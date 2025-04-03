@@ -286,6 +286,11 @@ class ZarrReader:
             return np.array([])
         
         try:
+            # If row or column indices represent a large selection, use optimized chunking
+            if (row_indices is not None and len(row_indices) > 1000) or \
+               (col_indices is not None and len(col_indices) > 1000):
+                return self._load_chunked_data('X', row_indices, col_indices)
+            
             # Handle selection
             if row_indices is not None and col_indices is not None:
                 # Both row and column indices provided
@@ -298,6 +303,11 @@ class ZarrReader:
                 return self.root['X'][:, col_indices]
             else:
                 # No selection, return everything
+                shape = self.root['X'].shape
+                # For very large matrices, return a sampled subset with warning
+                if shape[0] * shape[1] > 1e8:  # More than 100M elements
+                    logger.warning(f"X matrix is very large ({shape}). Returning downsampled data.")
+                    return self._downsample_array('X')
                 return self.root['X'][:]
         except Exception as e:
             logger.error(f"Error getting X data: {e}")
@@ -503,6 +513,210 @@ class ZarrReader:
         except Exception as e:
             logger.error(f"Error getting uns data for key {uns_key}: {e}")
             return None
+            
+    def _load_chunked_data(self, path: str, row_indices: Optional[List[int]] = None, 
+                          col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Load data using an optimized chunking strategy for large datasets.
+        
+        Args:
+            path: Path to the zarr array
+            row_indices: List of row indices to select
+            col_indices: List of column indices to select
+            
+        Returns:
+            numpy.ndarray: The chunked data
+        """
+        if not self.loaded:
+            return np.array([])
+            
+        try:
+            array = self.root[path]
+            chunks = getattr(array, 'chunks', None)
+            
+            # If chunks info is not available, fall back to regular loading
+            if chunks is None:
+                logger.warning(f"Chunk information not available for {path}, using standard loading")
+                if row_indices is not None and col_indices is not None:
+                    return array[row_indices, :][:, col_indices]
+                elif row_indices is not None:
+                    return array[row_indices, :]
+                elif col_indices is not None:
+                    return array[:, col_indices]
+                else:
+                    return array[:]
+            
+            # Determine ranges to load
+            if row_indices is not None:
+                min_row = min(row_indices)
+                max_row = max(row_indices)
+                row_range = (min_row, max_row + 1)
+            else:
+                row_range = None
+                
+            if col_indices is not None:
+                min_col = min(col_indices)
+                max_col = max(col_indices)
+                col_range = (min_col, max_col + 1)
+            else:
+                col_range = None
+            
+            # Calculate chunk boundaries for optimal loading
+            if row_range and col_range:
+                # Both dimensions have ranges defined
+                chunk_row_start = (row_range[0] // chunks[0]) * chunks[0]
+                chunk_row_end = ((row_range[1] + chunks[0] - 1) // chunks[0]) * chunks[0]
+                
+                chunk_col_start = (col_range[0] // chunks[1]) * chunks[1]
+                chunk_col_end = ((col_range[1] + chunks[1] - 1) // chunks[1]) * chunks[1]
+                
+                # Adjust boundaries to array dimensions
+                chunk_row_end = min(chunk_row_end, array.shape[0])
+                chunk_col_end = min(chunk_col_end, array.shape[1])
+                
+                # Load data in chunks
+                data_chunks = []
+                for row_start in range(chunk_row_start, chunk_row_end, chunks[0]):
+                    row_end = min(row_start + chunks[0], chunk_row_end)
+                    row_data = []
+                    
+                    for col_start in range(chunk_col_start, chunk_col_end, chunks[1]):
+                        col_end = min(col_start + chunks[1], chunk_col_end)
+                        chunk = array[row_start:row_end, col_start:col_end]
+                        row_data.append(chunk)
+                    
+                    if row_data:
+                        data_chunks.append(np.concatenate(row_data, axis=1))
+                
+                if data_chunks:
+                    full_data = np.concatenate(data_chunks, axis=0)
+                    
+                    # Now extract the exact indices requested
+                    if row_indices is not None and col_indices is not None:
+                        # Convert absolute indices to relative indices within the loaded chunk
+                        rel_row_indices = [i - chunk_row_start for i in row_indices]
+                        rel_col_indices = [i - chunk_col_start for i in col_indices]
+                        return full_data[rel_row_indices, :][:, rel_col_indices]
+                    
+                    return full_data
+            
+            # Fall back to regular loading for simpler cases
+            if row_indices is not None and col_indices is not None:
+                return array[row_indices, :][:, col_indices]
+            elif row_indices is not None:
+                return array[row_indices, :]
+            elif col_indices is not None:
+                return array[:, col_indices]
+            else:
+                return array[:]
+                
+        except Exception as e:
+            logger.error(f"Error loading chunked data for {path}: {e}")
+            return np.array([])
+            
+    def _downsample_array(self, path: str, max_size: int = 1000) -> np.ndarray:
+        """
+        Downsample a large array to a manageable size.
+        
+        Args:
+            path: Path to the zarr array
+            max_size: Maximum number of elements in each dimension
+            
+        Returns:
+            numpy.ndarray: The downsampled data
+        """
+        if not self.loaded or path not in self.root:
+            return np.array([])
+            
+        try:
+            array = self.root[path]
+            shape = array.shape
+            
+            if len(shape) != 2:
+                logger.warning(f"Downsampling only supported for 2D arrays, got shape {shape}")
+                return array[:]
+                
+            # Calculate stride for each dimension
+            row_stride = max(1, shape[0] // max_size)
+            col_stride = max(1, shape[1] // max_size)
+            
+            # Create index arrays for strided access
+            row_indices = np.arange(0, shape[0], row_stride)
+            col_indices = np.arange(0, shape[1], col_stride)
+            
+            # Limit the number of indices if still too large
+            if len(row_indices) > max_size:
+                row_indices = row_indices[:max_size]
+            if len(col_indices) > max_size:
+                col_indices = col_indices[:max_size]
+                
+            # Load the downsampled data
+            return array[row_indices[:, np.newaxis], col_indices]
+            
+        except Exception as e:
+            logger.error(f"Error downsampling array {path}: {e}")
+            return np.array([])
+            
+    def load_progressively(self, path: str, chunk_size: int = 1000, 
+                          callback: Optional[callable] = None) -> np.ndarray:
+        """
+        Load data progressively with callback for progress updates.
+        
+        Args:
+            path: Path to the zarr array
+            chunk_size: Size of chunks to load at once
+            callback: Callback function called with (chunk, progress)
+            
+        Returns:
+            numpy.ndarray: The complete loaded data
+        """
+        if not self.loaded or path not in self.root:
+            return np.array([])
+            
+        try:
+            array = self.root[path]
+            shape = array.shape
+            
+            # For 1D arrays
+            if len(shape) == 1:
+                data = np.zeros(shape, dtype=array.dtype)
+                chunks = [(i, min(i + chunk_size, shape[0])) 
+                         for i in range(0, shape[0], chunk_size)]
+                
+                for i, (start, end) in enumerate(chunks):
+                    data[start:end] = array[start:end]
+                    progress = (i + 1) / len(chunks)
+                    
+                    if callback:
+                        callback(data.copy(), progress)
+                        
+                return data
+                
+            # For 2D arrays
+            elif len(shape) == 2:
+                data = np.zeros(shape, dtype=array.dtype)
+                chunks = [(i, min(i + chunk_size, shape[0])) 
+                         for i in range(0, shape[0], chunk_size)]
+                
+                for i, (start, end) in enumerate(chunks):
+                    data[start:end, :] = array[start:end, :]
+                    progress = (i + 1) / len(chunks)
+                    
+                    if callback:
+                        callback(data.copy(), progress)
+                        
+                return data
+                
+            # For higher dimensional arrays, load all at once
+            else:
+                data = array[:]
+                if callback:
+                    callback(data, 1.0)
+                return data
+                
+        except Exception as e:
+            logger.error(f"Error loading data progressively from {path}: {e}")
+            return np.array([])
     
     def get_available_data(self) -> Dict[str, Any]:
         """

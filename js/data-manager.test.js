@@ -46,10 +46,11 @@ describe('DataManager', () => {
         expect(dataManager.getFocusedCell()).toBe('cell1');
         
         // Check that event was triggered
-        expect(dataManager._triggerEvent).toHaveBeenCalledWith(
-          'focusChanged', 
-          { type: 'cell', value: 'cell1' }
-        );
+        // Updated test to work with extended event data
+        const triggerCall = dataManager._triggerEvent.mock.calls[0];
+        expect(triggerCall[0]).toBe('focusChanged');
+        expect(triggerCall[1].type).toBe('cell');
+        expect(triggerCall[1].value).toBe('cell1');
       } finally {
         // Restore the original method
         dataManager._triggerEvent = origMethod;
@@ -66,10 +67,11 @@ describe('DataManager', () => {
         expect(dataManager.getFocusedGene()).toBe('BRCA1');
         
         // Check that event was triggered
-        expect(dataManager._triggerEvent).toHaveBeenCalledWith(
-          'focusChanged', 
-          { type: 'gene', value: 'BRCA1' }
-        );
+        // Updated test to work with extended event data
+        const triggerCall = dataManager._triggerEvent.mock.calls[0];
+        expect(triggerCall[0]).toBe('focusChanged');
+        expect(triggerCall[1].type).toBe('gene');
+        expect(triggerCall[1].value).toBe('BRCA1');
       } finally {
         // Restore the original method
         dataManager._triggerEvent = origMethod;

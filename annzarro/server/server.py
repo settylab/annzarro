@@ -557,6 +557,201 @@ def handle_gene_focus():
         # Clear focused gene
         data_manager.set_focused_gene(None)
         return jsonify({"focused_gene": None})
+        
+@app.route(f"/api/{API_VERSION}/data/statistics", methods=["GET"])
+def get_data_statistics():
+    """
+    Get statistical analysis of expression data.
+    
+    Query parameters:
+        gene_indices: Comma-separated list of gene indices
+        cell_indices: Comma-separated list of cell indices
+        layer: Layer name (optional)
+    
+    Returns:
+        JSON response with statistical analysis
+    """
+    # Get parameters
+    gene_indices_str = request.args.get("gene_indices")
+    cell_indices_str = request.args.get("cell_indices")
+    layer = request.args.get("layer")
+    
+    # Parse indices if provided
+    gene_indices = None
+    if gene_indices_str:
+        try:
+            gene_indices = [int(i) for i in gene_indices_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid gene indices format"})
+    
+    cell_indices = None
+    if cell_indices_str:
+        try:
+            cell_indices = [int(i) for i in cell_indices_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid cell indices format"})
+    
+    # Get statistics
+    stats = data_manager.analyze_expression_data(gene_indices, cell_indices, layer)
+    
+    return jsonify(stats)
+
+@app.route(f"/api/{API_VERSION}/data/downsampled", methods=["GET"])
+def get_downsampled_data():
+    """
+    Get downsampled data for visualization.
+    
+    Query parameters:
+        n_samples: Number of cells to sample (default: 1000)
+        method: Downsampling method ('random', 'stratified', or 'kmeans') (default: 'random')
+        seed: Random seed (default: 42)
+        include_embeddings: Whether to include embeddings data (default: true)
+        include_obs: Whether to include observation annotations (default: true)
+        
+    Returns:
+        JSON response with downsampled data
+    """
+    # Get parameters
+    n_samples = request.args.get("n_samples", 1000, type=int)
+    method = request.args.get("method", "random")
+    seed = request.args.get("seed", 42, type=int)
+    include_embeddings = request.args.get("include_embeddings", "true").lower() == "true"
+    include_obs = request.args.get("include_obs", "true").lower() == "true"
+    
+    # Get downsampled cell indices
+    cell_indices = data_manager.downsample_cells(n_samples, method, seed)
+    
+    if not cell_indices:
+        return jsonify({"error": "Failed to downsample cells"})
+    
+    # Prepare response data
+    result = {
+        "n_cells": len(cell_indices),
+        "cell_indices": cell_indices
+    }
+    
+    # Add cell names
+    cell_names = data_manager.get_obs_names()
+    if cell_indices and cell_names:
+        result["cell_names"] = [cell_names[i] for i in cell_indices if i < len(cell_names)]
+    
+    # Include observation annotations if requested
+    if include_obs:
+        # Get key observation columns
+        obs_data = {}
+        metadata = zarr_reader.get_metadata()
+        obs_columns = metadata.get("obs_columns", [])
+        
+        # Limit to important columns to reduce payload size
+        important_columns = ["cell_type", "leiden", "louvain", "cluster", "group", "condition", "state"]
+        columns_to_include = [col for col in obs_columns if col in important_columns or "cluster" in col.lower()]
+        
+        # Get data for each column
+        for column in columns_to_include[:5]:  # Limit to 5 columns max
+            column_data = data_manager.get_obs(column, cell_indices)
+            if column_data is not None and len(column_data) > 0:
+                if hasattr(column_data, "tolist"):
+                    obs_data[column] = column_data.tolist()
+                else:
+                    obs_data[column] = column_data
+                    
+        result["obs"] = obs_data
+    
+    # Include embeddings if requested
+    if include_embeddings:
+        embeddings = data_manager.get_embeddings()
+        if embeddings:
+            embedding_data = {}
+            
+            # Get the first 2-3 embeddings
+            for embedding in embeddings[:3]:
+                data = data_manager.get_obsm(embedding, cell_indices)
+                if data is not None and len(data) > 0:
+                    # Keep only the first two dimensions for 2D visualization
+                    if data.shape[1] > 2:
+                        data = data[:, :2]
+                        
+                    if hasattr(data, "tolist"):
+                        embedding_data[embedding] = data.tolist()
+                    else:
+                        embedding_data[embedding] = data
+                        
+            result["embeddings"] = embedding_data
+    
+    return jsonify(result)
+
+@app.route(f"/api/{API_VERSION}/data/progressive/<path:data_path>", methods=["GET"])
+def get_progressive_data(data_path):
+    """
+    Stream data progressively using chunked encoding.
+    
+    Args:
+        data_path: Path to the data component (e.g., 'X', 'obsm/X_umap')
+        
+    Query parameters:
+        chunk_size: Size of chunks to load at once (default: 1000)
+        
+    Returns:
+        Streamed JSON responses with data chunks
+    """
+    # Get parameters
+    chunk_size = request.args.get("chunk_size", 1000, type=int)
+    
+    if not data_manager.current_dataset:
+        return jsonify({"error": "No dataset loaded"})
+    
+    # Start the chunked response
+    def generate():
+        try:
+            # Define a callback for progressive loading
+            chunk_count = 0
+            
+            def progress_callback(chunk, progress):
+                nonlocal chunk_count
+                chunk_count += 1
+                
+                # Convert numpy arrays to lists
+                if hasattr(chunk, "tolist"):
+                    chunk_data = chunk.tolist()
+                else:
+                    chunk_data = chunk
+                    
+                # Create a chunk response
+                response = {
+                    "chunk": chunk_count,
+                    "progress": progress,
+                    "data": chunk_data,
+                    "final": progress >= 0.99
+                }
+                
+                # Yield chunk as a JSON string
+                yield json.dumps(response) + "\n"
+            
+            # Start progressive loading
+            if data_path == "X":
+                # Load from X matrix
+                zarr_reader.load_progressively("X", chunk_size, progress_callback)
+            elif data_path.startswith("obsm/"):
+                # Load from obsm
+                obsm_key = data_path[5:]  # Remove 'obsm/' prefix
+                zarr_reader.load_progressively(f"obsm/{obsm_key}", chunk_size, progress_callback)
+            elif data_path.startswith("layers/"):
+                # Load from layers
+                layer_key = data_path[7:]  # Remove 'layers/' prefix
+                zarr_reader.load_progressively(f"layers/{layer_key}", chunk_size, progress_callback)
+            else:
+                # Invalid path
+                yield json.dumps({"error": f"Invalid data path: {data_path}"}) + "\n"
+                
+        except Exception as e:
+            logger.error(f"Error in progressive loading: {e}")
+            yield json.dumps({"error": str(e)}) + "\n"
+    
+    # Return a streaming response
+    return app.response_class(
+        generate(),
+        mimetype="application/x-ndjson"
+    )
 
 def run_server(config_file: Optional[str] = None, 
               debug: bool = False, 

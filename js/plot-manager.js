@@ -70,6 +70,105 @@ class PlotManager {
             }
         };
     }
+    
+    /**
+     * Update all plots based on selection or filter changes
+     * @param {Object} filterChange - Information about what changed
+     */
+    updateAllPlots(filterChange) {
+        // Update each plot with the new filter or selection
+        for (const [panelId, plotInfo] of this.plots.entries()) {
+            // Apply filter to plot data
+            let filteredData = { ...plotInfo.data };
+            
+            // Apply selection filters if provided
+            if (filterChange.selectionChanged) {
+                if (filterChange.type === 'cells' && plotInfo.data.cellIndices) {
+                    // Filter data to show only selected cells
+                    const selectedIndices = filterChange.selected.map(cellName => {
+                        return plotInfo.data.cellIndices[cellName];
+                    }).filter(index => index !== undefined);
+                    
+                    // Apply filter to data arrays
+                    this._filterDataIndices(filteredData, selectedIndices);
+                } else if (filterChange.type === 'genes' && plotInfo.data.geneIndices) {
+                    // Filter data to show only selected genes
+                    const selectedIndices = filterChange.selected.map(geneName => {
+                        return plotInfo.data.geneIndices[geneName];
+                    }).filter(index => index !== undefined);
+                    
+                    // Apply filter to data arrays
+                    this._filterDataIndices(filteredData, selectedIndices);
+                }
+            }
+            
+            // Apply value filtering if provided
+            if (filterChange.valueFilter) {
+                const { field, min, max } = filterChange.valueFilter;
+                
+                if (filteredData[field]) {
+                    // Find indices that match the filter criteria
+                    const validIndices = [];
+                    for (let i = 0; i < filteredData[field].length; i++) {
+                        const value = filteredData[field][i];
+                        if (value >= min && value <= max) {
+                            validIndices.push(i);
+                        }
+                    }
+                    
+                    // Apply filter to data arrays
+                    this._filterDataIndices(filteredData, validIndices);
+                }
+            }
+            
+            // Handle focused items
+            if (filterChange.focusChanged) {
+                if (filterChange.type === 'cell') {
+                    filteredData.focusedCellIndex = filterChange.index;
+                    filteredData.focusedCellName = filterChange.name;
+                } else if (filterChange.type === 'gene') {
+                    filteredData.focusedGeneIndex = filterChange.index;
+                    filteredData.focusedGeneName = filterChange.name;
+                }
+            }
+            
+            // Update the plot with filtered data
+            this.updatePlot(panelId, filteredData);
+        }
+    }
+    
+    /**
+     * Helper method to filter data arrays by indices
+     * @param {Object} data - Data object with arrays
+     * @param {Array<number>} indices - Indices to keep
+     * @private
+     */
+    _filterDataIndices(data, indices) {
+        // Filter each array in the data object
+        for (const key in data) {
+            if (Array.isArray(data[key])) {
+                data[key] = indices.map(i => data[key][i]);
+            }
+        }
+    }
+    
+    /**
+     * Highlight focused items in a plot
+     * @param {string} plotId - ID of the plot
+     */
+    highlightFocusedItems(plotId) {
+        const plotInfo = this.plots.get(plotId);
+        if (!plotInfo) return;
+        
+        // Get the current data
+        const plotData = plotInfo.data;
+        
+        // Check if there's a focused gene or cell
+        if (plotData.focusedGeneIndex !== undefined || plotData.focusedCellIndex !== undefined) {
+            // Update the plot to highlight the focused item
+            this.updatePlot(plotId, plotData);
+        }
+    }
 
     /**
      * Create a new plot
@@ -202,6 +301,12 @@ class PlotManager {
      * @returns {Object} The created plot object
      */
     createScatterPlot(container, data, settings) {
+        // Check if this is a large dataset
+        if (data.x && data.x.length > 10000 && window.ANNZARRO_API_URL) {
+            // Use downsampled visualization for large datasets
+            return this._createLargeScatterPlot(container, data, settings);
+        }
+        
         // Extract data for the plot
         const {
             x, y, z,
@@ -214,7 +319,7 @@ class PlotManager {
         
         // Create the base trace
         const trace = {
-            type: 'scatter',
+            type: 'scattergl', // Use WebGL renderer for better performance
             mode: 'markers',
             x,
             y,
@@ -336,6 +441,238 @@ class PlotManager {
             // Basic plot without focusing
             return Plotly.newPlot(container, [trace], this._createLayout(xLabel, yLabel, zLabel, title));
         }
+    }
+    
+    /**
+     * Create a scatter plot for large datasets using backend downsampling
+     * @param {HTMLElement} container - Container element for the plot
+     * @param {Object} data - The plot data
+     * @param {Object} settings - Plot settings
+     * @returns {Promise<Object>} The created plot
+     * @private
+     */
+    async _createLargeScatterPlot(container, data, settings) {
+        // Show loading indicator
+        this._showLoadingIndicator(container, 'Loading optimized visualization...');
+        
+        try {
+            // Construct embedding name (usually X_umap, X_pca, etc.)
+            const embeddingKey = settings.embedding || 
+                                (data.xLabel && data.yLabel ? 
+                                 `X_${data.xLabel.toLowerCase().replace(/[0-9]/g, '')}` : 
+                                 'X_umap');
+            
+            // Determine color column if available
+            const colorBy = settings.colorBy || null;
+            
+            // Call the backend API to get downsampled data
+            const params = new URLSearchParams({
+                n_samples: settings.maxPoints || 5000,
+                method: settings.downsampleMethod || 'kmeans',
+                include_embeddings: 'true',
+                include_obs: 'true'
+            });
+            
+            // Make the API request
+            const response = await fetch(`${window.ANNZARRO_API_URL}/data/downsampled?${params}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch downsampled data: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            // Check if we got the embedding data we need
+            if (!result.embeddings || !result.embeddings[embeddingKey]) {
+                throw new Error(`Embedding data ${embeddingKey} not available`);
+            }
+            
+            // Create plot data from the API result
+            const plotData = {
+                x: result.embeddings[embeddingKey].map(coord => coord[0]),
+                y: result.embeddings[embeddingKey].map(coord => coord[1]),
+                xLabel: data.xLabel || embeddingKey.replace('X_', '') + ' 1',
+                yLabel: data.yLabel || embeddingKey.replace('X_', '') + ' 2',
+                title: (data.title || 'Cell Visualization') + 
+                       ` (${result.n_cells.toLocaleString()} cells, downsampled)`,
+                cellIndices: result.cell_indices  // Keep track of original indices
+            };
+            
+            // Add cell names if available
+            if (result.cell_names) {
+                plotData.text = result.cell_names.map((name, i) => {
+                    const x = plotData.x[i];
+                    const y = plotData.y[i];
+                    
+                    // Format hover text
+                    let text = `Cell: ${name}`;
+                    text += `<br>${plotData.xLabel}: ${this._formatNumber(x)}`;
+                    text += `<br>${plotData.yLabel}: ${this._formatNumber(y)}`;
+                    
+                    return text;
+                });
+            }
+            
+            // Add color information if available
+            if (colorBy && result.obs && result.obs[colorBy]) {
+                plotData.color = result.obs[colorBy];
+                plotData.colorLabel = colorBy;
+            }
+            
+            // Hide loading indicator
+            this._hideLoadingIndicator(container);
+            
+            // Create the plot using standard method
+            return this.createScatterPlot(container, plotData, {
+                ...settings,
+                title: plotData.title
+            });
+        } catch (error) {
+            console.error('Error creating downsampled plot:', error);
+            
+            // Remove loading indicator
+            this._hideLoadingIndicator(container);
+            
+            // Show error message
+            this._showErrorMessage(container, `Failed to create optimized plot: ${error.message}`);
+            
+            // Fall back to regular plot if possible
+            if (data.x && data.y) {
+                return this.createScatterPlot(container, {
+                    ...data,
+                    title: (data.title || '') + ' (unoptimized)'
+                }, settings);
+            }
+            
+            return null;
+        }
+    }
+    
+    /**
+     * Format a number nicely for display
+     * @param {number} value - The number to format
+     * @returns {string} Formatted number
+     * @private
+     */
+    _formatNumber(value) {
+        if (typeof value !== 'number') return value;
+        
+        // Check if it's an integer
+        if (Number.isInteger(value)) return value.toString();
+        
+        // Format with appropriate precision
+        if (Math.abs(value) < 0.001) return value.toExponential(2);
+        if (Math.abs(value) < 1) return value.toFixed(3);
+        if (Math.abs(value) < 10) return value.toFixed(2);
+        if (Math.abs(value) < 100) return value.toFixed(1);
+        return value.toFixed(0);
+    }
+    
+    /**
+     * Show a loading indicator in the container
+     * @param {HTMLElement} container - The container element
+     * @param {string} message - Loading message
+     * @private
+     */
+    _showLoadingIndicator(container, message = 'Loading...') {
+        // Remove any existing indicators
+        this._hideLoadingIndicator(container);
+        
+        // Create loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'plot-loading-indicator';
+        loadingDiv.style.position = 'absolute';
+        loadingDiv.style.top = '50%';
+        loadingDiv.style.left = '50%';
+        loadingDiv.style.transform = 'translate(-50%, -50%)';
+        loadingDiv.style.textAlign = 'center';
+        loadingDiv.style.padding = '20px';
+        loadingDiv.style.background = 'rgba(255,255,255,0.9)';
+        loadingDiv.style.borderRadius = '5px';
+        loadingDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+        loadingDiv.style.zIndex = '1000';
+        
+        // Add spinner and message
+        loadingDiv.innerHTML = `
+            <div style="display: inline-block; width: 2rem; height: 2rem; border: 0.25rem solid rgba(0,123,255,0.25); 
+                        border-right-color: #007bff; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div style="margin-top: 10px; color: #333;">${message}</div>
+        `;
+        
+        // Add animation style if needed
+        if (!document.getElementById('plot-loading-style')) {
+            const styleEl = document.createElement('style');
+            styleEl.id = 'plot-loading-style';
+            styleEl.textContent = `
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(styleEl);
+        }
+        
+        // Ensure container has position relative for proper positioning
+        const containerStyle = window.getComputedStyle(container);
+        if (containerStyle.position === 'static') {
+            container.style.position = 'relative';
+        }
+        
+        // Add to container
+        container.appendChild(loadingDiv);
+    }
+    
+    /**
+     * Hide the loading indicator
+     * @param {HTMLElement} container - The container element
+     * @private
+     */
+    _hideLoadingIndicator(container) {
+        const indicator = container.querySelector('.plot-loading-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+    
+    /**
+     * Show an error message in the container
+     * @param {HTMLElement} container - The container element
+     * @param {string} message - Error message
+     * @private
+     */
+    _showErrorMessage(container, message) {
+        // Remove any existing error messages
+        const existingError = container.querySelector('.plot-error-message');
+        if (existingError) existingError.remove();
+        
+        // Create error message element
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'plot-error-message';
+        errorDiv.style.position = 'absolute';
+        errorDiv.style.top = '50%';
+        errorDiv.style.left = '50%';
+        errorDiv.style.transform = 'translate(-50%, -50%)';
+        errorDiv.style.textAlign = 'center';
+        errorDiv.style.padding = '20px';
+        errorDiv.style.background = 'rgba(255,220,220,0.9)';
+        errorDiv.style.color = '#721c24';
+        errorDiv.style.borderRadius = '5px';
+        errorDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+        errorDiv.style.maxWidth = '80%';
+        
+        // Add error icon and message
+        errorDiv.innerHTML = `
+            <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
+            <div>${message}</div>
+        `;
+        
+        // Ensure container has position relative for proper positioning
+        const containerStyle = window.getComputedStyle(container);
+        if (containerStyle.position === 'static') {
+            container.style.position = 'relative';
+        }
+        
+        // Add to container
+        container.appendChild(errorDiv);
     }
 
     /**

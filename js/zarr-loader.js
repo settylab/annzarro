@@ -853,6 +853,226 @@ class ZarrLoader {
             throw error;
         }
     }
+    
+    /**
+     * Load data using optimized chunking strategy
+     * @param {string} path - Path to the zarr array
+     * @param {Array} selection - Selection indices [[rowStart, rowStop], [colStart, colStop]]
+     * @returns {Promise<Object>} The loaded data with chunking optimized
+     */
+    async _loadChunkedData(path, selection) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
+        if (!this.store) {
+            throw new Error('No zarr store loaded');
+        }
+        
+        try {
+            // Open the zarr array
+            const array = await zarr.open(this.store, path);
+            
+            // Get chunk information
+            const chunks = array.chunks;
+            
+            // Calculate optimal chunking strategy based on selection shape and chunks
+            // If selection spans multiple chunks, load in parallel
+            if (!selection) {
+                return await array.get();
+            }
+            
+            // Calculate how many chunks are needed for each dimension
+            const rowSelection = selection[0];
+            const colSelection = selection[1];
+            
+            if (!rowSelection || !colSelection) {
+                return await array.get(selection);
+            }
+            
+            const rowStart = rowSelection[0];
+            const rowStop = rowSelection[1];
+            const colStart = colSelection[0];
+            const colStop = colSelection[1];
+            
+            // Calculate chunk indices
+            const rowChunkStart = Math.floor(rowStart / chunks[0]);
+            const rowChunkStop = Math.ceil(rowStop / chunks[0]);
+            const colChunkStart = Math.floor(colStart / chunks[1]);
+            const colChunkStop = Math.ceil(colStop / chunks[1]);
+            
+            // If selection is within a single chunk, use direct selection
+            if (rowChunkStart === rowChunkStop - 1 && colChunkStart === colChunkStop - 1) {
+                return await array.get(selection);
+            }
+            
+            // If the selection spans multiple chunks, divide into smaller requests
+            // and load them in parallel for better performance
+            const requests = [];
+            
+            for (let rowChunk = rowChunkStart; rowChunk < rowChunkStop; rowChunk++) {
+                for (let colChunk = colChunkStart; colChunk < colChunkStop; colChunk++) {
+                    const chunkRowStart = Math.max(rowChunk * chunks[0], rowStart);
+                    const chunkRowStop = Math.min((rowChunk + 1) * chunks[0], rowStop);
+                    const chunkColStart = Math.max(colChunk * chunks[1], colStart);
+                    const chunkColStop = Math.min((colChunk + 1) * chunks[1], colStop);
+                    
+                    if (chunkRowStart < chunkRowStop && chunkColStart < chunkColStop) {
+                        requests.push({
+                            selection: [
+                                [chunkRowStart, chunkRowStop],
+                                [chunkColStart, chunkColStop]
+                            ],
+                            rowOffset: chunkRowStart - rowStart,
+                            colOffset: chunkColStart - colStart
+                        });
+                    }
+                }
+            }
+            
+            // Create result array
+            const rowCount = rowStop - rowStart;
+            const colCount = colStop - colStart;
+            const dtype = array.dtype;
+            const result = new (dtype === 'float32' ? Float32Array : 
+                               dtype === 'float64' ? Float64Array : 
+                               dtype === 'int32' ? Int32Array : 
+                               dtype === 'int16' ? Int16Array : 
+                               dtype === 'int8' ? Int8Array : 
+                               dtype === 'uint32' ? Uint32Array : 
+                               dtype === 'uint16' ? Uint16Array : 
+                               dtype === 'uint8' ? Uint8Array : 
+                               Array)(rowCount * colCount);
+            
+            // Load chunks in parallel
+            await Promise.all(requests.map(async (request) => {
+                const chunkData = await array.get(request.selection);
+                const chunkRows = request.selection[0][1] - request.selection[0][0];
+                const chunkCols = request.selection[1][1] - request.selection[1][0];
+                
+                // Copy chunk data to result array
+                for (let i = 0; i < chunkRows; i++) {
+                    for (let j = 0; j < chunkCols; j++) {
+                        const resultIdx = (request.rowOffset + i) * colCount + (request.colOffset + j);
+                        const chunkIdx = i * chunkCols + j;
+                        result[resultIdx] = chunkData[chunkIdx];
+                    }
+                }
+            }));
+            
+            // Reshape result to match the expected shape
+            const resultArray = [];
+            for (let i = 0; i < rowCount; i++) {
+                const row = [];
+                for (let j = 0; j < colCount; j++) {
+                    row.push(result[i * colCount + j]);
+                }
+                resultArray.push(row);
+            }
+            
+            return resultArray;
+        } catch (error) {
+            console.error(`Error loading chunked data from ${path}:`, error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Load data progressively with callback for progress updates
+     * @param {string} path - Path to the zarr array
+     * @param {Function} callback - Callback function called with loaded data chunks and progress
+     * @param {Object} options - Options for progressive loading
+     * @param {number} options.chunkSize - Size of chunks to load at once
+     * @param {number} options.throttleMs - Minimum time between progress callbacks
+     * @returns {Promise<Object>} The complete loaded data
+     */
+    async loadProgressively(path, callback, options = {}) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
+        if (!this.store) {
+            throw new Error('No zarr store loaded');
+        }
+        
+        const chunkSize = options.chunkSize || 1000; // Default chunk size
+        const throttleMs = options.throttleMs || 100; // Default throttle
+        
+        try {
+            // Open the zarr array
+            const array = await zarr.open(this.store, path);
+            
+            // Get array info
+            const shape = array.shape;
+            
+            // For 1D arrays
+            if (shape.length === 1) {
+                const totalSize = shape[0];
+                const chunks = Math.ceil(totalSize / chunkSize);
+                
+                let result = [];
+                let lastCallbackTime = 0;
+                
+                for (let i = 0; i < chunks; i++) {
+                    const start = i * chunkSize;
+                    const stop = Math.min((i + 1) * chunkSize, totalSize);
+                    
+                    const chunk = await array.get([[start, stop]]);
+                    result = result.concat(Array.from(chunk));
+                    
+                    const now = Date.now();
+                    if (now - lastCallbackTime >= throttleMs) {
+                        const progress = (i + 1) / chunks;
+                        callback(result, progress);
+                        lastCallbackTime = now;
+                    }
+                }
+                
+                return result;
+            }
+            
+            // For 2D arrays
+            if (shape.length === 2) {
+                const rows = shape[0];
+                const cols = shape[1];
+                const rowChunks = Math.ceil(rows / chunkSize);
+                
+                let result = new Array(rows);
+                for (let i = 0; i < rows; i++) {
+                    result[i] = new Array(cols);
+                }
+                
+                let lastCallbackTime = 0;
+                
+                for (let i = 0; i < rowChunks; i++) {
+                    const rowStart = i * chunkSize;
+                    const rowStop = Math.min((i + 1) * chunkSize, rows);
+                    
+                    const chunk = await array.get([[rowStart, rowStop], null]);
+                    
+                    // Copy chunk data to result
+                    for (let r = 0; r < (rowStop - rowStart); r++) {
+                        result[rowStart + r] = chunk[r];
+                    }
+                    
+                    const now = Date.now();
+                    if (now - lastCallbackTime >= throttleMs) {
+                        const progress = (i + 1) / rowChunks;
+                        callback(result, progress);
+                        lastCallbackTime = now;
+                    }
+                }
+                
+                return result;
+            }
+            
+            // For higher dimensions, just load all at once
+            const data = await array.get();
+            callback(data, 1.0);
+            return data;
+        } catch (error) {
+            console.error(`Error loading data progressively from ${path}:`, error);
+            throw error;
+        }
+    }
 }
 
 // Create and export a singleton instance

@@ -6,6 +6,9 @@
  * 3. Coordinates between data, UI, and visualization components
  */
 
+// Configuration for backend communication
+window.ANNZARRO_API_URL = process.env.ANNZARRO_API_URL || 'http://localhost:8000/api/v1';
+
 // Wait for all modules to be loaded and initialized
 document.addEventListener('modulesLoaded', function() {
     initializeApp();

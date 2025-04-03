@@ -113,87 +113,205 @@ def create_user(username=None, password=None, admin=False):
         print(f"Error creating user: {e}")
         return False
 
-def start_server(config_file=None, debug=False):
+def start_server(config_file=None, debug=False, frontend_only=False, backend_only=False):
     """Start the Annzarro server"""
+    processes = []
+    
     try:
-        cmd = [sys.executable, "-m", "annzarro.server"]
+        # Start backend server if requested
+        if not frontend_only:
+            cmd = [sys.executable, "-m", "annzarro.server"]
+            
+            if config_file:
+                cmd.extend(["-c", config_file])
+                
+            if debug:
+                cmd.append("--debug")
+                
+            # Start the backend server
+            print("Starting Annzarro backend server...")
+            backend_process = subprocess.Popen(cmd)
+            processes.append(('backend', backend_process))
+            
+            # Save the backend PID to a file
+            with open("backend_pid.txt", "w") as f:
+                f.write(str(backend_process.pid))
+                
+            print(f"Backend server started with PID {backend_process.pid}")
         
-        if config_file:
-            cmd.extend(["-c", config_file])
+        # Start frontend server if requested
+        if not backend_only:
+            # Choose HTTP server based on Python version
+            if sys.version_info >= (3, 7):
+                # Use Python's built-in HTTP server
+                frontend_cmd = [sys.executable, "-m", "http.server", "8080"]
+            else:
+                # Fallback for older Python versions
+                frontend_cmd = [sys.executable, "-m", "SimpleHTTPServer", "8080"]
             
-        if debug:
-            cmd.append("--debug")
+            # Start the frontend server
+            print("Starting frontend server...")
+            frontend_process = subprocess.Popen(frontend_cmd)
+            processes.append(('frontend', frontend_process))
             
-        # Start the server
-        print("Starting Annzarro server...")
-        process = subprocess.Popen(cmd)
+            # Save the frontend PID to a file
+            with open("frontend_pid.txt", "w") as f:
+                f.write(str(frontend_process.pid))
+                
+            print(f"Frontend server started with PID {frontend_process.pid}")
         
-        # Save the PID to a file
-        with open("server_pid.txt", "w") as f:
-            f.write(str(process.pid))
-            
-        print(f"Server started with PID {process.pid}")
-        print("To stop the server, press Ctrl+C or run: python run_annzarro.py --stop")
+        # Combine PIDs into a single file for easier management
+        with open("server_pids.txt", "w") as f:
+            for name, process in processes:
+                f.write(f"{name},{process.pid}\n")
+        
+        print("\nServers are now running!")
+        print("- Backend API:  http://localhost:8000/api/v1")
+        print("- Frontend UI:  http://localhost:8080")
+        print("\nTo stop the servers, press Ctrl+C or run: python run_annzarro.py --stop")
         
         # Wait for termination
         try:
-            process.wait()
+            # Wait for all processes
+            for _, process in processes:
+                process.wait()
         except KeyboardInterrupt:
-            print("\nShutting down server...")
-            process.terminate()
-            process.wait(timeout=5)
-            print("Server stopped.")
+            print("\nShutting down servers...")
+            for name, process in processes:
+                print(f"Stopping {name} server (PID {process.pid})...")
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    print(f"Forcing shutdown of {name} server...")
+                    process.kill()
+            print("All servers stopped.")
             
     except Exception as e:
-        print(f"Error starting server: {e}")
+        print(f"Error starting servers: {e}")
+        # Try to clean up any running processes
+        for _, process in processes:
+            try:
+                process.terminate()
+            except:
+                pass
         return False
         
     return True
 
 def stop_server():
     """Stop the Annzarro server"""
-    try:
-        if os.path.exists("server_pid.txt"):
-            with open("server_pid.txt", "r") as f:
-                pid = int(f.read().strip())
+    servers_stopped = False
+    
+    # Check for the combined PIDs file first
+    if os.path.exists("server_pids.txt"):
+        try:
+            with open("server_pids.txt", "r") as f:
+                server_entries = [line.strip().split(',') for line in f if line.strip()]
                 
-            try:
-                os.kill(pid, signal.SIGTERM)
-                print(f"Sent termination signal to server (PID {pid})")
-                
-                # Wait for process to stop
-                import time
-                for _ in range(5):
-                    time.sleep(1)
-                    try:
-                        os.kill(pid, 0)  # Check if process exists
-                    except OSError:
-                        # Process has stopped
-                        break
-                else:
-                    # Process didn't stop, try SIGKILL
-                    try:
-                        os.kill(pid, signal.SIGKILL)
-                        print(f"Sent SIGKILL to server (PID {pid})")
-                    except OSError:
-                        pass
-                
-                os.remove("server_pid.txt")
-                print("Server stopped.")
-                
-            except OSError as e:
-                if e.errno == 3:  # No such process
-                    print(f"Server (PID {pid}) is not running.")
-                    os.remove("server_pid.txt")
-                else:
-                    print(f"Error stopping server: {e}")
-        else:
-            print("No running server found.")
+            print(f"Found {len(server_entries)} servers to stop")
             
-    except Exception as e:
-        print(f"Error: {e}")
-        return False
+            for server_type, pid_str in server_entries:
+                try:
+                    pid = int(pid_str)
+                    print(f"Stopping {server_type} server (PID {pid})...")
+                    
+                    # Try to terminate the process
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        
+                        # Wait for process to stop
+                        for _ in range(5):
+                            time.sleep(1)
+                            try:
+                                os.kill(pid, 0)  # Check if process exists
+                            except OSError:
+                                # Process has stopped
+                                print(f"- {server_type} server stopped successfully")
+                                break
+                        else:
+                            # Process didn't stop, try SIGKILL
+                            try:
+                                os.kill(pid, signal.SIGKILL)
+                                print(f"- Forced {server_type} server shutdown with SIGKILL")
+                            except OSError:
+                                pass
+                            
+                    except OSError as e:
+                        if e.errno == 3:  # No such process
+                            print(f"- {server_type} server (PID {pid}) is not running")
+                        else:
+                            print(f"- Error stopping {server_type} server: {e}")
+                except ValueError:
+                    print(f"Invalid PID format for {server_type}: {pid_str}")
+            
+            # Remove PID files
+            os.remove("server_pids.txt")
+            for file in ["frontend_pid.txt", "backend_pid.txt", "server_pid.txt"]:
+                if os.path.exists(file):
+                    os.remove(file)
+                    
+            servers_stopped = True
+            print("All servers stopped")
+            
+        except Exception as e:
+            print(f"Error processing server_pids.txt: {e}")
+    
+    # Fallback to individual PID files
+    if not servers_stopped:
+        pid_files = [
+            ("backend", "backend_pid.txt"),
+            ("frontend", "frontend_pid.txt"),
+            ("server", "server_pid.txt")  # Legacy support
+        ]
         
+        servers_stopped = False
+        for server_type, pid_file in pid_files:
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file, "r") as f:
+                        pid = int(f.read().strip())
+                        
+                    print(f"Stopping {server_type} server (PID {pid})...")
+                    
+                    # Try to terminate the process
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        
+                        # Wait for process to stop
+                        for _ in range(5):
+                            time.sleep(1)
+                            try:
+                                os.kill(pid, 0)  # Check if process exists
+                            except OSError:
+                                # Process has stopped
+                                break
+                        else:
+                            # Process didn't stop, try SIGKILL
+                            try:
+                                os.kill(pid, signal.SIGKILL)
+                                print(f"Forced {server_type} server shutdown with SIGKILL")
+                            except OSError:
+                                pass
+                        
+                        os.remove(pid_file)
+                        servers_stopped = True
+                        print(f"{server_type.capitalize()} server stopped")
+                        
+                    except OSError as e:
+                        if e.errno == 3:  # No such process
+                            print(f"{server_type.capitalize()} server (PID {pid}) is not running")
+                            os.remove(pid_file)
+                            servers_stopped = True
+                        else:
+                            print(f"Error stopping {server_type} server: {e}")
+                            
+                except Exception as e:
+                    print(f"Error processing {pid_file}: {e}")
+    
+    if not servers_stopped:
+        print("No running servers found")
+            
     return True
 
 def initialize_project():
@@ -359,9 +477,11 @@ def main():
     
     # Command options
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--start", action="store_true", help="Start the server")
-    group.add_argument("--stop", action="store_true", help="Stop the server")
-    group.add_argument("--restart", action="store_true", help="Restart the server")
+    group.add_argument("--start", action="store_true", help="Start the servers (both backend and frontend)")
+    group.add_argument("--stop", action="store_true", help="Stop the servers")
+    group.add_argument("--restart", action="store_true", help="Restart the servers")
+    group.add_argument("--start-backend", action="store_true", help="Start only the backend server")
+    group.add_argument("--start-frontend", action="store_true", help="Start only the frontend server")
     group.add_argument("--create-user", action="store_true", help="Create a new user")
     group.add_argument("--install", action="store_true", help="Install required packages")
     group.add_argument("--install-dev", action="store_true", help="Install development packages")
@@ -370,6 +490,8 @@ def main():
     # Server options
     parser.add_argument("-c", "--config", type=str, default="annzarro/server/config.json", help="Path to config file")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--backend-port", type=int, default=8000, help="Port for the backend server (default: 8000)")
+    parser.add_argument("--frontend-port", type=int, default=8080, help="Port for the frontend server (default: 8080)")
     
     # User options
     parser.add_argument("-u", "--username", type=str, help="Username (for user creation)")
@@ -399,7 +521,17 @@ def main():
         if args.stop:
             return
     
-    if args.start or args.restart:
+    if args.start:
+        # Start both servers
+        start_server(args.config, args.debug)
+    elif args.start_backend:
+        # Start only backend server
+        start_server(args.config, args.debug, frontend_only=False, backend_only=True)
+    elif args.start_frontend:
+        # Start only frontend server
+        start_server(args.config, args.debug, frontend_only=True, backend_only=False)
+    elif args.restart:
+        # Restart both servers
         start_server(args.config, args.debug)
 
 if __name__ == "__main__":

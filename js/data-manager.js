@@ -316,6 +316,40 @@ class DataManager {
                 return this.cache.get(cacheKey);
             }
             
+            // Check if backend API is available
+            if (window.ANNZARRO_API_URL) {
+                try {
+                    // Build API request URL
+                    let url = `${window.ANNZARRO_API_URL}/data/X?`;
+                    
+                    // Add parameters
+                    if (rowIndices) {
+                        url += `rows=${rowIndices.join(',')}&`;
+                    }
+                    
+                    if (colIndices) {
+                        url += `cols=${colIndices.join(',')}&`;
+                    }
+                    
+                    // Make API request
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, data.data);
+                            return data.data;
+                        }
+                    }
+                    // If API request fails, fall back to local loading
+                    console.log('Failed to load X from backend API, falling back to local loading');
+                } catch (apiError) {
+                    console.error('Error using backend API:', apiError);
+                    // Fall back to local loading
+                }
+            }
+            
+            // Fall back to local loading (zarr.js)
             // Define selection based on indices
             let selection = null;
             
@@ -351,13 +385,21 @@ class DataManager {
                 ];
             }
             
-            // Load the data
+            // For large selections, try to use load progressively
+            const largeSelection = (rowIndices?.length > 5000 || colIndices?.length > 5000);
+            
             const zarrLoader = getZarrLoader();
             if (!zarrLoader) {
                 throw new Error('ZarrLoader not found');
             }
             
-            const result = await zarrLoader.loadData('X', selection);
+            let result;
+            if (largeSelection && zarrLoader.loadProgressively) {
+                // Use progressive loading for large selections
+                result = await zarrLoader._loadChunkedData('X', selection);
+            } else {
+                result = await zarrLoader.loadData('X', selection);
+            }
             
             // Cache the result
             this._addToCache(cacheKey, result);
@@ -592,12 +634,40 @@ class DataManager {
     }
 
     /**
+     * Find index of a gene by name
+     * @param {string} geneName - The gene name to find
+     * @returns {number} The index of the gene or -1 if not found
+     */
+    findGeneIndex(geneName) {
+        if (!this.anndata || !this.anndata.var || !this.anndata.var.index) return -1;
+        return this.anndata.var.index.indexOf(geneName);
+    }
+    
+    /**
+     * Find index of a cell by name
+     * @param {string} cellName - The cell name to find
+     * @returns {number} The index of the cell or -1 if not found
+     */
+    findCellIndex(cellName) {
+        if (!this.anndata || !this.anndata.obs || !this.anndata.obs.index) return -1;
+        return this.anndata.obs.index.indexOf(cellName);
+    }
+
+    /**
      * Set the focused gene
      * @param {string|null} gene - The gene name or null to clear
      */
     setFocusedGene(gene) {
         this.focusedGene = gene;
-        this._triggerEvent('focusChanged', { type: 'gene', value: gene });
+        // Find index in var/_index
+        const geneIndex = this.findGeneIndex(gene);
+        this.focusedGeneIndex = geneIndex;
+        this._triggerEvent('focusChanged', { 
+            type: 'gene', 
+            value: gene, // Keep value for backward compatibility
+            name: gene, 
+            index: geneIndex 
+        });
     }
 
     /**
@@ -614,7 +684,15 @@ class DataManager {
      */
     setFocusedCell(cell) {
         this.focusedCell = cell;
-        this._triggerEvent('focusChanged', { type: 'cell', value: cell });
+        // Find index in obs/_index
+        const cellIndex = this.findCellIndex(cell);
+        this.focusedCellIndex = cellIndex;
+        this._triggerEvent('focusChanged', { 
+            type: 'cell', 
+            value: cell, // Keep value for backward compatibility
+            name: cell, 
+            index: cellIndex 
+        });
     }
 
     /**
@@ -954,6 +1032,284 @@ class DataManager {
         }
     }
 
+    /**
+     * Calculate statistics for numerical data
+     * @param {Array|TypedArray} data - Numerical data to analyze
+     * @returns {Object} Object with statistics (min, max, mean, percentiles, etc.)
+     */
+    calculateStats(data) {
+        if (!data || data.length === 0) return null;
+        
+        // Check if backend API is available
+        if (window.ANNZARRO_API_URL && Array.isArray(data) && data.length > 10000) {
+            // For large datasets, we'll defer to the backend for performance reasons
+            // Instead of calculating here, we'll return a promise to fetch from backend
+            console.log('Large dataset detected, using backend for statistics calculation');
+            return this._getStatsFromBackend(data);
+        }
+        
+        // Local calculation for smaller datasets
+        const stats = {};
+        
+        // Convert to Array if TypedArray
+        const dataArray = Array.isArray(data) ? data : Array.from(data);
+        const validData = dataArray.filter(x => x !== null && x !== undefined && !isNaN(x));
+        
+        if (validData.length === 0) return null;
+        
+        // Sort for percentiles calculation
+        const sortedData = [...validData].sort((a, b) => a - b);
+        
+        // Basic statistics
+        stats.min = sortedData[0];
+        stats.max = sortedData[sortedData.length - 1];
+        stats.count = validData.length;
+        stats.sum = validData.reduce((acc, val) => acc + val, 0);
+        stats.mean = stats.sum / stats.count;
+        
+        // Calculate variance and standard deviation
+        const squaredDiffs = validData.map(x => Math.pow(x - stats.mean, 2));
+        stats.variance = squaredDiffs.reduce((acc, val) => acc + val, 0) / stats.count;
+        stats.std = Math.sqrt(stats.variance);
+        
+        // Calculate percentiles
+        const percentiles = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+        stats.percentiles = {};
+        
+        percentiles.forEach(p => {
+            const index = Math.floor(p * (sortedData.length - 1));
+            stats.percentiles[`p${Math.round(p * 100)}`] = sortedData[index];
+        });
+        
+        // Median (same as p50)
+        stats.median = stats.percentiles.p50;
+        
+        // Count zeros and non-zeros
+        stats.zero_count = validData.filter(x => x === 0).length;
+        stats.non_zero_count = validData.filter(x => x !== 0).length;
+        stats.zero_fraction = stats.zero_count / stats.count;
+        
+        return stats;
+    }
+    
+    /**
+     * Get statistics for a dataset from the backend
+     * @param {Array} data - Data array or indices for backend to process
+     * @param {Object} options - Options for the request
+     * @param {Array<number>} options.geneIndices - Gene indices to analyze
+     * @param {Array<number>} options.cellIndices - Cell indices to analyze
+     * @param {string} options.layer - Layer name
+     * @returns {Promise<Object>} Statistics object
+     * @private
+     */
+    async _getStatsFromBackend(data, options = {}) {
+        if (!window.ANNZARRO_API_URL) {
+            // Fall back to local calculation if backend API is not available
+            return this.calculateStats(data);
+        }
+        
+        try {
+            // Build API request URL
+            let url = `${window.ANNZARRO_API_URL}/data/statistics?`;
+            
+            // Add parameters
+            if (options.geneIndices) {
+                url += `gene_indices=${options.geneIndices.join(',')}&`;
+            }
+            
+            if (options.cellIndices) {
+                url += `cell_indices=${options.cellIndices.join(',')}&`;
+            }
+            
+            if (options.layer) {
+                url += `layer=${options.layer}&`;
+            }
+            
+            // Make API request
+            const response = await fetch(url);
+            if (response.ok) {
+                const stats = await response.json();
+                if (stats && stats.overall) {
+                    return stats.overall;
+                }
+            }
+            
+            // Fall back to local calculation if API request fails
+            console.log('Failed to get statistics from backend, calculating locally');
+            return this.calculateStats(data);
+        } catch (error) {
+            console.error('Error getting stats from backend:', error);
+            // Fall back to local calculation
+            return this.calculateStats(data);
+        }
+    }
+    
+    /**
+     * Analyze expression data to get statistics and insights
+     * @param {Array<number>} geneIndices - Indices of genes to analyze
+     * @param {Array<number>} cellIndices - Indices of cells to analyze
+     * @param {string} layer - Layer to analyze (optional)
+     * @returns {Promise<Object>} Analysis results
+     */
+    async analyzeExpressionData(geneIndices = null, cellIndices = null, layer = null) {
+        if (!this.isDataLoaded()) return null;
+        
+        // Check if backend API is available
+        if (window.ANNZARRO_API_URL) {
+            try {
+                // Build API request URL
+                let url = `${window.ANNZARRO_API_URL}/data/statistics?`;
+                
+                // Add parameters
+                if (geneIndices) {
+                    url += `gene_indices=${geneIndices.join(',')}&`;
+                }
+                
+                if (cellIndices) {
+                    url += `cell_indices=${cellIndices.join(',')}&`;
+                }
+                
+                if (layer) {
+                    url += `layer=${layer}&`;
+                }
+                
+                // Make API request
+                const response = await fetch(url);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.error('Error analyzing expression data from backend:', error);
+                // Fall back to local calculation
+            }
+        }
+        
+        // If backend API is not available or request fails, calculate locally
+        let data;
+        if (layer) {
+            data = await this.loadLayer(layer, cellIndices, geneIndices);
+        } else {
+            data = await this.loadX(cellIndices, geneIndices);
+        }
+        
+        if (!data) return null;
+        
+        // Calculate overall statistics
+        const stats = this.calculateStats(data.flat());
+        
+        // Return simplified analysis
+        return {
+            overall: stats,
+            genes: {},
+            cells: {},
+            shape: [data.length, data[0]?.length || 0],
+            sparsity: stats?.zero_fraction
+        };
+    }
+    
+    /**
+     * Load data progressively with callback for status updates
+     * @param {string} path - Path to the data
+     * @param {Function} callback - Function to call with progress updates
+     * @param {Object} options - Options for loading
+     * @returns {Promise<Array>} The loaded data
+     */
+    async loadProgressively(path, callback, options = {}) {
+        if (!this.isDataLoaded()) return null;
+        
+        // Check if backend API is available
+        if (window.ANNZARRO_API_URL) {
+            try {
+                // Build API request URL
+                let url = `${window.ANNZARRO_API_URL}/data/progressive/${path}?`;
+                
+                // Add parameters
+                if (options.chunkSize) {
+                    url += `chunk_size=${options.chunkSize}&`;
+                }
+                
+                // Create a fetch request
+                const response = await fetch(url);
+                
+                if (response.ok && response.body) {
+                    // Create a reader to read the streamed response
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let data = null;
+                    
+                    // Read chunks as they arrive
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        
+                        if (done) {
+                            break;
+                        }
+                        
+                        // Decode the chunk
+                        const chunk = decoder.decode(value, { stream: true });
+                        
+                        // Process each line (each line is a JSON object)
+                        const lines = chunk.split('\n').filter(Boolean);
+                        
+                        for (const line of lines) {
+                            try {
+                                const chunkData = JSON.parse(line);
+                                
+                                // If this is the first chunk, initialize the data array
+                                if (!data && chunkData.data) {
+                                    data = chunkData.data;
+                                } else if (chunkData.data) {
+                                    // Merge data (for 2D arrays)
+                                    if (Array.isArray(data) && Array.isArray(chunkData.data)) {
+                                        for (let i = 0; i < chunkData.data.length; i++) {
+                                            if (i < data.length) {
+                                                if (Array.isArray(data[i]) && Array.isArray(chunkData.data[i])) {
+                                                    data[i] = [...chunkData.data[i]];
+                                                }
+                                            } else {
+                                                data.push(chunkData.data[i]);
+                                            }
+                                        }
+                                    } else {
+                                        // For non-array data, just replace
+                                        data = chunkData.data;
+                                    }
+                                }
+                                
+                                // Call the callback with progress
+                                if (callback) {
+                                    callback(data, chunkData.progress);
+                                }
+                                
+                                // If this is the final chunk, we're done
+                                if (chunkData.final) {
+                                    break;
+                                }
+                            } catch (parseError) {
+                                console.error('Error parsing chunk data:', parseError);
+                            }
+                        }
+                    }
+                    
+                    return data;
+                }
+            } catch (error) {
+                console.error('Error loading progressively from backend:', error);
+                // Fall back to local loading
+            }
+        }
+        
+        // If backend API is not available or request fails, use local progressive loading
+        const zarrLoader = getZarrLoader();
+        if (!zarrLoader || !zarrLoader.loadProgressively) {
+            // If no progressive loading is available, load normally
+            return this.loadData(path);
+        }
+        
+        // Use zarr loader's progressive loading
+        return zarrLoader.loadProgressively(path, callback, options);
+    }
+    
     /**
      * Add an item to the cache with LRU eviction
      * @param {string} key - Cache key

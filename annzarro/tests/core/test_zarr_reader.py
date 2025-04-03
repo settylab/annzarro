@@ -251,6 +251,77 @@ class TestZarrReader(unittest.TestCase):
         # Check result
         self.assertTrue(result)
         mock_open_group.assert_called_once_with('http://example.com/test.zarr', mode='r')
+        
+    def test_load_chunked_data(self):
+        """Test loading chunked data with optimized strategy."""
+        self.reader.open_zarr(self.zarr_path)
+        
+        # Mock the chunks attribute
+        original_get_item = self.reader.root.__getitem__
+        
+        def mocked_get_item(key):
+            array = original_get_item(key)
+            if key == 'X':
+                array.chunks = (20, 10)  # Add chunks attribute
+            return array
+            
+        self.reader.root.__getitem__ = mocked_get_item
+        
+        # Test chunked loading with row selection
+        row_indices = list(range(30))
+        chunked_data = self.reader._load_chunked_data('X', row_indices=row_indices)
+        self.assertEqual(chunked_data.shape, (30, 50))
+        
+        # Test chunked loading with column selection
+        col_indices = list(range(25))
+        chunked_data = self.reader._load_chunked_data('X', col_indices=col_indices)
+        self.assertEqual(chunked_data.shape, (100, 25))
+        
+        # Test chunked loading with both row and column selection
+        chunked_data = self.reader._load_chunked_data('X', row_indices=row_indices, col_indices=col_indices)
+        self.assertEqual(chunked_data.shape, (30, 25))
+        
+        # Test with no chunks info
+        self.reader.root.__getitem__ = original_get_item
+        regular_data = self.reader._load_chunked_data('X', row_indices=row_indices)
+        self.assertEqual(regular_data.shape, (30, 50))
+        
+    def test_downsample_array(self):
+        """Test downsampling large arrays."""
+        self.reader.open_zarr(self.zarr_path)
+        
+        # Test downsampling with default parameters
+        downsampled = self.reader._downsample_array('X', max_size=20)
+        self.assertLessEqual(downsampled.shape[0], 100)
+        self.assertLessEqual(downsampled.shape[1], 50)
+        
+        # Test downsampling with small max_size
+        downsampled = self.reader._downsample_array('X', max_size=5)
+        self.assertLessEqual(downsampled.shape[0], 100)
+        self.assertLessEqual(downsampled.shape[1], 50)
+        self.assertGreaterEqual(downsampled.shape[0], 1)
+        self.assertGreaterEqual(downsampled.shape[1], 1)
+        
+    def test_load_progressively(self):
+        """Test progressive loading with callbacks."""
+        self.reader.open_zarr(self.zarr_path)
+        
+        # Create a mock callback
+        callback_calls = []
+        def mock_callback(chunk, progress):
+            callback_calls.append((chunk.shape, progress))
+        
+        # Test progressive loading
+        result = self.reader.load_progressively('X', chunk_size=20, callback=mock_callback)
+        
+        # Check result
+        self.assertEqual(result.shape, (100, 50))
+        
+        # Check that callback was called with increasing progress values
+        self.assertGreater(len(callback_calls), 0)
+        progress_values = [call[1] for call in callback_calls]
+        self.assertTrue(all(progress_values[i] <= progress_values[i+1] for i in range(len(progress_values)-1)))
+        self.assertAlmostEqual(progress_values[-1], 1.0)
 
 if __name__ == '__main__':
     unittest.main()

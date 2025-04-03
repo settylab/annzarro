@@ -49,10 +49,12 @@ yarn-error.log*
 
 # Project specific
 data/
+!annzarro/tests/data/
 prototype_notebooks/
 .ipynb_checkpoints/
 CLAUDE.md
 server_pid.txt
+server_pids.txt
 *.sqlite
 *.db
 
