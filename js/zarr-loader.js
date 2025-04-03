@@ -6,6 +6,13 @@
  * - S3 bucket
  */
 
+// Check if zarr is defined, if not, provide an error message function
+const checkZarrAvailability = () => {
+    if (typeof zarr === 'undefined') {
+        throw new Error('zarr is not defined. Make sure zarr.js is loaded before using this module.');
+    }
+};
+
 class ZarrLoader {
     constructor() {
         this.store = null;
@@ -20,6 +27,9 @@ class ZarrLoader {
      * @returns {Promise<Object>} A zarr store
      */
     async loadFromDirectory(fileList) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
@@ -75,6 +85,9 @@ class ZarrLoader {
      * @returns {Promise<Object>} A zarr store
      */
     async loadFromUrl(url) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
@@ -113,6 +126,9 @@ class ZarrLoader {
      * @returns {Promise<Object>} A zarr store
      */
     async loadFromS3(s3Config) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
@@ -183,6 +199,9 @@ class ZarrLoader {
      * @returns {Promise<Object>} An object with AnnData-like structure
      */
     async convertToAnnData() {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
         if (!this.store) {
             throw new Error('No zarr store loaded');
         }
@@ -720,6 +739,9 @@ class ZarrLoader {
      * @returns {Promise<Object>} The loaded data
      */
     async loadData(path, selection = null) {
+        // Check if zarr is available
+        checkZarrAvailability();
+        
         if (!this.store) {
             throw new Error('No zarr store loaded');
         }
@@ -744,3 +766,10 @@ class ZarrLoader {
 
 // Create and export a singleton instance
 const zarrLoader = new ZarrLoader();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = zarrLoader;
+} else if (typeof window !== 'undefined') {
+    window.zarrLoader = zarrLoader;
+}

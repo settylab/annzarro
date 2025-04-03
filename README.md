@@ -1,6 +1,6 @@
-# AnnZarr
+# Annzarro
 
-AnnZarr is a modern, browser-based single-cell data visualization tool that allows for comprehensive analysis of AnnData objects stored in zarr format without requiring a Python backend.
+Annzarro is a modern, browser-based single-cell data visualization tool that allows for comprehensive analysis of AnnData objects stored in zarr format without requiring a Python backend.
 
 ## Features
 
@@ -33,7 +33,7 @@ AnnData objects should be saved in zarr format. The tool expects standard AnnDat
 
 ## Browser Requirements
 
-AnnZarr works best with recent versions of:
+Annzarro works best with recent versions of:
 - Chrome
 - Firefox
 - Safari
@@ -46,6 +46,30 @@ This project uses:
 - [Plotly.js](https://plotly.com/javascript/) for interactive visualizations
 - [DataTables](https://datatables.net/) for data exploration
 - [Bootstrap](https://getbootstrap.com/) for responsive layout
+
+## Testing
+
+Annzarro includes a comprehensive testing framework:
+
+```bash
+# Install dependencies first
+npm install
+
+# Run tests
+npm test
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run tests in watch mode during development
+npm run test:watch
+```
+
+The testing framework includes:
+- Unit tests for individual components
+- Integration tests for component interactions
+- DOM tests for UI functionality
+- Continuous integration via GitHub Actions
 
 ## License
 

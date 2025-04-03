@@ -266,6 +266,11 @@ async function loadZarrFromS3(s3Config) {
  */
 async function loadDemoData(demoType) {
     try {
+        // Make sure zarr is defined
+        if (typeof zarr === 'undefined') {
+            throw new Error('zarr is not defined. Make sure the zarr.js library is properly loaded.');
+        }
+        
         // Map of demo types to URLs
         const demoUrls = {
             'aging': 'data/aging.zarr'
@@ -275,6 +280,8 @@ async function loadDemoData(demoType) {
         if (!url) {
             throw new Error(`Unknown demo type: ${demoType}`);
         }
+        
+        console.log(`Loading demo data from ${url}...`);
         
         // Load the zarr store
         await zarrLoader.loadFromUrl(url);

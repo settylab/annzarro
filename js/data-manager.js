@@ -7,6 +7,11 @@
  * 4. Caching data for better performance
  */
 
+// Import dependencies in Node environment
+if (typeof require !== 'undefined') {
+    var zarrLoader = require('./zarr-loader');
+}
+
 class DataManager {
     constructor() {
         // Main data structure
@@ -41,6 +46,11 @@ class DataManager {
      */
     async loadFromZarr(zarrStore) {
         try {
+            // If provided with a zarrStore, set it on the zarrLoader
+            if (zarrStore && typeof zarrStore === 'object') {
+                zarrLoader.store = zarrStore;
+            }
+            
             // Set the AnnData structure from zarr
             this.anndata = await zarrLoader.convertToAnnData();
             
@@ -914,3 +924,10 @@ class DataManager {
 
 // Create and export a singleton instance
 const dataManager = new DataManager();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = dataManager;
+} else if (typeof window !== 'undefined') {
+    window.dataManager = dataManager;
+}

@@ -1,7 +1,8 @@
 /**
- * Utility functions for AnnZarr
+ * Utility functions for Annzarro
  */
 
+// Define Utils object
 const Utils = {
     /**
      * Generates a UUID v4
@@ -409,3 +410,10 @@ const Utils = {
             .replace(/'/g, '&#039;');
     }
 };
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Utils;
+} else if (typeof window !== 'undefined') {
+    window.Utils = Utils;
+}

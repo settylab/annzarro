@@ -535,3 +535,10 @@ class TableManager {
 
 // Create and export a singleton instance
 const tableManager = new TableManager();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = tableManager;
+} else if (typeof window !== 'undefined') {
+    window.tableManager = tableManager;
+}

@@ -6,6 +6,15 @@
  * 3. Handling UI events and user interactions
  */
 
+// Import dependencies in Node environment
+if (typeof require !== 'undefined') {
+    var dataManager = require('./data-manager');
+    var plotManager = require('./plot-manager');
+    var tableManager = require('./table-manager');
+    var stringDB = require('./string-db');
+    var Utils = require('./utils');
+}
+
 class UIManager {
     constructor() {
         // Available layouts
@@ -1553,3 +1562,10 @@ class UIManager {
 
 // Create and export a singleton instance
 const uiManager = new UIManager();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = uiManager;
+} else if (typeof window !== 'undefined') {
+    window.uiManager = uiManager;
+}

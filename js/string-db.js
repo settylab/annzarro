@@ -357,3 +357,10 @@ class StringDB {
 
 // Create and export a singleton instance
 const stringDB = new StringDB();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = stringDB;
+} else if (typeof window !== 'undefined') {
+    window.stringDB = stringDB;
+}

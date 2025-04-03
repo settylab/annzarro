@@ -6,6 +6,11 @@
  * 3. Handling plot interactions (selection, hover, etc.)
  */
 
+// Import dependencies in Node environment
+if (typeof require !== 'undefined') {
+    var Utils = require('./utils');
+}
+
 class PlotManager {
     constructor() {
         // Plot type registry
@@ -657,3 +662,10 @@ class PlotManager {
 
 // Create and export a singleton instance
 const plotManager = new PlotManager();
+
+// Export for both browser and Node.js environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = plotManager;
+} else if (typeof window !== 'undefined') {
+    window.plotManager = plotManager;
+}
