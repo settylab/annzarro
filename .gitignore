@@ -50,11 +50,48 @@ yarn-error.log*
 # Project specific
 data/
 prototype_notebooks/
+.ipynb_checkpoints/
+CLAUDE.md
+server_pid.txt
+*.sqlite
+*.db
 
-# Zarr specific
+# Python specific
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytype/
+pyrightconfig.json
+mypy_cache/
+.ruff_cache/
+
+# Zarr specific
 *.zarr.zip
 
 # Manual backups

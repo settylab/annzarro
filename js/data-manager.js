@@ -8,8 +8,8 @@
  */
 
 /**
- * Helper function to access the zarrLoader dependency safely
- * This avoids variable declarations that might conflict
+ * Helper function to access the zarrLoader dependency safely.
+ * This avoids variable declarations that might conflict.
  */
 function getZarrLoader() {
     // Node environment

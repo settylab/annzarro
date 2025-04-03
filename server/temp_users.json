@@ -1,0 +1,12 @@
+{
+  "annzarro": {
+    "id": "legacy-user-id",
+    "username": "annzarro",
+    "password_hash": "scrypt:32768:8:1$ZhATdhf8pRhiJB6K$775a18b35addc1ea92c7b8effebe913472c78b7cd51a3818fe58c794f02192faf686b40be8f955035c170266e8f4dca9ff97f8297dadfb2e564534ab69614f09",
+    "is_admin": true,
+    "tokens": {},
+    "last_login": null,
+    "login_attempts": 0,
+    "locked_until": null
+  }
+}

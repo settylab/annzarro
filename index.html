@@ -3,188 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Annzarro - Single-Cell Visualization</title>
-    
-    <!-- External CSS Libraries -->
+    <title>Annzarro - Single Cell Visualization</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/searchbuilder/1.6.0/css/searchBuilder.bootstrap5.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.2/css/all.min.css">
-    
-    <!-- Custom CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plotly.js@2.24.3/dist/plotly.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="css/styles.css">
+    
+    <script>
+        // Configuration for API endpoints
+        window.Annzarro = window.Annzarro || {};
+        window.Annzarro.config = {
+            apiUrl: '/api/v1',  // Default API URL
+            useServer: true,    // Set to true when using the Python server
+            // Feature flags
+            features: {
+                pythonBackend: true,  // Use Python backend for zarr data access
+                lazyLoading: true,    // Use lazy loading for large datasets
+                embeddingSupport: true // Enable embedding visualization
+            }
+        };
+        
+        // Check if we're running from a file:// URL or Python server
+        if (window.location.protocol === 'file:') {
+            // Fallback to JS-only mode when opened directly in browser (file://)
+            window.Annzarro.config.useServer = false;
+            window.Annzarro.config.features.pythonBackend = false;
+            console.warn('Running in JS-only mode (no Python backend)');
+        }
+    </script>
+    
+    <!-- Load dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.24.3/dist/plotly.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    
+    <!-- Load zarr.js only when not using Python backend -->
+    <script>
+        if (!window.Annzarro.config.features.pythonBackend) {
+            document.write('<script src="lib/zarr.umd.js"><\/script>');
+        }
+    </script>
+    
+    <!-- Load application scripts -->
+    <script src="js/utils.js" defer></script>
+    <script src="js/module-loader.js" defer></script>
+    <script src="js/zarr-loader.js" defer></script>
+    <script src="js/data-manager.js" defer></script>
+    <script src="js/plot-manager.js" defer></script>
+    <script src="js/table-manager.js" defer></script>
+    <script src="js/string-db.js" defer></script>
+    <script src="js/ui-manager.js" defer></script>
+    <script src="js/main.js" defer></script>
 </head>
 <body>
-    <!-- Global Loading Overlay -->
-    <div id="globalLoadingOverlay">
-        <div class="spinner-container">
-            <div class="spinner-border text-primary" role="status"></div>
-            <div class="mt-3">Loading application...</div>
-            <div class="text-muted small mt-2">This may take a moment while resources are loaded</div>
-        </div>
-    </div>
-    
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
-                <i class="fas fa-dna me-2"></i>Annzarro
+                <span class="app-name">Annzarro</span>
+                <span class="app-version">v1.0</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" id="loadDataBtn" data-bs-toggle="modal" data-bs-target="#loadDataModal">
-                            <i class="fas fa-file-import me-1"></i>Load Data
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item active">
+                        <a class="nav-link" href="#" id="loadDataMenu">
+                            <i class="bi bi-folder-plus"></i> Load Data
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" id="saveLayoutBtn">
-                            <i class="fas fa-save me-1"></i>Save Layout
+                        <a class="nav-link" href="#" id="demoDataMenu">
+                            <i class="bi bi-journals"></i> Demo Data
                         </a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="layoutDropdown" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-th-large me-1"></i>Layout
-                        </a>
-                        <ul class="dropdown-menu" aria-labelledby="layoutDropdown">
-                            <li><a class="dropdown-item" href="#" data-layout="single">Single Panel</a></li>
-                            <li><a class="dropdown-item" href="#" data-layout="horizontal">Horizontal Split</a></li>
-                            <li><a class="dropdown-item" href="#" data-layout="vertical">Vertical Split</a></li>
-                            <li><a class="dropdown-item" href="#" data-layout="quad">Quad Split</a></li>
-                        </ul>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" id="helpBtn" data-bs-toggle="modal" data-bs-target="#helpModal">
-                            <i class="fas fa-question-circle me-1"></i>Help
+                        <a class="nav-link" href="#" id="layoutMenu">
+                            <i class="bi bi-layout-split"></i> Layout
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="settingsMenu">
+                            <i class="bi bi-gear"></i> Settings
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="helpMenu">
+                            <i class="bi bi-question-circle"></i> Help
                         </a>
                     </li>
                 </ul>
-                
-                <!-- Gene Focus Selection -->
-                <div class="d-flex align-items-center me-3">
-                    <label for="geneFocus" class="text-light me-2">Gene:</label>
-                    <select id="geneFocus" class="form-select form-select-sm" style="width: 200px;">
-                        <option value="">None selected</option>
-                    </select>
-                </div>
-                
-                <!-- Cell Focus Selection -->
-                <div class="d-flex align-items-center me-3">
-                    <label for="cellFocus" class="text-light me-2">Cell:</label>
-                    <select id="cellFocus" class="form-select form-select-sm" style="width: 200px;">
-                        <option value="">None selected</option>
-                    </select>
-                </div>
-                
-                <!-- Species Selection -->
                 <div class="d-flex align-items-center">
-                    <label for="speciesSelect" class="text-light me-2">Species:</label>
-                    <select id="speciesSelect" class="form-select form-select-sm">
-                        <option value="9606" selected>Homo sapiens (9606)</option>
-                        <option value="10090">Mus musculus (10090)</option>
-                        <option value="10116">Rattus norvegicus (10116)</option>
-                        <option value="7227">Drosophila melanogaster (7227)</option>
-                        <option value="6239">Caenorhabditis elegans (6239)</option>
-                        <option value="4932">Saccharomyces cerevisiae (4932)</option>
-                        <option value="3702">Arabidopsis thaliana (3702)</option>
-                    </select>
+                    <div class="status-indicator text-light pe-3">
+                        <span id="statusIndicator">
+                            <span class="badge bg-secondary">No Data Loaded</span>
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content Area -->
-    <div class="container-fluid">
-        <!-- Data Status Bar -->
-        <div id="dataStatusBar" class="alert alert-secondary my-2">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <span id="datasetName">No dataset loaded</span>
-                    <span id="datasetStats"></span>
-                </div>
-                <div>
-                    <button id="exploreDataBtn" class="btn btn-sm btn-outline-primary" disabled>
-                        <i class="fas fa-search me-1"></i>Explore Structure
+    <!-- Main Content -->
+    <div class="container-fluid p-0">
+        <div id="mainContainer" class="main-container">
+            <!-- Initial empty state -->
+            <div id="emptyState" class="empty-state p-5 d-flex flex-column align-items-center justify-content-center">
+                <h3>Welcome to Annzarro</h3>
+                <p class="text-center">
+                    Single-Cell Data Visualization with AnnData & Zarr
+                </p>
+                <div class="mt-4 d-flex gap-3">
+                    <button id="loadDataBtn" class="btn btn-primary btn-lg">
+                        <i class="bi bi-folder-plus"></i> Load Data
+                    </button>
+                    <button id="demoDataBtn" class="btn btn-outline-secondary btn-lg">
+                        <i class="bi bi-journals"></i> Demo Data
                     </button>
                 </div>
-            </div>
-        </div>
-        
-        <!-- Visualization Area -->
-        <div id="vizContainer" class="row h-100 mt-2">
-            <div class="col-12 h-100">
-                <div id="mainVizPanel" class="h-100 border rounded p-2 bg-light d-flex justify-content-center align-items-center">
-                    <div class="text-center text-muted">
-                        <i class="fas fa-file-import fa-3x mb-3"></i>
-                        <p>Load a data file to begin visualization</p>
-                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#loadDataModal">
-                            <i class="fas fa-file-import me-2"></i>Load Data
-                        </button>
-                    </div>
+                
+                <div class="mt-4 alert alert-info alert-dismissible fade show" role="alert">
+                    <strong>AnnData Visualization Tool</strong> 
+                    <p>Efficient exploration of single-cell data with zarr-based lazy loading. Supports multiple embeddings, gene expression visualization, and interactive exploration.</p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
+            </div>
+            
+            <!-- Content panels (initially hidden) -->
+            <div id="panelContainer" class="panel-container d-none">
+                <!-- Panels will be dynamically added by the UI manager -->
             </div>
         </div>
     </div>
 
+    <!-- Modals -->
+    
     <!-- Load Data Modal -->
-    <div class="modal fade" id="loadDataModal" tabindex="-1">
+    <div class="modal fade" id="loadDataModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Load AnnData in Zarr Format</h5>
+                    <h5 class="modal-title">Load Data</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs mb-3" id="loadDataTabs" role="tablist">
+                    <ul class="nav nav-tabs" id="loadDataTabs" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" type="button" role="tab">Local File</button>
+                            <button class="nav-link active" id="local-file-tab" data-bs-toggle="tab" data-bs-target="#local-file-content" type="button" role="tab">Local File</button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url" type="button" role="tab">URL</button>
+                            <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-content" type="button" role="tab">URL</button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="s3-tab" data-bs-toggle="tab" data-bs-target="#s3" type="button" role="tab">S3 Bucket</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="demo-tab" data-bs-toggle="tab" data-bs-target="#demo" type="button" role="tab">Demo Data</button>
+                            <button class="nav-link" id="s3-tab" data-bs-toggle="tab" data-bs-target="#s3-content" type="button" role="tab">S3</button>
                         </li>
                     </ul>
-                    <div class="tab-content" id="loadDataTabsContent">
-                        <div class="tab-pane fade show active" id="local" role="tabpanel">
+                    <div class="tab-content mt-3" id="loadDataTabContent">
+                        <!-- Local File Tab -->
+                        <div class="tab-pane fade show active" id="local-file-content" role="tabpanel">
                             <div class="mb-3">
-                                <label for="localZarrFile" class="form-label">Select a Zarr directory or archive file:</label>
-                                <input class="form-control" type="file" id="localZarrFile" webkitdirectory directory multiple>
-                                <div class="form-text">Select a directory containing .zarr files or a .zarr archive file.</div>
+                                <label for="localFile" class="form-label">Select .zarr directory:</label>
+                                <input type="file" class="form-control" id="localFile" webkitdirectory directory multiple>
+                                <div class="form-text">Select the root directory of a .zarr dataset</div>
                             </div>
                         </div>
-                        <div class="tab-pane fade" id="url" role="tabpanel">
+
+                        <!-- URL Tab -->
+                        <div class="tab-pane fade" id="url-content" role="tabpanel">
                             <div class="mb-3">
-                                <label for="zarrUrl" class="form-label">Enter URL to Zarr file or directory:</label>
-                                <input type="url" class="form-control" id="zarrUrl" placeholder="https://example.com/data.zarr">
+                                <label for="urlInput" class="form-label">Enter URL:</label>
+                                <input type="url" class="form-control" id="urlInput" placeholder="https://example.com/dataset.zarr">
+                                <div class="form-text">Enter the URL of a .zarr dataset</div>
                             </div>
                         </div>
-                        <div class="tab-pane fade" id="s3" role="tabpanel">
+
+                        <!-- S3 Tab -->
+                        <div class="tab-pane fade" id="s3-content" role="tabpanel">
                             <div class="mb-3">
                                 <label for="s3Bucket" class="form-label">S3 Bucket:</label>
                                 <input type="text" class="form-control" id="s3Bucket" placeholder="my-bucket">
                             </div>
                             <div class="mb-3">
-                                <label for="s3Key" class="form-label">S3 Key (path to zarr directory):</label>
-                                <input type="text" class="form-control" id="s3Key" placeholder="path/to/data.zarr">
+                                <label for="s3Key" class="form-label">S3 Key (Path):</label>
+                                <input type="text" class="form-control" id="s3Key" placeholder="path/to/dataset.zarr">
                             </div>
                             <div class="mb-3">
                                 <label for="s3Region" class="form-label">Region:</label>
-                                <input type="text" class="form-control" id="s3Region" placeholder="us-east-1">
+                                <input type="text" class="form-control" id="s3Region" placeholder="us-east-1" value="us-east-1">
                             </div>
                             <div class="mb-3 form-check">
-                                <input type="checkbox" class="form-check-input" id="s3Anonymous">
-                                <label class="form-check-label" for="s3Anonymous">Anonymous access</label>
+                                <input type="checkbox" class="form-check-input" id="s3Anonymous" checked>
+                                <label class="form-check-label" for="s3Anonymous">Anonymous Access</label>
                             </div>
-                            <div id="s3CredentialsSection">
+                            <div id="s3CredentialsSection" class="d-none">
                                 <div class="mb-3">
                                     <label for="s3AccessKey" class="form-label">Access Key:</label>
                                     <input type="text" class="form-control" id="s3AccessKey">
@@ -195,205 +212,130 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="tab-pane fade" id="demo" role="tabpanel">
-                            <div class="mb-3">
-                                <p>Load one of the included demo datasets:</p>
-                                <div class="list-group">
-                                    <!-- Demo datasets will be populated dynamically -->
-                                    <div class="d-flex justify-content-center my-3">
-                                        <div class="spinner-border text-primary" role="status">
-                                            <span class="visually-hidden">Loading datasets...</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mt-3 small text-muted">
-                                    <i class="fas fa-info-circle me-1"></i>
-                                    Add your own datasets by placing .zarr folders in the data/ directory.
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <div id="loadingProgress" class="progress w-100 d-none">
+                        <div id="loadingProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="loadZarrBtn">Load Data</button>
+                    <button type="button" class="btn btn-primary" id="loadDataSubmit">Load Data</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Data Structure Explorer Modal -->
-    <div class="modal fade" id="dataExplorerModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <!-- Demo Data Modal -->
+    <div class="modal fade" id="demoDataModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Data Structure Explorer</h5>
+                    <h5 class="modal-title">Demo Datasets</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs mb-3" id="explorerTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">Overview</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="obs-tab" data-bs-toggle="tab" data-bs-target="#obs" type="button" role="tab">Cells (.obs)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="var-tab" data-bs-toggle="tab" data-bs-target="#var" type="button" role="tab">Genes (.var)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="obsm-tab" data-bs-toggle="tab" data-bs-target="#obsm" type="button" role="tab">Cell Matrices (.obsm)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="varm-tab" data-bs-toggle="tab" data-bs-target="#varm" type="button" role="tab">Gene Matrices (.varm)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="layers-tab" data-bs-toggle="tab" data-bs-target="#layers" type="button" role="tab">Layers</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="uns-tab" data-bs-toggle="tab" data-bs-target="#uns" type="button" role="tab">Unstructured (.uns)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="kompot-tab" data-bs-toggle="tab" data-bs-target="#kompot" type="button" role="tab">Kompot Runs</button>
-                        </li>
-                    </ul>
-                    <div class="tab-content" id="explorerTabsContent">
-                        <div class="tab-pane fade show active" id="overview" role="tabpanel">
-                            <div id="datasetOverview"></div>
+                    <div id="demoDatasetsLoading" class="text-center p-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
                         </div>
-                        <div class="tab-pane fade" id="obs" role="tabpanel">
-                            <div id="obsExplorer"></div>
+                        <p class="mt-2">Loading available datasets...</p>
+                    </div>
+                    <div id="demoDatasetsError" class="alert alert-danger d-none" role="alert">
+                        Error loading demo datasets.
+                    </div>
+                    <div id="demoDatasetsEmpty" class="alert alert-info d-none" role="alert">
+                        No demo datasets found. Add .zarr datasets to the "data" directory.
+                    </div>
+                    <div id="demoDatasetsList" class="list-group">
+                        <!-- Datasets will be populated here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="loadDemoDataSubmit">Load Selected Dataset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layout Selection Modal -->
+    <div class="modal fade" id="layoutModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Layout Selection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-wrap gap-3 justify-content-center">
+                        <div class="layout-option" data-layout="single">
+                            <div class="layout-preview single-panel"></div>
+                            <div class="layout-name">Single Panel</div>
                         </div>
-                        <div class="tab-pane fade" id="var" role="tabpanel">
-                            <div id="varExplorer"></div>
+                        <div class="layout-option" data-layout="horizontal">
+                            <div class="layout-preview horiz-split"></div>
+                            <div class="layout-name">Horizontal Split</div>
                         </div>
-                        <div class="tab-pane fade" id="obsm" role="tabpanel">
-                            <div id="obsmExplorer"></div>
+                        <div class="layout-option" data-layout="vertical">
+                            <div class="layout-preview vert-split"></div>
+                            <div class="layout-name">Vertical Split</div>
                         </div>
-                        <div class="tab-pane fade" id="varm" role="tabpanel">
-                            <div id="varmExplorer"></div>
+                        <div class="layout-option" data-layout="quad">
+                            <div class="layout-preview quad-panel"></div>
+                            <div class="layout-name">Quad Panel</div>
                         </div>
-                        <div class="tab-pane fade" id="layers" role="tabpanel">
-                            <div id="layersExplorer"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="applyLayoutBtn">Apply Layout</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Data Processing</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="useServerSwitch" checked disabled>
+                            <label class="form-check-label" for="useServerSwitch">Use Python Backend</label>
                         </div>
-                        <div class="tab-pane fade" id="uns" role="tabpanel">
-                            <div id="unsExplorer"></div>
+                        <div class="form-text">Using Python backend for zarr data access with lazy loading</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Application</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="darkModeSwitch">
+                            <label class="form-check-label" for="darkModeSwitch">Dark Mode</label>
                         </div>
-                        <div class="tab-pane fade" id="kompot" role="tabpanel">
-                            <div id="kompotExplorer"></div>
-                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="cacheSize" class="form-label">Cache Size (MB)</label>
+                        <input type="number" class="form-control" id="cacheSize" value="200" min="50" max="2000">
+                        <div class="form-text">Maximum memory to use for caching data (MB)</div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Visualization Settings Modal -->
-    <div class="modal fade" id="vizSettingsModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Visualization Settings</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="vizSettingsForm">
-                        <div class="mb-3">
-                            <label for="plotType" class="form-label">Plot Type</label>
-                            <select class="form-select" id="plotType">
-                                <option value="scatter">Scatter Plot</option>
-                                <option value="violin">Violin Plot</option>
-                                <option value="heatmap">Heatmap</option>
-                                <option value="bar">Bar Plot</option>
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="xAxis" class="form-label">X Axis</label>
-                            <select class="form-select" id="xAxis"></select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="yAxis" class="form-label">Y Axis</label>
-                            <select class="form-select" id="yAxis"></select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="zAxis" class="form-label">Z Axis (optional)</label>
-                            <select class="form-select" id="zAxis">
-                                <option value="">None</option>
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="colorBy" class="form-label">Color By</label>
-                            <select class="form-select" id="colorBy">
-                                <option value="">None</option>
-                            </select>
-                        </div>
-                        
-                        <div id="colorSettings" style="display: none;">
-                            <div class="mb-3">
-                                <label class="form-label">Color Scale Range</label>
-                                <div class="row align-items-center">
-                                    <div class="col-5">
-                                        <input type="number" class="form-control" id="colorMin" placeholder="Min">
-                                    </div>
-                                    <div class="col-2 text-center">to</div>
-                                    <div class="col-5">
-                                        <input type="number" class="form-control" id="colorMax" placeholder="Max">
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="outOfRangeAction" id="clipValues" value="clip" checked>
-                                    <label class="form-check-label" for="clipValues">
-                                        Clip values to range
-                                    </label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="outOfRangeAction" id="hideValues" value="hide">
-                                    <label class="form-check-label" for="hideValues">
-                                        Hide points outside range
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="showFocusedGene">
-                                <label class="form-check-label" for="showFocusedGene">
-                                    Highlight focused gene
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="showFocusedCell">
-                                <label class="form-check-label" for="showFocusedCell">
-                                    Highlight focused cell
-                                </label>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="applyVizSettings">Apply Settings</button>
+                    <button type="button" class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Help Modal -->
-    <div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -401,45 +343,47 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <h4>Getting Started</h4>
-                    <p>Annzarro is a browser-based tool for visualizing single-cell data from AnnData objects stored in zarr format.</p>
+                    <h4>Annzarro: Python-based Single-Cell Visualization</h4>
+                    <p>
+                        Annzarro is a tool for visualizing and analyzing single-cell data stored in the zarr format.
+                        It provides interactive visualizations and analysis capabilities for exploring your data.
+                    </p>
                     
-                    <h5>Loading Data</h5>
-                    <p>You can load data from:</p>
+                    <h5>Getting Started</h5>
+                    <ol>
+                        <li>
+                            <strong>Load Data</strong>: Click on "Load Data" in the navigation bar to load a dataset 
+                            from a local file, URL, or S3 bucket.
+                        </li>
+                        <li>
+                            <strong>Demo Data</strong>: Click on "Demo Data" to browse and load available example datasets.
+                        </li>
+                        <li>
+                            <strong>Choose Layout</strong>: Select a layout to organize your visualization panels.
+                        </li>
+                    </ol>
+                    
+                    <h5>Features</h5>
                     <ul>
-                        <li><strong>Local files</strong>: Select a zarr directory or archive</li>
-                        <li><strong>URLs</strong>: Provide a URL to a zarr dataset</li>
-                        <li><strong>S3 storage</strong>: Connect to data in an S3 bucket</li>
-                        <li><strong>Demo data</strong>: Use the included sample datasets from the data/ directory</li>
+                        <li><strong>Python Backend</strong>: Efficient data loading with Python's zarr library</li>
+                        <li><strong>Lazy Loading</strong>: Load only the data you need when you need it</li>
+                        <li><strong>Interactive Visualizations</strong>: Explore your data with interactive plots</li>
+                        <li><strong>Data Selection</strong>: Select cells and genes of interest</li>
+                        <li><strong>Metadata Exploration</strong>: Examine cell and gene annotations</li>
                     </ul>
                     
-                    <h5>Visualization Panels</h5>
-                    <p>You can create multiple visualization panels with different layouts:</p>
+                    <h5>Data Requirements</h5>
+                    <p>
+                        Annzarro expects AnnData objects saved in zarr format with standard structure:
+                    </p>
                     <ul>
-                        <li><strong>Single Panel</strong>: One full-width visualization</li>
-                        <li><strong>Horizontal Split</strong>: Two panels side by side</li>
-                        <li><strong>Vertical Split</strong>: Two panels stacked vertically</li>
-                        <li><strong>Quad Split</strong>: Four panels in a 2x2 grid</li>
+                        <li><code>.X</code>: Main expression matrix</li>
+                        <li><code>.obs</code>: Cell annotations</li>
+                        <li><code>.var</code>: Gene annotations</li>
+                        <li><code>.obsm</code>: Multi-dimensional cell annotations (e.g., UMAP, PCA)</li>
+                        <li><code>.layers</code>: Named alternative expression matrices</li>
+                        <li><code>.uns</code>: Unstructured annotations</li>
                     </ul>
-                    
-                    <h5>Gene and Cell Focus</h5>
-                    <p>You can select a gene or cell of interest in the navigation bar. This selection will be highlighted in relevant visualizations.</p>
-                    
-                    <h5>Data Exploration</h5>
-                    <p>Use the "Explore Structure" button to see the full structure of your AnnData object, including:</p>
-                    <ul>
-                        <li><strong>.obs</strong>: Cell metadata</li>
-                        <li><strong>.var</strong>: Gene metadata</li>
-                        <li><strong>.obsm</strong>: Cell embeddings (UMAP, PCA, etc.)</li>
-                        <li><strong>.layers</strong>: Alternative expression matrices</li>
-                        <li><strong>.uns</strong>: Unstructured annotations</li>
-                    </ul>
-                    
-                    <h5>DataTables</h5>
-                    <p>Use the powerful search and filter capabilities of DataTables to find specific cells or genes of interest.</p>
-                    
-                    <h5>STRING-DB Integration</h5>
-                    <p>For gene-focused visualizations, Annzarro can connect to STRING-DB to show protein interaction networks and gene set enrichment.</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -447,143 +391,51 @@
             </div>
         </div>
     </div>
-    
 
-    <!-- External JS Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
-    
-    <!-- Load zarr.js which is critical for the application -->
-    <script>
-        // Define a function to load zarr.js with proper error handling
-        function loadZarrLibrary() {
-            return new Promise((resolve, reject) => {
-                // First try to load local version
-                const localScript = document.createElement('script');
-                localScript.src = 'lib/zarr.umd.js';
-                localScript.onload = () => {
-                    console.log('Zarr library loaded from local file');
-                    resolve();
-                };
-                localScript.onerror = () => {
-                    console.warn('Local zarr.js failed to load, trying CDN...');
-                    
-                    // Try the primary CDN
-                    const primaryScript = document.createElement('script');
-                    primaryScript.src = 'https://cdn.jsdelivr.net/npm/zarr@0.6.2/dist/zarr.umd.js';
-                    primaryScript.onload = () => {
-                        console.log('Zarr library loaded from primary CDN');
-                        resolve();
-                    };
-                    primaryScript.onerror = () => {
-                        console.warn('Primary zarr.js CDN failed, trying fallback...');
-                        
-                        // Try the fallback CDN
-                        const fallbackScript = document.createElement('script');
-                        fallbackScript.src = 'https://unpkg.com/zarr@0.6.2/dist/zarr.umd.js';
-                        fallbackScript.onload = () => {
-                            console.log('Zarr library loaded from fallback CDN');
-                            resolve();
-                        };
-                        fallbackScript.onerror = () => {
-                            reject(new Error('Failed to load zarr.js from all sources'));
-                        };
-                        document.head.appendChild(fallbackScript);
-                    };
-                    document.head.appendChild(primaryScript);
-                };
-                document.head.appendChild(localScript);
-            });
-        }
-        
-        // Load zarr library asynchronously before initializing the application
-        loadZarrLibrary()
-            .then(() => {
-                // Hide global loading overlay when zarr is loaded successfully
-                // We'll let main.js handle the complete initialization
-                setTimeout(() => {
-                    const globalLoadingOverlay = document.getElementById('globalLoadingOverlay');
-                    if (globalLoadingOverlay) {
-                        globalLoadingOverlay.style.display = 'none';
-                    }
-                }, 500); // Short delay to ensure everything is ready
-            })
-            .catch(error => {
-                console.error('Critical error loading zarr.js:', error);
-                // Show error to user and hide loading overlay
-                const globalLoadingOverlay = document.getElementById('globalLoadingOverlay');
-                if (globalLoadingOverlay) {
-                    globalLoadingOverlay.style.display = 'none';
-                }
-                
-                const errorMessage = document.createElement('div');
-                errorMessage.className = 'alert alert-danger m-3';
-                errorMessage.innerHTML = `
-                    <h4 class="alert-heading">Critical Error</h4>
-                    <p>Failed to load the zarr.js library which is required for this application to function.</p>
-                    <hr>
-                    <p class="mb-0">Please check your internet connection or try again later.</p>
-                `;
-                document.body.prepend(errorMessage);
-            });
-    </script>
-    
-    <script src="https://cdn.plot.ly/plotly-2.27.1.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
-    <script src="https://cdn.datatables.net/searchbuilder/1.6.0/js/dataTables.searchBuilder.min.js"></script>
-    <script src="https://cdn.datatables.net/searchbuilder/1.6.0/js/searchBuilder.bootstrap5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    
-    <!-- Module loader - must be loaded first -->
-    <script src="js/module-loader.js"></script>
-    
-    <!-- Load modules using a special loading script -->
-    <script>
-        // Dynamic script loading function
-        function loadScript(url, onLoad) {
-            const script = document.createElement('script');
-            script.src = url;
-            script.onload = onLoad;
-            document.head.appendChild(script);
-        }
-        
-        // Define the loading sequence
-        const moduleOrder = [
-            'js/utils.js',
-            'js/zarr-loader.js',
-            'js/table-manager.js',
-            'js/string-db.js',
-            'js/data-manager.js',
-            'js/plot-manager.js',
-            'js/ui-manager.js',
-            'js/main.js'
-        ];
-        
-        // Load scripts sequentially
-        let moduleIndex = 0;
-        
-        function loadNextModule() {
-            if (moduleIndex < moduleOrder.length) {
-                const modulePath = moduleOrder[moduleIndex++];
-                console.log(`Loading module: ${modulePath}`);
-                loadScript(modulePath, loadNextModule);
-            } else {
-                console.log('All modules loaded');
-                // Ensure modules are initialized
-                if (Annzarro && !Annzarro.modulesLoaded) {
-                    Annzarro.checkModulesReady();
-                }
-            }
-        }
-        
-        // Begin loading modules
-        loadNextModule();
-    </script>
+    <!-- Error Message Toast -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
+        <div id="errorToast" class="toast hide" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-danger text-white">
+                <strong class="me-auto">Error</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="errorToastBody">
+                An error occurred.
+            </div>
+        </div>
+    </div>
+
+    <!-- Component Templates (hidden) -->
+    <template id="panelTemplate">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Panel</div>
+                <div class="panel-controls">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-grid-1x2"></i>
+                        </button>
+                        <ul class="dropdown-menu panel-type-menu">
+                            <li><a class="dropdown-item" href="#" data-panel-type="scatter">Scatter Plot</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="heatmap">Heatmap</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="violin">Violin Plot</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="table">Data Table</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="gene">Gene Browser</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="cell">Cell Browser</a></li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary panel-settings-btn">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="panel-placeholder">
+                    <div>Select panel type</div>
+                </div>
+                <div class="panel-content"></div>
+            </div>
+        </div>
+    </template>
 </body>
 </html>

@@ -7,8 +7,8 @@
  */
 
 /**
- * Helper function to access the Utils dependency safely
- * This avoids variable declarations that might conflict
+ * Helper function to access the Utils dependency safely.
+ * This avoids variable declarations that might conflict.
  */
 function getUtils() {
     // Node environment

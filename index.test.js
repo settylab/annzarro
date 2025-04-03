@@ -28,12 +28,12 @@ describe('Index.html', () => {
   });
   
   test('has the correct title', () => {
-    expect(document.title).toBe('Annzarro - Single-Cell Visualization');
+    expect(document.title).toBe('Annzarro - Single Cell Visualization');
   });
   
-  test('has the main visualization container', () => {
-    const vizContainer = document.getElementById('vizContainer');
-    expect(vizContainer).toBeTruthy();
+  test('has the main container', () => {
+    const mainContainer = document.getElementById('mainContainer');
+    expect(mainContainer).toBeTruthy();
   });
   
   test('has data loading modal', () => {
@@ -41,51 +41,52 @@ describe('Index.html', () => {
     expect(loadDataModal).toBeTruthy();
   });
   
-  test('has gene and cell focus selectors', () => {
-    const geneFocus = document.getElementById('geneFocus');
-    const cellFocus = document.getElementById('cellFocus');
-    
-    expect(geneFocus).toBeTruthy();
-    expect(cellFocus).toBeTruthy();
-  });
-  
-  test('has species selector with default', () => {
-    const speciesSelect = document.getElementById('speciesSelect');
-    expect(speciesSelect).toBeTruthy();
-    
-    // Default should be human (9606)
-    const selected = speciesSelect.querySelector('option[selected]');
-    expect(selected).toBeTruthy();
-    expect(selected.value).toBe('9606');
-  });
-  
-  test('has load data button in navbar', () => {
+  test('has load data button in empty state', () => {
     const loadDataBtn = document.getElementById('loadDataBtn');
     expect(loadDataBtn).toBeTruthy();
-    expect(loadDataBtn.getAttribute('data-bs-toggle')).toBe('modal');
-    expect(loadDataBtn.getAttribute('data-bs-target')).toBe('#loadDataModal');
   });
-
-  test('has demo data tab in load data modal', () => {
-    const demoTab = document.getElementById('demo-tab');
-    expect(demoTab).toBeTruthy();
-    expect(demoTab.getAttribute('data-bs-target')).toBe('#demo');
+  
+  test('has demo data button in empty state', () => {
+    const demoDataBtn = document.getElementById('demoDataBtn');
+    expect(demoDataBtn).toBeTruthy();
+  });
+  
+  test('has demo data modal', () => {
+    const demoDataModal = document.getElementById('demoDataModal');
+    expect(demoDataModal).toBeTruthy();
     
-    // Verify demo tab content exists
-    const demoTabContent = document.getElementById('demo');
-    expect(demoTabContent).toBeTruthy();
+    // Verify demo datasets list exists
+    const demoDatasetsList = document.getElementById('demoDatasetsList');
+    expect(demoDatasetsList).toBeTruthy();
+  });
+  
+  test('has settings modal', () => {
+    const settingsModal = document.getElementById('settingsModal');
+    expect(settingsModal).toBeTruthy();
     
-    // Verify list group for demo datasets exists
-    const demoListGroup = demoTabContent.querySelector('.list-group');
-    expect(demoListGroup).toBeTruthy();
+    // Verify Python backend switch exists
+    const useServerSwitch = document.getElementById('useServerSwitch');
+    expect(useServerSwitch).toBeTruthy();
+  });
+  
+  test('has help modal with documentation', () => {
+    const helpModal = document.getElementById('helpModal');
+    expect(helpModal).toBeTruthy();
     
-    // Verify loading indicator is present initially
-    const loadingSpinner = demoListGroup.querySelector('.spinner-border');
-    expect(loadingSpinner).toBeTruthy();
+    // Verify that the help modal has some documentation text
+    const modalBody = helpModal.querySelector('.modal-body');
+    expect(modalBody.textContent).toContain('Annzarro');
+    expect(modalBody.textContent).toContain('Python Backend');
+  });
+  
+  test('has panel template for visualization', () => {
+    const panelTemplate = document.getElementById('panelTemplate');
+    expect(panelTemplate).toBeTruthy();
     
-    // Verify help text is present
-    const helpText = demoTabContent.querySelector('.text-muted');
-    expect(helpText).toBeTruthy();
-    expect(helpText.textContent).toContain('Add your own datasets');
+    // Verify panel contains expected structure
+    const templateContent = panelTemplate.innerHTML;
+    expect(templateContent).toContain('panel-header');
+    expect(templateContent).toContain('panel-body');
+    expect(templateContent).toContain('panel-content');
   });
 });

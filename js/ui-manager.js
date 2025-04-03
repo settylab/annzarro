@@ -7,8 +7,8 @@
  */
 
 /**
- * Helper function to access dependencies safely
- * This avoids variable declarations that might conflict
+ * Helper function to access dependencies safely.
+ * This avoids variable declarations that might conflict.
  */
 function getDependencies() {
     let deps = {};
@@ -81,7 +81,33 @@ class UIManager {
         
         if (!this.container) {
             console.error(`Container element with ID ${containerId} not found`);
-            return;
+            
+            // Create a container element if it doesn't exist
+            this.container = document.createElement('div');
+            this.container.id = containerId;
+            this.container.className = 'h-100 w-100';
+            
+            // Find mainContainer to append to
+            const mainContainer = document.getElementById('mainContainer');
+            if (mainContainer) {
+                // Hide empty state
+                const emptyState = document.getElementById('emptyState');
+                if (emptyState) emptyState.classList.add('d-none');
+                
+                // Show panel container
+                const panelContainer = document.getElementById('panelContainer');
+                if (panelContainer) {
+                    panelContainer.classList.remove('d-none');
+                    panelContainer.appendChild(this.container);
+                } else {
+                    mainContainer.appendChild(this.container);
+                }
+            } else {
+                // Fallback - append to body
+                document.body.appendChild(this.container);
+            }
+            
+            console.log(`Created container element with ID ${containerId}`);
         }
         
         // Set initial layout
@@ -359,7 +385,7 @@ class UIManager {
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-chart-line fa-3x mb-3"></i>
+                    <i class="bi bi-graph-up fs-1 mb-3"></i>
                     <p>Configure the plot to see visualization</p>
                 </div>
             `;
@@ -452,7 +478,7 @@ class UIManager {
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-table fa-3x mb-3"></i>
+                    <i class="bi bi-table fs-1 mb-3"></i>
                     <p>Configure the table to see data</p>
                 </div>
             `;
@@ -520,7 +546,7 @@ class UIManager {
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-dna fa-3x mb-3"></i>
+                    <i class="bi bi-code-slash fs-1 mb-3"></i>
                     <p>Select a gene to see information</p>
                 </div>
             `;
@@ -578,7 +604,7 @@ class UIManager {
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-circle fa-3x mb-3"></i>
+                    <i class="bi bi-circle fs-1 mb-3"></i>
                     <p>Select a cell to see information</p>
                 </div>
             `;
@@ -744,7 +770,7 @@ class UIManager {
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-project-diagram fa-3x mb-3"></i>
+                    <i class="bi bi-diagram-3 fs-1 mb-3"></i>
                     <p>Select genes to see protein interaction network</p>
                 </div>
             `;
@@ -768,22 +794,22 @@ class UIManager {
                 <h5>Create Panel</h5>
                 <div class="btn-group" role="group">
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="plot">
-                        <i class="fas fa-chart-line"></i> Plot
+                        <i class="bi bi-graph-up"></i> Plot
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="table">
-                        <i class="fas fa-table"></i> Table
+                        <i class="bi bi-table"></i> Table
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="gene-info">
-                        <i class="fas fa-dna"></i> Gene Info
+                        <i class="bi bi-code-slash"></i> Gene Info
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="cell-info">
-                        <i class="fas fa-circle"></i> Cell Info
+                        <i class="bi bi-circle"></i> Cell Info
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="data-explorer">
-                        <i class="fas fa-search"></i> Explorer
+                        <i class="bi bi-search"></i> Explorer
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="string-db">
-                        <i class="fas fa-project-diagram"></i> STRING-DB
+                        <i class="bi bi-diagram-3"></i> STRING-DB
                     </button>
                 </div>
             </div>

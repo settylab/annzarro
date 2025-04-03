@@ -93,8 +93,25 @@ class ZarrLoader {
         this.cancellationToken = { cancelled: false };
         
         try {
-            // Create HTTP store
-            const store = zarr.HTTPStore.fromUrl(url);
+            // Check if we have stored credentials
+            const storedCredentials = localStorage.getItem('annzarroCredentials');
+            
+            // Create options with authorization if credentials exist
+            const options = {};
+            if (storedCredentials) {
+                // Get auth from cookie or localStorage for backward compatibility
+                const authCookie = document.cookie.split('; ').find(row => row.startsWith('auth='));
+                const authValue = authCookie ? authCookie.split('=')[1] : storedCredentials;
+                
+                options.fetchOptions = {
+                    headers: {
+                        'Authorization': 'Basic ' + authValue
+                    }
+                };
+            }
+            
+            // Create HTTP store with auth headers if available
+            const store = zarr.HTTPStore.fromUrl(url, options);
             
             // Initial progress
             this.loadingProgress = 50;
@@ -210,14 +227,32 @@ class ZarrLoader {
         this.isLoading = true;
         this.loadingProgress = 0;
         
+        console.log('[DEBUG] Starting conversion to AnnData structure');
+        
         try {
             const anndata = {};
             
             // Open the root group
-            const root = await zarr.openGroup(this.store, '');
+            console.log('[DEBUG] Opening root zarr group');
+            try {
+                const root = await zarr.openGroup(this.store, '');
+                console.log('[DEBUG] Root zarr group opened successfully', root);
+            } catch (error) {
+                console.error('[DEBUG] Failed to open root zarr group:', error);
+                throw error;
+            }
             
             // Extract basic info
-            anndata.shape = await this._getArrayShape(this.store, 'X/shape');
+            console.log('[DEBUG] Extracting basic shape information');
+            try {
+                anndata.shape = await this._getArrayShape(this.store, 'X/shape');
+                console.log('[DEBUG] Shape extracted:', anndata.shape);
+            } catch (error) {
+                console.error('[DEBUG] Failed to extract shape:', error);
+                // Continue without shape - it might still be a valid AnnData object
+                anndata.shape = null;
+                console.log('[DEBUG] Setting null shape and continuing');
+            }
             
             // Common AnnData components
             const components = ['X', 'obs', 'var', 'obsm', 'varm', 'layers', 'uns', 'obsp', 'varp'];
@@ -225,48 +260,77 @@ class ZarrLoader {
             // Process each component
             for (let i = 0; i < components.length; i++) {
                 const component = components[i];
+                console.log(`[DEBUG] Processing component (${i+1}/${components.length}): ${component}`);
                 
                 try {
                     // Check if component exists
-                    if (await this._pathExists(component)) {
+                    console.log(`[DEBUG] Checking if ${component} exists`);
+                    const exists = await this._pathExists(component);
+                    console.log(`[DEBUG] Component ${component} exists: ${exists}`);
+                    
+                    if (exists) {
                         if (component === 'X') {
+                            console.log('[DEBUG] Processing X matrix');
                             anndata.X = await this._processXMatrix();
+                            console.log('[DEBUG] X matrix processed:', anndata.X);
                         } else if (component === 'layers') {
+                            console.log('[DEBUG] Processing layers');
                             anndata.layers = await this._processLayers();
+                            console.log('[DEBUG] Layers processed, found:', Object.keys(anndata.layers || {}));
                         } else if (component === 'obs') {
+                            console.log('[DEBUG] Processing obs dataframe');
                             anndata.obs = await this._processDataFrame('obs');
+                            console.log('[DEBUG] Obs processed, columns:', anndata.obs?.columns);
                         } else if (component === 'var') {
+                            console.log('[DEBUG] Processing var dataframe');
                             anndata.var = await this._processDataFrame('var');
+                            console.log('[DEBUG] Var processed, columns:', anndata.var?.columns);
                         } else if (component === 'obsm') {
+                            console.log('[DEBUG] Processing obsm matrices');
                             anndata.obsm = await this._processMultiDimensional('obsm');
+                            console.log('[DEBUG] Obsm processed, keys:', Object.keys(anndata.obsm || {}));
                         } else if (component === 'varm') {
+                            console.log('[DEBUG] Processing varm matrices');
                             anndata.varm = await this._processMultiDimensional('varm');
+                            console.log('[DEBUG] Varm processed, keys:', Object.keys(anndata.varm || {}));
                         } else if (component === 'uns') {
+                            console.log('[DEBUG] Processing unstructured data');
                             anndata.uns = await this._processUnstructured();
+                            console.log('[DEBUG] Uns processed, keys:', Object.keys(anndata.uns || {}));
                         } else if (component === 'obsp') {
+                            console.log('[DEBUG] Processing obsp matrices');
                             anndata.obsp = await this._processPairwise('obsp');
+                            console.log('[DEBUG] Obsp processed, keys:', Object.keys(anndata.obsp || {}));
                         } else if (component === 'varp') {
+                            console.log('[DEBUG] Processing varp matrices');
                             anndata.varp = await this._processPairwise('varp');
+                            console.log('[DEBUG] Varp processed, keys:', Object.keys(anndata.varp || {}));
                         }
+                    } else {
+                        console.log(`[DEBUG] Component ${component} does not exist, skipping`);
                     }
                 } catch (error) {
-                    console.error(`Error processing ${component}:`, error);
+                    console.error(`[DEBUG] Error processing ${component}:`, error);
                     anndata[component] = { error: error.message };
                 }
                 
                 // Update progress
                 this.loadingProgress = Math.round(((i + 1) / components.length) * 100);
+                console.log(`[DEBUG] Progress update: ${this.loadingProgress}%`);
                 this._notifyProgressUpdate(this.loadingProgress);
                 
                 if (this.cancellationToken?.cancelled) {
+                    console.log('[DEBUG] Loading cancelled by user');
                     throw new Error('Loading cancelled');
                 }
             }
             
             this.isLoading = false;
             this.loadingProgress = 100;
+            console.log('[DEBUG] AnnData conversion completed successfully');
             return anndata;
         } catch (error) {
+            console.error('[DEBUG] AnnData conversion failed:', error);
             this.isLoading = false;
             throw error;
         }
@@ -324,10 +388,36 @@ class ZarrLoader {
      */
     async _pathExists(path) {
         try {
-            const keys = await this.store.getKeys();
-            return keys.some(key => key.startsWith(`${path}/`) || key === path);
+            console.log(`[DEBUG] Checking if path exists: ${path}`);
+            const startTime = performance.now();
+            
+            // Get keys from store
+            console.log(`[DEBUG] Getting keys from store for ${path}`);
+            let keys;
+            try {
+                keys = await this.store.getKeys();
+                console.log(`[DEBUG] Got ${keys.length} keys from store`);
+            } catch (error) {
+                console.error(`[DEBUG] Error getting keys from store: ${error.message}`);
+                return false;
+            }
+            
+            // Check if any key matches the path
+            const pathWithSlash = `${path}/`;
+            const exists = keys.some(key => key.startsWith(pathWithSlash) || key === path);
+            
+            const endTime = performance.now();
+            console.log(`[DEBUG] Path ${path} exists: ${exists} (took ${(endTime - startTime).toFixed(2)}ms)`);
+            
+            // If the path doesn't exist, show some of the available keys for debugging
+            if (!exists) {
+                const sampleKeys = keys.slice(0, Math.min(5, keys.length));
+                console.log(`[DEBUG] Sample of available keys: ${sampleKeys.join(', ')}`);
+            }
+            
+            return exists;
         } catch (error) {
-            console.error(`Error checking if path exists: ${path}`, error);
+            console.error(`[DEBUG] Error checking if path exists: ${path}`, error);
             return false;
         }
     }
