@@ -77,39 +77,58 @@ class UIManager {
      */
     initialize(containerId = 'vizContainer') {
         this.containerId = containerId;
+        console.log(`Initializing UI manager with container ID: ${containerId}`);
+        
+        // Always ensure we have a container element
         this.container = document.getElementById(containerId);
         
+        // Create a container element if it doesn't exist
         if (!this.container) {
-            console.error(`Container element with ID ${containerId} not found`);
+            console.log(`Container element with ID ${containerId} not found, creating it`);
             
-            // Create a container element if it doesn't exist
             this.container = document.createElement('div');
             this.container.id = containerId;
             this.container.className = 'h-100 w-100';
             
-            // Find mainContainer to append to
-            const mainContainer = document.getElementById('mainContainer');
-            if (mainContainer) {
-                // Hide empty state
+            // Find panel container to append to (this is the most important part)
+            const panelContainer = document.getElementById('panelContainer');
+            if (panelContainer) {
+                console.log('Found panelContainer, appending container to it');
+                
+                // Make sure the panel container is visible and empty state is hidden
                 const emptyState = document.getElementById('emptyState');
-                if (emptyState) emptyState.classList.add('d-none');
+                if (emptyState) {
+                    console.log('Hiding empty state');
+                    emptyState.classList.add('d-none');
+                }
                 
                 // Show panel container
-                const panelContainer = document.getElementById('panelContainer');
-                if (panelContainer) {
-                    panelContainer.classList.remove('d-none');
-                    panelContainer.appendChild(this.container);
-                } else {
-                    mainContainer.appendChild(this.container);
-                }
+                panelContainer.classList.remove('d-none');
+                panelContainer.style.display = 'block';
+                panelContainer.style.height = '100%';
+                panelContainer.appendChild(this.container);
             } else {
-                // Fallback - append to body
-                document.body.appendChild(this.container);
+                // Fallback - find mainContainer
+                const mainContainer = document.getElementById('mainContainer');
+                if (mainContainer) {
+                    console.log('Found mainContainer, appending container to it');
+                    mainContainer.appendChild(this.container);
+                } else {
+                    // Last resort - append to body
+                    console.log('No suitable container found, appending to body');
+                    document.body.appendChild(this.container);
+                }
             }
             
             console.log(`Created container element with ID ${containerId}`);
         }
         
+        // Ensure the container is visible and has proper dimensions
+        this.container.style.display = 'block';
+        this.container.style.height = '100%';
+        this.container.style.width = '100%';
+        
+        console.log('Setting initial layout to single');
         // Set initial layout
         this.setLayout('single');
     }
@@ -119,6 +138,8 @@ class UIManager {
      * @param {string} layoutType - Type of layout ('single', 'horizontal', 'vertical', 'quad')
      */
     setLayout(layoutType) {
+        console.log(`Setting layout to: ${layoutType}`);
+        
         if (!this.layouts[layoutType]) {
             console.error(`Layout type '${layoutType}' is not supported`);
             return;
@@ -128,12 +149,42 @@ class UIManager {
         const currentPanels = Array.from(this.panels.values());
         
         // Clear the container
-        this.container.innerHTML = '';
+        const panelContainer = document.getElementById('panelContainer');
+        if (panelContainer) {
+            panelContainer.innerHTML = '';
+            
+            // Create a default container if needed
+            if (!this.container || !document.getElementById(this.containerId)) {
+                this.container = document.createElement('div');
+                this.container.id = this.containerId;
+                this.container.className = 'h-100 w-100';
+                panelContainer.appendChild(this.container);
+            }
+        }
+        
+        // Make sure container is visible
+        if (this.container) {
+            this.container.style.display = 'block';
+        }
+        
+        // Clear panels
         this.panels.clear();
         
         // Create the new layout
         this.layouts[layoutType]();
         this.currentLayout = layoutType;
+        
+        // Create default panel if no panels were created
+        if (this.panels.size === 0) {
+            console.log('Creating default panel for empty layout');
+            // For single layout, create one plot panel
+            if (layoutType === 'single' && document.getElementById('panel-1')) {
+                this.createPanel('panel-1', 'plot', {
+                    title: 'UMAP Plot',
+                    plotType: 'scatter'
+                });
+            }
+        }
         
         // Restore panels if possible
         if (currentPanels.length > 0) {
@@ -166,6 +217,18 @@ class UIManager {
      * @private
      */
     createSingleLayout() {
+        console.log('Creating single layout');
+        
+        // Make sure we have a container to work with
+        if (!this.container) {
+            console.error('Container not found for layout creation');
+            return;
+        }
+        
+        // Clear the container first to avoid duplicated content
+        this.container.innerHTML = '';
+        
+        // Set up the container structure
         const row = document.createElement('div');
         row.className = 'row h-100';
         this.container.appendChild(row);
@@ -181,6 +244,11 @@ class UIManager {
         
         // Create empty panel
         this._createEmptyPanelContent(panel);
+        
+        // Make sure panel is visible
+        panel.style.display = 'block';
+        
+        console.log('Single layout created with panel-1');
     }
 
     /**
@@ -279,33 +347,84 @@ class UIManager {
      * @returns {HTMLElement} The created panel
      */
     createPanel(panelId, panelType, config = {}) {
+        console.log(`Creating panel with ID ${panelId}, type ${panelType}`);
+        
         // Get the panel element
-        const panelElement = document.getElementById(panelId);
+        let panelElement = document.getElementById(panelId);
         if (!panelElement) {
-            console.error(`Panel element with ID ${panelId} not found`);
-            return null;
+            console.warn(`Panel element with ID ${panelId} not found, creating it`);
+            
+            // Try to find the container
+            const container = this.container || document.getElementById(this.containerId);
+            if (!container) {
+                console.error('Container not found for creating panel');
+                return null;
+            }
+            
+            // Create the panel element
+            panelElement = document.createElement('div');
+            panelElement.id = panelId;
+            panelElement.className = 'h-100 panel';
+            
+            // Find a suitable parent based on the panel ID
+            if (panelId === 'panel-1') {
+                // For panel-1, find the main layout container
+                const col = container.querySelector('.col-12');
+                if (col) {
+                    col.appendChild(panelElement);
+                } else {
+                    container.appendChild(panelElement);
+                }
+            } else {
+                // For other panels, add them directly to the container
+                container.appendChild(panelElement);
+            }
         }
         
         // Check if panel type is supported
         if (!this.panelTypes[panelType]) {
             console.error(`Panel type '${panelType}' is not supported`);
-            return null;
+            // Use a fallback panel type if available
+            if (this.panelTypes['plot']) {
+                console.log(`Falling back to 'plot' panel type`);
+                panelType = 'plot';
+            } else {
+                return null;
+            }
         }
+        
+        // Make sure panel is visible
+        panelElement.style.display = 'block';
         
         // Clear the panel
         panelElement.innerHTML = '';
         
-        // Create the panel
-        const panel = this.panelTypes[panelType](panelElement, config);
+        console.log(`Creating ${panelType} panel content`);
         
-        // Store the panel info
-        this.panels.set(panelId, {
-            element: panelElement,
-            type: panelType,
-            config: config
-        });
-        
-        return panel;
+        try {
+            // Create the panel
+            const panel = this.panelTypes[panelType](panelElement, config);
+            
+            // Store the panel info
+            this.panels.set(panelId, {
+                element: panelElement,
+                type: panelType,
+                config: config
+            });
+            
+            console.log(`Panel ${panelId} created successfully`);
+            return panel;
+        } catch (error) {
+            console.error(`Error creating panel: ${error.message}`);
+            // Create a fallback panel with error message
+            panelElement.innerHTML = `
+                <div class="alert alert-danger m-3">
+                    <h5>Error Creating Panel</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            return panelElement;
+        }
     }
 
     /**
@@ -316,14 +435,27 @@ class UIManager {
      * @private
      */
     createPlotPanel(container, config = {}) {
+        console.log('Creating plot panel', config);
+        
         // Get dependencies
         const deps = getDependencies();
         const plotManager = deps.plotManager;
+        const dataManager = deps.dataManager;
+        
         if (!plotManager) {
             console.error('PlotManager dependency not found');
+            container.innerHTML = `
+                <div class="alert alert-danger m-3">
+                    <h5>Error</h5>
+                    <p>PlotManager dependency not found</p>
+                </div>
+            `;
             return container;
         }
-            
+        
+        // Make sure the container is visible
+        container.style.display = 'block';
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -343,7 +475,7 @@ class UIManager {
         // Add settings button
         const settingsBtn = document.createElement('button');
         settingsBtn.className = 'btn btn-sm btn-outline-secondary me-1';
-        settingsBtn.innerHTML = '<i class="fas fa-cog"></i>';
+        settingsBtn.innerHTML = '<i class="bi bi-gear"></i>';
         settingsBtn.title = 'Plot Settings';
         settingsBtn.addEventListener('click', () => {
             // Show plot settings modal
@@ -360,7 +492,7 @@ class UIManager {
         // Add export button
         const exportBtn = document.createElement('button');
         exportBtn.className = 'btn btn-sm btn-outline-secondary me-1';
-        exportBtn.innerHTML = '<i class="fas fa-download"></i>';
+        exportBtn.innerHTML = '<i class="bi bi-download"></i>';
         exportBtn.title = 'Export Plot';
         exportBtn.addEventListener('click', () => {
             // Export the plot
@@ -371,6 +503,7 @@ class UIManager {
         // Add the body
         const body = document.createElement('div');
         body.className = 'panel-body';
+        body.style.height = 'calc(100% - 50px)'; // Account for header height
         container.appendChild(body);
         
         // Create the plot container
@@ -379,25 +512,120 @@ class UIManager {
         plotContainer.id = `plot-${container.id}`;
         body.appendChild(plotContainer);
         
-        // Create a placeholder plot if no data is provided
-        if (!config.data) {
+        // Check if data is loaded
+        const dataLoaded = dataManager && dataManager.isDataLoaded && dataManager.isDataLoaded();
+        
+        // Create a placeholder plot if no data is provided or no data is loaded
+        if (!config.data && !dataLoaded) {
+            console.log('No data available, showing placeholder');
             const placeholder = document.createElement('div');
             placeholder.className = 'd-flex justify-content-center align-items-center h-100';
             placeholder.innerHTML = `
                 <div class="text-center text-muted">
                     <i class="bi bi-graph-up fs-1 mb-3"></i>
-                    <p>Configure the plot to see visualization</p>
+                    <p>Load data to see visualization</p>
+                    <button class="btn btn-primary btn-sm load-data-btn">
+                        <i class="bi bi-folder-plus"></i> Load Data
+                    </button>
                 </div>
             `;
             plotContainer.appendChild(placeholder);
-        } else {
-            // Create the actual plot
-            plotManager.createPlot(
-                plotContainer.id,
-                config.plotType || 'scatter',
-                config.data,
-                config.plotSettings
-            );
+            
+            // Add click handler for the load data button
+            placeholder.querySelector('.load-data-btn')?.addEventListener('click', () => {
+                $('#loadDataModal').modal('show');
+            });
+        } else if (!config.data && dataLoaded) {
+            // Data is loaded but no specific plot configuration
+            console.log('Data loaded but no plot config, creating default plot');
+            
+            // Try to create a default plot with UMAP if available
+            try {
+                const basicInfo = dataManager.getBasicInfo();
+                if (basicInfo && basicInfo.embeddings && basicInfo.embeddings.includes('umap')) {
+                    console.log('Creating default UMAP plot');
+                    
+                    // Create simple plot data
+                    const defaultConfig = {
+                        plotType: 'scatter',
+                        title: 'UMAP Visualization',
+                        xAxis: 'obsm:X_umap:0',
+                        yAxis: 'obsm:X_umap:1'
+                    };
+                    
+                    // Load the data and create the plot
+                    this._loadPlotData(defaultConfig)
+                        .then(plotData => {
+                            console.log('Default plot data loaded', plotData);
+                            plotManager.createPlot(
+                                plotContainer.id,
+                                defaultConfig.plotType,
+                                plotData,
+                                { markerSize: 5, markerOpacity: 0.7 }
+                            );
+                        })
+                        .catch(error => {
+                            console.error('Error creating default plot:', error);
+                            plotContainer.innerHTML = `
+                                <div class="alert alert-warning m-3">
+                                    <p>Could not create default plot: ${error.message}</p>
+                                    <button class="btn btn-primary btn-sm configure-plot-btn">
+                                        <i class="bi bi-gear"></i> Configure Plot
+                                    </button>
+                                </div>
+                            `;
+                            
+                            // Add click handler for the configure button
+                            plotContainer.querySelector('.configure-plot-btn')?.addEventListener('click', () => {
+                                settingsBtn.click();
+                            });
+                        });
+                } else {
+                    console.log('No embeddings found, showing configuration prompt');
+                    plotContainer.innerHTML = `
+                        <div class="d-flex justify-content-center align-items-center h-100">
+                            <div class="text-center text-muted">
+                                <i class="bi bi-graph-up fs-1 mb-3"></i>
+                                <p>Data loaded. Configure the plot to see visualization.</p>
+                                <button class="btn btn-primary btn-sm configure-plot-btn">
+                                    <i class="bi bi-gear"></i> Configure Plot
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Add click handler for the configure button
+                    plotContainer.querySelector('.configure-plot-btn')?.addEventListener('click', () => {
+                        settingsBtn.click();
+                    });
+                }
+            } catch (error) {
+                console.error('Error setting up default plot:', error);
+                plotContainer.innerHTML = `
+                    <div class="alert alert-warning m-3">
+                        <p>Error setting up plot: ${error.message}</p>
+                    </div>
+                `;
+            }
+        } else if (config.data) {
+            // Create the actual plot with provided data
+            console.log('Creating plot with provided data');
+            
+            try {
+                plotManager.createPlot(
+                    plotContainer.id,
+                    config.plotType || 'scatter',
+                    config.data,
+                    config.plotSettings || { markerSize: 5, markerOpacity: 0.7 }
+                );
+            } catch (error) {
+                console.error('Error creating plot:', error);
+                plotContainer.innerHTML = `
+                    <div class="alert alert-danger m-3">
+                        <p>Error creating plot: ${error.message}</p>
+                    </div>
+                `;
+            }
         }
         
         return container;

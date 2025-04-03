@@ -1,0 +1,13 @@
+{
+    "host": "127.0.0.1",
+    "port": 8001,
+    "debug": false,
+    "cors_enabled": true,
+    "cors_origins": "*",
+    "https_enabled": false,
+    "data_dir": "data",
+    "log_file": "logs/annzarro_server.log",
+    "log_level": "INFO",
+    "auth_enabled": false,
+    "user_file": "annzarro/server/users.json"
+}

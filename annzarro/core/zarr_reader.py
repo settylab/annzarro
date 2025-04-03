@@ -36,6 +36,125 @@ class ZarrReader:
         self.loaded = False
         self.metadata = {}
     
+    def load_zarr(self, path: str, mode: str = 'r') -> None:
+        """
+        Load a zarr store from a local path.
+        
+        Args:
+            path: Path to the zarr directory or file
+            mode: Access mode (default: read-only)
+        """
+        try:
+            logger.info(f"Loading zarr from path: {path}")
+            self.store = zarr.open_group(path, mode=mode)
+            self.root = self.store
+            self.loaded = True
+            self.metadata = self._extract_metadata()
+            logger.info(f"Zarr loaded successfully from {path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading zarr from {path}: {e}")
+            self.loaded = False
+            raise
+            
+    def load_zarr_from_url(self, url: str) -> None:
+        """
+        Load a zarr store from a URL.
+        
+        Args:
+            url: URL to the zarr directory
+        """
+        try:
+            logger.info(f"Loading zarr from URL: {url}")
+            # Check if URL is a local path
+            if url.startswith('data/') or url.startswith('/data/'):
+                # For local paths, use direct file access
+                logger.info(f"Treating URL as local path: {url}")
+                return self.load_zarr(url)
+                
+            # For remote HTTP(S) URLs, use zarr's built-in HTTP support
+            import zarr
+            
+            try:
+                # Try importing fsspec which has better HTTP support
+                import fsspec
+                store = fsspec.filesystem('http').get_mapper(url)
+            except (ImportError, Exception) as e:
+                logger.warning(f"Falling back to basic URL handling: {e}")
+                # Basic fallback - use a regular file store with path
+                store = url
+            
+            # Open the zarr group
+            self.store = zarr.open_group(store, mode='r')
+            self.root = self.store
+            self.loaded = True
+            self.metadata = self._extract_metadata()
+            logger.info(f"Zarr loaded successfully from URL: {url}")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading zarr from URL {url}: {e}")
+            self.loaded = False
+            raise
+            
+    def load_zarr_from_s3(self, bucket: str, key: str, region: str = 'us-east-1', 
+                          anonymous: bool = True, **kwargs) -> None:
+        """
+        Load a zarr store from an S3 bucket.
+        
+        Args:
+            bucket: S3 bucket name
+            key: Path within the bucket to the zarr directory
+            region: AWS region (default: us-east-1)
+            anonymous: Whether to use anonymous access (default: True)
+            **kwargs: Additional parameters for boto3 client
+        """
+        try:
+            logger.info(f"Loading zarr from S3: {bucket}/{key}")
+            
+            # Try importing s3fs
+            try:
+                import s3fs
+            except ImportError:
+                logger.error("s3fs package not found. Install with 'pip install s3fs'.")
+                raise ImportError("s3fs package required for S3 access")
+                
+            # Configure S3 filesystem
+            s3_kwargs = {
+                'anon': anonymous,
+                'client_kwargs': {
+                    'region_name': region
+                }
+            }
+            
+            # Add credentials if provided
+            if not anonymous:
+                if 'aws_access_key_id' in kwargs and 'aws_secret_access_key' in kwargs:
+                    s3_kwargs['key'] = kwargs.get('aws_access_key_id')
+                    s3_kwargs['secret'] = kwargs.get('aws_secret_access_key')
+                else:
+                    # Use default credentials
+                    pass
+                    
+            # Create filesystem and map to zarr store
+            fs = s3fs.S3FileSystem(**s3_kwargs)
+            store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
+            
+            # Open the zarr group
+            self.store = zarr.open_group(store, mode='r')
+            self.root = self.store
+            self.loaded = True
+            self.metadata = self._extract_metadata()
+            logger.info(f"Zarr loaded successfully from S3: {bucket}/{key}")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading zarr from S3 {bucket}/{key}: {e}")
+            self.loaded = False
+            raise
+            
+    def is_initialized(self) -> bool:
+        """Check if a zarr store is loaded."""
+        return self.loaded and self.store is not None
+            
     def open_zarr(self, path: str, mode: str = 'r') -> None:
         """
         Open a zarr store from a local path.
@@ -48,13 +167,260 @@ class ZarrReader:
             self.store = zarr.open_group(path, mode=mode)
             self.root = self.store
             self.loaded = True
-            self._initialize_metadata()
+            self.metadata = self._extract_metadata()
             return True
         except Exception as e:
             logger.error(f"Error opening zarr at {path}: {e}")
             self.store = None
-            self.loaded = False
-            return False
+            
+    def _extract_metadata(self) -> Dict[str, Any]:
+        """
+        Extract metadata from the zarr store.
+        
+        Returns:
+            Dictionary of metadata
+        """
+        if not self.is_initialized():
+            return {}
+            
+        metadata = {}
+        
+        try:
+            # Get basic structure information
+            metadata['components'] = list(self.root.keys())
+            
+            # Check for X matrix
+            if 'X' in self.root:
+                metadata['X'] = {
+                    'shape': self.root['X'].shape if hasattr(self.root['X'], 'shape') else None,
+                    'chunks': self.root['X'].chunks if hasattr(self.root['X'], 'chunks') else None,
+                    'dtype': str(self.root['X'].dtype) if hasattr(self.root['X'], 'dtype') else None
+                }
+                
+            # Check for obs dataframe
+            if 'obs' in self.root:
+                metadata['obs'] = {
+                    'columns': list(self.root['obs'].keys()) if hasattr(self.root['obs'], 'keys') else []
+                }
+                
+            # Check for var dataframe
+            if 'var' in self.root:
+                metadata['var'] = {
+                    'columns': list(self.root['var'].keys()) if hasattr(self.root['var'], 'keys') else []
+                }
+                
+            # Check for obsm
+            if 'obsm' in self.root:
+                metadata['obsm'] = {
+                    'keys': list(self.root['obsm'].keys()) if hasattr(self.root['obsm'], 'keys') else []
+                }
+                
+            # Check for layers
+            if 'layers' in self.root:
+                metadata['layers'] = {
+                    'keys': list(self.root['layers'].keys()) if hasattr(self.root['layers'], 'keys') else []
+                }
+                
+            return metadata
+        except Exception as e:
+            logger.error(f"Error extracting metadata: {e}")
+            return {}
+            
+    def get_array(self, path: str, selection: Optional[List] = None) -> np.ndarray:
+        """
+        Get array data from a specific path.
+        
+        Args:
+            path: Path to the array within the zarr hierarchy
+            selection: Selection indices (start, stop) or None for all data
+            
+        Returns:
+            NumPy array with the requested data
+        """
+        if not self.is_initialized():
+            raise ValueError("No zarr dataset loaded")
+            
+        try:
+            # Get the array from the zarr hierarchy (handle paths with slashes)
+            array = None
+            path_parts = path.split('/')
+            
+            # Navigate the zarr hierarchy
+            current = self.root
+            for part in path_parts:
+                if not part:
+                    continue
+                if part in current:
+                    current = current[part]
+                else:
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+            
+            # Current should now be the zarr array we want
+            array = current
+            
+            # Apply selection if provided
+            if selection is not None:
+                return array[tuple(slice(*sel) if sel else slice(None) for sel in selection)]
+            else:
+                return array[:]
+        except Exception as e:
+            logger.error(f"Error getting array data from {path}: {e}")
+            raise
+            
+    def load_chunked_data(self, path: str, selection: Optional[List] = None) -> np.ndarray:
+        """
+        Load data using an optimized chunking strategy.
+        
+        Args:
+            path: Path to the array within the zarr hierarchy
+            selection: Selection indices [[rowStart, rowStop], [colStart, colStop]] or None for all
+            
+        Returns:
+            NumPy array with the requested data
+        """
+        if not self.is_initialized():
+            raise ValueError("No zarr dataset loaded")
+            
+        try:
+            # Get the array object
+            array = None
+            path_parts = path.split('/')
+            
+            # Navigate the zarr hierarchy
+            current = self.root
+            for part in path_parts:
+                if not part:
+                    continue
+                if part in current:
+                    current = current[part]
+                else:
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+            
+            # Current should now be the zarr array we want
+            array = current
+            
+            # If no selection, return the whole array
+            if selection is None:
+                return array[:]
+                
+            # Get chunk information
+            chunks = array.chunks
+            
+            # If the array doesn't have chunks, just use normal selection
+            if chunks is None:
+                return array[tuple(slice(*sel) if sel else slice(None) for sel in selection)]
+                
+            # Parse selection
+            row_sel = selection[0] if len(selection) > 0 else None
+            col_sel = selection[1] if len(selection) > 1 else None
+            
+            row_start = row_sel[0] if row_sel else 0
+            row_stop = row_sel[1] if row_sel else array.shape[0]
+            col_start = col_sel[0] if col_sel else 0
+            col_stop = col_sel[1] if col_sel else array.shape[1] if len(array.shape) > 1 else None
+            
+            # For 1D arrays, just return the data
+            if len(array.shape) == 1 or col_stop is None:
+                return array[row_start:row_stop]
+                
+            # For 2D arrays, optimize the chunking
+            # Calculate chunk indices
+            row_chunk_start = row_start // chunks[0]
+            row_chunk_stop = (row_stop + chunks[0] - 1) // chunks[0]
+            col_chunk_start = col_start // chunks[1]
+            col_chunk_stop = (col_stop + chunks[1] - 1) // chunks[1]
+            
+            # Allocate result array
+            result_shape = (row_stop - row_start, col_stop - col_start)
+            result = np.zeros(result_shape, dtype=array.dtype)
+            
+            # Read data in chunks
+            for row_chunk in range(row_chunk_start, row_chunk_stop):
+                for col_chunk in range(col_chunk_start, col_chunk_stop):
+                    # Calculate chunk boundaries in array coordinates
+                    chunk_row_start = row_chunk * chunks[0]
+                    chunk_row_stop = min((row_chunk + 1) * chunks[0], array.shape[0])
+                    chunk_col_start = col_chunk * chunks[1]
+                    chunk_col_stop = min((col_chunk + 1) * chunks[1], array.shape[1])
+                    
+                    # Intersect with selection
+                    intersect_row_start = max(chunk_row_start, row_start)
+                    intersect_row_stop = min(chunk_row_stop, row_stop)
+                    intersect_col_start = max(chunk_col_start, col_start)
+                    intersect_col_stop = min(chunk_col_stop, col_stop)
+                    
+                    # Skip if no intersection
+                    if intersect_row_start >= intersect_row_stop or intersect_col_start >= intersect_col_stop:
+                        continue
+                    
+                    # Read chunk
+                    chunk_data = array[
+                        intersect_row_start:intersect_row_stop,
+                        intersect_col_start:intersect_col_stop
+                    ]
+                    
+                    # Calculate destination indices in result array
+                    dest_row_start = intersect_row_start - row_start
+                    dest_row_stop = intersect_row_stop - row_start
+                    dest_col_start = intersect_col_start - col_start
+                    dest_col_stop = intersect_col_stop - col_start
+                    
+                    # Copy data to result array
+                    result[
+                        dest_row_start:dest_row_stop,
+                        dest_col_start:dest_col_stop
+                    ] = chunk_data
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error loading chunked data from {path}: {e}")
+            raise
+            
+    def get_array_info(self, path: str) -> Dict[str, Any]:
+        """
+        Get information about an array.
+        
+        Args:
+            path: Path to the array within the zarr hierarchy
+            
+        Returns:
+            Dictionary with array information
+        """
+        if not self.is_initialized():
+            raise ValueError("No zarr dataset loaded")
+            
+        try:
+            # Get the array from the zarr hierarchy (handle paths with slashes)
+            array = None
+            path_parts = path.split('/')
+            
+            # Navigate the zarr hierarchy
+            current = self.root
+            for part in path_parts:
+                if not part:
+                    continue
+                if part in current:
+                    current = current[part]
+                else:
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+            
+            # Current should now be the zarr array we want
+            array = current
+            
+            # Get array information
+            info = {
+                'shape': array.shape if hasattr(array, 'shape') else None,
+                'chunks': array.chunks if hasattr(array, 'chunks') else None,
+                'dtype': str(array.dtype) if hasattr(array, 'dtype') else None,
+                'compressor': array.compressor.get_config() if hasattr(array, 'compressor') and array.compressor else None,
+                'dimension_separator': array.dimension_separator if hasattr(array, 'dimension_separator') else None,
+                'fill_value': array.fill_value if hasattr(array, 'fill_value') else None
+            }
+            
+            return info
+        except Exception as e:
+            logger.error(f"Error getting array info from {path}: {e}")
+            raise
     
     def open_zarr_url(self, url: str) -> bool:
         """

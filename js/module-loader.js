@@ -128,6 +128,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!window.stringDB) window.stringDB = {};
                 if (!window.uiManager) window.uiManager = {};
                 
+                // Make sure zarr is defined for compatibility
+                if (typeof zarr === 'undefined') {
+                    console.warn('zarr library not found, creating empty object for compatibility');
+                    window.zarr = {};
+                }
+                
                 // Force modules loaded state
                 Annzarro.modulesLoaded = true;
                 

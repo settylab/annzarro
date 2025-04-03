@@ -61,8 +61,41 @@ class DataManager {
      * @param {Object} zarrStore - The zarr store from ZarrLoader
      * @returns {Promise<boolean>} Success status
      */
+    /**
+     * Set the AnnData object directly
+     * @param {Object} anndata - The AnnData object to set
+     * @returns {Boolean} Success flag
+     */
+    setAnndata(anndata) {
+        try {
+            console.log('Setting AnnData object in data manager');
+            
+            // Clear cache
+            this.clearCache();
+            
+            // Set the anndata object
+            this.anndata = anndata;
+            
+            // Initialize selections
+            this.selectedCells.clear();
+            this.selectedGenes.clear();
+            this.focusedCell = null;
+            this.focusedGene = null;
+            
+            // Create a dataLoaded event
+            this._triggerEvent('dataLoaded', anndata);
+            
+            console.log('AnnData set successfully');
+            return true;
+        } catch (error) {
+            console.error("Error setting AnnData:", error);
+            return false;
+        }
+    }
+    
     async loadFromZarr(zarrStore) {
         try {
+            console.log('Loading from zarr store in data-manager.js');
             const zarrLoader = getZarrLoader();
             if (!zarrLoader) {
                 throw new Error('ZarrLoader not found');
@@ -1330,6 +1363,54 @@ class DataManager {
         
         // Add the new entry
         this.cache.set(key, value);
+    }
+    
+    /**
+     * Check if data is loaded
+     * @returns {boolean} True if data is loaded
+     */
+    isDataLoaded() {
+        return this.anndata !== null;
+    }
+    
+    /**
+     * Get basic information about the loaded data
+     * @returns {Object} Basic information
+     */
+    getBasicInfo() {
+        if (!this.isDataLoaded()) {
+            return {};
+        }
+        
+        // Get observations and variables count
+        let nObs = 0;
+        let nVars = 0;
+        
+        if (this.anndata.shape && Array.isArray(this.anndata.shape)) {
+            nObs = this.anndata.shape[0] || 0;
+            nVars = this.anndata.shape[1] || 0;
+        } else if (this.anndata.observations !== undefined) {
+            nObs = this.anndata.observations;
+        } else if (this.anndata.X && this.anndata.X.shape) {
+            nObs = this.anndata.X.shape[0] || 0;
+            nVars = this.anndata.X.shape[1] || 0;
+        }
+        
+        // Get available embeddings
+        const embeddings = [];
+        if (this.anndata.obsm && typeof this.anndata.obsm === 'object') {
+            Object.keys(this.anndata.obsm).forEach(key => {
+                if (key.startsWith('X_')) {
+                    embeddings.push(key.substring(2)); // Remove X_ prefix
+                }
+            });
+        }
+        
+        return {
+            nObs,
+            nVars,
+            embeddings
+        };
     }
 }
 

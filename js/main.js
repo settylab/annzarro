@@ -7,7 +7,7 @@
  */
 
 // Configuration for backend communication
-window.ANNZARRO_API_URL = process.env.ANNZARRO_API_URL || 'http://localhost:8000/api/v1';
+window.ANNZARRO_API_URL = process.env.ANNZARRO_API_URL || 'http://localhost:8001/api/v1';
 
 // Wait for all modules to be loaded and initialized
 document.addEventListener('modulesLoaded', function() {
@@ -55,10 +55,27 @@ if (typeof module !== 'undefined' && module.exports) {
  * Initialize the application with proper dependency checking
  */
 function initializeApp() {
-    // Check if zarr is defined and retry if needed
-    if (typeof zarr === 'undefined') {
-        // Try again after a delay
-        setTimeout(initializeApp, 500);
+    // Check if we have the zarrLoader available
+    if (typeof zarrLoader === 'undefined' || !zarrLoader) {
+        console.error('zarrLoader is not available. Make sure the Python backend is running.');
+        // Show a warning to the user
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.innerHTML = `
+            <h4>Error: Python Backend Not Available</h4>
+            <p>The application cannot connect to the Python backend server.</p>
+            <p>Diagnostic steps:</p>
+            <ol>
+                <li>Check if the server is running:<br>
+                <code>python server_status.py</code></li>
+                <li>If not running, start the server:<br>
+                <code>python run_annzarro.py --start</code></li>
+                <li>If you see "Address already in use" errors, clear the ports:<br>
+                <code>python server_status.py --stop-all</code></li>
+            </ol>
+            <p>Then refresh this page.</p>
+        `;
+        document.body.insertBefore(errorDiv, document.body.firstChild);
         return;
     }
     
@@ -326,18 +343,103 @@ function setupEventListeners() {
     
     // Data loaded event
     document.addEventListener('dataLoaded', function(event) {
+        console.log('Data loaded event received', event);
+        
         // Update gene and cell select options
         updateGeneOptions();
         updateCellOptions();
         
+        // Make sure the empty state is hidden and panel container is shown
+        const emptyState = document.getElementById('emptyState');
+        const panelContainer = document.getElementById('panelContainer');
+        
+        if (emptyState) {
+            console.log('Hiding empty state');
+            emptyState.classList.add('d-none');
+            emptyState.style.display = 'none';
+        }
+        
+        if (panelContainer) {
+            console.log('Showing panel container');
+            panelContainer.classList.remove('d-none');
+            panelContainer.style.display = 'block';
+            panelContainer.style.height = '100%';
+        }
+        
+        // Update status indicator
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) {
+            console.log('Updating status indicator');
+            let dataInfo = '';
+            if (dataManager && dataManager.isDataLoaded()) {
+                const info = dataManager.getBasicInfo() || {};
+                if (info.nObs && info.nVars) {
+                    dataInfo = ` (${info.nObs} cells × ${info.nVars} genes)`;
+                }
+            }
+            statusIndicator.innerHTML = `<span class="badge bg-success">Data Loaded${dataInfo}</span>`;
+        }
+        
         // Create a default plot in the first panel
         const firstPanel = document.getElementById('panel-1');
         if (firstPanel) {
-            uiManager.createPanel('panel-1', 'plot', {
-                plotType: 'scatter',
-                title: 'UMAP Visualization'
-            });
+            console.log('Creating plot in first panel');
+            try {
+                // Get basic info about the data to determine what kind of plot to create
+                const basicInfo = dataManager.getBasicInfo() || {};
+                const hasEmbeddings = basicInfo.embeddings && basicInfo.embeddings.length > 0;
+                
+                if (hasEmbeddings) {
+                    console.log('Data has embeddings, creating UMAP plot');
+                    // Use UMAP or first available embedding
+                    const embedding = basicInfo.embeddings.includes('umap') ? 'umap' : basicInfo.embeddings[0];
+                    
+                    uiManager.createPanel('panel-1', 'plot', {
+                        plotType: 'scatter',
+                        title: `${embedding.toUpperCase()} Visualization`,
+                        xAxis: `obsm:X_${embedding}:0`,
+                        yAxis: `obsm:X_${embedding}:1`
+                    });
+                } else {
+                    console.log('Data has no embeddings, creating generic plot');
+                    // Create a basic plot panel that can be configured
+                    uiManager.createPanel('panel-1', 'plot', {
+                        plotType: 'scatter',
+                        title: 'Data Visualization'
+                    });
+                }
+            } catch (error) {
+                console.error('Error creating default plot:', error);
+                // Create a basic panel as fallback
+                uiManager.createPanel('panel-1', 'plot', {
+                    plotType: 'scatter',
+                    title: 'Data Visualization' 
+                });
+            }
+        } else {
+            console.log('First panel not found, initializing UI');
+            // First panel doesn't exist, might need to initialize the UI
+            try {
+                if (typeof uiManager !== 'undefined' && uiManager) {
+                    // Make sure UI is initialized with single layout
+                    uiManager.initialize('vizContainer');
+                    uiManager.setLayout('single');
+                    
+                    // Try again to create the panel
+                    const newFirstPanel = document.getElementById('panel-1');
+                    if (newFirstPanel) {
+                        uiManager.createPanel('panel-1', 'plot', {
+                            plotType: 'scatter',
+                            title: 'Data Visualization'
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error initializing UI after data load:', error);
+            }
         }
+        
+        console.log('Data loaded event processing complete');
     });
 }
 
@@ -1312,8 +1414,29 @@ function createHardcodedDataset(datasetType) {
  */
 async function loadAnndataFromZarr() {
     try {
-        // Load AnnData from zarr store
-        await dataManager.loadFromZarr(zarrLoader);
+        console.log('Starting to load AnnData from zarr');
+        
+        // Convert zarr to AnnData structure using backend API
+        const anndata = await zarrLoader.convertToAnnData();
+        console.log('AnnData structure received:', anndata);
+        
+        // Update data manager with the AnnData structure
+        if (dataManager && typeof dataManager.setAnndata === 'function') {
+            console.log('Setting AnnData in dataManager.setAnndata');
+            dataManager.setAnndata(anndata);
+        } else if (dataManager) {
+            console.log('Setting AnnData directly in dataManager.anndata');
+            dataManager.anndata = anndata;
+        } else {
+            console.error('dataManager not available, cannot set AnnData');
+        }
+        
+        // Dispatch dataLoaded event
+        console.log('Dispatching dataLoaded event');
+        const event = new CustomEvent('dataLoaded', {
+            detail: { source: 'zarr', data: anndata }
+        });
+        document.dispatchEvent(event);
         
         // Update the UI
         updateAfterDataLoad();
@@ -1329,7 +1452,82 @@ async function loadAnndataFromZarr() {
  * Update the UI after data is loaded
  */
 function updateAfterDataLoad() {
-    // This function updates various UI elements after data is loaded
+    console.log('Updating UI after data load');
+    
+    try {
+        // Update status indicator
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) {
+            console.log('Updating status indicator');
+            // Get basic info from data manager if available
+            let dataInfo = '';
+            if (dataManager && dataManager.isDataLoaded && dataManager.isDataLoaded()) {
+                let info = {};
+                if (typeof dataManager.getBasicInfo === 'function') {
+                    info = dataManager.getBasicInfo();
+                } else if (dataManager.anndata) {
+                    info = {
+                        nObs: dataManager.anndata.observations || 0,
+                        nVars: dataManager.anndata.variables || 0
+                    };
+                }
+                
+                // Add info to status badge
+                if (info.nObs && info.nVars) {
+                    dataInfo = ` (${info.nObs} cells × ${info.nVars} genes)`;
+                }
+            }
+            
+            statusIndicator.innerHTML = `<span class="badge bg-success">Data Loaded${dataInfo}</span>`;
+        }
+        
+        // Hide empty state and show panels
+        const emptyState = document.getElementById('emptyState');
+        const panelContainer = document.getElementById('panelContainer');
+        
+        if (emptyState) {
+            console.log('Hiding empty state');
+            emptyState.classList.add('d-none');
+            emptyState.style.display = 'none';
+        }
+        
+        if (panelContainer) {
+            console.log('Showing panel container');
+            panelContainer.classList.remove('d-none');
+            panelContainer.style.display = 'block';
+            panelContainer.style.height = '100%';
+            
+            // Create default panel if none exists
+            if (!panelContainer.querySelector('#vizContainer') && !panelContainer.querySelector('.panel')) {
+                console.log('Panel container is empty, initializing UI manager');
+                if (typeof uiManager !== 'undefined' && uiManager) {
+                    // Initialize the UI manager with the container and create a default layout
+                    console.log('Creating default panel in empty container');
+                    uiManager.initialize('vizContainer');
+                    uiManager.setLayout('single');
+                    
+                    // Create a default plot panel
+                    const panel1 = document.getElementById('panel-1');
+                    if (panel1) {
+                        console.log('Creating plot in panel-1');
+                        uiManager.createPanel('panel-1', 'plot', {
+                            plotType: 'scatter',
+                            title: 'Data Visualization'
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Update gene and cell options
+        console.log('Updating gene and cell options');
+        updateGeneOptions();
+        updateCellOptions();
+        
+        console.log('UI update complete');
+    } catch (error) {
+        console.error('Error updating UI after data load:', error);
+    }
 }
 
 /**

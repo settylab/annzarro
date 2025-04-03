@@ -1,152 +1,154 @@
 /**
- * ZarrLoader - Handles loading AnnData in zarr format
- * This module provides functionality to load zarr data from various sources:
- * - Local files (directory or archive)
- * - URL
- * - S3 bucket
+ * ZarrLoader - Python Backend API Client
+ * This module provides communication with the Python backend for zarr data operations:
+ * - Loading zarr data from various sources
+ * - Fetching metadata and array data
+ * - Handling data transformation and progressive loading
  */
-
-// Check if zarr is defined, if not, provide an error message function
-const checkZarrAvailability = () => {
-    if (typeof zarr === 'undefined') {
-        throw new Error('zarr is not defined. Make sure zarr.js is loaded before using this module.');
-    }
-};
 
 class ZarrLoader {
     constructor() {
-        this.store = null;
         this.isLoading = false;
         this.loadingProgress = 0;
         this.cancellationToken = null;
+        
+        // Get the API URL from the global config
+        this.apiUrl = window.Annzarro?.config?.apiUrl || '/api/v1';
+        
+        // Default error handler for API requests
+        this.defaultErrorHandler = (error) => {
+            console.error('ZarrLoader API error:', error);
+            throw error;
+        };
     }
 
     /**
-     * Initialize a zarr store from a local directory
+     * Initialize a zarr store from a local directory by uploading files to the Python backend
      * @param {FileList} fileList - The list of files from the directory
-     * @returns {Promise<Object>} A zarr store
+     * @returns {Promise<Object>} A success status
      */
     async loadFromDirectory(fileList) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
         
         try {
-            const files = Array.from(fileList);
+            // Create FormData to upload files
+            const formData = new FormData();
             
-            // Convert file paths to zarr-compatible structure
-            const fileMap = new Map();
-            for (const file of files) {
-                const relativePath = file.webkitRelativePath || file.name;
-                fileMap.set(relativePath, file);
-            }
-            
-            // Create a zarr store with HTTP range reader
-            const store = new zarr.MemoryStore();
-            
-            // Process files in batches to improve performance
-            const batchSize = 100;
-            const batches = Math.ceil(files.length / batchSize);
-            
-            for (let i = 0; i < batches; i++) {
+            // Add each file to the form data
+            let totalFiles = 0;
+            for (const file of fileList) {
+                formData.append('files[]', file, file.webkitRelativePath || file.name);
+                totalFiles++;
+                
+                // Update progress periodically during preparation
+                if (totalFiles % 100 === 0) {
+                    this.loadingProgress = Math.min(40, Math.round((totalFiles / fileList.length) * 40));
+                    this._notifyProgressUpdate(this.loadingProgress);
+                }
+                
                 if (this.cancellationToken?.cancelled) {
                     throw new Error('Loading cancelled');
                 }
-                
-                const batchFiles = files.slice(i * batchSize, (i + 1) * batchSize);
-                
-                // Process files in parallel
-                await Promise.all(batchFiles.map(async (file) => {
-                    const relativePath = file.webkitRelativePath || file.name;
-                    const buffer = await this._readFileAsArrayBuffer(file);
-                    await store.setItem(relativePath, buffer);
-                }));
-                
-                // Update progress
-                this.loadingProgress = Math.min(100, Math.round(((i + 1) * batchSize) / files.length * 100));
-                this._notifyProgressUpdate(this.loadingProgress);
             }
             
-            this.store = store;
+            // Update progress before starting upload
+            this.loadingProgress = 40;
+            this._notifyProgressUpdate(this.loadingProgress);
+            
+            // Send files to the backend
+            const response = await fetch(`${this.apiUrl}/zarr/upload`, {
+                method: 'POST',
+                body: formData,
+                // Add upload progress tracking
+                onUploadProgress: (progressEvent) => {
+                    if (progressEvent.lengthComputable) {
+                        // Scale progress from 40 to 90
+                        const uploadProgress = 40 + Math.round((progressEvent.loaded / progressEvent.total) * 50);
+                        this.loadingProgress = uploadProgress;
+                        this._notifyProgressUpdate(uploadProgress);
+                    }
+                }
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API error: ${error}`);
+            }
+            
+            const result = await response.json();
+            
+            // Final progress update
+            this.loadingProgress = 100;
+            this._notifyProgressUpdate(this.loadingProgress);
+            
             this.isLoading = false;
-            return store;
+            return result;
         } catch (error) {
             this.isLoading = false;
-            throw error;
+            this.loadingProgress = 0;
+            this._notifyProgressUpdate(0);
+            this.defaultErrorHandler(error);
         }
     }
 
     /**
      * Initialize a zarr store from a URL
      * @param {string} url - The URL to the zarr store
-     * @returns {Promise<Object>} A zarr store
+     * @returns {Promise<Object>} A success status
      */
     async loadFromUrl(url) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
         
         try {
-            // Check if we have stored credentials
-            const storedCredentials = localStorage.getItem('annzarroCredentials');
-            
-            // Create options with authorization if credentials exist
-            const options = {};
-            if (storedCredentials) {
-                // Get auth from cookie or localStorage for backward compatibility
-                const authCookie = document.cookie.split('; ').find(row => row.startsWith('auth='));
-                const authValue = authCookie ? authCookie.split('=')[1] : storedCredentials;
-                
-                options.fetchOptions = {
-                    headers: {
-                        'Authorization': 'Basic ' + authValue
-                    }
-                };
-            }
-            
-            // Create HTTP store with auth headers if available
-            const store = zarr.HTTPStore.fromUrl(url, options);
-            
-            // Initial progress
-            this.loadingProgress = 50;
+            // Update initial progress
+            this.loadingProgress = 20;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            // Let's validate the zarr store with a simple metadata read
-            try {
-                const attrs = await zarr.openGroup(store, '');
-                console.log('Zarr group opened successfully', attrs);
-            } catch (error) {
-                throw new Error(`Failed to open zarr group: ${error.message}`);
+            // Send request to backend to load from URL
+            console.log(`Sending URL request to: ${this.apiUrl}/zarr/url`);
+            const response = await fetch(`${this.apiUrl}/zarr/url`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ url })
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API error: ${error}`);
             }
             
+            // Update midway progress
+            this.loadingProgress = 70;
+            this._notifyProgressUpdate(this.loadingProgress);
+            
+            const result = await response.json();
+            
+            // Final progress update
             this.loadingProgress = 100;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            this.store = store;
             this.isLoading = false;
-            return store;
+            return result;
         } catch (error) {
             this.isLoading = false;
-            throw error;
+            this.loadingProgress = 0;
+            this._notifyProgressUpdate(0);
+            this.defaultErrorHandler(error);
         }
     }
     
-
     /**
      * Initialize a zarr store from an S3 bucket
      * @param {Object} s3Config - The S3 configuration
-     * @returns {Promise<Object>} A zarr store
+     * @returns {Promise<Object>} A success status
      */
     async loadFromS3(s3Config) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
@@ -161,178 +163,87 @@ class ZarrLoader {
                 throw new Error('S3 key (path) is required');
             }
             
-            // Create S3 client or use anonymous client
-            let s3Store;
-            if (s3Config.anonymous) {
-                // Anonymous access
-                s3Store = new zarr.S3Store({
-                    bucket: s3Config.bucket,
-                    prefix: s3Config.key,
-                    region: s3Config.region || 'us-east-1',
-                    credentials: false
-                });
-            } else {
-                // Access with credentials
-                if (!s3Config.accessKey || !s3Config.secretKey) {
-                    throw new Error('S3 access key and secret key are required for non-anonymous access');
-                }
-                
-                s3Store = new zarr.S3Store({
-                    bucket: s3Config.bucket,
-                    prefix: s3Config.key,
-                    region: s3Config.region || 'us-east-1',
-                    credentials: {
-                        accessKeyId: s3Config.accessKey,
-                        secretAccessKey: s3Config.secretKey
-                    }
-                });
-            }
-            
-            // Initial progress
-            this.loadingProgress = 50;
+            // Update initial progress
+            this.loadingProgress = 20;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            // Let's validate the zarr store with a simple metadata read
-            try {
-                const attrs = await zarr.openGroup(s3Store, '');
-                console.log('Zarr group opened successfully from S3', attrs);
-            } catch (error) {
-                throw new Error(`Failed to open zarr group from S3: ${error.message}`);
+            // Send request to backend
+            const response = await fetch(`${this.apiUrl}/zarr/s3`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(s3Config)
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API error: ${error}`);
             }
             
+            // Update midway progress
+            this.loadingProgress = 70;
+            this._notifyProgressUpdate(this.loadingProgress);
+            
+            const result = await response.json();
+            
+            // Final progress update
             this.loadingProgress = 100;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            this.store = s3Store;
             this.isLoading = false;
-            return s3Store;
+            return result;
         } catch (error) {
             this.isLoading = false;
-            throw error;
+            this.loadingProgress = 0;
+            this._notifyProgressUpdate(0);
+            this.defaultErrorHandler(error);
         }
     }
 
     /**
-     * Converts the store into an AnnData-like structure
+     * Converts the store into an AnnData-like structure through the Python backend
      * @returns {Promise<Object>} An object with AnnData-like structure
      */
     async convertToAnnData() {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
-        if (!this.store) {
-            throw new Error('No zarr store loaded');
-        }
-        
         this.isLoading = true;
         this.loadingProgress = 0;
         
-        console.log('[DEBUG] Starting conversion to AnnData structure');
-        
         try {
-            const anndata = {};
+            console.log(`Converting to AnnData using endpoint: ${this.apiUrl}/zarr/to_anndata`);
             
-            // Open the root group
-            console.log('[DEBUG] Opening root zarr group');
-            try {
-                const root = await zarr.openGroup(this.store, '');
-                console.log('[DEBUG] Root zarr group opened successfully', root);
-            } catch (error) {
-                console.error('[DEBUG] Failed to open root zarr group:', error);
-                throw error;
+            // Initial progress update
+            this.loadingProgress = 10;
+            this._notifyProgressUpdate(this.loadingProgress);
+            
+            // Request conversion to AnnData from backend
+            const response = await fetch(`${this.apiUrl}/zarr/to_anndata`, {
+                method: 'GET'
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                console.error(`Error converting to AnnData: ${error}`);
+                throw new Error(`API error: ${error}`);
             }
             
-            // Extract basic info
-            console.log('[DEBUG] Extracting basic shape information');
-            try {
-                anndata.shape = await this._getArrayShape(this.store, 'X/shape');
-                console.log('[DEBUG] Shape extracted:', anndata.shape);
-            } catch (error) {
-                console.error('[DEBUG] Failed to extract shape:', error);
-                // Continue without shape - it might still be a valid AnnData object
-                anndata.shape = null;
-                console.log('[DEBUG] Setting null shape and continuing');
-            }
+            console.log('Response from to_anndata endpoint:', response.status);
             
-            // Common AnnData components
-            const components = ['X', 'obs', 'var', 'obsm', 'varm', 'layers', 'uns', 'obsp', 'varp'];
+            // Midway progress update
+            this.loadingProgress = 50;
+            this._notifyProgressUpdate(this.loadingProgress);
             
-            // Process each component
-            for (let i = 0; i < components.length; i++) {
-                const component = components[i];
-                console.log(`[DEBUG] Processing component (${i+1}/${components.length}): ${component}`);
-                
-                try {
-                    // Check if component exists
-                    console.log(`[DEBUG] Checking if ${component} exists`);
-                    const exists = await this._pathExists(component);
-                    console.log(`[DEBUG] Component ${component} exists: ${exists}`);
-                    
-                    if (exists) {
-                        if (component === 'X') {
-                            console.log('[DEBUG] Processing X matrix');
-                            anndata.X = await this._processXMatrix();
-                            console.log('[DEBUG] X matrix processed:', anndata.X);
-                        } else if (component === 'layers') {
-                            console.log('[DEBUG] Processing layers');
-                            anndata.layers = await this._processLayers();
-                            console.log('[DEBUG] Layers processed, found:', Object.keys(anndata.layers || {}));
-                        } else if (component === 'obs') {
-                            console.log('[DEBUG] Processing obs dataframe');
-                            anndata.obs = await this._processDataFrame('obs');
-                            console.log('[DEBUG] Obs processed, columns:', anndata.obs?.columns);
-                        } else if (component === 'var') {
-                            console.log('[DEBUG] Processing var dataframe');
-                            anndata.var = await this._processDataFrame('var');
-                            console.log('[DEBUG] Var processed, columns:', anndata.var?.columns);
-                        } else if (component === 'obsm') {
-                            console.log('[DEBUG] Processing obsm matrices');
-                            anndata.obsm = await this._processMultiDimensional('obsm');
-                            console.log('[DEBUG] Obsm processed, keys:', Object.keys(anndata.obsm || {}));
-                        } else if (component === 'varm') {
-                            console.log('[DEBUG] Processing varm matrices');
-                            anndata.varm = await this._processMultiDimensional('varm');
-                            console.log('[DEBUG] Varm processed, keys:', Object.keys(anndata.varm || {}));
-                        } else if (component === 'uns') {
-                            console.log('[DEBUG] Processing unstructured data');
-                            anndata.uns = await this._processUnstructured();
-                            console.log('[DEBUG] Uns processed, keys:', Object.keys(anndata.uns || {}));
-                        } else if (component === 'obsp') {
-                            console.log('[DEBUG] Processing obsp matrices');
-                            anndata.obsp = await this._processPairwise('obsp');
-                            console.log('[DEBUG] Obsp processed, keys:', Object.keys(anndata.obsp || {}));
-                        } else if (component === 'varp') {
-                            console.log('[DEBUG] Processing varp matrices');
-                            anndata.varp = await this._processPairwise('varp');
-                            console.log('[DEBUG] Varp processed, keys:', Object.keys(anndata.varp || {}));
-                        }
-                    } else {
-                        console.log(`[DEBUG] Component ${component} does not exist, skipping`);
-                    }
-                } catch (error) {
-                    console.error(`[DEBUG] Error processing ${component}:`, error);
-                    anndata[component] = { error: error.message };
-                }
-                
-                // Update progress
-                this.loadingProgress = Math.round(((i + 1) / components.length) * 100);
-                console.log(`[DEBUG] Progress update: ${this.loadingProgress}%`);
-                this._notifyProgressUpdate(this.loadingProgress);
-                
-                if (this.cancellationToken?.cancelled) {
-                    console.log('[DEBUG] Loading cancelled by user');
-                    throw new Error('Loading cancelled');
-                }
-            }
+            const anndata = await response.json();
+            
+            // Final progress update
+            this.loadingProgress = 100;
+            this._notifyProgressUpdate(this.loadingProgress);
             
             this.isLoading = false;
-            this.loadingProgress = 100;
-            console.log('[DEBUG] AnnData conversion completed successfully');
             return anndata;
         } catch (error) {
-            console.error('[DEBUG] AnnData conversion failed:', error);
             this.isLoading = false;
-            throw error;
+            this.defaultErrorHandler(error);
         }
     }
 
@@ -343,28 +254,6 @@ class ZarrLoader {
         if (this.isLoading && this.cancellationToken) {
             this.cancellationToken.cancelled = true;
         }
-    }
-
-    /**
-     * Read a file as an ArrayBuffer
-     * @param {File} file - The file to read
-     * @returns {Promise<ArrayBuffer>} The file contents as ArrayBuffer
-     * @private
-     */
-    _readFileAsArrayBuffer(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = function(event) {
-                resolve(event.target.result);
-            };
-            
-            reader.onerror = function(error) {
-                reject(error);
-            };
-            
-            reader.readAsArrayBuffer(file);
-        });
     }
 
     /**
@@ -381,598 +270,67 @@ class ZarrLoader {
     }
 
     /**
-     * Check if a path exists in the zarr store
-     * @param {string} path - The path to check
-     * @returns {Promise<boolean>} True if the path exists
-     * @private
-     */
-    async _pathExists(path) {
-        try {
-            console.log(`[DEBUG] Checking if path exists: ${path}`);
-            const startTime = performance.now();
-            
-            // Get keys from store
-            console.log(`[DEBUG] Getting keys from store for ${path}`);
-            let keys;
-            try {
-                keys = await this.store.getKeys();
-                console.log(`[DEBUG] Got ${keys.length} keys from store`);
-            } catch (error) {
-                console.error(`[DEBUG] Error getting keys from store: ${error.message}`);
-                return false;
-            }
-            
-            // Check if any key matches the path
-            const pathWithSlash = `${path}/`;
-            const exists = keys.some(key => key.startsWith(pathWithSlash) || key === path);
-            
-            const endTime = performance.now();
-            console.log(`[DEBUG] Path ${path} exists: ${exists} (took ${(endTime - startTime).toFixed(2)}ms)`);
-            
-            // If the path doesn't exist, show some of the available keys for debugging
-            if (!exists) {
-                const sampleKeys = keys.slice(0, Math.min(5, keys.length));
-                console.log(`[DEBUG] Sample of available keys: ${sampleKeys.join(', ')}`);
-            }
-            
-            return exists;
-        } catch (error) {
-            console.error(`[DEBUG] Error checking if path exists: ${path}`, error);
-            return false;
-        }
-    }
-
-    /**
-     * Get shape of an array from metadata
-     * @param {Object} store - The zarr store
-     * @param {string} path - Path to the shape metadata
-     * @returns {Promise<Array>} The shape array
-     * @private
-     */
-    async _getArrayShape(store, path) {
-        try {
-            const shapeBuffer = await store.getItem(path);
-            if (!shapeBuffer) {
-                throw new Error(`Shape not found at ${path}`);
-            }
-            
-            // Convert buffer to string and parse
-            const shapeText = new TextDecoder().decode(shapeBuffer);
-            return JSON.parse(shapeText);
-        } catch (error) {
-            console.error(`Error getting array shape from ${path}:`, error);
-            return [0, 0];
-        }
-    }
-
-    /**
-     * Process the X matrix (main data matrix)
-     * @returns {Promise<Object>} Metadata about the X matrix
-     * @private
-     */
-    async _processXMatrix() {
-        try {
-            // We don't load the actual data, just metadata about it
-            const shape = await this._getArrayShape(this.store, 'X/shape');
-            
-            // Get information about chunking
-            let chunkShape;
-            try {
-                chunkShape = await this._getArrayShape(this.store, 'X/chunks');
-            } catch (error) {
-                chunkShape = null;
-            }
-            
-            // Try to get the data type
-            let dtype;
-            try {
-                const dtypeBuffer = await this.store.getItem('X/dtype');
-                dtype = new TextDecoder().decode(dtypeBuffer);
-            } catch (error) {
-                dtype = 'unknown';
-            }
-            
-            return {
-                shape,
-                chunkShape,
-                dtype,
-                isView: false,
-                path: 'X'
-            };
-        } catch (error) {
-            console.error('Error processing X matrix:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process all layers
-     * @returns {Promise<Object>} An object with layer information
-     * @private
-     */
-    async _processLayers() {
-        try {
-            const layerNames = new Set();
-            
-            // Get all keys from the store
-            const keys = await this.store.getKeys();
-            
-            // Find layer names by looking at keys that start with 'layers/'
-            for (const key of keys) {
-                if (key.startsWith('layers/')) {
-                    const parts = key.split('/');
-                    if (parts.length > 1) {
-                        layerNames.add(parts[1]);
-                    }
-                }
-            }
-            
-            // Process layer information
-            const layers = {};
-            for (const layerName of layerNames) {
-                try {
-                    // Get shape if available
-                    const shapePath = `layers/${layerName}/shape`;
-                    let shape;
-                    try {
-                        shape = await this._getArrayShape(this.store, shapePath);
-                    } catch (error) {
-                        shape = null;
-                    }
-                    
-                    // Get dtype if available
-                    let dtype;
-                    try {
-                        const dtypeBuffer = await this.store.getItem(`layers/${layerName}/dtype`);
-                        dtype = new TextDecoder().decode(dtypeBuffer);
-                    } catch (error) {
-                        dtype = 'unknown';
-                    }
-                    
-                    layers[layerName] = {
-                        shape,
-                        dtype,
-                        path: `layers/${layerName}`
-                    };
-                } catch (error) {
-                    console.error(`Error processing layer ${layerName}:`, error);
-                    layers[layerName] = { error: error.message };
-                }
-            }
-            
-            return layers;
-        } catch (error) {
-            console.error('Error processing layers:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process DataFrame-like components (obs and var)
-     * @param {string} component - The component name ('obs' or 'var')
-     * @returns {Promise<Object>} The processed data frame metadata
-     * @private
-     */
-    async _processDataFrame(component) {
-        try {
-            // Get the index
-            const indexPath = `${component}/_index`;
-            let index;
-            try {
-                const indexBuffer = await this.store.getItem(indexPath);
-                if (indexBuffer) {
-                    index = new TextDecoder().decode(indexBuffer).split('\n').filter(Boolean);
-                } else {
-                    index = null;
-                }
-            } catch (error) {
-                console.error(`Error getting index for ${component}:`, error);
-                index = null;
-            }
-            
-            // Get column names
-            const columns = new Set();
-            const keys = await this.store.getKeys();
-            
-            // Find columns by filtering keys
-            for (const key of keys) {
-                if (key.startsWith(`${component}/`)) {
-                    const parts = key.split('/');
-                    if (parts.length > 1 && parts[1] !== '_index') {
-                        columns.add(parts[1]);
-                    }
-                }
-            }
-            
-            // Process column metadata
-            const columnInfo = {};
-            for (const column of columns) {
-                try {
-                    // Get the shape if available
-                    let shape;
-                    try {
-                        shape = await this._getArrayShape(this.store, `${component}/${column}/shape`);
-                    } catch (error) {
-                        shape = null;
-                    }
-                    
-                    // Get dtype if available
-                    let dtype;
-                    try {
-                        const dtypeBuffer = await this.store.getItem(`${component}/${column}/dtype`);
-                        dtype = dtypeBuffer ? new TextDecoder().decode(dtypeBuffer) : 'unknown';
-                    } catch (error) {
-                        dtype = 'unknown';
-                    }
-                    
-                    columnInfo[column] = {
-                        shape,
-                        dtype,
-                        path: `${component}/${column}`
-                    };
-                } catch (error) {
-                    console.error(`Error processing column ${column} in ${component}:`, error);
-                    columnInfo[column] = { error: error.message };
-                }
-            }
-            
-            return {
-                index,
-                columns: Array.from(columns),
-                columnsInfo: columnInfo,
-                shape: index ? [index.length, columns.size] : [0, columns.size],
-                path: component
-            };
-        } catch (error) {
-            console.error(`Error processing ${component}:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process multi-dimensional components (obsm and varm)
-     * @param {string} component - The component name ('obsm' or 'varm')
-     * @returns {Promise<Object>} The processed multi-dimensional data
-     * @private
-     */
-    async _processMultiDimensional(component) {
-        try {
-            // Find all matrices in the component
-            const matrixNames = new Set();
-            const keys = await this.store.getKeys();
-            
-            // Extract matrix names from keys
-            for (const key of keys) {
-                if (key.startsWith(`${component}/`)) {
-                    const parts = key.split('/');
-                    if (parts.length > 1) {
-                        matrixNames.add(parts[1]);
-                    }
-                }
-            }
-            
-            // Process each matrix
-            const matrices = {};
-            for (const matrixName of matrixNames) {
-                try {
-                    // Get shape information
-                    let shape;
-                    try {
-                        shape = await this._getArrayShape(this.store, `${component}/${matrixName}/shape`);
-                    } catch (error) {
-                        shape = null;
-                    }
-                    
-                    // Get dtype if available
-                    let dtype;
-                    try {
-                        const dtypeBuffer = await this.store.getItem(`${component}/${matrixName}/dtype`);
-                        dtype = dtypeBuffer ? new TextDecoder().decode(dtypeBuffer) : 'unknown';
-                    } catch (error) {
-                        dtype = 'unknown';
-                    }
-                    
-                    matrices[matrixName] = {
-                        shape,
-                        dtype,
-                        path: `${component}/${matrixName}`
-                    };
-                } catch (error) {
-                    console.error(`Error processing ${matrixName} in ${component}:`, error);
-                    matrices[matrixName] = { error: error.message };
-                }
-            }
-            
-            return matrices;
-        } catch (error) {
-            console.error(`Error processing ${component}:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process unstructured components (uns)
-     * @returns {Promise<Object>} The processed unstructured data
-     * @private
-     */
-    async _processUnstructured() {
-        try {
-            // Find all keys in the unstructured component
-            const keys = await this.store.getKeys();
-            const unsKeys = keys.filter(key => key.startsWith('uns/'));
-            
-            // Map to extract key names
-            const unsKeyMap = {};
-            for (const key of unsKeys) {
-                const parts = key.split('/');
-                if (parts.length > 1) {
-                    // Extract the key name after 'uns/'
-                    const keyName = parts[1];
-                    
-                    // Skip if we already have this key
-                    if (unsKeyMap[keyName]) continue;
-                    
-                    // Add to the map
-                    unsKeyMap[keyName] = {
-                        path: `uns/${keyName}`
-                    };
-                    
-                    // Try to get shape and dtype for array-like data
-                    try {
-                        const shape = await this._getArrayShape(this.store, `uns/${keyName}/shape`);
-                        if (shape) {
-                            unsKeyMap[keyName].shape = shape;
-                            
-                            // Get dtype if available
-                            try {
-                                const dtypeBuffer = await this.store.getItem(`uns/${keyName}/dtype`);
-                                const dtype = dtypeBuffer ? new TextDecoder().decode(dtypeBuffer) : 'unknown';
-                                unsKeyMap[keyName].dtype = dtype;
-                            } catch (error) {
-                                // Ignore dtype errors
-                            }
-                        }
-                    } catch (error) {
-                        // Not an array, might be a scalar or a group
-                        try {
-                            // Check if it's a scalar
-                            const valueBuffer = await this.store.getItem(`uns/${keyName}`);
-                            if (valueBuffer) {
-                                let value;
-                                try {
-                                    // Try to parse as JSON
-                                    value = JSON.parse(new TextDecoder().decode(valueBuffer));
-                                } catch (parseError) {
-                                    // Not JSON, use as string
-                                    value = new TextDecoder().decode(valueBuffer);
-                                }
-                                unsKeyMap[keyName].value = value;
-                            }
-                        } catch (valueError) {
-                            // Probably a group, leave as is
-                        }
-                    }
-                }
-            }
-            
-            return unsKeyMap;
-        } catch (error) {
-            console.error('Error processing unstructured data:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process pairwise components (obsp and varp)
-     * @param {string} component - The component name ('obsp' or 'varp')
-     * @returns {Promise<Object>} The processed pairwise data
-     * @private
-     */
-    async _processPairwise(component) {
-        try {
-            // Find all matrices in the component
-            const matrixNames = new Set();
-            const keys = await this.store.getKeys();
-            
-            // Extract matrix names from keys
-            for (const key of keys) {
-                if (key.startsWith(`${component}/`)) {
-                    const parts = key.split('/');
-                    if (parts.length > 1) {
-                        matrixNames.add(parts[1]);
-                    }
-                }
-            }
-            
-            // Process each matrix
-            const matrices = {};
-            for (const matrixName of matrixNames) {
-                try {
-                    // Get shape information
-                    let shape;
-                    try {
-                        shape = await this._getArrayShape(this.store, `${component}/${matrixName}/shape`);
-                    } catch (error) {
-                        shape = null;
-                    }
-                    
-                    // Get dtype if available
-                    let dtype;
-                    try {
-                        const dtypeBuffer = await this.store.getItem(`${component}/${matrixName}/dtype`);
-                        dtype = dtypeBuffer ? new TextDecoder().decode(dtypeBuffer) : 'unknown';
-                    } catch (error) {
-                        dtype = 'unknown';
-                    }
-                    
-                    matrices[matrixName] = {
-                        shape,
-                        dtype,
-                        path: `${component}/${matrixName}`
-                    };
-                } catch (error) {
-                    console.error(`Error processing ${matrixName} in ${component}:`, error);
-                    matrices[matrixName] = { error: error.message };
-                }
-            }
-            
-            return matrices;
-        } catch (error) {
-            console.error(`Error processing ${component}:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Load specific data from zarr array
+     * Load specific data from zarr array through the Python backend
      * @param {string} path - Path to the zarr array
      * @param {Array} selection - Selection indices [start, stop] or null for all
      * @returns {Promise<Object>} The loaded data
      */
     async loadData(path, selection = null) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
-        if (!this.store) {
-            throw new Error('No zarr store loaded');
+        if (!path) {
+            throw new Error('Path is required');
         }
         
         try {
-            // Open the zarr array
-            const array = await zarr.open(this.store, path);
+            const queryParams = new URLSearchParams();
+            queryParams.append('path', path);
             
-            // If no selection is provided, load everything
-            if (!selection) {
-                return await array.get();
+            if (selection) {
+                queryParams.append('selection', JSON.stringify(selection));
             }
             
-            // Handle selections
-            return await array.get(selection);
+            const response = await fetch(`${this.apiUrl}/zarr/data?${queryParams.toString()}`);
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API error: ${error}`);
+            }
+            
+            return await response.json();
         } catch (error) {
-            console.error(`Error loading data from ${path}:`, error);
-            throw error;
+            this.defaultErrorHandler(error);
         }
     }
     
     /**
-     * Load data using optimized chunking strategy
+     * Load data using optimized chunking strategy through the Python backend
      * @param {string} path - Path to the zarr array
      * @param {Array} selection - Selection indices [[rowStart, rowStop], [colStart, colStop]]
      * @returns {Promise<Object>} The loaded data with chunking optimized
      */
-    async _loadChunkedData(path, selection) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
-        if (!this.store) {
-            throw new Error('No zarr store loaded');
+    async loadChunkedData(path, selection = null) {
+        if (!path) {
+            throw new Error('Path is required');
         }
         
         try {
-            // Open the zarr array
-            const array = await zarr.open(this.store, path);
+            const queryParams = new URLSearchParams();
+            queryParams.append('path', path);
             
-            // Get chunk information
-            const chunks = array.chunks;
-            
-            // Calculate optimal chunking strategy based on selection shape and chunks
-            // If selection spans multiple chunks, load in parallel
-            if (!selection) {
-                return await array.get();
+            if (selection) {
+                queryParams.append('selection', JSON.stringify(selection));
             }
             
-            // Calculate how many chunks are needed for each dimension
-            const rowSelection = selection[0];
-            const colSelection = selection[1];
+            // Request chunked data from Python backend
+            const response = await fetch(`${this.apiUrl}/zarr/chunked_data?${queryParams.toString()}`);
             
-            if (!rowSelection || !colSelection) {
-                return await array.get(selection);
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API error: ${error}`);
             }
             
-            const rowStart = rowSelection[0];
-            const rowStop = rowSelection[1];
-            const colStart = colSelection[0];
-            const colStop = colSelection[1];
-            
-            // Calculate chunk indices
-            const rowChunkStart = Math.floor(rowStart / chunks[0]);
-            const rowChunkStop = Math.ceil(rowStop / chunks[0]);
-            const colChunkStart = Math.floor(colStart / chunks[1]);
-            const colChunkStop = Math.ceil(colStop / chunks[1]);
-            
-            // If selection is within a single chunk, use direct selection
-            if (rowChunkStart === rowChunkStop - 1 && colChunkStart === colChunkStop - 1) {
-                return await array.get(selection);
-            }
-            
-            // If the selection spans multiple chunks, divide into smaller requests
-            // and load them in parallel for better performance
-            const requests = [];
-            
-            for (let rowChunk = rowChunkStart; rowChunk < rowChunkStop; rowChunk++) {
-                for (let colChunk = colChunkStart; colChunk < colChunkStop; colChunk++) {
-                    const chunkRowStart = Math.max(rowChunk * chunks[0], rowStart);
-                    const chunkRowStop = Math.min((rowChunk + 1) * chunks[0], rowStop);
-                    const chunkColStart = Math.max(colChunk * chunks[1], colStart);
-                    const chunkColStop = Math.min((colChunk + 1) * chunks[1], colStop);
-                    
-                    if (chunkRowStart < chunkRowStop && chunkColStart < chunkColStop) {
-                        requests.push({
-                            selection: [
-                                [chunkRowStart, chunkRowStop],
-                                [chunkColStart, chunkColStop]
-                            ],
-                            rowOffset: chunkRowStart - rowStart,
-                            colOffset: chunkColStart - colStart
-                        });
-                    }
-                }
-            }
-            
-            // Create result array
-            const rowCount = rowStop - rowStart;
-            const colCount = colStop - colStart;
-            const dtype = array.dtype;
-            const result = new (dtype === 'float32' ? Float32Array : 
-                               dtype === 'float64' ? Float64Array : 
-                               dtype === 'int32' ? Int32Array : 
-                               dtype === 'int16' ? Int16Array : 
-                               dtype === 'int8' ? Int8Array : 
-                               dtype === 'uint32' ? Uint32Array : 
-                               dtype === 'uint16' ? Uint16Array : 
-                               dtype === 'uint8' ? Uint8Array : 
-                               Array)(rowCount * colCount);
-            
-            // Load chunks in parallel
-            await Promise.all(requests.map(async (request) => {
-                const chunkData = await array.get(request.selection);
-                const chunkRows = request.selection[0][1] - request.selection[0][0];
-                const chunkCols = request.selection[1][1] - request.selection[1][0];
-                
-                // Copy chunk data to result array
-                for (let i = 0; i < chunkRows; i++) {
-                    for (let j = 0; j < chunkCols; j++) {
-                        const resultIdx = (request.rowOffset + i) * colCount + (request.colOffset + j);
-                        const chunkIdx = i * chunkCols + j;
-                        result[resultIdx] = chunkData[chunkIdx];
-                    }
-                }
-            }));
-            
-            // Reshape result to match the expected shape
-            const resultArray = [];
-            for (let i = 0; i < rowCount; i++) {
-                const row = [];
-                for (let j = 0; j < colCount; j++) {
-                    row.push(result[i * colCount + j]);
-                }
-                resultArray.push(row);
-            }
-            
-            return resultArray;
+            return await response.json();
         } catch (error) {
-            console.error(`Error loading chunked data from ${path}:`, error);
-            throw error;
+            this.defaultErrorHandler(error);
         }
     }
     
@@ -981,96 +339,77 @@ class ZarrLoader {
      * @param {string} path - Path to the zarr array
      * @param {Function} callback - Callback function called with loaded data chunks and progress
      * @param {Object} options - Options for progressive loading
-     * @param {number} options.chunkSize - Size of chunks to load at once
-     * @param {number} options.throttleMs - Minimum time between progress callbacks
+     * @param {number} options.chunkSize - Size of chunks to load at once (sent to backend)
      * @returns {Promise<Object>} The complete loaded data
      */
     async loadProgressively(path, callback, options = {}) {
-        // Check if zarr is available
-        checkZarrAvailability();
-        
-        if (!this.store) {
-            throw new Error('No zarr store loaded');
+        if (!path) {
+            throw new Error('Path is required');
         }
         
-        const chunkSize = options.chunkSize || 1000; // Default chunk size
-        const throttleMs = options.throttleMs || 100; // Default throttle
-        
         try {
-            // Open the zarr array
-            const array = await zarr.open(this.store, path);
+            const queryParams = new URLSearchParams();
+            queryParams.append('path', path);
             
-            // Get array info
-            const shape = array.shape;
-            
-            // For 1D arrays
-            if (shape.length === 1) {
-                const totalSize = shape[0];
-                const chunks = Math.ceil(totalSize / chunkSize);
-                
-                let result = [];
-                let lastCallbackTime = 0;
-                
-                for (let i = 0; i < chunks; i++) {
-                    const start = i * chunkSize;
-                    const stop = Math.min((i + 1) * chunkSize, totalSize);
-                    
-                    const chunk = await array.get([[start, stop]]);
-                    result = result.concat(Array.from(chunk));
-                    
-                    const now = Date.now();
-                    if (now - lastCallbackTime >= throttleMs) {
-                        const progress = (i + 1) / chunks;
-                        callback(result, progress);
-                        lastCallbackTime = now;
-                    }
-                }
-                
-                return result;
+            if (options.chunkSize) {
+                queryParams.append('chunk_size', options.chunkSize);
             }
             
-            // For 2D arrays
-            if (shape.length === 2) {
-                const rows = shape[0];
-                const cols = shape[1];
-                const rowChunks = Math.ceil(rows / chunkSize);
-                
-                let result = new Array(rows);
-                for (let i = 0; i < rows; i++) {
-                    result[i] = new Array(cols);
-                }
-                
-                let lastCallbackTime = 0;
-                
-                for (let i = 0; i < rowChunks; i++) {
-                    const rowStart = i * chunkSize;
-                    const rowStop = Math.min((i + 1) * chunkSize, rows);
-                    
-                    const chunk = await array.get([[rowStart, rowStop], null]);
-                    
-                    // Copy chunk data to result
-                    for (let r = 0; r < (rowStop - rowStart); r++) {
-                        result[rowStart + r] = chunk[r];
-                    }
-                    
-                    const now = Date.now();
-                    if (now - lastCallbackTime >= throttleMs) {
-                        const progress = (i + 1) / rowChunks;
-                        callback(result, progress);
-                        lastCallbackTime = now;
-                    }
-                }
-                
-                return result;
-            }
+            // Set up Server-Sent Events connection for streaming data
+            const eventSource = new EventSource(`${this.apiUrl}/zarr/progressive?${queryParams.toString()}`);
             
-            // For higher dimensions, just load all at once
-            const data = await array.get();
-            callback(data, 1.0);
-            return data;
+            return new Promise((resolve, reject) => {
+                let accumulatedData = null;
+                
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.error) {
+                            reject(new Error(data.error));
+                            eventSource.close();
+                            return;
+                        }
+                        
+                        if (data.progress && data.chunk) {
+                            // Accumulate data
+                            if (!accumulatedData) {
+                                accumulatedData = data.chunk;
+                            } else {
+                                // Append to accumulated data based on dimensionality
+                                if (Array.isArray(data.chunk)) {
+                                    if (Array.isArray(data.chunk[0])) {
+                                        // 2D data
+                                        accumulatedData = [...accumulatedData, ...data.chunk];
+                                    } else {
+                                        // 1D data
+                                        accumulatedData = [...accumulatedData, ...data.chunk];
+                                    }
+                                }
+                            }
+                            
+                            // Call the callback with accumulated data and progress
+                            callback(accumulatedData, data.progress);
+                            
+                            // If complete, resolve the promise
+                            if (data.progress >= 1.0) {
+                                resolve(accumulatedData);
+                                eventSource.close();
+                            }
+                        }
+                    } catch (error) {
+                        reject(error);
+                        eventSource.close();
+                    }
+                };
+                
+                eventSource.onerror = (error) => {
+                    reject(new Error('Error in SSE connection'));
+                    eventSource.close();
+                };
+            });
         } catch (error) {
-            console.error(`Error loading data progressively from ${path}:`, error);
-            throw error;
+            this.defaultErrorHandler(error);
         }
     }
 }

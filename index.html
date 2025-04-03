@@ -15,21 +15,33 @@
         window.Annzarro = window.Annzarro || {};
         window.Annzarro.config = {
             apiUrl: '/api/v1',  // Default API URL
-            useServer: true,    // Set to true when using the Python server
+            useServer: true,    // Always use the Python server
             // Feature flags
             features: {
-                pythonBackend: true,  // Use Python backend for zarr data access
+                pythonBackend: true,  // Always use Python backend for zarr data access
                 lazyLoading: true,    // Use lazy loading for large datasets
                 embeddingSupport: true // Enable embedding visualization
             }
         };
         
-        // Check if we're running from a file:// URL or Python server
+        // Check if we're running from a file:// URL 
         if (window.location.protocol === 'file:') {
-            // Fallback to JS-only mode when opened directly in browser (file://)
-            window.Annzarro.config.useServer = false;
-            window.Annzarro.config.features.pythonBackend = false;
-            console.warn('Running in JS-only mode (no Python backend)');
+            // Inform user that the app requires a Python backend server
+            console.error('This application requires the Python backend server to be running.');
+            // We'll show a warning to the user in the UI
+            window.addEventListener('DOMContentLoaded', function() {
+                document.body.innerHTML = `
+                    <div class="container p-5 text-center">
+                        <div class="alert alert-danger">
+                            <h4>Backend Server Required</h4>
+                            <p>This application cannot run directly from a file:// URL.</p>
+                            <p>Please run the Python server using:</p>
+                            <pre class="bg-light p-3 mt-3">python run_annzarro.py --start</pre>
+                            <p>Then access the application at: <a href="http://localhost:8080">http://localhost:8080</a></p>
+                        </div>
+                    </div>
+                `;
+            });
         }
     </script>
     
@@ -42,12 +54,7 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     
-    <!-- Load zarr.js only when not using Python backend -->
-    <script>
-        if (!window.Annzarro.config.features.pythonBackend) {
-            document.write('<script src="lib/zarr.umd.js"><\/script>');
-        }
-    </script>
+    <!-- Using Python backend exclusively for zarr operations -->
     
     <!-- Load application scripts -->
     <script src="js/utils.js" defer></script>

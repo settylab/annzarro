@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Enable CORS by default for all routes - important for frontend communication
+CORS(app)
+
 # Default config
 DEFAULT_CONFIG = {
     "host": "127.0.0.1",
@@ -753,6 +756,315 @@ def get_progressive_data(data_path):
         mimetype="application/x-ndjson"
     )
 
+
+@app.route(f"/api/{API_VERSION}/zarr/upload", methods=["POST"])
+def upload_zarr_files():
+    """
+    Upload zarr files to the server.
+    
+    Returns:
+        JSON response with upload status
+    """
+    try:
+        if 'files[]' not in request.files:
+            return jsonify({"error": "No files uploaded"}), 400
+            
+        files = request.files.getlist('files[]')
+        if not files:
+            return jsonify({"error": "No files selected"}), 400
+            
+        # Create a temporary directory for the uploaded files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save all files to the temporary directory
+            for file in files:
+                # Get the path from the filename (might include subdirectories)
+                relative_path = file.filename
+                if not relative_path:
+                    continue
+                    
+                # Create subdirectories if needed
+                full_path = os.path.join(temp_dir, relative_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                
+                # Save the file
+                file.save(full_path)
+            
+            # Load the zarr dataset
+            zarr_path = temp_dir
+            try:
+                # Initialize the zarr reader with the uploaded files
+                zarr_reader.load_zarr(zarr_path)
+                
+                # Initialize the data manager with the zarr dataset
+                data_manager.load_from_zarr(zarr_reader)
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Zarr dataset loaded successfully",
+                    "datasetInfo": {
+                        "name": os.path.basename(zarr_path),
+                        "path": zarr_path,
+                        "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error loading zarr dataset: {e}")
+                return jsonify({"error": f"Error loading zarr dataset: {str(e)}"}), 500
+    except Exception as e:
+        logger.error(f"Error uploading files: {e}")
+        return jsonify({"error": f"Error uploading files: {str(e)}"}), 500
+
+
+@app.route(f"/api/{API_VERSION}/zarr/url", methods=["POST"])
+def load_zarr_from_url():
+    """
+    Load zarr dataset from URL.
+    
+    Returns:
+        JSON response with loading status
+    """
+    try:
+        # Get URL from request
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({"error": "No URL provided"}), 400
+            
+        url = data['url']
+        
+        # Load the zarr dataset from URL
+        try:
+            # Initialize the zarr reader with the URL
+            # Note: This function may need to be implemented in zarr_reader
+            if hasattr(zarr_reader, 'load_zarr_from_url'):
+                zarr_reader.load_zarr_from_url(url)
+            else:
+                # Fallback to regular load_zarr if from_url is not implemented
+                zarr_reader.load_zarr(url)
+            
+            # Initialize the data manager with the zarr dataset
+            data_manager.load_from_zarr(zarr_reader)
+            
+            return jsonify({
+                "success": True,
+                "message": "Zarr dataset loaded successfully from URL",
+                "datasetInfo": {
+                    "name": os.path.basename(url),
+                    "path": url,
+                    "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error loading zarr dataset from URL: {e}")
+            return jsonify({"error": f"Error loading zarr dataset from URL: {str(e)}"}), 500
+    except Exception as e:
+        logger.error(f"Error processing URL request: {e}")
+        return jsonify({"error": f"Error processing URL request: {str(e)}"}), 500
+
+
+@app.route(f"/api/{API_VERSION}/zarr/s3", methods=["POST"])
+def load_zarr_from_s3():
+    """
+    Load zarr dataset from S3.
+    
+    Returns:
+        JSON response with loading status
+    """
+    try:
+        # Get S3 configuration from request
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No S3 configuration provided"}), 400
+            
+        # Validate required fields
+        if 'bucket' not in data or 'key' not in data:
+            return jsonify({"error": "S3 bucket and key are required"}), 400
+            
+        # Configure S3 parameters
+        s3_params = {
+            'bucket': data['bucket'],
+            'key': data['key'],
+            'region': data.get('region', 'us-east-1'),
+            'anonymous': data.get('anonymous', True)
+        }
+        
+        # Add credentials if not anonymous
+        if not s3_params['anonymous'] and 'accessKey' in data and 'secretKey' in data:
+            s3_params['aws_access_key_id'] = data['accessKey']
+            s3_params['aws_secret_access_key'] = data['secretKey']
+        
+        # Load the zarr dataset from S3
+        try:
+            # Initialize the zarr reader with the S3 parameters
+            # Note: This function may need to be implemented in zarr_reader
+            if hasattr(zarr_reader, 'load_zarr_from_s3'):
+                zarr_reader.load_zarr_from_s3(**s3_params)
+            else:
+                # Fallback to url-based loading if S3 is not directly supported
+                s3_url = f"s3://{s3_params['bucket']}/{s3_params['key']}"
+                if hasattr(zarr_reader, 'load_zarr_from_url'):
+                    zarr_reader.load_zarr_from_url(s3_url)
+                else:
+                    return jsonify({"error": "S3 loading not supported by zarr reader"}), 501
+            
+            # Initialize the data manager with the zarr dataset
+            data_manager.load_from_zarr(zarr_reader)
+            
+            return jsonify({
+                "success": True,
+                "message": "Zarr dataset loaded successfully from S3",
+                "datasetInfo": {
+                    "name": os.path.basename(s3_params['key']),
+                    "path": f"s3://{s3_params['bucket']}/{s3_params['key']}",
+                    "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error loading zarr dataset from S3: {e}")
+            return jsonify({"error": f"Error loading zarr dataset from S3: {str(e)}"}), 500
+    except Exception as e:
+        logger.error(f"Error processing S3 request: {e}")
+        return jsonify({"error": f"Error processing S3 request: {str(e)}"}), 500
+
+
+@app.route(f"/api/{API_VERSION}/zarr/to_anndata", methods=["GET"])
+def convert_to_anndata():
+    """
+    Convert current zarr store to AnnData-like structure.
+    
+    Returns:
+        JSON response with AnnData structure
+    """
+    try:
+        # Check if zarr dataset is loaded
+        if not hasattr(zarr_reader, 'is_initialized') or not zarr_reader.is_initialized():
+            return jsonify({"error": "No zarr dataset loaded"}), 400
+        
+        # Get basic shape and structure info
+        shape = data_manager.get_shape()
+        
+        # Create a simplified AnnData structure based on available information
+        result = {
+            "shape": list(shape) if shape else [0, 0],
+            "X": {
+                "shape": list(shape) if shape else [0, 0],
+                "dtype": "float32",
+                "path": "X"
+            },
+            "observations": shape[0] if shape else 0,
+            "variables": shape[1] if shape else 0,
+            "obs": {},
+            "var": {},
+            "obsm": {},
+            "layers": {}
+        }
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error converting to AnnData: {e}")
+        return jsonify({"error": f"Error converting to AnnData: {str(e)}"}), 500
+
+
+@app.route(f"/api/{API_VERSION}/zarr/data", methods=["GET"])
+def get_zarr_data():
+    """
+    Get data from zarr array.
+    
+    Returns:
+        JSON response with array data
+    """
+    try:
+        # Get parameters
+        path = request.args.get("path")
+        selection_str = request.args.get("selection")
+        
+        if not path:
+            return jsonify({"error": "Path parameter is required"}), 400
+        
+        # Parse selection if provided
+        selection = None
+        if selection_str:
+            try:
+                selection = json.loads(selection_str)
+            except json.JSONDecodeError:
+                return jsonify({"error": "Invalid selection format"}), 400
+        
+        # Get data from zarr array
+        if hasattr(zarr_reader, 'get_array'):
+            data = zarr_reader.get_array(path, selection)
+        else:
+            # Fallback to data manager methods
+            if path == 'X':
+                data = data_manager.get_X()
+            elif path.startswith('obs/'):
+                column = path.split('/', 1)[1] if '/' in path else None
+                data = data_manager.get_obs(column)
+            elif path.startswith('var/'):
+                column = path.split('/', 1)[1] if '/' in path else None
+                data = data_manager.get_var(column)
+            elif path.startswith('obsm/'):
+                key = path.split('/', 1)[1] if '/' in path else None
+                data = data_manager.get_obsm(key)
+            else:
+                return jsonify({"error": f"Unsupported path: {path}"}), 400
+        
+        # Convert to JSON-serializable format
+        if hasattr(data, "tolist"):
+            result = data.tolist()
+        else:
+            result = data
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting zarr data: {e}")
+        return jsonify({"error": f"Error getting zarr data: {str(e)}"}), 500
+
+
+@app.route(f"/api/{API_VERSION}/zarr/chunked_data", methods=["GET"])
+def get_chunked_data():
+    """
+    Get data using optimized chunking strategy.
+    
+    Returns:
+        JSON response with chunked array data
+    """
+    try:
+        # Get parameters
+        path = request.args.get("path")
+        selection_str = request.args.get("selection")
+        
+        if not path:
+            return jsonify({"error": "Path parameter is required"}), 400
+        
+        # Parse selection if provided
+        selection = None
+        if selection_str:
+            try:
+                selection = json.loads(selection_str)
+            except json.JSONDecodeError:
+                return jsonify({"error": "Invalid selection format"}), 400
+        
+        # Get data with chunking optimization
+        if hasattr(zarr_reader, 'load_chunked_data'):
+            data = zarr_reader.load_chunked_data(path, selection)
+        else:
+            # Fallback to regular data access if chunked method not available
+            if hasattr(zarr_reader, 'get_array'):
+                data = zarr_reader.get_array(path, selection)
+            else:
+                return jsonify({"error": "Chunked data loading not supported"}), 501
+        
+        # Convert to JSON-serializable format
+        if hasattr(data, "tolist"):
+            result = data.tolist()
+        else:
+            result = data
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting chunked zarr data: {e}")
+        return jsonify({"error": f"Error getting chunked zarr data: {str(e)}"}), 500
+
+
 def run_server(config_file: Optional[str] = None, 
               debug: bool = False, 
               port: Optional[int] = None) -> None:
@@ -786,6 +1098,11 @@ def run_server(config_file: Optional[str] = None,
     # Configure Flask app
     app.config.update(config)
     configure_app(app, config)
+    
+    # Ensure data directory exists
+    data_dir = config.get("data_dir", "data")
+    os.makedirs(data_dir, exist_ok=True)
+    logger.info(f"Using data directory: {data_dir}")
     
     # Run the server
     ssl_context = None

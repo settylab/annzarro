@@ -72,13 +72,55 @@ python run_annzarro.py --start --port 8000
 annzarro server --port 8000
 
 # OR using the run_annzarro.py script
-python run_annzarro.py --start --port 8000
+python run_annzarro.py --start
 ```
 
 Then open your browser and navigate to:
 ```
-http://localhost:8000
+http://localhost:8080
 ```
+
+### Server Management
+
+AnnZarro provides tools to manage the application servers:
+
+1. Check server status:
+   ```bash
+   python server_status.py
+   ```
+
+2. Start the servers:
+   ```bash
+   python run_annzarro.py --start
+   ```
+
+3. Stop the servers:
+   ```bash
+   python run_annzarro.py --stop
+   ```
+
+4. Stop specific servers (useful for port conflicts):
+   ```bash
+   python server_status.py --stop-backend
+   python server_status.py --stop-frontend
+   python server_status.py --stop-all
+   ```
+
+### Troubleshooting
+
+If you encounter "Address already in use" errors when starting the server:
+
+1. Check what's using the ports:
+   ```bash
+   python server_status.py
+   ```
+
+2. Stop any conflicting processes:
+   ```bash
+   python server_status.py --stop-all
+   ```
+
+3. If the issue persists, you can change the backend port in `annzarro/server/config.json`
 
 ### Command Line Interface (CLI)
 
