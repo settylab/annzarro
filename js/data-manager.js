@@ -7,9 +7,26 @@
  * 4. Caching data for better performance
  */
 
-// Import dependencies in Node environment
-if (typeof require !== 'undefined') {
-    var zarrLoader = require('./zarr-loader');
+/**
+ * Helper function to access the zarrLoader dependency safely
+ * This avoids variable declarations that might conflict
+ */
+function getZarrLoader() {
+    // Node environment
+    if (typeof require !== 'undefined') {
+        return require('./zarr-loader');
+    }
+    // Annzarro modules
+    if (typeof Annzarro !== 'undefined' && Annzarro.modules && Annzarro.modules.zarrLoader) {
+        return Annzarro.modules.zarrLoader;
+    }
+    // Global fallback
+    if (typeof window !== 'undefined' && window.zarrLoader) {
+        return window.zarrLoader;
+    }
+    
+    console.error('ZarrLoader dependency not found');
+    return null;
 }
 
 class DataManager {
@@ -46,6 +63,11 @@ class DataManager {
      */
     async loadFromZarr(zarrStore) {
         try {
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
             // If provided with a zarrStore, set it on the zarrLoader
             if (zarrStore && typeof zarrStore === 'object') {
                 zarrLoader.store = zarrStore;
@@ -169,6 +191,10 @@ class DataManager {
             }
             
             let result;
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
             
             // If column is null, load all columns
             if (column === null) {
@@ -228,6 +254,10 @@ class DataManager {
             }
             
             let result;
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
             
             // If column is null, load all columns
             if (column === null) {
@@ -322,6 +352,11 @@ class DataManager {
             }
             
             // Load the data
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
             const result = await zarrLoader.loadData('X', selection);
             
             // Cache the result
@@ -391,6 +426,11 @@ class DataManager {
             }
             
             // Load the data
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
             const result = await zarrLoader.loadData(`layers/${layer}`, selection);
             
             // Cache the result
@@ -438,6 +478,11 @@ class DataManager {
             }
             
             // Load the data
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
             const result = await zarrLoader.loadData(`obsm/${obsm}`, selection);
             
             // Cache the result
@@ -485,6 +530,11 @@ class DataManager {
             }
             
             // Load the data
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
             const result = await zarrLoader.loadData(`varm/${varm}`, selection);
             
             // Cache the result
@@ -523,6 +573,11 @@ class DataManager {
                 result = this.anndata.uns[key].value;
             } else {
                 // Load the data from zarr
+                const zarrLoader = getZarrLoader();
+                if (!zarrLoader) {
+                    throw new Error('ZarrLoader not found');
+                }
+                
                 result = await zarrLoader.loadData(`uns/${key}`);
             }
             
@@ -929,5 +984,11 @@ const dataManager = new DataManager();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = dataManager;
 } else if (typeof window !== 'undefined') {
-    window.dataManager = dataManager;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('dataManager', dataManager);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.dataManager = dataManager;
+    }
 }

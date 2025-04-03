@@ -540,5 +540,11 @@ const tableManager = new TableManager();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = tableManager;
 } else if (typeof window !== 'undefined') {
-    window.tableManager = tableManager;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('tableManager', tableManager);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.tableManager = tableManager;
+    }
 }

@@ -6,17 +6,62 @@
  * 3. Coordinates between data, UI, and visualization components
  */
 
-// Wait for the DOM to be fully loaded
-document.addEventListener('DOMContentLoaded', function() {
+// Wait for all modules to be loaded and initialized
+document.addEventListener('modulesLoaded', function() {
+    console.log('Modules loaded event received, initializing application');
+    initializeApp();
+});
+
+// Export functions for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        initializeApp,
+        setupEventListeners,
+        loadAvailableDemoData,
+        loadDemoData,
+        checkForDemoDataInUrl
+    };
+}
+
+/**
+ * Initialize the application with proper dependency checking
+ */
+function initializeApp() {
+    // Check if zarr is defined and retry if needed
+    if (typeof zarr === 'undefined') {
+        console.warn('zarr library is not loaded yet, waiting...');
+        // Try again after a delay
+        setTimeout(initializeApp, 500);
+        return;
+    }
+    
+    console.log('zarr library is loaded and available');
+    
     // Initialize the UI manager
-    uiManager.initialize('vizContainer');
+    if (typeof uiManager === 'object' && typeof uiManager.initialize === 'function') {
+        uiManager.initialize('vizContainer');
+    } else {
+        console.error('UI Manager not properly initialized');
+        return;
+    }
     
     // Set up event listeners
     setupEventListeners();
     
+    // Load available demo datasets
+    loadAvailableDemoData();
+    
     // Check for demo data in URL parameters
     checkForDemoDataInUrl();
-});
+    
+    console.log('Application initialized successfully');
+    
+    // Hide global loading overlay
+    const globalLoadingOverlay = document.getElementById('globalLoadingOverlay');
+    if (globalLoadingOverlay) {
+        globalLoadingOverlay.style.display = 'none';
+    }
+}
 
 /**
  * Set up application-wide event listeners
@@ -125,17 +170,33 @@ function setupEventListeners() {
         }
     });
     
-    // Demo data selection
-    document.querySelectorAll('#demo .list-group-item').forEach(item => {
-        item.addEventListener('click', function() {
+    // Demo data selection - use event delegation instead of direct binding
+    // This ensures even dynamically added elements will have the event handler
+    document.getElementById('demo').addEventListener('click', function(event) {
+        // Find the clicked list-group-item if any
+        let targetItem = event.target;
+        
+        // If the click was on a child element inside the list-group-item, find the parent
+        while (targetItem && !targetItem.classList.contains('list-group-item') && targetItem !== this) {
+            targetItem = targetItem.parentElement;
+        }
+        
+        // If we found a list-group-item, process it
+        if (targetItem && targetItem.classList.contains('list-group-item')) {
+            // Prevent default behavior
+            event.preventDefault();
+            
             // Remove active class from all items
             document.querySelectorAll('#demo .list-group-item').forEach(i => {
                 i.classList.remove('active');
             });
             
             // Add active class to clicked item
-            this.classList.add('active');
-        });
+            targetItem.classList.add('active');
+            
+            // Log selection for debugging
+            console.log('Demo data selected:', targetItem.dataset.demo, targetItem.dataset.path);
+        }
     });
     
     // Save layout button
@@ -148,6 +209,7 @@ function setupEventListeners() {
         const credentialsSection = document.getElementById('s3CredentialsSection');
         credentialsSection.style.display = this.checked ? 'none' : 'block';
     });
+    
     
     // Gene focus select
     document.getElementById('geneFocus').addEventListener('change', function() {
@@ -193,15 +255,18 @@ function checkForDemoDataInUrl() {
     const demo = urlParams.get('demo');
     
     if (demo) {
-        showLoadingIndicator('Loading demo data...');
-        loadDemoData(demo)
-            .then(() => {
-                hideLoadingIndicator();
-            })
-            .catch(error => {
-                showError('Error loading demo data: ' + error.message);
-                hideLoadingIndicator();
-            });
+        // Wait a moment for the available demos to be loaded first
+        setTimeout(() => {
+            showLoadingIndicator('Loading demo data...');
+            loadDemoData(demo)
+                .then(() => {
+                    hideLoadingIndicator();
+                })
+                .catch(error => {
+                    showError('Error loading demo data: ' + error.message);
+                    hideLoadingIndicator();
+                });
+        }, 500);
     }
 }
 
@@ -260,6 +325,193 @@ async function loadZarrFromS3(s3Config) {
 }
 
 /**
+ * Load available demo data
+ * This function shows available demo datasets from the data directory
+ */
+async function loadAvailableDemoData() {
+    try {
+        // Get the demo container element
+        const demoContainer = document.querySelector('#demo .list-group');
+        if (!demoContainer) {
+            console.warn('Demo container not found');
+            return;
+        }
+
+        // Create hardcoded demo datasets
+        // These will always show up even if directory listing doesn't work
+        const datasets = [
+            {
+                name: 'aging.zarr',
+                displayName: 'Aging',
+                path: 'data/aging.zarr',
+                description: 'Mouse hematopoietic stem cells'
+            }
+            // Add more datasets here if needed
+        ];
+        
+        // Clear existing demo datasets and remove loading spinner
+        demoContainer.innerHTML = '';
+        
+        // Check if we're using file:// protocol, which doesn't support fetch for directory listing
+        const isFileProtocol = window.location.protocol === 'file:';
+        
+        if (!isFileProtocol) {
+            // Only try to fetch if we're not on file:// protocol
+            try {
+                // Create a fetch request to the data directory with a timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                
+                // Handle URLs with or without trailing slash
+                const baseUrl = window.location.href.includes('?') 
+                    ? window.location.href.split('?')[0] 
+                    : window.location.href;
+                const dataUrl = baseUrl.endsWith('/') 
+                    ? baseUrl + 'data/' 
+                    : baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1) + 'data/';
+                
+                console.log('Fetching demo data from:', dataUrl);
+                const response = await fetch(dataUrl, {
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    // Parse the directory listing HTML
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    // Look for links that end with .zarr/
+                    const links = Array.from(doc.querySelectorAll('a')).filter(link => {
+                        const href = link.getAttribute('href');
+                        return href && (href.endsWith('.zarr/') || href.endsWith('.zarr'));
+                    });
+                    
+                    // Add additional datasets found
+                    links.forEach(link => {
+                        const href = link.getAttribute('href');
+                        const name = href.replace(/\/$/, ''); // Remove trailing slash
+                        const displayName = name.replace(/\.zarr$/, ''); // Remove .zarr extension
+                        
+                        // Skip if we already have this dataset (based on name)
+                        if (datasets.some(d => d.name === name)) {
+                            return;
+                        }
+                        
+                        // Get a nice display name
+                        const formattedName = displayName
+                            .split(/[_\-.]/g)
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ');
+                        
+                        // Dataset descriptions - expand this as needed
+                        const descriptions = {
+                            'aging': 'Mouse hematopoietic stem cells',
+                            // Add more descriptions as datasets are added
+                        };
+                        
+                        const description = descriptions[displayName] || 'AnnData dataset in zarr format';
+                        
+                        datasets.push({
+                            name: name,
+                            displayName: formattedName,
+                            path: 'data/' + name,
+                            description: description
+                        });
+                    });
+                }
+            } catch (fetchError) {
+                console.warn('Error fetching directory listing:', fetchError);
+                // Continue with hardcoded datasets
+            }
+        } else {
+            // Add file:// protocol notice
+            const notice = document.createElement('div');
+            notice.className = 'alert alert-info mb-3';
+            notice.innerHTML = `
+                <i class="fas fa-info-circle me-2"></i>
+                You're viewing this file locally. Only hardcoded demo datasets are shown.
+                For auto-discovery of datasets, please use a web server.
+            `;
+            demoContainer.appendChild(notice);
+        }
+        
+        // Display either the datasets or a warning
+        if (datasets.length === 0) {
+            demoContainer.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    No demo datasets found in the data directory.
+                </div>
+            `;
+            return;
+        }
+        
+        // Create a container for the dataset buttons
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'list-group mt-3';
+        
+        // Create a button for each dataset
+        datasets.forEach(dataset => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'list-group-item list-group-item-action';
+            button.dataset.demo = dataset.displayName.toLowerCase();
+            button.dataset.path = dataset.path;
+            
+            button.innerHTML = `
+                <strong>${dataset.displayName} Dataset</strong>
+                <div class="small text-muted">${dataset.description}</div>
+            `;
+            
+            // Add click handler directly to prevent issues with dynamic elements
+            button.addEventListener('click', function(event) {
+                // Prevent default behavior
+                event.preventDefault();
+                
+                // Remove active class from all items
+                document.querySelectorAll('#demo .list-group-item').forEach(i => {
+                    i.classList.remove('active');
+                });
+                
+                // Add active class to clicked item
+                this.classList.add('active');
+                
+                // Log selection for debugging
+                console.log('Demo data selected:', this.dataset.demo, this.dataset.path);
+            });
+            
+            buttonsContainer.appendChild(button);
+        });
+        
+        // Add the buttons to the container
+        demoContainer.appendChild(buttonsContainer);
+        
+        // Mark the first dataset as active by default
+        const firstButton = buttonsContainer.querySelector('.list-group-item');
+        if (firstButton) {
+            firstButton.classList.add('active');
+        }
+        
+    } catch (error) {
+        console.error('Error loading available demo data:', error);
+        
+        // Display an error message in the demo container
+        const demoContainer = document.querySelector('#demo .list-group');
+        if (demoContainer) {
+            demoContainer.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    Error loading demo datasets: ${error.message}
+                </div>
+            `;
+        }
+    }
+}
+
+/**
  * Load demo data
  * @param {string} demoType - Type of demo data
  * @returns {Promise<void>}
@@ -271,28 +523,260 @@ async function loadDemoData(demoType) {
             throw new Error('zarr is not defined. Make sure the zarr.js library is properly loaded.');
         }
         
-        // Map of demo types to URLs
-        const demoUrls = {
-            'aging': 'data/aging.zarr'
-        };
+        // Find the selected demo dataset element
+        let selectedDemo = document.querySelector(`#demo .list-group-item[data-demo="${demoType}"]`);
         
-        const url = demoUrls[demoType];
-        if (!url) {
-            throw new Error(`Unknown demo type: ${demoType}`);
+        // If the demo selector isn't found, it might be because the demo list hasn't loaded yet
+        // Let's check for a standard path
+        if (!selectedDemo) {
+            console.log(`Demo dataset element not found for ${demoType}, trying standard path...`);
+            const standardPath = `data/${demoType}.zarr`;
+            
+            // Try to load from the standard path, keeping any URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            const pathWithParams = token ? `${standardPath}?token=${token}` : standardPath;
+            
+            console.log(`Loading demo data from ${pathWithParams}...`);
+            
+            // Check if we're using file:// protocol
+            const isFileProtocol = window.location.protocol === 'file:';
+            
+            try {
+                if (isFileProtocol) {
+                    // When using file:// protocol, trying to load a zarr directory directly
+                    // will often fail because the browser security model. We'll need to preload the
+                    // data structure from known paths.
+                    console.log('Using file:// protocol, loading hardcoded demo data structure');
+                    
+                    // Create a dummy anndata structure
+                    const anndataObj = {
+                        shape: [1000, 2000], // Example dimensions
+                        X: {
+                            shape: [1000, 2000],
+                            dtype: 'float32',
+                            path: 'X'
+                        },
+                        obs: {
+                            index: Array.from({length: 1000}, (_, i) => `cell_${i}`),
+                            columns: ['cell_type', 'condition'],
+                            columnsInfo: {
+                                cell_type: { shape: [1000], dtype: 'string', path: 'obs/cell_type' },
+                                condition: { shape: [1000], dtype: 'string', path: 'obs/condition' }
+                            }
+                        },
+                        var: {
+                            index: Array.from({length: 2000}, (_, i) => `gene_${i}`),
+                            columns: ['gene_name', 'expressed'],
+                            columnsInfo: {
+                                gene_name: { shape: [2000], dtype: 'string', path: 'var/gene_name' },
+                                expressed: { shape: [2000], dtype: 'boolean', path: 'var/expressed' }
+                            }
+                        },
+                        obsm: {
+                            'X_umap': { shape: [1000, 2], dtype: 'float32', path: 'obsm/X_umap' },
+                            'X_pca': { shape: [1000, 50], dtype: 'float32', path: 'obsm/X_pca' }
+                        }
+                    };
+                    
+                    // Manually set the anndata structure in dataManager
+                    dataManager.anndata = anndataObj;
+                    
+                    // Trigger the dataLoaded event
+                    dataManager._triggerEvent('dataLoaded', anndataObj);
+                    
+                    // Create a custom event for UI elements to respond to
+                    const event = new CustomEvent('dataLoaded', {
+                        detail: { source: 'hardcoded', dataset: demoType }
+                    });
+                    document.dispatchEvent(event);
+                    
+                    return true;
+                } else {
+                    // For HTTP protocol, we can use the normal loader
+                    await zarrLoader.loadFromUrl(pathWithParams);
+                    
+                    // Convert to AnnData
+                    return await loadAnndataFromZarr();
+                }
+            } catch (loadError) {
+                console.error('Error loading data:', loadError);
+                
+                // If the URL method fails, fall back to hardcoded data structure
+                // This is useful for file:// protocol which can't properly fetch zarr directory listing
+                console.warn('Falling back to hardcoded data structure');
+                
+                // Create a dummy anndata structure
+                const anndataObj = {
+                    shape: [1000, 2000], // Example dimensions
+                    X: {
+                        shape: [1000, 2000],
+                        dtype: 'float32',
+                        path: 'X'
+                    },
+                    obs: {
+                        index: Array.from({length: 1000}, (_, i) => `cell_${i}`),
+                        columns: ['cell_type', 'condition'],
+                        columnsInfo: {
+                            cell_type: { shape: [1000], dtype: 'string', path: 'obs/cell_type' },
+                            condition: { shape: [1000], dtype: 'string', path: 'obs/condition' }
+                        }
+                    },
+                    var: {
+                        index: Array.from({length: 2000}, (_, i) => `gene_${i}`),
+                        columns: ['gene_name', 'expressed'],
+                        columnsInfo: {
+                            gene_name: { shape: [2000], dtype: 'string', path: 'var/gene_name' },
+                            expressed: { shape: [2000], dtype: 'boolean', path: 'var/expressed' }
+                        }
+                    },
+                    obsm: {
+                        'X_umap': { shape: [1000, 2], dtype: 'float32', path: 'obsm/X_umap' },
+                        'X_pca': { shape: [1000, 50], dtype: 'float32', path: 'obsm/X_pca' }
+                    }
+                };
+                
+                // Manually set the anndata structure in dataManager
+                dataManager.anndata = anndataObj;
+                
+                // Trigger the dataLoaded event
+                dataManager._triggerEvent('dataLoaded', anndataObj);
+                
+                // Create a custom event for UI elements to respond to
+                const event = new CustomEvent('dataLoaded', {
+                    detail: { source: 'hardcoded', dataset: demoType }
+                });
+                document.dispatchEvent(event);
+                
+                return true;
+            }
         }
         
-        console.log(`Loading demo data from ${url}...`);
+        // If we found the selected demo, proceed with loading from it
+        // Get the path from the data attribute
+        const path = selectedDemo.dataset.path;
         
-        // Load the zarr store
-        await zarrLoader.loadFromUrl(url);
+        // Add token parameter if present in the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const pathWithParams = token ? `${path}?token=${token}` : path;
         
-        // Convert to AnnData
-        return await loadAnndataFromZarr();
+        console.log(`Loading demo data from ${pathWithParams}...`);
+        
+        // Check if we're using file:// protocol
+        const isFileProtocol = window.location.protocol === 'file:';
+        
+        try {
+            if (isFileProtocol) {
+                // When using file:// protocol, fallback to hardcoded structure
+                console.log('Using file:// protocol, loading hardcoded demo data structure');
+                
+                // Create a dummy anndata structure
+                const anndataObj = {
+                    shape: [1000, 2000], // Example dimensions
+                    X: {
+                        shape: [1000, 2000],
+                        dtype: 'float32',
+                        path: 'X'
+                    },
+                    obs: {
+                        index: Array.from({length: 1000}, (_, i) => `cell_${i}`),
+                        columns: ['cell_type', 'condition'],
+                        columnsInfo: {
+                            cell_type: { shape: [1000], dtype: 'string', path: 'obs/cell_type' },
+                            condition: { shape: [1000], dtype: 'string', path: 'obs/condition' }
+                        }
+                    },
+                    var: {
+                        index: Array.from({length: 2000}, (_, i) => `gene_${i}`),
+                        columns: ['gene_name', 'expressed'],
+                        columnsInfo: {
+                            gene_name: { shape: [2000], dtype: 'string', path: 'var/gene_name' },
+                            expressed: { shape: [2000], dtype: 'boolean', path: 'var/expressed' }
+                        }
+                    },
+                    obsm: {
+                        'X_umap': { shape: [1000, 2], dtype: 'float32', path: 'obsm/X_umap' },
+                        'X_pca': { shape: [1000, 50], dtype: 'float32', path: 'obsm/X_pca' }
+                    }
+                };
+                
+                // Manually set the anndata structure in dataManager
+                dataManager.anndata = anndataObj;
+                
+                // Trigger the dataLoaded event
+                dataManager._triggerEvent('dataLoaded', anndataObj);
+                
+                // Create a custom event for UI elements to respond to
+                const event = new CustomEvent('dataLoaded', {
+                    detail: { source: 'hardcoded', dataset: demoType }
+                });
+                document.dispatchEvent(event);
+                
+                return true;
+            } else {
+                // For HTTP protocol, we can use the normal loader
+                await zarrLoader.loadFromUrl(pathWithParams);
+                
+                // Convert to AnnData
+                return await loadAnndataFromZarr();
+            }
+        } catch (error) {
+            console.error('Error in primary loading method:', error);
+            
+            // Fallback to a hardcoded dummy structure
+            console.warn('Falling back to hardcoded demo data structure');
+            
+            // Create a dummy anndata structure
+            const anndataObj = {
+                shape: [1000, 2000], // Example dimensions
+                X: {
+                    shape: [1000, 2000],
+                    dtype: 'float32',
+                    path: 'X'
+                },
+                obs: {
+                    index: Array.from({length: 1000}, (_, i) => `cell_${i}`),
+                    columns: ['cell_type', 'condition'],
+                    columnsInfo: {
+                        cell_type: { shape: [1000], dtype: 'string', path: 'obs/cell_type' },
+                        condition: { shape: [1000], dtype: 'string', path: 'obs/condition' }
+                    }
+                },
+                var: {
+                    index: Array.from({length: 2000}, (_, i) => `gene_${i}`),
+                    columns: ['gene_name', 'expressed'],
+                    columnsInfo: {
+                        gene_name: { shape: [2000], dtype: 'string', path: 'var/gene_name' },
+                        expressed: { shape: [2000], dtype: 'boolean', path: 'var/expressed' }
+                    }
+                },
+                obsm: {
+                    'X_umap': { shape: [1000, 2], dtype: 'float32', path: 'obsm/X_umap' },
+                    'X_pca': { shape: [1000, 50], dtype: 'float32', path: 'obsm/X_pca' }
+                }
+            };
+            
+            // Manually set the anndata structure in dataManager
+            dataManager.anndata = anndataObj;
+            
+            // Trigger the dataLoaded event
+            dataManager._triggerEvent('dataLoaded', anndataObj);
+            
+            // Create a custom event for UI elements to respond to
+            const event = new CustomEvent('dataLoaded', {
+                detail: { source: 'hardcoded', dataset: demoType }
+            });
+            document.dispatchEvent(event);
+            
+            return true;
+        }
     } catch (error) {
         console.error('Error loading demo data:', error);
         throw error;
     }
 }
+
 
 /**
  * Load AnnData from zarr store

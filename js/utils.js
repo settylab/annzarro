@@ -415,5 +415,11 @@ const Utils = {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Utils;
 } else if (typeof window !== 'undefined') {
-    window.Utils = Utils;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('Utils', Utils);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.Utils = Utils;
+    }
 }

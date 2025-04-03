@@ -6,9 +6,26 @@
  * 3. Handling plot interactions (selection, hover, etc.)
  */
 
-// Import dependencies in Node environment
-if (typeof require !== 'undefined') {
-    var Utils = require('./utils');
+/**
+ * Helper function to access the Utils dependency safely
+ * This avoids variable declarations that might conflict
+ */
+function getUtils() {
+    // Node environment
+    if (typeof require !== 'undefined') {
+        return require('./utils');
+    }
+    // Annzarro modules
+    if (typeof Annzarro !== 'undefined' && Annzarro.modules && Annzarro.modules.Utils) {
+        return Annzarro.modules.Utils;
+    }
+    // Global fallback
+    if (typeof window !== 'undefined' && window.Utils) {
+        return window.Utils;
+    }
+    
+    console.error('Utils dependency not found');
+    return null;
 }
 
 class PlotManager {
@@ -63,6 +80,12 @@ class PlotManager {
      * @returns {Object} The created plot object
      */
     createPlot(panelId, plotType, plotData, plotSettings = {}) {
+        const Utils = getUtils();
+        if (!Utils) {
+            console.error('Utils module not found');
+            return null;
+        }
+
         // Get the panel element
         const panelElement = document.getElementById(panelId);
         if (!panelElement) {
@@ -115,6 +138,12 @@ class PlotManager {
      * @returns {Object} The updated plot object
      */
     updatePlot(panelId, newData = null, newSettings = null) {
+        const Utils = getUtils();
+        if (!Utils) {
+            console.error('Utils module not found');
+            return null;
+        }
+
         // Get the plot
         const plotInfo = this.plots.get(panelId);
         if (!plotInfo) {
@@ -443,6 +472,12 @@ class PlotManager {
      * @returns {Object} The created plot object
      */
     createBarPlot(container, data, settings) {
+        const Utils = getUtils();
+        if (!Utils) {
+            console.error('Utils module not found');
+            return null;
+        }
+
         // Extract data for the plot
         const {
             x, y,
@@ -667,5 +702,11 @@ const plotManager = new PlotManager();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = plotManager;
 } else if (typeof window !== 'undefined') {
-    window.plotManager = plotManager;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('plotManager', plotManager);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.plotManager = plotManager;
+    }
 }

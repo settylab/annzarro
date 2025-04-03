@@ -119,6 +119,7 @@ class ZarrLoader {
             throw error;
         }
     }
+    
 
     /**
      * Initialize a zarr store from an S3 bucket
@@ -771,5 +772,11 @@ const zarrLoader = new ZarrLoader();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = zarrLoader;
 } else if (typeof window !== 'undefined') {
-    window.zarrLoader = zarrLoader;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('zarrLoader', zarrLoader);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.zarrLoader = zarrLoader;
+    }
 }

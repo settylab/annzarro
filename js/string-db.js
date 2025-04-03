@@ -362,5 +362,11 @@ const stringDB = new StringDB();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = stringDB;
 } else if (typeof window !== 'undefined') {
-    window.stringDB = stringDB;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('stringDB', stringDB);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.stringDB = stringDB;
+    }
 }

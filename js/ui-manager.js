@@ -6,13 +6,39 @@
  * 3. Handling UI events and user interactions
  */
 
-// Import dependencies in Node environment
-if (typeof require !== 'undefined') {
-    var dataManager = require('./data-manager');
-    var plotManager = require('./plot-manager');
-    var tableManager = require('./table-manager');
-    var stringDB = require('./string-db');
-    var Utils = require('./utils');
+/**
+ * Helper function to access dependencies safely
+ * This avoids variable declarations that might conflict
+ */
+function getDependencies() {
+    let deps = {};
+    
+    // Node environment
+    if (typeof require !== 'undefined') {
+        deps.dataManager = require('./data-manager');
+        deps.plotManager = require('./plot-manager');
+        deps.tableManager = require('./table-manager');
+        deps.stringDB = require('./string-db');
+        deps.Utils = require('./utils');
+    } 
+    // Annzarro modules
+    else if (typeof Annzarro !== 'undefined' && Annzarro.modules) {
+        deps.dataManager = Annzarro.modules.dataManager;
+        deps.plotManager = Annzarro.modules.plotManager;
+        deps.tableManager = Annzarro.modules.tableManager;
+        deps.stringDB = Annzarro.modules.stringDB;
+        deps.Utils = Annzarro.modules.Utils;
+    }
+    // Global fallback
+    else if (typeof window !== 'undefined') {
+        deps.dataManager = window.dataManager;
+        deps.plotManager = window.plotManager;
+        deps.tableManager = window.tableManager;
+        deps.stringDB = window.stringDB;
+        deps.Utils = window.Utils;
+    }
+    
+    return deps;
 }
 
 class UIManager {
@@ -264,6 +290,14 @@ class UIManager {
      * @private
      */
     createPlotPanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const plotManager = deps.plotManager;
+        if (!plotManager) {
+            console.error('PlotManager dependency not found');
+            return container;
+        }
+            
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -351,6 +385,14 @@ class UIManager {
      * @private
      */
     createTablePanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const tableManager = deps.tableManager;
+        if (!tableManager) {
+            console.error('TableManager dependency not found');
+            return container;
+        }
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -436,6 +478,17 @@ class UIManager {
      * @private
      */
     createGeneInfoPanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        const stringDB = deps.stringDB;
+        const plotManager = deps.plotManager;
+        
+        if (!dataManager || !stringDB || !plotManager) {
+            console.error('Dependencies not found');
+            return container;
+        }
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -485,6 +538,15 @@ class UIManager {
      * @private
      */
     createCellInfoPanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) {
+            console.error('DataManager dependency not found');
+            return container;
+        }
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -534,6 +596,16 @@ class UIManager {
      * @private
      */
     createDataExplorerPanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        const Utils = deps.Utils;
+        
+        if (!dataManager || !Utils) {
+            console.error('Dependencies not found');
+            return container;
+        }
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -632,6 +704,15 @@ class UIManager {
      * @private
      */
     createStringDbPanel(container, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const stringDB = deps.stringDB;
+        
+        if (!stringDB) {
+            console.error('StringDB dependency not found');
+            return container;
+        }
+        
         // Create the panel header
         const header = document.createElement('div');
         header.className = 'panel-header';
@@ -868,6 +949,8 @@ class UIManager {
         document.addEventListener('focusChanged', event => {
             const focusType = event.detail.type;
             const focusValue = event.detail.value;
+            const deps = getDependencies();
+            const dataManager = deps.dataManager;
             
             if (focusType === 'gene') {
                 // Update gene info panels
@@ -897,6 +980,15 @@ class UIManager {
      * @private
      */
     _updateDataStatusBar() {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        const Utils = deps.Utils;
+        
+        if (!dataManager || !Utils) {
+            console.error('Dependencies not found');
+            return;
+        }
+        
         const statusBar = document.getElementById('dataStatusBar');
         const datasetName = document.getElementById('datasetName');
         const datasetStats = document.getElementById('datasetStats');
@@ -995,7 +1087,10 @@ class UIManager {
      * @private
      */
     _updatePlotSettingsOptions() {
-        if (!dataManager.isDataLoaded()) return;
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager || !dataManager.isDataLoaded()) return;
         
         // Get data info
         const info = dataManager.getBasicInfo();
@@ -1057,7 +1152,10 @@ class UIManager {
      * @private
      */
     _applyPlotSettings(panelId, settings) {
-        if (!dataManager.isDataLoaded()) return;
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager || !dataManager.isDataLoaded()) return;
         
         // Get the panel
         const panel = this.panels.get(panelId);
@@ -1107,6 +1205,13 @@ class UIManager {
      * @private
      */
     async _loadPlotData(config) {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) {
+            throw new Error('DataManager dependency not found');
+        }
+        
         // Parse axis specifications
         const xAxisSpec = config.xAxis.split(':');
         const yAxisSpec = config.yAxis.split(':');
@@ -1160,6 +1265,13 @@ class UIManager {
      * @private
      */
     async _loadAxisData(axisSpec) {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) {
+            throw new Error('DataManager dependency not found');
+        }
+        
         const source = axisSpec[0];
         const key = axisSpec[1];
         const index = axisSpec.length > 2 ? parseInt(axisSpec[2]) : null;
@@ -1207,6 +1319,16 @@ class UIManager {
      * @private
      */
     _displayGeneInfo(containerId, gene, speciesId = 9606) {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        const stringDB = deps.stringDB;
+        const plotManager = deps.plotManager;
+        
+        if (!dataManager || !stringDB || !plotManager) {
+            console.error('Dependencies not found');
+            return;
+        }
+        
         // Get the container element
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -1309,6 +1431,14 @@ class UIManager {
      * @private
      */
     _displayCellInfo(containerId, cell) {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) {
+            console.error('DataManager dependency not found');
+            return;
+        }
+        
         // Get the container element
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -1475,6 +1605,14 @@ class UIManager {
      * @private
      */
     _displayStringDbNetwork(containerId, genes, speciesId = 9606) {
+        const deps = getDependencies();
+        const stringDB = deps.stringDB;
+        
+        if (!stringDB) {
+            console.error('StringDB dependency not found');
+            return;
+        }
+        
         // Get the container element
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -1532,10 +1670,11 @@ class UIManager {
      * @private
      */
     _populateDataExplorer(containerId) {
-        // This function would populate the data explorer tabs with information from the loaded AnnData
-        // For brevity, this implementation is placeholder and would need to be expanded
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        const Utils = deps.Utils;
         
-        if (!dataManager.isDataLoaded()) return;
+        if (!dataManager || !Utils || !dataManager.isDataLoaded()) return;
         
         // Get basic info
         const info = dataManager.getBasicInfo();
@@ -1567,5 +1706,11 @@ const uiManager = new UIManager();
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = uiManager;
 } else if (typeof window !== 'undefined') {
-    window.uiManager = uiManager;
+    // Register with the module loader if available
+    if (window.Annzarro) {
+        window.Annzarro.registerModule('uiManager', uiManager);
+        window.Annzarro.checkModulesReady();
+    } else {
+        window.uiManager = uiManager;
+    }
 }

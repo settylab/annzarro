@@ -65,4 +65,27 @@ describe('Index.html', () => {
     expect(loadDataBtn.getAttribute('data-bs-toggle')).toBe('modal');
     expect(loadDataBtn.getAttribute('data-bs-target')).toBe('#loadDataModal');
   });
+
+  test('has demo data tab in load data modal', () => {
+    const demoTab = document.getElementById('demo-tab');
+    expect(demoTab).toBeTruthy();
+    expect(demoTab.getAttribute('data-bs-target')).toBe('#demo');
+    
+    // Verify demo tab content exists
+    const demoTabContent = document.getElementById('demo');
+    expect(demoTabContent).toBeTruthy();
+    
+    // Verify list group for demo datasets exists
+    const demoListGroup = demoTabContent.querySelector('.list-group');
+    expect(demoListGroup).toBeTruthy();
+    
+    // Verify loading indicator is present initially
+    const loadingSpinner = demoListGroup.querySelector('.spinner-border');
+    expect(loadingSpinner).toBeTruthy();
+    
+    // Verify help text is present
+    const helpText = demoTabContent.querySelector('.text-muted');
+    expect(helpText).toBeTruthy();
+    expect(helpText.textContent).toContain('Add your own datasets');
+  });
 });
