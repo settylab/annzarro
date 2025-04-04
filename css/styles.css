@@ -203,7 +203,10 @@ body {
 
 .plot-area {
     flex: 1;
-    overflow: hidden;
+    min-height: 300px;
+    overflow: visible !important;
+    width: 100%;
+    position: relative;
 }
 
 /* Table styles */
@@ -308,6 +311,33 @@ body {
 .dataTables_wrapper .dataTables_length,
 .dataTables_wrapper .dataTables_filter {
     padding-bottom: 0.5em;
+}
+
+/* Axis selection dropdown */
+.axis-dropdown {
+    max-width: 350px;
+    width: 350px !important;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.field-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 10px;
+}
+
+.field-item {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.field-item:hover {
+    background-color: #f8f9fa;
 }
 
 /* Custom scrollbar for better visibility */

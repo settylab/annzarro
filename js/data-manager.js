@@ -57,12 +57,35 @@ const DataManager = (function() {
                 _activeDataset = path;
                 _datasetInfo = info;
                 _datasetRegistry[path] = info;
+                
+                console.log("Dataset loaded with legacy info endpoint:", info);
             } else {
                 const structureInfo = await response.json();
                 
                 _activeDataset = path;
                 _datasetInfo = structureInfo;
                 _datasetRegistry[path] = structureInfo;
+                
+                console.log("Dataset structure loaded:", structureInfo);
+                
+                // Log specific obsm information
+                if (structureInfo.obsm && structureInfo.obsm.available) {
+                    console.log("Available obsm keys:", structureInfo.obsm.keys || []);
+                    if (structureInfo.obsm.dataframes) {
+                        console.log("obsm dataframes:", structureInfo.obsm.dataframes);
+                    }
+                    if (structureInfo.obsm.matrices) {
+                        console.log("obsm matrices:", structureInfo.obsm.matrices);
+                    }
+                    
+                    if (structureInfo.embeddings && structureInfo.embeddings.length > 0) {
+                        console.log("Available embeddings:", structureInfo.embeddings);
+                    } else {
+                        console.warn("No embeddings found in the dataset. UMAP/tSNE plots may not work.");
+                    }
+                } else {
+                    console.warn("No obsm data available in this dataset. UMAP/tSNE plots will not work.");
+                }
             }
             
             // Clear caches when loading new dataset
@@ -75,6 +98,20 @@ const DataManager = (function() {
             // Reset focused items
             _focusedGene = null;
             _focusedCell = null;
+            
+            // Preload gene and cell names to ensure they're available
+            try {
+                // Preload in parallel
+                await Promise.all([
+                    loadGeneNames(),  // Preload gene names
+                    loadCellNames()   // Preload cell names
+                ]);
+                
+                console.log('Gene and cell names preloaded successfully');
+            } catch (preloadError) {
+                console.warn('Error preloading gene/cell data:', preloadError);
+                // Continue even if preloading fails
+            }
             
             // Dispatch event to notify components
             const event = new CustomEvent('dataLoaded', { 
@@ -323,39 +360,64 @@ const DataManager = (function() {
             throw new Error("No dataset loaded");
         }
         
+        console.log(`Loading obsm/${key} data for dataset: ${dataset}`);
+        console.log(`Parameters: rowIndices=${rowIndices}, colIndices=${colIndices}, columnName=${columnName}`);
+        
         // Create cache key
-        const cacheKey = `obsm_${key}_${rowIndices.join(',')}_${colIndices.join(',')}_${columnName || ''}`;
+        const rowIndicesStr = rowIndices ? rowIndices.join(',') : 'null';
+        const colIndicesStr = colIndices ? colIndices.join(',') : 'null';
+        const cacheKey = `obsm_${key}_${rowIndicesStr}_${colIndicesStr}_${columnName || ''}`;
         
         // Check cache first
         if (_dataCache[cacheKey]) {
+            console.log(`Using cached obsm/${key} data from key: ${cacheKey}`);
             return _dataCache[cacheKey];
         }
         
         try {
             const params = new URLSearchParams({
-                dataset_path: dataset,
-                rows: rowIndices.join(','),
-                cols: colIndices ? colIndices.join(',') : ''
+                dataset_path: dataset
             });
+            
+            // Only add non-null parameters
+            if (rowIndices) {
+                params.append('rows', rowIndices.join(','));
+            }
+            
+            if (colIndices) {
+                params.append('cols', colIndices.join(','));
+            }
             
             // Add column name for dataframe-encoded matrices
             if (columnName) {
                 params.append('column_name', columnName);
             }
             
-            const response = await fetch(`/api/v1/data/obsm/${encodeURIComponent(key)}?${params}`);
+            const url = `/api/v1/data/obsm/${encodeURIComponent(key)}?${params}`;
+            console.log(`Fetching obsm data from: ${url}`);
+            
+            const response = await fetch(url);
             if (!response.ok) {
-                throw new Error(`Failed to load obsm data: ${response.statusText}`);
+                const errorText = await response.text();
+                console.error(`Server error loading obsm/${key} data: ${response.status} ${response.statusText}`, errorText);
+                throw new Error(`Failed to load obsm data: ${response.statusText} - ${errorText}`);
             }
             
             const result = await response.json();
+            console.log(`Received obsm/${key} data:`, result);
+            
+            if (!result.data || (Array.isArray(result.data) && result.data.length === 0)) {
+                console.warn(`Server returned empty obsm/${key} data`);
+            } else {
+                console.log(`Successfully loaded obsm/${key} data: ${Array.isArray(result.data) ? result.data.length : 'non-array'} rows`);
+            }
             
             // Cache the result
             _dataCache[cacheKey] = result.data;
             
             return result.data;
         } catch (error) {
-            console.error(`Error loading obsm ${key} data:`, error);
+            console.error(`Error loading obsm/${key} data:`, error);
             throw error;
         }
     }
@@ -604,28 +666,39 @@ const DataManager = (function() {
         }
         
         // Check cache first
-        if (_geneCache.names) {
+        if (_geneCache.names && _geneCache.names.length > 0) {
             return _geneCache.names;
         }
         
         try {
+            console.log(`Loading gene names for dataset: ${dataset}`);
+            
             const params = new URLSearchParams({
                 dataset_path: dataset
             });
             
             const response = await fetch(`/api/v1/data/genes?${params}`);
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`Server error loading gene names: ${response.status} ${response.statusText}`, errorText);
                 throw new Error(`Failed to load gene names: ${response.statusText}`);
             }
             
             const result = await response.json();
             
-            // Cache the result
-            _geneCache.names = result.genes;
+            if (!result.genes || result.genes.length === 0) {
+                console.warn("Server returned empty gene list");
+            } else {
+                console.log(`Successfully loaded ${result.genes.length} gene names`);
+            }
             
-            return result.genes;
+            // Cache the result
+            _geneCache.names = result.genes || [];
+            
+            return result.genes || [];
         } catch (error) {
             console.error("Error loading gene names:", error);
+            _geneCache.names = []; // Set empty cache to prevent repeated failures
             throw error;
         }
     }
@@ -641,28 +714,39 @@ const DataManager = (function() {
         }
         
         // Check cache first
-        if (_cellCache.names) {
+        if (_cellCache.names && _cellCache.names.length > 0) {
             return _cellCache.names;
         }
         
         try {
+            console.log(`Loading cell names for dataset: ${dataset}`);
+            
             const params = new URLSearchParams({
                 dataset_path: dataset
             });
             
             const response = await fetch(`/api/v1/data/cells?${params}`);
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`Server error loading cell names: ${response.status} ${response.statusText}`, errorText);
                 throw new Error(`Failed to load cell names: ${response.statusText}`);
             }
             
             const result = await response.json();
             
-            // Cache the result
-            _cellCache.names = result.cells;
+            if (!result.cells || result.cells.length === 0) {
+                console.warn("Server returned empty cell list");
+            } else {
+                console.log(`Successfully loaded ${result.cells.length} cell names`);
+            }
             
-            return result.cells;
+            // Cache the result
+            _cellCache.names = result.cells || [];
+            
+            return result.cells || [];
         } catch (error) {
             console.error("Error loading cell names:", error);
+            _cellCache.names = []; // Set empty cache to prevent repeated failures
             throw error;
         }
     }

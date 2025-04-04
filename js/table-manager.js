@@ -68,10 +68,17 @@ const TableManager = (function() {
                 </div>
             `;
             
-            // Load cell names
-            const cellNames = await DataManager.loadCellNames();
+            // Load cell names with retry if needed
+            let cellNames = await DataManager.loadCellNames();
             if (!cellNames || cellNames.length === 0) {
-                throw new Error('No cell data available');
+                console.warn('Cell names not available on first try, retrying...');
+                // Short delay and retry
+                await new Promise(resolve => setTimeout(resolve, 500));
+                cellNames = await DataManager.loadCellNames();
+                
+                if (!cellNames || cellNames.length === 0) {
+                    throw new Error('No cell data available after retry');
+                }
             }
             
             // Get the first 5 columns from obs if not specified
@@ -242,10 +249,17 @@ const TableManager = (function() {
                 </div>
             `;
             
-            // Load gene names
-            const geneNames = await DataManager.loadGeneNames();
+            // Load gene names with retry if needed
+            let geneNames = await DataManager.loadGeneNames();
             if (!geneNames || geneNames.length === 0) {
-                throw new Error('No gene data available');
+                console.warn('Gene names not available on first try, retrying...');
+                // Short delay and retry
+                await new Promise(resolve => setTimeout(resolve, 500));
+                geneNames = await DataManager.loadGeneNames();
+                
+                if (!geneNames || geneNames.length === 0) {
+                    throw new Error('No gene data available after retry');
+                }
             }
             
             // Get the first 5 columns from var if not specified

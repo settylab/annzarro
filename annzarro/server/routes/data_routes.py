@@ -214,8 +214,21 @@ def register_data_routes(app, api_version):
             # Use direct zarr access for stateless operation
             data = zarr_reader.get_X(dataset_path, row_indices, col_indices)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded X data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             return jsonify({
-                "data": data,
+                "data": serialized_data,
                 "dataset_path": dataset_path
             })
         except Exception as e:
@@ -271,8 +284,21 @@ def register_data_routes(app, api_version):
             # Use direct zarr access for stateless operation
             data = zarr_reader.get_layer(dataset_path, layer_name, row_indices, col_indices)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded layer/{layer_name} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             return jsonify({
-                "data": data,
+                "data": serialized_data,
                 "layer_name": layer_name,
                 "dataset_path": dataset_path
             })
@@ -443,8 +469,21 @@ def register_data_routes(app, api_version):
                                      indices=row_indices, col_indices=col_indices,
                                      column_name=column_name)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded obsm/{obsm_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             response_data = {
-                "data": data,
+                "data": serialized_data,
                 "obsm_key": obsm_key,
                 "dataset_path": dataset_path
             }
@@ -513,8 +552,21 @@ def register_data_routes(app, api_version):
                                      indices=row_indices, col_indices=col_indices,
                                      column_name=column_name)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded varm/{varm_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             response_data = {
-                "data": data,
+                "data": serialized_data,
                 "varm_key": varm_key,
                 "dataset_path": dataset_path
             }
@@ -577,8 +629,21 @@ def register_data_routes(app, api_version):
             # Use direct zarr access for stateless operation
             data = zarr_reader.get_obsp(dataset_path, obsp_key, row_indices, col_indices)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded obsp/{obsp_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             return jsonify({
-                "data": data,
+                "data": serialized_data,
                 "obsp_key": obsp_key,
                 "dataset_path": dataset_path
             })
@@ -635,8 +700,21 @@ def register_data_routes(app, api_version):
             # Use direct zarr access for stateless operation
             data = zarr_reader.get_varp(dataset_path, varp_key, row_indices, col_indices)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded varp/{varp_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             return jsonify({
-                "data": data,
+                "data": serialized_data,
                 "varp_key": varp_key,
                 "dataset_path": dataset_path
             })
@@ -719,9 +797,22 @@ def register_data_routes(app, api_version):
             elif matrix_type == "varp":
                 data, pagination = zarr_reader.get_varp_paginated(dataset_path, key, row_indices, col_indices, page, page_size)
             
+            # Convert NumPy arrays to Python lists for JSON serialization
+            if hasattr(data, 'tolist'):
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded paginated data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
             # Prepare response data
             response_data = {
-                "data": data,
+                "data": serialized_data,
                 "dataset_path": dataset_path,
                 "pagination": pagination
             }
@@ -969,12 +1060,21 @@ def register_data_routes(app, api_version):
             data = zarr_reader.get_data_by_path(data_path, dataset_path=dataset_path, 
                                              indices=row_indices, col_indices=col_indices)
             
-            # Convert data to list for JSON serialization
+            # Convert NumPy arrays to Python lists for JSON serialization
             if hasattr(data, 'tolist'):
-                data = data.tolist()
+                # Direct conversion for simple ndarray
+                serialized_data = data.tolist()
+            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+                # Handle list of ndarrays case
+                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+            else:
+                # Already serializable or empty
+                serialized_data = data
+                
+            logger.info(f"Successfully loaded data from path {data_path}: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
             
             return jsonify({
-                "data": data,
+                "data": serialized_data,
                 "path": data_path,
                 "dataset_path": dataset_path
             })

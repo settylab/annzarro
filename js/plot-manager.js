@@ -91,13 +91,48 @@ const PlotManager = (function() {
             if (mergedConfig.xAxis.path === 'obsm/X_umap' && mergedConfig.xAxis.index === 0 && 
                 mergedConfig.yAxis.path === 'obsm/X_umap' && mergedConfig.yAxis.index === 1) {
                 // Common case: UMAP embedding
+                console.log('Loading UMAP embedding for scatter plot');
                 const embedding = await DataManager.loadObsm('X_umap', null, null);
+                console.log('UMAP embedding loaded:', embedding ? `Array of ${embedding.length} items` : 'null or undefined');
+                
+                // Detailed debug logging
+                if (embedding && embedding.length > 0) {
+                    console.log('First 5 UMAP points:', embedding.slice(0, 5));
+                    console.log('UMAP data type:', Array.isArray(embedding) ? 'Array' : typeof embedding);
+                    
+                    // Check for any null/undefined values
+                    const hasNulls = embedding.some(row => row === null || row === undefined || 
+                                                  !Array.isArray(row) || row.length < 2);
+                    if (hasNulls) {
+                        console.warn('UMAP data contains null/undefined values or rows with insufficient columns');
+                    }
+                }
+                
+                if (!embedding || embedding.length === 0) {
+                    console.error('UMAP embedding is empty or missing');
+                    throw new Error('UMAP data not available. Please check that the dataset contains UMAP coordinates in obsm/X_umap.');
+                }
+                
+                // Extract coordinates and validate them
                 xData = embedding.map(row => row[0]);
                 yData = embedding.map(row => row[1]);
+                
+                // Validate coordinate data
+                if (xData.some(val => val === null || val === undefined || isNaN(val)) ||
+                    yData.some(val => val === null || val === undefined || isNaN(val))) {
+                    console.error('UMAP coordinates contain invalid values');
+                    throw new Error('UMAP data contains invalid coordinates. Please check the data quality.');
+                }
+                
+                console.log(`Extracted coordinates: X (${xData.length} points), Y (${yData.length} points)`);
+                console.log('X range:', [Math.min(...xData), Math.max(...xData)]);
+                console.log('Y range:', [Math.min(...yData), Math.max(...yData)]);
             } else {
                 // General case: load each axis separately
+                console.log(`Loading axis data from paths: X=${mergedConfig.xAxis.path}, Y=${mergedConfig.yAxis.path}`);
                 xData = await loadAxisData(mergedConfig.xAxis.path, mergedConfig.xAxis.index);
                 yData = await loadAxisData(mergedConfig.yAxis.path, mergedConfig.yAxis.index);
+                console.log(`Loaded axis data: X (${xData?.length || 0} points), Y (${yData?.length || 0} points)`);
             }
             
             // Get Z axis data if 3D plot
@@ -212,16 +247,30 @@ const PlotManager = (function() {
             }
             
             // Create plot
+            console.log("Creating plot with data:", {
+                points: trace.x?.length || 0,
+                xRange: trace.x ? [Math.min(...trace.x), Math.max(...trace.x)] : 'N/A',
+                yRange: trace.y ? [Math.min(...trace.y), Math.max(...trace.y)] : 'N/A'
+            });
+            
+            // Ensure the element is visible and has dimensions
+            element.style.visibility = 'visible';
+            element.style.minHeight = '300px';
+            
             await Plotly.newPlot(element, [trace], layout, {
                 responsive: true,
                 displayModeBar: true,
                 modeBarButtonsToRemove: ['toImage', 'sendDataToCloud', 'resetScale2d']
             });
             
+            // Force a resize to ensure plot renders properly
+            window.dispatchEvent(new Event('resize'));
+            
             // Store plot in registry
             _plots[plotId] = {
                 element: element,
                 config: mergedConfig,
+                type: 'scatter',
                 lastUpdate: Date.now()
             };
             
@@ -235,13 +284,34 @@ const PlotManager = (function() {
         } catch (error) {
             console.error('Error creating scatter plot:', error);
             
-            // Show error in element
-            element.innerHTML = `
-                <div class="alert alert-danger">
-                    <h5>Error Creating Plot</h5>
-                    <p>${error.message}</p>
-                </div>
-            `;
+            // Show detailed error in element
+            console.error('Error stack trace:', error.stack);
+            
+            if (mergedConfig.error) {
+                // Use the provided error message from the config
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Plot</h5>
+                        <p>${mergedConfig.error}</p>
+                    </div>
+                `;
+            } else {
+                // Show the error message with detailed information
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Plot</h5>
+                        <p>${error.message}</p>
+                        <div class="mt-3">
+                            <strong>Troubleshooting:</strong>
+                            <ul>
+                                <li>Check if the dataset contains embedding data (UMAP, tSNE, PCA)</li>
+                                <li>Verify that 'obsm' section exists and contains embedding matrices</li>
+                                <li>Check browser console for detailed error logs</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
             
             return null;
         }
@@ -386,6 +456,7 @@ const PlotManager = (function() {
             _plots[plotId] = {
                 element: element,
                 config: mergedConfig,
+                type: 'scatter',
                 lastUpdate: Date.now()
             };
             
@@ -393,14 +464,34 @@ const PlotManager = (function() {
             return plotId;
         } catch (error) {
             console.error('Error creating violin plot:', error);
+            console.error('Error stack trace:', error.stack);
             
-            // Show error in element
-            element.innerHTML = `
-                <div class="alert alert-danger">
-                    <h5>Error Creating Plot</h5>
-                    <p>${error.message}</p>
-                </div>
-            `;
+            // Show detailed error in element
+            if (mergedConfig.error) {
+                // Use the provided error message from the config
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Plot</h5>
+                        <p>${mergedConfig.error}</p>
+                    </div>
+                `;
+            } else {
+                // Show the error message with detailed information
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Violin Plot</h5>
+                        <p>${error.message}</p>
+                        <div class="mt-3">
+                            <strong>Troubleshooting:</strong>
+                            <ul>
+                                <li>Check if the categorical variable exists in the dataset</li>
+                                <li>Verify that gene expression data is available</li>
+                                <li>Check browser console for detailed error logs</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
             
             return null;
         }
@@ -573,6 +664,7 @@ const PlotManager = (function() {
             _plots[plotId] = {
                 element: element,
                 config: mergedConfig,
+                type: 'scatter',
                 lastUpdate: Date.now()
             };
             
@@ -580,14 +672,35 @@ const PlotManager = (function() {
             return plotId;
         } catch (error) {
             console.error('Error creating heatmap:', error);
+            console.error('Error stack trace:', error.stack);
             
-            // Show error in element
-            element.innerHTML = `
-                <div class="alert alert-danger">
-                    <h5>Error Creating Heatmap</h5>
-                    <p>${error.message}</p>
-                </div>
-            `;
+            // Show detailed error in element
+            if (mergedConfig.error) {
+                // Use the provided error message from the config
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Heatmap</h5>
+                        <p>${mergedConfig.error}</p>
+                    </div>
+                `;
+            } else {
+                // Show the error message with detailed information
+                element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Creating Heatmap</h5>
+                        <p>${error.message}</p>
+                        <div class="mt-3">
+                            <strong>Troubleshooting:</strong>
+                            <ul>
+                                <li>Check if the gene and cell data is available</li>
+                                <li>Verify that expression data can be loaded</li>
+                                <li>Reduce the number of cells/genes if the dataset is too large</li>
+                                <li>Check browser console for detailed error logs</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
             
             return null;
         }
@@ -602,6 +715,25 @@ const PlotManager = (function() {
     async function loadAxisData(path, index) {
         if (!path) return null;
         
+        console.log(`Loading axis data from path: ${path}, index: ${index !== undefined ? index : 'undefined'}`);
+        
+        // Handle direct paths from DataManager.loadDataByPath when needed
+        if (path.includes('/') && path.split('/').length > 2) {
+            console.log(`Using direct path loading for complex path: ${path}`);
+            try {
+                const data = await DataManager.loadDataByPath(path, null, null);
+                if (Array.isArray(data)) {
+                    return data;
+                } else {
+                    console.warn(`Data returned from ${path} is not an array:`, data);
+                    return [];
+                }
+            } catch (e) {
+                console.error(`Error loading data by path ${path}:`, e);
+                throw new Error(`Failed to load ${path}: ${e.message}`);
+            }
+        }
+        
         try {
             const pathParts = path.split('/');
             const component = pathParts[0];
@@ -611,104 +743,202 @@ const PlotManager = (function() {
                     // Expression data - need a focused gene
                     const focusedGene = DataManager.getFocusedGene();
                     if (!focusedGene) {
-                        throw new Error('Expression plotting requires a focused gene');
+                        console.error('No focused gene available for X expression plotting');
+                        throw new Error('Expression plotting requires a focused gene. Please select a gene first.');
                     }
                     
-                    // Get gene index
-                    const geneNames = await DataManager.loadGeneNames();
+                    console.log(`Loading X expression data for gene: ${focusedGene}`);
+                    
+                    // Get gene index with retry if needed
+                    let geneNames = await DataManager.loadGeneNames();
+                    if (!geneNames || geneNames.length === 0) {
+                        console.warn('Gene names not available on first try, retrying...');
+                        // Short delay and retry
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        geneNames = await DataManager.loadGeneNames();
+                        
+                        if (!geneNames || geneNames.length === 0) {
+                            throw new Error('Failed to load gene names after retry. Dataset may be missing gene information.');
+                        }
+                    }
+                    
                     const geneIndex = geneNames.indexOf(focusedGene);
                     
                     if (geneIndex === -1) {
-                        throw new Error(`Gene not found: ${focusedGene}`);
+                        console.error(`Gene '${focusedGene}' not found in gene list`);
+                        throw new Error(`Gene not found: ${focusedGene}. Please select a valid gene from the dataset.`);
                     }
+                    
+                    console.log(`Loading X expression data for gene index: ${geneIndex}`);
                     
                     // Load data for this gene
                     const exprData = await DataManager.loadX(null, [geneIndex]);
-                    return exprData.map(row => row[0]);
+                    if (!exprData || exprData.length === 0) {
+                        throw new Error(`No expression data available for gene: ${focusedGene}`);
+                    }
+                    
+                    const result = exprData.map(row => row[0]);
+                    console.log(`Loaded X expression data: ${result.length} points`);
+                    return result;
                 
                 case 'obs':
                     if (pathParts.length < 2) {
-                        throw new Error('Invalid path for obs data');
+                        throw new Error('Invalid path for obs data: missing column name');
                     }
                     
                     const colName = pathParts[1];
+                    console.log(`Loading obs data for column: ${colName}`);
+                    
                     const obsData = await DataManager.loadObs(null, [colName]);
+                    if (!obsData || !obsData[colName] || obsData[colName].length === 0) {
+                        throw new Error(`No data available for obs column: ${colName}`);
+                    }
+                    
+                    console.log(`Loaded obs data for ${colName}: ${obsData[colName].length} values`);
                     return obsData[colName];
                 
                 case 'var':
                     if (pathParts.length < 2) {
-                        throw new Error('Invalid path for var data');
+                        throw new Error('Invalid path for var data: missing column name');
                     }
                     
                     const varName = pathParts[1];
+                    console.log(`Loading var data for column: ${varName}`);
+                    
                     const varData = await DataManager.loadVar(null, [varName]);
+                    if (!varData || !varData[varName] || varData[varName].length === 0) {
+                        throw new Error(`No data available for var column: ${varName}`);
+                    }
+                    
+                    console.log(`Loaded var data for ${varName}: ${varData[varName].length} values`);
                     return varData[varName];
                 
                 case 'obsm':
                     if (pathParts.length < 2) {
-                        throw new Error('Invalid path for obsm data');
+                        throw new Error('Invalid path for obsm data: missing obsm key');
                     }
                     
                     const obsmKey = pathParts[1];
+                    console.log(`Loading obsm data for key: ${obsmKey}`);
                     
                     if (pathParts.length >= 3) {
                         // Dataframe column
                         const columnName = pathParts[2];
-                        return await DataManager.loadObsm(obsmKey, null, null, columnName);
+                        console.log(`Loading dataframe column from obsm/${obsmKey}: ${columnName}`);
+                        
+                        const columnData = await DataManager.loadObsm(obsmKey, null, null, columnName);
+                        if (!columnData || columnData.length === 0) {
+                            throw new Error(`No data available for obsm dataframe column: ${obsmKey}/${columnName}`);
+                        }
+                        
+                        console.log(`Loaded obsm dataframe column ${obsmKey}/${columnName}: ${columnData.length} values`);
+                        return columnData;
                     } else {
                         // Matrix column
+                        console.log(`Loading matrix column from obsm/${obsmKey}, index: ${index || 0}`);
+                        
                         const matrix = await DataManager.loadObsm(obsmKey, null, null);
-                        return matrix.map(row => row[index || 0]);
+                        if (!matrix || matrix.length === 0) {
+                            throw new Error(`No data available for obsm matrix: ${obsmKey}`);
+                        }
+                        
+                        // Check if the index is valid
+                        if (matrix[0].length <= (index || 0)) {
+                            throw new Error(`Invalid column index ${index} for obsm/${obsmKey}. Matrix only has ${matrix[0].length} columns.`);
+                        }
+                        
+                        const columnData = matrix.map(row => row[index || 0]);
+                        console.log(`Extracted obsm/${obsmKey} column ${index || 0}: ${columnData.length} values`);
+                        return columnData;
                     }
                 
                 case 'varm':
                     if (pathParts.length < 2) {
-                        throw new Error('Invalid path for varm data');
+                        throw new Error('Invalid path for varm data: missing varm key');
                     }
                     
                     const varmKey = pathParts[1];
+                    console.log(`Loading varm data for key: ${varmKey}`);
                     
                     if (pathParts.length >= 3) {
                         // Dataframe column
                         const columnName = pathParts[2];
-                        return await DataManager.loadVarm(varmKey, null, null, columnName);
+                        console.log(`Loading dataframe column from varm/${varmKey}: ${columnName}`);
+                        
+                        const columnData = await DataManager.loadVarm(varmKey, null, null, columnName);
+                        if (!columnData || columnData.length === 0) {
+                            throw new Error(`No data available for varm dataframe column: ${varmKey}/${columnName}`);
+                        }
+                        
+                        console.log(`Loaded varm dataframe column ${varmKey}/${columnName}: ${columnData.length} values`);
+                        return columnData;
                     } else {
                         // Matrix column
+                        console.log(`Loading matrix column from varm/${varmKey}, index: ${index || 0}`);
+                        
                         const matrix = await DataManager.loadVarm(varmKey, null, null);
-                        return matrix.map(row => row[index || 0]);
+                        if (!matrix || matrix.length === 0) {
+                            throw new Error(`No data available for varm matrix: ${varmKey}`);
+                        }
+                        
+                        // Check if the index is valid
+                        if (matrix[0].length <= (index || 0)) {
+                            throw new Error(`Invalid column index ${index} for varm/${varmKey}. Matrix only has ${matrix[0].length} columns.`);
+                        }
+                        
+                        const columnData = matrix.map(row => row[index || 0]);
+                        console.log(`Extracted varm/${varmKey} column ${index || 0}: ${columnData.length} values`);
+                        return columnData;
                     }
                 
                 case 'layers':
                     if (pathParts.length < 2) {
-                        throw new Error('Invalid path for layers data');
+                        throw new Error('Invalid path for layers data: missing layer name');
                     }
                     
                     const layer = pathParts[1];
+                    console.log(`Loading layer data for: ${layer}`);
                     
                     // Expression data - need a focused gene
                     const focusedGeneLayer = DataManager.getFocusedGene();
                     if (!focusedGeneLayer) {
-                        throw new Error('Expression plotting requires a focused gene');
+                        console.error('No focused gene available for layer expression plotting');
+                        throw new Error('Expression plotting requires a focused gene. Please select a gene first.');
                     }
+                    
+                    console.log(`Loading layer expression data for gene: ${focusedGeneLayer}`);
                     
                     // Get gene index
                     const geneNamesLayer = await DataManager.loadGeneNames();
+                    if (!geneNamesLayer || geneNamesLayer.length === 0) {
+                        throw new Error('Failed to load gene names. Dataset may be missing gene information.');
+                    }
+                    
                     const geneIndexLayer = geneNamesLayer.indexOf(focusedGeneLayer);
                     
                     if (geneIndexLayer === -1) {
-                        throw new Error(`Gene not found: ${focusedGeneLayer}`);
+                        console.error(`Gene '${focusedGeneLayer}' not found in gene list`);
+                        throw new Error(`Gene not found: ${focusedGeneLayer}. Please select a valid gene from the dataset.`);
                     }
+                    
+                    console.log(`Loading layer expression data for gene index: ${geneIndexLayer}`);
                     
                     // Load data for this gene
                     const layerData = await DataManager.loadLayer(layer, null, [geneIndexLayer]);
-                    return layerData.map(row => row[0]);
+                    if (!layerData || layerData.length === 0) {
+                        throw new Error(`No expression data available for gene: ${focusedGeneLayer} in layer: ${layer}`);
+                    }
+                    
+                    const layerResult = layerData.map(row => row[0]);
+                    console.log(`Loaded layer expression data: ${layerResult.length} points`);
+                    return layerResult;
                 
                 default:
-                    throw new Error(`Unsupported data component: ${component}`);
+                    throw new Error(`Unsupported data component: ${component}. Valid options are X, obs, var, obsm, varm, layers.`);
             }
         } catch (error) {
             console.error(`Error loading axis data from ${path}:`, error);
-            throw error;
+            throw new Error(`Failed to load data from ${path}: ${error.message}`);
         }
     }
     
@@ -770,22 +1000,56 @@ const PlotManager = (function() {
             return;
         }
         
+        console.log(`Updating plot ${plotId} with config:`, config);
+        
         // Update config
         plot.config = deepMerge(plot.config, config);
         
-        // Re-create the plot based on its type
-        switch (plot.config.type) {
-            case 'scatter':
-                createScatterPlot(plot.element.id, plot.config);
-                break;
-            case 'violin':
-                createViolinPlot(plot.element.id, plot.config);
-                break;
-            case 'heatmap':
-                createHeatmap(plot.element.id, plot.config);
-                break;
-            default:
-                console.error(`Unsupported plot type: ${plot.config.type}`);
+        try {
+            // Re-create the plot based on its type
+            switch (plot.config.type) {
+                case 'scatter':
+                    // Use the element.id instead of element directly to ensure proper lookup
+                    if (plot.element && plot.element.id) {
+                        console.log(`Re-creating scatter plot in element ${plot.element.id}`);
+                        createScatterPlot(plot.element.id, plot.config);
+                    } else {
+                        console.error('Plot element missing or has no ID');
+                    }
+                    break;
+                case 'violin':
+                    createViolinPlot(plot.element.id, plot.config);
+                    break;
+                case 'heatmap':
+                    createHeatmap(plot.element.id, plot.config);
+                    break;
+                default:
+                    console.error(`Unsupported plot type: ${plot.config.type}`);
+            }
+            
+            // Update timestamp for tracking changes
+            plot.lastUpdate = Date.now();
+            
+        } catch (error) {
+            console.error('Error updating plot:', error);
+            
+            // Show error in plot area
+            if (plot.element) {
+                plot.element.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Updating Plot</h5>
+                        <p>${error.message}</p>
+                        <div class="mt-3">
+                            <strong>Troubleshooting:</strong>
+                            <ul>
+                                <li>Verify that the selected data exists in the dataset</li>
+                                <li>Check that any required focused gene/cell is selected</li>
+                                <li>Try a different combination of axes</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
         }
     }
     

@@ -208,6 +208,33 @@ const HeaderManager = (function() {
         
         // Make header visible
         document.querySelector('.persistent-header')?.classList.remove('d-none');
+        
+        // Initialize selectors with data
+        initializeGeneAndCellSelectors();
+    }
+    
+    /**
+     * Initialize gene and cell selectors with data
+     */
+    async function initializeGeneAndCellSelectors() {
+        try {
+            // Preload gene and cell names if needed
+            const geneNames = await DataManager.loadGeneNames();
+            const cellNames = await DataManager.loadCellNames();
+            
+            console.log(`Loaded ${geneNames?.length || 0} gene names and ${cellNames?.length || 0} cell names for selectors`);
+            
+            // Reinitialize the select2 components with direct access to the data
+            if (geneNames && geneNames.length > 0) {
+                setupGeneSearch();
+            }
+            
+            if (cellNames && cellNames.length > 0) {
+                setupCellSearch();
+            }
+        } catch (error) {
+            console.warn('Error initializing gene and cell selectors:', error);
+        }
     }
     
     /**
