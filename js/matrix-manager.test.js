@@ -8,15 +8,45 @@ global.fetch = jest.fn();
 
 // Mock dataManager
 const mockDataManager = {
-  getObsNames: jest.fn().mockResolvedValue(['cell1', 'cell2', 'cell3']),
-  getVarNames: jest.fn().mockResolvedValue(['gene1', 'gene2', 'gene3']),
+  getObsNames: jest.fn().mockImplementation((datasetId = null) => {
+    return Promise.resolve(['cell1', 'cell2', 'cell3']);
+  }),
+  getVarNames: jest.fn().mockImplementation((column = null, datasetId = null) => {
+    return Promise.resolve(['gene1', 'gene2', 'gene3']);
+  }),
+  isDataLoaded: jest.fn().mockImplementation((datasetId = null) => {
+    return datasetId ? datasetId === 'test_dataset' : true;
+  }),
+  getActiveDatasetId: jest.fn().mockReturnValue('test_dataset'),
   anndata: {
     obsm: { X_umap: {}, X_pca: {} },
     varm: { PCs: {} },
     obsp: { connectivities: {}, distances: {} },
     varp: { correlation: {}, covariance: {} },
     layers: { counts: {}, scaled: {} }
-  }
+  },
+  datasets: new Map([
+    ['test_dataset', {
+      anndata: {
+        obsm: { X_umap: {}, X_pca: {} },
+        varm: { PCs: {} },
+        obsp: { connectivities: {}, distances: {} },
+        varp: { correlation: {}, covariance: {} },
+        layers: { counts: {}, scaled: {} }
+      }
+    }]
+  ]),
+  getDatasetInfo: jest.fn().mockImplementation((datasetId = null) => {
+    const id = datasetId || 'test_dataset';
+    return {
+      id,
+      name: `Test Dataset (${id})`,
+      data: {
+        nObs: 100,
+        nVars: 200
+      }
+    };
+  })
 };
 
 // Setup window mocks - must be done before requiring the module
@@ -36,10 +66,20 @@ class MockMatrixManager {
     this.apiUrl = '/api/v1';
   }
 
-  async getObspMatrix(matrixKey, indices = null) {
-    let url = `${this.apiUrl}/data/obsp/${matrixKey}`;
+  async getObspMatrix(matrixKey, indices = null, datasetId = null) {
+    // Get active dataset ID if not specified
+    const dsId = datasetId || (this.dataManager ? this.dataManager.getActiveDatasetId() : null);
+    
+    let url = `${this.apiUrl}/data/obsp/${matrixKey}?`;
+    
+    // Add dataset ID if available
+    if (dsId) {
+      url += `dataset_id=${encodeURIComponent(dsId)}&`;
+    }
+    
+    // Add indices if provided
     if (indices && indices.length > 0) {
-      url += `?indices=${indices.join(',')}`;
+      url += `indices=${indices.join(',')}&`;
     }
     
     const response = await fetch(url);
@@ -51,10 +91,20 @@ class MockMatrixManager {
     return result.data;
   }
 
-  async getVarpMatrix(matrixKey, indices = null) {
-    let url = `${this.apiUrl}/data/varp/${matrixKey}`;
+  async getVarpMatrix(matrixKey, indices = null, datasetId = null) {
+    // Get active dataset ID if not specified
+    const dsId = datasetId || (this.dataManager ? this.dataManager.getActiveDatasetId() : null);
+    
+    let url = `${this.apiUrl}/data/varp/${matrixKey}?`;
+    
+    // Add dataset ID if available
+    if (dsId) {
+      url += `dataset_id=${encodeURIComponent(dsId)}&`;
+    }
+    
+    // Add indices if provided
     if (indices && indices.length > 0) {
-      url += `?indices=${indices.join(',')}`;
+      url += `indices=${indices.join(',')}&`;
     }
     
     const response = await fetch(url);
@@ -66,8 +116,28 @@ class MockMatrixManager {
     return result.data;
   }
 
-  async getMatrixMetadata() {
-    if (this.dataManager && this.dataManager.anndata) {
+  async getMatrixMetadata(datasetId = null) {
+    // Get active dataset ID if not specified
+    const dsId = datasetId || (this.dataManager ? this.dataManager.getActiveDatasetId() : null);
+    
+    // Try to get from dataset registry first
+    if (this.dataManager && dsId && this.dataManager.datasets && this.dataManager.datasets.has(dsId)) {
+      const dataset = this.dataManager.datasets.get(dsId);
+      const anndata = dataset.anndata;
+      
+      // Extract metadata from anndata
+      const metadata = {
+        obsm: Object.keys(anndata.obsm || {}),
+        varm: Object.keys(anndata.varm || {}),
+        obsp: Object.keys(anndata.obsp || {}),
+        varp: Object.keys(anndata.varp || {}),
+        layers: Object.keys(anndata.layers || {})
+      };
+      
+      return metadata;
+    }
+    // Legacy fallback
+    else if (this.dataManager && this.dataManager.anndata) {
       const anndata = this.dataManager.anndata;
       
       // Extract metadata from anndata
@@ -83,7 +153,14 @@ class MockMatrixManager {
     }
     
     // Fall back to API call
-    const response = await fetch(`${this.apiUrl}/data/info`);
+    let url = `${this.apiUrl}/data/info?`;
+    
+    // Add dataset ID if available
+    if (dsId) {
+      url += `dataset_id=${encodeURIComponent(dsId)}`;
+    }
+    
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Error fetching matrix metadata: ${response.statusText}`);
     }
@@ -102,11 +179,14 @@ class MockMatrixManager {
     return metadata;
   }
 
-  async getObspSample(matrixKey, sampleSize = 10) {
-    const cellNames = await this.dataManager.getObsNames();
+  async getObspSample(matrixKey, sampleSize = 10, datasetId = null) {
+    // Get active dataset ID if not specified
+    const dsId = datasetId || (this.dataManager ? this.dataManager.getActiveDatasetId() : null);
+    
+    const cellNames = await this.dataManager.getObsNames(dsId);
     const numCells = cellNames.length;
     const indices = Array.from({length: Math.min(sampleSize, numCells)}, (_, i) => i);
-    const data = await this.getObspMatrix(matrixKey, indices);
+    const data = await this.getObspMatrix(matrixKey, indices, dsId);
     const sampleCellNames = indices.map(i => cellNames[i]);
     
     return {
@@ -114,15 +194,19 @@ class MockMatrixManager {
       rowNames: sampleCellNames,
       colNames: sampleCellNames,
       key: matrixKey,
-      fullSize: [numCells, numCells]
+      fullSize: [numCells, numCells],
+      datasetId: dsId
     };
   }
 
-  async getVarpSample(matrixKey, sampleSize = 10) {
-    const varNames = await this.dataManager.getVarNames();
+  async getVarpSample(matrixKey, sampleSize = 10, datasetId = null) {
+    // Get active dataset ID if not specified
+    const dsId = datasetId || (this.dataManager ? this.dataManager.getActiveDatasetId() : null);
+    
+    const varNames = await this.dataManager.getVarNames(null, dsId);
     const numVars = varNames.length;
     const indices = Array.from({length: Math.min(sampleSize, numVars)}, (_, i) => i);
-    const data = await this.getVarpMatrix(matrixKey, indices);
+    const data = await this.getVarpMatrix(matrixKey, indices, dsId);
     const sampleVarNames = indices.map(i => varNames[i]);
     
     return {
@@ -130,7 +214,8 @@ class MockMatrixManager {
       rowNames: sampleVarNames,
       colNames: sampleVarNames,
       key: matrixKey,
-      fullSize: [numVars, numVars]
+      fullSize: [numVars, numVars],
+      datasetId: dsId
     };
   }
 
@@ -140,6 +225,7 @@ class MockMatrixManager {
       title: `${matrixKey} ${matrixType === 'obsp' ? 'Cell-Cell' : 'Gene-Gene'} Relationship`,
       matrixType,
       matrixKey,
+      datasetId: options.datasetId || null,
       colorScale: options.colorScale || 'viridis',
       showLabels: options.showLabels !== undefined ? options.showLabels : true,
       sampleSize: options.sampleSize || 100,
@@ -160,7 +246,7 @@ describe('MatrixManager', () => {
   });
 
   describe('getObspMatrix', () => {
-    it('should fetch obsp matrix data with provided API URL', async () => {
+    it('should fetch obsp matrix data with provided API URL and default dataset ID', async () => {
       // Mock successful API response
       fetch.mockResolvedValueOnce({
         ok: true,
@@ -169,8 +255,10 @@ describe('MatrixManager', () => {
 
       const result = await matrixManager.getObspMatrix('connectivities');
       
-      // Verify fetch was called with the correct URL
-      expect(fetch).toHaveBeenCalledWith('/api/v1/data/obsp/connectivities');
+      // Verify fetch was called with the correct URL including dataset_id
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/obsp\/connectivities\?dataset_id=test_dataset/)
+      );
       
       // Verify the returned data
       expect(result).toEqual([[1, 2], [3, 4]]);
@@ -185,11 +273,31 @@ describe('MatrixManager', () => {
 
       const result = await matrixManager.getObspMatrix('connectivities', [0, 2]);
       
-      // Verify fetch was called with indices
-      expect(fetch).toHaveBeenCalledWith('/api/v1/data/obsp/connectivities?indices=0,2');
+      // Verify fetch was called with indices and dataset_id
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/obsp\/connectivities\?dataset_id=test_dataset.*indices=0,2/)
+      );
       
       // Verify the returned data
       expect(result).toEqual([[1], [3]]);
+    });
+    
+    it('should use the provided dataset ID when specified', async () => {
+      // Mock successful API response
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ data: [[1, 2], [3, 4]] })
+      });
+
+      const result = await matrixManager.getObspMatrix('connectivities', null, 'custom_dataset');
+      
+      // Verify fetch was called with the custom dataset ID
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/obsp\/connectivities\?dataset_id=custom_dataset/)
+      );
+      
+      // Verify the returned data
+      expect(result).toEqual([[1, 2], [3, 4]]);
     });
 
     it('should handle API errors gracefully', async () => {
@@ -203,12 +311,14 @@ describe('MatrixManager', () => {
       await expect(matrixManager.getObspMatrix('invalid_matrix')).rejects.toThrow();
       
       // Verify fetch was called
-      expect(fetch).toHaveBeenCalledWith('/api/v1/data/obsp/invalid_matrix');
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/obsp\/invalid_matrix\?dataset_id=/)
+      );
     });
   });
 
   describe('getVarpMatrix', () => {
-    it('should fetch varp matrix data with provided API URL', async () => {
+    it('should fetch varp matrix data with provided API URL and default dataset ID', async () => {
       // Mock successful API response
       fetch.mockResolvedValueOnce({
         ok: true,
@@ -217,8 +327,10 @@ describe('MatrixManager', () => {
 
       const result = await matrixManager.getVarpMatrix('correlation');
       
-      // Verify fetch was called with the correct URL
-      expect(fetch).toHaveBeenCalledWith('/api/v1/data/varp/correlation');
+      // Verify fetch was called with the correct URL including dataset_id
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/varp\/correlation\?dataset_id=test_dataset/)
+      );
       
       // Verify the returned data
       expect(result).toEqual([[1, 2], [3, 4]]);
@@ -233,11 +345,31 @@ describe('MatrixManager', () => {
 
       const result = await matrixManager.getVarpMatrix('correlation', [0, 2]);
       
-      // Verify fetch was called with indices
-      expect(fetch).toHaveBeenCalledWith('/api/v1/data/varp/correlation?indices=0,2');
+      // Verify fetch was called with indices and dataset_id
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/varp\/correlation\?dataset_id=test_dataset.*indices=0,2/)
+      );
       
       // Verify the returned data
       expect(result).toEqual([[1], [3]]);
+    });
+    
+    it('should use the provided dataset ID when specified', async () => {
+      // Mock successful API response
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ data: [[1, 2], [3, 4]] })
+      });
+
+      const result = await matrixManager.getVarpMatrix('correlation', null, 'custom_dataset');
+      
+      // Verify fetch was called with the custom dataset ID
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/data\/varp\/correlation\?dataset_id=custom_dataset/)
+      );
+      
+      // Verify the returned data
+      expect(result).toEqual([[1, 2], [3, 4]]);
     });
   });
 

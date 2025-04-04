@@ -26,43 +26,94 @@ class ZarrReader:
     2. Read metadata without loading full data
     3. Selectively load parts of the data
     4. Convert zarr to AnnData-like structure
+    5. Support multiple datasets with dataset IDs
     """
     
     def __init__(self):
         """Initialize the ZarrReader."""
+        # Multiple dataset support
+        self.dataset_stores = {}  # Dict of dataset_id -> zarr store
+        self.dataset_roots = {}   # Dict of dataset_id -> zarr root
+        self.dataset_metadata = {}  # Dict of dataset_id -> metadata
+        self.dataset_paths = {}  # Dict of dataset_id -> original path
+        self.active_dataset_id = None  # Current active dataset ID
+        
+        # Legacy attributes - kept for backward compatibility
+        self.loaded = False
         self.store = None
         self.root = None
-        self.anndata_structure = None
-        self.loaded = False
         self.metadata = {}
     
-    def load_zarr(self, path: str, mode: str = 'r') -> None:
+    def load_zarr(self, path: str, mode: str = 'r', dataset_id: Optional[str] = None) -> str:
         """
         Load a zarr store from a local path.
         
         Args:
             path: Path to the zarr directory or file
             mode: Access mode (default: read-only)
+            dataset_id: Optional dataset ID for multi-dataset support.
+                        If None, a unique ID will be generated.
+        
+        Returns:
+            str: The dataset ID used
         """
         try:
-            logger.info(f"Loading zarr from path: {path}")
-            self.store = zarr.open_group(path, mode=mode)
-            self.root = self.store
+            # Generate a dataset ID if not provided
+            if dataset_id is None:
+                # Use the base filename or directory name as the ID
+                dataset_id = os.path.basename(os.path.normpath(path))
+                # Ensure uniqueness
+                if dataset_id in self.dataset_stores:
+                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
+            
+            logger.info(f"Loading zarr from path: {path} with dataset ID: {dataset_id}")
+            
+            # Open the zarr store
+            store = zarr.open_group(path, mode=mode)
+            
+            # Store in the dataset dictionaries
+            self.dataset_stores[dataset_id] = store
+            self.dataset_roots[dataset_id] = store
+            self.dataset_paths[dataset_id] = path  # Track the original path
+            
+            # Extract metadata for this dataset
+            metadata = self._extract_metadata(dataset_id)
+            self.dataset_metadata[dataset_id] = metadata
+            
+            # Always set as active dataset
+            self.active_dataset_id = dataset_id
+            
+            # Update legacy attributes for backward compatibility
+            self.store = store
+            self.root = store
+            self.metadata = metadata
             self.loaded = True
-            self.metadata = self._extract_metadata()
-            logger.info(f"Zarr loaded successfully from {path}")
-            return True
+            
+            logger.info(f"Zarr loaded successfully from {path} with dataset ID: {dataset_id}")
+            return dataset_id
         except Exception as e:
             logger.error(f"Error loading zarr from {path}: {e}")
-            self.loaded = False
+            if dataset_id in self.dataset_stores:
+                del self.dataset_stores[dataset_id]
+            if dataset_id in self.dataset_roots:
+                del self.dataset_roots[dataset_id]
+            if dataset_id in self.dataset_metadata:
+                del self.dataset_metadata[dataset_id]
+            # Reset active dataset if this was the active one
+            if self.active_dataset_id == dataset_id:
+                self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
             raise
             
-    def load_zarr_from_url(self, url: str) -> None:
+    def load_zarr_from_url(self, url: str, dataset_id: Optional[str] = None) -> str:
         """
         Load a zarr store from a URL.
         
         Args:
             url: URL to the zarr directory
+            dataset_id: Optional dataset ID. If None, one will be generated.
+            
+        Returns:
+            str: The dataset ID used
         """
         try:
             logger.info(f"Loading zarr from URL: {url}")
@@ -70,7 +121,20 @@ class ZarrReader:
             if url.startswith('data/') or url.startswith('/data/'):
                 # For local paths, use direct file access
                 logger.info(f"Treating URL as local path: {url}")
-                return self.load_zarr(url)
+                return self.load_zarr(url, 'r', dataset_id)
+                
+            # Generate a dataset ID if not provided
+            if dataset_id is None:
+                # Use the URL's basename as the ID
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(url)
+                path = parsed_url.path.rstrip('/')
+                dataset_id = os.path.basename(path)
+                # Ensure uniqueness
+                if dataset_id in self.dataset_stores:
+                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
+            
+            logger.info(f"Loading zarr from URL: {url} with dataset ID: {dataset_id}")
                 
             # For remote HTTP(S) URLs, use zarr's built-in HTTP support
             import zarr
@@ -84,20 +148,57 @@ class ZarrReader:
                 # Basic fallback - use a regular file store with path
                 store = url
             
-            # Open the zarr group
-            self.store = zarr.open_group(store, mode='r')
-            self.root = self.store
-            self.loaded = True
-            self.metadata = self._extract_metadata()
-            logger.info(f"Zarr loaded successfully from URL: {url}")
-            return True
+            try:
+                # Open the zarr group
+                zarr_store = zarr.open_group(store, mode='r')
+                
+                # Store in the dataset dictionaries
+                self.dataset_stores[dataset_id] = zarr_store
+                self.dataset_roots[dataset_id] = zarr_store
+                
+                # Extract metadata for this dataset
+                metadata = self._extract_metadata(dataset_id)
+                self.dataset_metadata[dataset_id] = metadata
+                
+                # Set as active dataset if it's the first one or none is active
+                if self.active_dataset_id is None:
+                    self.active_dataset_id = dataset_id
+                    # Update legacy attributes for backward compatibility
+                    self.store = zarr_store
+                    self.root = zarr_store
+                    self.metadata = metadata
+                    self.loaded = True
+                
+                logger.info(f"Zarr loaded successfully from URL: {url} with dataset ID: {dataset_id}")
+                return dataset_id
+            except Exception as e:
+                logger.error(f"Error opening zarr from URL {url}: {e}")
+                
+                # Clean up if an error occurred
+                if dataset_id in self.dataset_stores:
+                    del self.dataset_stores[dataset_id]
+                if dataset_id in self.dataset_roots:
+                    del self.dataset_roots[dataset_id]
+                if dataset_id in self.dataset_metadata:
+                    del self.dataset_metadata[dataset_id]
+                
+                # Update legacy attributes if this was the active dataset
+                if self.active_dataset_id == dataset_id:
+                    self.active_dataset_id = None
+                    self.store = None
+                    self.root = None
+                    self.loaded = False
+                    self.metadata = {}
+                
+                raise
         except Exception as e:
             logger.error(f"Error loading zarr from URL {url}: {e}")
             self.loaded = False
             raise
             
     def load_zarr_from_s3(self, bucket: str, key: str, region: str = 'us-east-1', 
-                          anonymous: bool = True, **kwargs) -> None:
+                          anonymous: bool = True, dataset_id: Optional[str] = None, 
+                          **kwargs) -> str:
         """
         Load a zarr store from an S3 bucket.
         
@@ -106,10 +207,24 @@ class ZarrReader:
             key: Path within the bucket to the zarr directory
             region: AWS region (default: us-east-1)
             anonymous: Whether to use anonymous access (default: True)
+            dataset_id: Optional dataset ID. If None, one will be generated.
             **kwargs: Additional parameters for boto3 client
+            
+        Returns:
+            str: The dataset ID used
         """
         try:
             logger.info(f"Loading zarr from S3: {bucket}/{key}")
+            
+            # Generate a dataset ID if not provided
+            if dataset_id is None:
+                # Use the key's basename as the ID
+                dataset_id = os.path.basename(key.rstrip('/'))
+                # Ensure uniqueness
+                if dataset_id in self.dataset_stores:
+                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
+            
+            logger.info(f"Loading zarr from S3: {bucket}/{key} with dataset ID: {dataset_id}")
             
             # Try importing s3fs
             try:
@@ -135,73 +250,150 @@ class ZarrReader:
                     # Use default credentials
                     pass
                     
-            # Create filesystem and map to zarr store
-            fs = s3fs.S3FileSystem(**s3_kwargs)
-            store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
-            
-            # Open the zarr group
-            self.store = zarr.open_group(store, mode='r')
-            self.root = self.store
-            self.loaded = True
-            self.metadata = self._extract_metadata()
-            logger.info(f"Zarr loaded successfully from S3: {bucket}/{key}")
-            return True
+            try:
+                # Create filesystem and map to zarr store
+                fs = s3fs.S3FileSystem(**s3_kwargs)
+                store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
+                
+                # Open the zarr group
+                zarr_store = zarr.open_group(store, mode='r')
+                
+                # Store in the dataset dictionaries
+                self.dataset_stores[dataset_id] = zarr_store
+                self.dataset_roots[dataset_id] = zarr_store
+                
+                # Extract metadata for this dataset
+                metadata = self._extract_metadata(dataset_id)
+                self.dataset_metadata[dataset_id] = metadata
+                
+                # Set as active dataset if it's the first one or none is active
+                if self.active_dataset_id is None:
+                    self.active_dataset_id = dataset_id
+                    # Update legacy attributes for backward compatibility
+                    self.store = zarr_store
+                    self.root = zarr_store
+                    self.metadata = metadata
+                    self.loaded = True
+                
+                logger.info(f"Zarr loaded successfully from S3: {bucket}/{key} with dataset ID: {dataset_id}")
+                return dataset_id
+                
+            except Exception as e:
+                logger.error(f"Error opening zarr from S3: {bucket}/{key}: {e}")
+                
+                # Clean up if an error occurred
+                if dataset_id in self.dataset_stores:
+                    del self.dataset_stores[dataset_id]
+                if dataset_id in self.dataset_roots:
+                    del self.dataset_roots[dataset_id]
+                if dataset_id in self.dataset_metadata:
+                    del self.dataset_metadata[dataset_id]
+                
+                # Update legacy attributes if this was the active dataset
+                if self.active_dataset_id == dataset_id:
+                    self.active_dataset_id = None
+                    self.store = None
+                    self.root = None
+                    self.loaded = False
+                    self.metadata = {}
+                
+                raise
         except Exception as e:
             logger.error(f"Error loading zarr from S3 {bucket}/{key}: {e}")
             self.loaded = False
             raise
             
-    def is_initialized(self) -> bool:
-        """Check if a zarr store is loaded."""
-        return self.loaded and self.store is not None
+    def is_initialized(self, dataset_id: Optional[str] = None) -> bool:
+        """
+        Check if a zarr store is loaded.
+        
+        Args:
+            dataset_id: Optional dataset ID. If None, checks the active dataset.
+        
+        Returns:
+            bool: True if the dataset is loaded, False otherwise
+        """
+        if dataset_id is None:
+            # Check if there's an active dataset
+            return self.active_dataset_id is not None and self.active_dataset_id in self.dataset_stores
+        else:
+            # Check if the specified dataset is loaded
+            return dataset_id in self.dataset_stores
+    
+    def _get_root(self, dataset_id: Optional[str] = None):
+        """
+        Get the root for a dataset.
+        
+        Args:
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
+        
+        Returns:
+            The zarr root for the dataset, or None if not found
+        """
+        if dataset_id is None:
+            # Use active dataset
+            dataset_id = self.active_dataset_id
             
-    def open_zarr(self, path: str, mode: str = 'r') -> None:
+        if dataset_id is None:
+            # No active dataset and none specified
+            return None
+            
+        # Return the root from the dataset dictionary
+        return self.dataset_roots.get(dataset_id)
+            
+    def open_zarr(self, path: str, mode: str = 'r', dataset_id: Optional[str] = None) -> str:
         """
         Open a zarr store from a local path.
         
         Args:
             path: Path to the zarr directory or file
             mode: Access mode (default: read-only)
-        """
-        try:
-            self.store = zarr.open_group(path, mode=mode)
-            self.root = self.store
-            self.loaded = True
-            self.metadata = self._extract_metadata()
-            return True
-        except Exception as e:
-            logger.error(f"Error opening zarr at {path}: {e}")
-            self.store = None
+            dataset_id: Optional dataset ID. If None, a unique ID will be generated.
             
-    def _extract_metadata(self) -> Dict[str, Any]:
+        Returns:
+            str: The dataset ID used
+        """
+        return self.load_zarr(path, mode, dataset_id)
+            
+    def _extract_metadata(self, dataset_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract metadata from the zarr store.
+        
+        Args:
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
         
         Returns:
             Dictionary of metadata
         """
-        if not self.is_initialized():
+        # Get the root for the specified dataset
+        root = self._get_root(dataset_id)
+        
+        if root is None:
             return {}
             
         metadata = {}
         
         try:
+            # Add dataset ID to metadata
+            if dataset_id is not None:
+                metadata['dataset_id'] = dataset_id
+            
             # Get basic structure information
-            metadata['components'] = list(self.root.keys())
+            metadata['components'] = list(root.keys())
             
             # Get shape information
             shape = None
-            if 'X' in self.root:
+            if 'X' in root:
                 try:
-                    shape = self.root['X'].shape
+                    shape = root['X'].shape
                     metadata['shape'] = shape
                 except Exception as e:
                     logger.warning(f"Could not get shape from X: {e}")
                     # Try alternative methods to determine shape
                     try:
                         # Try getting shape from .zattrs
-                        if hasattr(self.root['X'], 'attrs') and 'shape' in self.root['X'].attrs:
-                            shape = tuple(self.root['X'].attrs['shape'])
+                        if hasattr(root['X'], 'attrs') and 'shape' in root['X'].attrs:
+                            shape = tuple(root['X'].attrs['shape'])
                             metadata['shape'] = shape
                             logger.info(f"Got shape from X.attrs: {shape}")
                     except Exception as e_attr:
@@ -210,8 +402,8 @@ class ZarrReader:
                     # If shape is still None, try to infer from obs and var
                     if shape is None:
                         try:
-                            n_obs = len(self.root['obs']['_index']) if 'obs' in self.root and '_index' in self.root['obs'] else 0
-                            n_vars = len(self.root['var']['_index']) if 'var' in self.root and '_index' in self.root['var'] else 0
+                            n_obs = len(root['obs']['_index']) if 'obs' in root and '_index' in root['obs'] else 0
+                            n_vars = len(root['var']['_index']) if 'var' in root and '_index' in root['var'] else 0
                             if n_obs > 0 and n_vars > 0:
                                 shape = (n_obs, n_vars)
                                 metadata['shape'] = shape
@@ -220,32 +412,32 @@ class ZarrReader:
                             logger.warning(f"Could not infer shape from obs and var: {e_infer}")
                 
             # Check for X matrix
-            if 'X' in self.root:
+            if 'X' in root:
                 metadata['X'] = {
-                    'shape': self.root['X'].shape if hasattr(self.root['X'], 'shape') else None,
-                    'chunks': self.root['X'].chunks if hasattr(self.root['X'], 'chunks') else None,
-                    'dtype': str(self.root['X'].dtype) if hasattr(self.root['X'], 'dtype') else None
+                    'shape': root['X'].shape if hasattr(root['X'], 'shape') else None,
+                    'chunks': root['X'].chunks if hasattr(root['X'], 'chunks') else None,
+                    'dtype': str(root['X'].dtype) if hasattr(root['X'], 'dtype') else None
                 }
                 
             # Check for obs dataframe
-            if 'obs' in self.root:
+            if 'obs' in root:
                 metadata['obs'] = {
-                    'columns': list(self.root['obs'].keys()) if hasattr(self.root['obs'], 'keys') else []
+                    'columns': list(root['obs'].keys()) if hasattr(root['obs'], 'keys') else []
                 }
                 metadata['has_obs'] = True
-                metadata['obs_columns'] = list(self.root['obs'].keys()) if hasattr(self.root['obs'], 'keys') else []
+                metadata['obs_columns'] = list(root['obs'].keys()) if hasattr(root['obs'], 'keys') else []
                 
             # Check for var dataframe
-            if 'var' in self.root:
+            if 'var' in root:
                 metadata['var'] = {
-                    'columns': list(self.root['var'].keys()) if hasattr(self.root['var'], 'keys') else []
+                    'columns': list(root['var'].keys()) if hasattr(root['var'], 'keys') else []
                 }
                 metadata['has_var'] = True
-                metadata['var_columns'] = list(self.root['var'].keys()) if hasattr(self.root['var'], 'keys') else []
+                metadata['var_columns'] = list(root['var'].keys()) if hasattr(root['var'], 'keys') else []
                 
             # Check for obsm
-            if 'obsm' in self.root:
-                obsm_keys = list(self.root['obsm'].keys()) if hasattr(self.root['obsm'], 'keys') else []
+            if 'obsm' in root:
+                obsm_keys = list(root['obsm'].keys()) if hasattr(root['obsm'], 'keys') else []
                 metadata['obsm'] = {
                     'keys': obsm_keys
                 }
@@ -255,38 +447,38 @@ class ZarrReader:
                 metadata['embeddings'] = [key for key in obsm_keys if key.startswith('X_')]
                 
             # Check for varm
-            if 'varm' in self.root:
+            if 'varm' in root:
                 metadata['varm'] = {
-                    'keys': list(self.root['varm'].keys()) if hasattr(self.root['varm'], 'keys') else []
+                    'keys': list(root['varm'].keys()) if hasattr(root['varm'], 'keys') else []
                 }
                 metadata['has_varm'] = True
                 
             # Check for obsp (observation-observation matrices)
-            if 'obsp' in self.root:
+            if 'obsp' in root:
                 metadata['obsp'] = {
-                    'keys': list(self.root['obsp'].keys()) if hasattr(self.root['obsp'], 'keys') else []
+                    'keys': list(root['obsp'].keys()) if hasattr(root['obsp'], 'keys') else []
                 }
                 metadata['has_obsp'] = True
                 
             # Check for varp (variable-variable matrices)
-            if 'varp' in self.root:
+            if 'varp' in root:
                 metadata['varp'] = {
-                    'keys': list(self.root['varp'].keys()) if hasattr(self.root['varp'], 'keys') else []
+                    'keys': list(root['varp'].keys()) if hasattr(root['varp'], 'keys') else []
                 }
                 metadata['has_varp'] = True
                 
             # Check for layers
-            if 'layers' in self.root:
-                layer_keys = list(self.root['layers'].keys()) if hasattr(self.root['layers'], 'keys') else []
+            if 'layers' in root:
+                layer_keys = list(root['layers'].keys()) if hasattr(root['layers'], 'keys') else []
                 metadata['layers'] = {
                     'keys': layer_keys
                 }
                 metadata['has_layers'] = True
                 
             # Check for uns
-            if 'uns' in self.root:
+            if 'uns' in root:
                 metadata['uns'] = {
-                    'keys': list(self.root['uns'].keys()) if hasattr(self.root['uns'], 'keys') else []
+                    'keys': list(root['uns'].keys()) if hasattr(root['uns'], 'keys') else []
                 }
                 metadata['has_uns'] = True
                 
@@ -295,34 +487,41 @@ class ZarrReader:
             logger.error(f"Error extracting metadata: {e}")
             return {}
             
-    def get_array(self, path: str, selection: Optional[List] = None) -> np.ndarray:
+    def get_array(self, path: str, selection: Optional[List] = None, 
+                dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get array data from a specific path.
         
         Args:
             path: Path to the array within the zarr hierarchy
             selection: Selection indices (start, stop) or None for all data
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             NumPy array with the requested data
         """
-        if not self.is_initialized():
-            raise ValueError("No zarr dataset loaded")
+        if not self.is_initialized(dataset_id):
+            raise ValueError(f"Dataset '{dataset_id}' not loaded")
             
         try:
+            # Get the root for the specified dataset
+            root = self._get_root(dataset_id)
+            if root is None:
+                raise ValueError(f"Could not find root for dataset {dataset_id}")
+            
             # Get the array from the zarr hierarchy (handle paths with slashes)
             array = None
             path_parts = path.split('/')
             
             # Navigate the zarr hierarchy
-            current = self.root
+            current = root
             for part in path_parts:
                 if not part:
                     continue
                 if part in current:
                     current = current[part]
                 else:
-                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy for dataset {dataset_id}")
             
             # Current should now be the zarr array we want
             array = current
@@ -333,37 +532,44 @@ class ZarrReader:
             else:
                 return array[:]
         except Exception as e:
-            logger.error(f"Error getting array data from {path}: {e}")
+            logger.error(f"Error getting array data from {path} for dataset {dataset_id}: {e}")
             raise
             
-    def load_chunked_data(self, path: str, selection: Optional[List] = None) -> np.ndarray:
+    def load_chunked_data(self, path: str, selection: Optional[List] = None, 
+                         dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Load data using an optimized chunking strategy.
         
         Args:
             path: Path to the array within the zarr hierarchy
             selection: Selection indices [[rowStart, rowStop], [colStart, colStop]] or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             NumPy array with the requested data
         """
-        if not self.is_initialized():
-            raise ValueError("No zarr dataset loaded")
+        if not self.is_initialized(dataset_id):
+            raise ValueError(f"Dataset '{dataset_id}' not loaded")
             
         try:
+            # Get the root for the specified dataset
+            root = self._get_root(dataset_id)
+            if root is None:
+                raise ValueError(f"Could not find root for dataset {dataset_id}")
+            
             # Get the array object
             array = None
             path_parts = path.split('/')
             
             # Navigate the zarr hierarchy
-            current = self.root
+            current = root
             for part in path_parts:
                 if not part:
                     continue
                 if part in current:
                     current = current[part]
                 else:
-                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy for dataset {dataset_id}")
             
             # Current should now be the zarr array we want
             array = current
@@ -442,36 +648,42 @@ class ZarrReader:
             
             return result
         except Exception as e:
-            logger.error(f"Error loading chunked data from {path}: {e}")
+            logger.error(f"Error loading chunked data from {path} for dataset {dataset_id}: {e}")
             raise
             
-    def get_array_info(self, path: str) -> Dict[str, Any]:
+    def get_array_info(self, path: str, dataset_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get information about an array.
         
         Args:
             path: Path to the array within the zarr hierarchy
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             Dictionary with array information
         """
-        if not self.is_initialized():
-            raise ValueError("No zarr dataset loaded")
+        if not self.is_initialized(dataset_id):
+            raise ValueError(f"Dataset '{dataset_id}' not loaded")
             
         try:
+            # Get the root for the dataset
+            root = self._get_root(dataset_id)
+            if root is None:
+                raise ValueError(f"Could not find root for dataset {dataset_id}")
+            
             # Get the array from the zarr hierarchy (handle paths with slashes)
             array = None
             path_parts = path.split('/')
             
             # Navigate the zarr hierarchy
-            current = self.root
+            current = root
             for part in path_parts:
                 if not part:
                     continue
                 if part in current:
                     current = current[part]
                 else:
-                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy")
+                    raise ValueError(f"Path component '{part}' not found in zarr hierarchy for dataset {dataset_id}")
             
             # Current should now be the zarr array we want
             array = current
@@ -488,7 +700,7 @@ class ZarrReader:
             
             return info
         except Exception as e:
-            logger.error(f"Error getting array info from {path}: {e}")
+            logger.error(f"Error getting array info from {path} for dataset {dataset_id}: {e}")
             raise
     
     def open_zarr_url(self, url: str) -> bool:
@@ -691,38 +903,303 @@ class ZarrReader:
             logger.error(f"Error getting shape for {path}: {e}")
             return (0, 0)
     
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self, dataset_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get metadata about the loaded AnnData object.
+        
+        Args:
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
         
         Returns:
             dict: Metadata dictionary
         """
-        return self.metadata
+        if dataset_id is None:
+            # Use active dataset
+            dataset_id = self.active_dataset_id
+            
+            # If still None, use legacy metadata
+            if dataset_id is None:
+                return self.metadata
+                
+        # Return metadata from the dataset dictionary
+        return self.dataset_metadata.get(dataset_id, {})
     
-    def get_obs_names(self) -> List[str]:
+    def get_loaded_datasets(self) -> List[str]:
+        """
+        Get a list of loaded dataset IDs.
+        
+        Returns:
+            list: List of dataset IDs
+        """
+        return list(self.dataset_stores.keys())
+    
+    def set_active_dataset(self, dataset_id: str) -> bool:
+        """
+        Set the active dataset.
+        
+        Args:
+            dataset_id: Dataset ID to set as active
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if dataset_id not in self.dataset_stores:
+            logger.error(f"Dataset {dataset_id} not loaded")
+            return False
+            
+        # Set active dataset
+        self.active_dataset_id = dataset_id
+        
+        # Update legacy attributes for backward compatibility
+        self.store = self.dataset_stores[dataset_id]
+        self.root = self.dataset_roots[dataset_id]
+        self.metadata = self.dataset_metadata[dataset_id]
+        self.loaded = True
+        
+        logger.info(f"Set active dataset to {dataset_id}")
+        return True
+    
+    def get_active_dataset(self) -> Optional[str]:
+        """
+        Get the active dataset ID.
+        
+        Returns:
+            str: Active dataset ID, or None if no dataset is active
+        """
+        return self.active_dataset_id
+        
+    def open_dataset_by_path(self, path: str, mode: str = 'r') -> Tuple[zarr.Group, Dict[str, Any]]:
+        """
+        Open a zarr dataset directly from a path without storing any state.
+        This is the stateless way to access zarr data.
+        
+        Args:
+            path: Path to the zarr directory or file
+            mode: Access mode (default: read-only)
+            
+        Returns:
+            Tuple of (zarr_root, metadata)
+        """
+        try:
+            # Open the zarr store without maintaining state
+            store = zarr.open_group(path, mode=mode)
+            
+            # Extract metadata without storing it
+            metadata = self._extract_metadata_from_root(store)
+            
+            # Return the store and metadata without keeping any references
+            return store, metadata
+        except Exception as e:
+            logger.error(f"Error opening zarr dataset from {path}: {e}")
+            raise
+            
+    def _extract_metadata_from_root(self, root: zarr.Group) -> Dict[str, Any]:
+        """
+        Extract metadata from a zarr root without storing state.
+        
+        Args:
+            root: Zarr root group
+            
+        Returns:
+            Dictionary of metadata
+        """
+        metadata = {}
+        
+        try:            
+            # Get basic structure information
+            metadata['components'] = list(root.keys())
+            
+            # Get shape information
+            shape = None
+            if 'X' in root:
+                try:
+                    shape = root['X'].shape
+                    metadata['shape'] = shape
+                except Exception as e:
+                    logger.warning(f"Could not get shape from X: {e}")
+                    # Try alternative methods to determine shape
+                    try:
+                        # Try getting shape from .zattrs
+                        if hasattr(root['X'], 'attrs') and 'shape' in root['X'].attrs:
+                            shape = tuple(root['X'].attrs['shape'])
+                            metadata['shape'] = shape
+                            logger.info(f"Got shape from X.attrs: {shape}")
+                    except Exception as e_attr:
+                        logger.warning(f"Could not get shape from X.attrs: {e_attr}")
+                        
+                    # If shape is still None, try to infer from obs and var
+                    if shape is None:
+                        try:
+                            n_obs = len(root['obs']['_index']) if 'obs' in root and '_index' in root['obs'] else 0
+                            n_vars = len(root['var']['_index']) if 'var' in root and '_index' in root['var'] else 0
+                            if n_obs > 0 and n_vars > 0:
+                                shape = (n_obs, n_vars)
+                                metadata['shape'] = shape
+                                logger.info(f"Inferred shape from obs and var: {shape}")
+                        except Exception as e_infer:
+                            logger.warning(f"Could not infer shape from obs and var: {e_infer}")
+                
+            # Check for X matrix
+            if 'X' in root:
+                metadata['X'] = {
+                    'shape': root['X'].shape if hasattr(root['X'], 'shape') else None,
+                    'chunks': root['X'].chunks if hasattr(root['X'], 'chunks') else None,
+                    'dtype': str(root['X'].dtype) if hasattr(root['X'], 'dtype') else None
+                }
+                
+            # Check for obs dataframe
+            if 'obs' in root:
+                metadata['obs'] = {
+                    'columns': list(root['obs'].keys()) if hasattr(root['obs'], 'keys') else []
+                }
+                metadata['has_obs'] = True
+                metadata['obs_columns'] = list(root['obs'].keys()) if hasattr(root['obs'], 'keys') else []
+                
+            # Check for var dataframe
+            if 'var' in root:
+                metadata['var'] = {
+                    'columns': list(root['var'].keys()) if hasattr(root['var'], 'keys') else []
+                }
+                metadata['has_var'] = True
+                metadata['var_columns'] = list(root['var'].keys()) if hasattr(root['var'], 'keys') else []
+                
+            # Check for obsm
+            if 'obsm' in root:
+                obsm_keys = list(root['obsm'].keys()) if hasattr(root['obsm'], 'keys') else []
+                metadata['obsm'] = {
+                    'keys': obsm_keys
+                }
+                metadata['has_obsm'] = True
+                
+                # Check for embeddings (keys starting with X_)
+                metadata['embeddings'] = [key for key in obsm_keys if key.startswith('X_')]
+                
+            # Check for varm
+            if 'varm' in root:
+                metadata['varm'] = {
+                    'keys': list(root['varm'].keys()) if hasattr(root['varm'], 'keys') else []
+                }
+                metadata['has_varm'] = True
+                
+            # Check for obsp (observation-observation matrices)
+            if 'obsp' in root:
+                metadata['obsp'] = {
+                    'keys': list(root['obsp'].keys()) if hasattr(root['obsp'], 'keys') else []
+                }
+                metadata['has_obsp'] = True
+                
+            # Check for varp (variable-variable matrices)
+            if 'varp' in root:
+                metadata['varp'] = {
+                    'keys': list(root['varp'].keys()) if hasattr(root['varp'], 'keys') else []
+                }
+                metadata['has_varp'] = True
+                
+            # Check for layers
+            if 'layers' in root:
+                layer_keys = list(root['layers'].keys()) if hasattr(root['layers'], 'keys') else []
+                metadata['layers'] = {
+                    'keys': layer_keys
+                }
+                metadata['has_layers'] = True
+                
+            # Check for uns
+            if 'uns' in root:
+                metadata['uns'] = {
+                    'keys': list(root['uns'].keys()) if hasattr(root['uns'], 'keys') else []
+                }
+                metadata['has_uns'] = True
+                
+            return metadata
+        except Exception as e:
+            logger.error(f"Error extracting metadata from root: {e}")
+            return {}
+    
+    def unload_dataset(self, dataset_id: str) -> bool:
+        """
+        Unload a dataset from memory.
+        
+        Args:
+            dataset_id: Dataset ID to unload
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if dataset_id not in self.dataset_stores:
+            logger.warning(f"Dataset {dataset_id} not loaded")
+            return False
+            
+        # Remove from dataset dictionaries
+        del self.dataset_stores[dataset_id]
+        del self.dataset_roots[dataset_id]
+        del self.dataset_metadata[dataset_id]
+        
+        # Update active dataset if needed
+        if self.active_dataset_id == dataset_id:
+            # Choose a new active dataset if available
+            if self.dataset_stores:
+                self.active_dataset_id = next(iter(self.dataset_stores))
+                # Update legacy attributes
+                self.store = self.dataset_stores[self.active_dataset_id]
+                self.root = self.dataset_roots[self.active_dataset_id]
+                self.metadata = self.dataset_metadata[self.active_dataset_id]
+                self.loaded = True
+            else:
+                # No datasets left
+                self.active_dataset_id = None
+                self.store = None
+                self.root = None
+                self.metadata = {}
+                self.loaded = False
+                
+        logger.info(f"Unloaded dataset {dataset_id}")
+        return True
+    
+    def get_dataset_metadata(self, dataset_id: str) -> Dict[str, Any]:
+        """
+        Get metadata for a specific dataset.
+        
+        Args:
+            dataset_id: Dataset ID
+            
+        Returns:
+            dict: Metadata dictionary
+        """
+        return self.dataset_metadata.get(dataset_id, {})
+    
+    def get_obs_names(self, dataset_id: Optional[str] = None) -> List[str]:
         """
         Get the observation (cell) names.
         
+        Args:
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            
         Returns:
             list: List of observation names
         """
-        if not self.loaded or not self.metadata.get('has_obs', False):
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None:
+            return []
+            
+        # Get metadata for the dataset
+        metadata = self.get_metadata(dataset_id)
+        if not metadata.get('has_obs', False):
             return []
         
         try:
-            if '_index' in self.root['obs']:
-                index = self.root['obs']['_index'][:]
+            if 'obs' in root and '_index' in root['obs']:
+                index = root['obs']['_index'][:]
                 return [str(x) for x in index]
             else:
                 # If no explicit index, use numbered indices
-                shape = self.metadata.get('shape', (0, 0))
+                shape = metadata.get('shape', (0, 0))
                 return [f"Cell_{i}" for i in range(shape[0])]
         except Exception as e:
-            logger.error(f"Error getting obs names: {e}")
+            logger.error(f"Error getting obs names for dataset {dataset_id}: {e}")
             return []
     
-    def get_var_names(self, column: Optional[str] = None) -> List[str]:
+    def get_var_names(self, column: Optional[str] = None, dataset_id: Optional[str] = None) -> List[str]:
         """
         Get the variable (gene) names.
         
@@ -730,77 +1207,90 @@ class ZarrReader:
             column: Optional name of the column containing gene names.
                    If provided, this column will be used instead of '_index'.
                    If the column doesn't exist, falls back to '_index'.
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
         
         Returns:
             list: List of variable names
         """
-        if not self.loaded or not self.metadata.get('has_var', False):
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None:
+            return []
+            
+        # Get metadata for the dataset
+        metadata = self.get_metadata(dataset_id)
+        if not metadata.get('has_var', False):
             return []
             
         try:
             # If a specific column is requested and exists, use it
-            if column and column in self.root['var']:
-                logger.info(f"Using custom gene name column: {column}")
-                gene_names = self.root['var'][column][:]
+            if column and column in root['var']:
+                logger.info(f"Using custom gene name column: {column} for dataset {dataset_id}")
+                gene_names = root['var'][column][:]
                 return [str(x) for x in gene_names]
             # Otherwise use the default _index
-            elif '_index' in self.root['var']:
-                index = self.root['var']['_index'][:]
+            elif 'var' in root and '_index' in root['var']:
+                index = root['var']['_index'][:]
                 return [str(x) for x in index]
             else:
                 # If no explicit index, use numbered indices
-                shape = self.metadata.get('shape', (0, 0))
+                shape = metadata.get('shape', (0, 0))
                 return [f"Gene_{i}" for i in range(shape[1])]
         except Exception as e:
-            logger.error(f"Error getting var names from column {column}: {e}")
+            logger.error(f"Error getting var names from column {column} for dataset {dataset_id}: {e}")
             return []
     
     def get_X(self, row_indices: Optional[List[int]] = None, 
-             col_indices: Optional[List[int]] = None) -> np.ndarray:
+             col_indices: Optional[List[int]] = None,
+             dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get the X matrix or a subset of it.
         
         Args:
             row_indices: List of row indices to select
             col_indices: List of column indices to select
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'X' not in self.root:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'X' not in root:
             return np.array([])
         
         try:
             # If row or column indices represent a large selection, use optimized chunking
             if (row_indices is not None and len(row_indices) > 1000) or \
                (col_indices is not None and len(col_indices) > 1000):
-                return self._load_chunked_data('X', row_indices, col_indices)
+                return self._load_chunked_data('X', row_indices, col_indices, dataset_id)
             
             # Handle selection
             if row_indices is not None and col_indices is not None:
                 # Both row and column indices provided
-                return self.root['X'][row_indices, :][:, col_indices]
+                return root['X'][row_indices, :][:, col_indices]
             elif row_indices is not None:
                 # Only row indices provided
-                return self.root['X'][row_indices, :]
+                return root['X'][row_indices, :]
             elif col_indices is not None:
                 # Only column indices provided
-                return self.root['X'][:, col_indices]
+                return root['X'][:, col_indices]
             else:
                 # No selection, return everything
-                shape = self.root['X'].shape
+                shape = root['X'].shape
                 # For very large matrices, return a sampled subset with warning
                 if shape[0] * shape[1] > 1e8:  # More than 100M elements
-                    logger.warning(f"X matrix is very large ({shape}). Returning downsampled data.")
-                    return self._downsample_array('X')
-                return self.root['X'][:]
+                    logger.warning(f"X matrix is very large ({shape}) for dataset {dataset_id}. Returning downsampled data.")
+                    return self._downsample_array('X', max_size=1000, dataset_id=dataset_id)
+                return root['X'][:]
         except Exception as e:
-            logger.error(f"Error getting X data: {e}")
+            logger.error(f"Error getting X data for dataset {dataset_id}: {e}")
             return np.array([])
     
     def get_layer(self, layer_name: str,
                  row_indices: Optional[List[int]] = None,
-                 col_indices: Optional[List[int]] = None) -> np.ndarray:
+                 col_indices: Optional[List[int]] = None,
+                 dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get a layer matrix or a subset of it.
         
@@ -808,16 +1298,19 @@ class ZarrReader:
             layer_name: Name of the layer
             row_indices: List of row indices to select
             col_indices: List of column indices to select
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'layers' not in self.root or layer_name not in self.root['layers']:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'layers' not in root or layer_name not in root['layers']:
             return np.array([])
         
         try:
             # Get the layer
-            layer = self.root['layers'][layer_name]
+            layer = root['layers'][layer_name]
             
             # Handle selection
             if row_indices is not None and col_indices is not None:
@@ -833,222 +1326,258 @@ class ZarrReader:
                 # No selection, return everything
                 return layer[:]
         except Exception as e:
-            logger.error(f"Error getting layer {layer_name} data: {e}")
+            logger.error(f"Error getting layer {layer_name} data for dataset {dataset_id}: {e}")
             return np.array([])
     
     def get_obs(self, column_name: Optional[str] = None,
-               indices: Optional[List[int]] = None) -> Union[Dict[str, np.ndarray], np.ndarray]:
+               indices: Optional[List[int]] = None,
+               dataset_id: Optional[str] = None) -> Union[Dict[str, np.ndarray], np.ndarray]:
         """
         Get observation annotations.
         
         Args:
             column_name: Name of the column to retrieve, or None for all columns
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             dict or numpy.ndarray: The requested data
         """
-        if not self.loaded or 'obs' not in self.root:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'obs' not in root:
             return {} if column_name is None else np.array([])
+        
+        # Get metadata for the dataset
+        metadata = self.get_metadata(dataset_id)
         
         try:
             if column_name is not None:
                 # Get a specific column
-                if column_name not in self.root['obs']:
+                if column_name not in root['obs']:
                     return np.array([])
                 
                 if indices is not None:
-                    return self.root['obs'][column_name][indices]
+                    return root['obs'][column_name][indices]
                 else:
-                    return self.root['obs'][column_name][:]
+                    return root['obs'][column_name][:]
             else:
                 # Get all columns
                 result = {}
                 
                 # Get index if available
-                if '_index' in self.root['obs']:
+                if '_index' in root['obs']:
                     if indices is not None:
-                        result['_index'] = self.root['obs']['_index'][indices]
+                        result['_index'] = root['obs']['_index'][indices]
                     else:
-                        result['_index'] = self.root['obs']['_index'][:]
+                        result['_index'] = root['obs']['_index'][:]
                 
                 # Get all columns
-                for column in self.metadata.get('obs_columns', []):
+                for column in metadata.get('obs_columns', []):
                     if indices is not None:
-                        result[column] = self.root['obs'][column][indices]
+                        result[column] = root['obs'][column][indices]
                     else:
-                        result[column] = self.root['obs'][column][:]
+                        result[column] = root['obs'][column][:]
                 
                 return result
         except Exception as e:
-            logger.error(f"Error getting obs data for column {column_name}: {e}")
+            logger.error(f"Error getting obs data for column {column_name} in dataset {dataset_id}: {e}")
             return {} if column_name is None else np.array([])
     
     def get_var(self, column_name: Optional[str] = None,
-               indices: Optional[List[int]] = None) -> Union[Dict[str, np.ndarray], np.ndarray]:
+               indices: Optional[List[int]] = None,
+               dataset_id: Optional[str] = None) -> Union[Dict[str, np.ndarray], np.ndarray]:
         """
         Get variable annotations.
         
         Args:
             column_name: Name of the column to retrieve, or None for all columns
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             dict or numpy.ndarray: The requested data
         """
-        if not self.loaded or 'var' not in self.root:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'var' not in root:
             return {} if column_name is None else np.array([])
+        
+        # Get metadata for the dataset
+        metadata = self.get_metadata(dataset_id)
         
         try:
             if column_name is not None:
                 # Get a specific column
-                if column_name not in self.root['var']:
+                if column_name not in root['var']:
                     return np.array([])
                 
                 if indices is not None:
-                    return self.root['var'][column_name][indices]
+                    return root['var'][column_name][indices]
                 else:
-                    return self.root['var'][column_name][:]
+                    return root['var'][column_name][:]
             else:
                 # Get all columns
                 result = {}
                 
                 # Get index if available
-                if '_index' in self.root['var']:
+                if '_index' in root['var']:
                     if indices is not None:
-                        result['_index'] = self.root['var']['_index'][indices]
+                        result['_index'] = root['var']['_index'][indices]
                     else:
-                        result['_index'] = self.root['var']['_index'][:]
+                        result['_index'] = root['var']['_index'][:]
                 
                 # Get all columns
-                for column in self.metadata.get('var_columns', []):
+                for column in metadata.get('var_columns', []):
                     if indices is not None:
-                        result[column] = self.root['var'][column][indices]
+                        result[column] = root['var'][column][indices]
                     else:
-                        result[column] = self.root['var'][column][:]
+                        result[column] = root['var'][column][:]
                 
                 return result
         except Exception as e:
-            logger.error(f"Error getting var data for column {column_name}: {e}")
+            logger.error(f"Error getting var data for column {column_name} in dataset {dataset_id}: {e}")
             return {} if column_name is None else np.array([])
     
     def get_obsm(self, obsm_key: str,
-                indices: Optional[List[int]] = None) -> np.ndarray:
+                indices: Optional[List[int]] = None,
+                dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get observation multi-dimensional annotations.
         
         Args:
             obsm_key: Key of the obsm entry to retrieve
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'obsm' not in self.root or obsm_key not in self.root['obsm']:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'obsm' not in root or obsm_key not in root['obsm']:
             return np.array([])
         
         try:
             if indices is not None:
-                return self.root['obsm'][obsm_key][indices]
+                return root['obsm'][obsm_key][indices]
             else:
-                return self.root['obsm'][obsm_key][:]
+                return root['obsm'][obsm_key][:]
         except Exception as e:
-            logger.error(f"Error getting obsm data for key {obsm_key}: {e}")
+            logger.error(f"Error getting obsm data for key {obsm_key} in dataset {dataset_id}: {e}")
             return np.array([])
     
     def get_varm(self, varm_key: str,
-                indices: Optional[List[int]] = None) -> np.ndarray:
+                indices: Optional[List[int]] = None,
+                dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get variable multi-dimensional annotations.
         
         Args:
             varm_key: Key of the varm entry to retrieve
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'varm' not in self.root or varm_key not in self.root['varm']:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'varm' not in root or varm_key not in root['varm']:
             return np.array([])
         
         try:
             if indices is not None:
-                return self.root['varm'][varm_key][indices]
+                return root['varm'][varm_key][indices]
             else:
-                return self.root['varm'][varm_key][:]
+                return root['varm'][varm_key][:]
         except Exception as e:
-            logger.error(f"Error getting varm data for key {varm_key}: {e}")
+            logger.error(f"Error getting varm data for key {varm_key} in dataset {dataset_id}: {e}")
             return np.array([])
     
-    def get_uns(self, uns_key: str) -> Any:
+    def get_uns(self, uns_key: str, dataset_id: Optional[str] = None) -> Any:
         """
         Get unstructured annotation.
         
         Args:
             uns_key: Key of the uns entry to retrieve
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             The requested data
         """
-        if not self.loaded or 'uns' not in self.root or uns_key not in self.root['uns']:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or 'uns' not in root or uns_key not in root['uns']:
             return None
         
         try:
-            return self.root['uns'][uns_key][:]
+            return root['uns'][uns_key][:]
         except Exception as e:
-            logger.error(f"Error getting uns data for key {uns_key}: {e}")
+            logger.error(f"Error getting uns data for key {uns_key} in dataset {dataset_id}: {e}")
             return None
     
     def get_obsp(self, obsp_key: str,
-                indices: Optional[List[int]] = None) -> np.ndarray:
+                indices: Optional[List[int]] = None,
+                dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get observation-observation (cell-cell) matrices.
         
         Args:
             obsp_key: Key of the obsp entry to retrieve
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'obsp' not in self.root or obsp_key not in self.root['obsp']:
+        # Get the root for the specified dataset
+        root = self._get_root(dataset_id)
+        
+        if root is None or 'obsp' not in root or obsp_key not in root['obsp']:
             return np.array([])
         
         try:
             if indices is not None:
-                return self.root['obsp'][obsp_key][indices, :][:, indices]
+                return root['obsp'][obsp_key][indices, :][:, indices]
             else:
-                return self.root['obsp'][obsp_key][:]
+                return root['obsp'][obsp_key][:]
         except Exception as e:
-            logger.error(f"Error getting obsp data for key {obsp_key}: {e}")
+            logger.error(f"Error getting obsp data for key {obsp_key} in dataset {dataset_id}: {e}")
             return np.array([])
     
     def get_varp(self, varp_key: str,
-                indices: Optional[List[int]] = None) -> np.ndarray:
+                indices: Optional[List[int]] = None,
+                dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get variable-variable (gene-gene) matrices.
         
         Args:
             varp_key: Key of the varp entry to retrieve
             indices: List of indices to select, or None for all
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The requested data
         """
-        if not self.loaded or 'varp' not in self.root or varp_key not in self.root['varp']:
+        # Get the root for the specified dataset
+        root = self._get_root(dataset_id)
+        
+        if root is None or 'varp' not in root or varp_key not in root['varp']:
             return np.array([])
         
         try:
             if indices is not None:
-                return self.root['varp'][varp_key][indices, :][:, indices]
+                return root['varp'][varp_key][indices, :][:, indices]
             else:
-                return self.root['varp'][varp_key][:]
+                return root['varp'][varp_key][:]
         except Exception as e:
-            logger.error(f"Error getting varp data for key {varp_key}: {e}")
+            logger.error(f"Error getting varp data for key {varp_key} in dataset {dataset_id}: {e}")
             return np.array([])
             
     def _load_chunked_data(self, path: str, row_indices: Optional[List[int]] = None, 
-                          col_indices: Optional[List[int]] = None) -> np.ndarray:
+                          col_indices: Optional[List[int]] = None,
+                          dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Load data using an optimized chunking strategy for large datasets.
         
@@ -1056,20 +1585,23 @@ class ZarrReader:
             path: Path to the zarr array
             row_indices: List of row indices to select
             col_indices: List of column indices to select
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The chunked data
         """
-        if not self.loaded:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or path not in root:
             return np.array([])
             
         try:
-            array = self.root[path]
+            array = root[path]
             chunks = getattr(array, 'chunks', None)
             
             # If chunks info is not available, fall back to regular loading
             if chunks is None:
-                logger.warning(f"Chunk information not available for {path}, using standard loading")
+                logger.warning(f"Chunk information not available for {path} in dataset {dataset_id}, using standard loading")
                 if row_indices is not None and col_indices is not None:
                     return array[row_indices, :][:, col_indices]
                 elif row_indices is not None:
@@ -1144,29 +1676,32 @@ class ZarrReader:
                 return array[:]
                 
         except Exception as e:
-            logger.error(f"Error loading chunked data for {path}: {e}")
+            logger.error(f"Error loading chunked data for {path} in dataset {dataset_id}: {e}")
             return np.array([])
             
-    def _downsample_array(self, path: str, max_size: int = 1000) -> np.ndarray:
+    def _downsample_array(self, path: str, max_size: int = 1000, dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Downsample a large array to a manageable size.
         
         Args:
             path: Path to the zarr array
             max_size: Maximum number of elements in each dimension
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The downsampled data
         """
-        if not self.loaded or path not in self.root:
+        # Get the root for the dataset
+        root = self._get_root(dataset_id)
+        if root is None or path not in root:
             return np.array([])
             
         try:
-            array = self.root[path]
+            array = root[path]
             shape = array.shape
             
             if len(shape) != 2:
-                logger.warning(f"Downsampling only supported for 2D arrays, got shape {shape}")
+                logger.warning(f"Downsampling only supported for 2D arrays, got shape {shape} for dataset {dataset_id}")
                 return array[:]
                 
             # Calculate stride for each dimension
@@ -1187,11 +1722,12 @@ class ZarrReader:
             return array[row_indices[:, np.newaxis], col_indices]
             
         except Exception as e:
-            logger.error(f"Error downsampling array {path}: {e}")
+            logger.error(f"Error downsampling array {path} in dataset {dataset_id}: {e}")
             return np.array([])
             
     def load_progressively(self, path: str, chunk_size: int = 1000, 
-                          callback: Optional[callable] = None) -> np.ndarray:
+                          callback: Optional[callable] = None,
+                          dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Load data progressively with callback for progress updates.
         
@@ -1199,15 +1735,19 @@ class ZarrReader:
             path: Path to the zarr array
             chunk_size: Size of chunks to load at once
             callback: Callback function called with (chunk, progress)
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
             
         Returns:
             numpy.ndarray: The complete loaded data
         """
-        if not self.loaded or path not in self.root:
+        # Get the root for the specified dataset
+        root = self._get_root(dataset_id)
+        
+        if root is None or path not in root:
             return np.array([])
             
         try:
-            array = self.root[path]
+            array = root[path]
             shape = array.shape
             
             # For 1D arrays
@@ -1248,68 +1788,76 @@ class ZarrReader:
                 return data
                 
         except Exception as e:
-            logger.error(f"Error loading data progressively from {path}: {e}")
+            logger.error(f"Error loading data progressively from {path} for dataset {dataset_id}: {e}")
             return np.array([])
     
-    def get_available_data(self) -> Dict[str, Any]:
+    def get_available_data(self, dataset_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get a comprehensive dictionary of available data in the AnnData object.
         
+        Args:
+            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            
         Returns:
             dict: Dictionary of available data
         """
-        if not self.loaded:
+        if not self.is_initialized(dataset_id):
             return {}
             
+        # Get metadata for the dataset
+        metadata = self.get_metadata(dataset_id)
+            
         # Start with the metadata
-        result = dict(self.metadata)
+        result = dict(metadata)
         
         # Add more detailed information
-        if self.metadata.get('has_obs', False):
-            result['obs_sample'] = self.get_obs(indices=list(range(min(10, self.metadata['shape'][0]))))
+        if metadata.get('has_obs', False):
+            result['obs_sample'] = self.get_obs(indices=list(range(min(10, metadata['shape'][0]))), dataset_id=dataset_id)
             
-        if self.metadata.get('has_var', False):
-            result['var_sample'] = self.get_var(indices=list(range(min(10, self.metadata['shape'][1]))))
+        if metadata.get('has_var', False):
+            result['var_sample'] = self.get_var(indices=list(range(min(10, metadata['shape'][1]))), dataset_id=dataset_id)
             
-        if self.metadata.get('has_obsm', False) and self.metadata.get('embeddings', []):
+        if metadata.get('has_obsm', False) and metadata.get('embeddings', []):
             # Get a sample of the first embedding
-            embedding_key = self.metadata['embeddings'][0]
+            embedding_key = metadata['embeddings'][0]
             result['obsm_sample'] = {
                 embedding_key: self.get_obsm(embedding_key, 
-                                            indices=list(range(min(10, self.metadata['shape'][0]))))
+                                           indices=list(range(min(10, metadata['shape'][0]))), 
+                                           dataset_id=dataset_id)
             }
             
         # Add varm sample if available
-        if self.metadata.get('has_varm', False) and self.metadata.get('varm', {}).get('keys', []):
-            varm_keys = self.metadata['varm']['keys']
+        if metadata.get('has_varm', False) and metadata.get('varm', {}).get('keys', []):
+            varm_keys = metadata['varm']['keys']
             if varm_keys:
                 # Get a sample of the first varm matrix
                 varm_key = varm_keys[0]
                 result['varm_sample'] = {
                     varm_key: self.get_varm(varm_key, 
-                                           indices=list(range(min(10, self.metadata['shape'][1]))))
+                                          indices=list(range(min(10, metadata['shape'][1]))),
+                                          dataset_id=dataset_id)
                 }
                 
         # Add obsp sample if available
-        if self.metadata.get('has_obsp', False) and self.metadata.get('obsp', {}).get('keys', []):
-            obsp_keys = self.metadata['obsp']['keys']
+        if metadata.get('has_obsp', False) and metadata.get('obsp', {}).get('keys', []):
+            obsp_keys = metadata['obsp']['keys']
             if obsp_keys:
                 # Get a sample of the first obsp matrix
                 obsp_key = obsp_keys[0]
-                sample_indices = list(range(min(5, self.metadata['shape'][0])))
+                sample_indices = list(range(min(5, metadata['shape'][0])))
                 result['obsp_sample'] = {
-                    obsp_key: self.get_obsp(obsp_key, indices=sample_indices)
+                    obsp_key: self.get_obsp(obsp_key, indices=sample_indices, dataset_id=dataset_id)
                 }
                 
         # Add varp sample if available
-        if self.metadata.get('has_varp', False) and self.metadata.get('varp', {}).get('keys', []):
-            varp_keys = self.metadata['varp']['keys']
+        if metadata.get('has_varp', False) and metadata.get('varp', {}).get('keys', []):
+            varp_keys = metadata['varp']['keys']
             if varp_keys:
                 # Get a sample of the first varp matrix
                 varp_key = varp_keys[0]
-                sample_indices = list(range(min(5, self.metadata['shape'][1])))
+                sample_indices = list(range(min(5, metadata['shape'][1])))
                 result['varp_sample'] = {
-                    varp_key: self.get_varp(varp_key, indices=sample_indices)
+                    varp_key: self.get_varp(varp_key, indices=sample_indices, dataset_id=dataset_id)
                 }
             
         return result

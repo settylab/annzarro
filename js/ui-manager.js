@@ -1344,38 +1344,59 @@ class UIManager {
         const datasetStats = document.getElementById('datasetStats');
         const exploreBtn = document.getElementById('exploreDataBtn');
         
+        // Check if status bar exists
+        if (!statusBar) {
+            console.warn('Status bar element not found');
+            return;
+        }
+        
         if (dataManager.isDataLoaded()) {
             const info = dataManager.getBasicInfo();
             
-            // Set dataset name
-            datasetName.textContent = 'Dataset loaded';
+            // Set dataset name if element exists
+            if (datasetName) {
+                datasetName.textContent = 'Dataset loaded';
+            }
             
-            // Set dataset stats
-            datasetStats.textContent = `(${Utils.formatNumber(info.nObs)} cells × ${Utils.formatNumber(info.nVars)} genes)`;
+            // Set dataset stats if element exists
+            if (datasetStats) {
+                datasetStats.textContent = `(${Utils.formatNumber(info.nObs)} cells × ${Utils.formatNumber(info.nVars)} genes)`;
+            }
             
-            // Enable explore button
-            exploreBtn.disabled = false;
-            
-            // Add event listener to explore button if not already added
-            if (!exploreBtn.dataset.listenerAdded) {
-                exploreBtn.addEventListener('click', () => {
-                    // Show data explorer modal
-                    $('#dataExplorerModal').modal('show');
-                    
-                    // Populate the data explorer
-                    this._populateDataExplorer('dataExplorerModal');
-                });
+            // Update explore button if it exists
+            if (exploreBtn) {
+                exploreBtn.disabled = false;
                 
-                exploreBtn.dataset.listenerAdded = 'true';
+                // Add event listener to explore button if not already added
+                if (!exploreBtn.dataset.listenerAdded) {
+                    exploreBtn.addEventListener('click', () => {
+                        // Show data explorer modal
+                        $('#dataExplorerModal').modal('show');
+                        
+                        // Populate the data explorer
+                        this._populateDataExplorer('dataExplorerModal');
+                    });
+                    
+                    exploreBtn.dataset.listenerAdded = 'true';
+                }
             }
             
             // Update status bar style
             statusBar.className = 'alert alert-success my-2';
         } else {
-            // Reset status bar
-            datasetName.textContent = 'No dataset loaded';
-            datasetStats.textContent = '';
-            exploreBtn.disabled = true;
+            // Reset status bar elements if they exist
+            if (datasetName) {
+                datasetName.textContent = 'No dataset loaded';
+            }
+            
+            if (datasetStats) {
+                datasetStats.textContent = '';
+            }
+            
+            if (exploreBtn) {
+                exploreBtn.disabled = true;
+            }
+            
             statusBar.className = 'alert alert-secondary my-2';
         }
     }

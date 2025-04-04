@@ -45,7 +45,11 @@ DEFAULT_CONFIG = {
     "log_level": "INFO",
     "auth_enabled": False,
     "user_file": "users.json",
-    "unified_server": True  # New flag to indicate we're using the unified server approach
+    "unified_server": True,  # New flag to indicate we're using the unified server approach
+    "max_response_elements": 1000000,  # Maximum number of elements in array responses (can be increased for large datasets)
+    "max_cells_per_request": 10000,    # Maximum number of cells in a single request
+    "max_genes_per_request": 10000,    # Maximum number of genes in a single request
+    "max_embedding_dims": 50           # Maximum number of dimensions in embedding requests
 }
 
 # API version
@@ -317,44 +321,199 @@ def get_dataset_info(dataset_path: str):
     
     return jsonify(info)
 
-@app.route(f"/api/{API_VERSION}/datasets/<path:dataset_path>/load", methods=["POST"])
-def load_dataset(dataset_path: str):
+@app.route(f"/api/{API_VERSION}/datasets/<path:dataset_path>/info", methods=["GET"])
+def get_dataset_metadata(dataset_path: str):
     """
-    Load a dataset.
+    Get metadata for a dataset by path without loading it into memory.
+    This is the stateless way to get dataset information.
     
     Args:
         dataset_path: Path to the dataset
         
     Returns:
-        JSON response with success status
+        JSON response with dataset metadata
     """
-    # Load dataset
-    success = data_manager.load_dataset(dataset_path)
-    
-    if success:
-        # Get basic info
-        info = data_manager.get_basic_info()
-        return jsonify({"success": True, "info": info})
-    else:
-        return jsonify({"success": False, "error": "Failed to load dataset"})
+    try:
+        # Use the stateless approach to get dataset info
+        # Use direct file access without maintaining state
+        root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+        
+        # Generate a dataset ID from the path if needed
+        dataset_id = os.path.basename(os.path.normpath(dataset_path))
+        
+        # Format response with basic info
+        shape = metadata.get('shape', (0, 0))
+        info = {
+            "dataset_id": dataset_id,
+            "path": dataset_path,
+            "name": Path(dataset_path).stem.replace("_", " ").title(),
+            "shape": shape,
+            "n_obs": shape[0] if len(shape) > 0 else 0,
+            "n_vars": shape[1] if len(shape) > 1 else 0,
+            "has_obs": metadata.get("has_obs", False),
+            "has_var": metadata.get("has_var", False),
+            "has_obsm": metadata.get("has_obsm", False),
+            "has_varm": metadata.get("has_varm", False),
+            "has_layers": metadata.get("has_layers", False),
+            "has_uns": metadata.get("has_uns", False),
+            "obs_columns": metadata.get("obs_columns", []),
+            "var_columns": metadata.get("var_columns", []),
+            "layers": metadata.get("layers", {})
+        }
+        
+        # Add embeddings (obsm) information
+        embeddings = metadata.get("embeddings", [])
+        info["embeddings"] = embeddings
+        
+        # Add detailed obsm information
+        if metadata.get("has_obsm", False) and "obsm" in root:
+            obsm_info = {}
+            for key in root["obsm"].keys():
+                try:
+                    shape = root["obsm"][key].shape
+                    dtype = str(root["obsm"][key].dtype)
+                    obsm_info[key] = {"shape": shape, "dtype": dtype}
+                except Exception as e:
+                    logger.warning(f"Error getting shape for obsm/{key}: {e}")
+            info["obsm_details"] = obsm_info
+        
+        # Add detailed varm information
+        if metadata.get("has_varm", False) and "varm" in root:
+            varm_info = {}
+            for key in root["varm"].keys():
+                try:
+                    shape = root["varm"][key].shape
+                    dtype = str(root["varm"][key].dtype)
+                    varm_info[key] = {"shape": shape, "dtype": dtype}
+                except Exception as e:
+                    logger.warning(f"Error getting shape for varm/{key}: {e}")
+            info["varm_details"] = varm_info
+        
+        # Add detailed layers information
+        if metadata.get("has_layers", False) and "layers" in root:
+            layers_info = {}
+            for key in root["layers"].keys():
+                try:
+                    shape = root["layers"][key].shape
+                    dtype = str(root["layers"][key].dtype)
+                    layers_info[key] = {"shape": shape, "dtype": dtype}
+                except Exception as e:
+                    logger.warning(f"Error getting shape for layers/{key}: {e}")
+            info["layers_details"] = layers_info
+            
+        # Add detailed obsp information
+        if metadata.get("has_obsp", False) and "obsp" in root:
+            obsp_info = {}
+            for key in root["obsp"].keys():
+                try:
+                    shape = root["obsp"][key].shape
+                    dtype = str(root["obsp"][key].dtype)
+                    obsp_info[key] = {"shape": shape, "dtype": dtype}
+                except Exception as e:
+                    logger.warning(f"Error getting shape for obsp/{key}: {e}")
+            info["obsp_details"] = obsp_info
+            
+        # Add detailed varp information
+        if metadata.get("has_varp", False) and "varp" in root:
+            varp_info = {}
+            for key in root["varp"].keys():
+                try:
+                    shape = root["varp"][key].shape
+                    dtype = str(root["varp"][key].dtype)
+                    varp_info[key] = {"shape": shape, "dtype": dtype}
+                except Exception as e:
+                    logger.warning(f"Error getting shape for varp/{key}: {e}")
+            info["varp_details"] = varp_info
+            
+        # Get sample obs and var names if available
+        if metadata.get("has_obs", False) and 'obs' in root and '_index' in root['obs']:
+            # Get first 10 observation names
+            obs_names = root['obs']['_index'][:10]
+            info["obs_names_sample"] = [str(x) for x in obs_names]
+            
+        if metadata.get("has_var", False) and 'var' in root and '_index' in root['var']:
+            # Get first 10 variable names
+            var_names = root['var']['_index'][:10]
+            info["var_names_sample"] = [str(x) for x in var_names]
+        
+        return jsonify(info)
+    except Exception as e:
+        logger.error(f"Error getting dataset metadata for {dataset_path}: {e}")
+        return jsonify({"error": f"Failed to get dataset metadata: {str(e)}"}), 500
 
 @app.route(f"/api/{API_VERSION}/data/info", methods=["GET"])
 def get_data_info():
     """
-    Get information about the currently loaded dataset.
+    Get information about a dataset.
+    
+    Query parameters:
+        dataset_id: Optional. ID of the dataset to get info for.
+        dataset_path: Optional. Path to the dataset.
+                     Only one of dataset_id or dataset_path should be provided.
     
     Returns:
         JSON response with dataset information
     """
-    # Get basic info
-    info = data_manager.get_basic_info()
+    # Get dataset identification
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
-    return jsonify(info)
+    if dataset_path:
+        # Use the direct access approach for stateless operation
+        try:
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Format basic info
+            shape = metadata.get('shape', (0, 0))
+            info = {
+                "path": dataset_path,
+                "name": Path(dataset_path).stem.replace("_", " ").title(),
+                "shape": shape,
+                "n_obs": shape[0] if len(shape) > 0 else 0,
+                "n_vars": shape[1] if len(shape) > 1 else 0,
+                "has_obs": metadata.get("has_obs", False),
+                "has_var": metadata.get("has_var", False),
+                "has_obsm": metadata.get("has_obsm", False),
+                "has_varm": metadata.get("has_varm", False),
+                "has_layers": metadata.get("has_layers", False),
+                "has_uns": metadata.get("has_uns", False),
+                "obs_columns": metadata.get("obs_columns", []),
+                "var_columns": metadata.get("var_columns", []),
+                "layers": metadata.get("layers", {}),
+                "embeddings": metadata.get("embeddings", [])
+            }
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                info["dataset_id"] = dataset_id
+                
+            return jsonify(info)
+        except Exception as e:
+            logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
+    
+    elif dataset_id:
+        # For backward compatibility, use legacy approach
+        info = data_manager.get_basic_info(dataset_id)
+        
+        # Add dataset ID to response
+        info["dataset_id"] = dataset_id
+        
+        return jsonify(info)
+    else:
+        return jsonify({"error": "Either dataset_id or dataset_path must be provided"}), 400
 
 @app.route(f"/api/{API_VERSION}/data/obs", methods=["GET"])
 def get_obs():
     """
     Get observation annotations.
+    
+    Query parameters:
+        column: Optional name of the column to retrieve
+        indices: Optional comma-separated list of indices to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
     
     Returns:
         JSON response with observation data
@@ -362,6 +521,8 @@ def get_obs():
     # Get parameters
     column = request.args.get("column")
     indices_str = request.args.get("indices")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
     # Parse indices if provided
     indices = None
@@ -371,31 +532,153 @@ def get_obs():
         except ValueError:
             return jsonify({"error": "Invalid indices format"})
     
-    # Get data
-    data = data_manager.get_obs(column, indices)
-    
-    # Convert to JSON-serializable format
-    if isinstance(data, dict):
-        # For dictionary result (all columns)
-        result = {}
-        for key, value in data.items():
-            if hasattr(value, "tolist"):
-                result[key] = value.tolist()
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'obs' component exists
+            if 'obs' not in root:
+                return jsonify({"error": "Dataset has no observation annotations"}), 404
+                
+            # Get data from the specified column or all columns
+            if column:
+                # Check if the column exists
+                if column not in root['obs']:
+                    return jsonify({"error": f"Column '{column}' not found in 'obs'"}), 404
+                    
+                # Get data for the specific column
+                try:
+                    array = root['obs'][column]
+                    
+                    # Handle AnnData categorical arrays which have a special structure
+                    if hasattr(array, 'keys') and 'categories' in array and 'codes' in array:
+                        # This is likely a categorical array with categories and codes
+                        logger.info(f"Found categorical data in obs/{column}")
+                        if indices is not None:
+                            codes = array['codes'][indices]
+                        else:
+                            codes = array['codes'][:]
+                            
+                        categories = array['categories'][:]
+                        
+                        # Convert codes to category names
+                        import numpy as np
+                        data = [categories[code] if 0 <= code < len(categories) else None for code in codes]
+                    else:
+                        # Handle regular arrays
+                        if indices is not None:
+                            data = array[indices]
+                        else:
+                            data = array[:]
+                except Exception as e:
+                    logger.error(f"Error accessing obs data with direct indexing: {e}")
+                    # Fall back to numpy array conversion if direct indexing fails
+                    try:
+                        import numpy as np
+                        if hasattr(array, 'keys') and set(array.keys()) == {'categories', 'codes'}:
+                            # It's a categorical array but indexing failed
+                            codes = np.array(array['codes'])
+                            categories = np.array(array['categories'])
+                            if indices is not None:
+                                selected_codes = codes[indices]
+                            else:
+                                selected_codes = codes
+                            data = [categories[code] if 0 <= code < len(categories) else None for code in selected_codes]
+                        else:
+                            # Regular array
+                            np_array = np.array(array)
+                            if indices is not None:
+                                data = np_array[indices]
+                            else:
+                                data = np_array
+                    except Exception as nested_e:
+                        logger.error(f"Fallback indexing also failed: {nested_e}")
+                        return jsonify({"error": f"Failed to access observation data: {str(e)}"}), 500
+                    
+                # Convert to JSON-serializable format
+                if hasattr(data, "tolist"):
+                    result = data.tolist()
+                else:
+                    result = data
             else:
-                result[key] = value
-    else:
-        # For array result (single column)
-        if hasattr(data, "tolist"):
-            result = data.tolist()
-        else:
-            result = data
+                # Get all columns
+                result = {}
+                
+                # First get the _index column if available
+                if '_index' in root['obs']:
+                    if indices is not None:
+                        result['_index'] = root['obs']['_index'][indices].tolist()
+                    else:
+                        result['_index'] = root['obs']['_index'][:].tolist()
+                
+                # Then get all other columns
+                for col in root['obs'].keys():
+                    if col != '_index':
+                        if indices is not None:
+                            data = root['obs'][col][indices]
+                        else:
+                            data = root['obs'][col][:]
+                            
+                        if hasattr(data, "tolist"):
+                            result[col] = data.tolist()
+                        else:
+                            result[col] = data
+            
+            # Create response
+            response = {"data": result}
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                
+            # Include dataset ID in response
+            response["dataset_id"] = dataset_id
+            
+            return jsonify(response)
+        except Exception as e:
+            logger.error(f"Error getting obs data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get observation data: {str(e)}"}), 500
     
-    return jsonify({"data": result})
+    # Legacy approach using DataManager
+    else:
+        # Get data
+        data = data_manager.get_obs(column, indices, dataset_id)
+        
+        # Convert to JSON-serializable format
+        if isinstance(data, dict):
+            # For dictionary result (all columns)
+            result = {}
+            for key, value in data.items():
+                if hasattr(value, "tolist"):
+                    result[key] = value.tolist()
+                else:
+                    result[key] = value
+        else:
+            # For array result (single column)
+            if hasattr(data, "tolist"):
+                result = data.tolist()
+            else:
+                result = data
+        
+        # Include dataset ID in response if provided
+        response = {"data": result}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/var", methods=["GET"])
 def get_var():
     """
     Get variable annotations.
+    
+    Query parameters:
+        column: Optional name of the column to retrieve
+        indices: Optional comma-separated list of indices to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
     
     Returns:
         JSON response with variable data
@@ -403,6 +686,8 @@ def get_var():
     # Get parameters
     column = request.args.get("column")
     indices_str = request.args.get("indices")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
     # Parse indices if provided
     indices = None
@@ -412,38 +697,154 @@ def get_var():
         except ValueError:
             return jsonify({"error": "Invalid indices format"})
     
-    # Get data
-    data = data_manager.get_var(column, indices)
-    
-    # Convert to JSON-serializable format
-    if isinstance(data, dict):
-        # For dictionary result (all columns)
-        result = {}
-        for key, value in data.items():
-            if hasattr(value, "tolist"):
-                result[key] = value.tolist()
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'var' component exists
+            if 'var' not in root:
+                return jsonify({"error": "Dataset has no variable annotations"}), 404
+                
+            # Get data from the specified column or all columns
+            if column:
+                # Check if the column exists
+                if column not in root['var']:
+                    return jsonify({"error": f"Column '{column}' not found in 'var'"}), 404
+                    
+                # Get data for the specific column
+                if indices is not None:
+                    # Apply indices filter
+                    data = root['var'][column][indices]
+                else:
+                    # Get all indices
+                    data = root['var'][column][:]
+                    
+                # Convert to JSON-serializable format
+                if hasattr(data, "tolist"):
+                    result = data.tolist()
+                else:
+                    result = data
             else:
-                result[key] = value
-    else:
-        # For array result (single column)
-        if hasattr(data, "tolist"):
-            result = data.tolist()
-        else:
-            result = data
+                # Get all columns
+                result = {}
+                
+                # First get the _index column if available
+                if '_index' in root['var']:
+                    if indices is not None:
+                        result['_index'] = root['var']['_index'][indices].tolist()
+                    else:
+                        result['_index'] = root['var']['_index'][:].tolist()
+                
+                # Then get all other columns
+                for col in root['var'].keys():
+                    if col != '_index':
+                        if indices is not None:
+                            data = root['var'][col][indices]
+                        else:
+                            data = root['var'][col][:]
+                            
+                        if hasattr(data, "tolist"):
+                            result[col] = data.tolist()
+                        else:
+                            result[col] = data
+            
+            # Create response
+            response = {"data": result}
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                
+            # Include dataset ID in response
+            response["dataset_id"] = dataset_id
+            
+            return jsonify(response)
+        except Exception as e:
+            logger.error(f"Error getting var data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get variable data: {str(e)}"}), 500
     
-    return jsonify({"data": result})
+    # Legacy approach using DataManager
+    else:
+        # Get data
+        data = data_manager.get_var(column, indices, dataset_id)
+        
+        # Convert to JSON-serializable format
+        if isinstance(data, dict):
+            # For dictionary result (all columns)
+            result = {}
+            for key, value in data.items():
+                if hasattr(value, "tolist"):
+                    result[key] = value.tolist()
+                else:
+                    result[key] = value
+        else:
+            # For array result (single column)
+            if hasattr(data, "tolist"):
+                result = data.tolist()
+            else:
+                result = data
+        
+        # Include dataset ID in response if provided
+        response = {"data": result}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        
+        return jsonify(response)
+
+def process_array_response(data, dataset_id=None):
+    """
+    Process array data for JSON response, converting numpy arrays to lists.
+    
+    Args:
+        data: Data to convert
+        dataset_id: Optional dataset ID to include in response
+        
+    Returns:
+        Dictionary ready for JSON response
+    """
+    # Convert to JSON-serializable format
+    if hasattr(data, "tolist"):
+        result = data.tolist()
+    else:
+        result = data
+    
+    # Create response
+    response = {"data": result}
+    
+    # Include dataset ID in response if provided
+    if dataset_id:
+        response["dataset_id"] = dataset_id
+    
+    return response
 
 @app.route(f"/api/{API_VERSION}/data/X", methods=["GET"])
 def get_X():
     """
     Get X matrix data.
     
+    Query parameters:
+        rows: Required comma-separated list of row indices (cells) to select
+        cols: Required comma-separated list of column indices (genes) to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+    
     Returns:
-        JSON response with X matrix data
+        JSON response with X matrix data for the requested rows and columns
     """
     # Get parameters
     row_indices_str = request.args.get("rows")
     col_indices_str = request.args.get("cols")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
+    
+    # For X matrix access, we require at least one of rows or columns for efficient access
+    if not row_indices_str and not col_indices_str:
+        return jsonify({
+            "error": "At least one of 'rows' or 'cols' query parameters must be provided",
+            "message": "For efficient access, specify which rows/columns you need instead of requesting the entire matrix"
+        }), 400
     
     # Parse indices if provided
     row_indices = None
@@ -460,16 +861,85 @@ def get_X():
         except ValueError:
             return jsonify({"error": "Invalid column indices format"})
     
-    # Get data
-    data = data_manager.get_X(row_indices, col_indices)
+    # Limit number of elements to avoid performance issues
+    max_elements = app.config.get("max_response_elements", DEFAULT_CONFIG["max_response_elements"])
+    max_cells = app.config.get("max_cells_per_request", DEFAULT_CONFIG["max_cells_per_request"])
+    max_genes = app.config.get("max_genes_per_request", DEFAULT_CONFIG["max_genes_per_request"])
     
-    # Convert to JSON-serializable format
-    if hasattr(data, "tolist"):
-        result = data.tolist()
-    else:
-        result = data
+    # Check limits for cells and genes separately
+    if row_indices and len(row_indices) > max_cells:
+        return jsonify({
+            "error": "Too many cells requested",
+            "message": f"Requested {len(row_indices)} cells exceeds limit of {max_cells}",
+            "hint": "Reduce the number of cells in your request or increase server max_cells_per_request limit"
+        }), 413
     
-    return jsonify({"data": result})
+    if col_indices and len(col_indices) > max_genes:
+        return jsonify({
+            "error": "Too many genes requested",
+            "message": f"Requested {len(col_indices)} genes exceeds limit of {max_genes}",
+            "hint": "Reduce the number of genes in your request or increase server max_genes_per_request limit"
+        }), 413
+    
+    # Also check total number of elements
+    if row_indices and col_indices and len(row_indices) * len(col_indices) > max_elements:
+        return jsonify({
+            "error": "Request too large",
+            "message": f"Requested {len(row_indices)}x{len(col_indices)}={len(row_indices)*len(col_indices)} elements exceeds limit of {max_elements}",
+            "hint": "Reduce the number of rows or columns in your request or increase server max_response_elements limit"
+        }), 413
+    
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'X' component exists
+            if 'X' not in root:
+                return jsonify({"error": "Dataset has no X matrix"}), 404
+            
+            # Get data with indices filtering
+            if row_indices is not None and col_indices is not None:
+                # Both row and column indices provided
+                data = root['X'][row_indices, :][:, col_indices]
+            elif row_indices is not None:
+                # Only row indices provided
+                if len(row_indices) > 1000:  # Limit number of rows when all columns are requested
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": "When requesting all columns, limit the number of rows to 1000 or less",
+                        "hint": "Add a 'cols' parameter to select specific columns"
+                    }), 413
+                data = root['X'][row_indices, :]
+            elif col_indices is not None:
+                # Only column indices provided
+                if len(col_indices) > 1000:  # Limit number of columns when all rows are requested
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": "When requesting all rows, limit the number of columns to 1000 or less",
+                        "hint": "Add a 'rows' parameter to select specific rows"
+                    }), 413
+                data = root['X'][:, col_indices]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Process and return response
+            return jsonify(process_array_response(data, dataset_id))
+            
+        except Exception as e:
+            logger.error(f"Error getting X data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get X matrix data: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager
+    else:    
+        # Get data
+        data = data_manager.get_X(row_indices, col_indices, dataset_id)
+        
+        # Process and return response
+        return jsonify(process_array_response(data, dataset_id))
 
 @app.route(f"/api/{API_VERSION}/data/layer/<layer_name>", methods=["GET"])
 def get_layer(layer_name: str):
@@ -479,12 +949,27 @@ def get_layer(layer_name: str):
     Args:
         layer_name: Name of the layer
         
+    Query parameters:
+        rows: Required comma-separated list of row indices (cells) to select
+        cols: Required comma-separated list of column indices (genes) to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        
     Returns:
-        JSON response with layer data
+        JSON response with layer data for the requested rows and columns
     """
     # Get parameters
     row_indices_str = request.args.get("rows")
     col_indices_str = request.args.get("cols")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
+    
+    # For layer access, we require at least one of rows or columns for efficient access
+    if not row_indices_str and not col_indices_str:
+        return jsonify({
+            "error": "At least one of 'rows' or 'cols' query parameters must be provided",
+            "message": "For efficient access, specify which rows/columns you need instead of requesting the entire matrix"
+        }), 400
     
     # Parse indices if provided
     row_indices = None
@@ -501,30 +986,113 @@ def get_layer(layer_name: str):
         except ValueError:
             return jsonify({"error": "Invalid column indices format"})
     
-    # Get data
-    data = data_manager.get_layer(layer_name, row_indices, col_indices)
+    # Limit number of elements to avoid performance issues
+    max_elements = app.config.get("max_response_elements", DEFAULT_CONFIG["max_response_elements"])
+    max_cells = app.config.get("max_cells_per_request", DEFAULT_CONFIG["max_cells_per_request"])
+    max_genes = app.config.get("max_genes_per_request", DEFAULT_CONFIG["max_genes_per_request"])
     
-    # Convert to JSON-serializable format
-    if hasattr(data, "tolist"):
-        result = data.tolist()
+    # Check limits for cells and genes separately
+    if row_indices and len(row_indices) > max_cells:
+        return jsonify({
+            "error": "Too many cells requested",
+            "message": f"Requested {len(row_indices)} cells exceeds limit of {max_cells}",
+            "hint": "Reduce the number of cells in your request or increase server max_cells_per_request limit"
+        }), 413
+    
+    if col_indices and len(col_indices) > max_genes:
+        return jsonify({
+            "error": "Too many genes requested",
+            "message": f"Requested {len(col_indices)} genes exceeds limit of {max_genes}",
+            "hint": "Reduce the number of genes in your request or increase server max_genes_per_request limit"
+        }), 413
+    
+    # Also check total number of elements
+    if row_indices and col_indices and len(row_indices) * len(col_indices) > max_elements:
+        return jsonify({
+            "error": "Request too large",
+            "message": f"Requested {len(row_indices)}x{len(col_indices)}={len(row_indices)*len(col_indices)} elements exceeds limit of {max_elements}",
+            "hint": "Reduce the number of rows or columns in your request or increase server max_response_elements limit"
+        }), 413
+    
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'layers' component exists
+            if 'layers' not in root or layer_name not in root['layers']:
+                return jsonify({"error": f"Layer '{layer_name}' not found in dataset"}), 404
+            
+            # Get layer data
+            layer = root['layers'][layer_name]
+            
+            # Get data with indices filtering
+            if row_indices is not None and col_indices is not None:
+                # Both row and column indices provided
+                data = layer[row_indices, :][:, col_indices]
+            elif row_indices is not None:
+                # Only row indices provided
+                if len(row_indices) > 1000:  # Limit number of rows when all columns are requested
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": "When requesting all columns, limit the number of rows to 1000 or less",
+                        "hint": "Add a 'cols' parameter to select specific columns"
+                    }), 413
+                data = layer[row_indices, :]
+            elif col_indices is not None:
+                # Only column indices provided
+                if len(col_indices) > 1000:  # Limit number of columns when all rows are requested
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": "When requesting all rows, limit the number of columns to 1000 or less",
+                        "hint": "Add a 'rows' parameter to select specific rows"
+                    }), 413
+                data = layer[:, col_indices]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Process and return response
+            return jsonify(process_array_response(data, dataset_id))
+            
+        except Exception as e:
+            logger.error(f"Error getting layer '{layer_name}' data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager
     else:
-        result = data
-    
-    return jsonify({"data": result})
+        # Get data
+        data = data_manager.get_layer(layer_name, row_indices, col_indices, dataset_id)
+        
+        # Process and return response
+        return jsonify(process_array_response(data, dataset_id))
 
 @app.route(f"/api/{API_VERSION}/data/obsm/<obsm_key>", methods=["GET"])
 def get_obsm(obsm_key: str):
     """
-    Get obsm data.
+    Get obsm data (observation multidimensional arrays like embeddings).
     
     Args:
-        obsm_key: Key of the obsm entry
+        obsm_key: Key of the obsm entry (like 'X_umap', 'X_pca', etc.)
+        
+    Query parameters:
+        indices: Required comma-separated list of cell indices to select
+        cols: Optional comma-separated list of component indices (dimensions) to select
+        info_only: Optional flag to return only shape and metadata without data (true/false)
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
         
     Returns:
-        JSON response with obsm data
+        JSON response with obsm data for the specified embedding and cells
     """
     # Get parameters
     indices_str = request.args.get("indices")
+    cols_str = request.args.get("cols")
+    info_only = request.args.get("info_only", "false").lower() == "true"
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
     # Parse indices if provided
     indices = None
@@ -534,16 +1102,134 @@ def get_obsm(obsm_key: str):
         except ValueError:
             return jsonify({"error": "Invalid indices format"})
     
-    # Get data
-    data = data_manager.get_obsm(obsm_key, indices)
+    # Parse column indices if provided
+    col_indices = None
+    if cols_str:
+        try:
+            col_indices = [int(i) for i in cols_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid column indices format"})
     
-    # Convert to JSON-serializable format
-    if hasattr(data, "tolist"):
-        result = data.tolist()
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'obsm' component exists
+            if 'obsm' not in root or obsm_key not in root['obsm']:
+                return jsonify({"error": f"Obsm key '{obsm_key}' not found in dataset"}), 404
+            
+            # Get basic info about the array
+            obsm_array = root['obsm'][obsm_key]
+            array_shape = obsm_array.shape
+            array_dtype = str(obsm_array.dtype)
+            
+            # Prepare a response with metadata
+            response = {
+                "shape": array_shape,
+                "dtype": array_dtype,
+                "key": obsm_key
+            }
+            
+            # If info_only flag is set, return only metadata
+            if info_only:
+                # Generate a dataset ID from the path if needed
+                if not dataset_id:
+                    dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                
+                response["dataset_id"] = dataset_id
+                return jsonify(response)
+            
+            # For data access, we require cell indices
+            if indices is None:
+                return jsonify({
+                    "error": "Missing required 'indices' parameter",
+                    "message": "For efficient access, specify which cells you need with the 'indices' parameter"
+                }), 400
+            
+            # Limit number of elements to avoid performance issues
+            max_elements = app.config.get("max_response_elements", DEFAULT_CONFIG["max_response_elements"])
+            max_cells = app.config.get("max_cells_per_request", DEFAULT_CONFIG["max_cells_per_request"])
+            max_dims = app.config.get("max_embedding_dims", DEFAULT_CONFIG["max_embedding_dims"])
+            
+            # Get data with filtering
+            if col_indices is not None:
+                # Check cell limit
+                if len(indices) > max_cells:
+                    return jsonify({
+                        "error": "Too many cells requested",
+                        "message": f"Requested {len(indices)} cells exceeds limit of {max_cells}",
+                        "hint": "Reduce the number of cells or increase server max_cells_per_request limit"
+                    }), 413
+                
+                # Check dimensions limit
+                if len(col_indices) > max_dims:
+                    return jsonify({
+                        "error": "Too many dimensions requested",
+                        "message": f"Requested {len(col_indices)} dimensions exceeds limit of {max_dims}",
+                        "hint": "Reduce the number of dimensions or increase server max_embedding_dims limit"
+                    }), 413
+                
+                # Apply total elements limit
+                if len(indices) * len(col_indices) > max_elements:
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": f"Requested {len(indices)}x{len(col_indices)}={len(indices)*len(col_indices)} elements exceeds limit of {max_elements}",
+                        "hint": "Reduce the request size or increase server max_response_elements limit"
+                    }), 413
+                data = obsm_array[indices][:, col_indices]
+            else:
+                # Only filter by rows (cells)
+                # Check cell limit
+                if len(indices) > max_cells:
+                    return jsonify({
+                        "error": "Too many cells requested",
+                        "message": f"Requested {len(indices)} cells exceeds limit of {max_cells}",
+                        "hint": "Reduce the number of cells or increase server max_cells_per_request limit"
+                    }), 413
+                
+                # Check if number of dimensions is too large
+                if array_shape[1] > max_dims:
+                    return jsonify({
+                        "error": "Too many dimensions in this embedding",
+                        "message": f"This embedding has {array_shape[1]} dimensions, which exceeds the display limit of {max_dims}",
+                        "hint": "Use the 'cols' parameter to select specific dimensions or increase max_embedding_dims limit"
+                    }), 413
+                    
+                # Apply total elements limit
+                if len(indices) * array_shape[1] > max_elements:
+                    return jsonify({
+                        "error": "Request too large",
+                        "message": f"Requested {len(indices)}x{array_shape[1]}={len(indices)*array_shape[1]} elements exceeds limit of {max_elements}",
+                        "hint": "Use the 'cols' parameter to select specific dimensions or increase max_response_elements limit"
+                    }), 413
+                data = obsm_array[indices]
+            
+            # Add data to response
+            if hasattr(data, "tolist"):
+                response["data"] = data.tolist()
+            else:
+                response["data"] = data
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            response["dataset_id"] = dataset_id
+            return jsonify(response)
+            
+        except Exception as e:
+            logger.error(f"Error getting obsm '{obsm_key}' data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get obsm data: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager
     else:
-        result = data
-    
-    return jsonify({"data": result})
+        # Get data
+        data = data_manager.get_obsm(obsm_key, indices, dataset_id)
+        
+        # Process and return response
+        return jsonify(process_array_response(data, dataset_id))
 
 @app.route(f"/api/{API_VERSION}/data/obsp/<obsp_key>", methods=["GET"])
 def get_obsp(obsp_key: str):
@@ -553,11 +1239,18 @@ def get_obsp(obsp_key: str):
     Args:
         obsp_key: Key of the obsp entry
         
+    Query parameters:
+        indices: Optional comma-separated list of indices to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        
     Returns:
         JSON response with obsp data
     """
     # Get parameters
     indices_str = request.args.get("indices")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
     # Parse indices if provided
     indices = None
@@ -567,29 +1260,119 @@ def get_obsp(obsp_key: str):
         except ValueError:
             return jsonify({"error": "Invalid indices format"})
     
-    # Get data
-    data = zarr_reader.get_obsp(obsp_key, indices)
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'obsp' component exists
+            if 'obsp' not in root or obsp_key not in root['obsp']:
+                return jsonify({"error": f"Obsp key '{obsp_key}' not found in dataset"}), 404
+            
+            # Get obsp data
+            if indices is not None:
+                # For cell-cell matrices, we need to select both rows and columns with the same indices
+                data = root['obsp'][obsp_key][indices, :][:, indices]
+            else:
+                data = root['obsp'][obsp_key][:]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Process and return response
+            return jsonify(process_array_response(data, dataset_id))
+            
+        except Exception as e:
+            logger.error(f"Error getting obsp '{obsp_key}' data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get obsp data: {str(e)}"}), 500
     
-    # Convert to JSON-serializable format
-    if hasattr(data, "tolist"):
-        result = data.tolist()
+    # Legacy approach using ZarrReader directly
     else:
-        result = data
-    
-    return jsonify({"data": result})
+        # Get data
+        data = zarr_reader.get_obsp(obsp_key, indices, dataset_id)
+        
+        # Process and return response
+        return jsonify(process_array_response(data, dataset_id))
 
 @app.route(f"/api/{API_VERSION}/data/cells", methods=["GET"])
 def get_cells():
     """
     Get cell names.
     
+    Query parameters:
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        limit: Optional maximum number of cell names to return.
+    
     Returns:
         JSON response with cell names
     """
-    # Get cell names
-    cells = data_manager.get_obs_names()
+    # Get parameters
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
+    limit_str = request.args.get("limit")
     
-    return jsonify({"cells": cells})
+    # Parse limit if provided
+    limit = None
+    if limit_str:
+        try:
+            limit = int(limit_str)
+        except ValueError:
+            return jsonify({"error": "Invalid limit format"}), 400
+    
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'obs' component exists
+            if 'obs' not in root or '_index' not in root['obs']:
+                return jsonify({"error": "Dataset has no observation index"}), 404
+                
+            # Get cell names directly from the root
+            if limit is not None and limit > 0:
+                # Apply limit
+                cells_array = root['obs']['_index'][:limit]
+            else:
+                # Get all cell names
+                cells_array = root['obs']['_index'][:]
+                
+            # Convert to JSON-serializable format
+            cells = [str(x) for x in cells_array]
+            
+            # Create response
+            response = {"cells": cells}
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                
+            # Include dataset ID in response
+            response["dataset_id"] = dataset_id
+            
+            return jsonify(response)
+        except Exception as e:
+            logger.error(f"Error getting cell names from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get cell names: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager
+    else:
+        # Get cell names
+        cells = data_manager.get_obs_names(dataset_id)
+        
+        # Apply limit if specified
+        if limit is not None and limit > 0 and len(cells) > limit:
+            cells = cells[:limit]
+        
+        # Create response
+        response = {"cells": cells}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/genes", methods=["GET"])
 def get_genes():
@@ -598,17 +1381,80 @@ def get_genes():
     
     Query parameters:
         column: Optional name of the column containing gene names
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        limit: Optional maximum number of gene names to return.
     
     Returns:
         JSON response with gene names
     """
-    # Get optional column parameter
+    # Get parameters
     column = request.args.get("column")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
+    limit_str = request.args.get("limit")
     
-    # Get gene names
-    genes = data_manager.get_var_names(column)
+    # Parse limit if provided
+    limit = None
+    if limit_str:
+        try:
+            limit = int(limit_str)
+        except ValueError:
+            return jsonify({"error": "Invalid limit format"}), 400
     
-    return jsonify({"genes": genes})
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'var' component exists
+            if 'var' not in root:
+                return jsonify({"error": "Dataset has no variable annotations"}), 404
+            
+            # Get gene names column - use specified column or default to _index
+            target_column = column if column and column in root['var'] else '_index'
+            
+            if target_column not in root['var']:
+                return jsonify({"error": f"Column '{target_column}' not found in var"}), 404
+            
+            # Get gene names
+            if limit is not None and limit > 0:
+                gene_array = root['var'][target_column][:limit]
+            else:
+                gene_array = root['var'][target_column][:]
+            
+            # Convert to list of strings
+            genes = [str(x) for x in gene_array]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Create response
+            response = {"genes": genes}
+            response["dataset_id"] = dataset_id
+            
+            # Include source column in response
+            response["source_column"] = target_column
+            
+            return jsonify(response)
+            
+        except Exception as e:
+            logger.error(f"Error getting gene names from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get gene names: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager
+    else:
+        # Get gene names
+        genes = data_manager.get_var_names(column, dataset_id)
+        
+        # Create response
+        response = {"genes": genes}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/varp/<varp_key>", methods=["GET"])
 def get_varp(varp_key: str):
@@ -618,11 +1464,18 @@ def get_varp(varp_key: str):
     Args:
         varp_key: Key of the varp entry
         
+    Query parameters:
+        indices: Optional comma-separated list of indices to select
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        
     Returns:
         JSON response with varp data
     """
     # Get parameters
     indices_str = request.args.get("indices")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
     # Parse indices if provided
     indices = None
@@ -632,16 +1485,41 @@ def get_varp(varp_key: str):
         except ValueError:
             return jsonify({"error": "Invalid indices format"})
     
-    # Get data
-    data = zarr_reader.get_varp(varp_key, indices)
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if 'varp' component exists
+            if 'varp' not in root or varp_key not in root['varp']:
+                return jsonify({"error": f"Varp key '{varp_key}' not found in dataset"}), 404
+            
+            # Get varp data
+            if indices is not None:
+                # For gene-gene matrices, we need to select both rows and columns with the same indices
+                data = root['varp'][varp_key][indices, :][:, indices]
+            else:
+                data = root['varp'][varp_key][:]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Process and return response
+            return jsonify(process_array_response(data, dataset_id))
+            
+        except Exception as e:
+            logger.error(f"Error getting varp '{varp_key}' data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get varp data: {str(e)}"}), 500
     
-    # Convert to JSON-serializable format
-    if hasattr(data, "tolist"):
-        result = data.tolist()
+    # Legacy approach using ZarrReader directly
     else:
-        result = data
-    
-    return jsonify({"data": result})
+        # Get data
+        data = zarr_reader.get_varp(varp_key, indices, dataset_id)
+        
+        # Process and return response
+        return jsonify(process_array_response(data, dataset_id))
 
 @app.route(f"/api/{API_VERSION}/data/selection/cells", methods=["GET", "POST", "DELETE"])
 def handle_cell_selection():
@@ -652,38 +1530,58 @@ def handle_cell_selection():
     POST: Add or set selected cells
     DELETE: Remove or clear selected cells
     
+    Query parameters (GET, DELETE) or request body (POST):
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+    
     Returns:
         JSON response with selected cells
     """
+    # Get dataset ID
+    dataset_id = None
+    if request.method == "GET" or request.method == "DELETE":
+        dataset_id = request.args.get("dataset_id")
+    else:  # POST
+        data = request.get_json() or {}
+        dataset_id = data.get("dataset_id")
+    
     if request.method == "GET":
         # Get selected cells
-        cells = list(data_manager.get_selected_cells())
-        return jsonify({"selected_cells": cells})
+        cells = list(data_manager.get_selected_cells(dataset_id))
+        response = {"selected_cells": cells}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "POST":
         # Get request data
-        data = request.get_json()
+        data = request.get_json() or {}
         cells = data.get("cells", [])
         operation = data.get("operation", "set")  # "set", "add", or "remove"
         
         # Perform the requested operation
         if operation == "set":
-            data_manager.set_selected_cells(cells)
+            data_manager.set_selected_cells(cells, dataset_id)
         elif operation == "add":
-            data_manager.add_selected_cells(cells)
+            data_manager.add_selected_cells(cells, dataset_id)
         elif operation == "remove":
-            data_manager.remove_selected_cells(cells)
+            data_manager.remove_selected_cells(cells, dataset_id)
         else:
             return jsonify({"error": f"Invalid operation: {operation}"})
         
         # Return the updated selection
-        cells = list(data_manager.get_selected_cells())
-        return jsonify({"selected_cells": cells})
+        cells = list(data_manager.get_selected_cells(dataset_id))
+        response = {"selected_cells": cells}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "DELETE":
         # Clear selection
-        data_manager.clear_selected_cells()
-        return jsonify({"selected_cells": []})
+        data_manager.clear_selected_cells(dataset_id)
+        response = {"selected_cells": []}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/selection/genes", methods=["GET", "POST", "DELETE"])
 def handle_gene_selection():
@@ -694,38 +1592,58 @@ def handle_gene_selection():
     POST: Add or set selected genes
     DELETE: Remove or clear selected genes
     
+    Query parameters (GET, DELETE) or request body (POST):
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+    
     Returns:
         JSON response with selected genes
     """
+    # Get dataset ID
+    dataset_id = None
+    if request.method == "GET" or request.method == "DELETE":
+        dataset_id = request.args.get("dataset_id")
+    else:  # POST
+        data = request.get_json() or {}
+        dataset_id = data.get("dataset_id")
+    
     if request.method == "GET":
         # Get selected genes
-        genes = list(data_manager.get_selected_genes())
-        return jsonify({"selected_genes": genes})
+        genes = list(data_manager.get_selected_genes(dataset_id))
+        response = {"selected_genes": genes}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "POST":
         # Get request data
-        data = request.get_json()
+        data = request.get_json() or {}
         genes = data.get("genes", [])
         operation = data.get("operation", "set")  # "set", "add", or "remove"
         
         # Perform the requested operation
         if operation == "set":
-            data_manager.set_selected_genes(genes)
+            data_manager.set_selected_genes(genes, dataset_id)
         elif operation == "add":
-            data_manager.add_selected_genes(genes)
+            data_manager.add_selected_genes(genes, dataset_id)
         elif operation == "remove":
-            data_manager.remove_selected_genes(genes)
+            data_manager.remove_selected_genes(genes, dataset_id)
         else:
             return jsonify({"error": f"Invalid operation: {operation}"})
         
         # Return the updated selection
-        genes = list(data_manager.get_selected_genes())
-        return jsonify({"selected_genes": genes})
+        genes = list(data_manager.get_selected_genes(dataset_id))
+        response = {"selected_genes": genes}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "DELETE":
         # Clear selection
-        data_manager.clear_selected_genes()
-        return jsonify({"selected_genes": []})
+        data_manager.clear_selected_genes(dataset_id)
+        response = {"selected_genes": []}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/focus/cell", methods=["GET", "POST", "DELETE"])
 def handle_cell_focus():
@@ -736,28 +1654,48 @@ def handle_cell_focus():
     POST: Set the focused cell
     DELETE: Clear the focused cell
     
+    Query parameters (GET, DELETE) or request body (POST):
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+    
     Returns:
         JSON response with focused cell
     """
+    # Get dataset ID
+    dataset_id = None
+    if request.method == "GET" or request.method == "DELETE":
+        dataset_id = request.args.get("dataset_id")
+    else:  # POST
+        data = request.get_json() or {}
+        dataset_id = data.get("dataset_id")
+    
     if request.method == "GET":
         # Get focused cell
-        cell = data_manager.get_focused_cell()
-        return jsonify({"focused_cell": cell})
+        cell = data_manager.get_focused_cell(dataset_id)
+        response = {"focused_cell": cell}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "POST":
         # Get request data
-        data = request.get_json()
+        data = request.get_json() or {}
         cell = data.get("cell")
         
         # Set focused cell
-        data_manager.set_focused_cell(cell)
+        data_manager.set_focused_cell(cell, dataset_id)
         
-        return jsonify({"focused_cell": cell})
+        response = {"focused_cell": cell}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "DELETE":
         # Clear focused cell
-        data_manager.set_focused_cell(None)
-        return jsonify({"focused_cell": None})
+        data_manager.set_focused_cell(None, dataset_id)
+        response = {"focused_cell": None}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
 
 @app.route(f"/api/{API_VERSION}/data/focus/gene", methods=["GET", "POST", "DELETE"])
 def handle_gene_focus():
@@ -768,28 +1706,48 @@ def handle_gene_focus():
     POST: Set the focused gene
     DELETE: Clear the focused gene
     
+    Query parameters (GET, DELETE) or request body (POST):
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+    
     Returns:
         JSON response with focused gene
     """
+    # Get dataset ID
+    dataset_id = None
+    if request.method == "GET" or request.method == "DELETE":
+        dataset_id = request.args.get("dataset_id")
+    else:  # POST
+        data = request.get_json() or {}
+        dataset_id = data.get("dataset_id")
+    
     if request.method == "GET":
         # Get focused gene
-        gene = data_manager.get_focused_gene()
-        return jsonify({"focused_gene": gene})
+        gene = data_manager.get_focused_gene(dataset_id)
+        response = {"focused_gene": gene}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "POST":
         # Get request data
-        data = request.get_json()
+        data = request.get_json() or {}
         gene = data.get("gene")
         
         # Set focused gene
-        data_manager.set_focused_gene(gene)
+        data_manager.set_focused_gene(gene, dataset_id)
         
-        return jsonify({"focused_gene": gene})
+        response = {"focused_gene": gene}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
     elif request.method == "DELETE":
         # Clear focused gene
-        data_manager.set_focused_gene(None)
-        return jsonify({"focused_gene": None})
+        data_manager.set_focused_gene(None, dataset_id)
+        response = {"focused_gene": None}
+        if dataset_id:
+            response["dataset_id"] = dataset_id
+        return jsonify(response)
         
 @app.route(f"/api/{API_VERSION}/data/statistics", methods=["GET"])
 def get_data_statistics():
@@ -800,6 +1758,7 @@ def get_data_statistics():
         gene_indices: Comma-separated list of gene indices
         cell_indices: Comma-separated list of cell indices
         layer: Layer name (optional)
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
     
     Returns:
         JSON response with statistical analysis
@@ -808,6 +1767,7 @@ def get_data_statistics():
     gene_indices_str = request.args.get("gene_indices")
     cell_indices_str = request.args.get("cell_indices")
     layer = request.args.get("layer")
+    dataset_id = request.args.get("dataset_id")
     
     # Parse indices if provided
     gene_indices = None
@@ -825,7 +1785,11 @@ def get_data_statistics():
             return jsonify({"error": "Invalid cell indices format"})
     
     # Get statistics
-    stats = data_manager.analyze_expression_data(gene_indices, cell_indices, layer)
+    stats = data_manager.analyze_expression_data(gene_indices, cell_indices, layer, dataset_id)
+    
+    # Include dataset ID in response if provided
+    if dataset_id:
+        stats["dataset_id"] = dataset_id
     
     return jsonify(stats)
 
@@ -840,6 +1804,7 @@ def get_downsampled_data():
         seed: Random seed (default: 42)
         include_embeddings: Whether to include embeddings data (default: true)
         include_obs: Whether to include observation annotations (default: true)
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
         
     Returns:
         JSON response with downsampled data
@@ -850,9 +1815,10 @@ def get_downsampled_data():
     seed = request.args.get("seed", 42, type=int)
     include_embeddings = request.args.get("include_embeddings", "true").lower() == "true"
     include_obs = request.args.get("include_obs", "true").lower() == "true"
+    dataset_id = request.args.get("dataset_id")
     
     # Get downsampled cell indices
-    cell_indices = data_manager.downsample_cells(n_samples, method, seed)
+    cell_indices = data_manager.downsample_cells(n_samples, method, seed, dataset_id)
     
     if not cell_indices:
         return jsonify({"error": "Failed to downsample cells"})
@@ -863,8 +1829,12 @@ def get_downsampled_data():
         "cell_indices": cell_indices
     }
     
+    # Include dataset ID in response if provided
+    if dataset_id:
+        result["dataset_id"] = dataset_id
+    
     # Add cell names
-    cell_names = data_manager.get_obs_names()
+    cell_names = data_manager.get_obs_names(dataset_id)
     if cell_indices and cell_names:
         result["cell_names"] = [cell_names[i] for i in cell_indices if i < len(cell_names)]
     
@@ -872,7 +1842,7 @@ def get_downsampled_data():
     if include_obs:
         # Get key observation columns
         obs_data = {}
-        metadata = zarr_reader.get_metadata()
+        metadata = zarr_reader.get_metadata(dataset_id)
         obs_columns = metadata.get("obs_columns", [])
         
         # Limit to important columns to reduce payload size
@@ -881,7 +1851,7 @@ def get_downsampled_data():
         
         # Get data for each column
         for column in columns_to_include[:5]:  # Limit to 5 columns max
-            column_data = data_manager.get_obs(column, cell_indices)
+            column_data = data_manager.get_obs(column, cell_indices, dataset_id)
             if column_data is not None and len(column_data) > 0:
                 if hasattr(column_data, "tolist"):
                     obs_data[column] = column_data.tolist()
@@ -892,13 +1862,13 @@ def get_downsampled_data():
     
     # Include embeddings if requested
     if include_embeddings:
-        embeddings = data_manager.get_embeddings()
+        embeddings = data_manager.get_embeddings(dataset_id)
         if embeddings:
             embedding_data = {}
             
             # Get the first 2-3 embeddings
             for embedding in embeddings[:3]:
-                data = data_manager.get_obsm(embedding, cell_indices)
+                data = data_manager.get_obsm(embedding, cell_indices, dataset_id)
                 if data is not None and len(data) > 0:
                     # Keep only the first two dimensions for 2D visualization
                     if data.shape[1] > 2:
@@ -923,15 +1893,20 @@ def get_progressive_data(data_path):
         
     Query parameters:
         chunk_size: Size of chunks to load at once (default: 1000)
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
         
     Returns:
         Streamed JSON responses with data chunks
     """
     # Get parameters
     chunk_size = request.args.get("chunk_size", 1000, type=int)
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
     
-    if not data_manager.current_dataset:
-        return jsonify({"error": "No dataset loaded"})
+    # For stateless architecture, dataset_path is required
+    if not dataset_path and not dataset_id:
+        return jsonify({"error": "Either dataset_path or dataset_id must be provided"}), 400
     
     # Start the chunked response
     def generate():
@@ -957,21 +1932,35 @@ def get_progressive_data(data_path):
                     "final": progress >= 0.99
                 }
                 
+                # Generate a dataset ID from the path if needed
+                if dataset_path and not dataset_id:
+                    response["dataset_id"] = os.path.basename(os.path.normpath(dataset_path))
+                elif dataset_id:
+                    response["dataset_id"] = dataset_id
+                
                 # Yield chunk as a JSON string
                 yield json.dumps(response) + "\n"
             
             # Start progressive loading
             if data_path == "X":
                 # Load from X matrix
-                zarr_reader.load_progressively("X", chunk_size, progress_callback)
+                zarr_reader.load_progressively("X", chunk_size, progress_callback, dataset_id, dataset_path)
             elif data_path.startswith("obsm/"):
                 # Load from obsm
                 obsm_key = data_path[5:]  # Remove 'obsm/' prefix
-                zarr_reader.load_progressively(f"obsm/{obsm_key}", chunk_size, progress_callback)
+                zarr_reader.load_progressively(f"obsm/{obsm_key}", chunk_size, progress_callback, dataset_id, dataset_path)
             elif data_path.startswith("layers/"):
                 # Load from layers
                 layer_key = data_path[7:]  # Remove 'layers/' prefix
-                zarr_reader.load_progressively(f"layers/{layer_key}", chunk_size, progress_callback)
+                zarr_reader.load_progressively(f"layers/{layer_key}", chunk_size, progress_callback, dataset_id, dataset_path)
+            elif data_path.startswith("obsp/"):
+                # Load from obsp
+                obsp_key = data_path[5:]  # Remove 'obsp/' prefix
+                zarr_reader.load_progressively(f"obsp/{obsp_key}", chunk_size, progress_callback, dataset_id, dataset_path)
+            elif data_path.startswith("varp/"):
+                # Load from varp
+                varp_key = data_path[5:]  # Remove 'varp/' prefix
+                zarr_reader.load_progressively(f"varp/{varp_key}", chunk_size, progress_callback, dataset_id, dataset_path)
             else:
                 # Invalid path
                 yield json.dumps({"error": f"Invalid data path: {data_path}"}) + "\n"
@@ -992,10 +1981,16 @@ def upload_zarr_files():
     """
     Upload zarr files to the server.
     
+    Query parameters or form data:
+        dataset_id: Optional dataset ID. If not provided, one will be generated.
+    
     Returns:
         JSON response with upload status
     """
     try:
+        # Get dataset ID if provided
+        dataset_id = request.form.get("dataset_id")
+        
         if 'files[]' not in request.files:
             return jsonify({"error": "No files uploaded"}), 400
             
@@ -1023,18 +2018,19 @@ def upload_zarr_files():
             zarr_path = temp_dir
             try:
                 # Initialize the zarr reader with the uploaded files
-                zarr_reader.load_zarr(zarr_path)
+                loaded_dataset_id = zarr_reader.load_zarr(zarr_path, 'r', dataset_id)
                 
                 # Initialize the data manager with the zarr dataset
-                data_manager.load_from_zarr(zarr_reader)
+                data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
                 
                 return jsonify({
                     "success": True,
                     "message": "Zarr dataset loaded successfully",
+                    "dataset_id": loaded_dataset_id,
                     "datasetInfo": {
                         "name": os.path.basename(zarr_path),
                         "path": zarr_path,
-                        "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                        "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
                     }
                 })
             except Exception as e:
@@ -1050,6 +2046,10 @@ def load_zarr_from_url():
     """
     Load zarr dataset from URL.
     
+    Request body:
+        url: URL to the zarr dataset
+        dataset_id: Optional dataset ID. If not provided, one will be generated.
+    
     Returns:
         JSON response with loading status
     """
@@ -1060,27 +2060,29 @@ def load_zarr_from_url():
             return jsonify({"error": "No URL provided"}), 400
             
         url = data['url']
+        dataset_id = data.get('dataset_id')
         
         # Load the zarr dataset from URL
         try:
             # Initialize the zarr reader with the URL
-            # Note: This function may need to be implemented in zarr_reader
             if hasattr(zarr_reader, 'load_zarr_from_url'):
-                zarr_reader.load_zarr_from_url(url)
+                # Pass dataset_id to the custom URL loader if available
+                loaded_dataset_id = zarr_reader.load_zarr_from_url(url, dataset_id)
             else:
                 # Fallback to regular load_zarr if from_url is not implemented
-                zarr_reader.load_zarr(url)
+                loaded_dataset_id = zarr_reader.load_zarr(url, 'r', dataset_id)
             
             # Initialize the data manager with the zarr dataset
-            data_manager.load_from_zarr(zarr_reader)
+            data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
             
             return jsonify({
                 "success": True,
                 "message": "Zarr dataset loaded successfully from URL",
+                "dataset_id": loaded_dataset_id,
                 "datasetInfo": {
                     "name": os.path.basename(url),
                     "path": url,
-                    "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                    "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
                 }
             })
         except Exception as e:
@@ -1096,6 +2098,15 @@ def load_zarr_from_s3():
     """
     Load zarr dataset from S3.
     
+    Request body:
+        bucket: S3 bucket name
+        key: Path within the bucket
+        region: Optional AWS region (default: us-east-1)
+        anonymous: Optional boolean indicating whether to use anonymous access (default: true)
+        accessKey: Optional AWS access key ID (required if anonymous is false)
+        secretKey: Optional AWS secret access key (required if anonymous is false)
+        dataset_id: Optional dataset ID. If not provided, one will be generated.
+    
     Returns:
         JSON response with loading status
     """
@@ -1108,6 +2119,9 @@ def load_zarr_from_s3():
         # Validate required fields
         if 'bucket' not in data or 'key' not in data:
             return jsonify({"error": "S3 bucket and key are required"}), 400
+            
+        # Get dataset ID if provided
+        dataset_id = data.get('dataset_id')
             
         # Configure S3 parameters
         s3_params = {
@@ -1125,27 +2139,31 @@ def load_zarr_from_s3():
         # Load the zarr dataset from S3
         try:
             # Initialize the zarr reader with the S3 parameters
-            # Note: This function may need to be implemented in zarr_reader
+            loaded_dataset_id = None
             if hasattr(zarr_reader, 'load_zarr_from_s3'):
-                zarr_reader.load_zarr_from_s3(**s3_params)
+                # Add dataset_id to params if provided
+                if dataset_id:
+                    s3_params['dataset_id'] = dataset_id
+                loaded_dataset_id = zarr_reader.load_zarr_from_s3(**s3_params)
             else:
                 # Fallback to url-based loading if S3 is not directly supported
                 s3_url = f"s3://{s3_params['bucket']}/{s3_params['key']}"
                 if hasattr(zarr_reader, 'load_zarr_from_url'):
-                    zarr_reader.load_zarr_from_url(s3_url)
+                    loaded_dataset_id = zarr_reader.load_zarr_from_url(s3_url, dataset_id)
                 else:
                     return jsonify({"error": "S3 loading not supported by zarr reader"}), 501
             
             # Initialize the data manager with the zarr dataset
-            data_manager.load_from_zarr(zarr_reader)
+            data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
             
             return jsonify({
                 "success": True,
                 "message": "Zarr dataset loaded successfully from S3",
+                "dataset_id": loaded_dataset_id,
                 "datasetInfo": {
                     "name": os.path.basename(s3_params['key']),
                     "path": f"s3://{s3_params['bucket']}/{s3_params['key']}",
-                    "shape": data_manager.get_shape() if hasattr(data_manager, 'get_shape') else None
+                    "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
                 }
             })
         except Exception as e:
@@ -1194,10 +2212,96 @@ def convert_to_anndata():
         return jsonify({"error": f"Error converting to AnnData: {str(e)}"}), 500
 
 
+@app.route(f"/api/{API_VERSION}/datasets/compare", methods=["GET"])
+def compare_datasets():
+    """
+    Compare multiple datasets.
+    
+    Query parameters:
+        dataset_ids: Comma-separated list of dataset IDs to compare
+        include_metadata: Whether to include metadata (default: true)
+        include_obs_columns: Whether to include observation column names (default: true)
+        include_var_columns: Whether to include variable column names (default: true)
+        include_shape: Whether to include shape information (default: true)
+    
+    Returns:
+        JSON response with dataset comparison
+    """
+    try:
+        # Get parameters
+        dataset_ids_str = request.args.get("dataset_ids")
+        if not dataset_ids_str:
+            return jsonify({"error": "dataset_ids parameter is required"}), 400
+            
+        # Parse dataset IDs
+        dataset_ids = [id.strip() for id in dataset_ids_str.split(",")]
+        
+        # Check if datasets exist
+        for dataset_id in dataset_ids:
+            if not data_manager.has_dataset(dataset_id):
+                return jsonify({"error": f"Dataset {dataset_id} not found"}), 404
+        
+        # Get comparison options
+        include_metadata = request.args.get("include_metadata", "true").lower() == "true"
+        include_obs_columns = request.args.get("include_obs_columns", "true").lower() == "true"
+        include_var_columns = request.args.get("include_var_columns", "true").lower() == "true"
+        include_shape = request.args.get("include_shape", "true").lower() == "true"
+        
+        # Build comparison result
+        comparison = {
+            "dataset_ids": dataset_ids,
+            "datasets": {}
+        }
+        
+        # Get dataset information
+        for dataset_id in dataset_ids:
+            dataset_info = {}
+            
+            # Get shape information
+            if include_shape:
+                dataset_info["shape"] = data_manager.get_shape(dataset_id)
+            
+            # Get metadata
+            if include_metadata:
+                dataset_info["metadata"] = zarr_reader.get_metadata(dataset_id)
+            
+            # Get observation columns
+            if include_obs_columns:
+                dataset_info["obs_columns"] = data_manager.get_obs_columns(dataset_id)
+            
+            # Get variable columns
+            if include_var_columns:
+                dataset_info["var_columns"] = data_manager.get_var_columns(dataset_id)
+            
+            comparison["datasets"][dataset_id] = dataset_info
+        
+        # Add common features
+        if include_obs_columns:
+            # Find common observation columns
+            obs_columns_sets = [set(data_manager.get_obs_columns(dataset_id)) for dataset_id in dataset_ids]
+            common_obs_columns = list(set.intersection(*obs_columns_sets)) if obs_columns_sets else []
+            comparison["common_obs_columns"] = common_obs_columns
+        
+        if include_var_columns:
+            # Find common variable columns
+            var_columns_sets = [set(data_manager.get_var_columns(dataset_id)) for dataset_id in dataset_ids]
+            common_var_columns = list(set.intersection(*var_columns_sets)) if var_columns_sets else []
+            comparison["common_var_columns"] = common_var_columns
+        
+        return jsonify(comparison)
+    except Exception as e:
+        logger.error(f"Error comparing datasets: {e}")
+        return jsonify({"error": f"Error comparing datasets: {str(e)}"}), 500
+
 @app.route(f"/api/{API_VERSION}/zarr/data", methods=["GET"])
 def get_zarr_data():
     """
     Get data from zarr array.
+    
+    Query parameters:
+        path: Path to the zarr array (e.g., 'X', 'obs/cell_type')
+        selection: Optional JSON-encoded selection indices
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
     
     Returns:
         JSON response with array data
@@ -1206,6 +2310,7 @@ def get_zarr_data():
         # Get parameters
         path = request.args.get("path")
         selection_str = request.args.get("selection")
+        dataset_id = request.args.get("dataset_id")
         
         if not path:
             return jsonify({"error": "Path parameter is required"}), 400
@@ -1220,30 +2325,27 @@ def get_zarr_data():
         
         # Get data from zarr array
         if hasattr(zarr_reader, 'get_array'):
-            data = zarr_reader.get_array(path, selection)
+            data = zarr_reader.get_array(path, selection, dataset_id)
         else:
             # Fallback to data manager methods
             if path == 'X':
-                data = data_manager.get_X()
+                data = data_manager.get_X(None, None, dataset_id)
             elif path.startswith('obs/'):
                 column = path.split('/', 1)[1] if '/' in path else None
-                data = data_manager.get_obs(column)
+                data = data_manager.get_obs(column, None, dataset_id)
             elif path.startswith('var/'):
                 column = path.split('/', 1)[1] if '/' in path else None
-                data = data_manager.get_var(column)
+                data = data_manager.get_var(column, None, dataset_id)
             elif path.startswith('obsm/'):
                 key = path.split('/', 1)[1] if '/' in path else None
-                data = data_manager.get_obsm(key)
+                data = data_manager.get_obsm(key, None, dataset_id)
             else:
                 return jsonify({"error": f"Unsupported path: {path}"}), 400
         
-        # Convert to JSON-serializable format
-        if hasattr(data, "tolist"):
-            result = data.tolist()
-        else:
-            result = data
+        # Process and format the response
+        response = process_array_response(data, dataset_id)
         
-        return jsonify(result)
+        return jsonify(response)
     except Exception as e:
         logger.error(f"Error getting zarr data: {e}")
         return jsonify({"error": f"Error getting zarr data: {str(e)}"}), 500
@@ -1254,6 +2356,11 @@ def get_chunked_data():
     """
     Get data using optimized chunking strategy.
     
+    Query parameters:
+        path: Path to the zarr array (e.g., 'X', 'obsm/X_umap')
+        selection: Optional JSON-encoded selection indices
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+    
     Returns:
         JSON response with chunked array data
     """
@@ -1261,6 +2368,7 @@ def get_chunked_data():
         # Get parameters
         path = request.args.get("path")
         selection_str = request.args.get("selection")
+        dataset_id = request.args.get("dataset_id")
         
         if not path:
             return jsonify({"error": "Path parameter is required"}), 400
@@ -1275,21 +2383,18 @@ def get_chunked_data():
         
         # Get data with chunking optimization
         if hasattr(zarr_reader, 'load_chunked_data'):
-            data = zarr_reader.load_chunked_data(path, selection)
+            data = zarr_reader.load_chunked_data(path, selection, dataset_id)
         else:
             # Fallback to regular data access if chunked method not available
             if hasattr(zarr_reader, 'get_array'):
-                data = zarr_reader.get_array(path, selection)
+                data = zarr_reader.get_array(path, selection, dataset_id)
             else:
                 return jsonify({"error": "Chunked data loading not supported"}), 501
         
-        # Convert to JSON-serializable format
-        if hasattr(data, "tolist"):
-            result = data.tolist()
-        else:
-            result = data
+        # Process and format the response
+        response = process_array_response(data, dataset_id)
         
-        return jsonify(result)
+        return jsonify(response)
     except Exception as e:
         logger.error(f"Error getting chunked zarr data: {e}")
         return jsonify({"error": f"Error getting chunked zarr data: {str(e)}"}), 500
@@ -1299,7 +2404,10 @@ def run_server(config_file: Optional[str] = None,
               debug: bool = False, 
               port: Optional[int] = None,
               data_dir: Optional[str] = None,
-              static_dir: Optional[str] = None) -> None:
+              static_dir: Optional[str] = None,
+              max_response_elements: Optional[int] = None,
+              max_cells_per_request: Optional[int] = None,
+              max_genes_per_request: Optional[int] = None) -> None:
     """
     Run the unified Annzarro server.
     
@@ -1312,6 +2420,24 @@ def run_server(config_file: Optional[str] = None,
         port: Port to run the server on (overrides config)
         data_dir: Path to the data directory (overrides config)
         static_dir: Path to the directory containing static files (overrides config)
+        max_response_elements: Maximum number of total elements allowed in array responses
+                              (default: 1,000,000). Increase for large datasets.
+        max_cells_per_request: Maximum number of cells allowed in a single request
+                              (default: 10,000). Increase for datasets with millions of cells.
+        max_genes_per_request: Maximum number of genes allowed in a single request
+                              (default: 10,000). Increase for datasets with many genes.
+    
+    Configuration parameters for large datasets:
+        For servers hosting large single-cell datasets (millions of cells), you may need
+        to increase the following limits in the config file or command line parameters:
+        
+        - max_response_elements: Limits the total size of array responses (rows*columns)
+        - max_cells_per_request: Limits the number of cells that can be queried at once
+        - max_genes_per_request: Limits the number of genes that can be queried at once
+        - max_embedding_dims: Limits the number of embedding dimensions that can be requested
+        
+        These limits are in place to prevent excessive memory use and response size.
+        Adjust based on your server capacity and dataset characteristics.
     """
     # Load configuration
     config = dict(DEFAULT_CONFIG)
@@ -1387,6 +2513,19 @@ def run_server(config_file: Optional[str] = None,
             
         config["static_dir"] = static_dir
         logger.info(f"Using static directory from command line: {static_dir}")
+    
+    # Update server limits for large datasets
+    if max_response_elements:
+        config["max_response_elements"] = max_response_elements
+        logger.info(f"Setting max_response_elements to {max_response_elements}")
+    
+    if max_cells_per_request:
+        config["max_cells_per_request"] = max_cells_per_request
+        logger.info(f"Setting max_cells_per_request to {max_cells_per_request}")
+    
+    if max_genes_per_request:
+        config["max_genes_per_request"] = max_genes_per_request
+        logger.info(f"Setting max_genes_per_request to {max_genes_per_request}")
     
     # Set up logging
     setup_logging(config)

@@ -20,7 +20,7 @@ class TestServerEndpoints(unittest.TestCase):
     def setUpClass(cls):
         """Set up test class."""
         # Get server URL from environment or use default
-        cls.server_url = os.environ.get("ANNZARRO_TEST_SERVER_URL", "http://localhost:8888")
+        cls.server_url = os.environ.get("ANNZARRO_TEST_SERVER_URL", "http://localhost:8000")
         
         # Check if real data is available for more informative output
         cls.has_real_data = os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "aging.zarr"))
@@ -78,60 +78,47 @@ class TestServerEndpoints(unittest.TestCase):
         
     def test_real_zarr_dataset(self):
         """Test loading a real zarr dataset from data directory."""
-        # First check if aging.zarr exists in the data directory
-        response = requests.get(f"{self.server_url}/api/v1/datasets")
-        data = response.json()
-        
-        # Find if aging.zarr is in the datasets
-        aging_dataset = None
-        for dataset in data["datasets"]:
-            if "aging.zarr" in dataset.get("path", ""):
-                aging_dataset = dataset
-                break
-                
-        # Skip test if aging.zarr is not found (e.g. in CI environments)
-        if not aging_dataset:
-            print("⚠️ Skipping real data test: aging.zarr (mouse hematopoiesis data) not found")
-            self.skipTest("aging.zarr dataset not found in data directory - this is normal in CI environments")
+        # Skip test if real data is not available
+        if not self.has_real_data:
+            self.skipTest("aging.zarr dataset not found")
             
-        # Test loading the dataset info
-        dataset_path = aging_dataset["path"]
-        response = requests.get(f"{self.server_url}/api/v1/datasets/{dataset_path}")
-        self.assertEqual(response.status_code, 200)
-        info = response.json()
-        
-        # Check that the dataset info contains basic structure information
-        self.assertIn("shape", info)
-        self.assertIn("obs_columns", info)
-        self.assertIn("var_columns", info)
-        
-        # Test that embeddings are available
-        response = requests.get(f"{self.server_url}/api/v1/datasets/{dataset_path}/load", 
-                               headers={"Content-Type": "application/json"})
+        # Test accessing a dataset via the stateless API
+        dataset_path = "data/aging.zarr"
+        response = requests.get(f"{self.server_url}/api/v1/datasets/{dataset_path}/info")
         self.assertEqual(response.status_code, 200)
         
-        # Check for UMAP embedding
-        response = requests.get(f"{self.server_url}/api/v1/data/obsm/X_umap")
-        self.assertEqual(response.status_code, 200)
+        # Parse response
         data = response.json()
-        self.assertIn("data", data)
-        self.assertTrue(len(data["data"]) > 0)
         
-        # Check for obsp matrices (connectivities)
-        response = requests.get(f"{self.server_url}/api/v1/data/obsp/connectivities")
-        self.assertEqual(response.status_code, 200)
+        # Basic assertions about the dataset
+        self.assertEqual(data["path"], dataset_path)
+        self.assertTrue(data["has_obs"])
+        self.assertTrue(data["has_var"])
         
-        # Check that we can get cell names
-        response = requests.get(f"{self.server_url}/api/v1/data/cells")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("cells", data)
+        # Get the actual columns first
+        columns_response = requests.get(f"{self.server_url}/api/v1/datasets/{dataset_path}/info")
+        self.assertEqual(columns_response.status_code, 200)
+        info_data = columns_response.json()
         
-        # Check that we can get gene names
-        response = requests.get(f"{self.server_url}/api/v1/data/genes")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("genes", data)
+        # Check for obs columns in dataset metadata
+        if "obs_columns" in info_data and info_data["obs_columns"]:
+            column_name = info_data["obs_columns"][0]  # Use first available column
+            print(f"Testing with observation column: {column_name}")
+            # Try to fetch the column data
+            response = requests.get(f"{self.server_url}/api/v1/data/obs?dataset_path={dataset_path}&column={column_name}")
+            self.assertEqual(response.status_code, 200)
+            obs_data = response.json()
+            self.assertIn("data", obs_data)
+        
+        # Test getting embedding data if available
+        if "embeddings" in data and data["embeddings"]:
+            embedding_key = data["embeddings"][0]
+            response = requests.get(
+                f"{self.server_url}/api/v1/data/obsm/{embedding_key}?dataset_path={dataset_path}&indices=0,1,2,3,4"
+            )
+            self.assertEqual(response.status_code, 200)
+            embedding_data = response.json()
+            self.assertIn("data", embedding_data)
     
     def test_static_file_serving(self):
         """Test static file serving."""

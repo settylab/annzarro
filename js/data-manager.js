@@ -38,10 +38,15 @@ function getZarrLoader() {
 
 class DataManager {
     constructor() {
-        // Main data structure
+        // Dataset registry - Map of dataset_id -> dataset info
+        this.datasets = new Map();
+        // Active dataset ID
+        this.activeDatasetId = null;
+        
+        // Main data structure for currently active dataset
         this.anndata = null;
         
-        // Current selections and focused items
+        // Current selections and focused items - will be moved to per-dataset storage
         this.selectedCells = new Set();
         this.selectedGenes = new Set();
         this.focusedGene = null;
@@ -51,7 +56,7 @@ class DataManager {
         this.taxonomyId = 9606; // Default: Homo sapiens
         this.species = "Homo sapiens";
         
-        // Cache for loaded data
+        // Cache for loaded data - will use dataset_id as prefix
         this.cache = new Map();
         this.cacheMaxSize = 50; // Maximum number of items to cache
         
@@ -59,7 +64,10 @@ class DataManager {
         this.eventListeners = {
             dataLoaded: [],
             selectionChanged: [],
-            focusChanged: []
+            focusChanged: [],
+            datasetChanged: [], // New event for dataset switching
+            datasetAdded: [],   // New event for dataset addition
+            datasetRemoved: []  // New event for dataset removal
         };
     }
 
@@ -69,38 +77,166 @@ class DataManager {
      * @returns {Promise<boolean>} Success status
      */
     /**
-     * Set the AnnData object directly
+     * Set the AnnData object directly with a dataset ID
      * @param {Object} anndata - The AnnData object to set
-     * @returns {Boolean} Success flag
+     * @param {string} datasetId - The dataset ID (if not provided, a random ID will be generated)
+     * @param {Object} metadata - Optional metadata about the dataset
+     * @returns {string} The dataset ID that was set
      */
-    setAnndata(anndata) {
+    setAnndata(anndata, datasetId = null, metadata = {}) {
         try {
             console.log('Setting AnnData object in data manager');
             
-            // Clear cache
-            this.clearCache();
+            // Generate dataset ID if not provided
+            if (!datasetId) {
+                datasetId = 'dataset_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            }
             
-            // Set the anndata object
-            this.anndata = anndata;
+            // Store dataset info in registry
+            this.datasets.set(datasetId, {
+                anndata: anndata,
+                selectedCells: new Set(),
+                selectedGenes: new Set(),
+                focusedCell: null,
+                focusedGene: null,
+                focusedCellIndex: -1,
+                focusedGeneIndex: -1,
+                taxonomyId: metadata.taxonomyId || this.taxonomyId,
+                species: metadata.species || this.species,
+                name: metadata.name || datasetId,
+                description: metadata.description || '',
+                path: metadata.path || '',
+                loaded: true,
+                timestamp: Date.now()
+            });
             
-            // Initialize selections
-            this.selectedCells.clear();
-            this.selectedGenes.clear();
-            this.focusedCell = null;
-            this.focusedGene = null;
+            // Make this the active dataset
+            this.setActiveDataset(datasetId);
             
-            // Create a dataLoaded event
-            this._triggerEvent('dataLoaded', anndata);
+            // Create a datasetAdded event
+            this._triggerEvent('datasetAdded', {
+                datasetId,
+                metadata: this.getDatasetInfo(datasetId)
+            });
             
-            console.log('AnnData set successfully');
-            return true;
+            console.log(`AnnData set successfully with dataset ID: ${datasetId}`);
+            return datasetId;
         } catch (error) {
             console.error("Error setting AnnData:", error);
+            return null;
+        }
+    }
+    
+    /**
+     * Set the active dataset
+     * @param {string} datasetId - The dataset ID to set as active
+     * @returns {boolean} Success flag
+     */
+    setActiveDataset(datasetId) {
+        if (!this.datasets.has(datasetId)) {
+            console.error(`Dataset ID ${datasetId} not found`);
+            return false;
+        }
+        
+        try {
+            const previousDatasetId = this.activeDatasetId;
+            
+            // If there's a current active dataset, save its state
+            if (previousDatasetId && this.datasets.has(previousDatasetId)) {
+                const currentDataset = this.datasets.get(previousDatasetId);
+                currentDataset.selectedCells = new Set(this.selectedCells);
+                currentDataset.selectedGenes = new Set(this.selectedGenes);
+                currentDataset.focusedCell = this.focusedCell;
+                currentDataset.focusedGene = this.focusedGene;
+                currentDataset.focusedCellIndex = this.focusedCellIndex;
+                currentDataset.focusedGeneIndex = this.focusedGeneIndex;
+                currentDataset.taxonomyId = this.taxonomyId;
+                currentDataset.species = this.species;
+            }
+            
+            // Set new active dataset
+            this.activeDatasetId = datasetId;
+            const dataset = this.datasets.get(datasetId);
+            
+            // Set anndata object
+            this.anndata = dataset.anndata;
+            
+            // Restore selections and focus states
+            this.selectedCells = new Set(dataset.selectedCells);
+            this.selectedGenes = new Set(dataset.selectedGenes);
+            this.focusedCell = dataset.focusedCell;
+            this.focusedGene = dataset.focusedGene;
+            this.focusedCellIndex = dataset.focusedCellIndex;
+            this.focusedGeneIndex = dataset.focusedGeneIndex;
+            
+            // Restore taxonomy info
+            this.taxonomyId = dataset.taxonomyId;
+            this.species = dataset.species;
+            
+            // Trigger dataset changed event
+            this._triggerEvent('datasetChanged', {
+                previousDatasetId,
+                newDatasetId: datasetId,
+                dataset: this.getDatasetInfo(datasetId)
+            });
+            
+            // Also trigger dataLoaded event for backward compatibility
+            this._triggerEvent('dataLoaded', this.anndata);
+            
+            return true;
+        } catch (error) {
+            console.error(`Error setting active dataset ${datasetId}:`, error);
             return false;
         }
     }
     
-    async loadFromZarr(zarrStore) {
+    /**
+     * Get information about a dataset
+     * @param {string} datasetId - The dataset ID
+     * @returns {Object|null} Dataset information or null if not found
+     */
+    getDatasetInfo(datasetId) {
+        if (!datasetId || !this.datasets.has(datasetId)) {
+            return null;
+        }
+        
+        const dataset = this.datasets.get(datasetId);
+        const info = {
+            id: datasetId,
+            name: dataset.name,
+            description: dataset.description,
+            path: dataset.path,
+            loaded: dataset.loaded,
+            timestamp: dataset.timestamp,
+            taxonomyId: dataset.taxonomyId,
+            species: dataset.species,
+            selections: {
+                cells: [...dataset.selectedCells].length,
+                genes: [...dataset.selectedGenes].length
+            },
+            focus: {
+                cell: dataset.focusedCell,
+                gene: dataset.focusedGene
+            }
+        };
+        
+        // Add basic data info if available
+        if (dataset.anndata) {
+            const basicInfo = this._getBasicInfo(dataset.anndata);
+            info.data = basicInfo;
+        }
+        
+        return info;
+    }
+    
+    /**
+     * Load AnnData from zarr with dataset ID support
+     * @param {Object} zarrStore - The zarr store from ZarrLoader
+     * @param {string} datasetId - Optional dataset ID
+     * @param {Object} metadata - Optional metadata about the dataset
+     * @returns {Promise<string|boolean>} Dataset ID if successful, false otherwise
+     */
+    async loadFromZarr(zarrStore, datasetId = null, metadata = {}) {
         try {
             console.log('Loading from zarr store in data-manager.js');
             const zarrLoader = getZarrLoader();
@@ -113,63 +249,92 @@ class DataManager {
                 zarrLoader.store = zarrStore;
             }
             
-            // Set the AnnData structure from zarr
-            this.anndata = await zarrLoader.convertToAnnData();
+            // Generate dataset ID if not provided
+            if (!datasetId) {
+                datasetId = 'dataset_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            }
             
-            // Initialize empty selections
-            this.selectedCells = new Set();
-            this.selectedGenes = new Set();
-            this.focusedGene = null;
-            this.focusedCell = null;
+            // Get path information if available
+            const path = metadata.path || (zarrStore && zarrStore.path) || '';
             
-            // Clear the cache
-            this.cache.clear();
+            // Convert to AnnData structure
+            const anndataStructure = await zarrLoader.convertToAnnData();
             
-            // Trigger dataLoaded event
-            this._triggerEvent('dataLoaded', this.anndata);
+            // Create dataset metadata
+            const datasetMetadata = {
+                ...metadata,
+                path: path,
+                name: metadata.name || path.split('/').pop() || datasetId,
+                description: metadata.description || 'Loaded from zarr',
+                timestamp: Date.now()
+            };
             
-            return true;
+            // Set the AnnData with dataset ID
+            const resultId = this.setAnndata(anndataStructure, datasetId, datasetMetadata);
+            
+            return resultId;
         } catch (error) {
             console.error('Error loading AnnData from zarr:', error);
-            this.anndata = null;
             return false;
         }
     }
 
     /**
-     * Get basic information about the loaded AnnData
-     * @returns {Object|null} Basic info or null if no data loaded
+     * Get basic information about a dataset's AnnData
+     * Helper method to extract information from an anndata object
+     * @param {Object} anndata - The AnnData object to extract info from
+     * @returns {Object} Basic info object
+     * @private
      */
-    getBasicInfo() {
-        if (!this.anndata) return null;
+    _getBasicInfo(anndata) {
+        if (!anndata) return null;
         
         return {
             // Basic sizes
-            nObs: this.anndata.shape ? this.anndata.shape[0] : 0,
-            nVars: this.anndata.shape ? this.anndata.shape[1] : 0,
+            nObs: anndata.shape ? anndata.shape[0] : 0,
+            nVars: anndata.shape ? anndata.shape[1] : 0,
             
             // Available components
-            hasX: !!this.anndata.X,
-            hasObs: !!this.anndata.obs,
-            hasVar: !!this.anndata.var,
-            hasObsm: !!this.anndata.obsm,
-            hasVarm: !!this.anndata.varm,
-            hasLayers: !!this.anndata.layers,
-            hasUns: !!this.anndata.uns,
-            hasObsp: !!this.anndata.obsp,
-            hasVarp: !!this.anndata.varp,
+            hasX: !!anndata.X,
+            hasObs: !!anndata.obs,
+            hasVar: !!anndata.var,
+            hasObsm: !!anndata.obsm,
+            hasVarm: !!anndata.varm,
+            hasLayers: !!anndata.layers,
+            hasUns: !!anndata.uns,
+            hasObsp: !!anndata.obsp,
+            hasVarp: !!anndata.varp,
             
             // Layer names if available
-            layerNames: this.anndata.layers ? Object.keys(this.anndata.layers) : [],
+            layerNames: anndata.layers ? Object.keys(anndata.layers) : [],
             
             // Embeddings if available
-            embeddings: this.anndata.obsm ? 
-                Object.keys(this.anndata.obsm).filter(key => key.startsWith('X_')) : [],
+            embeddings: anndata.obsm ? 
+                Object.keys(anndata.obsm).filter(key => key.startsWith('X_')) : [],
                 
             // obsp and varp if available
-            obspMatrices: this.anndata.obsp ? Object.keys(this.anndata.obsp) : [],
-            varpMatrices: this.anndata.varp ? Object.keys(this.anndata.varp) : []
+            obspMatrices: anndata.obsp ? Object.keys(anndata.obsp) : [],
+            varpMatrices: anndata.varp ? Object.keys(anndata.varp) : []
         };
+    }
+    
+    /**
+     * Get basic information about the loaded AnnData
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {Object|null} Basic info or null if no data loaded
+     */
+    getBasicInfo(datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata) return null;
+        
+        return this._getBasicInfo(anndata);
     }
 
     /**
@@ -561,21 +726,30 @@ class DataManager {
     }
 
     /**
-     * Load X matrix data
+     * Load X matrix data with dataset ID support
      * @param {Array<number>} rowIndices - Array of row indices or null for all
      * @param {Array<number>} colIndices - Array of column indices or null for all
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
      * @returns {Promise<Array|null>} The X matrix data
      */
-    async loadX(rowIndices = null, colIndices = null) {
-        if (!this.anndata || !this.anndata.X) return null;
+    async loadX(rowIndices = null, colIndices = null, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.X) return null;
         
         try {
             // Generate cache key
             const cacheKey = `X_${rowIndices ? rowIndices.join(',') : 'all'}_${colIndices ? colIndices.join(',') : 'all'}`;
             
             // Check cache first
-            if (this.cache.has(cacheKey)) {
-                return this.cache.get(cacheKey);
+            if (this._hasInCache(cacheKey, dsId)) {
+                return this._getFromCache(cacheKey, dsId);
             }
             
             // Check if backend API is available
@@ -583,6 +757,11 @@ class DataManager {
                 try {
                     // Build API request URL
                     let url = `${window.ANNZARRO_API_URL}/data/X?`;
+                    
+                    // Add dataset ID parameter
+                    if (dsId) {
+                        url += `dataset_id=${encodeURIComponent(dsId)}&`;
+                    }
                     
                     // Add parameters
                     if (rowIndices) {
@@ -599,7 +778,7 @@ class DataManager {
                         const data = await response.json();
                         if (data && data.data) {
                             // Cache the result
-                            this._addToCache(cacheKey, data.data);
+                            this._addToCache(cacheKey, data.data, dsId);
                             return data.data;
                         }
                     }
@@ -655,6 +834,11 @@ class DataManager {
                 throw new Error('ZarrLoader not found');
             }
             
+            // If we have a dataset ID, make sure zarr loader knows about it
+            if (dsId && zarrLoader.setDatasetContext) {
+                zarrLoader.setDatasetContext(dsId);
+            }
+            
             let result;
             if (largeSelection && zarrLoader.loadProgressively) {
                 // Use progressive loading for large selections
@@ -664,7 +848,7 @@ class DataManager {
             }
             
             // Cache the result
-            this._addToCache(cacheKey, result);
+            this._addToCache(cacheKey, result, dsId);
             
             return result;
         } catch (error) {
@@ -1573,15 +1757,22 @@ class DataManager {
     }
     
     /**
-     * Add an item to the cache with LRU eviction
+     * Add an item to the cache with LRU eviction and dataset prefix
      * @param {string} key - Cache key
      * @param {any} value - Value to cache
+     * @param {string} datasetId - Dataset ID to use as prefix (defaults to active dataset)
      * @private
      */
-    _addToCache(key, value) {
+    _addToCache(key, value, datasetId = null) {
+        // Use active dataset ID if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Create a prefixed key with dataset ID
+        const prefixedKey = dsId ? `${dsId}:${key}` : key;
+        
         // Remove the key if it already exists to update its position
-        if (this.cache.has(key)) {
-            this.cache.delete(key);
+        if (this.cache.has(prefixedKey)) {
+            this.cache.delete(prefixedKey);
         }
         
         // Evict the oldest entry if the cache is full
@@ -1591,15 +1782,153 @@ class DataManager {
         }
         
         // Add the new entry
-        this.cache.set(key, value);
+        this.cache.set(prefixedKey, value);
+    }
+    
+    /**
+     * Get an item from the cache with dataset prefix
+     * @param {string} key - Cache key
+     * @param {string} datasetId - Dataset ID to use as prefix (defaults to active dataset)
+     * @private
+     * @returns {any} Cached value or undefined if not found
+     */
+    _getFromCache(key, datasetId = null) {
+        // Use active dataset ID if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Create a prefixed key with dataset ID
+        const prefixedKey = dsId ? `${dsId}:${key}` : key;
+        
+        return this.cache.get(prefixedKey);
+    }
+    
+    /**
+     * Check if an item exists in the cache with dataset prefix
+     * @param {string} key - Cache key
+     * @param {string} datasetId - Dataset ID to use as prefix (defaults to active dataset)
+     * @private
+     * @returns {boolean} True if the key exists in the cache
+     */
+    _hasInCache(key, datasetId = null) {
+        // Use active dataset ID if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Create a prefixed key with dataset ID
+        const prefixedKey = dsId ? `${dsId}:${key}` : key;
+        
+        return this.cache.has(prefixedKey);
     }
     
     /**
      * Check if data is loaded
+     * @param {string} datasetId - Optional dataset ID to check (defaults to active dataset)
      * @returns {boolean} True if data is loaded
      */
-    isDataLoaded() {
-        return this.anndata !== null;
+    isDataLoaded(datasetId = null) {
+        if (datasetId) {
+            return this.datasets.has(datasetId) && this.datasets.get(datasetId).anndata !== null;
+        }
+        return this.activeDatasetId !== null && this.anndata !== null;
+    }
+    
+    /**
+     * Reset the DataManager to its initial state (for testing)
+     */
+    reset() {
+        // Clear datasets
+        this.datasets.clear();
+        this.activeDatasetId = null;
+        
+        // Reset state
+        this.anndata = null;
+        this.selectedCells = new Set();
+        this.selectedGenes = new Set();
+        this.focusedGene = null;
+        this.focusedCell = null;
+        this.focusedGeneIndex = -1;
+        this.focusedCellIndex = -1;
+        
+        // Reset taxonomy
+        this.taxonomyId = 9606; // Default: Homo sapiens
+        this.species = "Homo sapiens";
+        
+        // Clear cache
+        this.cache.clear();
+    }
+    
+    /**
+     * Get a list of all loaded datasets
+     * @returns {Array<Object>} Array of dataset info objects
+     */
+    getLoadedDatasets() {
+        const datasets = [];
+        for (const [id, _] of this.datasets) {
+            datasets.push(this.getDatasetInfo(id));
+        }
+        return datasets;
+    }
+    
+    /**
+     * Remove a dataset
+     * @param {string} datasetId - The dataset ID to remove
+     * @returns {boolean} Success flag
+     */
+    removeDataset(datasetId) {
+        if (!this.datasets.has(datasetId)) {
+            return false;
+        }
+        
+        try {
+            // If removing the active dataset, need to switch active dataset
+            if (this.activeDatasetId === datasetId) {
+                // Find another dataset to make active, or set to null
+                const datasetIds = Array.from(this.datasets.keys());
+                const newActiveId = datasetIds.find(id => id !== datasetId);
+                
+                // Set new active dataset if available, otherwise clear
+                if (newActiveId) {
+                    this.setActiveDataset(newActiveId);
+                } else {
+                    this.activeDatasetId = null;
+                    this.anndata = null;
+                    this.selectedCells.clear();
+                    this.selectedGenes.clear();
+                    this.focusedCell = null;
+                    this.focusedGene = null;
+                }
+            }
+            
+            // Remove from dataset registry
+            const removedDataset = this.datasets.get(datasetId);
+            this.datasets.delete(datasetId);
+            
+            // Remove dataset-specific cache entries
+            const dsPrefix = `${datasetId}:`;
+            for (const key of this.cache.keys()) {
+                if (key.startsWith(dsPrefix)) {
+                    this.cache.delete(key);
+                }
+            }
+            
+            // Trigger datasetRemoved event
+            this._triggerEvent('datasetRemoved', {
+                datasetId,
+                dataset: removedDataset
+            });
+            
+            return true;
+        } catch (error) {
+            console.error(`Error removing dataset ${datasetId}:`, error);
+            return false;
+        }
+    }
+    
+    /**
+     * Get the active dataset ID
+     * @returns {string|null} The active dataset ID or null if none
+     */
+    getActiveDatasetId() {
+        return this.activeDatasetId;
     }
     
     /**

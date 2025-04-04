@@ -850,14 +850,25 @@ function checkForDataInUrl() {
     const urlParams = new URLSearchParams(window.location.search);
     const dataset = urlParams.get('dataset') || urlParams.get('demo'); // Support both new and old parameter names
     const path = urlParams.get('path');
+    const datasetId = urlParams.get('dataset_id'); // Support explicit dataset ID
     
     if (dataset || path) {
         // Wait a moment for the available datasets to be loaded first
         setTimeout(() => {
             showLoadingIndicator('Loading data...');
-            loadDataFromPath(dataset, path)
-                .then(() => {
+            loadDataFromPath(dataset, path, datasetId)
+                .then((loadedDatasetId) => {
                     hideLoadingIndicator();
+                    
+                    // Add the dataset ID to the URL if not already present
+                    if (loadedDatasetId && !urlParams.has('dataset_id')) {
+                        const newParams = new URLSearchParams(window.location.search);
+                        newParams.set('dataset_id', loadedDatasetId);
+                        
+                        // Update the URL without reloading the page
+                        const newUrl = window.location.pathname + '?' + newParams.toString();
+                        window.history.replaceState({}, '', newUrl);
+                    }
                 })
                 .catch(error => {
                     showError('Error loading data: ' + error.message);
@@ -1323,9 +1334,10 @@ async function loadAvailableData() {
  * Load data from a specified path using the unified server approach
  * @param {string} datasetName - Name of the dataset (used for display only)
  * @param {string} path - Path to the data
- * @returns {Promise<void>}
+ * @param {string|null} datasetId - Optional dataset ID to use (if null, one will be generated)
+ * @returns {Promise<string>} The dataset ID of the loaded dataset
  */
-async function loadDataFromPath(datasetName, path = null) {
+async function loadDataFromPath(datasetName, path = null, datasetId = null) {
     try {
         // Check if we have a path
         if (!path) {
@@ -1357,8 +1369,20 @@ async function loadDataFromPath(datasetName, path = null) {
         const pathWithParams = (token && /^[a-zA-Z0-9]+$/.test(token)) ? 
             `${path}?token=${token}` : path;
         
+        // Generate dataset ID if not provided
+        if (!datasetId) {
+            datasetId = 'dataset_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        }
+        
+        // Create dataset metadata
+        const metadata = {
+            name: datasetName,
+            description: `Dataset loaded from ${path}`,
+            path: path
+        };
+        
         // Show loading status in console
-        console.log('Loading dataset via zarrLoader...');
+        console.log(`Loading dataset via zarrLoader with ID: ${datasetId}...`);
         
         try {
             // Check if zarrLoader is available
@@ -1368,7 +1392,7 @@ async function loadDataFromPath(datasetName, path = null) {
             
             // Load from URL using zarrLoader (which will call the backend API)
             console.log('Calling zarrLoader.loadFromUrl with path:', pathWithParams);
-            const loadResult = await zarrLoader.loadFromUrl(pathWithParams);
+            const loadResult = await zarrLoader.loadFromUrl(pathWithParams, datasetId);
             
             if (!loadResult || loadResult.error) {
                 throw new Error(loadResult?.error || 'Failed to load dataset. Server returned an error.');
@@ -1376,8 +1400,11 @@ async function loadDataFromPath(datasetName, path = null) {
             
             console.log('Initial load successful, retrieving AnnData structure...');
             
-            // Convert to AnnData via the loadAnndataFromZarr function
-            return await loadAnndataFromZarr();
+            // Convert to AnnData via the loadAnndataFromZarr function with dataset ID
+            const loadedDatasetId = await loadAnndataFromZarr(datasetId, metadata);
+            
+            // Return the dataset ID
+            return loadedDatasetId;
         } catch (error) {
             console.error('Error loading data from server:', error);
             throw new Error(`Failed to load dataset: ${error.message}`);
@@ -1496,10 +1523,12 @@ function createHardcodedDataset(datasetType) {
 
 
 /**
- * Load AnnData from zarr store
- * @returns {Promise<void>}
+ * Load AnnData from zarr store with dataset ID
+ * @param {string} datasetId - Optional dataset ID to use (if null, one will be generated)
+ * @param {Object} metadata - Optional metadata for the dataset
+ * @returns {Promise<string>} The dataset ID that was loaded
  */
-async function loadAnndataFromZarr() {
+async function loadAnndataFromZarr(datasetId = null, metadata = {}) {
     try {
         console.log('Starting to load AnnData from zarr');
         
@@ -1508,27 +1537,36 @@ async function loadAnndataFromZarr() {
         console.log('AnnData structure received:', anndata);
         
         // Update data manager with the AnnData structure
+        let loadedDatasetId = null;
+        
         if (dataManager && typeof dataManager.setAnndata === 'function') {
-            console.log('Setting AnnData in dataManager.setAnndata');
-            dataManager.setAnndata(anndata);
+            console.log('Setting AnnData in dataManager.setAnndata with dataset ID');
+            loadedDatasetId = dataManager.setAnndata(anndata, datasetId, metadata);
         } else if (dataManager) {
-            console.log('Setting AnnData directly in dataManager.anndata');
+            console.error('dataManager.setAnndata method not available, falling back to legacy approach');
+            // Legacy approach - just set directly and don't track dataset ID
             dataManager.anndata = anndata;
         } else {
             console.error('dataManager not available, cannot set AnnData');
+            throw new Error('dataManager not available');
         }
         
-        // Dispatch dataLoaded event
+        // Dispatch dataLoaded event - Include dataset ID for newer components
         console.log('Dispatching dataLoaded event');
         const event = new CustomEvent('dataLoaded', {
-            detail: { source: 'zarr', data: anndata }
+            detail: { 
+                source: 'zarr', 
+                data: anndata,
+                datasetId: loadedDatasetId,
+                metadata: metadata
+            }
         });
         document.dispatchEvent(event);
         
         // Update the UI
-        updateAfterDataLoad();
+        updateAfterDataLoad(loadedDatasetId);
         
-        return Promise.resolve();
+        return loadedDatasetId;
     } catch (error) {
         console.error('Error loading AnnData from zarr:', error);
         throw error;
@@ -1537,21 +1575,34 @@ async function loadAnndataFromZarr() {
 
 /**
  * Update the UI after data is loaded
+ * @param {string} datasetId - The ID of the loaded dataset
  */
-function updateAfterDataLoad() {
+function updateAfterDataLoad(datasetId = null) {
     console.log('Updating UI after data load');
     
     try {
+        // Get the active dataset ID if not specified
+        const dsId = datasetId || (dataManager ? dataManager.getActiveDatasetId() : null);
+        
         // Update status indicator
         const statusIndicator = document.getElementById('statusIndicator');
         if (statusIndicator) {
             console.log('Updating status indicator');
             // Get basic info from data manager if available
             let dataInfo = '';
-            if (dataManager && dataManager.isDataLoaded && dataManager.isDataLoaded()) {
+            let datasetInfo = '';
+            
+            if (dataManager && dataManager.isDataLoaded(dsId)) {
+                // Get dataset info if available
+                const dsInfo = dsId ? dataManager.getDatasetInfo(dsId) : null;
+                if (dsInfo) {
+                    datasetInfo = dsInfo.name ? ` - ${dsInfo.name}` : '';
+                }
+                
+                // Get basic info about the data
                 let info = {};
                 if (typeof dataManager.getBasicInfo === 'function') {
-                    info = dataManager.getBasicInfo();
+                    info = dataManager.getBasicInfo(dsId);
                 } else if (dataManager.anndata) {
                     info = {
                         nObs: dataManager.anndata.observations || 0,
@@ -1565,7 +1616,31 @@ function updateAfterDataLoad() {
                 }
             }
             
-            statusIndicator.innerHTML = `<span class="badge bg-success">Data Loaded${dataInfo}</span>`;
+            // Create the status badges
+            const loadedBadge = `<span class="badge bg-success">Data Loaded${dataInfo}</span>`;
+            const idBadge = dsId ? `<span class="badge bg-primary ms-1" title="Dataset ID">${dsId}</span>` : '';
+            const nameBadge = datasetInfo ? `<span class="badge bg-secondary ms-1">${datasetInfo}</span>` : '';
+            
+            statusIndicator.innerHTML = loadedBadge + idBadge + nameBadge;
+            
+            // Add dataset dropdown if multiple datasets are loaded
+            if (dataManager && dataManager.getLoadedDatasets().length > 1) {
+                // Create a dataset switcher dropdown
+                const dropdownHTML = createDatasetSwitcherDropdown();
+                statusIndicator.innerHTML += dropdownHTML;
+                
+                // Add event listener after rendering
+                setTimeout(() => {
+                    document.getElementById('datasetSwitcher')?.addEventListener('change', function() {
+                        const newDatasetId = this.value;
+                        if (newDatasetId && dataManager) {
+                            dataManager.setActiveDataset(newDatasetId);
+                            // Update UI to reflect the dataset change
+                            updateAfterDataLoad(newDatasetId);
+                        }
+                    });
+                }, 0);
+            }
         }
         
         // Hide empty state and show panels
@@ -1599,7 +1674,8 @@ function updateAfterDataLoad() {
                         console.log('Creating plot in panel-1');
                         uiManager.createPanel('panel-1', 'plot', {
                             plotType: 'scatter',
-                            title: 'Data Visualization'
+                            title: 'Data Visualization',
+                            datasetId: dsId // Associate panel with dataset ID
                         });
                     }
                 }
@@ -1618,23 +1694,79 @@ function updateAfterDataLoad() {
 }
 
 /**
+ * Create a dataset switcher dropdown HTML
+ * @returns {string} HTML for dataset switcher dropdown
+ */
+function createDatasetSwitcherDropdown() {
+    // Get datasets from dataManager
+    const datasets = dataManager.getLoadedDatasets();
+    const activeId = dataManager.getActiveDatasetId();
+    
+    if (datasets.length <= 1) {
+        return '';
+    }
+    
+    // Create the dropdown
+    let html = `
+        <div class="dataset-switcher ms-3 d-inline-block">
+            <select id="datasetSwitcher" class="form-select form-select-sm">
+                <option value="">Switch Dataset</option>
+    `;
+    
+    // Add options for each dataset
+    datasets.forEach(dataset => {
+        const selected = dataset.id === activeId ? 'selected' : '';
+        const datasetName = dataset.name || dataset.id;
+        const cellCount = dataset.data?.nObs || '?';
+        const geneCount = dataset.data?.nVars || '?';
+        
+        html += `<option value="${dataset.id}" ${selected}>${datasetName} (${cellCount}×${geneCount})</option>`;
+    });
+    
+    html += `
+            </select>
+        </div>
+    `;
+    
+    return html;
+}
+
+/**
  * Update gene selection options
  * @param {string} geneNameColumn - Optional column containing gene names
+ * @param {string} datasetId - Optional dataset ID to update for
  */
-function updateGeneOptions(geneNameColumn = null) {
+function updateGeneOptions(geneNameColumn = null, datasetId = null) {
     const geneFocusSelect = document.getElementById('geneFocus');
+    
+    // Check if element exists
+    if (!geneFocusSelect) {
+        console.error('Gene focus select element not found');
+        return;
+    }
+    
+    // Use active dataset if not specified
+    const dsId = datasetId || (dataManager ? dataManager.getActiveDatasetId() : null);
     
     // Clear existing options
     geneFocusSelect.innerHTML = '<option value="">None selected</option>';
     
     // Check if data is loaded
-    if (!dataManager.isDataLoaded()) return;
+    if (!dataManager.isDataLoaded(dsId)) return;
     
     try {
         // First try the API endpoint which can use a specific column
         let url = `${window.ANNZARRO_API_URL}/data/genes`;
+        
+        // Add parameters
+        url += '?';
+        
+        if (dsId) {
+            url += `dataset_id=${encodeURIComponent(dsId)}&`;
+        }
+        
         if (geneNameColumn) {
-            url += `?column=${encodeURIComponent(geneNameColumn)}`;
+            url += `column=${encodeURIComponent(geneNameColumn)}`;
         }
         
         fetch(url)
@@ -1658,6 +1790,15 @@ function updateGeneOptions(geneNameColumn = null) {
                         width: '100%'
                     });
                     
+                    // Set the current focused gene if any
+                    if (dataManager && dsId && dataManager.datasets.has(dsId)) {
+                        const dataset = dataManager.datasets.get(dsId);
+                        if (dataset.focusedGene) {
+                            geneFocusSelect.value = dataset.focusedGene;
+                            $(geneFocusSelect).trigger('change');
+                        }
+                    }
+                    
                     return;
                 }
                 
@@ -1678,7 +1819,7 @@ function updateGeneOptions(geneNameColumn = null) {
     function fallbackLoadGenes() {
         try {
             // Try to load var index directly
-            dataManager.loadVar()
+            dataManager.loadVar(null, null, dsId)
                 .then(varData => {
                     if (varData && varData._index) {
                         const geneNames = varData._index;
@@ -1697,6 +1838,15 @@ function updateGeneOptions(geneNameColumn = null) {
                             allowClear: true,
                             width: '100%'
                         });
+                        
+                        // Set the current focused gene if any
+                        if (dataManager && dsId && dataManager.datasets.has(dsId)) {
+                            const dataset = dataManager.datasets.get(dsId);
+                            if (dataset.focusedGene) {
+                                geneFocusSelect.value = dataset.focusedGene;
+                                $(geneFocusSelect).trigger('change');
+                            }
+                        }
                     }
                 })
                 .catch(error => {
@@ -1710,20 +1860,30 @@ function updateGeneOptions(geneNameColumn = null) {
 
 /**
  * Update cell selection options
+ * @param {string} datasetId - Optional dataset ID to update for
  */
-function updateCellOptions() {
+function updateCellOptions(datasetId = null) {
     const cellFocusSelect = document.getElementById('cellFocus');
+    
+    // Check if element exists
+    if (!cellFocusSelect) {
+        console.error('Cell focus select element not found');
+        return;
+    }
+    
+    // Use active dataset if not specified
+    const dsId = datasetId || (dataManager ? dataManager.getActiveDatasetId() : null);
     
     // Clear existing options
     cellFocusSelect.innerHTML = '<option value="">None selected</option>';
     
     // Check if data is loaded
-    if (!dataManager.isDataLoaded()) return;
+    if (!dataManager.isDataLoaded(dsId)) return;
     
     // Get obs index
     try {
         // Try to load obs index
-        dataManager.loadObs()
+        dataManager.loadObs(null, null, dsId)
             .then(obsData => {
                 if (obsData && obsData._index) {
                     const cellNames = obsData._index;
@@ -1742,6 +1902,15 @@ function updateCellOptions() {
                         allowClear: true,
                         width: '100%'
                     });
+                    
+                    // Set the current focused cell if any
+                    if (dataManager && dsId && dataManager.datasets.has(dsId)) {
+                        const dataset = dataManager.datasets.get(dsId);
+                        if (dataset.focusedCell) {
+                            cellFocusSelect.value = dataset.focusedCell;
+                            $(cellFocusSelect).trigger('change');
+                        }
+                    }
                 }
             })
             .catch(error => {

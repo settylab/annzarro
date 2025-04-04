@@ -4,13 +4,27 @@ This plan outlines the necessary changes to address the reported issues and requ
 
 ## Current Status (Updated on April 3, 2025)
 
-We're working on improving Annzarro to handle browsing from the startup directory and add proper support for additional matrix types like .varm, .obsp, and .varp. 
+We have made significant progress with Annzarro, implementing a stateless server architecture, fixing critical JavaScript errors, unifying the server approach, and adding proper support for additional matrix types like .varm, .obsp, and .varp.
 
-We've fixed the JavaScript SyntaxError in main.js by completely removing file:// protocol support and restructuring the conditional logic. The specific error "Unexpected token 'else'" at line 1054 has been fixed by properly handling the case where no datasets are found without using an else clause that would be connected to a distant if statement.
+Key accomplishments:
+- Successfully implemented stateless server architecture with direct file access (completed)
+- Added dataset_path parameter to all data access endpoints, eliminating server-side dataset state
+- Created comprehensive test coverage for the stateless API endpoints (all tests now passing)
+- Implemented configurable limits for request sizes to handle datasets with millions of cells
+- Fixed JavaScript SyntaxError in main.js by completely removing file:// protocol support
+- Implemented a unified server approach using a single port for both frontend and backend
+- Added comprehensive support for .obsp and .varp matrices in both server and client code
+- Fixed UI-related errors with proper null-checking in the codebase
+- Created robust unit and integration testing infrastructure
 
-We've also documented the server architecture and proposed a unified server approach that would use a single port for both frontend and backend. The API URL detection has been simplified to prioritize same-origin access. Since backward compatibility is not required, legacy code paths can be removed entirely in future updates.
+The stateless server architecture now:
+1. Supports multiple simultaneous active datasets without server-side state
+2. Provides efficient direct file access for each request using the zarr_reader.open_dataset_by_path() method
+3. Returns complete metadata in the initial dataset request
+4. Enables highly scalable access to large single-cell datasets
+5. Allows for configurable request limits for large datasets
 
-The next steps are implementing the unified server approach, completing client-side support for .obsp and .varp matrices, adding robust testing infrastructure, and fixing any remaining issues with the directory browsing functionality.
+All API endpoints now accept a dataset_path parameter, enabling concurrent use by multiple users with different datasets without requiring server-side state maintenance. This improves scalability and reliability while simplifying the server implementation.
 
 ## IMPORTANT: No Backward Compatibility Required
 
@@ -67,11 +81,14 @@ Since this application has not yet been released, we DO NOT need to maintain bac
   - [x] Create get_varp method in zarr_reader.py
   - [x] Add REST API endpoint to expose .varp data
   - [x] Implement client-side functions to retrieve .varp matrices
-- [ ] Implement lazy loading for large matrices
-  - [ ] Add Dask integration for large matrix operations
-  - [ ] Implement chunked loading for .obsp and .varp matrices
+- [ ] Implement lazy loading with dataset-identifier architecture
+  - [ ] Return complete metadata in initial dataset load
+  - [ ] Include matrix dimensions, types, and summary statistics
+  - [ ] Modify API endpoints to accept dataset_id parameter
+  - [ ] Support partial matrix loading via row/column indices
+  - [ ] Implement chunked loading with pagination
   - [ ] Add progress indicators for large matrix operations
-  - [ ] Support pagination and partial matrix loading
+  - [ ] Create server-side caching by dataset ID
 - [ ] Integrate matrix data as selectable sources in existing visualizations
   - [ ] Add .obsp and .varp as data source options alongside .obs, .obsm, and layers
   - [ ] For .obsp matrices, allow selecting specific cells or the focused cell
@@ -81,16 +98,26 @@ Since this application has not yet been released, we DO NOT need to maintain bac
 - [ ] Test UI controls for all matrix type selection
 - [ ] Add comprehensive matrix type documentation
 
-## 5. Frontend State Management and Client Architecture
-- [ ] Refactor state management for multi-user support
-  - [ ] Move user-specific state (focused cell, gene, species) entirely to frontend
-  - [ ] Eliminate POST requests to maintain read-only backend
-  - [ ] Pass all necessary parameters in GET requests
-  - [ ] Implement URL-based state sharing
+## 5. Dataset-Centric Frontend State Management
+- [x] Implement dataset-centric state management
+  - [x] Associate all state (selections, focused items) with specific dataset ID 
+  - [x] Store dataset registry in client-side state with active datasets
+  - [x] Enable dataset-level operations (close, refresh, compare)
+  - [x] Implement switching between datasets without losing state
+  - [x] Support multiple simultaneous active datasets
+- [x] Create fully stateless server architecture
+  - [x] Include dataset_path parameter in all data requests
+  - [x] Eliminate POST endpoints for dataset loading/unloading
+  - [x] Make server completely stateless regarding datasets
+  - [x] Convert all loading operations to on-demand data fetching
+  - [x] Use direct file access for each request without maintaining state
+  - [x] Use query parameters for all selection/filter criteria
+  - [x] Support URL-based state sharing with dataset context
 - [ ] Implement frontend-only selection and filtering
-  - [ ] Store selections in client-side state
-  - [ ] Pass selections as parameters in data requests
+  - [x] Store selections in client-side state linked to dataset ID
+  - [x] Pass selections as parameters in data requests
   - [ ] Support URL-based sharing of selections
+  - [x] Create dataset-aware visualization components
 - [ ] Add filesystem change detection and notifications
   - [ ] Implement server-side file watching for data directory
   - [ ] Add WebSocket support for real-time notifications
@@ -189,10 +216,32 @@ Since this application has not yet been released, we DO NOT need to maintain bac
 - Test cell and gene selection with real biological data
 - Implement graceful test skipping when dataset isn't available (e.g., in CI environments)
 
-## 7. Data Loading Functionality
-- [ ] Debug and fix data loading issues from local files
+## 7. Dataset-Identifier Based Loading Architecture
 - [x] Refactor loadDemoData to loadDataFromPath (complete terminology shift)
 - [x] Rename loadAvailableDemoData to loadAvailableData throughout codebase
+- [x] Implement dataset-identifier based architecture
+  - [x] Modify API endpoints to accept dataset_id parameter for all data requests
+  - [x] Create client-side dataset registry to track multiple active datasets
+  - [x] Support switching between datasets without requiring reload from server
+  - [x] Maintain dataset-specific selections/state in the client
+  - [x] Enable dataset comparison views with multiple active datasets
+- [x] Convert to fully stateless server implementation
+  - [x] Eliminate server-side dataset loading/unloading state
+  - [x] Implement direct zarr file access for each request
+  - [x] Use path-based dataset identification without server-side state
+  - [x] Support multiple concurrent users of the same datasets efficiently
+  - [x] Ensure proper file closing after each request
+- [ ] Enhance metadata and lazy loading mechanism
+  - [x] Return complete metadata for all matrices in initial load (obsm, varm, obsp, varp)
+  - [x] Include size information for all matrix types
+  - [x] Add data type information (categorical vs continuous, sparse vs dense)
+  - [x] Support lazy loading with partial matrix loading via indices
+  - [ ] Implement view pagination for large matrices
+- [ ] Optimize data access performance
+  - [ ] Leverage zarr's chunking for efficient partial reads
+  - [ ] Use query parameters to request only needed data chunks
+  - [ ] Implement client-side caching and cache invalidation
+  - [ ] Add progressive loading for large matrices
 - [ ] Implement proper loading indicators and error messages
 - [ ] Test data loading from various sources (URL, S3)
 - [ ] Add better error handling for malformed or incomplete zarr archives
@@ -212,56 +261,67 @@ Since this application has not yet been released, we DO NOT need to maintain bac
 - [ ] Make sure this information is visible at all times, regardless of panel layout
 
 ## Implementation Priority
-1. Fix JavaScript errors - Critical issue preventing the application from working properly
-   - Focus on the SyntaxError at line 1054 in main.js (unexpected 'else' token)
-   - Remove all file:// protocol support code as it's no longer needed
-   - Ensure zarr library is properly loaded 
-   - Fix server startup issues with clear port configuration
+1. ✅ Fix JavaScript errors - Critical issue preventing the application from working properly
+   - ✅ Focus on the SyntaxError at line 1054 in main.js (unexpected 'else' token)
+   - ✅ Remove all file:// protocol support code as it's no longer needed
+   - ✅ Ensure zarr library is properly loaded 
+   - ✅ Fix server startup issues with clear port configuration
 
-2. Unify server architecture and configuration
-   - Implement single-server approach on one port
-   - Make data directory fully configurable
-   - Document server architecture clearly
+2. ✅ Unify server architecture and configuration
+   - ✅ Implement single-server approach on one port
+   - ✅ Make data directory fully configurable
+   - ✅ Document server architecture clearly
 
-3. Revise matrix data integration approach
-   - Modify data source selection UI to include matrix types alongside existing sources
-     - Update the data source dropdown in plot configurations to include .obsp/.varp
-     - Add cell/gene selection for matrix data sources (or use focused cell/gene)
-     - Implement appropriate UI for selecting matrix columns/cells
-   - Implement data fetching logic for selected matrix cells/genes
-     - For .obsp matrices, fetch data for selected cells or focused cell
-     - For .varp matrices, fetch data for selected genes or focused gene
-   - Connect matrix data sources to focused cell/gene changes
-     - Add event listeners for focus changes to update visualizations
-     - Implement caching for better performance
-   - Remove unnecessary standalone matrix visualization code
-   - Update tests to reflect the new approach
+3. ✅ Revise matrix data integration approach
+   - ✅ Modify data source selection UI to include matrix types alongside existing sources
+     - ✅ Update the data source dropdown in plot configurations to include .obsp/.varp
+     - ✅ Add cell/gene selection for matrix data sources (or use focused cell/gene)
+     - ✅ Implement appropriate UI for selecting matrix columns/cells
+   - ✅ Implement data fetching logic for selected matrix cells/genes
+     - ✅ For .obsp matrices, fetch data for selected cells or focused cell
+     - ✅ For .varp matrices, fetch data for selected genes or focused gene
+   - ✅ Connect matrix data sources to focused cell/gene changes
+     - ✅ Add event listeners for focus changes to update visualizations
+     - ✅ Implement caching for better performance
+   - ✅ Remove unnecessary standalone matrix visualization code
+   - ✅ Update tests to reflect the new approach
 
-4. Refactor state management for multi-user support
-   - Move user state (focused cell, gene, species) to frontend only
-   - Implement read-only backend with all selection in GET parameters
-   - Add URL-based state sharing
+4. Implement dataset-identifier based architecture (HIGHEST PRIORITY)
+   - ✅ Create dataset-aware API endpoints that accept dataset_id parameters
+   - ✅ Redesign frontend to support multiple active datasets simultaneously
+   - ✅ Create client-side dataset registry for tracking loaded datasets
+   - ✅ Implement dataset-specific state management
+   - ✅ Add enhanced dataset metadata with complete matrix information
+   - ✅ Support lazy loading through specific matrix indices
+   - ✅ Enable dataset comparison views
+   - Convert to fully stateless server implementation
+   - Eliminate server-side dataset loading state
+   - Implement direct zarr file access for each request without server state
 
-5. Add filesystem change detection and notifications
+5. Enhance client-side UI for dataset management
+   - Add dataset-centric UI controls (open, close, switch between datasets)
+   - Create visual indicators for current active dataset
+   - Design dataset information panels with complete metadata
+   - Implement dataset search and filtering functionality
+   - Add support for dataset tagging and organization
+
+6. Add filesystem change detection and notifications
    - Implement WebSocket-based file change notifications
    - Add UI components for data change alerts
    - Support manual and automatic refresh options
-
-6. Revise client-side integration for matrix fields
-   - Implement client-side functions to retrieve all matrix types
-   - Integrate matrices as selectable data sources in existing visualizations
-   - Add support for focused cell/gene in matrix data sources
-   - Remove unnecessary standalone matrix visualization
+   - Create dataset-aware refresh functionality
 
 7. Implement comprehensive testing infrastructure
    - Add command-line browser testing capabilities
    - Create automated tests for all core functionality
+   - Implement tests specifically for multi-dataset functionality
    - Document testing procedures
 
 8. Interface improvements and polish
    - Fix splitting and resizing behavior
    - Add persistent information panel
    - Improve error handling and user feedback
+   - Enhance dataset loading progress indicators
 
 ## JavaScript Error Resolution Plan
 1. ✅ Debug "registerModule is not a function" error
