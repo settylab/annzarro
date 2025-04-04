@@ -67,28 +67,41 @@ def check_process_running(pid):
 
 def check_server_config():
     """Check server configuration"""
-    config_path = os.path.join('annzarro', 'server', 'config.json')
-    if not os.path.exists(config_path):
-        config_path = os.path.join('server', 'config.json')
+    # Try multiple possible config locations
+    config_paths = [
+        os.path.join('annzarro', 'server', 'config.json'),
+        os.path.join('server', 'config.json'),
+        'config.json'
+    ]
     
-    if not os.path.exists(config_path):
-        return {
-            'backend_port': 8001,  # Default port
-            'host': '127.0.0.1'
-        }
+    for config_path in config_paths:
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    
+                    # Read configured port and host
+                    backend_port = config.get('port', 8001)
+                    host = config.get('host', '127.0.0.1')
+                    
+                    print(f"Found server config at {config_path}, port={backend_port}, host={host}")
+                    
+                    return {
+                        'backend_port': backend_port,
+                        'host': host,
+                        'config_path': config_path
+                    }
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                print(f"Error reading config from {config_path}: {e}")
+                # Continue to try next config path
     
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            return {
-                'backend_port': config.get('port', 8001),
-                'host': config.get('host', '127.0.0.1')
-            }
-    except (json.JSONDecodeError, FileNotFoundError):
-        return {
-            'backend_port': 8001,  # Default port
-            'host': '127.0.0.1'
-        }
+    # Default values if no config is found
+    print("No valid server config found, using default values")
+    return {
+        'backend_port': 8001,  # Default port
+        'host': '127.0.0.1',
+        'config_path': None
+    }
 
 def get_server_status():
     """Get status of backend and frontend servers"""

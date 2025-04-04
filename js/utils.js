@@ -416,10 +416,26 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = Utils;
 } else if (typeof window !== 'undefined') {
     // Register with the module loader if available
-    if (window.Annzarro) {
+    if (window.Annzarro && typeof window.Annzarro.registerModule === 'function') {
         window.Annzarro.registerModule('Utils', Utils);
-        window.Annzarro.checkModulesReady();
     } else {
+        // Fallback to global registration
         window.Utils = Utils;
+        
+        // Ensure Annzarro namespace exists
+        window.Annzarro = window.Annzarro || {};
+        
+        // Create modules object if it doesn't exist
+        if (!window.Annzarro.modules) {
+            window.Annzarro.modules = {};
+        }
+        
+        // Register the module in the namespace
+        window.Annzarro.modules.Utils = Utils;
+    }
+    
+    // Call checkModulesReady if it exists
+    if (window.Annzarro && typeof window.Annzarro.checkModulesReady === 'function') {
+        window.Annzarro.checkModulesReady();
     }
 }

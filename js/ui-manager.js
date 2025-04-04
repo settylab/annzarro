@@ -231,10 +231,11 @@ class UIManager {
         // Set up the container structure
         const row = document.createElement('div');
         row.className = 'row h-100';
+        row.style.margin = '0'; // Ensure row doesn't add unwanted margins
         this.container.appendChild(row);
         
         const col = document.createElement('div');
-        col.className = 'col-12 h-100';
+        col.className = 'col-12 h-100 p-0'; // Removed padding
         row.appendChild(col);
         
         const panel = document.createElement('div');
@@ -256,26 +257,55 @@ class UIManager {
      * @private
      */
     createHorizontalLayout() {
-        const row = document.createElement('div');
-        row.className = 'row h-100';
-        this.container.appendChild(row);
+        // Clear the container
+        this.container.innerHTML = '';
+        
+        // Create a wrapper using CSS Grid instead of Bootstrap
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'grid-container';
+        gridContainer.style.display = 'grid';
+        gridContainer.style.gridTemplateColumns = '50% 50%';
+        gridContainer.style.gridTemplateRows = '100%';
+        gridContainer.style.height = '100%';
+        gridContainer.style.width = '100%';
+        gridContainer.style.overflow = 'hidden';
+        this.container.appendChild(gridContainer);
         
         for (let i = 1; i <= 2; i++) {
-            const col = document.createElement('div');
-            col.className = 'col-6 h-100';
-            row.appendChild(col);
+            const panelContainer = document.createElement('div');
+            panelContainer.className = 'panel-container';
+            panelContainer.style.gridColumn = i;
+            panelContainer.style.gridRow = 1;
+            panelContainer.style.overflow = 'hidden';
+            panelContainer.style.height = '100%';
+            panelContainer.style.position = 'relative';
+            gridContainer.appendChild(panelContainer);
             
             const panel = document.createElement('div');
             panel.id = `panel-${i}`;
             panel.className = 'h-100 panel';
-            col.appendChild(panel);
+            panel.style.overflow = 'hidden';
+            panelContainer.appendChild(panel);
             
             // Create empty panel
             this._createEmptyPanelContent(panel);
         }
         
-        // Add resizer
-        this._addResizer('horizontal', row.children[0], row.children[1]);
+        // Add resizer between panels (replaces old implementation)
+        const resizer = document.createElement('div');
+        resizer.className = 'panel-resizer horizontal';
+        resizer.style.position = 'absolute';
+        resizer.style.width = '10px';
+        resizer.style.height = '100%';
+        resizer.style.left = 'calc(50% - 5px)';
+        resizer.style.top = '0';
+        resizer.style.cursor = 'col-resize';
+        resizer.style.zIndex = '1000';
+        resizer.style.backgroundColor = '#dee2e6';
+        this.container.appendChild(resizer);
+        
+        // Attach resize event
+        this._attachGridResizeEvent(resizer, gridContainer, 'horizontal');
     }
 
     /**
@@ -283,27 +313,55 @@ class UIManager {
      * @private
      */
     createVerticalLayout() {
+        // Clear the container
+        this.container.innerHTML = '';
+        
+        // Create a wrapper using CSS Grid
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'grid-container';
+        gridContainer.style.display = 'grid';
+        gridContainer.style.gridTemplateRows = '50% 50%';
+        gridContainer.style.gridTemplateColumns = '100%';
+        gridContainer.style.height = '100%';
+        gridContainer.style.width = '100%';
+        gridContainer.style.overflow = 'hidden';
+        this.container.appendChild(gridContainer);
+        
         for (let i = 1; i <= 2; i++) {
-            const row = document.createElement('div');
-            row.className = 'row';
-            row.style.height = '50%';
-            this.container.appendChild(row);
-            
-            const col = document.createElement('div');
-            col.className = 'col-12 h-100';
-            row.appendChild(col);
+            const panelContainer = document.createElement('div');
+            panelContainer.className = 'panel-container';
+            panelContainer.style.gridRow = i;
+            panelContainer.style.gridColumn = 1;
+            panelContainer.style.overflow = 'hidden';
+            panelContainer.style.height = '100%';
+            panelContainer.style.position = 'relative';
+            gridContainer.appendChild(panelContainer);
             
             const panel = document.createElement('div');
             panel.id = `panel-${i}`;
             panel.className = 'h-100 panel';
-            col.appendChild(panel);
+            panel.style.overflow = 'hidden';
+            panelContainer.appendChild(panel);
             
             // Create empty panel
             this._createEmptyPanelContent(panel);
         }
         
-        // Add resizer
-        this._addResizer('vertical', this.container.children[0], this.container.children[1]);
+        // Add resizer between panels
+        const resizer = document.createElement('div');
+        resizer.className = 'panel-resizer vertical';
+        resizer.style.position = 'absolute';
+        resizer.style.height = '10px';
+        resizer.style.width = '100%';
+        resizer.style.top = 'calc(50% - 5px)';
+        resizer.style.left = '0';
+        resizer.style.cursor = 'row-resize';
+        resizer.style.zIndex = '1000';
+        resizer.style.backgroundColor = '#dee2e6';
+        this.container.appendChild(resizer);
+        
+        // Attach resize event
+        this._attachGridResizeEvent(resizer, gridContainer, 'vertical');
     }
 
     /**
@@ -311,32 +369,75 @@ class UIManager {
      * @private
      */
     createQuadLayout() {
-        for (let i = 1; i <= 2; i++) {
-            const row = document.createElement('div');
-            row.className = 'row';
-            row.style.height = '50%';
-            this.container.appendChild(row);
-            
-            for (let j = 1; j <= 2; j++) {
-                const col = document.createElement('div');
-                col.className = 'col-6 h-100';
-                row.appendChild(col);
+        // Clear the container
+        this.container.innerHTML = '';
+        
+        // Create a wrapper using CSS Grid
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'grid-container';
+        gridContainer.style.display = 'grid';
+        gridContainer.style.gridTemplateRows = '50% 50%';
+        gridContainer.style.gridTemplateColumns = '50% 50%';
+        gridContainer.style.height = '100%';
+        gridContainer.style.width = '100%';
+        gridContainer.style.overflow = 'hidden';
+        this.container.appendChild(gridContainer);
+        
+        // Create all four panels
+        let panelCount = 1;
+        for (let row = 1; row <= 2; row++) {
+            for (let col = 1; col <= 2; col++) {
+                const panelContainer = document.createElement('div');
+                panelContainer.className = 'panel-container';
+                panelContainer.style.gridRow = row;
+                panelContainer.style.gridColumn = col;
+                panelContainer.style.overflow = 'hidden';
+                panelContainer.style.height = '100%';
+                panelContainer.style.position = 'relative';
+                gridContainer.appendChild(panelContainer);
                 
                 const panel = document.createElement('div');
-                panel.id = `panel-${(i - 1) * 2 + j}`;
+                panel.id = `panel-${panelCount}`;
                 panel.className = 'h-100 panel';
-                col.appendChild(panel);
+                panel.style.overflow = 'hidden';
+                panelContainer.appendChild(panel);
                 
                 // Create empty panel
                 this._createEmptyPanelContent(panel);
+                
+                panelCount++;
             }
-            
-            // Add horizontal resizers
-            this._addResizer('horizontal', row.children[0], row.children[1]);
         }
         
-        // Add vertical resizers
-        this._addResizer('vertical', this.container.children[0], this.container.children[1]);
+        // Add horizontal resizer
+        const horizontalResizer = document.createElement('div');
+        horizontalResizer.className = 'panel-resizer horizontal';
+        horizontalResizer.style.position = 'absolute';
+        horizontalResizer.style.width = '10px';
+        horizontalResizer.style.height = '100%';
+        horizontalResizer.style.left = 'calc(50% - 5px)';
+        horizontalResizer.style.top = '0';
+        horizontalResizer.style.cursor = 'col-resize';
+        horizontalResizer.style.zIndex = '1000';
+        horizontalResizer.style.backgroundColor = '#dee2e6';
+        this.container.appendChild(horizontalResizer);
+        
+        // Add vertical resizer
+        const verticalResizer = document.createElement('div');
+        verticalResizer.className = 'panel-resizer vertical';
+        verticalResizer.style.position = 'absolute';
+        verticalResizer.style.height = '10px';
+        verticalResizer.style.width = '100%';
+        verticalResizer.style.top = 'calc(50% - 5px)';
+        verticalResizer.style.left = '0';
+        verticalResizer.style.cursor = 'row-resize';
+        verticalResizer.style.zIndex = '1000';
+        verticalResizer.style.backgroundColor = '#dee2e6';
+        this.container.appendChild(verticalResizer);
+        
+        // Attach resize events
+        this._attachGridResizeEvent(horizontalResizer, gridContainer, 'horizontal');
+        this._attachGridResizeEvent(verticalResizer, gridContainer, 'vertical');
     }
 
     /**
@@ -1055,85 +1156,70 @@ class UIManager {
     }
 
     /**
-     * Add a resizer element between two panels
+     * Attach resize event to a grid container
+     * @param {HTMLElement} resizer - The resizer element
+     * @param {HTMLElement} gridContainer - The grid container to resize
      * @param {string} direction - Direction of the resizer ('horizontal' or 'vertical')
-     * @param {HTMLElement} firstElement - First element
-     * @param {HTMLElement} secondElement - Second element
      * @private
      */
-    _addResizer(direction, firstElement, secondElement) {
-        const resizer = document.createElement('div');
-        resizer.className = `resizer ${direction}`;
+    _attachGridResizeEvent(resizer, gridContainer, direction) {
+        let startPos, startGrid;
         
-        if (direction === 'horizontal') {
-            resizer.style.left = `${firstElement.offsetWidth}px`;
-            this.container.appendChild(resizer);
+        const startResize = (e) => {
+            e.preventDefault();
+            if (direction === 'horizontal') {
+                startPos = e.clientX;
+                startGrid = gridContainer.style.gridTemplateColumns;
+            } else {
+                startPos = e.clientY;
+                startGrid = gridContainer.style.gridTemplateRows;
+            }
             
-            let startX, startWidth;
-            
-            const startResize = (e) => {
-                startX = e.clientX;
-                startWidth = firstElement.offsetWidth;
-                document.addEventListener('mousemove', resize);
-                document.addEventListener('mouseup', stopResize);
-                document.body.style.cursor = 'col-resize';
-            };
-            
-            const resize = (e) => {
-                const containerWidth = this.container.offsetWidth;
-                const newWidth = startWidth + (e.clientX - startX);
-                const percentage = (newWidth / containerWidth) * 100;
+            document.addEventListener('mousemove', resize);
+            document.addEventListener('mouseup', stopResize);
+            document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
+            resizer.classList.add('resizing');
+        };
+        
+        const resize = (e) => {
+            if (direction === 'horizontal') {
+                // Horizontal resizing - update column widths
+                const containerWidth = gridContainer.offsetWidth;
+                const newPos = e.clientX;
+                const delta = newPos - startPos;
+                const percentage = (newPos / containerWidth) * 100;
                 
-                // Ensure minimum widths
+                // Ensure minimum widths (10%)
                 if (percentage > 10 && percentage < 90) {
-                    firstElement.style.width = `${percentage}%`;
-                    secondElement.style.width = `${100 - percentage}%`;
-                    resizer.style.left = `${firstElement.offsetWidth}px`;
+                    gridContainer.style.gridTemplateColumns = `${percentage}% ${100 - percentage}%`;
+                    resizer.style.left = `calc(${percentage}% - 5px)`;
                 }
-            };
-            
-            const stopResize = () => {
-                document.removeEventListener('mousemove', resize);
-                document.removeEventListener('mouseup', stopResize);
-                document.body.style.cursor = '';
-            };
-            
-            resizer.addEventListener('mousedown', startResize);
-        } else {
-            resizer.style.top = `${firstElement.offsetHeight}px`;
-            this.container.appendChild(resizer);
-            
-            let startY, startHeight;
-            
-            const startResize = (e) => {
-                startY = e.clientY;
-                startHeight = firstElement.offsetHeight;
-                document.addEventListener('mousemove', resize);
-                document.addEventListener('mouseup', stopResize);
-                document.body.style.cursor = 'row-resize';
-            };
-            
-            const resize = (e) => {
-                const containerHeight = this.container.offsetHeight;
-                const newHeight = startHeight + (e.clientY - startY);
-                const percentage = (newHeight / containerHeight) * 100;
+            } else {
+                // Vertical resizing - update row heights
+                const containerHeight = gridContainer.offsetHeight;
+                const newPos = e.clientY;
+                const delta = newPos - startPos;
+                const percentage = (newPos / containerHeight) * 100;
                 
-                // Ensure minimum heights
+                // Ensure minimum heights (10%)
                 if (percentage > 10 && percentage < 90) {
-                    firstElement.style.height = `${percentage}%`;
-                    secondElement.style.height = `${100 - percentage}%`;
-                    resizer.style.top = `${firstElement.offsetHeight}px`;
+                    gridContainer.style.gridTemplateRows = `${percentage}% ${100 - percentage}%`;
+                    resizer.style.top = `calc(${percentage}% - 5px)`;
                 }
-            };
+            }
+        };
+        
+        const stopResize = () => {
+            document.removeEventListener('mousemove', resize);
+            document.removeEventListener('mouseup', stopResize);
+            document.body.style.cursor = '';
+            resizer.classList.remove('resizing');
             
-            const stopResize = () => {
-                document.removeEventListener('mousemove', resize);
-                document.removeEventListener('mouseup', stopResize);
-                document.body.style.cursor = '';
-            };
-            
-            resizer.addEventListener('mousedown', startResize);
-        }
+            // Trigger a window resize event to update any internal components
+            window.dispatchEvent(new Event('resize'));
+        };
+        
+        resizer.addEventListener('mousedown', startResize);
     }
 
     /**
@@ -1562,13 +1648,313 @@ class UIManager {
      * @private
      */
     _showColumnsSelectionModal(panelId, config) {
-        // To be implemented
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+
+        if (!dataManager || !dataManager.isDataLoaded()) {
+            return;
+        }
+
+        // Create modal if it doesn't exist
+        let modal = document.getElementById('columnsSelectionModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.id = 'columnsSelectionModal';
+            modal.setAttribute('tabindex', '-1');
+            modal.setAttribute('aria-labelledby', 'columnsSelectionModalLabel');
+            modal.setAttribute('aria-hidden', 'true');
+
+            // Add modal HTML structure
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="columnsSelectionModalLabel">Select Columns</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <!-- Source selection tabs -->
+                                    <div class="nav flex-column nav-pills" id="data-source-tabs" role="tablist">
+                                        <button class="nav-link active" id="obs-tab" data-bs-toggle="pill" data-bs-target="#obs-content" type="button">Cell Annotations (.obs)</button>
+                                        <button class="nav-link" id="var-tab" data-bs-toggle="pill" data-bs-target="#var-content" type="button">Gene Annotations (.var)</button>
+                                        <button class="nav-link" id="obsm-tab" data-bs-toggle="pill" data-bs-target="#obsm-content" type="button">Cell Matrices (.obsm)</button>
+                                        <button class="nav-link" id="varm-tab" data-bs-toggle="pill" data-bs-target="#varm-content" type="button">Gene Matrices (.varm)</button>
+                                        <button class="nav-link" id="layers-tab" data-bs-toggle="pill" data-bs-target="#layers-content" type="button">Layers</button>
+                                    </div>
+                                </div>
+                                <div class="col-md-8">
+                                    <!-- Tab content -->
+                                    <div class="tab-content" id="data-source-content">
+                                        <div class="tab-pane fade show active" id="obs-content" role="tabpanel">
+                                            <div class="list-group" id="obs-columns-list"></div>
+                                        </div>
+                                        <div class="tab-pane fade" id="var-content" role="tabpanel">
+                                            <div class="list-group" id="var-columns-list"></div>
+                                        </div>
+                                        <div class="tab-pane fade" id="obsm-content" role="tabpanel">
+                                            <div id="obsm-selector">
+                                                <div class="form-group mb-3">
+                                                    <label for="obsm-key-select">Select Matrix:</label>
+                                                    <select class="form-select" id="obsm-key-select"></select>
+                                                </div>
+                                                <div class="list-group" id="obsm-columns-list"></div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="varm-content" role="tabpanel">
+                                            <div id="varm-selector">
+                                                <div class="form-group mb-3">
+                                                    <label for="varm-key-select">Select Matrix:</label>
+                                                    <select class="form-select" id="varm-key-select"></select>
+                                                </div>
+                                                <div class="list-group" id="varm-columns-list"></div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="layers-content" role="tabpanel">
+                                            <div class="list-group" id="layers-list"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="apply-columns-btn">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Initialize event handlers
+            const applyBtn = document.getElementById('apply-columns-btn');
+            applyBtn.addEventListener('click', () => this._applyColumnSelection(panelId, config));
+
+            // Handle .obsm key selection changes
+            const obsmKeySelect = document.getElementById('obsm-key-select');
+            obsmKeySelect.addEventListener('change', () => this._populateObsmColumns(obsmKeySelect.value));
+
+            // Handle .varm key selection changes
+            const varmKeySelect = document.getElementById('varm-key-select');
+            varmKeySelect.addEventListener('change', () => this._populateVarmColumns(varmKeySelect.value));
+        }
+
+        // Store target panel ID in the modal
+        modal.dataset.targetPanel = panelId;
+
+        // Populate data sources
+        this._populateColumnSelectionData(config);
+
+        // Show the modal
+        const modalInstance = new bootstrap.Modal(modal);
+        modalInstance.show();
+    }
+
+    /**
+     * Populate column selection modal with available data sources
+     * @param {Object} config - Current panel configuration
+     * @private
+     */
+    _populateColumnSelectionData(config) {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+
+        if (!dataManager || !dataManager.isDataLoaded()) {
+            return;
+        }
+
+        // Get available data
+        const info = dataManager.getBasicInfo();
+
+        // Populate .obs columns
+        const obsColumnsList = document.getElementById('obs-columns-list');
+        obsColumnsList.innerHTML = '';
+        
+        for (const column of info.obs_columns || []) {
+            const item = document.createElement('a');
+            item.className = 'list-group-item list-group-item-action';
+            item.setAttribute('href', '#');
+            item.setAttribute('data-column', `obs:${column}`);
+            item.innerHTML = `<i class="bi bi-table"></i> ${column}`;
+            obsColumnsList.appendChild(item);
+        }
+
+        // Populate .var columns
+        const varColumnsList = document.getElementById('var-columns-list');
+        varColumnsList.innerHTML = '';
+        
+        for (const column of info.var_columns || []) {
+            const item = document.createElement('a');
+            item.className = 'list-group-item list-group-item-action';
+            item.setAttribute('href', '#');
+            item.setAttribute('data-column', `var:${column}`);
+            item.innerHTML = `<i class="bi bi-table"></i> ${column}`;
+            varColumnsList.appendChild(item);
+        }
+
+        // Populate .obsm keys
+        const obsmKeySelect = document.getElementById('obsm-key-select');
+        obsmKeySelect.innerHTML = '';
+        
+        for (const key of info.embeddings || []) {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = key;
+            obsmKeySelect.appendChild(option);
+        }
+
+        // Populate .varm keys
+        const varmKeySelect = document.getElementById('varm-key-select');
+        varmKeySelect.innerHTML = '';
+        
+        if (info.has_varm && info.metadata && info.metadata.varm && info.metadata.varm.keys) {
+            for (const key of info.metadata.varm.keys) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = key;
+                varmKeySelect.appendChild(option);
+            }
+        }
+
+        // Populate initial obsm columns if available
+        if (obsmKeySelect.options.length > 0) {
+            this._populateObsmColumns(obsmKeySelect.value);
+        }
+
+        // Populate initial varm columns if available
+        if (varmKeySelect.options.length > 0) {
+            this._populateVarmColumns(varmKeySelect.value);
+        }
+
+        // Populate layers
+        const layersList = document.getElementById('layers-list');
+        layersList.innerHTML = '';
+        
+        for (const layer of info.layers || []) {
+            const item = document.createElement('a');
+            item.className = 'list-group-item list-group-item-action';
+            item.setAttribute('href', '#');
+            item.setAttribute('data-layer', layer);
+            item.innerHTML = `<i class="bi bi-layers"></i> ${layer}`;
+            layersList.appendChild(item);
+        }
+    }
+
+    /**
+     * Populate obsm columns based on selected key
+     * @param {string} obsmKey - Selected obsm key
+     * @private
+     */
+    _populateObsmColumns(obsmKey) {
+        const obsmColumnsList = document.getElementById('obsm-columns-list');
+        obsmColumnsList.innerHTML = '';
+
+        // Get sample data to determine dimensions
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+
+        if (!dataManager || !obsmKey) return;
+
+        // Load a sample to get dimensions
+        dataManager.loadObsm(obsmKey, [0]).then(sample => {
+            if (!sample || !sample.length) return;
+
+            const dimensions = sample[0].length;
+            
+            // Create a list item for each dimension
+            for (let i = 0; i < dimensions; i++) {
+                const item = document.createElement('a');
+                item.className = 'list-group-item list-group-item-action';
+                item.setAttribute('href', '#');
+                item.setAttribute('data-column', `obsm:${obsmKey}:${i}`);
+                item.innerHTML = `<i class="bi bi-graph-up"></i> ${obsmKey} Dimension ${i+1}`;
+                obsmColumnsList.appendChild(item);
+            }
+        }).catch(err => {
+            console.error(`Error getting obsm dimensions for ${obsmKey}:`, err);
+        });
+    }
+
+    /**
+     * Populate varm columns based on selected key
+     * @param {string} varmKey - Selected varm key
+     * @private
+     */
+    _populateVarmColumns(varmKey) {
+        const varmColumnsList = document.getElementById('varm-columns-list');
+        varmColumnsList.innerHTML = '';
+
+        // Get sample data to determine dimensions
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+
+        if (!dataManager || !varmKey) return;
+
+        // Load a sample to get dimensions
+        dataManager.loadVarm(varmKey, [0]).then(sample => {
+            if (!sample || !sample.length) return;
+
+            const dimensions = sample[0].length;
+            
+            // Create a list item for each dimension
+            for (let i = 0; i < dimensions; i++) {
+                const item = document.createElement('a');
+                item.className = 'list-group-item list-group-item-action';
+                item.setAttribute('href', '#');
+                item.setAttribute('data-column', `varm:${varmKey}:${i}`);
+                item.innerHTML = `<i class="bi bi-graph-up"></i> ${varmKey} Dimension ${i+1}`;
+                varmColumnsList.appendChild(item);
+            }
+        }).catch(err => {
+            console.error(`Error getting varm dimensions for ${varmKey}:`, err);
+        });
+    }
+
+    /**
+     * Apply column selection to the panel
+     * @param {string} panelId - Target panel ID
+     * @param {Object} config - Current panel configuration
+     * @private
+     */
+    _applyColumnSelection(panelId, config) {
+        // Get selected columns
+        const selectedItems = document.querySelectorAll('.list-group-item.active');
+        const columns = Array.from(selectedItems).map(item => {
+            if (item.dataset.column) {
+                return item.dataset.column;
+            } else if (item.dataset.layer) {
+                return `layer:${item.dataset.layer}`;
+            }
+            return null;
+        }).filter(Boolean);
+
+        // Update panel with selected columns
+        const panel = this.panels.get(panelId);
+        if (panel && columns.length > 0) {
+            const newConfig = {
+                ...panel.config,
+                columns: columns
+            };
+            
+            // Create a new panel with the updated config
+            this.createPanel(panelId, 'table', newConfig);
+        }
+
+        // Close the modal
+        const modal = document.getElementById('columnsSelectionModal');
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        if (modalInstance) {
+            modalInstance.hide();
+        }
     }
 
     /**
      * Display gene information
      * @param {string} containerId - ID of the container element
-     * @param {string} gene - Gene symbol
+     * @param {string} gene - Gene symbol or name
      * @param {number} speciesId - NCBI taxonomy ID
      * @private
      */

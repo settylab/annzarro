@@ -189,6 +189,36 @@ class ZarrReader:
             # Get basic structure information
             metadata['components'] = list(self.root.keys())
             
+            # Get shape information
+            shape = None
+            if 'X' in self.root:
+                try:
+                    shape = self.root['X'].shape
+                    metadata['shape'] = shape
+                except Exception as e:
+                    logger.warning(f"Could not get shape from X: {e}")
+                    # Try alternative methods to determine shape
+                    try:
+                        # Try getting shape from .zattrs
+                        if hasattr(self.root['X'], 'attrs') and 'shape' in self.root['X'].attrs:
+                            shape = tuple(self.root['X'].attrs['shape'])
+                            metadata['shape'] = shape
+                            logger.info(f"Got shape from X.attrs: {shape}")
+                    except Exception as e_attr:
+                        logger.warning(f"Could not get shape from X.attrs: {e_attr}")
+                        
+                    # If shape is still None, try to infer from obs and var
+                    if shape is None:
+                        try:
+                            n_obs = len(self.root['obs']['_index']) if 'obs' in self.root and '_index' in self.root['obs'] else 0
+                            n_vars = len(self.root['var']['_index']) if 'var' in self.root and '_index' in self.root['var'] else 0
+                            if n_obs > 0 and n_vars > 0:
+                                shape = (n_obs, n_vars)
+                                metadata['shape'] = shape
+                                logger.info(f"Inferred shape from obs and var: {shape}")
+                        except Exception as e_infer:
+                            logger.warning(f"Could not infer shape from obs and var: {e_infer}")
+                
             # Check for X matrix
             if 'X' in self.root:
                 metadata['X'] = {
@@ -202,24 +232,63 @@ class ZarrReader:
                 metadata['obs'] = {
                     'columns': list(self.root['obs'].keys()) if hasattr(self.root['obs'], 'keys') else []
                 }
+                metadata['has_obs'] = True
+                metadata['obs_columns'] = list(self.root['obs'].keys()) if hasattr(self.root['obs'], 'keys') else []
                 
             # Check for var dataframe
             if 'var' in self.root:
                 metadata['var'] = {
                     'columns': list(self.root['var'].keys()) if hasattr(self.root['var'], 'keys') else []
                 }
+                metadata['has_var'] = True
+                metadata['var_columns'] = list(self.root['var'].keys()) if hasattr(self.root['var'], 'keys') else []
                 
             # Check for obsm
             if 'obsm' in self.root:
+                obsm_keys = list(self.root['obsm'].keys()) if hasattr(self.root['obsm'], 'keys') else []
                 metadata['obsm'] = {
-                    'keys': list(self.root['obsm'].keys()) if hasattr(self.root['obsm'], 'keys') else []
+                    'keys': obsm_keys
                 }
+                metadata['has_obsm'] = True
+                
+                # Check for embeddings (keys starting with X_)
+                metadata['embeddings'] = [key for key in obsm_keys if key.startswith('X_')]
+                
+            # Check for varm
+            if 'varm' in self.root:
+                metadata['varm'] = {
+                    'keys': list(self.root['varm'].keys()) if hasattr(self.root['varm'], 'keys') else []
+                }
+                metadata['has_varm'] = True
+                
+            # Check for obsp (observation-observation matrices)
+            if 'obsp' in self.root:
+                metadata['obsp'] = {
+                    'keys': list(self.root['obsp'].keys()) if hasattr(self.root['obsp'], 'keys') else []
+                }
+                metadata['has_obsp'] = True
+                
+            # Check for varp (variable-variable matrices)
+            if 'varp' in self.root:
+                metadata['varp'] = {
+                    'keys': list(self.root['varp'].keys()) if hasattr(self.root['varp'], 'keys') else []
+                }
+                metadata['has_varp'] = True
                 
             # Check for layers
             if 'layers' in self.root:
+                layer_keys = list(self.root['layers'].keys()) if hasattr(self.root['layers'], 'keys') else []
                 metadata['layers'] = {
-                    'keys': list(self.root['layers'].keys()) if hasattr(self.root['layers'], 'keys') else []
+                    'keys': layer_keys
                 }
+                metadata['has_layers'] = True
+                
+            # Check for uns
+            if 'uns' in self.root:
+                metadata['uns'] = {
+                    'keys': list(self.root['uns'].keys()) if hasattr(self.root['uns'], 'keys') else []
+                }
+                metadata['has_uns'] = True
                 
             return metadata
         except Exception as e:
@@ -573,11 +642,50 @@ class ZarrReader:
             tuple: Shape of the dataset
         """
         try:
+            # First try getting shape directly
             if path in self.root:
-                if hasattr(self.root[path], 'shape'):
-                    return self.root[path].shape
-                elif 'shape' in self.root[path]:
-                    return tuple(self.root[path]['shape'][()])
+                try:
+                    if hasattr(self.root[path], 'shape'):
+                        return self.root[path].shape
+                    elif 'shape' in self.root[path]:
+                        return tuple(self.root[path]['shape'][()])
+                except Exception as e:
+                    logger.warning(f"Could not get shape directly for {path}: {e}")
+                    
+                # Try getting shape from attributes
+                try:
+                    if hasattr(self.root[path], 'attrs') and 'shape' in self.root[path].attrs:
+                        return tuple(self.root[path].attrs['shape'])
+                except Exception as e:
+                    logger.warning(f"Could not get shape from attrs for {path}: {e}")
+                    
+                # For X matrix, try to infer shape from obs and var
+                if path == 'X':
+                    try:
+                        n_obs = len(self.root['obs']['_index']) if 'obs' in self.root and '_index' in self.root['obs'] else 0
+                        n_vars = len(self.root['var']['_index']) if 'var' in self.root and '_index' in self.root['var'] else 0
+                        if n_obs > 0 and n_vars > 0:
+                            logger.info(f"Inferred shape ({n_obs}, {n_vars}) for {path}")
+                            return (n_obs, n_vars)
+                    except Exception as e:
+                        logger.warning(f"Could not infer shape from obs and var for {path}: {e}")
+                
+            # Look in the metadata if we already have it
+            if hasattr(self, 'metadata') and 'shape' in self.metadata:
+                return self.metadata['shape']
+                
+            # If we still don't have a shape, check if we can read the size of obs and var
+            try:
+                if 'obs' in self.root and 'var' in self.root:
+                    n_obs = len(list(self.root['obs'].keys())) - 1  # Subtract 1 for '_index'
+                    n_vars = len(list(self.root['var'].keys())) - 1  # Subtract 1 for '_index'
+                    if n_obs > 0 and n_vars > 0:
+                        logger.info(f"Estimated shape ({n_obs}, {n_vars}) for {path}")
+                        return (n_obs, n_vars)
+            except Exception as e:
+                logger.warning(f"Could not estimate shape for {path}: {e}")
+                
+            # Return empty shape as last resort
             return (0, 0)
         except Exception as e:
             logger.error(f"Error getting shape for {path}: {e}")
@@ -614,9 +722,14 @@ class ZarrReader:
             logger.error(f"Error getting obs names: {e}")
             return []
     
-    def get_var_names(self) -> List[str]:
+    def get_var_names(self, column: Optional[str] = None) -> List[str]:
         """
         Get the variable (gene) names.
+        
+        Args:
+            column: Optional name of the column containing gene names.
+                   If provided, this column will be used instead of '_index'.
+                   If the column doesn't exist, falls back to '_index'.
         
         Returns:
             list: List of variable names
@@ -625,7 +738,13 @@ class ZarrReader:
             return []
             
         try:
-            if '_index' in self.root['var']:
+            # If a specific column is requested and exists, use it
+            if column and column in self.root['var']:
+                logger.info(f"Using custom gene name column: {column}")
+                gene_names = self.root['var'][column][:]
+                return [str(x) for x in gene_names]
+            # Otherwise use the default _index
+            elif '_index' in self.root['var']:
                 index = self.root['var']['_index'][:]
                 return [str(x) for x in index]
             else:
@@ -633,7 +752,7 @@ class ZarrReader:
                 shape = self.metadata.get('shape', (0, 0))
                 return [f"Gene_{i}" for i in range(shape[1])]
         except Exception as e:
-            logger.error(f"Error getting var names: {e}")
+            logger.error(f"Error getting var names from column {column}: {e}")
             return []
     
     def get_X(self, row_indices: Optional[List[int]] = None, 
@@ -879,6 +998,54 @@ class ZarrReader:
         except Exception as e:
             logger.error(f"Error getting uns data for key {uns_key}: {e}")
             return None
+    
+    def get_obsp(self, obsp_key: str,
+                indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get observation-observation (cell-cell) matrices.
+        
+        Args:
+            obsp_key: Key of the obsp entry to retrieve
+            indices: List of indices to select, or None for all
+            
+        Returns:
+            numpy.ndarray: The requested data
+        """
+        if not self.loaded or 'obsp' not in self.root or obsp_key not in self.root['obsp']:
+            return np.array([])
+        
+        try:
+            if indices is not None:
+                return self.root['obsp'][obsp_key][indices, :][:, indices]
+            else:
+                return self.root['obsp'][obsp_key][:]
+        except Exception as e:
+            logger.error(f"Error getting obsp data for key {obsp_key}: {e}")
+            return np.array([])
+    
+    def get_varp(self, varp_key: str,
+                indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get variable-variable (gene-gene) matrices.
+        
+        Args:
+            varp_key: Key of the varp entry to retrieve
+            indices: List of indices to select, or None for all
+            
+        Returns:
+            numpy.ndarray: The requested data
+        """
+        if not self.loaded or 'varp' not in self.root or varp_key not in self.root['varp']:
+            return np.array([])
+        
+        try:
+            if indices is not None:
+                return self.root['varp'][varp_key][indices, :][:, indices]
+            else:
+                return self.root['varp'][varp_key][:]
+        except Exception as e:
+            logger.error(f"Error getting varp data for key {varp_key}: {e}")
+            return np.array([])
             
     def _load_chunked_data(self, path: str, row_indices: Optional[List[int]] = None, 
                           col_indices: Optional[List[int]] = None) -> np.ndarray:
@@ -1111,6 +1278,39 @@ class ZarrReader:
                 embedding_key: self.get_obsm(embedding_key, 
                                             indices=list(range(min(10, self.metadata['shape'][0]))))
             }
+            
+        # Add varm sample if available
+        if self.metadata.get('has_varm', False) and self.metadata.get('varm', {}).get('keys', []):
+            varm_keys = self.metadata['varm']['keys']
+            if varm_keys:
+                # Get a sample of the first varm matrix
+                varm_key = varm_keys[0]
+                result['varm_sample'] = {
+                    varm_key: self.get_varm(varm_key, 
+                                           indices=list(range(min(10, self.metadata['shape'][1]))))
+                }
+                
+        # Add obsp sample if available
+        if self.metadata.get('has_obsp', False) and self.metadata.get('obsp', {}).get('keys', []):
+            obsp_keys = self.metadata['obsp']['keys']
+            if obsp_keys:
+                # Get a sample of the first obsp matrix
+                obsp_key = obsp_keys[0]
+                sample_indices = list(range(min(5, self.metadata['shape'][0])))
+                result['obsp_sample'] = {
+                    obsp_key: self.get_obsp(obsp_key, indices=sample_indices)
+                }
+                
+        # Add varp sample if available
+        if self.metadata.get('has_varp', False) and self.metadata.get('varp', {}).get('keys', []):
+            varp_keys = self.metadata['varp']['keys']
+            if varp_keys:
+                # Get a sample of the first varp matrix
+                varp_key = varp_keys[0]
+                sample_indices = list(range(min(5, self.metadata['shape'][1])))
+                result['varp_sample'] = {
+                    varp_key: self.get_varp(varp_key, indices=sample_indices)
+                }
             
         return result
 

@@ -137,11 +137,38 @@ def list_datasets():
     # Override from query parameter if provided
     if "dir" in request.args:
         data_dir = request.args.get("dir")
+        
+        # Handle "." as current directory by converting to os.getcwd()
+        if data_dir == ".":
+            data_dir = os.getcwd()
     
-    # List datasets
-    datasets = data_manager.list_datasets(data_dir)
+    # Add option to scan recursively
+    recursive = request.args.get("recursive", "true").lower() == "true"
+    
+    # Add option to follow symlinks
+    follow_symlinks = request.args.get("follow_symlinks", "true").lower() == "true"
+    
+    # List datasets with new options
+    datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
     
     return jsonify({"datasets": datasets})
+
+@app.route(f"/api/{API_VERSION}/config", methods=["GET"])
+def get_config():
+    """
+    Get server configuration.
+    
+    Returns:
+        JSON response with configuration (limited to what clients need to know)
+    """
+    # Only return necessary configuration
+    client_config = {
+        "host": app.config.get("host", DEFAULT_CONFIG["host"]),
+        "port": app.config.get("port", DEFAULT_CONFIG["port"]),
+        "data_dir": app.config.get("data_dir", DEFAULT_CONFIG["data_dir"])
+    }
+    
+    return jsonify(client_config)
 
 @app.route(f"/api/{API_VERSION}/datasets/<path:dataset_path>", methods=["GET"])
 def get_dataset_info(dataset_path: str):
@@ -387,6 +414,39 @@ def get_obsm(obsm_key: str):
     
     return jsonify({"data": result})
 
+@app.route(f"/api/{API_VERSION}/data/obsp/<obsp_key>", methods=["GET"])
+def get_obsp(obsp_key: str):
+    """
+    Get observation-observation matrices (cell-cell relationships).
+    
+    Args:
+        obsp_key: Key of the obsp entry
+        
+    Returns:
+        JSON response with obsp data
+    """
+    # Get parameters
+    indices_str = request.args.get("indices")
+    
+    # Parse indices if provided
+    indices = None
+    if indices_str:
+        try:
+            indices = [int(i) for i in indices_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid indices format"})
+    
+    # Get data
+    data = zarr_reader.get_obsp(obsp_key, indices)
+    
+    # Convert to JSON-serializable format
+    if hasattr(data, "tolist"):
+        result = data.tolist()
+    else:
+        result = data
+    
+    return jsonify({"data": result})
+
 @app.route(f"/api/{API_VERSION}/data/cells", methods=["GET"])
 def get_cells():
     """
@@ -405,13 +465,52 @@ def get_genes():
     """
     Get gene names.
     
+    Query parameters:
+        column: Optional name of the column containing gene names
+    
     Returns:
         JSON response with gene names
     """
+    # Get optional column parameter
+    column = request.args.get("column")
+    
     # Get gene names
-    genes = data_manager.get_var_names()
+    genes = data_manager.get_var_names(column)
     
     return jsonify({"genes": genes})
+
+@app.route(f"/api/{API_VERSION}/data/varp/<varp_key>", methods=["GET"])
+def get_varp(varp_key: str):
+    """
+    Get variable-variable matrices (gene-gene relationships).
+    
+    Args:
+        varp_key: Key of the varp entry
+        
+    Returns:
+        JSON response with varp data
+    """
+    # Get parameters
+    indices_str = request.args.get("indices")
+    
+    # Parse indices if provided
+    indices = None
+    if indices_str:
+        try:
+            indices = [int(i) for i in indices_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid indices format"})
+    
+    # Get data
+    data = zarr_reader.get_varp(varp_key, indices)
+    
+    # Convert to JSON-serializable format
+    if hasattr(data, "tolist"):
+        result = data.tolist()
+    else:
+        result = data
+    
+    return jsonify({"data": result})
 
 @app.route(f"/api/{API_VERSION}/data/selection/cells", methods=["GET", "POST", "DELETE"])
 def handle_cell_selection():

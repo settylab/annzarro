@@ -86,8 +86,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" id="demoDataMenu">
-                            <i class="bi bi-journals"></i> Demo Data
+                        <a class="nav-link" href="#" id="browseDataMenu">
+                            <i class="bi bi-journals"></i> Browse Data
                         </a>
                     </li>
                     <li class="nav-item">
@@ -130,8 +130,8 @@
                     <button id="loadDataBtn" class="btn btn-primary btn-lg">
                         <i class="bi bi-folder-plus"></i> Load Data
                     </button>
-                    <button id="demoDataBtn" class="btn btn-outline-secondary btn-lg">
-                        <i class="bi bi-journals"></i> Demo Data
+                    <button id="browseDataBtn" class="btn btn-outline-secondary btn-lg">
+                        <i class="bi bi-journals"></i> Browse Data
                     </button>
                 </div>
                 
@@ -233,33 +233,33 @@
     </div>
 
     <!-- Demo Data Modal -->
-    <div class="modal fade" id="demoDataModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="browseDataModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Demo Datasets</h5>
+                    <h5 class="modal-title">Browse Datasets</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="demoDatasetsLoading" class="text-center p-3">
+                    <div id="datasetsLoading" class="text-center p-3">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
                         <p class="mt-2">Loading available datasets...</p>
                     </div>
-                    <div id="demoDatasetsError" class="alert alert-danger d-none" role="alert">
-                        Error loading demo datasets.
+                    <div id="datasetsError" class="alert alert-danger d-none" role="alert">
+                        Error loading datasets.
                     </div>
-                    <div id="demoDatasetsEmpty" class="alert alert-info d-none" role="alert">
-                        No demo datasets found. Add .zarr datasets to the "data" directory.
+                    <div id="datasetsEmpty" class="alert alert-info d-none" role="alert">
+                        No datasets found. Add .zarr datasets to the current directory.
                     </div>
-                    <div id="demoDatasetsList" class="list-group">
+                    <div id="datasetsList" class="list-group">
                         <!-- Datasets will be populated here -->
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="loadDemoDataSubmit">Load Selected Dataset</button>
+                    <button type="button" class="btn btn-primary" id="loadDatasetSubmit">Load Selected Dataset</button>
                 </div>
             </div>
         </div>
@@ -325,6 +325,36 @@
                             <input class="form-check-input" type="checkbox" id="darkModeSwitch">
                             <label class="form-check-label" for="darkModeSwitch">Dark Mode</label>
                         </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Species Setting</label>
+                        <div class="d-flex">
+                          <select class="form-select" id="speciesSelect">
+                            <option value="9606">Homo sapiens (9606)</option>
+                            <option value="10090">Mus musculus (10090)</option>
+                            <option value="10116">Rattus norvegicus (10116)</option>
+                            <option value="7227">Drosophila melanogaster (7227)</option>
+                            <option value="6239">Caenorhabditis elegans (6239)</option>
+                            <option value="4932">Saccharomyces cerevisiae (4932)</option>
+                          </select>
+                          <button type="button" class="btn btn-sm btn-outline-secondary ms-1" data-bs-toggle="modal" data-bs-target="#customSpeciesModal" title="Add custom species">
+                            <i class="bi bi-plus"></i>
+                          </button>
+                        </div>
+                        <div class="form-text">Set species for resource links and database integration</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="geneNameColumn" class="form-label">Gene Name Column</label>
+                        <select class="form-select" id="geneNameColumn">
+                          <option value="">Default (_index)</option>
+                          <option value="gene_symbols">gene_symbols</option>
+                          <option value="gene_names">gene_names</option>
+                          <option value="name">name</option>
+                          <option value="symbol">symbol</option>
+                        </select>
+                        <div class="form-text">Select the var column containing gene names for resource linking</div>
                     </div>
                     
                     <div class="mb-3">
@@ -444,5 +474,133 @@
             </div>
         </div>
     </template>
+  <!-- Custom Species Modal -->
+  <div class="modal fade" id="customSpeciesModal" tabindex="-1" aria-labelledby="customSpeciesModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="customSpeciesModalLabel">Add Custom Species</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="customSpeciesForm">
+            <div class="mb-3">
+              <label for="customSpeciesName" class="form-label">Species Name</label>
+              <input type="text" class="form-control" id="customSpeciesName" required>
+            </div>
+            <div class="mb-3">
+              <label for="customTaxonomyId" class="form-label">Taxonomy ID</label>
+              <input type="number" class="form-control" id="customTaxonomyId" required>
+              <div class="form-text">Find taxonomy IDs at <a href="https://www.ncbi.nlm.nih.gov/taxonomy" target="_blank">NCBI Taxonomy</a></div>
+            </div>
+            <div class="d-flex justify-content-end">
+              <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Add Species</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visualization Settings Modal -->
+  <div class="modal fade" id="vizSettingsModal" tabindex="-1" aria-labelledby="vizSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="vizSettingsModalLabel">Visualization Settings</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="vizSettingsForm">
+            <div class="row mb-3">
+              <div class="col-4">
+                <label for="plotType" class="form-label">Plot Type</label>
+                <select class="form-select" id="plotType">
+                  <option value="scatter">Scatter Plot</option>
+                  <option value="heatmap">Heatmap</option>
+                  <option value="violin">Violin Plot</option>
+                  <option value="box">Box Plot</option>
+                  <option value="bar">Bar Chart</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <label for="xAxis" class="form-label">X Axis</label>
+                <select class="form-select" id="xAxis">
+                  <option value="">--Select--</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <label for="yAxis" class="form-label">Y Axis</label>
+                <select class="form-select" id="yAxis">
+                  <option value="">--Select--</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-4">
+                <label for="zAxis" class="form-label">Z Axis (optional)</label>
+                <select class="form-select" id="zAxis">
+                  <option value="">--None--</option>
+                </select>
+              </div>
+              <div class="col-8">
+                <label for="colorBy" class="form-label">Color By</label>
+                <select class="form-select" id="colorBy">
+                  <option value="">--None--</option>
+                </select>
+              </div>
+            </div>
+            
+            <div id="colorSettings" class="mb-3 d-none">
+              <div class="row">
+                <div class="col-6">
+                  <label for="colorMin" class="form-label">Min Value</label>
+                  <input type="number" class="form-control" id="colorMin" placeholder="Auto">
+                </div>
+                <div class="col-6">
+                  <label for="colorMax" class="form-label">Max Value</label>
+                  <input type="number" class="form-control" id="colorMax" placeholder="Auto">
+                </div>
+              </div>
+              <div class="mt-2">
+                <label class="form-label">Out of Range Values</label>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="outOfRangeAction" id="clipValues" value="clip" checked>
+                  <label class="form-check-label" for="clipValues">Clip to min/max</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="outOfRangeAction" id="hideValues" value="hide">
+                  <label class="form-check-label" for="hideValues">Hide points</label>
+                </div>
+              </div>
+            </div>
+            
+            <hr>
+            
+            <div class="row mb-3">
+              <div class="col-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="showFocusedGene" checked>
+                  <label class="form-check-label" for="showFocusedGene">Highlight Focused Gene</label>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="showFocusedCell" checked>
+                  <label class="form-check-label" for="showFocusedCell">Highlight Focused Cell</label>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="applyVizSettings">Apply Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

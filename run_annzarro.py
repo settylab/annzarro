@@ -118,6 +118,36 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
     processes = []
     
     try:
+        # Read backend port from config file
+        backend_port = 8001  # Default port if config can't be read
+        backend_host = "127.0.0.1"  # Default host
+        
+        if config_file and os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    backend_port = config.get('port', 8001)
+                    backend_host = config.get('host', '127.0.0.1')
+            except Exception as e:
+                print(f"Warning: Failed to read config file: {e}")
+        else:
+            # Try standard config locations
+            config_paths = [
+                os.path.join("annzarro", "server", "config.json"),
+                os.path.join("server", "config.json")
+            ]
+            
+            for path in config_paths:
+                if os.path.exists(path):
+                    try:
+                        with open(path, 'r') as f:
+                            config = json.load(f)
+                            backend_port = config.get('port', 8001)
+                            backend_host = config.get('host', '127.0.0.1')
+                            break
+                    except Exception as e:
+                        print(f"Warning: Failed to read config file {path}: {e}")
+        
         # Start backend server if requested
         if not frontend_only:
             cmd = [sys.executable, "-m", "annzarro.server"]
@@ -129,7 +159,7 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
                 cmd.append("--debug")
                 
             # Start the backend server
-            print("Starting Annzarro backend server...")
+            print(f"Starting Annzarro backend server on port {backend_port}...")
             backend_process = subprocess.Popen(cmd)
             processes.append(('backend', backend_process))
             
@@ -140,17 +170,18 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
             print(f"Backend server started with PID {backend_process.pid}")
         
         # Start frontend server if requested
+        frontend_port = 8080  # Standard frontend port
         if not backend_only:
             # Choose HTTP server based on Python version
             if sys.version_info >= (3, 7):
                 # Use Python's built-in HTTP server
-                frontend_cmd = [sys.executable, "-m", "http.server", "8080"]
+                frontend_cmd = [sys.executable, "-m", "http.server", str(frontend_port)]
             else:
                 # Fallback for older Python versions
-                frontend_cmd = [sys.executable, "-m", "SimpleHTTPServer", "8080"]
+                frontend_cmd = [sys.executable, "-m", "SimpleHTTPServer", str(frontend_port)]
             
             # Start the frontend server
-            print("Starting frontend server...")
+            print(f"Starting frontend server on port {frontend_port}...")
             frontend_process = subprocess.Popen(frontend_cmd)
             processes.append(('frontend', frontend_process))
             
@@ -166,8 +197,14 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
                 f.write(f"{name},{process.pid}\n")
         
         print("\nServers are now running!")
-        print("- Backend API:  http://localhost:8000/api/v1")
-        print("- Frontend UI:  http://localhost:8080")
+        
+        # Display correct URLs based on configuration
+        host_display = backend_host if backend_host != "0.0.0.0" else "localhost"
+        if not frontend_only:
+            print(f"- Backend API:  http://{host_display}:{backend_port}/api/v1")
+        if not backend_only:
+            print(f"- Frontend UI:  http://localhost:{frontend_port}")
+        
         print("\nTo stop the servers, press Ctrl+C or run: python run_annzarro.py --stop")
         
         # Wait for termination

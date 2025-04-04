@@ -6,8 +6,84 @@
  * 3. Coordinates between data, UI, and visualization components
  */
 
-// Configuration for backend communication
-window.ANNZARRO_API_URL = process.env.ANNZARRO_API_URL || 'http://localhost:8001/api/v1';
+// Configuration for backend communication - load from config
+// The API URL will be determined dynamically from the server configuration
+window.ANNZARRO_API_URL = null; // Will be set in getApiConfig()
+
+// Function to configure API URL - simplified for unified server approach
+async function getApiConfig() {
+    try {
+        // First, try to get config from same origin (unified server approach)
+        console.log('Fetching API configuration from unified server...');
+        
+        // Build API URL based on current location (same origin)
+        const currentLocation = window.location;
+        const protocol = currentLocation.protocol;
+        const hostname = currentLocation.hostname;
+        const port = currentLocation.port ? `:${currentLocation.port}` : '';
+        
+        // Use the same origin for API URL (unified server approach)
+        window.ANNZARRO_API_URL = `${protocol}//${hostname}${port}/api/v1`;
+        console.log(`Using unified server API URL: ${window.ANNZARRO_API_URL}`);
+        
+        // Verify the API URL by making a test request
+        const testResponse = await fetch(`${window.ANNZARRO_API_URL}/config`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            timeout: 2000
+        });
+        
+        if (testResponse.ok) {
+            console.log(`API URL verified: ${window.ANNZARRO_API_URL}`);
+            return true;
+        } else {
+            console.warn(`API not available at ${window.ANNZARRO_API_URL}, status:`, testResponse.status);
+            // Fall back to legacy dual-server approach
+            return await fallbackLegacyApiConfig();
+        }
+    } catch (error) {
+        console.error('Error verifying API URL:', error);
+        // Fall back to legacy dual-server approach
+        return await fallbackLegacyApiConfig();
+    }
+}
+
+// Legacy fallback for dual-server approach (Frontend + Backend)
+async function fallbackLegacyApiConfig() {
+    console.log('Falling back to legacy dual-server API configuration...');
+    
+    // Get current location information
+    const currentLocation = window.location;
+    const protocol = currentLocation.protocol;
+    const hostname = currentLocation.hostname;
+    
+    // Try to use the fixed backend port (8001)
+    // This is only for backward compatibility and should be removed once unified server is implemented
+    const backendPort = 8001;
+    
+    console.warn(`Using legacy backend port ${backendPort} - consider upgrading to unified server`);
+    window.ANNZARRO_API_URL = `${protocol}//${hostname}:${backendPort}/api/v1`;
+    
+    try {
+        // Try to verify the connection
+        const testResponse = await fetch(`${window.ANNZARRO_API_URL}/config`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            mode: 'cors',
+            timeout: 2000
+        });
+        
+        if (testResponse.ok) {
+            console.log(`Legacy API URL verified: ${window.ANNZARRO_API_URL}`);
+            return true;
+        }
+    } catch (error) {
+        console.error('Error testing legacy API connection:', error);
+    }
+    
+    console.error('Could not connect to API server - please make sure the server is running');
+    return false;
+}
 
 // Wait for all modules to be loaded and initialized
 document.addEventListener('modulesLoaded', function() {
@@ -32,8 +108,8 @@ setTimeout(function() {
                 globalLoadingOverlay.style.display = 'none';
             }
             
-            // Try to load demo data
-            loadAvailableDemoData();
+            // Try to load available data
+            loadAvailableData();
         } catch (error) {
             console.error('Error in fallback initialization:', error);
         }
@@ -45,26 +121,41 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         initializeApp,
         setupEventListeners,
-        loadAvailableDemoData,
-        loadDemoData,
-        checkForDemoDataInUrl
+        loadAvailableData,
+        loadAvailableDemoData, // Kept for backward compatibility
+        loadDataFromPath,
+        checkForDataInUrl
     };
 }
 
 /**
  * Initialize the application with proper dependency checking
  */
-function initializeApp() {
+async function initializeApp() {
+    // Get API configuration
+    await getApiConfig();
+    
     // Check if we have the zarrLoader available
     if (typeof zarrLoader === 'undefined' || !zarrLoader) {
         console.error('zarrLoader is not available. Make sure the Python backend is running.');
-        // Show a warning to the user
+        
+        // Show a more detailed error based on what we know
+        let apiUrl = window.ANNZARRO_API_URL || '(not configured)';
+        let portMatch = apiUrl.match(/:(\d+)\//);
+        let apiPort = portMatch ? portMatch[1] : 'unknown';
+        
         const errorDiv = document.createElement('div');
         errorDiv.className = 'alert alert-danger';
         errorDiv.innerHTML = `
             <h4>Error: Python Backend Not Available</h4>
-            <p>The application cannot connect to the Python backend server.</p>
-            <p>Diagnostic steps:</p>
+            <p>The application cannot connect to the Python backend server at ${apiUrl}.</p>
+            <p><strong>Current status:</strong></p>
+            <ul>
+                <li>API URL: ${apiUrl}</li>
+                <li>Connection status: Failed</li>
+                <li>Error: zarrLoader is not initialized</li>
+            </ul>
+            <p><strong>Diagnostic steps:</strong></p>
             <ol>
                 <li>Check if the server is running:<br>
                 <code>python server_status.py</code></li>
@@ -72,10 +163,46 @@ function initializeApp() {
                 <code>python run_annzarro.py --start</code></li>
                 <li>If you see "Address already in use" errors, clear the ports:<br>
                 <code>python server_status.py --stop-all</code></li>
+                <li>Check server configuration in <code>annzarro/server/config.json</code></li>
+                <li>Verify the correct port is being used (currently trying to connect to port ${apiPort})</li>
             </ol>
-            <p>Then refresh this page.</p>
+            <p>After fixing the issue, refresh this page.</p>
+            <button id="retryConnectionBtn" class="btn btn-primary mt-2">
+                <i class="fas fa-sync-alt me-1"></i> Retry Connection
+            </button>
         `;
         document.body.insertBefore(errorDiv, document.body.firstChild);
+        
+        // Add retry button handler
+        document.getElementById('retryConnectionBtn')?.addEventListener('click', async function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Retrying...';
+            
+            // Try to reconnect
+            try {
+                // Re-fetch API config
+                await getApiConfig();
+                
+                // Try to verify backend is running
+                const response = await fetch(`${window.ANNZARRO_API_URL}/config`, { 
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' },
+                    timeout: 3000
+                });
+                
+                if (response.ok) {
+                    // Reload the page if successful
+                    window.location.reload();
+                } else {
+                    this.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
+                    errorDiv.querySelector('ul').innerHTML += `<li>Retry attempt failed: ${response.status} ${response.statusText}</li>`;
+                }
+            } catch (retryError) {
+                this.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
+                errorDiv.querySelector('ul').innerHTML += `<li>Retry attempt failed: ${retryError.message}</li>`;
+            }
+        });
+        
         return;
     }
     
@@ -106,18 +233,18 @@ function initializeApp() {
         return;
     }
     
-    // Load available demo datasets
+    // Load available datasets
     try {
-        loadAvailableDemoData();
+        loadAvailableData();
     } catch (error) {
-        console.error('Error starting demo dataset loading:', error);
+        console.error('Error starting dataset loading:', error);
     }
     
-    // Check for demo data in URL parameters
+    // Check for dataset parameters in URL
     try {
-        checkForDemoDataInUrl();
+        checkForDataInUrl();
     } catch (error) {
-        console.error('Error checking for demo data in URL:', error);
+        console.error('Error checking for dataset in URL:', error);
     }
     
     // Hide global loading overlay
@@ -138,12 +265,12 @@ function setupEventListeners() {
     });
     
     // Demo data button
-    document.getElementById('demoDataBtn').addEventListener('click', function() {
-        // Show the demo data modal
-        $('#demoDataModal').modal('show');
+    document.getElementById('browseDataBtn').addEventListener('click', function() {
+        // Show the browse data modal
+        $('#browseDataModal').modal('show');
         
-        // Load available demo data
-        loadAvailableDemoData();
+        // Load available data
+        loadAvailableData();
     });
     
     // Main menu items
@@ -152,10 +279,10 @@ function setupEventListeners() {
         $('#loadDataModal').modal('show');
     });
     
-    document.getElementById('demoDataMenu').addEventListener('click', function(e) {
+    document.getElementById('browseDataMenu').addEventListener('click', function(e) {
         e.preventDefault();
-        $('#demoDataModal').modal('show');
-        loadAvailableDemoData();
+        $('#browseDataModal').modal('show');
+        loadAvailableData();
     });
     
     document.getElementById('layoutMenu').addEventListener('click', function(e) {
@@ -288,25 +415,26 @@ function setupEventListeners() {
     });
     
     // Load demo data button
-    document.getElementById('loadDemoDataSubmit').addEventListener('click', function() {
-        const selectedDemo = document.querySelector('#demoDatasetsList .list-group-item.active');
+    document.getElementById('loadDatasetSubmit').addEventListener('click', function() {
+        const selectedDemo = document.querySelector('#datasetsList .list-group-item.active');
         if (selectedDemo) {
             const demoType = selectedDemo.dataset.demo;
+            const path = selectedDemo.dataset.path;
             
             // Show loading indicator
-            showLoadingIndicator('Loading demo data...');
+            showLoadingIndicator('Loading data...');
             
-            loadDemoData(demoType)
+            loadDataFromPath(demoType, path)
                 .then(() => {
                     hideLoadingIndicator();
-                    $('#demoDataModal').modal('hide');
+                    $('#browseDataModal').modal('hide');
                 })
                 .catch(error => {
-                    showError('Error loading demo data: ' + error.message);
+                    showError('Error loading data: ' + error.message);
                     hideLoadingIndicator();
                 });
         } else {
-            showError('Please select a demo dataset');
+            showError('Please select a dataset');
         }
     });
     
@@ -339,6 +467,42 @@ function setupEventListeners() {
         const taxonomyId = parseInt(this.value);
         const speciesName = this.options[this.selectedIndex].text.split('(')[0].trim();
         dataManager.setTaxonomyInfo(taxonomyId, speciesName);
+    });
+    
+    // Add support for custom species ID and name
+    document.getElementById('customSpeciesForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const taxonomyId = parseInt(document.getElementById('customTaxonomyId').value);
+        const speciesName = document.getElementById('customSpeciesName').value.trim();
+        
+        if (taxonomyId && speciesName) {
+            dataManager.setTaxonomyInfo(taxonomyId, speciesName);
+            
+            // Update the select dropdown or add a new option
+            const select = document.getElementById('speciesSelect');
+            const existingOption = Array.from(select.options).find(opt => parseInt(opt.value) === taxonomyId);
+            
+            if (existingOption) {
+                existingOption.text = `${speciesName} (${taxonomyId})`;
+                existingOption.selected = true;
+            } else {
+                const newOption = document.createElement('option');
+                newOption.value = taxonomyId;
+                newOption.text = `${speciesName} (${taxonomyId})`;
+                newOption.selected = true;
+                select.appendChild(newOption);
+            }
+            
+            // Close the modal if open
+            $('#customSpeciesModal').modal('hide');
+        }
+    });
+    
+    // Gene name column select
+    document.getElementById('geneNameColumn')?.addEventListener('change', function() {
+        const column = this.value;
+        // Update gene options with the selected column
+        updateGeneOptions(column);
     });
     
     // Data loaded event
@@ -444,22 +608,23 @@ function setupEventListeners() {
 }
 
 /**
- * Check for demo data in URL parameters
+ * Check for dataset parameters in URL
  */
-function checkForDemoDataInUrl() {
+function checkForDataInUrl() {
     const urlParams = new URLSearchParams(window.location.search);
-    const demo = urlParams.get('demo');
+    const dataset = urlParams.get('dataset') || urlParams.get('demo'); // Support both new and old parameter names
+    const path = urlParams.get('path');
     
-    if (demo) {
-        // Wait a moment for the available demos to be loaded first
+    if (dataset || path) {
+        // Wait a moment for the available datasets to be loaded first
         setTimeout(() => {
-            showLoadingIndicator('Loading demo data...');
-            loadDemoData(demo)
+            showLoadingIndicator('Loading data...');
+            loadDataFromPath(dataset, path)
                 .then(() => {
                     hideLoadingIndicator();
                 })
                 .catch(error => {
-                    showError('Error loading demo data: ' + error.message);
+                    showError('Error loading data: ' + error.message);
                     hideLoadingIndicator();
                 });
         }, 500);
@@ -521,57 +686,59 @@ async function loadZarrFromS3(s3Config) {
 }
 
 /**
- * Load available demo data
- * This function shows available demo datasets from the data directory
+ * Legacy function - redirects to the new loadAvailableData function
+ * This function is kept for backwards compatibility
  */
 async function loadAvailableDemoData() {
+    return loadAvailableData();
+}
+
+/**
+ * Load available data from the server and display in a browsable interface
+ * This function shows available datasets from the application startup directory
+ * with navigation controls and proper separation of directories and zarr files
+ */
+async function loadAvailableData() {
     try {
-        // Get the demo container element
-        const demoContainer = document.getElementById('demoDatasetsList');
+        // Get the datasets container element
+        const demoContainer = document.getElementById('datasetsList');
         if (!demoContainer) {
             console.error('Demo datasets container not found');
             return;
         }
         
         // Hide loading indicators
-        const loadingIndicator = document.getElementById('demoDatasetsLoading');
+        const loadingIndicator = document.getElementById('datasetsLoading');
         if (loadingIndicator) loadingIndicator.classList.add('d-none');
         
         // Hide error message
-        const errorMessage = document.getElementById('demoDatasetsError');
+        const errorMessage = document.getElementById('datasetsError');
         if (errorMessage) errorMessage.classList.add('d-none');
 
-        // Create hardcoded demo datasets
-        // These will always show up even if directory listing doesn't work
-        const datasets = [
-            {
-                name: 'aging.zarr',
-                displayName: 'Aging',
-                path: 'data/aging.zarr',
-                description: 'Mouse hematopoietic stem cells'
-            }
-            // Add more datasets here if needed
-        ];
+        // Initialize datasets array
+        const datasets = {
+            directories: [],
+            zarrFiles: []
+        };
+        
         // Clear existing demo datasets and remove loading spinner
         demoContainer.innerHTML = '';
         
         // Check if we're using file:// protocol, which doesn't support fetch for directory listing
         const isFileProtocol = window.location.protocol === 'file:';
         
-        // Create a "Refresh" button that can be used to retry loading demo data
+        // Create a refresh button
         const refreshButton = document.createElement('button');
         refreshButton.className = 'btn btn-sm btn-outline-primary mb-3';
-        refreshButton.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh Available Demos';
+        refreshButton.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh';
         refreshButton.addEventListener('click', function() {
-            // Show a loading spinner inside the button
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Refreshing...';
             
-            // Reload demo data
-            loadAvailableDemoData().finally(() => {
-                // Re-enable the button
+            // Keep track of the current directory when refreshing
+            loadAvailableData().finally(() => {
                 this.disabled = false;
-                this.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh Available Demos';
+                this.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh';
             });
         });
         
@@ -584,330 +751,320 @@ async function loadAvailableDemoData() {
         statusMessage.innerHTML = `
             <div class="d-flex align-items-center">
                 <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                <span>Looking for available demo datasets...</span>
+                <span>Loading available data...</span>
             </div>
         `;
         demoContainer.appendChild(statusMessage);
         
-        // Create hardcoded list of all .zarr directories in data/
-        // This is a temporary solution until we implement proper directory scanning
-        const knownDatasets = [
-            {
-                name: 'aging.zarr',
-                displayName: 'Aging',
-                path: 'data/aging.zarr',
-                description: 'Mouse hematopoietic stem cells'
-            },
-            // Add additional datasets as they're discovered - they'll be picked up automatically
-            {
-                name: 'pbmc3k.zarr',
-                displayName: 'PBMC 3K',
-                path: 'data/pbmc3k.zarr',
-                description: 'Peripheral blood mononuclear cells (3K)'
-            },
-            {
-                name: 'cortex.zarr',
-                displayName: 'Cortex',
-                path: 'data/cortex.zarr',
-                description: 'Mouse brain cortex cells'
-            }
-        ];
+        // Track current directory
+        let currentDirectory = "."; // Start at application root
         
-        // Manually load dataset list into the datasets array
-        knownDatasets.forEach(dataset => {
-            // Skip duplicates
-            if (!datasets.some(d => d.name === dataset.name)) {
-                datasets.push(dataset);
+        // Create breadcrumbs navigation
+        const breadcrumbsContainer = document.createElement('nav');
+        breadcrumbsContainer.setAttribute('aria-label', 'breadcrumb');
+        breadcrumbsContainer.className = 'mb-3';
+        breadcrumbsContainer.innerHTML = `
+            <ol class="breadcrumb" id="directoryBreadcrumbs">
+                <li class="breadcrumb-item active" aria-current="page">
+                    <a href="#" data-path=".">Home</a>
+                </li>
+            </ol>
+        `;
+        demoContainer.appendChild(breadcrumbsContainer);
+        
+        // Add event listener for breadcrumb navigation
+        document.getElementById('directoryBreadcrumbs').addEventListener('click', function(event) {
+            event.preventDefault();
+            const target = event.target;
+            
+            if (target.tagName === 'A' && target.hasAttribute('data-path')) {
+                const path = target.getAttribute('data-path');
+                currentDirectory = path;
+                refreshDirectoryContents(path);
             }
         });
         
-        // For debugging and future enhancements, still try HTTP method when appropriate
-        if (!isFileProtocol) {
-            // console.log('[DEBUG] Using HTTP protocol, will try to fetch directory listing');
-            // Only try to fetch if we're not on file:// protocol
+        // Function to update breadcrumbs based on current path
+        function updateBreadcrumbs(path) {
+            const breadcrumbs = document.getElementById('directoryBreadcrumbs');
+            const pathParts = path === '.' ? [] : path.split('/');
+            
+            // Clear existing breadcrumbs
+            breadcrumbs.innerHTML = '';
+            
+            // Always add home
+            const homeItem = document.createElement('li');
+            homeItem.className = 'breadcrumb-item';
+            if (path === '.') homeItem.className += ' active';
+            homeItem.innerHTML = path === '.' ? 
+                'Home' : 
+                '<a href="#" data-path=".">Home</a>';
+            breadcrumbs.appendChild(homeItem);
+            
+            // Add path parts
+            let currentPath = '';
+            pathParts.forEach((part, index) => {
+                currentPath += (index > 0 ? '/' : '') + part;
+                
+                const item = document.createElement('li');
+                item.className = 'breadcrumb-item';
+                if (index === pathParts.length - 1) {
+                    item.className += ' active';
+                    item.setAttribute('aria-current', 'page');
+                    item.textContent = part;
+                } else {
+                    item.innerHTML = `<a href="#" data-path="${currentPath}">${part}</a>`;
+                }
+                breadcrumbs.appendChild(item);
+            });
+        }
+        
+        // Function to fetch and display directory contents
+        async function refreshDirectoryContents(directoryPath) {
+            currentDirectory = directoryPath; // Update current directory
+            
+            // Show loading indicator
+            const contentsContainer = document.getElementById('directoryContents');
+            if (contentsContainer) {
+                contentsContainer.innerHTML = `
+                    <div class="d-flex justify-content-center p-4">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
             try {
-                // Create a fetch request to the data directory with a timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => {
-                    // console.log('[DEBUG] Fetch timeout reached, aborting');
-                    controller.abort();
-                }, 5000);
+                // Update breadcrumbs
+                updateBreadcrumbs(directoryPath);
                 
-                // Handle URLs with or without trailing slash
-                const baseUrl = window.location.href.includes('?') 
-                    ? window.location.href.split('?')[0] 
-                    : window.location.href;
-                const dataUrl = baseUrl.endsWith('/') 
-                    ? baseUrl + 'data/' 
-                    : baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1) + 'data/';
+                // Fetch directory contents from API
+                let apiUrl = `${window.ANNZARRO_API_URL}/datasets?dir=${encodeURIComponent(directoryPath)}`;
+                console.log(`Fetching directory contents from: ${apiUrl}`);
                 
-                // console.log('[DEBUG] Fetching demo data from:', dataUrl);
-                // console.log('[DEBUG] Current URL is:', window.location.href);
-                // console.log('[DEBUG] Constructed base URL is:', baseUrl);
-                try {
-                    const response = await fetch(dataUrl, {
-                        signal: controller.signal
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to load directory contents: ${response.status} ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // Clear existing datasets
+                datasets.directories = [];
+                datasets.zarrFiles = [];
+                
+                // Process the response data
+                if (data.datasets && Array.isArray(data.datasets)) {
+                    data.datasets.forEach(item => {
+                        // Check if it's a zarr file or directory
+                        if (item.name.endsWith('.zarr')) {
+                            datasets.zarrFiles.push({
+                                name: item.name,
+                                displayName: item.name.replace(/\.zarr$/, '').replace(/[_-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                                path: item.path,
+                                description: item.description || 'AnnData dataset in zarr format',
+                                isSymlink: item.is_symlink || false
+                            });
+                        } else if (item.is_directory) {
+                            datasets.directories.push({
+                                name: item.name,
+                                path: item.path,
+                                isSymlink: item.is_symlink || false
+                            });
+                        }
+                    });
+                }
+                
+                // Display the contents
+                displayDirectoryContents();
+                
+            } catch (error) {
+                console.error('Error fetching directory contents:', error);
+                
+                if (contentsContainer) {
+                    contentsContainer.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>
+                            Error loading directory contents: ${error.message}
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        // Function to display directory contents
+        function displayDirectoryContents() {
+            // Remove the loading status message
+            if (statusMessage.parentNode) {
+                statusMessage.parentNode.removeChild(statusMessage);
+            }
+            
+            // Create or get the contents container
+            let contentsContainer = document.getElementById('directoryContents');
+            if (!contentsContainer) {
+                contentsContainer = document.createElement('div');
+                contentsContainer.id = 'directoryContents';
+                demoContainer.appendChild(contentsContainer);
+            }
+            
+            // Clear existing content
+            contentsContainer.innerHTML = '';
+            
+            // Show "up" navigation if not at root
+            if (currentDirectory !== '.') {
+                const upButton = document.createElement('button');
+                upButton.type = 'button';
+                upButton.className = 'list-group-item list-group-item-action';
+                upButton.innerHTML = '<i class="fas fa-level-up-alt me-2"></i> Up one level';
+                upButton.addEventListener('click', function() {
+                    // Go up one level in the directory tree
+                    const parts = currentDirectory.split('/');
+                    parts.pop();
+                    const parentDir = parts.length === 0 ? '.' : parts.join('/');
+                    refreshDirectoryContents(parentDir);
+                });
+                contentsContainer.appendChild(upButton);
+            }
+            
+            // Display directories
+            if (datasets.directories.length > 0) {
+                const directoriesTitle = document.createElement('div');
+                directoriesTitle.className = 'list-group-item list-group-item-secondary';
+                directoriesTitle.innerHTML = '<i class="fas fa-folder me-2"></i> Directories';
+                contentsContainer.appendChild(directoriesTitle);
+                
+                datasets.directories.forEach(directory => {
+                    const directoryItem = document.createElement('button');
+                    directoryItem.type = 'button';
+                    directoryItem.className = 'list-group-item list-group-item-action';
+                    
+                    // Add symlink indicator if applicable
+                    const symlinkBadge = directory.isSymlink ? 
+                        '<span class="badge bg-info ms-2">symlink</span>' : '';
+                    
+                    directoryItem.innerHTML = `
+                        <i class="fas fa-folder me-2"></i>
+                        ${directory.name}${symlinkBadge}
+                    `;
+                    
+                    directoryItem.addEventListener('click', function() {
+                        refreshDirectoryContents(directory.path);
                     });
                     
-                    clearTimeout(timeoutId);
-                    // console.log('[DEBUG] Fetch response received, status:', response.status);
-                    
-                    if (response.ok) {
-                        // Parse the directory listing HTML
-                        // console.log('[DEBUG] Parsing directory listing HTML');
-                        const html = await response.text();
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(html, 'text/html');
-                        
-                        // Look for links that end with .zarr/
-                        // console.log('[DEBUG] Looking for zarr directory links');
-                        const links = Array.from(doc.querySelectorAll('a')).filter(link => {
-                            const href = link.getAttribute('href');
-                            return href && (href.endsWith('.zarr/') || href.endsWith('.zarr'));
-                        });
-                        
-                        // console.log('[DEBUG] Found', links.length, 'zarr links');
-                        
-                        // Add additional datasets found
-                        links.forEach(link => {
-                            const href = link.getAttribute('href');
-                            const name = href.replace(/\/$/, ''); // Remove trailing slash
-                            const displayName = name.replace(/\.zarr$/, ''); // Remove .zarr extension
-                            
-                            // Skip if we already have this dataset (based on name)
-                            if (datasets.some(d => d.name === name)) {
-                                // console.log('[DEBUG] Skipping duplicate dataset:', name);
-                                return;
-                            }
-                            
-                            // Get a nice display name
-                            const formattedName = displayName
-                                .split(/[_\-.]/g)
-                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                .join(' ');
-                            
-                            // Dataset descriptions - expand this as needed
-                            const descriptions = {
-                                'aging': 'Mouse hematopoietic stem cells',
-                                // Add more descriptions as datasets are added
-                            };
-                            
-                            const description = descriptions[displayName] || 'AnnData dataset in zarr format';
-                            
-                            // console.log('[DEBUG] Adding dataset:', name);
-                            datasets.push({
-                                name: name,
-                                displayName: formattedName,
-                                path: 'data/' + name,
-                                description: description
-                            });
-                        });
-                    } else {
-                        // console.warn('[DEBUG] Fetch response not OK:', response.status, response.statusText);
-                    }
-                } catch (innerFetchError) {
-                    // console.warn('[DEBUG] Inner fetch error:', innerFetchError);
-                }
-            } catch (fetchError) {
-                // console.warn('[DEBUG] Error fetching directory listing:', fetchError);
-                // Continue with hardcoded datasets
+                    contentsContainer.appendChild(directoryItem);
+                });
             }
-        } else {
-            // console.log('[DEBUG] Using file:// protocol, offering directory selection');
             
-            // Add file:// protocol notice
+            // Display zarr files
+            if (datasets.zarrFiles.length > 0) {
+                const zarrTitle = document.createElement('div');
+                zarrTitle.className = 'list-group-item list-group-item-secondary';
+                zarrTitle.innerHTML = '<i class="fas fa-database me-2"></i> Zarr Datasets';
+                contentsContainer.appendChild(zarrTitle);
+                
+                datasets.zarrFiles.forEach(dataset => {
+                    const datasetItem = document.createElement('button');
+                    datasetItem.type = 'button';
+                    datasetItem.className = 'list-group-item list-group-item-action';
+                    datasetItem.dataset.demo = dataset.displayName.toLowerCase();
+                    datasetItem.dataset.path = dataset.path;
+                    
+                    // Add symlink indicator if applicable
+                    const symlinkBadge = dataset.isSymlink ? 
+                        '<span class="badge bg-info ms-2">symlink</span>' : '';
+                    
+                    datasetItem.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">
+                                <i class="fas fa-database me-2"></i>
+                                ${dataset.displayName}${symlinkBadge}
+                            </h5>
+                        </div>
+                        <div class="small text-muted">${dataset.description}</div>
+                        <div class="small text-muted">Path: ${dataset.path}</div>
+                    `;
+                    
+                    // Add click handler to select this dataset
+                    datasetItem.addEventListener('click', function(event) {
+                        // Remove active class from all items
+                        document.querySelectorAll('#directoryContents .list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        this.classList.add('active');
+                    });
+                    
+                    contentsContainer.appendChild(datasetItem);
+                });
+            }
+            
+            // If no items found, show message
+            if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
+                const emptyMessage = document.createElement('div');
+                emptyMessage.className = 'alert alert-info mt-3';
+                emptyMessage.innerHTML = 'This directory is empty';
+                contentsContainer.appendChild(emptyMessage);
+            }
+            
+            // Add load button for zarr files
+            if (datasets.zarrFiles.length > 0) {
+                const loadButton = document.createElement('button');
+                loadButton.type = 'button';
+                loadButton.className = 'btn btn-primary mt-3 w-100';
+                loadButton.innerHTML = '<i class="fas fa-download me-1"></i> Load Selected Dataset';
+                loadButton.addEventListener('click', function() {
+                    const selectedDataset = document.querySelector('#directoryContents .list-group-item.active');
+                    if (selectedDataset) {
+                        const demoType = selectedDataset.dataset.demo;
+                        const path = selectedDataset.dataset.path;
+                        
+                        // Show loading indicator
+                        showLoadingIndicator('Loading data...');
+                        
+                        // Use the path directly for loading
+                        loadDataFromPath(demoType, path)
+                            .then(() => {
+                                hideLoadingIndicator();
+                                $('#browseDataModal').modal('hide');
+                            })
+                            .catch(error => {
+                                showError('Error loading data: ' + error.message);
+                                hideLoadingIndicator();
+                            });
+                    } else {
+                        showError('Please select a dataset');
+                    }
+                });
+                demoContainer.appendChild(loadButton);
+            }
+        }
+        
+        // Handle the case where no datasets are found (replacing the else branch)
+        if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
+            // Default case - just display empty container with message
+            console.log('No datasets found in standard location');
+            
+            // Add information notice 
             const notice = document.createElement('div');
             notice.className = 'alert alert-info mb-3';
             notice.innerHTML = `
                 <i class="fas fa-info-circle me-2"></i>
-                You're viewing this application using the file:// protocol.
-                Select a directory containing zarr datasets below.
+                No datasets found. Please check that the data directory exists and contains .zarr datasets.
             `;
             demoContainer.appendChild(notice);
             
-            // Check if File System Access API is available (modern browsers)
-            const hasFileSystemAccess = 'showDirectoryPicker' in window;
-            // console.log('[DEBUG] FileSystem Access API available:', hasFileSystemAccess);
+            // Add a retry button
+            const retryButton = document.createElement('button'); 
+            retryButton.type = 'button';
+            retryButton.className = 'btn btn-primary mb-3';
+            retryButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Retry Loading Datasets';
+            retryButton.addEventListener('click', function() {
+                loadAvailableData();
+            });
             
-            if (hasFileSystemAccess) {
-                // Create a button to let user select a directory
-                const browseButton = document.createElement('button');
-                browseButton.type = 'button';
-                browseButton.className = 'btn btn-primary mb-3';
-                browseButton.innerHTML = '<i class="fas fa-folder-open me-2"></i>Browse for Data Directory';
-                browseButton.addEventListener('click', async function() {
-                    // console.log('[DEBUG] Browse directory button clicked');
-                    
-                    try {
-                        // Show that we're waiting for directory selection
-                        this.disabled = true;
-                        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Waiting for directory selection...';
-                        
-                        // Get a handle to the directory the user selects
-                        const dirHandle = await window.showDirectoryPicker();
-                        // console.log('[DEBUG] Directory selected:', dirHandle.name);
-                        
-                        // Process the selected directory
-                        const foundDatasets = [];
-                        
-                        // Show a loading message
-                        const scanningMessage = document.createElement('div');
-                        scanningMessage.className = 'alert alert-info mt-3';
-                        scanningMessage.innerHTML = `
-                            <div class="d-flex align-items-center">
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                                <span>Scanning directory for zarr datasets...</span>
-                            </div>
-                        `;
-                        demoContainer.appendChild(scanningMessage);
-                        
-                        // Scan for .zarr directories in the selected directory
-                        try {
-                            // Get all entries in the directory
-                            for await (const entry of dirHandle.values()) {
-                                // console.log('[DEBUG] Found entry:', entry.name, entry.kind);
-                                
-                                // Check if this is a directory and ends with .zarr
-                                if (entry.kind === 'directory' && entry.name.endsWith('.zarr')) {
-                                    // console.log('[DEBUG] Found zarr directory:', entry.name);
-                                    
-                                    // Get a nice display name
-                                    const displayName = entry.name.replace(/\.zarr$/, '')
-                                        .split(/[_\-.]/g)
-                                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                        .join(' ');
-                                    
-                                    // Store the dataset info
-                                    foundDatasets.push({
-                                        name: entry.name,
-                                        displayName: displayName,
-                                        path: entry.name, // We'll use this with the directory handle
-                                        description: 'AnnData dataset in zarr format',
-                                        dirHandle: entry, // Keep the directory handle for later
-                                        parentHandle: dirHandle
-                                    });
-                                }
-                            }
-                        } catch (scanError) {
-                            // console.error('[DEBUG] Error scanning directory:', scanError);
-                        }
-                        
-                        // Remove the scanning message
-                        if (scanningMessage.parentNode) {
-                            scanningMessage.parentNode.removeChild(scanningMessage);
-                        }
-                        
-                        // console.log('[DEBUG] Found zarr datasets in selected directory:', foundDatasets.length);
-                        
-                        // Clear existing datasets and add the newly found ones
-                        datasets.length = 0;
-                        datasets.push(...foundDatasets);
-                        
-                        // Refresh the UI
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-folder-open me-2"></i>Browse for Data Directory';
-                        
-                        // Remove status message if it exists
-                        if (statusMessage.parentNode) {
-                            statusMessage.parentNode.removeChild(statusMessage);
-                        }
-                        
-                        // Display the found datasets
-                        // This will be handled by the code below that creates the buttons
-                        
-                    } catch (error) {
-                        // console.error('[DEBUG] Error selecting directory:', error);
-                        
-                        // Handle user cancellation separately
-                        if (error.name === 'AbortError') {
-                            // console.log('[DEBUG] User cancelled directory selection');
-                        } else {
-                            // Show error message
-                            const errorMessage = document.createElement('div');
-                            errorMessage.className = 'alert alert-danger mt-3';
-                            errorMessage.innerHTML = `
-                                <i class="fas fa-exclamation-circle me-2"></i>
-                                Error selecting directory: ${error.message}
-                            `;
-                            demoContainer.appendChild(errorMessage);
-                        }
-                        
-                        // Reset button
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-folder-open me-2"></i>Browse for Data Directory';
-                    }
-                });
-                
-                // Add the browse button to the container
-                demoContainer.appendChild(browseButton);
-            } else {
-                // Create a file input element for older browsers
-                const fileInput = document.createElement('div');
-                fileInput.className = 'mb-3';
-                fileInput.innerHTML = `
-                    <label for="dataDirectory" class="form-label">Select a directory containing zarr datasets:</label>
-                    <input class="form-control" type="file" id="dataDirectory" webkitdirectory directory multiple>
-                    <div class="form-text">Select a directory that contains .zarr folders.</div>
-                `;
-                demoContainer.appendChild(fileInput);
-                
-                // Add an event listener to process selected files
-                document.getElementById('dataDirectory').addEventListener('change', function(e) {
-                    // console.log('[DEBUG] Files selected:', this.files.length);
-                    
-                    // Process selected files to find zarr directories
-                    const files = Array.from(this.files);
-                    
-                    // Get all directory paths
-                    const dirPaths = new Set();
-                    files.forEach(file => {
-                        const path = file.webkitRelativePath;
-                        const parts = path.split('/');
-                        if (parts.length > 1) {
-                            dirPaths.add(parts[0]);
-                        }
-                    });
-                    
-                    // console.log('[DEBUG] Found directories:', Array.from(dirPaths));
-                    
-                    // Find zarr directories
-                    const foundDatasets = [];
-                    dirPaths.forEach(dirPath => {
-                        if (dirPath.endsWith('.zarr')) {
-                            // console.log('[DEBUG] Found zarr directory:', dirPath);
-                            
-                            // Get a nice display name
-                            const displayName = dirPath.replace(/\.zarr$/, '')
-                                .split(/[_\-.]/g)
-                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                .join(' ');
-                            
-                            // Store the dataset info
-                            foundDatasets.push({
-                                name: dirPath,
-                                displayName: displayName,
-                                path: dirPath,
-                                description: 'AnnData dataset in zarr format',
-                                files: files.filter(f => f.webkitRelativePath.startsWith(dirPath + '/'))
-                            });
-                        }
-                    });
-                    
-                    // console.log('[DEBUG] Found zarr datasets:', foundDatasets.length);
-                    
-                    // Clear existing datasets and add the newly found ones
-                    datasets.length = 0;
-                    datasets.push(...foundDatasets);
-                    
-                    // Refresh the UI
-                    // This will be handled by the code below that creates the buttons
-                    
-                    // Remove status message if it exists
-                    if (statusMessage.parentNode) {
-                        statusMessage.parentNode.removeChild(statusMessage);
-                    }
-                });
-            }
+            demoContainer.appendChild(retryButton);
         }
         
         // Remove status message
@@ -915,41 +1072,16 @@ async function loadAvailableDemoData() {
             statusMessage.parentNode.removeChild(statusMessage);
         }
         
-        // console.log('[DEBUG] Final datasets count:', datasets.length);
-        
-        // Always add some hardcoded datasets, even if not found on the server
-        if (datasets.length === 0) {
-            // Add some default demo datasets
-            datasets.push(
-                {
-                    name: 'aging.zarr',
-                    displayName: 'Aging',
-                    path: 'data/aging.zarr',
-                    description: 'Mouse hematopoietic stem cells'
-                },
-                {
-                    name: 'pbmc3k.zarr',
-                    displayName: 'PBMC 3K',
-                    path: 'data/pbmc3k.zarr',
-                    description: 'Peripheral blood mononuclear cells (3K)'
-                },
-                {
-                    name: 'cortex.zarr',
-                    displayName: 'Cortex',
-                    path: 'data/cortex.zarr',
-                    description: 'Mouse brain cortex cells'
-                }
-            );
-        }
+        console.log('Final datasets count:', datasets.directories.length + datasets.zarrFiles.length);
         
         // If still no datasets, show warning
-        if (datasets.length === 0) {
-            console.log('[DEBUG] No datasets found, showing warning');
+        if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
+            console.log('No datasets found, showing warning');
             const warningEl = document.createElement('div');
             warningEl.className = 'alert alert-warning';
             warningEl.innerHTML = `
                 <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                No demo datasets found in the data directory.
+                No datasets found in the current directory.
             `;
             demoContainer.appendChild(warningEl);
             
@@ -957,17 +1089,17 @@ async function loadAvailableDemoData() {
             const fallbackButton = document.createElement('button');
             fallbackButton.type = 'button';
             fallbackButton.className = 'btn btn-primary mt-3';
-            fallbackButton.innerHTML = '<i class="bi bi-database-fill me-1"></i> Try Loading Aging Dataset Directly';
+            fallbackButton.innerHTML = '<i class="bi bi-database-fill me-1"></i> Try Loading Sample Dataset';
             fallbackButton.addEventListener('click', function() {
-                loadDemoData('aging')
+                loadDataFromPath('aging', 'data/aging.zarr')
                     .then(() => {
                         // Hide the modal
-                        $('#demoDataModal').modal('hide');
+                        $('#browseDataModal').modal('hide');
                     })
                     .catch(error => {
-                        console.error('[DEBUG] Error loading aging dataset directly:', error);
+                        console.error('Error loading sample dataset:', error);
                         // Show error message
-                        showError('Error loading aging dataset: ' + error.message);
+                        showError('Error loading sample dataset: ' + error.message);
                     });
             });
             demoContainer.appendChild(fallbackButton);
@@ -976,22 +1108,26 @@ async function loadAvailableDemoData() {
         }
         
         // Create a container for the dataset buttons
-        // console.log('[DEBUG] Creating buttons container for datasets');
         const buttonsContainer = document.createElement('div');
         buttonsContainer.className = 'list-group mt-3';
         
         // Create a button for each dataset
-        datasets.forEach(dataset => {
-            // console.log('[DEBUG] Creating button for dataset:', dataset.name);
+        datasets.zarrFiles.forEach(dataset => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'list-group-item list-group-item-action';
             button.dataset.demo = dataset.displayName.toLowerCase();
             button.dataset.path = dataset.path;
             
+            // Add symlink indicator if applicable
+            const symlinkBadge = dataset.isSymlink 
+                ? '<span class="badge bg-info ms-2">symlink</span>' 
+                : '';
+            
             button.innerHTML = `
-                <strong>${dataset.displayName} Dataset</strong>
+                <strong>${dataset.displayName} Dataset${symlinkBadge}</strong>
                 <div class="small text-muted">${dataset.description}</div>
+                <div class="small text-muted">Path: ${dataset.path}</div>
             `;
             
             // Add click handler directly to prevent issues with dynamic elements
@@ -1000,28 +1136,23 @@ async function loadAvailableDemoData() {
                 event.preventDefault();
                 
                 // Remove active class from all items
-                document.querySelectorAll('#demo .list-group-item').forEach(i => {
+                document.querySelectorAll('#demoDatasetsList .list-group-item').forEach(i => {
                     i.classList.remove('active');
                 });
                 
                 // Add active class to clicked item
                 this.classList.add('active');
-                
-                // Log selection for debugging
-                // console.log('[DEBUG] Demo data selected:', this.dataset.demo, this.dataset.path);
             });
             
             buttonsContainer.appendChild(button);
         });
         
         // Add the buttons to the container
-        // console.log('[DEBUG] Adding buttons container to demo container');
         demoContainer.appendChild(buttonsContainer);
         
         // Mark the first dataset as active by default
         const firstButton = buttonsContainer.querySelector('.list-group-item');
         if (firstButton) {
-            // console.log('[DEBUG] Setting first dataset as active');
             firstButton.classList.add('active');
         }
         
@@ -1031,44 +1162,42 @@ async function loadAvailableDemoData() {
         directLoadButton.className = 'btn btn-primary mt-3 w-100';
         directLoadButton.innerHTML = '<i class="fas fa-download me-1"></i> Load Selected Dataset';
         directLoadButton.addEventListener('click', function() {
-            const selectedDemo = document.querySelector('#demo .list-group-item.active');
+            const selectedDemo = document.querySelector('#demoDatasetsList .list-group-item.active');
             if (selectedDemo) {
                 const demoType = selectedDemo.dataset.demo;
-                // console.log('[DEBUG] Direct load button clicked for:', demoType);
+                const path = selectedDemo.dataset.path;
                 
                 // Show loading indicator
-                showLoadingIndicator('Loading demo data...');
+                showLoadingIndicator('Loading data...');
                 
-                loadDemoData(demoType)
+                loadDataFromPath(demoType, path)
                     .then(() => {
                         hideLoadingIndicator();
-                        $('#loadDataModal').modal('hide');
+                        $('#browseDataModal').modal('hide');
                     })
                     .catch(error => {
-                        showError('Error loading demo data: ' + error.message);
+                        showError('Error loading data: ' + error.message);
                         hideLoadingIndicator();
                     });
             } else {
-                showError('Please select a demo dataset');
+                showError('Please select a dataset');
             }
         });
         demoContainer.appendChild(directLoadButton);
         
-        // console.log('[DEBUG] loadAvailableDemoData completed successfully');
-        
     } catch (error) {
-        // console.error('[DEBUG] Error in loadAvailableDemoData:', error);
+        console.error('Error in loadAvailableData:', error);
         
         // Display an error message in the demo container
-        const demoContainer = document.querySelector('#demo .list-group');
+        const demoContainer = document.querySelector('#datasetsList');
         if (demoContainer) {
             demoContainer.innerHTML = `
                 <div class="alert alert-danger">
                     <i class="fas fa-exclamation-circle me-2"></i>
-                    Error loading demo datasets: ${error.message}
+                    Error loading datasets: ${error.message}
                 </div>
-                <button class="btn btn-primary mt-3" id="retryDemoLoadBtn">
-                    <i class="fas fa-sync-alt me-1"></i> Retry Loading Demos
+                <button class="btn btn-primary mt-3" id="retryLoadBtn">
+                    <i class="fas fa-sync-alt me-1"></i> Retry Loading Datasets
                 </button>
                 <button class="btn btn-outline-primary mt-3 ms-2" id="directLoadAgingBtn">
                     <i class="fas fa-database me-1"></i> Load Aging Dataset Directly
@@ -1076,17 +1205,17 @@ async function loadAvailableDemoData() {
             `;
             
             // Add event listeners to the buttons
-            document.getElementById('retryDemoLoadBtn')?.addEventListener('click', function() {
-                loadAvailableDemoData();
+            document.getElementById('retryLoadBtn')?.addEventListener('click', function() {
+                loadAvailableData();
             });
             
             document.getElementById('directLoadAgingBtn')?.addEventListener('click', function() {
-                loadDemoData('aging')
+                loadDataFromPath('aging', 'data/aging.zarr')
                     .then(() => {
-                        $('#loadDataModal').modal('hide');
+                        $('#browseDataModal').modal('hide');
                     })
                     .catch(error => {
-                        showError('Error loading aging dataset: ' + error.message);
+                        showError('Error loading sample dataset: ' + error.message);
                     });
             });
         }
@@ -1094,207 +1223,48 @@ async function loadAvailableDemoData() {
 }
 
 /**
- * Load demo data
- * @param {string} demoType - Type of demo data
+ * Load data from a specified path
+ * @param {string} datasetName - Name of the dataset
+ * @param {string} path - Optional direct path to the data
  * @returns {Promise<void>}
  */
-async function loadDemoData(demoType) {
+async function loadDataFromPath(datasetName, path = null) {
     try {
         // Make sure zarr is defined
         if (typeof zarr === 'undefined') {
             throw new Error('zarr is not defined. Make sure the zarr.js library is properly loaded.');
         }
         
-        // Find the selected demo dataset element
-        let selectedDemo = document.querySelector(`#demo .list-group-item[data-demo="${demoType}"]`);
+        // Find the selected dataset element
+        let selectedDataset = document.querySelector(`#datasetsList .list-group-item[data-demo="${datasetName}"]`);
         
-        // Check if we're using file:// protocol
-        const isFileProtocol = window.location.protocol === 'file:';
+        // If no dataset is selected but we have a path, use that
+        const datasetPath = path || (selectedDataset ? selectedDataset.dataset.path : null);
         
-        // Handle directory handle based loading (from File System Access API)
-        if (selectedDemo && selectedDemo.dataset.hasDirectoryHandle) {
-            try {
-                // Get the directory handle from the dataset
-                const dirHandle = selectedDemo.dataset.dirHandle;
-                const parentHandle = selectedDemo.dataset.parentHandle;
-                
-                if (dirHandle) {
-                    // Create a hardcoded anndata structure for now
-                    // In a real implementation, you would use the directory handle to load the actual data
-                    const anndataObj = createHardcodedDataset(demoType);
-                    
-                    // Manually set the anndata structure in dataManager
-                    dataManager.anndata = anndataObj;
-                    
-                    // Trigger the dataLoaded event
-                    dataManager._triggerEvent('dataLoaded', anndataObj);
-                    
-                    // Create a custom event for UI elements to respond to
-                    const event = new CustomEvent('dataLoaded', {
-                        detail: { source: 'dirHandle', dataset: demoType }
-                    });
-                    document.dispatchEvent(event);
-                    
-                    return true;
-                }
-            } catch (error) {
-                console.error('Error loading from directory handle:', error);
-                // Fall back to hardcoded data
-            }
+        if (!datasetPath) {
+            throw new Error('No dataset path specified');
         }
         
-        // Handle file-based loading (from file input)
-        if (selectedDemo && selectedDemo.dataset.hasFiles) {
-            try {
-                // Get the files from the dataset
-                const files = selectedDemo.dataset.files;
-                
-                if (files && files.length > 0) {
-                    // Create a hardcoded anndata structure for now
-                    // In a real implementation, you would use the files array to load the actual data
-                    const anndataObj = createHardcodedDataset(demoType);
-                    
-                    // Manually set the anndata structure in dataManager
-                    dataManager.anndata = anndataObj;
-                    
-                    // Trigger the dataLoaded event
-                    dataManager._triggerEvent('dataLoaded', anndataObj);
-                    
-                    // Create a custom event for UI elements to respond to
-                    const event = new CustomEvent('dataLoaded', {
-                        detail: { source: 'files', dataset: demoType }
-                    });
-                    document.dispatchEvent(event);
-                    
-                    return true;
-                }
-            } catch (error) {
-                console.error('Error loading from files array:', error);
-                // Fall back to hardcoded data
-            }
-        }
+        console.log(`Loading data from path: ${datasetPath}`);
         
-        // If the demo selector isn't found, it might be because the demo list hasn't loaded yet
-        // Let's check for a standard path
-        if (!selectedDemo) {
-            // console.log(`[DEBUG] Demo dataset element not found for ${demoType}, trying standard path...`);
-            const standardPath = `data/${demoType}.zarr`;
-            
-            // Try to load from the standard path, keeping only the token parameter if present
-            const urlParams = new URLSearchParams(window.location.search);
-            const token = urlParams.get('token');
-            // Only add token if it's alphanumeric (basic security validation)
-            const pathWithParams = (token && /^[a-zA-Z0-9]+$/.test(token)) ? 
-                `${standardPath}?token=${token}` : standardPath;
-            
-            // console.log(`[DEBUG] Loading demo data from ${pathWithParams}...`);
-            
-            // Try to load from URL if we're not in file:// protocol
-            if (!isFileProtocol) {
-                try {
-                    // console.log('[DEBUG] Attempting to load from URL:', pathWithParams);
-                    
-                    // Load from URL using zarrLoader
-                    await zarrLoader.loadFromUrl(pathWithParams);
-                    
-                    // Convert to AnnData
-                    return await loadAnndataFromZarr();
-                } catch (error) {
-                    // console.error('[DEBUG] Error loading from URL:', error);
-                    // Fall back to hardcoded data
-                }
-            }
-            
-            // Always load a hardcoded dataset structure as a fallback
-            console.log('[DEBUG] Creating hardcoded demo data structure');
-            
-            // Create a realistic anndata structure based on dataset type
-            const anndataObj = createHardcodedDataset(demoType);
-            
-            // Manually set the anndata structure in dataManager
-            console.log('[DEBUG] Setting hardcoded anndata structure in dataManager');
-            if (window.dataManager && typeof dataManager.setAnndata === 'function') {
-                dataManager.setAnndata(anndataObj);
-            } else if (window.dataManager) {
-                dataManager.anndata = anndataObj;
-            } else {
-                console.error('dataManager not available');
-                window.dataManager = { 
-                    anndata: anndataObj,
-                    isDataLoaded: function() { return true; },
-                    getBasicInfo: function() { return { nObs: 1000, nVars: 2000, embeddings: ['umap', 'pca'] }; },
-                    _triggerEvent: function(name, data) {
-                        const event = new CustomEvent(name, { detail: data });
-                        document.dispatchEvent(event);
-                        return true;
-                    }
-                };
-            }
-            
-            // Trigger the dataLoaded event
-            // console.log('[DEBUG] Triggering dataLoaded event');
-            dataManager._triggerEvent('dataLoaded', anndataObj);
-            
-            // Create a custom event for UI elements to respond to
-            const event = new CustomEvent('dataLoaded', {
-                detail: { source: 'hardcoded', dataset: demoType }
-            });
-            document.dispatchEvent(event);
-            
-            // console.log('[DEBUG] Hardcoded dataset loaded successfully');
-            return true;
-        }
-        
-        // If we found the selected demo, proceed with loading from it
-        // Get the path from the data attribute
-        const path = selectedDemo.dataset.path;
-        // console.log(`[DEBUG] Loading from selected demo with path: ${path}`);
-        
-        // Add token parameter if present in the URL and is valid
+        // Add token parameter if present in the URL and is valid (for auth)
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
         // Only add token if it's alphanumeric (basic security validation)
         const pathWithParams = (token && /^[a-zA-Z0-9]+$/.test(token)) ? 
-            `${path}?token=${token}` : path;
+            `${datasetPath}?token=${token}` : datasetPath;
         
-        // console.log(`[DEBUG] Loading demo data from ${pathWithParams}...`);
-        
-        // Try to load from URL if we're not in file:// protocol
-        if (!isFileProtocol) {
-            try {
-                // console.log('[DEBUG] Attempting to load from URL:', pathWithParams);
-                
-                // Load from URL using zarrLoader
-                await zarrLoader.loadFromUrl(pathWithParams);
-                
-                // Convert to AnnData
-                return await loadAnndataFromZarr();
-            } catch (error) {
-                // console.error('[DEBUG] Error loading from URL:', error);
-                // Fall back to hardcoded data
-            }
+        try {
+            // Load from URL using zarrLoader
+            console.log('Loading zarr data from URL:', pathWithParams);
+            await zarrLoader.loadFromUrl(pathWithParams);
+            
+            // Convert to AnnData
+            return await loadAnndataFromZarr();
+        } catch (error) {
+            console.error('Error loading data from path:', error);
+            throw error;
         }
-        
-        // Create a hardcoded anndata structure as a fallback
-        // console.log('[DEBUG] Creating hardcoded demo data structure as fallback');
-        const anndataObj = createHardcodedDataset(demoType);
-        
-        // Manually set the anndata structure in dataManager
-        // console.log('[DEBUG] Setting hardcoded anndata structure in dataManager');
-        dataManager.anndata = anndataObj;
-        
-        // Trigger the dataLoaded event
-        // console.log('[DEBUG] Triggering dataLoaded event');
-        dataManager._triggerEvent('dataLoaded', anndataObj);
-        
-        // Create a custom event for UI elements to respond to
-        const event = new CustomEvent('dataLoaded', {
-            detail: { source: 'hardcoded', dataset: demoType }
-        });
-        document.dispatchEvent(event);
-        
-        // console.log('[DEBUG] Demo data loaded successfully');
-        return true;
     } catch (error) {
         // console.error('[DEBUG] Error loading demo data:', error);
         throw error;
@@ -1532,8 +1502,9 @@ function updateAfterDataLoad() {
 
 /**
  * Update gene selection options
+ * @param {string} geneNameColumn - Optional column containing gene names
  */
-function updateGeneOptions() {
+function updateGeneOptions(geneNameColumn = null) {
     const geneFocusSelect = document.getElementById('geneFocus');
     
     // Clear existing options
@@ -1542,15 +1513,18 @@ function updateGeneOptions() {
     // Check if data is loaded
     if (!dataManager.isDataLoaded()) return;
     
-    // Get var index or gene symbols
-    let geneNames = [];
-    
     try {
-        // Try to load var index
-        dataManager.loadVar()
-            .then(varData => {
-                if (varData && varData._index) {
-                    geneNames = varData._index;
+        // First try the API endpoint which can use a specific column
+        let url = `${window.ANNZARRO_API_URL}/data/genes`;
+        if (geneNameColumn) {
+            url += `?column=${encodeURIComponent(geneNameColumn)}`;
+        }
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.genes && data.genes.length > 0) {
+                    const geneNames = data.genes;
                     
                     // Add options to select
                     for (const gene of geneNames) {
@@ -1566,13 +1540,54 @@ function updateGeneOptions() {
                         allowClear: true,
                         width: '100%'
                     });
+                    
+                    return;
                 }
+                
+                // If the API failed or returned empty, try the legacy method
+                fallbackLoadGenes();
             })
             .catch(error => {
-                console.error('Error loading var data:', error);
+                console.error('Error loading genes from API:', error);
+                // Try legacy method as fallback
+                fallbackLoadGenes();
             });
     } catch (error) {
         console.error('Error setting up gene options:', error);
+        // Try legacy method as fallback
+        fallbackLoadGenes();
+    }
+    
+    function fallbackLoadGenes() {
+        try {
+            // Try to load var index directly
+            dataManager.loadVar()
+                .then(varData => {
+                    if (varData && varData._index) {
+                        const geneNames = varData._index;
+                        
+                        // Add options to select
+                        for (const gene of geneNames) {
+                            const option = document.createElement('option');
+                            option.value = gene;
+                            option.textContent = gene;
+                            geneFocusSelect.appendChild(option);
+                        }
+                        
+                        // Initialize select2 for better UX
+                        $(geneFocusSelect).select2({
+                            placeholder: 'Select a gene',
+                            allowClear: true,
+                            width: '100%'
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading var data:', error);
+                });
+        } catch (error) {
+            console.error('Error in fallback gene loading:', error);
+        }
     }
 }
 
