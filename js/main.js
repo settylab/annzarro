@@ -10,80 +10,191 @@
 // The API URL will be determined dynamically from the server configuration
 window.ANNZARRO_API_URL = null; // Will be set in getApiConfig()
 
-// Function to configure API URL - simplified for unified server approach
-async function getApiConfig() {
-    try {
-        // First, try to get config from same origin (unified server approach)
-        console.log('Fetching API configuration from unified server...');
-        
-        // Build API URL based on current location (same origin)
-        const currentLocation = window.location;
-        const protocol = currentLocation.protocol;
-        const hostname = currentLocation.hostname;
-        const port = currentLocation.port ? `:${currentLocation.port}` : '';
-        
-        // Use the same origin for API URL (unified server approach)
-        window.ANNZARRO_API_URL = `${protocol}//${hostname}${port}/api/v1`;
-        console.log(`Using unified server API URL: ${window.ANNZARRO_API_URL}`);
-        
-        // Verify the API URL by making a test request
-        const testResponse = await fetch(`${window.ANNZARRO_API_URL}/config`, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            timeout: 2000
-        });
-        
-        if (testResponse.ok) {
-            console.log(`API URL verified: ${window.ANNZARRO_API_URL}`);
-            return true;
-        } else {
-            console.warn(`API not available at ${window.ANNZARRO_API_URL}, status:`, testResponse.status);
-            // Fall back to legacy dual-server approach
-            return await fallbackLegacyApiConfig();
+// Function to configure API URL - using unified server approach only
+/**
+ * Configure and verify API connection, with automatic retry
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} retryDelay - Delay between retries in ms (default: 1000)
+ * @returns {Promise<boolean>} - Success status
+ */
+async function getApiConfig(maxRetries = 3, retryDelay = 1000) {
+    let retryCount = 0;
+    
+    async function attemptConnection() {
+        try {
+            // Configure for unified server approach (only option now)
+            console.log(`Configuring API for unified server (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+            
+            // Build API URL based on current location (same origin)
+            const currentLocation = window.location;
+            const protocol = currentLocation.protocol;
+            const hostname = currentLocation.hostname;
+            const port = currentLocation.port ? `:${currentLocation.port}` : '';
+            
+            // Use the same origin for API URL (unified server approach)
+            window.ANNZARRO_API_URL = `${protocol}//${hostname}${port}/api/v1`;
+            console.log(`Using unified server API URL: ${window.ANNZARRO_API_URL}`);
+            
+            // Set in global config as well
+            if (window.Annzarro && window.Annzarro.config) {
+                window.Annzarro.config.apiUrl = window.ANNZARRO_API_URL;
+            }
+            
+            // Verify the API URL by making a test request
+            const testResponse = await fetch(`${window.ANNZARRO_API_URL}/config`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                timeout: 2000
+            });
+            
+            if (testResponse.ok) {
+                console.log(`API URL verified: ${window.ANNZARRO_API_URL}`);
+                
+                // Get the actual config
+                const config = await testResponse.json();
+                console.log('Server config:', config);
+                
+                // Update UI with data directory if needed
+                if (config && config.data_dir) {
+                    console.log(`Server using data directory: ${config.data_dir}`);
+                }
+                
+                // Check server status for more detailed info
+                try {
+                    const statusResponse = await fetch(`${window.ANNZARRO_API_URL}/status`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' },
+                        timeout: 2000
+                    });
+                    
+                    if (statusResponse.ok) {
+                        const statusData = await statusResponse.json();
+                        console.log('Server status:', statusData);
+                        
+                        // Store server status information for later use
+                        window.serverStatus = statusData;
+                        
+                        // Update status indicator if available
+                        updateServerStatusIndicator(statusData);
+                    }
+                } catch (statusError) {
+                    console.warn('Could not fetch detailed server status:', statusError);
+                    // Non-critical, continue anyway
+                }
+                
+                return true;
+            } else {
+                console.error(`API not available at ${window.ANNZARRO_API_URL}, status: ${testResponse.status}`);
+                return false;
+            }
+        } catch (error) {
+            console.error('Error verifying API URL:', error);
+            return false;
         }
-    } catch (error) {
-        console.error('Error verifying API URL:', error);
-        // Fall back to legacy dual-server approach
-        return await fallbackLegacyApiConfig();
+    }
+    
+    // First attempt
+    let success = await attemptConnection();
+    
+    // Auto-retry logic
+    while (!success && retryCount < maxRetries) {
+        retryCount++;
+        console.log(`Retrying connection in ${retryDelay}ms... (${retryCount}/${maxRetries})`);
+        
+        // Show retry notification if available
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) {
+            statusIndicator.innerHTML = `
+                <span class="badge bg-warning">
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    Connecting... (${retryCount}/${maxRetries})
+                </span>
+            `;
+        }
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        
+        // Exponential backoff for retry delay
+        retryDelay = Math.min(retryDelay * 1.5, 5000);
+        
+        // Attempt connection again
+        success = await attemptConnection();
+    }
+    
+    // Final result
+    if (success) {
+        console.log('API connection successful');
+        return true;
+    } else {
+        console.error('Failed to connect to API server after multiple attempts');
+        
+        // Show failure in UI
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) {
+            statusIndicator.innerHTML = `
+                <span class="badge bg-danger">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Server Disconnected
+                </span>
+            `;
+        }
+        
+        // Show alert
+        alert("Cannot connect to server. Please make sure the server is running at " + window.ANNZARRO_API_URL);
+        return false;
     }
 }
 
-// Legacy fallback for dual-server approach (Frontend + Backend)
-async function fallbackLegacyApiConfig() {
-    console.log('Falling back to legacy dual-server API configuration...');
+/**
+ * Update the server status indicator in the UI
+ * @param {Object} statusData - Server status data
+ */
+function updateServerStatusIndicator(statusData) {
+    const statusIndicator = document.getElementById('statusIndicator');
+    if (!statusIndicator) return;
     
-    // Get current location information
-    const currentLocation = window.location;
-    const protocol = currentLocation.protocol;
-    const hostname = currentLocation.hostname;
-    
-    // Try to use the fixed backend port (8001)
-    // This is only for backward compatibility and should be removed once unified server is implemented
-    const backendPort = 8001;
-    
-    console.warn(`Using legacy backend port ${backendPort} - consider upgrading to unified server`);
-    window.ANNZARRO_API_URL = `${protocol}//${hostname}:${backendPort}/api/v1`;
-    
-    try {
-        // Try to verify the connection
-        const testResponse = await fetch(`${window.ANNZARRO_API_URL}/config`, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            mode: 'cors',
-            timeout: 2000
-        });
+    if (statusData && statusData.server && statusData.server.status === 'running') {
+        // Server is running
+        const memoryUsage = statusData.resources?.memory_usage_mb || 0;
+        const cpuLoad = statusData.resources?.cpu_load || 0;
+        const uptime = statusData.server?.uptime || 'unknown';
         
-        if (testResponse.ok) {
-            console.log(`Legacy API URL verified: ${window.ANNZARRO_API_URL}`);
-            return true;
-        }
-    } catch (error) {
-        console.error('Error testing legacy API connection:', error);
+        statusIndicator.innerHTML = `
+            <span class="badge bg-success" title="Server Status">
+                <i class="bi bi-hdd-network-fill me-1"></i>
+                Server Connected
+            </span>
+            <span class="badge bg-info ms-1" title="Memory Usage">
+                <i class="bi bi-memory me-1"></i>
+                ${memoryUsage.toFixed(0)} MB
+            </span>
+            <span class="badge bg-info ms-1" title="CPU Load">
+                <i class="bi bi-cpu me-1"></i>
+                ${cpuLoad.toFixed(0)}%
+            </span>
+        `;
+    } else if (statusData && statusData.server && statusData.server.status === 'error') {
+        // Server has an error
+        statusIndicator.innerHTML = `
+            <span class="badge bg-danger">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                Server Error: ${statusData.server.error || 'Unknown error'}
+            </span>
+        `;
+    } else {
+        // Unknown server status
+        statusIndicator.innerHTML = `
+            <span class="badge bg-warning">
+                <i class="bi bi-question-circle-fill me-1"></i>
+                Unknown Server Status
+            </span>
+        `;
     }
-    
-    console.error('Could not connect to API server - please make sure the server is running');
-    return false;
 }
+
+// Note: Legacy fallback for dual-server approach has been removed
+// We now exclusively use the unified server approach with API and static content on the same port
 
 // Wait for all modules to be loaded and initialized
 document.addEventListener('modulesLoaded', function() {
@@ -116,6 +227,133 @@ setTimeout(function() {
     }
 }, 3000); // Wait 3 seconds before trying fallback
 
+/**
+ * Background server health check function
+ * Periodically monitors the server connection and updates UI accordingly
+ */
+let healthCheckInterval = null;
+let connectionLostTime = null;
+let consecutiveFailures = 0;
+
+function startServerHealthCheck() {
+    // Clear any existing interval
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+    }
+    
+    // Reset state
+    connectionLostTime = null;
+    consecutiveFailures = 0;
+    
+    // Start the health check interval
+    healthCheckInterval = setInterval(async () => {
+        // Skip if API URL is not configured
+        if (!window.ANNZARRO_API_URL) return;
+        
+        try {
+            // Make a lightweight request to the status endpoint
+            const response = await fetch(`${window.ANNZARRO_API_URL}/status`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                timeout: 2000
+            });
+            
+            if (response.ok) {
+                // Server is responsive, reset failure counter
+                const statusData = await response.json();
+                console.log('Server health check OK');
+                
+                // Update the UI with status information
+                updateServerStatusIndicator(statusData);
+                
+                // Store for app-wide access
+                window.serverStatus = statusData;
+                
+                // If we were previously disconnected, show reconnection message
+                if (connectionLostTime) {
+                    const downtime = Math.round((Date.now() - connectionLostTime) / 1000);
+                    showSuccess(`Server connection restored after ${downtime} seconds`);
+                    connectionLostTime = null;
+                }
+                
+                // Reset failure counter
+                consecutiveFailures = 0;
+            } else {
+                // Server responded but with an error
+                handleHealthCheckFailure(`Server responded with status ${response.status}`);
+            }
+        } catch (error) {
+            // Connection failed completely
+            handleHealthCheckFailure(`Connection error: ${error.message}`);
+        }
+    }, 30000); // Check every 30 seconds
+    
+    console.log('Server health check started');
+}
+
+/**
+ * Handle health check failure by updating UI and tracking failures
+ * @param {string} reason - Reason for the failure
+ */
+function handleHealthCheckFailure(reason) {
+    consecutiveFailures++;
+    console.warn(`Server health check failed (${consecutiveFailures}): ${reason}`);
+    
+    // Update the status indicator
+    const statusIndicator = document.getElementById('statusIndicator');
+    if (statusIndicator) {
+        if (consecutiveFailures === 1) {
+            // First failure, show warning
+            statusIndicator.innerHTML = `
+                <span class="badge bg-warning">
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Server Connection Issue
+                </span>
+            `;
+        } else if (consecutiveFailures >= 3) {
+            // Multiple failures, consider disconnected
+            statusIndicator.innerHTML = `
+                <span class="badge bg-danger">
+                    <i class="bi bi-x-circle me-1"></i>
+                    Server Disconnected
+                </span>
+                <button id="reconnectBtn" class="btn btn-sm btn-outline-light ms-2">
+                    <i class="bi bi-arrow-repeat me-1"></i>
+                    Reconnect
+                </button>
+            `;
+            
+            // Add reconnect button handler
+            document.getElementById('reconnectBtn')?.addEventListener('click', async function() {
+                this.disabled = true;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Reconnecting...';
+                
+                // Try to reconnect
+                const success = await getApiConfig(2, 1000);
+                
+                if (success) {
+                    consecutiveFailures = 0;
+                    connectionLostTime = null;
+                } else {
+                    // Reset button after failure
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Reconnect';
+                }
+            });
+            
+            // Record when we first detected disconnection
+            if (!connectionLostTime) {
+                connectionLostTime = Date.now();
+            }
+        }
+    }
+    
+    // If multiple failures and we have data loaded, show a toast warning
+    if (consecutiveFailures === 3 && dataManager && dataManager.isDataLoaded()) {
+        showWarning('Server connection lost. Your current view will remain available, but you cannot load new data.');
+    }
+}
+
 // Export functions for testing
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -133,11 +371,16 @@ if (typeof module !== 'undefined' && module.exports) {
  */
 async function initializeApp() {
     // Get API configuration
-    await getApiConfig();
+    const apiConfigSuccess = await getApiConfig();
+    
+    // Start server health check if API connection was successful
+    if (apiConfigSuccess) {
+        startServerHealthCheck();
+    }
     
     // Check if we have the zarrLoader available
     if (typeof zarrLoader === 'undefined' || !zarrLoader) {
-        console.error('zarrLoader is not available. Make sure the Python backend is running.');
+        console.error('zarrLoader is not available. Make sure the unified server is running.');
         
         // Show a more detailed error based on what we know
         let apiUrl = window.ANNZARRO_API_URL || '(not configured)';
@@ -147,8 +390,8 @@ async function initializeApp() {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'alert alert-danger';
         errorDiv.innerHTML = `
-            <h4>Error: Python Backend Not Available</h4>
-            <p>The application cannot connect to the Python backend server at ${apiUrl}.</p>
+            <h4>Error: Unified Server Not Available</h4>
+            <p>The application cannot connect to the unified server at ${apiUrl}.</p>
             <p><strong>Current status:</strong></p>
             <ul>
                 <li>API URL: ${apiUrl}</li>
@@ -161,14 +404,14 @@ async function initializeApp() {
                 <code>python server_status.py</code></li>
                 <li>If not running, start the server:<br>
                 <code>python run_annzarro.py --start</code></li>
-                <li>If you see "Address already in use" errors, clear the ports:<br>
-                <code>python server_status.py --stop-all</code></li>
+                <li>If you see "Address already in use" errors, stop the server:<br>
+                <code>python run_annzarro.py --stop</code></li>
                 <li>Check server configuration in <code>annzarro/server/config.json</code></li>
                 <li>Verify the correct port is being used (currently trying to connect to port ${apiPort})</li>
             </ol>
             <p>After fixing the issue, refresh this page.</p>
             <button id="retryConnectionBtn" class="btn btn-primary mt-2">
-                <i class="fas fa-sync-alt me-1"></i> Retry Connection
+                <i class="bi bi-arrow-repeat me-1"></i> Retry Connection
             </button>
         `;
         document.body.insertBefore(errorDiv, document.body.firstChild);
@@ -181,24 +424,17 @@ async function initializeApp() {
             // Try to reconnect
             try {
                 // Re-fetch API config
-                await getApiConfig();
+                const success = await getApiConfig(2, 1000);
                 
-                // Try to verify backend is running
-                const response = await fetch(`${window.ANNZARRO_API_URL}/config`, { 
-                    mode: 'cors',
-                    headers: { 'Accept': 'application/json' },
-                    timeout: 3000
-                });
-                
-                if (response.ok) {
+                if (success) {
                     // Reload the page if successful
                     window.location.reload();
                 } else {
-                    this.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
-                    errorDiv.querySelector('ul').innerHTML += `<li>Retry attempt failed: ${response.status} ${response.statusText}</li>`;
+                    this.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
+                    errorDiv.querySelector('ul').innerHTML += `<li>Retry attempt failed: Connection timeout</li>`;
                 }
             } catch (retryError) {
-                this.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
+                this.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Failed - Refresh Page to Try Again';
                 errorDiv.querySelector('ul').innerHTML += `<li>Retry attempt failed: ${retryError.message}</li>`;
             }
         });
@@ -700,10 +936,12 @@ async function loadAvailableDemoData() {
  */
 async function loadAvailableData() {
     try {
+        console.log('Loading available datasets...');
+        
         // Get the datasets container element
         const demoContainer = document.getElementById('datasetsList');
         if (!demoContainer) {
-            console.error('Demo datasets container not found');
+            console.error('Datasets container not found');
             return;
         }
         
@@ -715,35 +953,8 @@ async function loadAvailableData() {
         const errorMessage = document.getElementById('datasetsError');
         if (errorMessage) errorMessage.classList.add('d-none');
 
-        // Initialize datasets array
-        const datasets = {
-            directories: [],
-            zarrFiles: []
-        };
-        
-        // Clear existing demo datasets and remove loading spinner
+        // Clear existing content
         demoContainer.innerHTML = '';
-        
-        // Check if we're using file:// protocol, which doesn't support fetch for directory listing
-        const isFileProtocol = window.location.protocol === 'file:';
-        
-        // Create a refresh button
-        const refreshButton = document.createElement('button');
-        refreshButton.className = 'btn btn-sm btn-outline-primary mb-3';
-        refreshButton.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh';
-        refreshButton.addEventListener('click', function() {
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Refreshing...';
-            
-            // Keep track of the current directory when refreshing
-            loadAvailableData().finally(() => {
-                this.disabled = false;
-                this.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh';
-            });
-        });
-        
-        // Add the refresh button to the container
-        demoContainer.appendChild(refreshButton);
         
         // Add status message while loading
         const statusMessage = document.createElement('div');
@@ -755,6 +966,24 @@ async function loadAvailableData() {
             </div>
         `;
         demoContainer.appendChild(statusMessage);
+        
+        // Create a refresh button
+        const refreshButton = document.createElement('button');
+        refreshButton.className = 'btn btn-sm btn-outline-primary mb-3';
+        refreshButton.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh';
+        refreshButton.addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Refreshing...';
+            
+            // Reload available data
+            loadAvailableData().finally(() => {
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh';
+            });
+        });
+        
+        // Add the refresh button to the container
+        demoContainer.appendChild(refreshButton);
         
         // Track current directory
         let currentDirectory = "."; // Start at application root
@@ -787,6 +1016,8 @@ async function loadAvailableData() {
         // Function to update breadcrumbs based on current path
         function updateBreadcrumbs(path) {
             const breadcrumbs = document.getElementById('directoryBreadcrumbs');
+            if (!breadcrumbs) return;
+
             const pathParts = path === '.' ? [] : path.split('/');
             
             // Clear existing breadcrumbs
@@ -819,28 +1050,41 @@ async function loadAvailableData() {
             });
         }
         
+        // Create contents container
+        const contentsContainer = document.createElement('div');
+        contentsContainer.id = 'directoryContents';
+        contentsContainer.className = 'list-group mt-3';
+        demoContainer.appendChild(contentsContainer);
+        
+        // First load of directory contents
+        await refreshDirectoryContents(currentDirectory);
+        
         // Function to fetch and display directory contents
         async function refreshDirectoryContents(directoryPath) {
-            currentDirectory = directoryPath; // Update current directory
+            // Update current directory
+            currentDirectory = directoryPath;
+            console.log(`Loading directory contents for: ${directoryPath}`);
             
             // Show loading indicator
-            const contentsContainer = document.getElementById('directoryContents');
-            if (contentsContainer) {
-                contentsContainer.innerHTML = `
-                    <div class="d-flex justify-content-center p-4">
-                        <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+            contentsContainer.innerHTML = `
+                <div class="d-flex justify-content-center p-4">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
                     </div>
-                `;
-            }
+                </div>
+            `;
             
             try {
                 // Update breadcrumbs
                 updateBreadcrumbs(directoryPath);
                 
+                // Make sure API URL is set
+                if (!window.ANNZARRO_API_URL) {
+                    throw new Error('API URL not configured. Try refreshing the page.');
+                }
+                
                 // Fetch directory contents from API
-                let apiUrl = `${window.ANNZARRO_API_URL}/datasets?dir=${encodeURIComponent(directoryPath)}`;
+                const apiUrl = `${window.ANNZARRO_API_URL}/datasets?dir=${encodeURIComponent(directoryPath)}`;
                 console.log(`Fetching directory contents from: ${apiUrl}`);
                 
                 const response = await fetch(apiUrl);
@@ -849,74 +1093,69 @@ async function loadAvailableData() {
                 }
                 
                 const data = await response.json();
+                console.log('API response:', data);
                 
-                // Clear existing datasets
-                datasets.directories = [];
-                datasets.zarrFiles = [];
+                // Process and display the contents
+                displayContents(data.datasets || []);
                 
-                // Process the response data
-                if (data.datasets && Array.isArray(data.datasets)) {
-                    data.datasets.forEach(item => {
-                        // Check if it's a zarr file or directory
-                        if (item.name.endsWith('.zarr')) {
-                            datasets.zarrFiles.push({
-                                name: item.name,
-                                displayName: item.name.replace(/\.zarr$/, '').replace(/[_-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                                path: item.path,
-                                description: item.description || 'AnnData dataset in zarr format',
-                                isSymlink: item.is_symlink || false
-                            });
-                        } else if (item.is_directory) {
-                            datasets.directories.push({
-                                name: item.name,
-                                path: item.path,
-                                isSymlink: item.is_symlink || false
-                            });
-                        }
-                    });
+                // Remove the loading status message if it exists
+                if (statusMessage && statusMessage.parentNode) {
+                    statusMessage.parentNode.removeChild(statusMessage);
                 }
-                
-                // Display the contents
-                displayDirectoryContents();
-                
             } catch (error) {
                 console.error('Error fetching directory contents:', error);
                 
-                if (contentsContainer) {
-                    contentsContainer.innerHTML = `
-                        <div class="alert alert-danger">
-                            <i class="fas fa-exclamation-circle me-2"></i>
-                            Error loading directory contents: ${error.message}
-                        </div>
-                    `;
-                }
+                contentsContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        Error loading directory contents: ${error.message}
+                    </div>
+                    <button class="btn btn-primary mt-3" id="retryDirectoryBtn">
+                        <i class="bi bi-arrow-repeat me-1"></i> Retry
+                    </button>
+                `;
+                
+                // Add event listener to retry button
+                document.getElementById('retryDirectoryBtn')?.addEventListener('click', function() {
+                    refreshDirectoryContents(currentDirectory);
+                });
             }
         }
         
         // Function to display directory contents
-        function displayDirectoryContents() {
-            // Remove the loading status message
-            if (statusMessage.parentNode) {
-                statusMessage.parentNode.removeChild(statusMessage);
-            }
-            
-            // Create or get the contents container
-            let contentsContainer = document.getElementById('directoryContents');
-            if (!contentsContainer) {
-                contentsContainer = document.createElement('div');
-                contentsContainer.id = 'directoryContents';
-                demoContainer.appendChild(contentsContainer);
-            }
-            
+        function displayContents(items) {
             // Clear existing content
             contentsContainer.innerHTML = '';
+            
+            // Categorize items
+            const directories = [];
+            const zarrFiles = [];
+            
+            items.forEach(item => {
+                // Check if this is a zarr dataset by checking the type or if the path ends with .zarr
+                if (item.type === 'zarr' || (item.path && item.path.endsWith('.zarr'))) {
+                    zarrFiles.push({
+                        name: item.name || item.id || item.path.split('/').pop(),
+                        displayName: item.name || item.id?.replace(/[_-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                        path: item.path,
+                        description: item.description || 'AnnData dataset in zarr format',
+                        isSymlink: item.is_symlink || false
+                    });
+                } else if (item.is_directory) {
+                    directories.push({
+                        name: item.name,
+                        path: item.path,
+                        isSymlink: item.is_symlink || false
+                    });
+                }
+            });
             
             // Show "up" navigation if not at root
             if (currentDirectory !== '.') {
                 const upButton = document.createElement('button');
                 upButton.type = 'button';
                 upButton.className = 'list-group-item list-group-item-action';
-                upButton.innerHTML = '<i class="fas fa-level-up-alt me-2"></i> Up one level';
+                upButton.innerHTML = '<i class="bi bi-arrow-up-circle me-2"></i> Up one level';
                 upButton.addEventListener('click', function() {
                     // Go up one level in the directory tree
                     const parts = currentDirectory.split('/');
@@ -928,13 +1167,13 @@ async function loadAvailableData() {
             }
             
             // Display directories
-            if (datasets.directories.length > 0) {
+            if (directories.length > 0) {
                 const directoriesTitle = document.createElement('div');
                 directoriesTitle.className = 'list-group-item list-group-item-secondary';
-                directoriesTitle.innerHTML = '<i class="fas fa-folder me-2"></i> Directories';
+                directoriesTitle.innerHTML = '<i class="bi bi-folder me-2"></i> Directories';
                 contentsContainer.appendChild(directoriesTitle);
                 
-                datasets.directories.forEach(directory => {
+                directories.forEach(directory => {
                     const directoryItem = document.createElement('button');
                     directoryItem.type = 'button';
                     directoryItem.className = 'list-group-item list-group-item-action';
@@ -944,7 +1183,7 @@ async function loadAvailableData() {
                         '<span class="badge bg-info ms-2">symlink</span>' : '';
                     
                     directoryItem.innerHTML = `
-                        <i class="fas fa-folder me-2"></i>
+                        <i class="bi bi-folder2 me-2"></i>
                         ${directory.name}${symlinkBadge}
                     `;
                     
@@ -957,13 +1196,13 @@ async function loadAvailableData() {
             }
             
             // Display zarr files
-            if (datasets.zarrFiles.length > 0) {
+            if (zarrFiles.length > 0) {
                 const zarrTitle = document.createElement('div');
                 zarrTitle.className = 'list-group-item list-group-item-secondary';
-                zarrTitle.innerHTML = '<i class="fas fa-database me-2"></i> Zarr Datasets';
+                zarrTitle.innerHTML = '<i class="bi bi-database me-2"></i> Zarr Datasets';
                 contentsContainer.appendChild(zarrTitle);
                 
-                datasets.zarrFiles.forEach(dataset => {
+                zarrFiles.forEach(dataset => {
                     const datasetItem = document.createElement('button');
                     datasetItem.type = 'button';
                     datasetItem.className = 'list-group-item list-group-item-action';
@@ -977,7 +1216,7 @@ async function loadAvailableData() {
                     datasetItem.innerHTML = `
                         <div class="d-flex w-100 justify-content-between">
                             <h5 class="mb-1">
-                                <i class="fas fa-database me-2"></i>
+                                <i class="bi bi-database-fill me-2"></i>
                                 ${dataset.displayName}${symlinkBadge}
                             </h5>
                         </div>
@@ -1001,7 +1240,7 @@ async function loadAvailableData() {
             }
             
             // If no items found, show message
-            if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
+            if (directories.length === 0 && zarrFiles.length === 0) {
                 const emptyMessage = document.createElement('div');
                 emptyMessage.className = 'alert alert-info mt-3';
                 emptyMessage.innerHTML = 'This directory is empty';
@@ -1009,16 +1248,18 @@ async function loadAvailableData() {
             }
             
             // Add load button for zarr files
-            if (datasets.zarrFiles.length > 0) {
+            if (zarrFiles.length > 0) {
                 const loadButton = document.createElement('button');
                 loadButton.type = 'button';
                 loadButton.className = 'btn btn-primary mt-3 w-100';
-                loadButton.innerHTML = '<i class="fas fa-download me-1"></i> Load Selected Dataset';
+                loadButton.innerHTML = '<i class="bi bi-download me-1"></i> Load Selected Dataset';
                 loadButton.addEventListener('click', function() {
-                    const selectedDataset = document.querySelector('#directoryContents .list-group-item.active');
+                    const selectedDataset = document.querySelector('#directoryContents .list-group-item.active[data-path]');
                     if (selectedDataset) {
                         const demoType = selectedDataset.dataset.demo;
                         const path = selectedDataset.dataset.path;
+                        
+                        console.log(`Loading dataset: ${path}`);
                         
                         // Show loading indicator
                         showLoadingIndicator('Loading data...');
@@ -1041,150 +1282,6 @@ async function loadAvailableData() {
             }
         }
         
-        // Handle the case where no datasets are found (replacing the else branch)
-        if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
-            // Default case - just display empty container with message
-            console.log('No datasets found in standard location');
-            
-            // Add information notice 
-            const notice = document.createElement('div');
-            notice.className = 'alert alert-info mb-3';
-            notice.innerHTML = `
-                <i class="fas fa-info-circle me-2"></i>
-                No datasets found. Please check that the data directory exists and contains .zarr datasets.
-            `;
-            demoContainer.appendChild(notice);
-            
-            // Add a retry button
-            const retryButton = document.createElement('button'); 
-            retryButton.type = 'button';
-            retryButton.className = 'btn btn-primary mb-3';
-            retryButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Retry Loading Datasets';
-            retryButton.addEventListener('click', function() {
-                loadAvailableData();
-            });
-            
-            demoContainer.appendChild(retryButton);
-        }
-        
-        // Remove status message
-        if (statusMessage.parentNode) {
-            statusMessage.parentNode.removeChild(statusMessage);
-        }
-        
-        console.log('Final datasets count:', datasets.directories.length + datasets.zarrFiles.length);
-        
-        // If still no datasets, show warning
-        if (datasets.directories.length === 0 && datasets.zarrFiles.length === 0) {
-            console.log('No datasets found, showing warning');
-            const warningEl = document.createElement('div');
-            warningEl.className = 'alert alert-warning';
-            warningEl.innerHTML = `
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                No datasets found in the current directory.
-            `;
-            demoContainer.appendChild(warningEl);
-            
-            // Add a direct load aging.zarr button as fallback
-            const fallbackButton = document.createElement('button');
-            fallbackButton.type = 'button';
-            fallbackButton.className = 'btn btn-primary mt-3';
-            fallbackButton.innerHTML = '<i class="bi bi-database-fill me-1"></i> Try Loading Sample Dataset';
-            fallbackButton.addEventListener('click', function() {
-                loadDataFromPath('aging', 'data/aging.zarr')
-                    .then(() => {
-                        // Hide the modal
-                        $('#browseDataModal').modal('hide');
-                    })
-                    .catch(error => {
-                        console.error('Error loading sample dataset:', error);
-                        // Show error message
-                        showError('Error loading sample dataset: ' + error.message);
-                    });
-            });
-            demoContainer.appendChild(fallbackButton);
-            
-            return;
-        }
-        
-        // Create a container for the dataset buttons
-        const buttonsContainer = document.createElement('div');
-        buttonsContainer.className = 'list-group mt-3';
-        
-        // Create a button for each dataset
-        datasets.zarrFiles.forEach(dataset => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'list-group-item list-group-item-action';
-            button.dataset.demo = dataset.displayName.toLowerCase();
-            button.dataset.path = dataset.path;
-            
-            // Add symlink indicator if applicable
-            const symlinkBadge = dataset.isSymlink 
-                ? '<span class="badge bg-info ms-2">symlink</span>' 
-                : '';
-            
-            button.innerHTML = `
-                <strong>${dataset.displayName} Dataset${symlinkBadge}</strong>
-                <div class="small text-muted">${dataset.description}</div>
-                <div class="small text-muted">Path: ${dataset.path}</div>
-            `;
-            
-            // Add click handler directly to prevent issues with dynamic elements
-            button.addEventListener('click', function(event) {
-                // Prevent default behavior
-                event.preventDefault();
-                
-                // Remove active class from all items
-                document.querySelectorAll('#demoDatasetsList .list-group-item').forEach(i => {
-                    i.classList.remove('active');
-                });
-                
-                // Add active class to clicked item
-                this.classList.add('active');
-            });
-            
-            buttonsContainer.appendChild(button);
-        });
-        
-        // Add the buttons to the container
-        demoContainer.appendChild(buttonsContainer);
-        
-        // Mark the first dataset as active by default
-        const firstButton = buttonsContainer.querySelector('.list-group-item');
-        if (firstButton) {
-            firstButton.classList.add('active');
-        }
-        
-        // Add a direct load button for convenience
-        const directLoadButton = document.createElement('button');
-        directLoadButton.type = 'button';
-        directLoadButton.className = 'btn btn-primary mt-3 w-100';
-        directLoadButton.innerHTML = '<i class="fas fa-download me-1"></i> Load Selected Dataset';
-        directLoadButton.addEventListener('click', function() {
-            const selectedDemo = document.querySelector('#demoDatasetsList .list-group-item.active');
-            if (selectedDemo) {
-                const demoType = selectedDemo.dataset.demo;
-                const path = selectedDemo.dataset.path;
-                
-                // Show loading indicator
-                showLoadingIndicator('Loading data...');
-                
-                loadDataFromPath(demoType, path)
-                    .then(() => {
-                        hideLoadingIndicator();
-                        $('#browseDataModal').modal('hide');
-                    })
-                    .catch(error => {
-                        showError('Error loading data: ' + error.message);
-                        hideLoadingIndicator();
-                    });
-            } else {
-                showError('Please select a dataset');
-            }
-        });
-        demoContainer.appendChild(directLoadButton);
-        
     } catch (error) {
         console.error('Error in loadAvailableData:', error);
         
@@ -1193,14 +1290,14 @@ async function loadAvailableData() {
         if (demoContainer) {
             demoContainer.innerHTML = `
                 <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-circle me-2"></i>
+                    <i class="bi bi-exclamation-circle me-2"></i>
                     Error loading datasets: ${error.message}
                 </div>
                 <button class="btn btn-primary mt-3" id="retryLoadBtn">
-                    <i class="fas fa-sync-alt me-1"></i> Retry Loading Datasets
+                    <i class="bi bi-arrow-repeat me-1"></i> Retry Loading Datasets
                 </button>
                 <button class="btn btn-outline-primary mt-3 ms-2" id="directLoadAgingBtn">
-                    <i class="fas fa-database me-1"></i> Load Aging Dataset Directly
+                    <i class="bi bi-database-fill me-1"></i> Load Aging Dataset Directly
                 </button>
             `;
             
@@ -1223,50 +1320,70 @@ async function loadAvailableData() {
 }
 
 /**
- * Load data from a specified path
- * @param {string} datasetName - Name of the dataset
- * @param {string} path - Optional direct path to the data
+ * Load data from a specified path using the unified server approach
+ * @param {string} datasetName - Name of the dataset (used for display only)
+ * @param {string} path - Path to the data
  * @returns {Promise<void>}
  */
 async function loadDataFromPath(datasetName, path = null) {
     try {
-        // Make sure zarr is defined
-        if (typeof zarr === 'undefined') {
-            throw new Error('zarr is not defined. Make sure the zarr.js library is properly loaded.');
+        // Check if we have a path
+        if (!path) {
+            // Try to find the path from the selected dataset element
+            const selectedDataset = document.querySelector(`#datasetsList .list-group-item[data-demo="${datasetName}"]`) || 
+                                    document.querySelector(`#directoryContents .list-group-item.active[data-path]`);
+            
+            if (selectedDataset && selectedDataset.dataset.path) {
+                path = selectedDataset.dataset.path;
+            } else {
+                throw new Error('No dataset path specified');
+            }
         }
         
-        // Find the selected dataset element
-        let selectedDataset = document.querySelector(`#datasetsList .list-group-item[data-demo="${datasetName}"]`);
+        console.log(`Loading data from path: ${path}`);
         
-        // If no dataset is selected but we have a path, use that
-        const datasetPath = path || (selectedDataset ? selectedDataset.dataset.path : null);
-        
-        if (!datasetPath) {
-            throw new Error('No dataset path specified');
+        // Make sure API URL is set
+        if (!window.ANNZARRO_API_URL) {
+            await getApiConfig(); // Make sure API URL is configured
+            if (!window.ANNZARRO_API_URL) {
+                throw new Error('API URL is not configured. Please refresh the page and try again.');
+            }
         }
-        
-        console.log(`Loading data from path: ${datasetPath}`);
         
         // Add token parameter if present in the URL and is valid (for auth)
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
         // Only add token if it's alphanumeric (basic security validation)
         const pathWithParams = (token && /^[a-zA-Z0-9]+$/.test(token)) ? 
-            `${datasetPath}?token=${token}` : datasetPath;
+            `${path}?token=${token}` : path;
+        
+        // Show loading status in console
+        console.log('Loading dataset via zarrLoader...');
         
         try {
-            // Load from URL using zarrLoader
-            console.log('Loading zarr data from URL:', pathWithParams);
-            await zarrLoader.loadFromUrl(pathWithParams);
+            // Check if zarrLoader is available
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader is not available. Please refresh the page and try again.');
+            }
             
-            // Convert to AnnData
+            // Load from URL using zarrLoader (which will call the backend API)
+            console.log('Calling zarrLoader.loadFromUrl with path:', pathWithParams);
+            const loadResult = await zarrLoader.loadFromUrl(pathWithParams);
+            
+            if (!loadResult || loadResult.error) {
+                throw new Error(loadResult?.error || 'Failed to load dataset. Server returned an error.');
+            }
+            
+            console.log('Initial load successful, retrieving AnnData structure...');
+            
+            // Convert to AnnData via the loadAnndataFromZarr function
             return await loadAnndataFromZarr();
         } catch (error) {
-            console.error('Error loading data from path:', error);
-            throw error;
+            console.error('Error loading data from server:', error);
+            throw new Error(`Failed to load dataset: ${error.message}`);
         }
     } catch (error) {
-        // console.error('[DEBUG] Error loading demo data:', error);
+        console.error('Error in loadDataFromPath:', error);
         throw error;
     }
 }
@@ -1782,7 +1899,7 @@ function showSuccess(message) {
     successToast.innerHTML = `
         <div class="d-flex">
             <div class="toast-body">
-                <i class="fas fa-check-circle me-2"></i> ${message}
+                <i class="bi bi-check-circle me-2"></i> ${message}
             </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
@@ -1806,5 +1923,48 @@ function showSuccess(message) {
     // Remove the toast after it's hidden
     successToast.addEventListener('hidden.bs.toast', function() {
         successToast.remove();
+    });
+}
+
+/**
+ * Show a warning message
+ * @param {string} message - Warning message
+ */
+function showWarning(message) {
+    // Create a toast notification
+    const warningToast = document.createElement('div');
+    warningToast.className = 'toast align-items-center text-dark bg-warning border-0';
+    warningToast.setAttribute('role', 'alert');
+    warningToast.setAttribute('aria-live', 'assertive');
+    warningToast.setAttribute('aria-atomic', 'true');
+    warningToast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi bi-exclamation-triangle me-2"></i> ${message}
+            </div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    // Create toast container if it doesn't exist
+    let toastContainer = document.querySelector('.toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Add toast to container
+    toastContainer.appendChild(warningToast);
+    
+    // Initialize and show the toast
+    const toast = new bootstrap.Toast(warningToast, {
+        autohide: false  // Warning messages don't auto-hide
+    });
+    toast.show();
+    
+    // Remove the toast after it's hidden
+    warningToast.addEventListener('hidden.bs.toast', function() {
+        warningToast.remove();
     });
 }

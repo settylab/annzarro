@@ -1,8 +1,9 @@
 """
-Server module for Annzarro
+Unified Server module for Annzarro
 
 This module provides a Flask-based web server for the Annzarro application.
-It serves both the web UI and the API endpoints for data access.
+It serves both the web UI static content and the API endpoints for data access
+through a single unified server on one port.
 """
 
 import os
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
-# Enable CORS by default for all routes - important for frontend communication
+# Enable CORS by default for all routes - important during development
 CORS(app)
 
 # Default config
@@ -33,17 +34,18 @@ DEFAULT_CONFIG = {
     "host": "127.0.0.1",
     "port": 8000,
     "debug": False,
-    "cors_enabled": False,
+    "cors_enabled": False,  # Not needed for unified server but kept for backward compatibility
     "cors_origins": "*",
     "https_enabled": False,
     "cert_file": None,
     "key_file": None,
     "data_dir": "data",
-    "static_dir": None,
+    "static_dir": None,  # Will default to project root directory
     "log_file": "annzarro_server.log",
     "log_level": "INFO",
     "auth_enabled": False,
-    "user_file": "users.json"
+    "user_file": "users.json",
+    "unified_server": True  # New flag to indicate we're using the unified server approach
 }
 
 # API version
@@ -103,12 +105,21 @@ def serve_static(path: str):
     """
     Serve static files for the web UI.
     
+    This function handles all non-API routes and serves static files from the configured
+    static directory or the repository root by default. It makes the Flask server act 
+    as both an API server and a static file server, eliminating the need for a separate
+    frontend server.
+    
     Args:
         path: Path to the requested file
         
     Returns:
         Flask response
     """
+    # Skip API routes - they will be handled by the API endpoints
+    if path.startswith(f"api/{API_VERSION}") or path.startswith(f"api"):
+        return {"error": "Not found"}, 404
+    
     # Get static directory from config
     static_dir = app.config.get("static_dir")
     
@@ -116,12 +127,29 @@ def serve_static(path: str):
         # Use repository root as default
         static_dir = Path(__file__).resolve().parent.parent.parent
     
-    # If path is empty or a directory, serve index.html
-    if not path or os.path.isdir(os.path.join(static_dir, path)):
-        return send_file(os.path.join(static_dir, "index.html"))
+    # Normalize the path
+    static_dir = os.path.abspath(static_dir)
+    logger.debug(f"Serving static content from: {static_dir}")
     
-    # Otherwise serve the requested file
-    return send_from_directory(static_dir, path)
+    # If path is empty or a directory, serve index.html
+    full_path = os.path.join(static_dir, path)
+    if not path or (os.path.exists(full_path) and os.path.isdir(full_path)):
+        index_path = os.path.join(static_dir, "index.html")
+        logger.debug(f"Serving index.html from: {index_path}")
+        return send_file(index_path)
+    
+    # Check if the file exists
+    if os.path.exists(full_path) and os.path.isfile(full_path):
+        logger.debug(f"Serving file: {full_path}")
+        try:
+            return send_from_directory(static_dir, path)
+        except Exception as e:
+            logger.error(f"Error serving file {path}: {e}")
+            return {"error": "Error serving file"}, 500
+    else:
+        # File not found - for single page apps, return index.html for client-side routing
+        logger.debug(f"File not found: {full_path}, serving index.html for client-side routing")
+        return send_file(os.path.join(static_dir, "index.html"))
 
 @app.route(f"/api/{API_VERSION}/datasets", methods=["GET"])
 def list_datasets():
@@ -169,6 +197,109 @@ def get_config():
     }
     
     return jsonify(client_config)
+    
+@app.route(f"/api/{API_VERSION}/status", methods=["GET"])
+def get_status():
+    """
+    Get server status information.
+    
+    Returns:
+        JSON response with server status information
+    """
+    import os
+    import psutil
+    import time
+    import platform
+    from datetime import datetime, timedelta
+    
+    try:
+        # Get process information
+        process = psutil.Process(os.getpid())
+        
+        # Calculate uptime
+        start_time = datetime.fromtimestamp(process.create_time())
+        uptime = datetime.now() - start_time
+        
+        # Format uptime
+        days, remainder = divmod(uptime.total_seconds(), 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime_str = f"{int(days)}d {int(hours)}h {int(minutes)}m {int(seconds)}s"
+        
+        # Get memory usage
+        memory_info = process.memory_info()
+        memory_usage_mb = memory_info.rss / (1024 * 1024)  # Convert to MB
+        
+        # Get load information
+        cpu_load = process.cpu_percent(interval=0.1)
+        system_load = psutil.cpu_percent(interval=0.1)
+        
+        # Get connection count
+        connections_count = len(process.connections())
+        
+        # Check data directory
+        data_dir = app.config.get("data_dir", DEFAULT_CONFIG["data_dir"])
+        data_dir_exists = os.path.exists(data_dir)
+        data_dir_is_readable = os.access(data_dir, os.R_OK)
+        data_dir_is_writable = os.access(data_dir, os.W_OK)
+        
+        # Count files in data directory
+        zarr_count = 0
+        if data_dir_exists and data_dir_is_readable:
+            for root, dirs, files in os.walk(data_dir):
+                if '.zgroup' in files:
+                    zarr_count += 1
+        
+        # Get version from the package
+        try:
+            from annzarro import __version__
+            version = __version__
+        except ImportError:
+            version = "0.1.0"  # Fallback version
+            
+        # Build status information
+        status = {
+            "server": {
+                "status": "running",
+                "version": version,
+                "start_time": start_time.isoformat(),
+                "uptime": uptime_str,
+                "uptime_seconds": int(uptime.total_seconds()),
+                "pid": process.pid,
+                "python_version": platform.python_version(),
+                "platform": platform.platform(),
+                "hostname": platform.node()
+            },
+            "config": {
+                "host": app.config.get("host", DEFAULT_CONFIG["host"]),
+                "port": app.config.get("port", DEFAULT_CONFIG["port"]),
+                "data_dir": data_dir,
+                "static_dir": app.config.get("static_dir"),
+                "unified_server": app.config.get("unified_server", True)
+            },
+            "resources": {
+                "memory_usage_mb": round(memory_usage_mb, 2),
+                "cpu_load": round(cpu_load, 2),
+                "system_load": round(system_load, 2),
+                "connections": connections_count
+            },
+            "data": {
+                "data_dir_exists": data_dir_exists,
+                "data_dir_readable": data_dir_is_readable,
+                "data_dir_writable": data_dir_is_writable,
+                "zarr_file_count": zarr_count
+            }
+        }
+        
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error in get_status: {e}")
+        return jsonify({
+            "server": {
+                "status": "error",
+                "error": str(e)
+            }
+        }), 500
 
 @app.route(f"/api/{API_VERSION}/datasets/<path:dataset_path>", methods=["GET"])
 def get_dataset_info(dataset_path: str):
@@ -1166,14 +1297,21 @@ def get_chunked_data():
 
 def run_server(config_file: Optional[str] = None, 
               debug: bool = False, 
-              port: Optional[int] = None) -> None:
+              port: Optional[int] = None,
+              data_dir: Optional[str] = None,
+              static_dir: Optional[str] = None) -> None:
     """
-    Run the Annzarro server.
+    Run the unified Annzarro server.
+    
+    This is the main entry point for starting the Annzarro server, which now serves
+    both the API endpoints and static content on a single port.
     
     Args:
         config_file: Path to the configuration file
         debug: Whether to run in debug mode
         port: Port to run the server on (overrides config)
+        data_dir: Path to the data directory (overrides config)
+        static_dir: Path to the directory containing static files (overrides config)
     """
     # Load configuration
     config = dict(DEFAULT_CONFIG)
@@ -1185,11 +1323,70 @@ def run_server(config_file: Optional[str] = None,
         except Exception as e:
             logger.error(f"Error loading config file: {e}")
     
-    # Override config with function parameters
+    # Check for environment variables (override config file)
+    # ANNZARRO_DATA_DIR environment variable
+    if "ANNZARRO_DATA_DIR" in os.environ:
+        env_data_dir = os.environ.get("ANNZARRO_DATA_DIR")
+        if env_data_dir:
+            # Expand user directory (~/path) if present
+            env_data_dir = os.path.expanduser(env_data_dir)
+            
+            # Convert to absolute path if it's relative
+            if not os.path.isabs(env_data_dir):
+                env_data_dir = os.path.abspath(env_data_dir)
+                
+            config["data_dir"] = env_data_dir
+            logger.info(f"Using data directory from environment variable: {env_data_dir}")
+    
+    # ANNZARRO_PORT environment variable
+    if "ANNZARRO_PORT" in os.environ:
+        try:
+            env_port = int(os.environ.get("ANNZARRO_PORT"))
+            config["port"] = env_port
+            logger.info(f"Using port from environment variable: {env_port}")
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid port in environment variable: {os.environ.get('ANNZARRO_PORT')}")
+    
+    # ANNZARRO_STATIC_DIR environment variable
+    if "ANNZARRO_STATIC_DIR" in os.environ:
+        env_static_dir = os.environ.get("ANNZARRO_STATIC_DIR")
+        if env_static_dir:
+            # Expand user directory (~/path) if present
+            env_static_dir = os.path.expanduser(env_static_dir)
+            
+            # Convert to absolute path if it's relative
+            if not os.path.isabs(env_static_dir):
+                env_static_dir = os.path.abspath(env_static_dir)
+                
+            config["static_dir"] = env_static_dir
+            logger.info(f"Using static directory from environment variable: {env_static_dir}")
+    
+    # Override config with function parameters (highest priority)
     if debug:
         config["debug"] = True
     if port:
         config["port"] = port
+    if data_dir:
+        # Expand user directory (~/path) if present
+        data_dir = os.path.expanduser(data_dir)
+        
+        # Convert to absolute path if it's relative
+        if not os.path.isabs(data_dir):
+            data_dir = os.path.abspath(data_dir)
+            
+        config["data_dir"] = data_dir
+        logger.info(f"Using data directory from command line: {data_dir}")
+    
+    if static_dir:
+        # Expand user directory (~/path) if present
+        static_dir = os.path.expanduser(static_dir)
+        
+        # Convert to absolute path if it's relative
+        if not os.path.isabs(static_dir):
+            static_dir = os.path.abspath(static_dir)
+            
+        config["static_dir"] = static_dir
+        logger.info(f"Using static directory from command line: {static_dir}")
     
     # Set up logging
     setup_logging(config)
@@ -1203,6 +1400,16 @@ def run_server(config_file: Optional[str] = None,
     os.makedirs(data_dir, exist_ok=True)
     logger.info(f"Using data directory: {data_dir}")
     
+    # Ensure static directory info is logged
+    static_dir = config.get("static_dir")
+    if static_dir:
+        static_dir = os.path.abspath(static_dir)
+        logger.info(f"Using static directory: {static_dir}")
+    else:
+        # Use repository root as default
+        static_dir = str(Path(__file__).resolve().parent.parent.parent)
+        logger.info(f"Using default static directory (repository root): {static_dir}")
+    
     # Run the server
     ssl_context = None
     if config.get("https_enabled", False):
@@ -1214,8 +1421,15 @@ def run_server(config_file: Optional[str] = None,
         else:
             ssl_context = "adhoc"
     
-    # Log startup message
-    logger.info(f"Starting Annzarro server on {config['host']}:{config['port']}")
+    # Log startup message with unified server info
+    host = config['host']
+    port = config['port']
+    host_display = "localhost" if host in ["127.0.0.1", "0.0.0.0"] else host
+    protocol = "https" if ssl_context else "http"
+    
+    logger.info(f"Starting unified Annzarro server on {host}:{port}")
+    logger.info(f"Access the application at: {protocol}://{host_display}:{port}")
+    logger.info(f"API endpoints available at: {protocol}://{host_display}:{port}/api/{API_VERSION}")
     
     # Run Flask app
     app.run(

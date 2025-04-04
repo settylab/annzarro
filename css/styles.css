@@ -328,6 +328,57 @@ body {
     width: 100%;
 }
 
+/* Matrix visualization styles */
+.matrix-preview {
+    height: 200px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.matrix-preview.loading::after {
+    content: "Loading...";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.8);
+    font-weight: bold;
+}
+
+.matrix-visualization {
+    height: 100%;
+    width: 100%;
+    position: relative;
+}
+
+.matrix-controls {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.matrix-container {
+    height: calc(100% - 60px);
+    overflow: hidden;
+}
+
+.matrix-options {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: auto;
+}
+
 /* STRING-DB integration styles */
 .stringdb-container {
     padding: 10px;

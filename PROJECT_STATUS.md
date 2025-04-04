@@ -76,7 +76,8 @@ The following features should be implemented next:
 
 1. **Data-specific features**:
    - Better handling of kompot-specific data (from `runinfo.py`)
-   - Support for additional AnnData components (obsp, varp)
+   - Enhanced integration of AnnData components (obsp, varp) as selectable data sources
+   - Automatic updating of visualizations when focused cells/genes change
 
 2. **UI enhancements**:
    - Improved panel configurability
@@ -114,6 +115,8 @@ The following features should be implemented next:
 ### Phase 2: Enhanced Features (Next)
 
 - Implement data-specific features (kompot visualizations)
+- Integrate matrix data (.obsp, .varp) as selectable data sources
+- Implement responsive updates based on focused cell/gene changes
 - Add linked views between panels
 - Improve gene/cell selection mechanisms
 - Expand STRING-DB integration
@@ -200,12 +203,18 @@ The GitHub CI workflow automatically runs tests on each push and pull request.
    - Handle errors gracefully
    - Add validation for zarr structure
 
-3. **Plot implementations**:
+3. **Matrix data integration**:
+   - Integrate .obsp and .varp as selectable data sources in existing visualizations
+   - Make visualizations respond to focused cell/gene changes
+   - Remove dedicated matrix visualization code
+   - Add support for chunked/lazy loading of large matrices
+
+4. **Plot implementations**:
    - Complete functionality for all plot types
    - Add specialized single-cell visualizations
    - Implement linking between views
 
-4. **Documentation**:
+5. **Documentation**:
    - Add inline code documentation
    - Create user documentation
    - Add examples and tutorials

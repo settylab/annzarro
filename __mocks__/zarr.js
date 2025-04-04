@@ -1,4 +1,12 @@
-// Mock for zarr.js
+/**
+ * Mock for zarr.js - USED FOR TESTING ONLY
+ * 
+ * IMPORTANT: This mock is only used for Jest tests. The actual application
+ * no longer uses the zarr.js library directly. Instead, it uses the Python zarr
+ * implementation via the unified server approach.
+ * 
+ * This mock is kept for backward compatibility with existing tests.
+ */
 const zarr = {
   MemoryStore: jest.fn(() => ({
     setItem: jest.fn(),

@@ -46,18 +46,9 @@ describe('Index.html', () => {
     expect(loadDataBtn).toBeTruthy();
   });
   
-  test('has demo data button in empty state', () => {
-    const demoDataBtn = document.getElementById('demoDataBtn');
-    expect(demoDataBtn).toBeTruthy();
-  });
-  
-  test('has demo data modal', () => {
-    const demoDataModal = document.getElementById('demoDataModal');
-    expect(demoDataModal).toBeTruthy();
-    
-    // Verify demo datasets list exists
-    const demoDatasetsList = document.getElementById('demoDatasetsList');
-    expect(demoDatasetsList).toBeTruthy();
+  test('has browse data button in empty state', () => {
+    const browseDataBtn = document.getElementById('browseDataBtn');
+    expect(browseDataBtn).toBeTruthy();
   });
   
   test('has settings modal', () => {
@@ -76,7 +67,7 @@ describe('Index.html', () => {
     // Verify that the help modal has some documentation text
     const modalBody = helpModal.querySelector('.modal-body');
     expect(modalBody.textContent).toContain('Annzarro');
-    expect(modalBody.textContent).toContain('Python Backend');
+    expect(modalBody.textContent).toContain('Unified Server');
   });
   
   test('has panel template for visualization', () => {

@@ -104,44 +104,66 @@ def check_server_config():
     }
 
 def get_server_status():
-    """Get status of backend and frontend servers"""
-    # Read stored PIDs
-    backend_pid = read_pid_file('backend_pid.txt')
-    frontend_pid = read_pid_file('frontend_pid.txt')
+    """Get status of unified server"""
+    # Read stored PID - try multiple filename options
+    server_pid = read_pid_file('server_pid.txt')
+    
+    # For backward compatibility, also check backend_pid.txt
+    if server_pid is None:
+        server_pid = read_pid_file('backend_pid.txt')
     
     # Get config
     config = check_server_config()
-    backend_port = config['backend_port']
-    frontend_port = 8080  # Default frontend port
+    server_port = config['backend_port']  # We use the same port for the unified server
+    host = config.get('host', '127.0.0.1')
     
-    # Check if ports are in use
-    backend_port_in_use = check_port(backend_port)
-    frontend_port_in_use = check_port(frontend_port)
+    # Check if port is in use
+    port_in_use = check_port(server_port)
     
-    # Check if processes are running
-    backend_running = check_process_running(backend_pid)
-    frontend_running = check_process_running(frontend_pid)
+    # Check if process is running
+    process_running = check_process_running(server_pid)
     
-    # Get current PIDs for ports (might be different from stored ones)
-    current_backend_pid = get_pid_for_port(backend_port)
-    current_frontend_pid = get_pid_for_port(frontend_port)
+    # Get current PID for port (might be different from stored one)
+    current_pid = get_pid_for_port(server_port)
+    
+    # Check if config indicates unified server
+    is_unified = False
+    try:
+        with open(config['config_path'], 'r') as f:
+            full_config = json.load(f)
+            is_unified = full_config.get('unified_server', False)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        # Default to unified server if we can't determine
+        is_unified = True
     
     return {
+        'unified': is_unified,
+        'server': {
+            'expected_pid': server_pid,
+            'current_pid': current_pid,
+            'port': server_port,
+            'host': host,
+            'port_in_use': port_in_use,
+            'process_running': process_running,
+            'status': 'running' if port_in_use else 'stopped'
+        },
+        # Keep these for backward compatibility
         'backend': {
-            'expected_pid': backend_pid,
-            'current_pid': current_backend_pid,
-            'port': backend_port,
-            'port_in_use': backend_port_in_use,
-            'process_running': backend_running,
-            'status': 'running' if backend_port_in_use else 'stopped'
+            'expected_pid': server_pid,
+            'current_pid': current_pid,
+            'port': server_port,
+            'host': host,
+            'port_in_use': port_in_use,
+            'process_running': process_running,
+            'status': 'running' if port_in_use else 'stopped'
         },
         'frontend': {
-            'expected_pid': frontend_pid,
-            'current_pid': current_frontend_pid,
-            'port': frontend_port,
-            'port_in_use': frontend_port_in_use,
-            'process_running': frontend_running,
-            'status': 'running' if frontend_port_in_use else 'stopped'
+            'expected_pid': None,
+            'current_pid': None,
+            'port': server_port,  # Same port in unified server
+            'port_in_use': False,  # Always false for separate frontend in unified mode
+            'process_running': False,
+            'status': 'unified' if is_unified else 'stopped'
         }
     }
 
@@ -174,60 +196,91 @@ def print_status_and_recommendations():
     
     print("\n===== AnnZarro Server Status =====\n")
     
-    # Backend status
-    backend = status['backend']
-    print(f"Backend Server (API):\n" +
-          f"  Status: {backend['status'].upper()}\n" +
-          f"  Port: {backend['port']}" + 
-          (f" (IN USE by PID {backend['current_pid']})" if backend['port_in_use'] else "") + "\n" +
-          f"  Expected PID: {backend['expected_pid'] or 'Not found'}\n" +
-          f"  Actual Process: {'Running' if backend['process_running'] else 'Not running'}\n")
+    # Check if we're using unified server
+    is_unified = status.get('unified', False)
     
-    # Frontend status
-    frontend = status['frontend']
-    print(f"Frontend Server (UI):\n" +
-          f"  Status: {frontend['status'].upper()}\n" +
-          f"  Port: {frontend['port']}" + 
-          (f" (IN USE by PID {frontend['current_pid']})" if frontend['port_in_use'] else "") + "\n" +
-          f"  Expected PID: {frontend['expected_pid'] or 'Not found'}\n" +
-          f"  Actual Process: {'Running' if frontend['process_running'] else 'Not running'}\n")
-    
-    # Recommendations
-    print("Recommendations:")
-    
-    if backend['port_in_use'] and frontend['port_in_use']:
-        print("✅ Both servers are running. You can access the application at:")
-        print(f"   http://{status['backend']['host'] if 'host' in status['backend'] else '127.0.0.1'}:{frontend['port']}")
-    elif not backend['port_in_use'] and not frontend['port_in_use']:
-        print("❌ Both servers are stopped. Start them with:")
-        print("   python run_annzarro.py --start")
-    else:
-        if backend['port_in_use'] and not frontend['port_in_use']:
-            print("⚠️ Backend server is running but frontend server is stopped.")
-            print("   This might cause connectivity issues.")
-        else:  # frontend running but backend stopped
-            print("⚠️ Frontend server is running but backend server is stopped.")
-            print("   The UI will load but data operations will fail.")
+    if is_unified:
+        # Unified server status
+        server = status['server']
+        print(f"Unified Server (API + UI):\n" +
+              f"  Status: {server['status'].upper()}\n" +
+              f"  Port: {server['port']}" + 
+              (f" (IN USE by PID {server['current_pid']})" if server['port_in_use'] else "") + "\n" +
+              f"  Host: {server.get('host', '127.0.0.1')}\n" +
+              f"  Expected PID: {server['expected_pid'] or 'Not found'}\n" +
+              f"  Actual Process: {'Running' if server['process_running'] else 'Not running'}\n")
         
-        print("\nTo fix this issue:")
-        print("1. Stop all servers: python run_annzarro.py --stop")
-        print("2. Restart both servers: python run_annzarro.py --start")
-    
-    # Port conflict recommendations
-    if backend['port_in_use'] and backend['current_pid'] != backend['expected_pid']:
-        print(f"\n⚠️ Port {backend['port']} is being used by another process (PID {backend['current_pid']}).")
-        print("   You can:")
-        print(f"   1. Stop the process: kill {backend['current_pid']} (Unix) or taskkill /F /PID {backend['current_pid']} (Windows)")
-        print("   2. Change the backend port in annzarro/server/config.json")
-    
-    if frontend['port_in_use'] and frontend['current_pid'] != frontend['expected_pid']:
-        print(f"\n⚠️ Port {frontend['port']} is being used by another process (PID {frontend['current_pid']}).")
-        print("   You can:")
-        print(f"   1. Stop the process: kill {frontend['current_pid']} (Unix) or taskkill /F /PID {frontend['current_pid']} (Windows)")
+        # Recommendations for unified server
+        print("Recommendations:")
+        
+        if server['port_in_use']:
+            print(f"✅ Unified server is running. You can access the application at:")
+            print(f"   http://{server.get('host', '127.0.0.1')}:{server['port']}")
+        else:
+            print("❌ Unified server is stopped. Start it with:")
+            print("   python run_annzarro.py --start")
+        
+        # Port conflict recommendations
+        if server['port_in_use'] and server['current_pid'] != server['expected_pid']:
+            print(f"\n⚠️ Port {server['port']} is being used by another process (PID {server['current_pid']}).")
+            print("   You can:")
+            print(f"   1. Stop the process: kill {server['current_pid']} (Unix) or taskkill /F /PID {server['current_pid']} (Windows)")
+            print("   2. Change the server port in annzarro/server/config.json")
+    else:
+        # Legacy dual-server status
+        backend = status['backend']
+        frontend = status['frontend']
+        
+        print(f"Backend Server (API):\n" +
+              f"  Status: {backend['status'].upper()}\n" +
+              f"  Port: {backend['port']}" + 
+              (f" (IN USE by PID {backend['current_pid']})" if backend['port_in_use'] else "") + "\n" +
+              f"  Expected PID: {backend['expected_pid'] or 'Not found'}\n" +
+              f"  Actual Process: {'Running' if backend['process_running'] else 'Not running'}\n")
+        
+        print(f"Frontend Server (UI):\n" +
+              f"  Status: {frontend['status'].upper()}\n" +
+              f"  Port: {frontend['port']}" + 
+              (f" (IN USE by PID {frontend['current_pid']})" if frontend['port_in_use'] else "") + "\n" +
+              f"  Expected PID: {frontend['expected_pid'] or 'Not found'}\n" +
+              f"  Actual Process: {'Running' if frontend['process_running'] else 'Not running'}\n")
+        
+        # Legacy recommendations
+        print("Recommendations:")
+        
+        if backend['port_in_use'] and frontend['port_in_use']:
+            print("✅ Both servers are running. You can access the application at:")
+            print(f"   http://{backend.get('host', '127.0.0.1')}:{frontend['port']}")
+        elif not backend['port_in_use'] and not frontend['port_in_use']:
+            print("❌ Both servers are stopped. Start them with:")
+            print("   python run_annzarro.py --start")
+        else:
+            if backend['port_in_use'] and not frontend['port_in_use']:
+                print("⚠️ Backend server is running but frontend server is stopped.")
+                print("   This might cause connectivity issues.")
+            else:  # frontend running but backend stopped
+                print("⚠️ Frontend server is running but backend server is stopped.")
+                print("   The UI will load but data operations will fail.")
+            
+            print("\nTo fix this issue:")
+            print("1. Stop all servers: python run_annzarro.py --stop")
+            print("2. Restart both servers: python run_annzarro.py --start")
+        
+        # Port conflict recommendations
+        if backend['port_in_use'] and backend['current_pid'] != backend['expected_pid']:
+            print(f"\n⚠️ Port {backend['port']} is being used by another process (PID {backend['current_pid']}).")
+            print("   You can:")
+            print(f"   1. Stop the process: kill {backend['current_pid']} (Unix) or taskkill /F /PID {backend['current_pid']} (Windows)")
+            print("   2. Change the backend port in annzarro/server/config.json")
+        
+        if frontend['port_in_use'] and frontend['current_pid'] != frontend['expected_pid']:
+            print(f"\n⚠️ Port {frontend['port']} is being used by another process (PID {frontend['current_pid']}).")
+            print("   You can:")
+            print(f"   1. Stop the process: kill {frontend['current_pid']} (Unix) or taskkill /F /PID {frontend['current_pid']} (Windows)")
     
     print("\nFor detailed server management:")
-    print("1. Start servers: python run_annzarro.py --start")
-    print("2. Stop servers: python run_annzarro.py --stop")
+    print("1. Start server: python run_annzarro.py --start")
+    print("2. Stop server: python run_annzarro.py --stop")
     print("3. Check status: python server_status.py")
 
 def main():
@@ -235,28 +288,46 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Check or manage AnnZarro server status')
     parser.add_argument('--json', action='store_true', help='Output in JSON format')
-    parser.add_argument('--stop-backend', action='store_true', help='Stop the backend server')
-    parser.add_argument('--stop-frontend', action='store_true', help='Stop the frontend server')
+    parser.add_argument('--stop-server', action='store_true', help='Stop the unified server')
+    parser.add_argument('--stop-backend', action='store_true', help='Stop the backend server (legacy)')
+    parser.add_argument('--stop-frontend', action='store_true', help='Stop the frontend server (legacy)')
     parser.add_argument('--stop-all', action='store_true', help='Stop all servers')
     
     args = parser.parse_args()
     
-    if args.stop_backend or args.stop_all:
-        status = get_server_status()
-        pid = status['backend']['current_pid']
-        if pid:
-            print(f"Stopping backend server (PID {pid})...")
-            success = stop_server(pid)
-            print("Success" if success else "Failed")
+    status = get_server_status()
+    is_unified = status.get('unified', False)
     
-    if args.stop_frontend or args.stop_all:
-        status = get_server_status()
-        pid = status['frontend']['current_pid']
-        if pid:
-            print(f"Stopping frontend server (PID {pid})...")
-            success = stop_server(pid)
-            print("Success" if success else "Failed")
+    if is_unified:
+        # Unified server mode
+        if args.stop_server or args.stop_all or args.stop_backend:
+            pid = status['server']['current_pid']
+            if pid:
+                print(f"Stopping unified server (PID {pid})...")
+                try:
+                    success = stop_server(pid)
+                    print("Success" if success else "Failed")
+                except Exception as e:
+                    print(f"Failed: {e}")
+            else:
+                print("No running server to stop")
+    else:
+        # Legacy dual-server mode
+        if args.stop_backend or args.stop_all:
+            pid = status['backend']['current_pid']
+            if pid:
+                print(f"Stopping backend server (PID {pid})...")
+                success = stop_server(pid)
+                print("Success" if success else "Failed")
+        
+        if args.stop_frontend or args.stop_all:
+            pid = status['frontend']['current_pid']
+            if pid:
+                print(f"Stopping frontend server (PID {pid})...")
+                success = stop_server(pid)
+                print("Success" if success else "Failed")
     
+    # Refresh status after stopping servers
     status = get_server_status()
     
     if args.json:

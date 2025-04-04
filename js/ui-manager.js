@@ -16,6 +16,7 @@ function getDependencies() {
     // Node environment
     if (typeof require !== 'undefined') {
         deps.dataManager = require('./data-manager');
+        deps.matrixManager = require('./matrix-manager');
         deps.plotManager = require('./plot-manager');
         deps.tableManager = require('./table-manager');
         deps.stringDB = require('./string-db');
@@ -24,6 +25,7 @@ function getDependencies() {
     // Annzarro modules
     else if (typeof Annzarro !== 'undefined' && Annzarro.modules) {
         deps.dataManager = Annzarro.modules.dataManager;
+        deps.matrixManager = Annzarro.modules.matrixManager;
         deps.plotManager = Annzarro.modules.plotManager;
         deps.tableManager = Annzarro.modules.tableManager;
         deps.stringDB = Annzarro.modules.stringDB;
@@ -32,6 +34,7 @@ function getDependencies() {
     // Global fallback
     else if (typeof window !== 'undefined') {
         deps.dataManager = window.dataManager;
+        deps.matrixManager = window.matrixManager;
         deps.plotManager = window.plotManager;
         deps.tableManager = window.tableManager;
         deps.stringDB = window.stringDB;
@@ -64,11 +67,15 @@ class UIManager {
             'gene-info': this.createGeneInfoPanel.bind(this),
             'cell-info': this.createCellInfoPanel.bind(this),
             'data-explorer': this.createDataExplorerPanel.bind(this),
-            'string-db': this.createStringDbPanel.bind(this)
+            'string-db': this.createStringDbPanel.bind(this),
+            'matrix': this.createMatrixPanel.bind(this)
         };
         
         // Initialize UI event handlers
         this._initEventHandlers();
+        
+        // Set up focus change handlers
+        this._setupFocusChangeHandlers();
     }
 
     /**
@@ -1140,6 +1147,9 @@ class UIManager {
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="string-db">
                         <i class="bi bi-diagram-3"></i> STRING-DB
                     </button>
+                    <button type="button" class="btn btn-outline-primary create-panel" data-type="matrix">
+                        <i class="bi bi-grid-3x3"></i> Matrix
+                    </button>
                 </div>
             </div>
         `;
@@ -1475,6 +1485,54 @@ class UIManager {
             colorBySelect.appendChild(option.cloneNode(true));
         }
         
+        // Add obsp options (cell-cell matrices)
+        const obspMatrices = info.obspMatrices || dataManager.getObspMatrices() || [];
+        if (obspMatrices.length > 0) {
+            // Add option group for obsp matrices
+            const obspGroup = document.createElement('optgroup');
+            obspGroup.label = 'Cell-Cell Matrices (.obsp)';
+            
+            // Get cell names (observe only for current focused cell)
+            const focusedCell = dataManager.getFocusedCell();
+            
+            for (const matrixKey of obspMatrices) {
+                // Option for the entire matrix with focused cell
+                const optionFocused = document.createElement('option');
+                optionFocused.value = `obsp:${matrixKey}:focused`;
+                optionFocused.textContent = `obsp.${matrixKey} (focused cell)`;
+                
+                // Add to all selects
+                xAxisSelect.appendChild(optionFocused.cloneNode(true));
+                yAxisSelect.appendChild(optionFocused.cloneNode(true));
+                zAxisSelect.appendChild(optionFocused.cloneNode(true));
+                colorBySelect.appendChild(optionFocused.cloneNode(true));
+            }
+        }
+        
+        // Add varp options (gene-gene matrices)
+        const varpMatrices = info.varpMatrices || dataManager.getVarpMatrices() || [];
+        if (varpMatrices.length > 0) {
+            // Add option group for varp matrices
+            const varpGroup = document.createElement('optgroup');
+            varpGroup.label = 'Gene-Gene Matrices (.varp)';
+            
+            // Get gene names (observe only for current focused gene)
+            const focusedGene = dataManager.getFocusedGene();
+            
+            for (const matrixKey of varpMatrices) {
+                // Option for the entire matrix with focused gene
+                const optionFocused = document.createElement('option');
+                optionFocused.value = `varp:${matrixKey}:focused`;
+                optionFocused.textContent = `varp.${matrixKey} (focused gene)`;
+                
+                // Add to all selects
+                xAxisSelect.appendChild(optionFocused.cloneNode(true));
+                yAxisSelect.appendChild(optionFocused.cloneNode(true));
+                zAxisSelect.appendChild(optionFocused.cloneNode(true));
+                colorBySelect.appendChild(optionFocused.cloneNode(true));
+            }
+        }
+        
         // Select first two options by default if not already set
         if (!xAxisSelect.value && xAxisSelect.options.length > 0) {
             xAxisSelect.selectedIndex = 0;
@@ -1559,10 +1617,16 @@ class UIManager {
         const colorBySpec = config.colorBy ? config.colorBy.split(':') : null;
         
         // Load data for each axis
-        const [xData, xLabel] = await this._loadAxisData(xAxisSpec);
-        const [yData, yLabel] = await this._loadAxisData(yAxisSpec);
-        const [zData, zLabel] = zAxisSpec ? await this._loadAxisData(zAxisSpec) : [null, null];
-        const [colorData, colorLabel] = colorBySpec ? await this._loadAxisData(colorBySpec) : [null, null];
+        const xResult = await this._loadAxisData(xAxisSpec);
+        const yResult = await this._loadAxisData(yAxisSpec);
+        const zResult = zAxisSpec ? await this._loadAxisData(zAxisSpec) : [null, null];
+        const colorResult = colorBySpec ? await this._loadAxisData(colorBySpec) : [null, null];
+        
+        // Extract data, labels, and optional text
+        const [xData, xLabel, xText] = xResult.length >= 3 ? xResult : [...xResult, null];
+        const [yData, yLabel, yText] = yResult.length >= 3 ? yResult : [...yResult, null];
+        const [zData, zLabel, zText] = zResult.length >= 3 ? zResult : [...zResult, null];
+        const [colorData, colorLabel, colorText] = colorResult.length >= 3 ? colorResult : [...colorResult, null];
         
         // Create plot data object
         const plotData = {
@@ -1570,6 +1634,7 @@ class UIManager {
             y: yData,
             z: zData,
             color: colorData,
+            text: xText || yText || zText || colorText, // Use any available text for hover
             xLabel,
             yLabel,
             zLabel,
@@ -1607,6 +1672,7 @@ class UIManager {
     async _loadAxisData(axisSpec) {
         const deps = getDependencies();
         const dataManager = deps.dataManager;
+        const matrixManager = deps.matrixManager;
         
         if (!dataManager) {
             throw new Error('DataManager dependency not found');
@@ -1614,7 +1680,13 @@ class UIManager {
         
         const source = axisSpec[0];
         const key = axisSpec[1];
-        const index = axisSpec.length > 2 ? parseInt(axisSpec[2]) : null;
+        const param = axisSpec.length > 2 ? axisSpec[2] : null;
+        
+        // For obsm and other numerical indices
+        let index = null;
+        if (param && param !== 'focused' && !isNaN(parseInt(param))) {
+            index = parseInt(param);
+        }
         
         let data = null;
         let label = `${source}.${key}`;
@@ -1635,6 +1707,66 @@ class UIManager {
             if (obs) {
                 data = Array.from(obs);
                 label = `obs.${key}`;
+            }
+        } else if (source === 'obsp') {
+            // Load obsp matrix data for either focused cell or index
+            if (param === 'focused') {
+                // Get the focused cell
+                const focusedCell = dataManager.getFocusedCell();
+                const focusedCellIndex = dataManager.findCellIndex(focusedCell);
+                
+                if (focusedCell && focusedCellIndex >= 0) {
+                    try {
+                        // Get row for focused cell from the matrix
+                        const matrix = await matrixManager.getObspMatrix(key, [focusedCellIndex]);
+                        if (matrix && matrix.length > 0) {
+                            // Use just the first row for plotting (focused cell)
+                            data = matrix[0];
+                            label = `obsp.${key} (${focusedCell})`;
+                            
+                            // Get cell names for the plot
+                            const cellNames = await dataManager.getObsNames();
+                            // Create text labels for hover
+                            const text = data.map((value, idx) => 
+                                `${focusedCell} → ${cellNames[idx]}: ${value.toFixed(3)}`);
+                                
+                            // Add to returned data for use in plotting
+                            return [data, label, text];
+                        }
+                    } catch (error) {
+                        console.error(`Error loading obsp matrix ${key} for focused cell:`, error);
+                    }
+                }
+            }
+        } else if (source === 'varp') {
+            // Load varp matrix data for either focused gene or index
+            if (param === 'focused') {
+                // Get the focused gene
+                const focusedGene = dataManager.getFocusedGene();
+                const focusedGeneIndex = dataManager.findGeneIndex(focusedGene);
+                
+                if (focusedGene && focusedGeneIndex >= 0) {
+                    try {
+                        // Get row for focused gene from the matrix
+                        const matrix = await matrixManager.getVarpMatrix(key, [focusedGeneIndex]);
+                        if (matrix && matrix.length > 0) {
+                            // Use just the first row for plotting (focused gene)
+                            data = matrix[0];
+                            label = `varp.${key} (${focusedGene})`;
+                            
+                            // Get gene names for the plot
+                            const geneNames = await dataManager.getVarNames();
+                            // Create text labels for hover
+                            const text = data.map((value, idx) => 
+                                `${focusedGene} → ${geneNames[idx]}: ${value.toFixed(3)}`);
+                                
+                            // Add to returned data for use in plotting
+                            return [data, label, text];
+                        }
+                    } catch (error) {
+                        console.error(`Error loading varp matrix ${key} for focused gene:`, error);
+                    }
+                }
             }
         }
         
@@ -1682,6 +1814,8 @@ class UIManager {
                                         <button class="nav-link" id="var-tab" data-bs-toggle="pill" data-bs-target="#var-content" type="button">Gene Annotations (.var)</button>
                                         <button class="nav-link" id="obsm-tab" data-bs-toggle="pill" data-bs-target="#obsm-content" type="button">Cell Matrices (.obsm)</button>
                                         <button class="nav-link" id="varm-tab" data-bs-toggle="pill" data-bs-target="#varm-content" type="button">Gene Matrices (.varm)</button>
+                                        <button class="nav-link" id="obsp-tab" data-bs-toggle="pill" data-bs-target="#obsp-content" type="button">Cell-Cell Relations (.obsp)</button>
+                                        <button class="nav-link" id="varp-tab" data-bs-toggle="pill" data-bs-target="#varp-content" type="button">Gene-Gene Relations (.varp)</button>
                                         <button class="nav-link" id="layers-tab" data-bs-toggle="pill" data-bs-target="#layers-content" type="button">Layers</button>
                                     </div>
                                 </div>
@@ -1710,6 +1844,54 @@ class UIManager {
                                                     <select class="form-select" id="varm-key-select"></select>
                                                 </div>
                                                 <div class="list-group" id="varm-columns-list"></div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="obsp-content" role="tabpanel">
+                                            <div id="obsp-selector">
+                                                <div class="form-group mb-3">
+                                                    <label for="obsp-key-select">Select Cell-Cell Matrix:</label>
+                                                    <select class="form-select" id="obsp-key-select"></select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="obspCellType" id="obspFocusedCell" value="focused" checked>
+                                                        <label class="form-check-label" for="obspFocusedCell">
+                                                            Use focused cell
+                                                        </label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="obspCellType" id="obspSpecificCell" value="specific">
+                                                        <label class="form-check-label" for="obspSpecificCell">
+                                                            Select specific cell:
+                                                        </label>
+                                                    </div>
+                                                    <select class="form-select mt-2" id="obsp-cell-select" disabled></select>
+                                                </div>
+                                                <div class="list-group" id="obsp-columns-list"></div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="varp-content" role="tabpanel">
+                                            <div id="varp-selector">
+                                                <div class="form-group mb-3">
+                                                    <label for="varp-key-select">Select Gene-Gene Matrix:</label>
+                                                    <select class="form-select" id="varp-key-select"></select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="varpGeneType" id="varpFocusedGene" value="focused" checked>
+                                                        <label class="form-check-label" for="varpFocusedGene">
+                                                            Use focused gene
+                                                        </label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="varpGeneType" id="varpSpecificGene" value="specific">
+                                                        <label class="form-check-label" for="varpSpecificGene">
+                                                            Select specific gene:
+                                                        </label>
+                                                    </div>
+                                                    <select class="form-select mt-2" id="varp-gene-select" disabled></select>
+                                                </div>
+                                                <div class="list-group" id="varp-columns-list"></div>
                                             </div>
                                         </div>
                                         <div class="tab-pane fade" id="layers-content" role="tabpanel">
@@ -1828,6 +2010,80 @@ class UIManager {
         if (varmKeySelect.options.length > 0) {
             this._populateVarmColumns(varmKeySelect.value);
         }
+        
+        // Populate .obsp matrices
+        const obspKeySelect = document.getElementById('obsp-key-select');
+        obspKeySelect.innerHTML = '';
+        
+        const obspMatrices = info.obspMatrices || dataManager.getObspMatrices() || [];
+        for (const matrix of obspMatrices) {
+            const option = document.createElement('option');
+            option.value = matrix;
+            option.textContent = matrix;
+            obspKeySelect.appendChild(option);
+        }
+        
+        // Set up event handlers for obsp
+        if (obspKeySelect.options.length > 0) {
+            // Cell selector radio buttons
+            const obspFocusedRadio = document.getElementById('obspFocusedCell');
+            const obspSpecificRadio = document.getElementById('obspSpecificCell');
+            const obspCellSelect = document.getElementById('obsp-cell-select');
+            
+            // Toggle cell selector based on radio selection
+            obspFocusedRadio.addEventListener('change', () => {
+                obspCellSelect.disabled = obspFocusedRadio.checked;
+            });
+            
+            obspSpecificRadio.addEventListener('change', () => {
+                obspCellSelect.disabled = !obspSpecificRadio.checked;
+                
+                // Populate cell selector if needed
+                if (obspSpecificRadio.checked && obspCellSelect.options.length === 0) {
+                    this._populateObspCellSelect();
+                }
+            });
+            
+            // Initial population of obsp columns
+            this._populateObspColumns(obspKeySelect.value);
+        }
+        
+        // Populate .varp matrices
+        const varpKeySelect = document.getElementById('varp-key-select');
+        varpKeySelect.innerHTML = '';
+        
+        const varpMatrices = info.varpMatrices || dataManager.getVarpMatrices() || [];
+        for (const matrix of varpMatrices) {
+            const option = document.createElement('option');
+            option.value = matrix;
+            option.textContent = matrix;
+            varpKeySelect.appendChild(option);
+        }
+        
+        // Set up event handlers for varp
+        if (varpKeySelect.options.length > 0) {
+            // Gene selector radio buttons
+            const varpFocusedRadio = document.getElementById('varpFocusedGene');
+            const varpSpecificRadio = document.getElementById('varpSpecificGene');
+            const varpGeneSelect = document.getElementById('varp-gene-select');
+            
+            // Toggle gene selector based on radio selection
+            varpFocusedRadio.addEventListener('change', () => {
+                varpGeneSelect.disabled = varpFocusedRadio.checked;
+            });
+            
+            varpSpecificRadio.addEventListener('change', () => {
+                varpGeneSelect.disabled = !varpSpecificRadio.checked;
+                
+                // Populate gene selector if needed
+                if (varpSpecificRadio.checked && varpGeneSelect.options.length === 0) {
+                    this._populateVarpGeneSelect();
+                }
+            });
+            
+            // Initial population of varp columns
+            this._populateVarpColumns(varpKeySelect.value);
+        }
 
         // Populate layers
         const layersList = document.getElementById('layers-list');
@@ -1913,6 +2169,177 @@ class UIManager {
         });
     }
 
+    /**
+     * Populate obsp cell selector dropdown
+     * @private
+     */
+    _populateObspCellSelect() {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) return;
+        
+        // Get cell selector
+        const cellSelect = document.getElementById('obsp-cell-select');
+        cellSelect.innerHTML = '';
+        
+        // Get cell names
+        dataManager.getObsNames().then(cellNames => {
+            if (!cellNames || !cellNames.length) return;
+            
+            // Populate select with cell names
+            for (let i = 0; i < cellNames.length; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = cellNames[i];
+                cellSelect.appendChild(option);
+            }
+        }).catch(err => {
+            console.error('Error getting cell names:', err);
+        });
+    }
+    
+    /**
+     * Populate obsp columns for the selected key
+     * @param {string} obspKey - The obsp matrix key
+     * @private
+     */
+    _populateObspColumns(obspKey) {
+        const obspColumnsList = document.getElementById('obsp-columns-list');
+        obspColumnsList.innerHTML = '';
+        
+        if (!obspKey) return;
+        
+        // Create data item for focused cell option
+        const focusedItem = document.createElement('a');
+        focusedItem.className = 'list-group-item list-group-item-action';
+        focusedItem.setAttribute('href', '#');
+        focusedItem.setAttribute('data-column', `obsp:${obspKey}:focused`);
+        focusedItem.innerHTML = `<i class="bi bi-grid-3x3"></i> ${obspKey} (focused cell)`;
+        obspColumnsList.appendChild(focusedItem);
+    }
+    
+    /**
+     * Populate varp gene selector dropdown
+     * @private
+     */
+    _populateVarpGeneSelect() {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) return;
+        
+        // Get gene selector
+        const geneSelect = document.getElementById('varp-gene-select');
+        geneSelect.innerHTML = '';
+        
+        // Get gene names
+        dataManager.getVarNames().then(geneNames => {
+            if (!geneNames || !geneNames.length) return;
+            
+            // Populate select with gene names
+            for (let i = 0; i < geneNames.length; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = geneNames[i];
+                geneSelect.appendChild(option);
+            }
+        }).catch(err => {
+            console.error('Error getting gene names:', err);
+        });
+    }
+    
+    /**
+     * Populate varp columns for the selected key
+     * @param {string} varpKey - The varp matrix key
+     * @private
+     */
+    _populateVarpColumns(varpKey) {
+        const varpColumnsList = document.getElementById('varp-columns-list');
+        varpColumnsList.innerHTML = '';
+        
+        if (!varpKey) return;
+        
+        // Create data item for focused gene option
+        const focusedItem = document.createElement('a');
+        focusedItem.className = 'list-group-item list-group-item-action';
+        focusedItem.setAttribute('href', '#');
+        focusedItem.setAttribute('data-column', `varp:${varpKey}:focused`);
+        focusedItem.innerHTML = `<i class="bi bi-grid-3x3"></i> ${varpKey} (focused gene)`;
+        varpColumnsList.appendChild(focusedItem);
+    }
+    
+    /**
+     * Set up listeners for focus changes to update visualizations
+     * @private
+     */
+    _setupFocusChangeHandlers() {
+        const deps = getDependencies();
+        const dataManager = deps.dataManager;
+        
+        if (!dataManager) return;
+        
+        // Add event listener for focus changes
+        dataManager.addEventListener('focusChanged', (event) => {
+            // When focus changes, update all panels that might be affected
+            if (event.type === 'cell' || event.type === 'gene') {
+                this._updatePanelsOnFocusChange(event);
+            }
+        });
+    }
+    
+    /**
+     * Update panels when focused cell or gene changes
+     * @param {Object} focusEvent - Focus change event
+     * @private
+     */
+    _updatePanelsOnFocusChange(focusEvent) {
+        // Iterate through all panels
+        for (const [panelId, panel] of this.panels.entries()) {
+            // For plot panels, check if they use obsp or varp data with 'focused'
+            if (panel.type === 'plot' && panel.config) {
+                let needsUpdate = false;
+                
+                // Check axis specs for obsp or varp with focused option
+                const checkSpec = (spec) => {
+                    if (!spec) return false;
+                    const parts = spec.split(':');
+                    if (parts.length < 3) return false;
+                    
+                    const [source, key, param] = parts;
+                    
+                    // Check if using focused cell and cell focus changed
+                    if (source === 'obsp' && param === 'focused' && focusEvent.type === 'cell') {
+                        return true;
+                    }
+                    
+                    // Check if using focused gene and gene focus changed
+                    if (source === 'varp' && param === 'focused' && focusEvent.type === 'gene') {
+                        return true;
+                    }
+                    
+                    return false;
+                };
+                
+                // Check all axes and color
+                if (checkSpec(panel.config.xAxis) || 
+                    checkSpec(panel.config.yAxis) || 
+                    checkSpec(panel.config.zAxis) || 
+                    checkSpec(panel.config.colorBy)) {
+                    needsUpdate = true;
+                }
+                
+                // Update the panel if needed
+                if (needsUpdate) {
+                    console.log(`Updating panel ${panelId} due to focus change: ${focusEvent.type}`);
+                    
+                    // Re-apply the plot settings to update the visualization
+                    this._applyPlotSettings(panelId, panel.config);
+                }
+            }
+        }
+    }
+    
     /**
      * Apply column selection to the panel
      * @param {string} panelId - Target panel ID
@@ -2330,12 +2757,666 @@ class UIManager {
                         <p><strong>Genes:</strong> ${Utils.formatNumber(info.nVars)}</p>
                         <p><strong>Embeddings:</strong> ${info.embeddings.join(', ') || 'None'}</p>
                         <p><strong>Layers:</strong> ${info.layerNames.join(', ') || 'None'}</p>
+                        <p><strong>Cell-Cell Matrices:</strong> ${info.obspMatrices?.join(', ') || 'None'}</p>
+                        <p><strong>Gene-Gene Matrices:</strong> ${info.varpMatrices?.join(', ') || 'None'}</p>
                     </div>
                 </div>
             `;
         }
         
         // Ideally, other tabs would be populated with similar data-driven content
+    }
+    
+    /**
+     * Create a Matrix Visualization panel for obsp and varp matrices
+     * @param {string} panelId - Panel ID
+     * @param {Object} config - Panel configuration
+     * @returns {Object} Panel object
+     */
+    createMatrixPanel(panelId, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const { dataManager, matrixManager, plotManager } = deps;
+        
+        // Default config
+        config = {
+            title: 'Matrix Visualization',
+            matrixType: null, // 'obsp' or 'varp'
+            matrixKey: null,
+            colorScale: 'viridis',
+            showLabels: true,
+            sampleSize: 100,
+            ...config
+        };
+        
+        // Create panel
+        const panel = document.createElement('div');
+        panel.className = 'matrix-panel w-100 h-100 pb-2';
+        panel.innerHTML = `
+            <div class="panel-toolbar d-flex justify-content-between mb-2">
+                <div class="d-flex">
+                    <select class="form-select form-select-sm me-1 matrix-type-select" style="max-width: 120px;">
+                        <option value="">Matrix Type</option>
+                        <option value="obsp" ${config.matrixType === 'obsp' ? 'selected' : ''}>Cell-Cell</option>
+                        <option value="varp" ${config.matrixType === 'varp' ? 'selected' : ''}>Gene-Gene</option>
+                    </select>
+                    <select class="form-select form-select-sm me-1 matrix-key-select" style="max-width: 150px;">
+                        <option value="">Select Matrix</option>
+                    </select>
+                </div>
+                <div class="d-flex">
+                    <select class="form-select form-select-sm me-1 color-scale-select" style="max-width: 100px;">
+                        <option value="viridis" ${config.colorScale === 'viridis' ? 'selected' : ''}>Viridis</option>
+                        <option value="plasma" ${config.colorScale === 'plasma' ? 'selected' : ''}>Plasma</option>
+                        <option value="inferno" ${config.colorScale === 'inferno' ? 'selected' : ''}>Inferno</option>
+                        <option value="magma" ${config.colorScale === 'magma' ? 'selected' : ''}>Magma</option>
+                        <option value="Reds" ${config.colorScale === 'Reds' ? 'selected' : ''}>Reds</option>
+                        <option value="Blues" ${config.colorScale === 'Blues' ? 'selected' : ''}>Blues</option>
+                        <option value="RdBu" ${config.colorScale === 'RdBu' ? 'selected' : ''}>Red-Blue</option>
+                    </select>
+                    <div class="form-check form-switch me-1 mt-1">
+                        <input class="form-check-input show-labels-check" type="checkbox" ${config.showLabels ? 'checked' : ''}>
+                        <label class="form-check-label small">Labels</label>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary ms-1 select-matrix-btn">
+                        <i class="bi bi-grid-3x2"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="matrix-container w-100" style="height: calc(100% - 40px);">
+                <div class="d-flex justify-content-center align-items-center h-100 matrix-placeholder">
+                    <div class="text-center">
+                        <div class="mb-3">Select a matrix to visualize</div>
+                        <button class="btn btn-primary select-matrix-btn">
+                            <i class="bi bi-grid-3x2 me-1"></i> Select Matrix
+                        </button>
+                    </div>
+                </div>
+                <div class="matrix-plot h-100"></div>
+            </div>
+        `;
+        
+        // Update panel title
+        this._setPanelTitle(panelId, config.title);
+        
+        // Get panel content
+        const content = document.querySelector(`#${panelId} .panel-content`);
+        content.innerHTML = '';
+        content.appendChild(panel);
+        
+        // Hide panel placeholder
+        this._hidePanelPlaceholder(panelId);
+        
+        // Store panel info
+        this.panels.set(panelId, {
+            type: 'matrix',
+            config,
+            panel
+        });
+        
+        // Set up event listeners
+        panel.querySelector('.matrix-type-select').addEventListener('change', (e) => {
+            const matrixType = e.target.value;
+            if (matrixType) {
+                // Update matrix key select with available options
+                this._populateMatrixKeySelect(panel.querySelector('.matrix-key-select'), matrixType);
+            }
+        });
+        
+        panel.querySelector('.matrix-key-select').addEventListener('change', (e) => {
+            const matrixKey = e.target.value;
+            const matrixType = panel.querySelector('.matrix-type-select').value;
+            const colorScale = panel.querySelector('.color-scale-select').value;
+            const showLabels = panel.querySelector('.show-labels-check').checked;
+            
+            if (matrixKey && matrixType) {
+                // Display matrix
+                this._displayMatrix(panelId, matrixType, matrixKey, colorScale, showLabels);
+            }
+        });
+        
+        panel.querySelector('.color-scale-select').addEventListener('change', (e) => {
+            const matrixKey = panel.querySelector('.matrix-key-select').value;
+            const matrixType = panel.querySelector('.matrix-type-select').value;
+            const colorScale = e.target.value;
+            const showLabels = panel.querySelector('.show-labels-check').checked;
+            
+            if (matrixKey && matrixType) {
+                // Update color scale
+                this._displayMatrix(panelId, matrixType, matrixKey, colorScale, showLabels);
+            }
+        });
+        
+        panel.querySelector('.show-labels-check').addEventListener('change', (e) => {
+            const matrixKey = panel.querySelector('.matrix-key-select').value;
+            const matrixType = panel.querySelector('.matrix-type-select').value;
+            const colorScale = panel.querySelector('.color-scale-select').value;
+            const showLabels = e.target.checked;
+            
+            if (matrixKey && matrixType) {
+                // Update labels
+                this._displayMatrix(panelId, matrixType, matrixKey, colorScale, showLabels);
+            }
+        });
+        
+        // Set up matrix selection button
+        const selectMatrixButtons = panel.querySelectorAll('.select-matrix-btn');
+        selectMatrixButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                this._showMatrixSelector(panelId);
+            });
+        });
+        
+        // Populate matrix type if provided
+        if (config.matrixType) {
+            this._populateMatrixKeySelect(panel.querySelector('.matrix-key-select'), config.matrixType);
+        }
+        
+        // Display matrix if type and key are provided
+        if (config.matrixType && config.matrixKey) {
+            this._displayMatrix(panelId, config.matrixType, config.matrixKey, config.colorScale, config.showLabels);
+        } else {
+            // Hide the plot container and show placeholder
+            panel.querySelector('.matrix-plot').style.display = 'none';
+        }
+        
+        return this.panels.get(panelId);
+    }
+    
+    /**
+     * Show the matrix selector modal
+     * @param {string} panelId - Panel ID to update after selection
+     * @private
+     */
+    _showMatrixSelector(panelId) {
+        const deps = getDependencies();
+        const { dataManager } = deps;
+        
+        // Get the modal element
+        const modal = document.getElementById('matrixSelectorModal');
+        if (!modal) return;
+        
+        // Set up the callback for the select button
+        const selectButton = modal.querySelector('#selectMatrixBtn');
+        
+        // Remove any existing event listeners using cloneNode
+        const newButton = selectButton.cloneNode(true);
+        selectButton.parentNode.replaceChild(newButton, selectButton);
+        
+        // Add new event listener
+        newButton.addEventListener('click', () => {
+            // Get the selected tab
+            const activeTab = modal.querySelector('.nav-link.active');
+            const tabId = activeTab.id;
+            
+            // Determine matrix type based on tab
+            let matrixType;
+            let matrixKey;
+            
+            if (tabId === 'obsp-tab') {
+                matrixType = 'obsp';
+                const selected = modal.querySelector('#obsp-list .list-group-item.active');
+                if (selected) {
+                    matrixKey = selected.dataset.key;
+                }
+            } else if (tabId === 'varp-tab') {
+                matrixType = 'varp';
+                const selected = modal.querySelector('#varp-list .list-group-item.active');
+                if (selected) {
+                    matrixKey = selected.dataset.key;
+                }
+            } else if (tabId === 'obsm-tab') {
+                matrixType = 'obsm';
+                const selected = modal.querySelector('#obsm-list .list-group-item.active');
+                if (selected) {
+                    matrixKey = selected.dataset.key;
+                }
+            } else if (tabId === 'varm-tab') {
+                matrixType = 'varm';
+                const selected = modal.querySelector('#varm-list .list-group-item.active');
+                if (selected) {
+                    matrixKey = selected.dataset.key;
+                }
+            } else if (tabId === 'layers-tab') {
+                matrixType = 'layer';
+                const selected = modal.querySelector('#layers-list .list-group-item.active');
+                if (selected) {
+                    matrixKey = selected.dataset.key;
+                }
+            }
+            
+            // Check if we have a valid selection
+            if (matrixType && matrixKey) {
+                // Update the panel
+                const panel = this.panels.get(panelId);
+                if (panel && panel.type === 'matrix') {
+                    // Update the panel selects
+                    const matrixTypeSelect = panel.panel.querySelector('.matrix-type-select');
+                    const matrixKeySelect = panel.panel.querySelector('.matrix-key-select');
+                    
+                    // Set the values
+                    matrixTypeSelect.value = matrixType;
+                    
+                    // Populate the key select
+                    this._populateMatrixKeySelect(matrixKeySelect, matrixType);
+                    matrixKeySelect.value = matrixKey;
+                    
+                    // Get other settings
+                    const colorScale = panel.panel.querySelector('.color-scale-select').value;
+                    const showLabels = panel.panel.querySelector('.show-labels-check').checked;
+                    
+                    // Display the matrix
+                    this._displayMatrix(panelId, matrixType, matrixKey, colorScale, showLabels);
+                    
+                    // Update panel title
+                    let title;
+                    if (matrixType === 'obsp') {
+                        title = `Cell-Cell Matrix: ${matrixKey}`;
+                    } else if (matrixType === 'varp') {
+                        title = `Gene-Gene Matrix: ${matrixKey}`;
+                    } else if (matrixType === 'obsm') {
+                        title = `Cell Embedding: ${matrixKey}`;
+                    } else if (matrixType === 'varm') {
+                        title = `Gene Matrix: ${matrixKey}`;
+                    } else if (matrixType === 'layer') {
+                        title = `Layer: ${matrixKey}`;
+                    }
+                    
+                    this._setPanelTitle(panelId, title);
+                }
+                
+                // Close the modal
+                const bsModal = bootstrap.Modal.getInstance(modal);
+                if (bsModal) {
+                    bsModal.hide();
+                }
+            } else {
+                // Show error if nothing selected
+                alert('Please select a matrix');
+            }
+        });
+        
+        // Load matrix data for all tabs
+        this._loadMatrixSelectorData(modal);
+        
+        // Show the modal
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    /**
+     * Load data for the matrix selector modal
+     * @param {HTMLElement} modal - The modal element
+     * @private
+     */
+    _loadMatrixSelectorData(modal) {
+        const deps = getDependencies();
+        const { dataManager } = deps;
+        
+        // Get basic info to determine available matrices
+        const info = dataManager.getBasicInfo();
+        if (!info) return;
+        
+        // Load obsp matrices
+        const obspList = modal.querySelector('#obsp-list');
+        const obspLoading = modal.querySelector('#obsp-loading');
+        const obspEmpty = modal.querySelector('#obsp-empty');
+        
+        if (obspList && obspLoading && obspEmpty) {
+            obspList.innerHTML = '';
+            obspLoading.style.display = 'block';
+            obspEmpty.style.display = 'none';
+            
+            const obspMatrices = info.obspMatrices || dataManager.getObspMatrices() || [];
+            
+            if (obspMatrices.length > 0) {
+                obspMatrices.forEach(key => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.key = key;
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${key}</h6>
+                        </div>
+                        <p class="mb-1 small text-muted">Cell-cell relationships matrix</p>
+                    `;
+                    
+                    // Add click handler
+                    item.addEventListener('click', () => {
+                        // Remove active class from all items
+                        obspList.querySelectorAll('.list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        item.classList.add('active');
+                    });
+                    
+                    obspList.appendChild(item);
+                });
+                
+                obspLoading.style.display = 'none';
+            } else {
+                obspLoading.style.display = 'none';
+                obspEmpty.style.display = 'block';
+            }
+        }
+        
+        // Load varp matrices
+        const varpList = modal.querySelector('#varp-list');
+        const varpLoading = modal.querySelector('#varp-loading');
+        const varpEmpty = modal.querySelector('#varp-empty');
+        
+        if (varpList && varpLoading && varpEmpty) {
+            varpList.innerHTML = '';
+            varpLoading.style.display = 'block';
+            varpEmpty.style.display = 'none';
+            
+            const varpMatrices = info.varpMatrices || dataManager.getVarpMatrices() || [];
+            
+            if (varpMatrices.length > 0) {
+                varpMatrices.forEach(key => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.key = key;
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${key}</h6>
+                        </div>
+                        <p class="mb-1 small text-muted">Gene-gene relationships matrix</p>
+                    `;
+                    
+                    // Add click handler
+                    item.addEventListener('click', () => {
+                        // Remove active class from all items
+                        varpList.querySelectorAll('.list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        item.classList.add('active');
+                    });
+                    
+                    varpList.appendChild(item);
+                });
+                
+                varpLoading.style.display = 'none';
+            } else {
+                varpLoading.style.display = 'none';
+                varpEmpty.style.display = 'block';
+            }
+        }
+        
+        // Load obsm matrices (embeddings)
+        const obsmList = modal.querySelector('#obsm-list');
+        const obsmLoading = modal.querySelector('#obsm-loading');
+        const obsmEmpty = modal.querySelector('#obsm-empty');
+        
+        if (obsmList && obsmLoading && obsmEmpty) {
+            obsmList.innerHTML = '';
+            obsmLoading.style.display = 'block';
+            obsmEmpty.style.display = 'none';
+            
+            const embeddings = info.embeddings || dataManager.getEmbeddings() || [];
+            
+            if (embeddings.length > 0) {
+                embeddings.forEach(key => {
+                    // Use the X_ prefix for obsm keys
+                    const obsmKey = key.startsWith('X_') ? key : `X_${key.toLowerCase()}`;
+                    
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.key = obsmKey;
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${key}</h6>
+                        </div>
+                        <p class="mb-1 small text-muted">Cell embedding</p>
+                    `;
+                    
+                    // Add click handler
+                    item.addEventListener('click', () => {
+                        // Remove active class from all items
+                        obsmList.querySelectorAll('.list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        item.classList.add('active');
+                    });
+                    
+                    obsmList.appendChild(item);
+                });
+                
+                obsmLoading.style.display = 'none';
+            } else {
+                obsmLoading.style.display = 'none';
+                obsmEmpty.style.display = 'block';
+            }
+        }
+        
+        // Load varm matrices
+        const varmList = modal.querySelector('#varm-list');
+        const varmLoading = modal.querySelector('#varm-loading');
+        const varmEmpty = modal.querySelector('#varm-empty');
+        
+        if (varmList && varmLoading && varmEmpty) {
+            varmList.innerHTML = '';
+            varmLoading.style.display = 'block';
+            varmEmpty.style.display = 'none';
+            
+            // Get varm matrices if available 
+            const varmMatrices = info.varmMatrices || [];
+            
+            if (varmMatrices.length > 0) {
+                varmMatrices.forEach(key => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.key = key;
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${key}</h6>
+                        </div>
+                        <p class="mb-1 small text-muted">Gene matrix</p>
+                    `;
+                    
+                    // Add click handler
+                    item.addEventListener('click', () => {
+                        // Remove active class from all items
+                        varmList.querySelectorAll('.list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        item.classList.add('active');
+                    });
+                    
+                    varmList.appendChild(item);
+                });
+                
+                varmLoading.style.display = 'none';
+            } else {
+                varmLoading.style.display = 'none';
+                varmEmpty.style.display = 'block';
+            }
+        }
+        
+        // Load layers
+        const layersList = modal.querySelector('#layers-list');
+        const layersLoading = modal.querySelector('#layers-loading');
+        const layersEmpty = modal.querySelector('#layers-empty');
+        
+        if (layersList && layersLoading && layersEmpty) {
+            layersList.innerHTML = '';
+            layersLoading.style.display = 'block';
+            layersEmpty.style.display = 'none';
+            
+            const layers = info.layerNames || dataManager.getLayers() || [];
+            
+            if (layers.length > 0) {
+                layers.forEach(key => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.key = key;
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${key}</h6>
+                        </div>
+                        <p class="mb-1 small text-muted">Expression matrix layer</p>
+                    `;
+                    
+                    // Add click handler
+                    item.addEventListener('click', () => {
+                        // Remove active class from all items
+                        layersList.querySelectorAll('.list-group-item').forEach(i => {
+                            i.classList.remove('active');
+                        });
+                        
+                        // Add active class to clicked item
+                        item.classList.add('active');
+                    });
+                    
+                    layersList.appendChild(item);
+                });
+                
+                layersLoading.style.display = 'none';
+            } else {
+                layersLoading.style.display = 'none';
+                layersEmpty.style.display = 'block';
+            }
+        }
+    }
+    
+    /**
+     * Populate the matrix key select with options based on matrix type
+     * @param {HTMLSelectElement} select - The select element to populate
+     * @param {string} matrixType - The type of matrix ('obsp' or 'varp')
+     * @private
+     */
+    _populateMatrixKeySelect(select, matrixType) {
+        const deps = getDependencies();
+        const { dataManager } = deps;
+        
+        // Clear existing options
+        select.innerHTML = '<option value="">Select Matrix</option>';
+        
+        // Get available matrices based on type
+        let matrices = [];
+        if (matrixType === 'obsp') {
+            matrices = dataManager.getObspMatrices() || [];
+        } else if (matrixType === 'varp') {
+            matrices = dataManager.getVarpMatrices() || [];
+        }
+        
+        // Add options
+        matrices.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = key;
+            select.appendChild(option);
+        });
+    }
+    
+    /**
+     * Display a matrix visualization
+     * @param {string} panelId - The panel ID
+     * @param {string} matrixType - The type of matrix ('obsp' or 'varp')
+     * @param {string} matrixKey - The key of the matrix
+     * @param {string} colorScale - The color scale to use
+     * @param {boolean} showLabels - Whether to show labels
+     * @private
+     */
+    _displayMatrix(panelId, matrixType, matrixKey, colorScale, showLabels) {
+        const deps = getDependencies();
+        const { dataManager, matrixManager, plotManager } = deps;
+        
+        // Get the panel
+        const panel = this.panels.get(panelId);
+        if (!panel) return;
+        
+        // Update config
+        panel.config.matrixType = matrixType;
+        panel.config.matrixKey = matrixKey;
+        panel.config.colorScale = colorScale;
+        panel.config.showLabels = showLabels;
+        
+        // Show loading indicator
+        const matrixContainer = panel.panel.querySelector('.matrix-container');
+        const matrixPlot = panel.panel.querySelector('.matrix-plot');
+        const matrixPlaceholder = panel.panel.querySelector('.matrix-placeholder');
+        
+        matrixPlaceholder.style.display = 'none';
+        matrixPlot.style.display = 'none';
+        matrixPlot.innerHTML = '<div class="d-flex justify-content-center align-items-center h-100"><div class="spinner-border" role="status"></div></div>';
+        matrixPlot.style.display = 'block';
+        
+        // Load matrix data
+        const loadPromise = matrixType === 'obsp' 
+            ? matrixManager.getObspSample(matrixKey, 50)
+            : matrixManager.getVarpSample(matrixKey, 50);
+            
+        loadPromise.then(data => {
+            // Create heatmap visualization
+            const plotData = [{
+                z: data.data,
+                x: data.rowNames || Array.from({length: data.data[0].length}, (_, i) => i),
+                y: data.colNames || Array.from({length: data.data.length}, (_, i) => i),
+                type: 'heatmap',
+                colorscale: colorScale,
+                showscale: true,
+                hoverongaps: false
+            }];
+            
+            const plotLayout = {
+                title: `${matrixKey} ${matrixType === 'obsp' ? 'Cell-Cell' : 'Gene-Gene'} Matrix`,
+                margin: {
+                    l: showLabels ? 120 : 50,
+                    r: 50,
+                    b: showLabels ? 120 : 50,
+                    t: 50,
+                    pad: 4
+                },
+                xaxis: {
+                    showticklabels: showLabels,
+                    tickangle: 45
+                },
+                yaxis: {
+                    showticklabels: showLabels
+                }
+            };
+            
+            const plotConfig = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `${matrixType}_${matrixKey}`,
+                    height: 1000,
+                    width: 1000,
+                    scale: 2
+                }
+            };
+            
+            // Clear and create the plot
+            matrixPlot.innerHTML = '';
+            Plotly.newPlot(matrixPlot, plotData, plotLayout, plotConfig);
+            
+            // Update plot on window resize
+            const resizeObserver = new ResizeObserver(() => {
+                Plotly.Plots.resize(matrixPlot);
+            });
+            resizeObserver.observe(matrixPlot);
+        })
+        .catch(error => {
+            console.error(`Error loading ${matrixType} matrix ${matrixKey}:`, error);
+            matrixPlot.innerHTML = `<div class="alert alert-danger">Error loading matrix: ${error.message}</div>`;
+        });
     }
 }
 

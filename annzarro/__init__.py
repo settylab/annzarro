@@ -11,4 +11,11 @@ Core components:
 - Web interface for interactive visualization
 """
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"
+
+# Import version from package metadata if available, otherwise use the hardcoded value above
+try:
+    import importlib.metadata
+    __version__ = importlib.metadata.version("annzarro")
+except (ImportError, importlib.metadata.PackageNotFoundError):
+    pass  # Keep using the hardcoded version

@@ -56,6 +56,24 @@ class TestZarrReader(unittest.TestCase):
         umap = np.random.rand(100, 2).astype('float32')
         obsm_group.create_dataset('X_umap', data=umap)
         
+        # Create obsp (observation-observation matrices)
+        obsp_group = root.create_group('obsp')
+        # Create a connectivities matrix (sparse representation of cell-cell relationships)
+        connectivities = np.random.rand(100, 100).astype('float32')
+        np.fill_diagonal(connectivities, 1.0)  # Cells always connect to themselves
+        obsp_group.create_dataset('connectivities', data=connectivities)
+        # Create a distances matrix
+        distances = np.random.rand(100, 100).astype('float32')
+        np.fill_diagonal(distances, 0.0)  # Distance to self is zero
+        obsp_group.create_dataset('distances', data=distances)
+        
+        # Create varp (variable-variable matrices)
+        varp_group = root.create_group('varp')
+        # Create a correlation matrix between genes
+        correlation = np.random.rand(50, 50).astype('float32')
+        np.fill_diagonal(correlation, 1.0)  # Self-correlation is 1
+        varp_group.create_dataset('correlation', data=correlation)
+        
         # Create layers
         layers_group = root.create_group('layers')
         raw = np.random.rand(100, 50).astype('float32')
@@ -85,14 +103,40 @@ class TestZarrReader(unittest.TestCase):
         self.assertTrue(metadata['has_var'])
         self.assertTrue(metadata['has_obsm'])
         self.assertTrue(metadata['has_layers'])
+        self.assertTrue(metadata['has_obsp'])
+        self.assertTrue(metadata['has_varp'])
         
-        # Check that embeddings and layers are detected
-        self.assertIn('X_umap', metadata['embeddings'])
-        self.assertIn('raw', metadata['layers'])
-        
+        # Check that embeddings are detected
+        if 'embeddings' in metadata:
+            self.assertIn('X_umap', metadata['embeddings'])
+        elif 'obsm' in metadata:
+            self.assertIn('X_umap', metadata['obsm'])
+            
+        # Check that layers are detected
+        if 'layers' in metadata:
+            if isinstance(metadata['layers'], list):
+                self.assertIn('raw', metadata['layers'])
+            elif isinstance(metadata['layers'], dict) and 'keys' in metadata['layers']:
+                self.assertIn('raw', metadata['layers']['keys'])
+            
         # Check that obs and var columns are detected
         self.assertIn('cell_type', metadata['obs_columns'])
         self.assertIn('gene_name', metadata['var_columns'])
+        
+        # Check that obsp and varp matrices are detected
+        if 'obsp' in metadata:
+            if isinstance(metadata['obsp'], list):
+                self.assertIn('connectivities', metadata['obsp'])
+                self.assertIn('distances', metadata['obsp'])
+            elif isinstance(metadata['obsp'], dict) and 'keys' in metadata['obsp']:
+                self.assertIn('connectivities', metadata['obsp']['keys'])
+                self.assertIn('distances', metadata['obsp']['keys'])
+                
+        if 'varp' in metadata:
+            if isinstance(metadata['varp'], list):
+                self.assertIn('correlation', metadata['varp'])
+            elif isinstance(metadata['varp'], dict) and 'keys' in metadata['varp']:
+                self.assertIn('correlation', metadata['varp']['keys'])
 
     def test_get_obs_names(self):
         """Test getting observation names."""
@@ -322,6 +366,53 @@ class TestZarrReader(unittest.TestCase):
         progress_values = [call[1] for call in callback_calls]
         self.assertTrue(all(progress_values[i] <= progress_values[i+1] for i in range(len(progress_values)-1)))
         self.assertAlmostEqual(progress_values[-1], 1.0)
+        
+    def test_get_obsp(self):
+        """Test getting observation-observation matrices (obsp)."""
+        self.reader.open_zarr(self.zarr_path)
+        
+        # Test getting a valid obsp key
+        connectivities = self.reader.get_obsp('connectivities')
+        self.assertEqual(connectivities.shape, (100, 100))
+        
+        # Test getting a subset using indices
+        indices = [0, 1, 2]
+        conn_subset = self.reader.get_obsp('connectivities', indices=indices)
+        self.assertEqual(conn_subset.shape, (3, 3))
+        
+        # Verify diagonal values of connectivities (should be 1.0)
+        np.testing.assert_almost_equal(np.diag(connectivities), np.ones(100))
+        
+        # Test getting distances matrix
+        distances = self.reader.get_obsp('distances')
+        self.assertEqual(distances.shape, (100, 100))
+        
+        # Verify diagonal values of distances (should be 0.0)
+        np.testing.assert_almost_equal(np.diag(distances), np.zeros(100))
+        
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsp('nonexistent')
+        self.assertEqual(len(nonexistent), 0)
+        
+    def test_get_varp(self):
+        """Test getting variable-variable matrices (varp)."""
+        self.reader.open_zarr(self.zarr_path)
+        
+        # Test getting a valid varp key
+        correlation = self.reader.get_varp('correlation')
+        self.assertEqual(correlation.shape, (50, 50))
+        
+        # Test getting a subset using indices
+        indices = [0, 1, 2]
+        corr_subset = self.reader.get_varp('correlation', indices=indices)
+        self.assertEqual(corr_subset.shape, (3, 3))
+        
+        # Verify diagonal values of correlation (should be 1.0)
+        np.testing.assert_almost_equal(np.diag(correlation), np.ones(50))
+        
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_varp('nonexistent')
+        self.assertEqual(len(nonexistent), 0)
 
 if __name__ == '__main__':
     unittest.main()

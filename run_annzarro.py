@@ -113,21 +113,23 @@ def create_user(username=None, password=None, admin=False):
         print(f"Error creating user: {e}")
         return False
 
-def start_server(config_file=None, debug=False, frontend_only=False, backend_only=False):
-    """Start the Annzarro server"""
+def start_server(config_file=None, debug=False, frontend_only=False, backend_only=False, data_dir=None):
+    """Start the unified Annzarro server"""
     processes = []
     
     try:
-        # Read backend port from config file
-        backend_port = 8001  # Default port if config can't be read
-        backend_host = "127.0.0.1"  # Default host
+        # Default port if config can't be read
+        server_port = 8000
+        server_host = "127.0.0.1"
         
+        # Read config file if provided
+        config = {}
         if config_file and os.path.exists(config_file):
             try:
                 with open(config_file, 'r') as f:
                     config = json.load(f)
-                    backend_port = config.get('port', 8001)
-                    backend_host = config.get('host', '127.0.0.1')
+                    server_port = config.get('port', 8000)
+                    server_host = config.get('host', '127.0.0.1')
             except Exception as e:
                 print(f"Warning: Failed to read config file: {e}")
         else:
@@ -142,70 +144,73 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
                     try:
                         with open(path, 'r') as f:
                             config = json.load(f)
-                            backend_port = config.get('port', 8001)
-                            backend_host = config.get('host', '127.0.0.1')
+                            server_port = config.get('port', 8000)
+                            server_host = config.get('host', '127.0.0.1')
                             break
                     except Exception as e:
                         print(f"Warning: Failed to read config file {path}: {e}")
         
-        # Start backend server if requested
-        if not frontend_only:
-            cmd = [sys.executable, "-m", "annzarro.server"]
-            
-            if config_file:
-                cmd.extend(["-c", config_file])
-                
-            if debug:
-                cmd.append("--debug")
-                
-            # Start the backend server
-            print(f"Starting Annzarro backend server on port {backend_port}...")
-            backend_process = subprocess.Popen(cmd)
-            processes.append(('backend', backend_process))
-            
-            # Save the backend PID to a file
-            with open("backend_pid.txt", "w") as f:
-                f.write(str(backend_process.pid))
-                
-            print(f"Backend server started with PID {backend_process.pid}")
+        # Handle legacy frontend-only and backend-only options
+        if frontend_only:
+            print("Note: Frontend-only option is deprecated with unified server approach.")
+            print("The unified server will serve both frontend and API.")
         
-        # Start frontend server if requested
-        frontend_port = 8080  # Standard frontend port
-        if not backend_only:
-            # Choose HTTP server based on Python version
-            if sys.version_info >= (3, 7):
-                # Use Python's built-in HTTP server
-                frontend_cmd = [sys.executable, "-m", "http.server", str(frontend_port)]
-            else:
-                # Fallback for older Python versions
-                frontend_cmd = [sys.executable, "-m", "SimpleHTTPServer", str(frontend_port)]
+        if backend_only:
+            print("Note: Backend-only option is deprecated with unified server approach.")
+            print("The unified server will serve both frontend and API.")
             
-            # Start the frontend server
-            print(f"Starting frontend server on port {frontend_port}...")
-            frontend_process = subprocess.Popen(frontend_cmd)
-            processes.append(('frontend', frontend_process))
+        # Start the unified server (always serves both API and frontend)
+        cmd = [sys.executable, "-m", "annzarro.server"]
+        
+        if config_file:
+            cmd.extend(["-c", config_file])
             
-            # Save the frontend PID to a file
-            with open("frontend_pid.txt", "w") as f:
-                f.write(str(frontend_process.pid))
-                
-            print(f"Frontend server started with PID {frontend_process.pid}")
+        if debug:
+            cmd.append("--debug")
+            
+        # Add data directory if specified
+        if data_dir:
+            # Expand user directory (~/path) if present
+            expanded_data_dir = os.path.expanduser(data_dir)
+            
+            # Convert to absolute path if it's relative
+            if not os.path.isabs(expanded_data_dir):
+                expanded_data_dir = os.path.abspath(expanded_data_dir)
+            
+            cmd.extend(["--data-dir", expanded_data_dir])
+            print(f"Using data directory: {expanded_data_dir}")
+        else:
+            # Use the default from config or 'data/'
+            default_data_dir = config.get('data_dir', 'data')
+            print(f"Using default data directory: {default_data_dir}")
+            
+        # Add static directory - use ROOT_DIR as default for static files
+        static_dir = str(ROOT_DIR)
+        cmd.extend(["--static-dir", static_dir])
+        print(f"Using static directory: {static_dir}")
+            
+        # Start the unified server
+        host_display = server_host if server_host != "0.0.0.0" else "localhost"
+        print(f"Starting unified Annzarro server on port {server_port}...")
+        server_process = subprocess.Popen(cmd)
+        processes.append(('server', server_process))
+        
+        # Save the server PID to a file
+        with open("server_pid.txt", "w") as f:
+            f.write(str(server_process.pid))
+            
+        print(f"Unified server started with PID {server_process.pid}")
         
         # Combine PIDs into a single file for easier management
         with open("server_pids.txt", "w") as f:
             for name, process in processes:
                 f.write(f"{name},{process.pid}\n")
         
-        print("\nServers are now running!")
+        print("\nUnified server is now running!")
+        print(f"- Application UI: http://{host_display}:{server_port}")
+        print(f"- API endpoint:   http://{host_display}:{server_port}/api/v1")
         
-        # Display correct URLs based on configuration
-        host_display = backend_host if backend_host != "0.0.0.0" else "localhost"
-        if not frontend_only:
-            print(f"- Backend API:  http://{host_display}:{backend_port}/api/v1")
-        if not backend_only:
-            print(f"- Frontend UI:  http://localhost:{frontend_port}")
-        
-        print("\nTo stop the servers, press Ctrl+C or run: python run_annzarro.py --stop")
+        print("\nTo stop the server, press Ctrl+C or run: python run_annzarro.py --stop")
         
         # Wait for termination
         try:
@@ -213,19 +218,19 @@ def start_server(config_file=None, debug=False, frontend_only=False, backend_onl
             for _, process in processes:
                 process.wait()
         except KeyboardInterrupt:
-            print("\nShutting down servers...")
+            print("\nShutting down server...")
             for name, process in processes:
-                print(f"Stopping {name} server (PID {process.pid})...")
+                print(f"Stopping {name} (PID {process.pid})...")
                 process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    print(f"Forcing shutdown of {name} server...")
+                    print(f"Forcing shutdown of {name}...")
                     process.kill()
-            print("All servers stopped.")
+            print("Server stopped.")
             
     except Exception as e:
-        print(f"Error starting servers: {e}")
+        print(f"Error starting server: {e}")
         # Try to clean up any running processes
         for _, process in processes:
             try:
@@ -529,6 +534,7 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--backend-port", type=int, default=8000, help="Port for the backend server (default: 8000)")
     parser.add_argument("--frontend-port", type=int, default=8080, help="Port for the frontend server (default: 8080)")
+    parser.add_argument("--data-dir", type=str, help="Path to data directory (default: 'data/')")
     
     # User options
     parser.add_argument("-u", "--username", type=str, help="Username (for user creation)")
@@ -560,16 +566,16 @@ def main():
     
     if args.start:
         # Start both servers
-        start_server(args.config, args.debug)
+        start_server(args.config, args.debug, data_dir=args.data_dir)
     elif args.start_backend:
         # Start only backend server
-        start_server(args.config, args.debug, frontend_only=False, backend_only=True)
+        start_server(args.config, args.debug, frontend_only=False, backend_only=True, data_dir=args.data_dir)
     elif args.start_frontend:
         # Start only frontend server
-        start_server(args.config, args.debug, frontend_only=True, backend_only=False)
+        start_server(args.config, args.debug, frontend_only=True, backend_only=False, data_dir=args.data_dir)
     elif args.restart:
         # Restart both servers
-        start_server(args.config, args.debug)
+        start_server(args.config, args.debug, data_dir=args.data_dir)
 
 if __name__ == "__main__":
     main()

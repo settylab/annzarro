@@ -9,20 +9,27 @@
 
 /**
  * Helper function to access the zarrLoader dependency safely.
- * This avoids variable declarations that might conflict.
+ * In the unified server approach, we only use the Python backend API
+ * for zarr operations, not the zarr.js library.
  */
 function getZarrLoader() {
-    // Node environment
-    if (typeof require !== 'undefined') {
-        return require('./zarr-loader');
-    }
-    // Annzarro modules
+    // Annzarro modules - preferred approach
     if (typeof Annzarro !== 'undefined' && Annzarro.modules && Annzarro.modules.zarrLoader) {
         return Annzarro.modules.zarrLoader;
     }
+    
     // Global fallback
     if (typeof window !== 'undefined' && window.zarrLoader) {
         return window.zarrLoader;
+    }
+    
+    // Node environment for testing
+    if (typeof require !== 'undefined') {
+        try {
+            return require('./zarr-loader');
+        } catch (e) {
+            console.error('Error requiring zarr-loader:', e);
+        }
     }
     
     console.error('ZarrLoader dependency not found');
@@ -157,7 +164,11 @@ class DataManager {
             
             // Embeddings if available
             embeddings: this.anndata.obsm ? 
-                Object.keys(this.anndata.obsm).filter(key => key.startsWith('X_')) : []
+                Object.keys(this.anndata.obsm).filter(key => key.startsWith('X_')) : [],
+                
+            // obsp and varp if available
+            obspMatrices: this.anndata.obsp ? Object.keys(this.anndata.obsp) : [],
+            varpMatrices: this.anndata.varp ? Object.keys(this.anndata.varp) : []
         };
     }
 
@@ -203,6 +214,224 @@ class DataManager {
     getLayers() {
         if (!this.anndata || !this.anndata.layers) return null;
         return Object.keys(this.anndata.layers);
+    }
+    
+    /**
+     * Get list of available obsp matrices
+     * @returns {Array<string>|null} Array of obsp matrix names or null if no data
+     */
+    getObspMatrices() {
+        if (!this.anndata || !this.anndata.obsp) return null;
+        return Object.keys(this.anndata.obsp);
+    }
+    
+    /**
+     * Get list of available varp matrices
+     * @returns {Array<string>|null} Array of varp matrix names or null if no data
+     */
+    getVarpMatrices() {
+        if (!this.anndata || !this.anndata.varp) return null;
+        return Object.keys(this.anndata.varp);
+    }
+    
+    /**
+     * Get the dimensions of an obsp matrix
+     * @param {string} obspKey - The obsp matrix key
+     * @returns {Array<number>|null} [rows, cols] or null if not found
+     */
+    getObspDimensions(obspKey) {
+        if (!this.anndata || !this.anndata.obsp || !this.anndata.obsp[obspKey]) return null;
+        
+        // Try to get shape directly
+        if (this.anndata.obsp[obspKey].shape) {
+            return this.anndata.obsp[obspKey].shape;
+        }
+        
+        // Fallback to using overall data shape
+        if (this.anndata.shape) {
+            const nObs = this.anndata.shape[0];
+            return [nObs, nObs]; // obsp matrices are typically square
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get the dimensions of a varp matrix
+     * @param {string} varpKey - The varp matrix key
+     * @returns {Array<number>|null} [rows, cols] or null if not found
+     */
+    getVarpDimensions(varpKey) {
+        if (!this.anndata || !this.anndata.varp || !this.anndata.varp[varpKey]) return null;
+        
+        // Try to get shape directly
+        if (this.anndata.varp[varpKey].shape) {
+            return this.anndata.varp[varpKey].shape;
+        }
+        
+        // Fallback to using overall data shape
+        if (this.anndata.shape) {
+            const nVars = this.anndata.shape[1];
+            return [nVars, nVars]; // varp matrices are typically square
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Load obsp matrix data
+     * @param {string} obspKey - The key of the obsp entry
+     * @param {Array<number>} indices - Optional subset of indices to retrieve
+     * @returns {Promise<Array<Array<number>>>} The obsp matrix data
+     */
+    async loadObsp(obspKey, indices = null) {
+        if (!this.anndata || !this.anndata.obsp || !this.anndata.obsp[obspKey]) {
+            return null;
+        }
+        
+        try {
+            // Generate cache key
+            const cacheKey = `obsp_${obspKey}_${indices ? indices.join(',') : 'all'}`;
+            
+            // Check cache first
+            if (this.cache.has(cacheKey)) {
+                return this.cache.get(cacheKey);
+            }
+            
+            // Try to use the API endpoint for obsp matrices
+            if (window.ANNZARRO_API_URL) {
+                try {
+                    // Construct API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/obsp/${obspKey}`;
+                    
+                    // Add indices parameter if provided
+                    if (indices && indices.length > 0) {
+                        url += `?indices=${indices.join(',')}`;
+                    }
+                    
+                    // Fetch data from server
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data);
+                            return result.data;
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('Error using obsp API endpoint:', apiError);
+                    // Fall back to local loading
+                }
+            }
+            
+            // Fallback to using zarr-loader directly
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
+            // Define selection based on indices
+            let selection = null;
+            if (indices) {
+                const minIndex = Math.min(...indices);
+                const maxIndex = Math.max(...indices);
+                
+                selection = [
+                    [minIndex, maxIndex + 1],
+                    [minIndex, maxIndex + 1]
+                ];
+            }
+            
+            // Load the data
+            const result = await zarrLoader.loadData(`obsp/${obspKey}`, selection);
+            
+            // Cache the result
+            this._addToCache(cacheKey, result);
+            
+            return result;
+        } catch (error) {
+            console.error(`Error loading obsp ${obspKey} data:`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * Load varp matrix data
+     * @param {string} varpKey - The key of the varp entry
+     * @param {Array<number>} indices - Optional subset of indices to retrieve
+     * @returns {Promise<Array<Array<number>>>} The varp matrix data
+     */
+    async loadVarp(varpKey, indices = null) {
+        if (!this.anndata || !this.anndata.varp || !this.anndata.varp[varpKey]) {
+            return null;
+        }
+        
+        try {
+            // Generate cache key
+            const cacheKey = `varp_${varpKey}_${indices ? indices.join(',') : 'all'}`;
+            
+            // Check cache first
+            if (this.cache.has(cacheKey)) {
+                return this.cache.get(cacheKey);
+            }
+            
+            // Try to use the API endpoint for varp matrices
+            if (window.ANNZARRO_API_URL) {
+                try {
+                    // Construct API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/varp/${varpKey}`;
+                    
+                    // Add indices parameter if provided
+                    if (indices && indices.length > 0) {
+                        url += `?indices=${indices.join(',')}`;
+                    }
+                    
+                    // Fetch data from server
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data);
+                            return result.data;
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('Error using varp API endpoint:', apiError);
+                    // Fall back to local loading
+                }
+            }
+            
+            // Fallback to using zarr-loader directly
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
+            // Define selection based on indices
+            let selection = null;
+            if (indices) {
+                const minIndex = Math.min(...indices);
+                const maxIndex = Math.max(...indices);
+                
+                selection = [
+                    [minIndex, maxIndex + 1],
+                    [minIndex, maxIndex + 1]
+                ];
+            }
+            
+            // Load the data
+            const result = await zarrLoader.loadData(`varp/${varpKey}`, selection);
+            
+            // Cache the result
+            this._addToCache(cacheKey, result);
+            
+            return result;
+        } catch (error) {
+            console.error(`Error loading varp ${varpKey} data:`, error);
+            return null;
+        }
     }
 
     /**
@@ -1374,6 +1603,98 @@ class DataManager {
     }
     
     /**
+     * Get observation (cell) names
+     * @returns {Promise<Array<string>>} Array of observation names
+     */
+    async getObsNames() {
+        if (!this.isDataLoaded() || !this.anndata.obs) {
+            return [];
+        }
+        
+        // If already loaded in memory
+        if (this.anndata.obs.index) {
+            return this.anndata.obs.index;
+        }
+        
+        // Try to load from cache or zarr
+        try {
+            // Check cache
+            const cacheKey = 'obs_index';
+            if (this.cache.has(cacheKey)) {
+                return this.cache.get(cacheKey);
+            }
+            
+            // Load from zarr
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
+            // Try to load obs/_index
+            const obsIndex = await zarrLoader.loadData('obs/_index');
+            if (obsIndex) {
+                this._addToCache(cacheKey, obsIndex);
+                return obsIndex;
+            }
+            
+            // Fallback - generate numeric indices
+            const count = this.anndata.shape ? this.anndata.shape[0] : 0;
+            const indices = Array.from({length: count}, (_, i) => `Cell_${i}`);
+            this._addToCache(cacheKey, indices);
+            return indices;
+        } catch (error) {
+            console.error('Error loading observation names:', error);
+            return [];
+        }
+    }
+    
+    /**
+     * Get variable (gene) names
+     * @returns {Promise<Array<string>>} Array of variable names
+     */
+    async getVarNames() {
+        if (!this.isDataLoaded() || !this.anndata.var) {
+            return [];
+        }
+        
+        // If already loaded in memory
+        if (this.anndata.var.index) {
+            return this.anndata.var.index;
+        }
+        
+        // Try to load from cache or zarr
+        try {
+            // Check cache
+            const cacheKey = 'var_index';
+            if (this.cache.has(cacheKey)) {
+                return this.cache.get(cacheKey);
+            }
+            
+            // Load from zarr
+            const zarrLoader = getZarrLoader();
+            if (!zarrLoader) {
+                throw new Error('ZarrLoader not found');
+            }
+            
+            // Try to load var/_index
+            const varIndex = await zarrLoader.loadData('var/_index');
+            if (varIndex) {
+                this._addToCache(cacheKey, varIndex);
+                return varIndex;
+            }
+            
+            // Fallback - generate numeric indices
+            const count = this.anndata.shape ? this.anndata.shape[1] : 0;
+            const indices = Array.from({length: count}, (_, i) => `Gene_${i}`);
+            this._addToCache(cacheKey, indices);
+            return indices;
+        } catch (error) {
+            console.error('Error loading variable names:', error);
+            return [];
+        }
+    }
+    
+    /**
      * Get basic information about the loaded data
      * @returns {Object} Basic information
      */
@@ -1401,15 +1722,43 @@ class DataManager {
         if (this.anndata.obsm && typeof this.anndata.obsm === 'object') {
             Object.keys(this.anndata.obsm).forEach(key => {
                 if (key.startsWith('X_')) {
-                    embeddings.push(key.substring(2)); // Remove X_ prefix
+                    embeddings.push(key); // Keep full key for consistency
                 }
+            });
+        }
+        
+        // Get available matrix types
+        const obspMatrices = [];
+        if (this.anndata.obsp && typeof this.anndata.obsp === 'object') {
+            Object.keys(this.anndata.obsp).forEach(key => {
+                obspMatrices.push(key);
+            });
+        }
+        
+        const varpMatrices = [];
+        if (this.anndata.varp && typeof this.anndata.varp === 'object') {
+            Object.keys(this.anndata.varp).forEach(key => {
+                varpMatrices.push(key);
+            });
+        }
+        
+        // Get available layers
+        const layerNames = [];
+        if (this.anndata.layers && typeof this.anndata.layers === 'object') {
+            Object.keys(this.anndata.layers).forEach(key => {
+                layerNames.push(key);
             });
         }
         
         return {
             nObs,
             nVars,
-            embeddings
+            embeddings,
+            obspMatrices,
+            varpMatrices,
+            layerNames,
+            hasObsp: obspMatrices.length > 0,
+            hasVarp: varpMatrices.length > 0
         };
     }
 }

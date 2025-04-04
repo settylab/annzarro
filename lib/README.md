@@ -1,40 +1,17 @@
 # Library Files for Annzarro
 
-This directory contains essential library files required for the application to function properly.
+This directory contains essential library files that may be required for the application.
 
-## Required Libraries
+## Legacy Libraries (No Longer Used)
 
-- `zarr.umd.js` - The UMD build of zarr.js v0.6.2
+- ~~`zarr.umd.js`~~ - The JavaScript zarr library is no longer used. The application now exclusively uses the Python zarr implementation via the unified server for all zarr operations.
 
-## How to Install/Update Libraries
+## Note on Architecture Change
 
-### zarr.js
+As of the latest version, Annzarro has migrated to a unified server architecture that uses Python's zarr library exclusively for all zarr operations. The JavaScript zarr.js library is no longer required or used.
 
-You can install the zarr.js UMD build in either of the following ways:
+All zarr operations are now handled by:
+1. The Python backend API endpoints
+2. The zarr-loader.js module that communicates with these endpoints
 
-#### Option 1: Download directly from NPM
-
-```bash
-# From the project root directory
-npm pack zarr@0.6.2
-tar -xzf zarr-0.6.2.tgz
-cp package/zarr.umd.js lib/
-rm -rf package zarr-0.6.2.tgz
-```
-
-#### Option 2: Download directly from GitHub
-
-```bash
-curl -o lib/zarr.umd.js https://github.com/gzuidhof/zarr.js/releases/download/v0.6.2/zarr.umd.js
-```
-
-#### Option 3: Use a CDN
-
-If you're unable to download the library directly, the application will attempt to 
-load it from CDNs in the following order:
-
-1. Local file (lib/zarr.umd.js)
-2. jsdelivr CDN (https://cdn.jsdelivr.net/npm/zarr@0.6.2/dist/zarr.umd.js)
-3. unpkg CDN (https://unpkg.com/zarr@0.6.2/dist/zarr.umd.js)
-
-Note that using the local file is recommended for consistent performance and offline capabilities.
+This change provides better performance, improved memory management, and better support for large datasets through lazy loading.

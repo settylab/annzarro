@@ -434,6 +434,78 @@ class TestServer(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
     
+    @patch('annzarro.data.manager.zarr_reader.get_obsp')
+    def test_get_obsp(self, mock_get_obsp):
+        """Test getting obsp (observation-observation) matrix data."""
+        # Mock obsp data
+        mock_data = np.array([[1.0, 2.0], [3.0, 4.0]])
+        mock_get_obsp.return_value = mock_data
+        
+        # Send request with no indices
+        response = self.client.get('/api/v1/data/obsp/connectivities')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('data', data)
+        self.assertEqual(data['data'], [[1.0, 2.0], [3.0, 4.0]])
+        
+        # Verify mock was called correctly
+        mock_get_obsp.assert_called_with('connectivities', None)
+        
+        # Send request with indices
+        response = self.client.get('/api/v1/data/obsp/connectivities?indices=0,1')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify mock was called correctly
+        mock_get_obsp.assert_called_with('connectivities', [0, 1])
+        
+        # Test with invalid indices
+        response = self.client.get('/api/v1/data/obsp/connectivities?indices=invalid')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+    
+    @patch('annzarro.data.manager.zarr_reader.get_varp')
+    def test_get_varp(self, mock_get_varp):
+        """Test getting varp (variable-variable) matrix data."""
+        # Mock varp data
+        mock_data = np.array([[1.0, 2.0], [3.0, 4.0]])
+        mock_get_varp.return_value = mock_data
+        
+        # Send request with no indices
+        response = self.client.get('/api/v1/data/varp/correlation')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('data', data)
+        self.assertEqual(data['data'], [[1.0, 2.0], [3.0, 4.0]])
+        
+        # Verify mock was called correctly
+        mock_get_varp.assert_called_with('correlation', None)
+        
+        # Send request with indices
+        response = self.client.get('/api/v1/data/varp/correlation?indices=0,1')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify mock was called correctly
+        mock_get_varp.assert_called_with('correlation', [0, 1])
+        
+        # Test with invalid indices
+        response = self.client.get('/api/v1/data/varp/correlation?indices=invalid')
+        
+        # Check response
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+    
     def test_get_progressive_data(self):
         """Test progressive data loading endpoint."""
         # This is mostly a smoke test since streaming responses are hard to test
@@ -467,6 +539,14 @@ class TestServer(unittest.TestCase):
                 
                 # Test layers path
                 response = self.client.get('/api/v1/data/progressive/layers/raw')
+                self.assertEqual(response.status_code, 200)
+                
+                # Test obsp path
+                response = self.client.get('/api/v1/data/progressive/obsp/connectivities')
+                self.assertEqual(response.status_code, 200)
+                
+                # Test varp path
+                response = self.client.get('/api/v1/data/progressive/varp/correlation')
                 self.assertEqual(response.status_code, 200)
                 
                 # Test invalid path

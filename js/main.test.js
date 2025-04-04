@@ -71,21 +71,21 @@ describe('Main application', () => {
     expect(typeof main.initializeApp).toBe('function');
   });
   
-  test('includes demo data loading functionality', () => {
-    // Create mock for demo element
-    const mockDemoElement = {
+  test('includes data browsing functionality', () => {
+    // Create mock for data browser element
+    const mockDataBrowserElement = {
       addEventListener: jest.fn()
     };
     
     // Add to mock elements
-    mockElements['demo'] = mockDemoElement;
+    mockElements['datasetsListGroup'] = mockDataBrowserElement;
     
-    // Check if function exists
-    expect(typeof main.loadAvailableDemoData).toBe('function');
+    // Check if function exists for browsing available data
+    expect(typeof main.loadAvailableData).toBe('function');
   });
   
-  test('handles loading demo data', () => {
+  test('handles loading data from path', () => {
     // Define a basic test to make sure the function exists
-    expect(typeof main.loadDemoData).toBe('function');
+    expect(typeof main.loadDataFromPath).toBe('function');
   });
 });

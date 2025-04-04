@@ -77,50 +77,51 @@ python run_annzarro.py --start
 
 Then open your browser and navigate to:
 ```
-http://localhost:8080
+http://localhost:8000
 ```
 
 ### Server Management
 
-AnnZarro provides tools to manage the application servers:
+AnnZarro provides tools to manage the unified server:
 
 1. Check server status:
    ```bash
    python server_status.py
    ```
 
-2. Start the servers:
+2. Start the server:
    ```bash
    python run_annzarro.py --start
    ```
 
-3. Stop the servers:
+3. Stop the server:
    ```bash
    python run_annzarro.py --stop
    ```
 
-4. Stop specific servers (useful for port conflicts):
+4. Configure the server:
    ```bash
-   python server_status.py --stop-backend
-   python server_status.py --stop-frontend
-   python server_status.py --stop-all
+   python run_annzarro.py --start --port 8000 --data-dir /path/to/data
    ```
 
 ### Troubleshooting
 
 If you encounter "Address already in use" errors when starting the server:
 
-1. Check what's using the ports:
+1. Check what's using the port:
    ```bash
    python server_status.py
    ```
 
 2. Stop any conflicting processes:
    ```bash
-   python server_status.py --stop-all
+   python run_annzarro.py --stop
    ```
 
-3. If the issue persists, you can change the backend port in `annzarro/server/config.json`
+3. If the issue persists, you can change the port in `annzarro/server/config.json` or use the `--port` command-line argument:
+   ```bash
+   python run_annzarro.py --start --port 8001
+   ```
 
 ### Command Line Interface (CLI)
 
@@ -194,6 +195,31 @@ AnnData objects should be saved in zarr format. The tool expects standard AnnDat
 - `.layers` - Named alternative expression matrices
 - `.uns` - Unstructured annotations
 
+## Testing
+
+Annzarro includes a comprehensive test suite:
+
+```bash
+# Run all tests
+python run_tests.py
+
+# Run specific test suites
+python run_tests.py --unit       # Run unit tests
+python run_tests.py --integration # Run integration tests
+python run_tests.py --js         # Run JavaScript tests
+python run_tests.py --e2e        # Run end-to-end tests
+
+# Run tests with specific options
+python run_tests.py --coverage   # Generate coverage reports
+python run_tests.py --ci         # Run in CI mode (skip certain tests)
+```
+
+You can also use the console script:
+
+```bash
+annzarro-tests --unit --integration
+```
+
 ## Development Setup
 
 ### Backend (Python)
@@ -203,17 +229,14 @@ AnnData objects should be saved in zarr format. The tool expects standard AnnDat
 git clone https://github.com/settylab/annzarro.git
 cd annzarro
 
-# Install in development mode
-pip install -e .
-
-# Install development dependencies
-pip install pytest pytest-cov pylint
+# Install in development mode with development dependencies
+pip install -e ".[dev]"
 
 # Run tests
 pytest annzarro/tests
 
-# Check code quality
-pylint annzarro --disable=C0111,C0301,C0103
+# Start the server for development
+python -m annzarro.server
 ```
 
 ### Frontend (JavaScript)
@@ -228,7 +251,7 @@ npm test
 # Run linter
 npm run lint
 
-# Serve the web UI
+# Serve the web UI (if using the legacy dual-server approach)
 npm run serve
 ```
 

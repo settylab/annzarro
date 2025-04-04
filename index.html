@@ -26,18 +26,18 @@
         
         // Check if we're running from a file:// URL 
         if (window.location.protocol === 'file:') {
-            // Inform user that the app requires a Python backend server
-            console.error('This application requires the Python backend server to be running.');
-            // We'll show a warning to the user in the UI
+            // Inform user that the app requires a unified server
+            console.error('This application requires the unified server to be running.');
+            // Show a warning to the user in the UI
             window.addEventListener('DOMContentLoaded', function() {
                 document.body.innerHTML = `
                     <div class="container p-5 text-center">
                         <div class="alert alert-danger">
-                            <h4>Backend Server Required</h4>
+                            <h4>Unified Server Required</h4>
                             <p>This application cannot run directly from a file:// URL.</p>
-                            <p>Please run the Python server using:</p>
+                            <p>Please run the unified server using:</p>
                             <pre class="bg-light p-3 mt-3">python run_annzarro.py --start</pre>
-                            <p>Then access the application at: <a href="http://localhost:8080">http://localhost:8080</a></p>
+                            <p>Then access the application at: <a href="http://localhost:8000">http://localhost:8000</a></p>
                         </div>
                     </div>
                 `;
@@ -61,6 +61,7 @@
     <script src="js/module-loader.js" defer></script>
     <script src="js/zarr-loader.js" defer></script>
     <script src="js/data-manager.js" defer></script>
+    <script src="js/matrix-manager.js" defer></script>
     <script src="js/plot-manager.js" defer></script>
     <script src="js/table-manager.js" defer></script>
     <script src="js/string-db.js" defer></script>
@@ -73,7 +74,7 @@
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
                 <span class="app-name">Annzarro</span>
-                <span class="app-version">v1.0</span>
+                <span class="app-version">v0.1.0</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -150,6 +151,94 @@
     </div>
 
     <!-- Modals -->
+    
+    <!-- Matrix Selector Modal -->
+    <div class="modal fade" id="matrixSelectorModal" tabindex="-1" aria-labelledby="matrixSelectorModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="matrixSelectorModalLabel">Select Matrix</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs" id="matrixTypeTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="obsp-tab" data-bs-toggle="tab" data-bs-target="#obsp-content" type="button" role="tab">
+                                Cell-Cell (obsp)
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="varp-tab" data-bs-toggle="tab" data-bs-target="#varp-content" type="button" role="tab">
+                                Gene-Gene (varp)
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content mt-3" id="matrixTypeTabContent">
+                        <!-- Observation-Observation Matrices (obsp) -->
+                        <div class="tab-pane fade show active" id="obsp-content" role="tabpanel">
+                            <div class="mb-3">
+                                <label for="obspKeySelect" class="form-label">Select Cell-Cell Matrix:</label>
+                                <select class="form-select" id="obspKeySelect">
+                                    <option value="" selected disabled>-- Select a matrix --</option>
+                                </select>
+                                <div class="form-text">
+                                    Cell-cell relationship matrices showing connections between observations
+                                </div>
+                            </div>
+                            <div id="obspMatrixPreview" class="matrix-preview mt-3">
+                                <div class="text-center text-muted">
+                                    <p>Select a matrix to see a preview</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Variable-Variable Matrices (varp) -->
+                        <div class="tab-pane fade" id="varp-content" role="tabpanel">
+                            <div class="mb-3">
+                                <label for="varpKeySelect" class="form-label">Select Gene-Gene Matrix:</label>
+                                <select class="form-select" id="varpKeySelect">
+                                    <option value="" selected disabled>-- Select a matrix --</option>
+                                </select>
+                                <div class="form-text">
+                                    Gene-gene relationship matrices showing connections between variables
+                                </div>
+                            </div>
+                            <div id="varpMatrixPreview" class="matrix-preview mt-3">
+                                <div class="text-center text-muted">
+                                    <p>Select a matrix to see a preview</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <div class="matrix-options">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="showLabelsCheck" checked>
+                            <label class="form-check-label" for="showLabelsCheck">Show Labels</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <label for="colorScaleSelect" class="form-label me-2">Color Scale:</label>
+                            <select class="form-select form-select-sm" id="colorScaleSelect" style="width: 120px">
+                                <option value="viridis">Viridis</option>
+                                <option value="plasma">Plasma</option>
+                                <option value="inferno">Inferno</option>
+                                <option value="magma">Magma</option>
+                                <option value="Greens">Greens</option>
+                                <option value="Blues">Blues</option>
+                                <option value="Reds">Reds</option>
+                                <option value="YlOrRd">YlOrRd</option>
+                                <option value="YlGnBu">YlGnBu</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="selectMatrixBtn">Create Matrix Panel</button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Load Data Modal -->
     <div class="modal fade" id="loadDataModal" tabindex="-1" aria-hidden="true">
@@ -314,9 +403,9 @@
                         <label class="form-label">Data Processing</label>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="useServerSwitch" checked disabled>
-                            <label class="form-check-label" for="useServerSwitch">Use Python Backend</label>
+                            <label class="form-check-label" for="useServerSwitch">Use Unified Server</label>
                         </div>
-                        <div class="form-text">Using Python backend for zarr data access with lazy loading</div>
+                        <div class="form-text">Using unified server for zarr data access with lazy loading</div>
                     </div>
                     
                     <div class="mb-3">
@@ -402,7 +491,7 @@
                     
                     <h5>Features</h5>
                     <ul>
-                        <li><strong>Python Backend</strong>: Efficient data loading with Python's zarr library</li>
+                        <li><strong>Unified Server</strong>: Efficient data loading with Python's zarr library on a single server</li>
                         <li><strong>Lazy Loading</strong>: Load only the data you need when you need it</li>
                         <li><strong>Interactive Visualizations</strong>: Explore your data with interactive plots</li>
                         <li><strong>Data Selection</strong>: Select cells and genes of interest</li>
@@ -459,6 +548,7 @@
                             <li><a class="dropdown-item" href="#" data-panel-type="table">Data Table</a></li>
                             <li><a class="dropdown-item" href="#" data-panel-type="gene">Gene Browser</a></li>
                             <li><a class="dropdown-item" href="#" data-panel-type="cell">Cell Browser</a></li>
+                            <li><a class="dropdown-item" href="#" data-panel-type="matrix">Matrix Browser</a></li>
                         </ul>
                     </div>
                     <button class="btn btn-sm btn-outline-secondary panel-settings-btn">
@@ -598,6 +688,138 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-primary" id="applyVizSettings">Apply Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Matrix Selector Modal -->
+  <div class="modal fade" id="matrixSelectorModal" tabindex="-1" aria-labelledby="matrixSelectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="matrixSelectorModalLabel">Select Matrix</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <ul class="nav nav-tabs" id="matrixTypeTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="obsm-tab" data-bs-toggle="tab" data-bs-target="#obsm-content" type="button" role="tab">
+                Observation Matrices (obsm)
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="varm-tab" data-bs-toggle="tab" data-bs-target="#varm-content" type="button" role="tab">
+                Variable Matrices (varm)
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="obsp-tab" data-bs-toggle="tab" data-bs-target="#obsp-content" type="button" role="tab">
+                Cell-Cell Matrices (obsp)
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="varp-tab" data-bs-toggle="tab" data-bs-target="#varp-content" type="button" role="tab">
+                Gene-Gene Matrices (varp)
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="layers-tab" data-bs-toggle="tab" data-bs-target="#layers-content" type="button" role="tab">
+                Layers
+              </button>
+            </li>
+          </ul>
+          
+          <div class="tab-content mt-3" id="matrixTypeTabContent">
+            <!-- obsm Content -->
+            <div class="tab-pane fade show active" id="obsm-content" role="tabpanel">
+              <p class="text-muted">Observation matrices (obsm) contain cell embeddings like UMAP, PCA, and more.</p>
+              <div id="obsm-loading" class="text-center p-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading observation matrices...</span>
+              </div>
+              <div id="obsm-list" class="list-group">
+                <!-- Will be populated dynamically -->
+              </div>
+              <div id="obsm-empty" class="alert alert-info mt-3 d-none">
+                No observation matrices (obsm) found in the current dataset.
+              </div>
+            </div>
+            
+            <!-- varm Content -->
+            <div class="tab-pane fade" id="varm-content" role="tabpanel">
+              <p class="text-muted">Variable matrices (varm) contain gene-specific multi-dimensional annotations.</p>
+              <div id="varm-loading" class="text-center p-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading variable matrices...</span>
+              </div>
+              <div id="varm-list" class="list-group">
+                <!-- Will be populated dynamically -->
+              </div>
+              <div id="varm-empty" class="alert alert-info mt-3 d-none">
+                No variable matrices (varm) found in the current dataset.
+              </div>
+            </div>
+            
+            <!-- obsp Content -->
+            <div class="tab-pane fade" id="obsp-content" role="tabpanel">
+              <p class="text-muted">Cell-cell matrices (obsp) contain relationships between cells, such as distances or connectivity graphs.</p>
+              <div id="obsp-loading" class="text-center p-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading cell-cell matrices...</span>
+              </div>
+              <div id="obsp-list" class="list-group">
+                <!-- Will be populated dynamically -->
+              </div>
+              <div id="obsp-empty" class="alert alert-info mt-3 d-none">
+                No cell-cell matrices (obsp) found in the current dataset.
+              </div>
+            </div>
+            
+            <!-- varp Content -->
+            <div class="tab-pane fade" id="varp-content" role="tabpanel">
+              <p class="text-muted">Gene-gene matrices (varp) contain relationships between genes, such as correlation or regulatory networks.</p>
+              <div id="varp-loading" class="text-center p-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading gene-gene matrices...</span>
+              </div>
+              <div id="varp-list" class="list-group">
+                <!-- Will be populated dynamically -->
+              </div>
+              <div id="varp-empty" class="alert alert-info mt-3 d-none">
+                No gene-gene matrices (varp) found in the current dataset.
+              </div>
+            </div>
+            
+            <!-- Layers Content -->
+            <div class="tab-pane fade" id="layers-content" role="tabpanel">
+              <p class="text-muted">Layers contain alternative representations of the expression matrix, such as normalized counts.</p>
+              <div id="layers-loading" class="text-center p-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading layers...</span>
+              </div>
+              <div id="layers-list" class="list-group">
+                <!-- Will be populated dynamically -->
+              </div>
+              <div id="layers-empty" class="alert alert-info mt-3 d-none">
+                No layers found in the current dataset.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="selectMatrixBtn">Select Matrix</button>
         </div>
       </div>
     </div>
