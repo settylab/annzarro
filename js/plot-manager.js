@@ -1,1049 +1,947 @@
 /**
- * PlotManager - Creates and manages plots for visualization
- * This class is responsible for:
- * 1. Creating various plot types (scatter, violin, heatmap, etc.)
- * 2. Updating plots based on data and settings
- * 3. Handling plot interactions (selection, hover, etc.)
+ * Plot Manager Module
+ * 
+ * Handles plot creation and management using Plotly.js
  */
 
-/**
- * Helper function to access the Utils dependency safely.
- * This avoids variable declarations that might conflict.
- */
-function getUtils() {
-    // Node environment
-    if (typeof require !== 'undefined') {
-        return require('./utils');
-    }
-    // Annzarro modules
-    if (typeof Annzarro !== 'undefined' && Annzarro.modules && Annzarro.modules.Utils) {
-        return Annzarro.modules.Utils;
-    }
-    // Global fallback
-    if (typeof window !== 'undefined' && window.Utils) {
-        return window.Utils;
-    }
-    
-    console.error('Utils dependency not found');
-    return null;
-}
-
-class PlotManager {
-    constructor() {
-        // Plot type registry
-        this.plotTypes = {
-            'scatter': this.createScatterPlot.bind(this),
-            'violin': this.createViolinPlot.bind(this),
-            'heatmap': this.createHeatmapPlot.bind(this),
-            'bar': this.createBarPlot.bind(this)
-        };
-        
-        // Plot instances (panelId -> plot object)
-        this.plots = new Map();
-        
-        // Default plot settings
-        this.defaultSettings = {
-            scatter: {
-                markerSize: 5,
-                markerOpacity: 0.7,
-                colorRange: ['blue', 'red'],
-                showFocusedGene: true,
-                showFocusedCell: true
-            },
-            violin: {
-                showPoints: true,
-                pointsOpacity: 0.3,
-                colorRange: ['blue', 'red'],
-                boxWidth: 0.5
-            },
-            heatmap: {
-                colorRange: ['blue', 'white', 'red'],
-                zMin: null,
-                zMax: null,
-                showDendrogram: true
-            },
-            bar: {
-                orientation: 'vertical',
-                colorRange: ['blue', 'red'],
-                barWidth: 0.8,
-                showError: true
-            }
-        };
-    }
+const PlotManager = (function() {
+    // Private variables
+    let _plots = {};
+    let _colorScales = {
+        sequential: ['Viridis', 'Plasma', 'Inferno', 'Magma', 'Cividis', 'Turbo'],
+        diverging: ['RdBu', 'RdYlBu', 'RdYlGn', 'Spectral', 'PiYG'],
+        categorical: ['Paired', 'Set1', 'Set2', 'Set3', 'Dark2', 'Pastel1']
+    };
     
     /**
-     * Update all plots based on selection or filter changes
-     * @param {Object} filterChange - Information about what changed
+     * Initialize the plot manager
      */
-    updateAllPlots(filterChange) {
-        // Update each plot with the new filter or selection
-        for (const [panelId, plotInfo] of this.plots.entries()) {
-            // Apply filter to plot data
-            let filteredData = { ...plotInfo.data };
-            
-            // Apply selection filters if provided
-            if (filterChange.selectionChanged) {
-                if (filterChange.type === 'cells' && plotInfo.data.cellIndices) {
-                    // Filter data to show only selected cells
-                    const selectedIndices = filterChange.selected.map(cellName => {
-                        return plotInfo.data.cellIndices[cellName];
-                    }).filter(index => index !== undefined);
-                    
-                    // Apply filter to data arrays
-                    this._filterDataIndices(filteredData, selectedIndices);
-                } else if (filterChange.type === 'genes' && plotInfo.data.geneIndices) {
-                    // Filter data to show only selected genes
-                    const selectedIndices = filterChange.selected.map(geneName => {
-                        return plotInfo.data.geneIndices[geneName];
-                    }).filter(index => index !== undefined);
-                    
-                    // Apply filter to data arrays
-                    this._filterDataIndices(filteredData, selectedIndices);
-                }
-            }
-            
-            // Apply value filtering if provided
-            if (filterChange.valueFilter) {
-                const { field, min, max } = filterChange.valueFilter;
-                
-                if (filteredData[field]) {
-                    // Find indices that match the filter criteria
-                    const validIndices = [];
-                    for (let i = 0; i < filteredData[field].length; i++) {
-                        const value = filteredData[field][i];
-                        if (value >= min && value <= max) {
-                            validIndices.push(i);
-                        }
-                    }
-                    
-                    // Apply filter to data arrays
-                    this._filterDataIndices(filteredData, validIndices);
-                }
-            }
-            
-            // Handle focused items
-            if (filterChange.focusChanged) {
-                if (filterChange.type === 'cell') {
-                    filteredData.focusedCellIndex = filterChange.index;
-                    filteredData.focusedCellName = filterChange.name;
-                } else if (filterChange.type === 'gene') {
-                    filteredData.focusedGeneIndex = filterChange.index;
-                    filteredData.focusedGeneName = filterChange.name;
-                }
-            }
-            
-            // Update the plot with filtered data
-            this.updatePlot(panelId, filteredData);
-        }
+    function init() {
+        console.log('PlotManager initialized');
+        
+        // Listen for events
+        document.addEventListener('dataLoaded', handleDataLoaded);
+        document.addEventListener('geneFocusChanged', handleGeneFocusChanged);
+        document.addEventListener('cellFocusChanged', handleCellFocusChanged);
+        document.addEventListener('geneSetChanged', handleGeneSetChanged);
+        document.addEventListener('cellSetChanged', handleCellSetChanged);
+        
+        // Handle window resize
+        window.addEventListener('resize', handleResize);
     }
     
-    /**
-     * Helper method to filter data arrays by indices
-     * @param {Object} data - Data object with arrays
-     * @param {Array<number>} indices - Indices to keep
-     * @private
-     */
-    _filterDataIndices(data, indices) {
-        // Filter each array in the data object
-        for (const key in data) {
-            if (Array.isArray(data[key])) {
-                data[key] = indices.map(i => data[key][i]);
-            }
-        }
-    }
-    
-    /**
-     * Highlight focused items in a plot
-     * @param {string} plotId - ID of the plot
-     */
-    highlightFocusedItems(plotId) {
-        const plotInfo = this.plots.get(plotId);
-        if (!plotInfo) return;
-        
-        // Get the current data
-        const plotData = plotInfo.data;
-        
-        // Check if there's a focused gene or cell
-        if (plotData.focusedGeneIndex !== undefined || plotData.focusedCellIndex !== undefined) {
-            // Update the plot to highlight the focused item
-            this.updatePlot(plotId, plotData);
-        }
-    }
-
-    /**
-     * Create a new plot
-     * @param {string} panelId - ID of the panel to create the plot in
-     * @param {string} plotType - Type of plot to create
-     * @param {Object} plotData - Data for the plot
-     * @param {Object} plotSettings - Settings for the plot
-     * @returns {Object} The created plot object
-     */
-    createPlot(panelId, plotType, plotData, plotSettings = {}) {
-        const Utils = getUtils();
-        if (!Utils) {
-            console.error('Utils module not found');
-            return null;
-        }
-
-        // Get the panel element
-        const panelElement = document.getElementById(panelId);
-        if (!panelElement) {
-            console.error(`Panel element with ID ${panelId} not found`);
-            return null;
-        }
-        
-        // Check if plot type is supported
-        if (!this.plotTypes[plotType]) {
-            console.error(`Plot type '${plotType}' is not supported`);
-            return null;
-        }
-        
-        // Clear any existing plot
-        this.destroyPlot(panelId);
-        
-        // Create the plot container
-        const plotContainer = document.createElement('div');
-        plotContainer.className = 'plot-container';
-        plotContainer.style.width = '100%';
-        plotContainer.style.height = '100%';
-        panelElement.appendChild(plotContainer);
-        
-        // Merge default settings with provided settings
-        const settings = Utils.deepMerge(
-            this.defaultSettings[plotType] || {},
-            plotSettings
-        );
-        
-        // Create the plot
-        const plot = this.plotTypes[plotType](plotContainer, plotData, settings);
-        
-        // Store the plot
-        this.plots.set(panelId, {
-            type: plotType,
-            plot,
-            container: plotContainer,
-            data: plotData,
-            settings
-        });
-        
-        return plot;
-    }
-
-    /**
-     * Update an existing plot
-     * @param {string} panelId - ID of the panel with the plot
-     * @param {Object} newData - New data for the plot
-     * @param {Object} newSettings - New settings for the plot
-     * @returns {Object} The updated plot object
-     */
-    updatePlot(panelId, newData = null, newSettings = null) {
-        const Utils = getUtils();
-        if (!Utils) {
-            console.error('Utils module not found');
-            return null;
-        }
-
-        // Get the plot
-        const plotInfo = this.plots.get(panelId);
-        if (!plotInfo) {
-            console.error(`No plot found in panel ${panelId}`);
-            return null;
-        }
-        
-        // Update data if provided
-        if (newData) {
-            plotInfo.data = newData;
-        }
-        
-        // Update settings if provided
-        if (newSettings) {
-            plotInfo.settings = Utils.deepMerge(plotInfo.settings, newSettings);
-        }
-        
-        // Recreate the plot with updated data and settings
-        const updatedPlot = this.plotTypes[plotInfo.type](
-            plotInfo.container,
-            plotInfo.data,
-            plotInfo.settings
-        );
-        
-        // Update plot in the registry
-        plotInfo.plot = updatedPlot;
-        this.plots.set(panelId, plotInfo);
-        
-        return updatedPlot;
-    }
-
-    /**
-     * Destroy a plot
-     * @param {string} panelId - ID of the panel with the plot to destroy
-     */
-    destroyPlot(panelId) {
-        // Get the plot
-        const plotInfo = this.plots.get(panelId);
-        if (!plotInfo) return;
-        
-        // Clear the plot container
-        if (plotInfo.container) {
-            Plotly.purge(plotInfo.container);
-            plotInfo.container.remove();
-        }
-        
-        // Remove from registry
-        this.plots.delete(panelId);
-    }
-
     /**
      * Create a scatter plot
-     * @param {HTMLElement} container - Container element for the plot
-     * @param {Object} data - Data for the plot
-     * @param {Object} settings - Settings for the plot
-     * @returns {Object} The created plot object
+     * @param {string} elementId - ID of the container element
+     * @param {Object} config - Plot configuration
+     * @returns {string} - Plot ID
      */
-    createScatterPlot(container, data, settings) {
-        // Check if this is a large dataset
-        if (data.x && data.x.length > 10000 && window.ANNZARRO_API_URL) {
-            // Use downsampled visualization for large datasets
-            return this._createLargeScatterPlot(container, data, settings);
+    async function createScatterPlot(elementId, config = {}) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`Element not found: ${elementId}`);
+            return null;
         }
         
-        // Extract data for the plot
-        const {
-            x, y, z,
-            color,
-            text,
-            xLabel, yLabel, zLabel,
-            colorLabel,
-            title
-        } = data;
-        
-        // Create the base trace
-        const trace = {
-            type: 'scattergl', // Use WebGL renderer for better performance
-            mode: 'markers',
-            x,
-            y,
-            text,
-            hoverinfo: text ? 'text' : 'x+y',
-            marker: {
-                size: settings.markerSize || 5,
-                opacity: settings.markerOpacity || 0.7
-            }
-        };
-        
-        // Add z dimension for 3D plot if provided
-        if (z) {
-            trace.type = 'scatter3d';
-            trace.z = z;
-        }
-        
-        // Add color if provided
-        if (color) {
-            // Check if the color values are categorical
-            const uniqueValues = [...new Set(color)];
-            const isCategorical = uniqueValues.some(val => typeof val === 'string' && isNaN(val)) || 
-                                 uniqueValues.length <= 10;
-            
-            if (isCategorical) {
-                // Categorical coloring
-                trace.marker.color = color;
-                trace.marker.colorscale = settings.colorRange || ['blue', 'red'];
-            } else {
-                // Numerical coloring
-                trace.marker.color = color;
-                trace.marker.colorscale = settings.colorRange || 'Viridis';
-                
-                // Set color range if specified
-                if (settings.colorMin !== undefined && settings.colorMax !== undefined) {
-                    trace.marker.cmin = settings.colorMin;
-                    trace.marker.cmax = settings.colorMax;
-                }
-                
-                // Add colorbar
-                trace.marker.colorbar = { title: colorLabel || 'Value' };
-                
-                // Handle out of range values
-                if (settings.outOfRangeAction === 'hide') {
-                    // Filter points outside the color range
-                    const validIndices = [];
-                    for (let i = 0; i < color.length; i++) {
-                        if (color[i] >= settings.colorMin && color[i] <= settings.colorMax) {
-                            validIndices.push(i);
-                        }
-                    }
-                    
-                    // Only show valid points
-                    trace.x = validIndices.map(i => x[i]);
-                    trace.y = validIndices.map(i => y[i]);
-                    if (z) trace.z = validIndices.map(i => z[i]);
-                    trace.marker.color = validIndices.map(i => color[i]);
-                    if (text) trace.text = validIndices.map(i => text[i]);
-                }
-            }
-        }
-        
-        // Highlight focused items if enabled
-        if (settings.showFocusedGene && data.focusedGeneIndex !== undefined) {
-            // Create a trace for the focused gene
-            const focusedTrace = {
-                type: trace.type,
-                mode: 'markers',
-                x: [x[data.focusedGeneIndex]],
-                y: [y[data.focusedGeneIndex]],
-                marker: {
-                    size: (settings.markerSize || 5) * 1.5,
-                    color: 'red',
-                    line: {
-                        color: 'black',
-                        width: 2
-                    }
-                },
-                hoverinfo: 'text',
-                text: [`Focused Gene: ${data.focusedGeneName}`],
-                showlegend: true,
-                name: 'Focused Gene'
-            };
-            
-            if (z) {
-                focusedTrace.z = [z[data.focusedGeneIndex]];
-            }
-            
-            // Add the focused trace
-            return Plotly.newPlot(container, [trace, focusedTrace], this._createLayout(xLabel, yLabel, zLabel, title));
-        } else if (settings.showFocusedCell && data.focusedCellIndex !== undefined) {
-            // Create a trace for the focused cell
-            const focusedTrace = {
-                type: trace.type,
-                mode: 'markers',
-                x: [x[data.focusedCellIndex]],
-                y: [y[data.focusedCellIndex]],
-                marker: {
-                    size: (settings.markerSize || 5) * 1.5,
-                    color: 'red',
-                    line: {
-                        color: 'black',
-                        width: 2
-                    }
-                },
-                hoverinfo: 'text',
-                text: [`Focused Cell: ${data.focusedCellName}`],
-                showlegend: true,
-                name: 'Focused Cell'
-            };
-            
-            if (z) {
-                focusedTrace.z = [z[data.focusedCellIndex]];
-            }
-            
-            // Add the focused trace
-            return Plotly.newPlot(container, [trace, focusedTrace], this._createLayout(xLabel, yLabel, zLabel, title));
-        } else {
-            // Basic plot without focusing
-            return Plotly.newPlot(container, [trace], this._createLayout(xLabel, yLabel, zLabel, title));
-        }
-    }
-    
-    /**
-     * Create a scatter plot for large datasets using backend downsampling
-     * @param {HTMLElement} container - Container element for the plot
-     * @param {Object} data - The plot data
-     * @param {Object} settings - Plot settings
-     * @returns {Promise<Object>} The created plot
-     * @private
-     */
-    async _createLargeScatterPlot(container, data, settings) {
-        // Show loading indicator
-        this._showLoadingIndicator(container, 'Loading optimized visualization...');
+        // Generate a unique plot ID
+        const plotId = `plot-${Date.now()}`;
         
         try {
-            // Construct embedding name (usually X_umap, X_pca, etc.)
-            const embeddingKey = settings.embedding || 
-                                (data.xLabel && data.yLabel ? 
-                                 `X_${data.xLabel.toLowerCase().replace(/[0-9]/g, '')}` : 
-                                 'X_umap');
-            
-            // Determine color column if available
-            const colorBy = settings.colorBy || null;
-            
-            // Call the backend API to get downsampled data
-            const params = new URLSearchParams({
-                n_samples: settings.maxPoints || 5000,
-                method: settings.downsampleMethod || 'kmeans',
-                include_embeddings: 'true',
-                include_obs: 'true'
-            });
-            
-            // Make the API request
-            const response = await fetch(`${window.ANNZARRO_API_URL}/data/downsampled?${params}`);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to fetch downsampled data: ${response.statusText}`);
-            }
-            
-            const result = await response.json();
-            
-            // Check if we got the embedding data we need
-            if (!result.embeddings || !result.embeddings[embeddingKey]) {
-                throw new Error(`Embedding data ${embeddingKey} not available`);
-            }
-            
-            // Create plot data from the API result
-            const plotData = {
-                x: result.embeddings[embeddingKey].map(coord => coord[0]),
-                y: result.embeddings[embeddingKey].map(coord => coord[1]),
-                xLabel: data.xLabel || embeddingKey.replace('X_', '') + ' 1',
-                yLabel: data.yLabel || embeddingKey.replace('X_', '') + ' 2',
-                title: (data.title || 'Cell Visualization') + 
-                       ` (${result.n_cells.toLocaleString()} cells, downsampled)`,
-                cellIndices: result.cell_indices  // Keep track of original indices
+            // Default config
+            const defaultConfig = {
+                xAxis: {
+                    path: 'obsm/X_umap',
+                    index: 0,
+                    label: 'UMAP 1'
+                },
+                yAxis: {
+                    path: 'obsm/X_umap',
+                    index: 1,
+                    label: 'UMAP 2'
+                },
+                zAxis: null,
+                color: {
+                    path: null,
+                    label: null,
+                    scale: 'Viridis',
+                    range: [null, null],
+                    clipValues: true
+                },
+                marker: {
+                    size: 5,
+                    opacity: 0.7
+                },
+                selection: {
+                    cells: null,
+                    genes: null
+                },
+                layout: {
+                    title: '',
+                    showLegend: true
+                }
             };
             
-            // Add cell names if available
-            if (result.cell_names) {
-                plotData.text = result.cell_names.map((name, i) => {
-                    const x = plotData.x[i];
-                    const y = plotData.y[i];
-                    
-                    // Format hover text
-                    let text = `Cell: ${name}`;
-                    text += `<br>${plotData.xLabel}: ${this._formatNumber(x)}`;
-                    text += `<br>${plotData.yLabel}: ${this._formatNumber(y)}`;
-                    
-                    return text;
-                });
+            // Merge configs
+            const mergedConfig = deepMerge(defaultConfig, config);
+            
+            // Get data
+            let xData, yData, zData, colorData;
+            
+            // Get X axis data
+            if (mergedConfig.xAxis.path === 'obsm/X_umap' && mergedConfig.xAxis.index === 0 && 
+                mergedConfig.yAxis.path === 'obsm/X_umap' && mergedConfig.yAxis.index === 1) {
+                // Common case: UMAP embedding
+                const embedding = await DataManager.loadObsm('X_umap', null, null);
+                xData = embedding.map(row => row[0]);
+                yData = embedding.map(row => row[1]);
+            } else {
+                // General case: load each axis separately
+                xData = await loadAxisData(mergedConfig.xAxis.path, mergedConfig.xAxis.index);
+                yData = await loadAxisData(mergedConfig.yAxis.path, mergedConfig.yAxis.index);
             }
             
-            // Add color information if available
-            if (colorBy && result.obs && result.obs[colorBy]) {
-                plotData.color = result.obs[colorBy];
-                plotData.colorLabel = colorBy;
+            // Get Z axis data if 3D plot
+            if (mergedConfig.zAxis) {
+                zData = await loadAxisData(mergedConfig.zAxis.path, mergedConfig.zAxis.index);
             }
             
-            // Hide loading indicator
-            this._hideLoadingIndicator(container);
+            // Get color data if specified
+            if (mergedConfig.color.path) {
+                colorData = await loadAxisData(mergedConfig.color.path, mergedConfig.color.index);
+            }
             
-            // Create the plot using standard method
-            return this.createScatterPlot(container, plotData, {
-                ...settings,
-                title: plotData.title
+            // Apply selection filtering if needed
+            let filterIndices = null;
+            if (mergedConfig.selection && mergedConfig.selection.cells) {
+                filterIndices = DataManager.getCellSet(mergedConfig.selection.cells);
+            }
+            
+            // Apply filtering if needed
+            if (filterIndices && filterIndices.length > 0) {
+                xData = filterIndices.map(i => xData[i]);
+                yData = filterIndices.map(i => yData[i]);
+                
+                if (zData) {
+                    zData = filterIndices.map(i => zData[i]);
+                }
+                
+                if (colorData) {
+                    colorData = filterIndices.map(i => colorData[i]);
+                }
+            }
+            
+            // Create plot data
+            const trace = {
+                type: 'scatter' + (zData ? '3d' : ''),
+                mode: 'markers',
+                x: xData,
+                y: yData,
+                marker: {
+                    size: mergedConfig.marker.size,
+                    opacity: mergedConfig.marker.opacity
+                }
+            };
+            
+            // Add z data if 3D
+            if (zData) {
+                trace.z = zData;
+            }
+            
+            // Add color data if available
+            if (colorData) {
+                trace.marker.color = colorData;
+                
+                // Apply color range if specified
+                if (mergedConfig.color.range[0] !== null && mergedConfig.color.range[1] !== null) {
+                    const [min, max] = mergedConfig.color.range;
+                    
+                    if (mergedConfig.color.clipValues) {
+                        // Clip values to range
+                        trace.marker.cmin = min;
+                        trace.marker.cmax = max;
+                    } else {
+                        // Filter out points outside the range
+                        const indices = [];
+                        for (let i = 0; i < colorData.length; i++) {
+                            if (colorData[i] >= min && colorData[i] <= max) {
+                                indices.push(i);
+                            }
+                        }
+                        
+                        trace.x = indices.map(i => trace.x[i]);
+                        trace.y = indices.map(i => trace.y[i]);
+                        trace.marker.color = indices.map(i => colorData[i]);
+                        
+                        if (trace.z) {
+                            trace.z = indices.map(i => trace.z[i]);
+                        }
+                    }
+                }
+                
+                // Set color scale
+                trace.marker.colorscale = mergedConfig.color.scale;
+                
+                // Add color bar
+                trace.marker.colorbar = {
+                    title: mergedConfig.color.label || '',
+                    titleside: 'right'
+                };
+            }
+            
+            // Create layout
+            const layout = {
+                title: mergedConfig.layout.title || '',
+                showlegend: mergedConfig.layout.showLegend,
+                hovermode: 'closest',
+                margin: { l: 60, r: 40, t: 50, b: 60, pad: 10 },
+                xaxis: {
+                    title: mergedConfig.xAxis.label || 'X Axis'
+                },
+                yaxis: {
+                    title: mergedConfig.yAxis.label || 'Y Axis'
+                }
+            };
+            
+            // Add z-axis for 3D plots
+            if (zData) {
+                layout.scene = {
+                    xaxis: { title: mergedConfig.xAxis.label || 'X Axis' },
+                    yaxis: { title: mergedConfig.yAxis.label || 'Y Axis' },
+                    zaxis: { title: mergedConfig.zAxis.label || 'Z Axis' }
+                };
+            }
+            
+            // Create plot
+            await Plotly.newPlot(element, [trace], layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['toImage', 'sendDataToCloud', 'resetScale2d']
             });
+            
+            // Store plot in registry
+            _plots[plotId] = {
+                element: element,
+                config: mergedConfig,
+                lastUpdate: Date.now()
+            };
+            
+            // Add click event handler
+            element.on('plotly_click', data => {
+                handlePlotClick(plotId, data);
+            });
+            
+            // Return the plot ID
+            return plotId;
         } catch (error) {
-            console.error('Error creating downsampled plot:', error);
+            console.error('Error creating scatter plot:', error);
             
-            // Remove loading indicator
-            this._hideLoadingIndicator(container);
-            
-            // Show error message
-            this._showErrorMessage(container, `Failed to create optimized plot: ${error.message}`);
-            
-            // Fall back to regular plot if possible
-            if (data.x && data.y) {
-                return this.createScatterPlot(container, {
-                    ...data,
-                    title: (data.title || '') + ' (unoptimized)'
-                }, settings);
-            }
+            // Show error in element
+            element.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error Creating Plot</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
             
             return null;
         }
     }
     
-    /**
-     * Format a number nicely for display
-     * @param {number} value - The number to format
-     * @returns {string} Formatted number
-     * @private
-     */
-    _formatNumber(value) {
-        if (typeof value !== 'number') return value;
-        
-        // Check if it's an integer
-        if (Number.isInteger(value)) return value.toString();
-        
-        // Format with appropriate precision
-        if (Math.abs(value) < 0.001) return value.toExponential(2);
-        if (Math.abs(value) < 1) return value.toFixed(3);
-        if (Math.abs(value) < 10) return value.toFixed(2);
-        if (Math.abs(value) < 100) return value.toFixed(1);
-        return value.toFixed(0);
-    }
-    
-    /**
-     * Show a loading indicator in the container
-     * @param {HTMLElement} container - The container element
-     * @param {string} message - Loading message
-     * @private
-     */
-    _showLoadingIndicator(container, message = 'Loading...') {
-        // Remove any existing indicators
-        this._hideLoadingIndicator(container);
-        
-        // Create loading indicator
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'plot-loading-indicator';
-        loadingDiv.style.position = 'absolute';
-        loadingDiv.style.top = '50%';
-        loadingDiv.style.left = '50%';
-        loadingDiv.style.transform = 'translate(-50%, -50%)';
-        loadingDiv.style.textAlign = 'center';
-        loadingDiv.style.padding = '20px';
-        loadingDiv.style.background = 'rgba(255,255,255,0.9)';
-        loadingDiv.style.borderRadius = '5px';
-        loadingDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-        loadingDiv.style.zIndex = '1000';
-        
-        // Add spinner and message
-        loadingDiv.innerHTML = `
-            <div style="display: inline-block; width: 2rem; height: 2rem; border: 0.25rem solid rgba(0,123,255,0.25); 
-                        border-right-color: #007bff; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <div style="margin-top: 10px; color: #333;">${message}</div>
-        `;
-        
-        // Add animation style if needed
-        if (!document.getElementById('plot-loading-style')) {
-            const styleEl = document.createElement('style');
-            styleEl.id = 'plot-loading-style';
-            styleEl.textContent = `
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
-                }
-            `;
-            document.head.appendChild(styleEl);
-        }
-        
-        // Ensure container has position relative for proper positioning
-        const containerStyle = window.getComputedStyle(container);
-        if (containerStyle.position === 'static') {
-            container.style.position = 'relative';
-        }
-        
-        // Add to container
-        container.appendChild(loadingDiv);
-    }
-    
-    /**
-     * Hide the loading indicator
-     * @param {HTMLElement} container - The container element
-     * @private
-     */
-    _hideLoadingIndicator(container) {
-        const indicator = container.querySelector('.plot-loading-indicator');
-        if (indicator) {
-            indicator.remove();
-        }
-    }
-    
-    /**
-     * Show an error message in the container
-     * @param {HTMLElement} container - The container element
-     * @param {string} message - Error message
-     * @private
-     */
-    _showErrorMessage(container, message) {
-        // Remove any existing error messages
-        const existingError = container.querySelector('.plot-error-message');
-        if (existingError) existingError.remove();
-        
-        // Create error message element
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'plot-error-message';
-        errorDiv.style.position = 'absolute';
-        errorDiv.style.top = '50%';
-        errorDiv.style.left = '50%';
-        errorDiv.style.transform = 'translate(-50%, -50%)';
-        errorDiv.style.textAlign = 'center';
-        errorDiv.style.padding = '20px';
-        errorDiv.style.background = 'rgba(255,220,220,0.9)';
-        errorDiv.style.color = '#721c24';
-        errorDiv.style.borderRadius = '5px';
-        errorDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-        errorDiv.style.maxWidth = '80%';
-        
-        // Add error icon and message
-        errorDiv.innerHTML = `
-            <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
-            <div>${message}</div>
-        `;
-        
-        // Ensure container has position relative for proper positioning
-        const containerStyle = window.getComputedStyle(container);
-        if (containerStyle.position === 'static') {
-            container.style.position = 'relative';
-        }
-        
-        // Add to container
-        container.appendChild(errorDiv);
-    }
-
     /**
      * Create a violin plot
-     * @param {HTMLElement} container - Container element for the plot
-     * @param {Object} data - Data for the plot
-     * @param {Object} settings - Settings for the plot
-     * @returns {Object} The created plot object
+     * @param {string} elementId - ID of the container element
+     * @param {Object} config - Plot configuration
+     * @returns {string} - Plot ID
      */
-    createViolinPlot(container, data, settings) {
-        // Extract data for the plot
-        const {
-            groups,
-            values,
-            text,
-            xLabel, yLabel,
-            title
-        } = data;
+    async function createViolinPlot(elementId, config = {}) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`Element not found: ${elementId}`);
+            return null;
+        }
         
-        // Create traces for each group
-        const traces = [];
+        // Generate a unique plot ID
+        const plotId = `plot-${Date.now()}`;
         
-        // Get unique groups
-        const uniqueGroups = [...new Set(groups)];
-        
-        // Create violin for each group
-        for (const group of uniqueGroups) {
-            // Get indices for this group
-            const indices = [];
-            for (let i = 0; i < groups.length; i++) {
-                if (groups[i] === group) {
-                    indices.push(i);
-                }
-            }
-            
-            // Get values for this group
-            const groupValues = indices.map(i => values[i]);
-            const groupText = text ? indices.map(i => text[i]) : null;
-            
-            // Create violin trace
-            const violinTrace = {
-                type: 'violin',
-                x: Array(groupValues.length).fill(group),
-                y: groupValues,
-                name: group,
-                box: {
-                    visible: true,
-                    width: settings.boxWidth || 0.5
+        try {
+            // Default config
+            const defaultConfig = {
+                xAxis: {
+                    path: 'obs/leiden',
+                    label: 'Cluster'
                 },
-                meanline: {
-                    visible: true
+                yAxis: {
+                    path: 'obs/n_genes',
+                    label: 'Number of Genes'
                 },
-                points: settings.showPoints ? 'all' : false,
-                pointpos: 0,
-                jitter: 0.3,
-                marker: {
-                    opacity: settings.pointsOpacity || 0.3
+                color: {
+                    path: null,
+                    scale: 'Viridis'
+                },
+                layout: {
+                    title: '',
+                    showLegend: true
                 }
             };
             
-            // Add hover text if provided
-            if (groupText) {
-                violinTrace.text = groupText;
-                violinTrace.hoverinfo = 'text';
-            }
+            // Merge configs
+            const mergedConfig = deepMerge(defaultConfig, config);
             
-            traces.push(violinTrace);
-        }
-        
-        // Create the layout
-        const layout = this._createLayout(xLabel, yLabel, null, title);
-        layout.violinmode = 'group';
-        
-        // Create the plot
-        return Plotly.newPlot(container, traces, layout);
-    }
-
-    /**
-     * Create a heatmap plot
-     * @param {HTMLElement} container - Container element for the plot
-     * @param {Object} data - Data for the plot
-     * @param {Object} settings - Settings for the plot
-     * @returns {Object} The created plot object
-     */
-    createHeatmapPlot(container, data, settings) {
-        // Extract data for the plot
-        const {
-            z,
-            x, y,
-            text,
-            xLabel, yLabel,
-            title
-        } = data;
-        
-        // Create the trace
-        const trace = {
-            type: 'heatmap',
-            z,
-            x,
-            y,
-            colorscale: settings.colorRange || 'RdBu',
-            hoverinfo: text ? 'text' : 'x+y+z'
-        };
-        
-        // Add hover text if provided
-        if (text) {
-            trace.text = text;
-        }
-        
-        // Set color range if specified
-        if (settings.zMin !== undefined) trace.zmin = settings.zMin;
-        if (settings.zMax !== undefined) trace.zmax = settings.zMax;
-        
-        // Create the layout
-        const layout = this._createLayout(xLabel, yLabel, null, title);
-        
-        // Enable zoom if there are many cells
-        if (z && z.length > 20) {
-            layout.xaxis.autorange = true;
-            layout.yaxis.autorange = true;
-            layout.xaxis.showgrid = false;
-            layout.yaxis.showgrid = false;
-        }
-        
-        // Create the plot
-        return Plotly.newPlot(container, [trace], layout);
-    }
-
-    /**
-     * Create a bar plot
-     * @param {HTMLElement} container - Container element for the plot
-     * @param {Object} data - Data for the plot
-     * @param {Object} settings - Settings for the plot
-     * @returns {Object} The created plot object
-     */
-    createBarPlot(container, data, settings) {
-        const Utils = getUtils();
-        if (!Utils) {
-            console.error('Utils module not found');
-            return null;
-        }
-
-        // Extract data for the plot
-        const {
-            x, y,
-            error,
-            color,
-            text,
-            xLabel, yLabel,
-            title
-        } = data;
-        
-        // Determine orientation
-        const isVertical = settings.orientation !== 'horizontal';
-        
-        // Create the trace
-        const trace = {
-            type: 'bar',
-            orientation: isVertical ? 'v' : 'h',
-            [isVertical ? 'x' : 'y']: x,
-            [isVertical ? 'y' : 'x']: y,
-            text,
-            hoverinfo: text ? 'text' : 'x+y',
-            marker: {
-                width: settings.barWidth || 0.8
-            }
-        };
-        
-        // Add color if provided
-        if (color) {
-            // Check if the color values are categorical
-            const uniqueValues = [...new Set(color)];
-            const isCategorical = uniqueValues.some(val => typeof val === 'string' && isNaN(val)) || 
-                                 uniqueValues.length <= 10;
+            // Get data
+            let xData, yData;
             
-            if (isCategorical) {
-                // Categorical coloring - use a list of colors
-                const colorMap = {};
-                uniqueValues.forEach((val, i) => {
-                    colorMap[val] = Utils.getColorFromPalette(i);
-                });
-                trace.marker.color = color.map(val => colorMap[val]);
+            // Load X data (categorical)
+            const xPath = mergedConfig.xAxis.path.split('/');
+            if (xPath[0] === 'obs') {
+                const obsData = await DataManager.loadObs(null, [xPath[1]]);
+                xData = obsData[xPath[1]];
             } else {
-                // Numerical coloring
-                trace.marker.color = color;
-                trace.marker.colorscale = settings.colorRange || 'Viridis';
-                
-                // Set color range if specified
-                if (settings.colorMin !== undefined && settings.colorMax !== undefined) {
-                    trace.marker.cmin = settings.colorMin;
-                    trace.marker.cmax = settings.colorMax;
+                throw new Error('X axis for violin plot must be a categorical variable from obs');
+            }
+            
+            // Load Y data (numerical)
+            const yPath = mergedConfig.yAxis.path.split('/');
+            if (yPath[0] === 'obs') {
+                const obsData = await DataManager.loadObs(null, [yPath[1]]);
+                yData = obsData[yPath[1]];
+            } else if (yPath[0] === 'X' || yPath[0] === 'layers') {
+                // For expression data, need focused gene
+                const focusedGene = DataManager.getFocusedGene();
+                if (!focusedGene) {
+                    throw new Error('Expression plotting requires a focused gene');
                 }
                 
-                // Add colorbar
-                trace.marker.colorbar = { title: 'Value' };
-            }
-        }
-        
-        // Add error bars if provided and enabled
-        if (error && settings.showError) {
-            trace.error_[isVertical ? 'y' : 'x'] = {
-                type: 'data',
-                array: error,
-                visible: true
-            };
-        }
-        
-        // Create the layout
-        const layout = this._createLayout(
-            isVertical ? xLabel : yLabel,
-            isVertical ? yLabel : xLabel,
-            null,
-            title
-        );
-        
-        // Create the plot
-        return Plotly.newPlot(container, [trace], layout);
-    }
-
-    /**
-     * Create a layout object for Plotly
-     * @param {string} xLabel - Label for x-axis
-     * @param {string} yLabel - Label for y-axis
-     * @param {string} zLabel - Label for z-axis
-     * @param {string} title - Plot title
-     * @returns {Object} Plotly layout object
-     * @private
-     */
-    _createLayout(xLabel, yLabel, zLabel, title) {
-        const layout = {
-            title: {
-                text: title || '',
-                font: {
-                    size: 16
+                // Get gene index
+                const geneNames = await DataManager.loadGeneNames();
+                const geneIndex = geneNames.indexOf(focusedGene);
+                
+                if (geneIndex === -1) {
+                    throw new Error(`Gene not found: ${focusedGene}`);
                 }
-            },
-            margin: {
-                l: 60,
-                r: 40,
-                t: 50,
-                b: 60
-            },
-            xaxis: {
-                title: {
-                    text: xLabel || '',
-                    font: {
-                        size: 14
+                
+                // Load expression data
+                if (yPath[0] === 'X') {
+                    const exprData = await DataManager.loadX(null, [geneIndex]);
+                    yData = exprData.map(row => row[0]);
+                } else {
+                    // Layers
+                    const layer = yPath[1];
+                    const exprData = await DataManager.loadLayer(layer, null, [geneIndex]);
+                    yData = exprData.map(row => row[0]);
+                }
+            } else {
+                throw new Error('Y axis data path not supported for violin plot');
+            }
+            
+            // Group Y data by X categories
+            const categories = [...new Set(xData)];
+            const traces = [];
+            
+            for (const category of categories) {
+                const indices = [];
+                for (let i = 0; i < xData.length; i++) {
+                    if (xData[i] === category) {
+                        indices.push(i);
                     }
                 }
-            },
-            yaxis: {
-                title: {
-                    text: yLabel || '',
-                    font: {
-                        size: 14
+                
+                const categoryYData = indices.map(i => yData[i]);
+                
+                traces.push({
+                    type: 'violin',
+                    x: Array(categoryYData.length).fill(category),
+                    y: categoryYData,
+                    name: category,
+                    box: {
+                        visible: true
+                    },
+                    meanline: {
+                        visible: true
                     }
-                }
-            },
-            hovermode: 'closest',
-            template: 'plotly_white'
-        };
-        
-        // Add z-axis for 3D plots
-        if (zLabel) {
-            layout.scene = {
-                xaxis: { title: xLabel || '' },
-                yaxis: { title: yLabel || '' },
-                zaxis: { title: zLabel || '' }
+                });
+            }
+            
+            // Create layout
+            const layout = {
+                title: mergedConfig.layout.title || '',
+                xaxis: {
+                    title: mergedConfig.xAxis.label || 'X Axis'
+                },
+                yaxis: {
+                    title: mergedConfig.yAxis.label || 'Y Axis'
+                },
+                violinmode: 'group',
+                showlegend: mergedConfig.layout.showLegend,
+                margin: { l: 60, r: 40, t: 50, b: 100, pad: 10 }
             };
+            
+            // Create plot
+            await Plotly.newPlot(element, traces, layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['toImage', 'sendDataToCloud']
+            });
+            
+            // Store plot in registry
+            _plots[plotId] = {
+                element: element,
+                config: mergedConfig,
+                lastUpdate: Date.now()
+            };
+            
+            // Return the plot ID
+            return plotId;
+        } catch (error) {
+            console.error('Error creating violin plot:', error);
+            
+            // Show error in element
+            element.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error Creating Plot</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            
+            return null;
         }
-        
-        return layout;
     }
-
+    
     /**
-     * Download a plot as an image
-     * @param {string} panelId - ID of the panel with the plot
-     * @param {string} format - Image format ('png', 'svg', 'jpeg')
-     * @param {string} filename - Name for the downloaded file
+     * Create a heatmap
+     * @param {string} elementId - ID of the container element
+     * @param {Object} config - Plot configuration
+     * @returns {string} - Plot ID
      */
-    downloadPlot(panelId, format = 'png', filename = 'plot') {
-        // Get the plot
-        const plotInfo = this.plots.get(panelId);
-        if (!plotInfo) {
-            console.error(`No plot found in panel ${panelId}`);
-            return;
-        }
-        
-        // Download the plot
-        Plotly.downloadImage(plotInfo.container, {
-            format: format,
-            filename: filename,
-            width: 1200,
-            height: 800
-        });
-    }
-
-    /**
-     * Enable plot interactions (like selection)
-     * @param {string} panelId - ID of the panel with the plot
-     * @param {Function} callback - Callback function for interactions
-     */
-    enableInteractions(panelId, callback) {
-        // Get the plot
-        const plotInfo = this.plots.get(panelId);
-        if (!plotInfo) {
-            console.error(`No plot found in panel ${panelId}`);
-            return;
-        }
-        
-        // Enable selection
-        plotInfo.container.on('plotly_selected', data => {
-            if (data && callback) {
-                callback('selection', data);
-            }
-        });
-        
-        // Enable clicking
-        plotInfo.container.on('plotly_click', data => {
-            if (data && callback) {
-                callback('click', data);
-            }
-        });
-        
-        // Enable hovering
-        plotInfo.container.on('plotly_hover', data => {
-            if (data && callback) {
-                callback('hover', data);
-            }
-        });
-    }
-
-    /**
-     * Add annotations to a plot
-     * @param {string} panelId - ID of the panel with the plot
-     * @param {Array} annotations - Array of annotation objects
-     * @returns {Object} The updated plot object
-     */
-    addAnnotations(panelId, annotations) {
-        // Get the plot
-        const plotInfo = this.plots.get(panelId);
-        if (!plotInfo) {
-            console.error(`No plot found in panel ${panelId}`);
+    async function createHeatmap(elementId, config = {}) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`Element not found: ${elementId}`);
             return null;
         }
         
-        // Get current layout
-        const layout = plotInfo.plot.layout || {};
+        // Generate a unique plot ID
+        const plotId = `plot-${Date.now()}`;
         
-        // Add annotations
-        layout.annotations = annotations;
-        
-        // Update the plot
-        Plotly.relayout(plotInfo.container, layout);
-        
-        return plotInfo.plot;
+        try {
+            // Default config
+            const defaultConfig = {
+                data: {
+                    path: 'X',
+                    layer: null
+                },
+                rows: {
+                    type: 'cells',
+                    set: null,
+                    max: 50
+                },
+                columns: {
+                    type: 'genes',
+                    set: null,
+                    max: 50
+                },
+                color: {
+                    scale: 'Viridis',
+                    range: [null, null]
+                },
+                layout: {
+                    title: '',
+                    showLabels: true
+                }
+            };
+            
+            // Merge configs
+            const mergedConfig = deepMerge(defaultConfig, config);
+            
+            // Load rows and columns
+            let rowIndices = [];
+            let columnIndices = [];
+            let rowLabels = [];
+            let columnLabels = [];
+            
+            // Handle rows (cells)
+            if (mergedConfig.rows.type === 'cells') {
+                if (mergedConfig.rows.set) {
+                    // Use a specified cell set
+                    rowIndices = DataManager.getCellSet(mergedConfig.rows.set);
+                    if (rowIndices.length === 0) {
+                        throw new Error(`Cell set empty or not found: ${mergedConfig.rows.set}`);
+                    }
+                } else {
+                    // Use top N cells
+                    const cellCount = DataManager.getDatasetInfo().n_obs || 0;
+                    rowIndices = Array.from({ length: Math.min(cellCount, mergedConfig.rows.max) }, (_, i) => i);
+                }
+                
+                // Get cell labels
+                const cellNames = await DataManager.loadCellNames();
+                rowLabels = rowIndices.map(i => cellNames[i]);
+            } else {
+                throw new Error('Unsupported row type for heatmap');
+            }
+            
+            // Handle columns (genes)
+            if (mergedConfig.columns.type === 'genes') {
+                if (mergedConfig.columns.set) {
+                    // Use a specified gene set
+                    columnIndices = DataManager.getGeneSet(mergedConfig.columns.set);
+                    if (columnIndices.length === 0) {
+                        throw new Error(`Gene set empty or not found: ${mergedConfig.columns.set}`);
+                    }
+                } else if (DataManager.getFocusedGene()) {
+                    // Use focused gene and related genes (placeholder for actual implementation)
+                    const geneNames = await DataManager.loadGeneNames();
+                    const focusedGene = DataManager.getFocusedGene();
+                    const focusedIndex = geneNames.indexOf(focusedGene);
+                    
+                    if (focusedIndex !== -1) {
+                        // For now just use the focused gene and surrounding genes
+                        const startIndex = Math.max(0, focusedIndex - Math.floor(mergedConfig.columns.max / 2));
+                        columnIndices = Array.from(
+                            { length: Math.min(mergedConfig.columns.max, geneNames.length - startIndex) }, 
+                            (_, i) => startIndex + i
+                        );
+                    } else {
+                        // Fallback to first N genes
+                        columnIndices = Array.from({ length: mergedConfig.columns.max }, (_, i) => i);
+                    }
+                } else {
+                    // Use top N genes
+                    const geneCount = DataManager.getDatasetInfo().n_vars || 0;
+                    columnIndices = Array.from({ length: Math.min(geneCount, mergedConfig.columns.max) }, (_, i) => i);
+                }
+                
+                // Get gene labels
+                const geneNames = await DataManager.loadGeneNames();
+                columnLabels = columnIndices.map(i => geneNames[i]);
+            } else {
+                throw new Error('Unsupported column type for heatmap');
+            }
+            
+            // Load matrix data
+            let matrixData;
+            if (mergedConfig.data.path === 'X') {
+                // Load from main matrix
+                matrixData = await DataManager.loadX(rowIndices, columnIndices);
+            } else if (mergedConfig.data.path === 'layers') {
+                // Load from layer
+                if (!mergedConfig.data.layer) {
+                    throw new Error('Layer name not specified');
+                }
+                matrixData = await DataManager.loadLayer(mergedConfig.data.layer, rowIndices, columnIndices);
+            } else {
+                throw new Error(`Unsupported data path for heatmap: ${mergedConfig.data.path}`);
+            }
+            
+            // Create trace
+            const trace = {
+                type: 'heatmap',
+                z: matrixData,
+                x: columnLabels,
+                y: rowLabels,
+                colorscale: mergedConfig.color.scale,
+                showscale: true
+            };
+            
+            // Apply color range if specified
+            if (mergedConfig.color.range[0] !== null && mergedConfig.color.range[1] !== null) {
+                trace.zmin = mergedConfig.color.range[0];
+                trace.zmax = mergedConfig.color.range[1];
+            }
+            
+            // Create layout
+            const layout = {
+                title: mergedConfig.layout.title || '',
+                margin: { l: 100, r: 40, t: 50, b: 100, pad: 10 },
+                xaxis: {
+                    title: 'Genes',
+                    showticklabels: mergedConfig.layout.showLabels
+                },
+                yaxis: {
+                    title: 'Cells',
+                    showticklabels: mergedConfig.layout.showLabels
+                }
+            };
+            
+            // Create plot
+            await Plotly.newPlot(element, [trace], layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['toImage', 'sendDataToCloud']
+            });
+            
+            // Store plot in registry
+            _plots[plotId] = {
+                element: element,
+                config: mergedConfig,
+                lastUpdate: Date.now()
+            };
+            
+            // Return the plot ID
+            return plotId;
+        } catch (error) {
+            console.error('Error creating heatmap:', error);
+            
+            // Show error in element
+            element.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error Creating Heatmap</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            
+            return null;
+        }
     }
-}
+    
+    /**
+     * Load data for a specific axis
+     * @param {string} path - Data path
+     * @param {number} index - Index in array (if applicable)
+     * @returns {Promise<Array>} - Array of values
+     */
+    async function loadAxisData(path, index) {
+        if (!path) return null;
+        
+        try {
+            const pathParts = path.split('/');
+            const component = pathParts[0];
+            
+            switch (component) {
+                case 'X':
+                    // Expression data - need a focused gene
+                    const focusedGene = DataManager.getFocusedGene();
+                    if (!focusedGene) {
+                        throw new Error('Expression plotting requires a focused gene');
+                    }
+                    
+                    // Get gene index
+                    const geneNames = await DataManager.loadGeneNames();
+                    const geneIndex = geneNames.indexOf(focusedGene);
+                    
+                    if (geneIndex === -1) {
+                        throw new Error(`Gene not found: ${focusedGene}`);
+                    }
+                    
+                    // Load data for this gene
+                    const exprData = await DataManager.loadX(null, [geneIndex]);
+                    return exprData.map(row => row[0]);
+                
+                case 'obs':
+                    if (pathParts.length < 2) {
+                        throw new Error('Invalid path for obs data');
+                    }
+                    
+                    const colName = pathParts[1];
+                    const obsData = await DataManager.loadObs(null, [colName]);
+                    return obsData[colName];
+                
+                case 'var':
+                    if (pathParts.length < 2) {
+                        throw new Error('Invalid path for var data');
+                    }
+                    
+                    const varName = pathParts[1];
+                    const varData = await DataManager.loadVar(null, [varName]);
+                    return varData[varName];
+                
+                case 'obsm':
+                    if (pathParts.length < 2) {
+                        throw new Error('Invalid path for obsm data');
+                    }
+                    
+                    const obsmKey = pathParts[1];
+                    
+                    if (pathParts.length >= 3) {
+                        // Dataframe column
+                        const columnName = pathParts[2];
+                        return await DataManager.loadObsm(obsmKey, null, null, columnName);
+                    } else {
+                        // Matrix column
+                        const matrix = await DataManager.loadObsm(obsmKey, null, null);
+                        return matrix.map(row => row[index || 0]);
+                    }
+                
+                case 'varm':
+                    if (pathParts.length < 2) {
+                        throw new Error('Invalid path for varm data');
+                    }
+                    
+                    const varmKey = pathParts[1];
+                    
+                    if (pathParts.length >= 3) {
+                        // Dataframe column
+                        const columnName = pathParts[2];
+                        return await DataManager.loadVarm(varmKey, null, null, columnName);
+                    } else {
+                        // Matrix column
+                        const matrix = await DataManager.loadVarm(varmKey, null, null);
+                        return matrix.map(row => row[index || 0]);
+                    }
+                
+                case 'layers':
+                    if (pathParts.length < 2) {
+                        throw new Error('Invalid path for layers data');
+                    }
+                    
+                    const layer = pathParts[1];
+                    
+                    // Expression data - need a focused gene
+                    const focusedGeneLayer = DataManager.getFocusedGene();
+                    if (!focusedGeneLayer) {
+                        throw new Error('Expression plotting requires a focused gene');
+                    }
+                    
+                    // Get gene index
+                    const geneNamesLayer = await DataManager.loadGeneNames();
+                    const geneIndexLayer = geneNamesLayer.indexOf(focusedGeneLayer);
+                    
+                    if (geneIndexLayer === -1) {
+                        throw new Error(`Gene not found: ${focusedGeneLayer}`);
+                    }
+                    
+                    // Load data for this gene
+                    const layerData = await DataManager.loadLayer(layer, null, [geneIndexLayer]);
+                    return layerData.map(row => row[0]);
+                
+                default:
+                    throw new Error(`Unsupported data component: ${component}`);
+            }
+        } catch (error) {
+            console.error(`Error loading axis data from ${path}:`, error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Handle plot click events
+     * @param {string} plotId - Plot ID
+     * @param {Object} data - Click event data
+     */
+    function handlePlotClick(plotId, data) {
+        if (!plotId || !data || !data.points || data.points.length === 0) return;
+        
+        const plot = _plots[plotId];
+        if (!plot) return;
+        
+        const point = data.points[0];
+        
+        // Determine what was clicked based on plot type and config
+        if (plot.config.type === 'scatter') {
+            // For scatter plots, set focused cell if showing cells
+            if (plot.config.rows && plot.config.rows.type === 'cells') {
+                // Find the cell index
+                const pointIndex = point.pointIndex;
+                
+                // Get cell name
+                DataManager.loadCellNames().then(cellNames => {
+                    const cellName = cellNames[pointIndex];
+                    if (cellName) {
+                        DataManager.setFocusedCell(cellName);
+                    }
+                }).catch(error => {
+                    console.error('Error getting cell name:', error);
+                });
+            }
+        } else if (plot.config.type === 'heatmap') {
+            // For heatmaps, set focused gene or cell depending on what was clicked
+            if (point.y !== undefined && plot.config.rows && plot.config.rows.type === 'cells') {
+                // Cell row clicked
+                const cellName = point.y;
+                DataManager.setFocusedCell(cellName);
+            }
+            
+            if (point.x !== undefined && plot.config.columns && plot.config.columns.type === 'genes') {
+                // Gene column clicked
+                const geneName = point.x;
+                DataManager.setFocusedGene(geneName);
+            }
+        }
+    }
+    
+    /**
+     * Update a plot
+     * @param {string} plotId - Plot ID
+     * @param {Object} config - Updated configuration
+     */
+    function updatePlot(plotId, config = {}) {
+        const plot = _plots[plotId];
+        if (!plot) {
+            console.error(`Plot not found: ${plotId}`);
+            return;
+        }
+        
+        // Update config
+        plot.config = deepMerge(plot.config, config);
+        
+        // Re-create the plot based on its type
+        switch (plot.config.type) {
+            case 'scatter':
+                createScatterPlot(plot.element.id, plot.config);
+                break;
+            case 'violin':
+                createViolinPlot(plot.element.id, plot.config);
+                break;
+            case 'heatmap':
+                createHeatmap(plot.element.id, plot.config);
+                break;
+            default:
+                console.error(`Unsupported plot type: ${plot.config.type}`);
+        }
+    }
+    
+    /**
+     * Handle dataset loaded event
+     * @param {Event} event - Dataset loaded event
+     */
+    function handleDataLoaded(event) {
+        // No action by default, plots will be created explicitly
+    }
+    
+    /**
+     * Handle gene focus changed event
+     * @param {Event} event - Gene focus changed event
+     */
+    function handleGeneFocusChanged(event) {
+        // Update plots that depend on focused gene
+        for (const plotId in _plots) {
+            const plot = _plots[plotId];
+            
+            // Check if plot depends on focused gene
+            let needsUpdate = false;
+            
+            if (plot.config.xAxis && plot.config.xAxis.path && 
+                (plot.config.xAxis.path.startsWith('X/') || plot.config.xAxis.path.startsWith('layers/'))) {
+                needsUpdate = true;
+            }
+            
+            if (plot.config.yAxis && plot.config.yAxis.path && 
+                (plot.config.yAxis.path.startsWith('X/') || plot.config.yAxis.path.startsWith('layers/'))) {
+                needsUpdate = true;
+            }
+            
+            if (plot.config.zAxis && plot.config.zAxis.path && 
+                (plot.config.zAxis.path.startsWith('X/') || plot.config.zAxis.path.startsWith('layers/'))) {
+                needsUpdate = true;
+            }
+            
+            if (plot.config.color && plot.config.color.path && 
+                (plot.config.color.path.startsWith('X/') || plot.config.color.path.startsWith('layers/'))) {
+                needsUpdate = true;
+            }
+            
+            // Update plot if needed
+            if (needsUpdate) {
+                updatePlot(plotId);
+            }
+        }
+    }
+    
+    /**
+     * Handle cell focus changed event
+     * @param {Event} event - Cell focus changed event
+     */
+    function handleCellFocusChanged(event) {
+        // Update plots that highlight focused cell
+        // (Placeholder for implementation)
+    }
+    
+    /**
+     * Handle gene set changed event
+     * @param {Event} event - Gene set changed event
+     */
+    function handleGeneSetChanged(event) {
+        // Update plots that use gene sets
+        for (const plotId in _plots) {
+            const plot = _plots[plotId];
+            
+            // Check if plot uses the changed gene set
+            if (plot.config.type === 'heatmap' && 
+                plot.config.columns && 
+                plot.config.columns.type === 'genes' && 
+                plot.config.columns.set === event.detail.name) {
+                
+                updatePlot(plotId);
+            }
+        }
+    }
+    
+    /**
+     * Handle cell set changed event
+     * @param {Event} event - Cell set changed event
+     */
+    function handleCellSetChanged(event) {
+        // Update plots that use cell sets
+        for (const plotId in _plots) {
+            const plot = _plots[plotId];
+            
+            // Check if plot uses the changed cell set
+            if ((plot.config.type === 'scatter' || plot.config.type === 'heatmap') && 
+                plot.config.selection && 
+                plot.config.selection.cells === event.detail.name) {
+                
+                updatePlot(plotId);
+            }
+        }
+    }
+    
+    /**
+     * Handle window resize
+     */
+    function handleResize() {
+        // Resize all plots
+        for (const plotId in _plots) {
+            const plot = _plots[plotId];
+            Plotly.Plots.resize(plot.element);
+        }
+    }
+    
+    /**
+     * Deep merge two objects
+     * @param {Object} target - Target object
+     * @param {Object} source - Source object
+     * @returns {Object} - Merged object
+     */
+    function deepMerge(target, source) {
+        const result = {...target};
+        
+        for (const key in source) {
+            if (source[key] instanceof Object && key in target && target[key] instanceof Object) {
+                result[key] = deepMerge(target[key], source[key]);
+            } else if (source[key] !== undefined) {
+                result[key] = source[key];
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Get available color scales
+     * @returns {Object} - Color scales by category
+     */
+    function getColorScales() {
+        return {..._colorScales};
+    }
+    
+    // Public API
+    return {
+        init,
+        createScatterPlot,
+        createViolinPlot,
+        createHeatmap,
+        updatePlot,
+        getColorScales
+    };
+})();
 
-// Create and export a singleton instance
-const plotManager = new PlotManager();
+// Initialize on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    PlotManager.init();
+});
 
-// Export for both browser and Node.js environments
+// Export as module and global
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = plotManager;
-} else if (typeof window !== 'undefined') {
-    // Register with the module loader if available
-    if (window.Annzarro) {
-        window.Annzarro.registerModule('plotManager', plotManager);
-        window.Annzarro.checkModulesReady();
-    } else {
-        window.plotManager = plotManager;
-    }
+    module.exports = PlotManager;
+} else {
+    window.PlotManager = PlotManager;
 }

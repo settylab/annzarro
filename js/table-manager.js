@@ -1,550 +1,714 @@
 /**
- * TableManager - Creates and manages DataTables for cell and gene data
- * This class is responsible for:
- * 1. Creating and configuring DataTables
- * 2. Handling DataTable events like selection and filtering
- * 3. Managing table data and column visibility
+ * Table Manager Module
+ * 
+ * Handles data table creation and management using DataTables
  */
 
-class TableManager {
-    constructor() {
-        // Map of table instances
-        this.tables = new Map();
-        
-        // Map of searchBuilder instances
-        this.searchBuilders = new Map();
-        
-        // Column configurations
-        this.columnConfigs = {
-            // Special columns that should be visible by default
-            defaultVisible: ['_index', 'gene', 'cell', 'symbol', 'name'],
-            
-            // Columns that should always be hidden
-            alwaysHidden: ['_row', '_column']
-        };
-        
-        // Current filter settings
-        this.filters = new Map();
-    }
-
+const TableManager = (function() {
+    // Private variables
+    let _tables = {};
+    let _pageSize = 25;
+    
     /**
-     * Create a new DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {Array} data - Data for the table
-     * @param {Array} columns - Column definitions
-     * @param {Object} options - Additional options
-     * @returns {Object} The DataTable instance
+     * Initialize the table manager
      */
-    createTable(containerId, data, columns, options = {}) {
-        // Get the container element
-        const container = document.getElementById(containerId);
-        if (!container) {
-            console.error(`Container element with ID ${containerId} not found`);
+    function init() {
+        console.log('TableManager initialized');
+        
+        // Listen for events
+        document.addEventListener('dataLoaded', handleDataLoaded);
+        document.addEventListener('geneFocusChanged', handleGeneFocusChanged);
+        document.addEventListener('cellFocusChanged', handleCellFocusChanged);
+        document.addEventListener('geneSetChanged', handleGeneSetChanged);
+        document.addEventListener('cellSetChanged', handleCellSetChanged);
+    }
+    
+    /**
+     * Create a cells table
+     * @param {string} elementId - ID of the table element
+     * @param {Object} config - Table configuration
+     * @returns {string} - Table ID
+     */
+    async function createCellsTable(elementId, config = {}) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`Element not found: ${elementId}`);
             return null;
         }
         
-        // Clear the container
-        container.innerHTML = '';
+        // Generate a unique table ID
+        const tableId = `table-${Date.now()}`;
         
-        // Create a table element
-        const table = document.createElement('table');
-        table.className = 'table table-striped table-hover';
-        table.style.width = '100%';
-        container.appendChild(table);
-        
-        // Process column definitions
-        const columnDefs = this._processColumnDefinitions(columns);
-        
-        // Configure default options
-        const defaultOptions = {
-            data: data,
-            columns: columns,
-            columnDefs: columnDefs,
-            dom: 'Qlfrtip', // Include SearchBuilder ('Q')
-            responsive: true,
-            orderCellsTop: true,
-            fixedHeader: true,
-            paging: true,
-            pageLength: 25,
-            lengthMenu: [10, 25, 50, 100],
-            scrollY: options.scrollY || '400px',
-            scrollX: true,
-            select: {
-                style: 'multi',
-                selector: 'td:first-child'
-            },
-            buttons: [
-                {
-                    extend: 'colvis',
-                    text: 'Columns',
-                    columns: ':not(.noVis)'
-                },
-                {
-                    extend: 'collection',
-                    text: 'Export',
-                    buttons: [
-                        'copy',
-                        'csv',
-                        'excel',
-                        'pdf'
-                    ]
-                }
-            ],
-            language: {
-                searchBuilder: {
-                    data: 'Column',
-                    value: 'Value',
-                    conditions: {
-                        string: {
-                            contains: 'Contains',
-                            empty: 'Empty',
-                            notEmpty: 'Not Empty',
-                            equals: 'Equals',
-                            notContains: 'Does not contain',
-                            startsWith: 'Starts with',
-                            endsWith: 'Ends with'
-                        },
-                        num: {
-                            equals: 'Equals',
-                            gt: '>',
-                            gte: '>=',
-                            lt: '<',
-                            lte: '<=',
-                            not: 'Not',
-                            between: 'Between',
-                            notBetween: 'Not Between'
-                        }
-                    }
-                }
+        try {
+            // Default config
+            const defaultConfig = {
+                columns: ['_index'],
+                initialPageLength: _pageSize,
+                enableSelection: true,
+                selectionSet: 'selectedCells',
+                enableSearchBuilder: true
+            };
+            
+            // Merge configs
+            const mergedConfig = {...defaultConfig, ...config};
+            
+            // First check if dataset is loaded
+            const datasetInfo = DataManager.getDatasetInfo();
+            if (!datasetInfo) {
+                throw new Error('No dataset loaded');
             }
-        };
-        
-        // Merge with user options
-        const tableOptions = {...defaultOptions, ...options};
-        
-        // Initialize DataTable
-        const dataTable = $(table).DataTable(tableOptions);
-        
-        // Store the table instance
-        this.tables.set(containerId, {
-            table: dataTable,
-            container: container,
-            columns: columns,
-            data: data,
-            options: tableOptions
-        });
-        
-        // Get the searchBuilder instance
-        const searchBuilder = dataTable.searchBuilder();
-        this.searchBuilders.set(containerId, searchBuilder);
-        
-        // Set up event handlers
-        this._setupEventHandlers(containerId, dataTable);
-        
-        return dataTable;
-    }
-
-    /**
-     * Process column definitions to set visibility and rendering
-     * @param {Array} columns - Column definitions
-     * @returns {Array} Processed column definitions
-     * @private
-     */
-    _processColumnDefinitions(columns) {
-        const columnDefs = [];
-        
-        // Add default visibility rules
-        for (let i = 0; i < columns.length; i++) {
-            const column = columns[i];
-            const columnName = column.data;
             
-            // Check if column should be visible by default
-            const visible = this.columnConfigs.defaultVisible.includes(columnName) ||
-                            column.defaultVisible === true;
-                            
-            // Check if column should always be hidden
-            const alwaysHidden = this.columnConfigs.alwaysHidden.includes(columnName) ||
-                                column.alwaysHidden === true;
+            // Initialize loading state
+            element.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        <div>Loading cell data...</div>
+                    </div>
+                </div>
+            `;
             
-            // Add column definition
-            columnDefs.push({
-                targets: i,
-                visible: visible && !alwaysHidden,
-                searchable: !alwaysHidden,
-                className: alwaysHidden ? 'noVis' : ''
-            });
-        }
-        
-        return columnDefs;
-    }
-
-    /**
-     * Set up event handlers for the DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {Object} dataTable - DataTable instance
-     * @private
-     */
-    _setupEventHandlers(containerId, dataTable) {
-        // Selection change event
-        dataTable.on('select', (e, dt, type, indexes) => {
-            if (type === 'row') {
-                const selectedData = dataTable.rows(indexes).data().toArray();
+            // Load cell names
+            const cellNames = await DataManager.loadCellNames();
+            if (!cellNames || cellNames.length === 0) {
+                throw new Error('No cell data available');
+            }
+            
+            // Get the first 5 columns from obs if not specified
+            if (mergedConfig.columns.length === 0 || 
+                (mergedConfig.columns.length === 1 && mergedConfig.columns[0] === '_index')) {
                 
-                // Dispatch custom event
-                const event = new CustomEvent('tableSelectionChanged', {
-                    detail: {
-                        containerId: containerId,
-                        selected: selectedData,
-                        type: 'add'
-                    }
-                });
-                document.dispatchEvent(event);
+                if (datasetInfo.obs_columns && datasetInfo.obs_columns.length > 0) {
+                    mergedConfig.columns = ['_index', ...datasetInfo.obs_columns.slice(0, 4)];
+                }
             }
-        });
-        
-        // Deselection event
-        dataTable.on('deselect', (e, dt, type, indexes) => {
-            if (type === 'row') {
-                const deselectedData = dataTable.rows(indexes).data().toArray();
-                
-                // Dispatch custom event
-                const event = new CustomEvent('tableSelectionChanged', {
-                    detail: {
-                        containerId: containerId,
-                        selected: deselectedData,
-                        type: 'remove'
-                    }
-                });
-                document.dispatchEvent(event);
-            }
-        });
-        
-        // Search event
-        dataTable.on('search.dt', () => {
-            // Get filtered data
-            const filteredData = dataTable.rows({search: 'applied'}).data().toArray();
             
-            // Update filters
-            this.filters.set(containerId, {
-                active: dataTable.search() !== '',
-                filtered: filteredData
+            // Load obs data for columns
+            const obsColumns = mergedConfig.columns.filter(col => col !== '_index');
+            
+            // Batch size for loading to avoid memory issues
+            const batchSize = 1000;
+            const batches = Math.ceil(cellNames.length / batchSize);
+            
+            let allObsData = {};
+            
+            // Initialize each column
+            for (const col of obsColumns) {
+                allObsData[col] = new Array(cellNames.length);
+            }
+            
+            // Load data in batches
+            for (let batch = 0; batch < batches; batch++) {
+                const start = batch * batchSize;
+                const end = Math.min(start + batchSize, cellNames.length);
+                const indices = Array.from({ length: end - start }, (_, i) => start + i);
+                
+                const obsData = await DataManager.loadObs(indices, obsColumns);
+                
+                // Merge batch data into full dataset
+                for (const col of obsColumns) {
+                    for (let i = 0; i < indices.length; i++) {
+                        allObsData[col][indices[i]] = obsData[col][i];
+                    }
+                }
+            }
+            
+            // Prepare table data
+            const data = [];
+            
+            for (let i = 0; i < cellNames.length; i++) {
+                const row = { '_index': cellNames[i] };
+                
+                for (const col of obsColumns) {
+                    row[col] = allObsData[col][i];
+                }
+                
+                data.push(row);
+            }
+            
+            // Prepare columns configuration
+            const columns = mergedConfig.columns.map(col => {
+                return {
+                    data: col,
+                    title: col === '_index' ? 'Cell ID' : col
+                };
             });
             
-            // Dispatch custom event
-            const event = new CustomEvent('tableFilterChanged', {
-                detail: {
-                    containerId: containerId,
-                    filtered: filteredData,
-                    activeFilter: dataTable.search() !== ''
+            // Clear element
+            element.innerHTML = '';
+            
+            // Create table
+            const table = $(`#${elementId}`).DataTable({
+                data: data,
+                columns: columns,
+                pageLength: mergedConfig.initialPageLength,
+                scrollX: true,
+                scrollY: '400px',
+                scrollCollapse: true,
+                dom: mergedConfig.enableSearchBuilder ? 'QBfrtip' : 'Bfrtip',
+                select: mergedConfig.enableSelection,
+                buttons: [
+                    'copy', 'csv', 'excel'
+                ],
+                language: {
+                    searchBuilder: {
+                        title: 'Filter Cells',
+                        button: 'Filter',
+                        clearAll: 'Reset'
+                    }
                 }
             });
-            document.dispatchEvent(event);
-        });
-    }
-
-    /**
-     * Get a DataTable instance
-     * @param {string} containerId - ID of the container element
-     * @returns {Object|null} The DataTable instance or null if not found
-     */
-    getTable(containerId) {
-        const tableInfo = this.tables.get(containerId);
-        return tableInfo ? tableInfo.table : null;
-    }
-
-    /**
-     * Update the data in a DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {Array} newData - New data for the table
-     * @returns {Object|null} The updated DataTable instance or null if not found
-     */
-    updateTableData(containerId, newData) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Update the table data
-        tableInfo.table.clear();
-        tableInfo.table.rows.add(newData);
-        tableInfo.table.draw();
-        
-        // Update the stored data
-        tableInfo.data = newData;
-        
-        return tableInfo.table;
-    }
-
-    /**
-     * Add or remove columns from a DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {Array} columns - Column definitions to add
-     * @param {Array} columnsToRemove - Column names to remove
-     * @returns {Object|null} The updated DataTable instance or null if not found
-     */
-    updateTableColumns(containerId, columns = [], columnsToRemove = []) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Get current columns
-        const currentColumns = [...tableInfo.columns];
-        
-        // Remove columns if specified
-        const filteredColumns = columnsToRemove.length > 0
-            ? currentColumns.filter(col => !columnsToRemove.includes(col.data))
-            : currentColumns;
-        
-        // Add new columns if specified
-        const newColumns = [
-            ...filteredColumns,
-            ...columns
-        ];
-        
-        // Re-create the table with new columns
-        const container = tableInfo.container;
-        container.innerHTML = '';
-        
-        const table = document.createElement('table');
-        table.className = 'table table-striped table-hover';
-        table.style.width = '100%';
-        container.appendChild(table);
-        
-        // Process column definitions
-        const columnDefs = this._processColumnDefinitions(newColumns);
-        
-        // Update column definitions in options
-        const newOptions = {
-            ...tableInfo.options,
-            columns: newColumns,
-            columnDefs: columnDefs
-        };
-        
-        // Initialize new DataTable
-        const dataTable = $(table).DataTable(newOptions);
-        
-        // Update stored table info
-        tableInfo.table = dataTable;
-        tableInfo.columns = newColumns;
-        tableInfo.options = newOptions;
-        this.tables.set(containerId, tableInfo);
-        
-        // Update searchBuilder reference
-        this.searchBuilders.set(containerId, dataTable.searchBuilder());
-        
-        // Set up event handlers
-        this._setupEventHandlers(containerId, dataTable);
-        
-        return dataTable;
-    }
-
-    /**
-     * Select rows in a DataTable based on criteria
-     * @param {string} containerId - ID of the container element
-     * @param {Function} filterFn - Function to filter rows
-     * @returns {Object|null} The DataTable instance or null if not found
-     */
-    selectRows(containerId, filterFn) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Get the rows to select
-        const indexes = [];
-        tableInfo.table.rows().every(function(index) {
-            const rowData = this.data();
-            if (filterFn(rowData)) {
-                indexes.push(index);
-            }
-        });
-        
-        // Select the rows
-        tableInfo.table.rows(indexes).select();
-        
-        return tableInfo.table;
-    }
-
-    /**
-     * Deselect all rows in a DataTable
-     * @param {string} containerId - ID of the container element
-     * @returns {Object|null} The DataTable instance or null if not found
-     */
-    deselectAllRows(containerId) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Deselect all rows
-        tableInfo.table.rows().deselect();
-        
-        return tableInfo.table;
-    }
-
-    /**
-     * Highlight a specific row in a DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {string} value - Value to search for
-     * @param {string} column - Column name to search in
-     * @returns {Object|null} The DataTable instance or null if not found
-     */
-    highlightRow(containerId, value, column = '_index') {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Find the column index
-        const columnIndex = tableInfo.columns.findIndex(col => col.data === column);
-        if (columnIndex === -1) {
-            console.error(`Column ${column} not found in table ${containerId}`);
-            return null;
-        }
-        
-        // Remove any existing highlights
-        $(tableInfo.container).find('tr.highlighted-row').removeClass('highlighted-row');
-        
-        // Find the row with the matching value
-        const rowIndex = tableInfo.table
-            .column(columnIndex)
-            .data()
-            .toArray()
-            .findIndex(val => val === value);
-        
-        if (rowIndex !== -1) {
-            // Highlight the row
-            $(tableInfo.table.row(rowIndex).node()).addClass('highlighted-row');
             
-            // Scroll to the row
-            const rowNode = tableInfo.table.row(rowIndex).node();
-            const scrollBody = $(tableInfo.container).find('.dataTables_scrollBody');
-            scrollBody.animate({
-                scrollTop: $(rowNode).position().top + scrollBody.scrollTop()
-            }, 500);
+            // Add click handler for focusing cells
+            $(`#${elementId} tbody`).on('click', 'tr', function() {
+                const cellId = table.row(this).data()._index;
+                DataManager.setFocusedCell(cellId);
+            });
+            
+            // Add search builder change handler for selection sets
+            if (mergedConfig.enableSearchBuilder && mergedConfig.selectionSet) {
+                table.on('searchBuilder.search', () => {
+                    updateCellSelectionFromTable(tableId, mergedConfig.selectionSet);
+                });
+            }
+            
+            // Store table reference
+            _tables[tableId] = {
+                table: table,
+                element: element,
+                config: mergedConfig,
+                type: 'cells'
+            };
+            
+            return tableId;
+        } catch (error) {
+            console.error('Error creating cells table:', error);
+            
+            // Show error in element
+            element.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error Creating Table</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            
+            return null;
+        }
+    }
+    
+    /**
+     * Create a genes table
+     * @param {string} elementId - ID of the table element
+     * @param {Object} config - Table configuration
+     * @returns {string} - Table ID
+     */
+    async function createGenesTable(elementId, config = {}) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`Element not found: ${elementId}`);
+            return null;
         }
         
-        return tableInfo.table;
+        // Generate a unique table ID
+        const tableId = `table-${Date.now()}`;
+        
+        try {
+            // Default config
+            const defaultConfig = {
+                columns: ['_index'],
+                initialPageLength: _pageSize,
+                enableSelection: true,
+                selectionSet: 'selectedGenes',
+                enableSearchBuilder: true,
+                enableStringDB: true
+            };
+            
+            // Merge configs
+            const mergedConfig = {...defaultConfig, ...config};
+            
+            // First check if dataset is loaded
+            const datasetInfo = DataManager.getDatasetInfo();
+            if (!datasetInfo) {
+                throw new Error('No dataset loaded');
+            }
+            
+            // Initialize loading state
+            element.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        <div>Loading gene data...</div>
+                    </div>
+                </div>
+            `;
+            
+            // Load gene names
+            const geneNames = await DataManager.loadGeneNames();
+            if (!geneNames || geneNames.length === 0) {
+                throw new Error('No gene data available');
+            }
+            
+            // Get the first 5 columns from var if not specified
+            if (mergedConfig.columns.length === 0 || 
+                (mergedConfig.columns.length === 1 && mergedConfig.columns[0] === '_index')) {
+                
+                if (datasetInfo.var_columns && datasetInfo.var_columns.length > 0) {
+                    mergedConfig.columns = ['_index', ...datasetInfo.var_columns.slice(0, 4)];
+                }
+            }
+            
+            // Load var data for columns
+            const varColumns = mergedConfig.columns.filter(col => col !== '_index');
+            
+            // Batch size for loading to avoid memory issues
+            const batchSize = 1000;
+            const batches = Math.ceil(geneNames.length / batchSize);
+            
+            let allVarData = {};
+            
+            // Initialize each column
+            for (const col of varColumns) {
+                allVarData[col] = new Array(geneNames.length);
+            }
+            
+            // Load data in batches
+            for (let batch = 0; batch < batches; batch++) {
+                const start = batch * batchSize;
+                const end = Math.min(start + batchSize, geneNames.length);
+                const indices = Array.from({ length: end - start }, (_, i) => start + i);
+                
+                const varData = await DataManager.loadVar(indices, varColumns);
+                
+                // Merge batch data into full dataset
+                for (const col of varColumns) {
+                    for (let i = 0; i < indices.length; i++) {
+                        allVarData[col][indices[i]] = varData[col][i];
+                    }
+                }
+            }
+            
+            // Prepare table data
+            const data = [];
+            
+            for (let i = 0; i < geneNames.length; i++) {
+                const row = { '_index': geneNames[i] };
+                
+                for (const col of varColumns) {
+                    row[col] = allVarData[col][i];
+                }
+                
+                // Add StringDB link column if enabled
+                if (mergedConfig.enableStringDB) {
+                    row['_stringdb'] = `<a href="https://string-db.org/network/${geneNames[i]}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </a>`;
+                }
+                
+                data.push(row);
+            }
+            
+            // Prepare columns configuration
+            const columns = mergedConfig.columns.map(col => {
+                return {
+                    data: col,
+                    title: col === '_index' ? 'Gene ID' : col
+                };
+            });
+            
+            // Add StringDB column if enabled
+            if (mergedConfig.enableStringDB) {
+                columns.push({
+                    data: '_stringdb',
+                    title: 'StringDB',
+                    orderable: false,
+                    searchable: false
+                });
+            }
+            
+            // Clear element
+            element.innerHTML = '';
+            
+            // Create table
+            const table = $(`#${elementId}`).DataTable({
+                data: data,
+                columns: columns,
+                pageLength: mergedConfig.initialPageLength,
+                scrollX: true,
+                scrollY: '400px',
+                scrollCollapse: true,
+                dom: mergedConfig.enableSearchBuilder ? 'QBfrtip' : 'Bfrtip',
+                select: mergedConfig.enableSelection,
+                buttons: [
+                    'copy', 'csv', 'excel'
+                ],
+                language: {
+                    searchBuilder: {
+                        title: 'Filter Genes',
+                        button: 'Filter',
+                        clearAll: 'Reset'
+                    }
+                }
+            });
+            
+            // Add click handler for focusing genes
+            $(`#${elementId} tbody`).on('click', 'tr', function(e) {
+                // Ignore clicks on StringDB link
+                if (e.target.tagName === 'A' || e.target.tagName === 'I') return;
+                
+                const geneId = table.row(this).data()._index;
+                DataManager.setFocusedGene(geneId);
+            });
+            
+            // Add search builder change handler for selection sets
+            if (mergedConfig.enableSearchBuilder && mergedConfig.selectionSet) {
+                table.on('searchBuilder.search', () => {
+                    updateGeneSelectionFromTable(tableId, mergedConfig.selectionSet);
+                });
+            }
+            
+            // Store table reference
+            _tables[tableId] = {
+                table: table,
+                element: element,
+                config: mergedConfig,
+                type: 'genes'
+            };
+            
+            return tableId;
+        } catch (error) {
+            console.error('Error creating genes table:', error);
+            
+            // Show error in element
+            element.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error Creating Table</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            
+            return null;
+        }
     }
-
+    
     /**
-     * Apply a search filter to a DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {string} searchTerm - Search term
-     * @returns {Object|null} The DataTable instance or null if not found
+     * Update cell selection from table
+     * @param {string} tableId - Table ID
+     * @param {string} setName - Selection set name
      */
-    applySearch(containerId, searchTerm) {
-        const tableInfo = this.tables.get(containerId);
+    function updateCellSelectionFromTable(tableId, setName) {
+        const tableInfo = _tables[tableId];
+        if (!tableInfo || tableInfo.type !== 'cells') return;
+        
+        const table = tableInfo.table;
+        
+        // Get all indices from filtered rows
+        const rows = table.rows({ search: 'applied' }).data().toArray();
+        const cellNames = rows.map(row => row._index);
+        
+        // Convert to indices
+        DataManager.loadCellNames().then(allCellNames => {
+            const indices = cellNames.map(name => allCellNames.indexOf(name)).filter(idx => idx !== -1);
+            
+            // Update selection set
+            DataManager.setCellSet(setName, indices);
+        }).catch(error => {
+            console.error('Error updating cell selection:', error);
+        });
+    }
+    
+    /**
+     * Update gene selection from table
+     * @param {string} tableId - Table ID
+     * @param {string} setName - Selection set name
+     */
+    function updateGeneSelectionFromTable(tableId, setName) {
+        const tableInfo = _tables[tableId];
+        if (!tableInfo || tableInfo.type !== 'genes') return;
+        
+        const table = tableInfo.table;
+        
+        // Get all indices from filtered rows
+        const rows = table.rows({ search: 'applied' }).data().toArray();
+        const geneNames = rows.map(row => row._index);
+        
+        // Convert to indices
+        DataManager.loadGeneNames().then(allGeneNames => {
+            const indices = geneNames.map(name => allGeneNames.indexOf(name)).filter(idx => idx !== -1);
+            
+            // Update selection set
+            DataManager.setGeneSet(setName, indices);
+        }).catch(error => {
+            console.error('Error updating gene selection:', error);
+        });
+    }
+    
+    /**
+     * Add a column to a table
+     * @param {string} tableId - Table ID
+     * @param {string} column - Column name
+     * @param {string} type - Column data type ('obs' or 'var')
+     */
+    async function addColumn(tableId, column, type) {
+        const tableInfo = _tables[tableId];
         if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
+            console.error(`Table not found: ${tableId}`);
+            return;
         }
         
-        // Apply the search
-        tableInfo.table.search(searchTerm).draw();
+        const table = tableInfo.table;
         
-        return tableInfo.table;
-    }
-
-    /**
-     * Apply a SearchBuilder rule to a DataTable
-     * @param {string} containerId - ID of the container element
-     * @param {Object} rule - SearchBuilder rule
-     * @returns {Object|null} The SearchBuilder instance or null if not found
-     */
-    applySearchBuilderRule(containerId, rule) {
-        const searchBuilder = this.searchBuilders.get(containerId);
-        if (!searchBuilder) {
-            console.error(`No SearchBuilder found for container ${containerId}`);
-            return null;
+        try {
+            // Check if column already exists
+            const existingColumns = table.columns().header().toArray().map(el => el.textContent);
+            if (existingColumns.includes(column)) {
+                console.warn(`Column ${column} already exists in table`);
+                return;
+            }
+            
+            // Load data based on table type
+            let data;
+            if (tableInfo.type === 'cells' && type === 'obs') {
+                data = await DataManager.loadObs(null, [column]);
+            } else if (tableInfo.type === 'genes' && type === 'var') {
+                data = await DataManager.loadVar(null, [column]);
+            } else {
+                throw new Error(`Incompatible column type ${type} for table type ${tableInfo.type}`);
+            }
+            
+            // Add column to table
+            table.column.add({
+                title: column,
+                data: function(row, type, set, meta) {
+                    const name = row._index;
+                    const idx = tableInfo.type === 'cells' ? 
+                        DataManager.getCellNames().indexOf(name) : 
+                        DataManager.getGeneNames().indexOf(name);
+                    return data[column][idx];
+                }
+            }).draw();
+            
+            // Update config
+            tableInfo.config.columns.push(column);
+        } catch (error) {
+            console.error(`Error adding column ${column} to table:`, error);
+            throw error;
         }
-        
-        // Clear existing rules
-        searchBuilder.clear();
-        
-        // Add the new rule
-        const group = searchBuilder.getGroup();
-        group.criteria[0].condition(rule.condition);
-        group.criteria[0].data(rule.column);
-        group.criteria[0].value(rule.value);
-        
-        // Apply the search
-        searchBuilder.rebuild();
-        
-        return searchBuilder;
     }
-
+    
     /**
-     * Get the current filtered data from a DataTable
-     * @param {string} containerId - ID of the container element
-     * @returns {Array|null} The filtered data or null if table not found
+     * Apply a set to all plots
+     * @param {string} tableId - Table ID
      */
-    getFilteredData(containerId) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Get filtered data
-        return tableInfo.table.rows({search: 'applied'}).data().toArray();
-    }
-
-    /**
-     * Get the selected rows from a DataTable
-     * @param {string} containerId - ID of the container element
-     * @returns {Array|null} The selected data or null if table not found
-     */
-    getSelectedData(containerId) {
-        const tableInfo = this.tables.get(containerId);
-        if (!tableInfo) {
-            console.error(`No table found for container ${containerId}`);
-            return null;
-        }
-        
-        // Get selected data
-        return tableInfo.table.rows({selected: true}).data().toArray();
-    }
-
-    /**
-     * Destroy a DataTable
-     * @param {string} containerId - ID of the container element
-     */
-    destroyTable(containerId) {
-        const tableInfo = this.tables.get(containerId);
+    function applySetToAllPlots(tableId) {
+        const tableInfo = _tables[tableId];
         if (!tableInfo) return;
         
-        // Destroy the DataTable
-        tableInfo.table.destroy();
+        // Get set name
+        const setName = tableInfo.config.selectionSet;
+        if (!setName) return;
         
-        // Clear the container
-        tableInfo.container.innerHTML = '';
-        
-        // Remove from maps
-        this.tables.delete(containerId);
-        this.searchBuilders.delete(containerId);
-        this.filters.delete(containerId);
+        // Trigger an event for plot manager
+        const event = new CustomEvent('applySetToAllPlots', {
+            detail: {
+                type: tableInfo.type,
+                setName: setName
+            }
+        });
+        document.dispatchEvent(event);
     }
-}
+    
+    /**
+     * Generate StringDB URL for selected genes
+     * @param {string} tableId - Table ID
+     * @returns {string} - StringDB URL
+     */
+    function generateStringDBUrl(tableId) {
+        const tableInfo = _tables[tableId];
+        if (!tableInfo || tableInfo.type !== 'genes') return null;
+        
+        const table = tableInfo.table;
+        
+        // Get selected rows
+        const selectedRows = table.rows({ selected: true }).data().toArray();
+        
+        // If none selected, use filtered rows
+        const rows = selectedRows.length > 0 ? selectedRows : table.rows({ search: 'applied' }).data().toArray();
+        
+        // Get gene names
+        const geneNames = rows.map(row => row._index);
+        
+        // Limit to 100 genes (StringDB limit)
+        const limitedGenes = geneNames.slice(0, 100);
+        
+        if (limitedGenes.length === 0) return null;
+        
+        // Get taxonomy ID (9606 is human default)
+        const taxonomy = DataManager.getTaxonomy();
+        const taxId = taxonomy.taxonomyId || '9606';
+        
+        // Generate URL
+        const baseUrl = 'https://string-db.org/cgi/network.pl';
+        const queryParams = new URLSearchParams({
+            identifier: limitedGenes.join('%0d'),
+            species: taxId,
+            network_flavor: 'evidence',
+            required_score: 400
+        });
+        
+        return `${baseUrl}?${queryParams.toString()}`;
+    }
+    
+    /**
+     * Handle dataset loaded event
+     * @param {Event} event - Dataset loaded event
+     */
+    function handleDataLoaded(event) {
+        // No automatic action, tables created on-demand
+    }
+    
+    /**
+     * Handle gene focus changed event
+     * @param {Event} event - Gene focus changed event
+     */
+    function handleGeneFocusChanged(event) {
+        // Highlight focused gene in tables
+        for (const tableId in _tables) {
+            const tableInfo = _tables[tableId];
+            
+            if (tableInfo.type !== 'genes') continue;
+            
+            const table = tableInfo.table;
+            const focusedGene = event.detail.gene;
+            
+            // Remove previous highlighting
+            $(table.table().container()).find('tr.focused-gene').removeClass('focused-gene');
+            
+            if (focusedGene) {
+                // Find row for focused gene
+                const rows = table.rows().data();
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i]._index === focusedGene) {
+                        // Highlight row
+                        $(table.row(i).node()).addClass('focused-gene');
+                        
+                        // Scroll to row if not visible
+                        const $container = $(table.table().container());
+                        const $row = $(table.row(i).node());
+                        const containerTop = $container.offset().top;
+                        const containerHeight = $container.height();
+                        const rowTop = $row.offset().top;
+                        
+                        if (rowTop < containerTop || rowTop > containerTop + containerHeight) {
+                            // Set page
+                            const pageSize = table.page.len();
+                            const pageNum = Math.floor(i / pageSize);
+                            table.page(pageNum).draw(false);
+                            
+                            // Scroll to row
+                            const rowIndex = i % pageSize;
+                            const $tbody = $container.find('tbody');
+                            const $rows = $tbody.find('tr');
+                            if ($rows.length > rowIndex) {
+                                $tbody.scrollTop($rows.eq(rowIndex).position().top);
+                            }
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Handle cell focus changed event
+     * @param {Event} event - Cell focus changed event
+     */
+    function handleCellFocusChanged(event) {
+        // Highlight focused cell in tables
+        for (const tableId in _tables) {
+            const tableInfo = _tables[tableId];
+            
+            if (tableInfo.type !== 'cells') continue;
+            
+            const table = tableInfo.table;
+            const focusedCell = event.detail.cell;
+            
+            // Remove previous highlighting
+            $(table.table().container()).find('tr.focused-cell').removeClass('focused-cell');
+            
+            if (focusedCell) {
+                // Find row for focused cell
+                const rows = table.rows().data();
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i]._index === focusedCell) {
+                        // Highlight row
+                        $(table.row(i).node()).addClass('focused-cell');
+                        
+                        // Scroll to row if not visible
+                        const $container = $(table.table().container());
+                        const $row = $(table.row(i).node());
+                        const containerTop = $container.offset().top;
+                        const containerHeight = $container.height();
+                        const rowTop = $row.offset().top;
+                        
+                        if (rowTop < containerTop || rowTop > containerTop + containerHeight) {
+                            // Set page
+                            const pageSize = table.page.len();
+                            const pageNum = Math.floor(i / pageSize);
+                            table.page(pageNum).draw(false);
+                            
+                            // Scroll to row
+                            const rowIndex = i % pageSize;
+                            const $tbody = $container.find('tbody');
+                            const $rows = $tbody.find('tr');
+                            if ($rows.length > rowIndex) {
+                                $tbody.scrollTop($rows.eq(rowIndex).position().top);
+                            }
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Handle gene set changed event
+     * @param {Event} event - Gene set changed event
+     */
+    function handleGeneSetChanged(event) {
+        // No automatic action for now
+    }
+    
+    /**
+     * Handle cell set changed event
+     * @param {Event} event - Cell set changed event
+     */
+    function handleCellSetChanged(event) {
+        // No automatic action for now
+    }
+    
+    // Public API
+    return {
+        init,
+        createCellsTable,
+        createGenesTable,
+        addColumn,
+        applySetToAllPlots,
+        generateStringDBUrl
+    };
+})();
 
-// Create and export a singleton instance
-const tableManager = new TableManager();
+// Initialize on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    TableManager.init();
+});
 
-// Export for both browser and Node.js environments
+// Export as module and global
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = tableManager;
-} else if (typeof window !== 'undefined') {
-    // Register with the module loader if available
-    if (window.Annzarro) {
-        window.Annzarro.registerModule('tableManager', tableManager);
-        window.Annzarro.checkModulesReady();
-    } else {
-        window.tableManager = tableManager;
-    }
+    module.exports = TableManager;
+} else {
+    window.TableManager = TableManager;
 }

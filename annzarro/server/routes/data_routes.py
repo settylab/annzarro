@@ -87,6 +87,87 @@ def register_data_routes(app, api_version):
         else:
             return jsonify({"error": "Either dataset_id or dataset_path parameter is required"}), 400
     
+    @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
+    def get_dataset_structure():
+        """
+        Get complete structure information about a dataset including available matrices, embeddings, etc.
+        
+        Query parameters:
+            dataset_path: Path to the dataset.
+            
+        Returns:
+            JSON response with complete dataset structure
+        """
+        # Get dataset identification
+        dataset_path = request.args.get("dataset_path")
+        
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        
+        try:
+            # Use the direct access approach for stateless operation
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Format basic info
+            shape = metadata.get('shape', (0, 0))
+            dataset_structure = {
+                "path": dataset_path,
+                "name": Path(dataset_path).stem.replace("_", " ").title(),
+                "shape": shape,
+                "n_obs": shape[0] if len(shape) > 0 else 0,
+                "n_vars": shape[1] if len(shape) > 1 else 0,
+                "obs": {
+                    "available": metadata.get("has_obs", False),
+                    "columns": metadata.get("obs_columns", [])
+                },
+                "var": {
+                    "available": metadata.get("has_var", False),
+                    "columns": metadata.get("var_columns", [])
+                },
+                "X": {
+                    "available": True,
+                    "shape": shape
+                },
+                "layers": {
+                    "available": metadata.get("has_layers", False),
+                    "keys": list(metadata.get("layers", {}).keys()),
+                    "details": metadata.get("layers", {})
+                },
+                "obsm": {
+                    "available": metadata.get("has_obsm", False),
+                    "keys": metadata.get("obsm_keys", []),
+                    "dataframes": metadata.get("obsm_dataframes", {}),
+                    "matrices": metadata.get("obsm_matrices", {})
+                },
+                "varm": {
+                    "available": metadata.get("has_varm", False),
+                    "keys": metadata.get("varm_keys", []),
+                    "dataframes": metadata.get("varm_dataframes", {}),
+                    "matrices": metadata.get("varm_matrices", {})
+                },
+                "obsp": {
+                    "available": metadata.get("has_obsp", False),
+                    "keys": metadata.get("obsp_keys", [])
+                },
+                "varp": {
+                    "available": metadata.get("has_varp", False),
+                    "keys": metadata.get("varp_keys", [])
+                },
+                "uns": {
+                    "available": metadata.get("has_uns", False),
+                    "keys": metadata.get("uns_keys", [])
+                },
+                "embeddings": metadata.get("embeddings", [])
+            }
+            
+            # Add dataset ID from the path
+            dataset_structure["dataset_id"] = os.path.basename(os.path.normpath(dataset_path))
+            
+            return jsonify(dataset_structure)
+        except Exception as e:
+            logger.error(f"Error getting dataset structure for path {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
+    
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
     def get_data_X():
         """
@@ -900,6 +981,785 @@ def register_data_routes(app, api_version):
         except Exception as e:
             logger.error(f"Error getting data at path {data_path} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/directories/home", methods=["GET"])
+    def get_home_directory():
+        """
+        Get the home directory for data browsing.
+        
+        Returns:
+            JSON response with home directory path
+        """
+        try:
+            # Get data directory from config
+            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            
+            return jsonify({
+                "directory": data_dir
+            })
+        except Exception as e:
+            logger.error(f"Error getting home directory: {e}")
+            return jsonify({"error": f"Failed to get home directory: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/directories/list", methods=["GET"])
+    def list_directory():
+        """
+        List contents of a directory.
+        
+        Query parameters:
+            path: Path to directory to list.
+            
+        Returns:
+            JSON response with directory contents
+        """
+        # Get directory path
+        directory_path = request.args.get("path")
+        
+        if not directory_path:
+            return jsonify({"error": "path parameter is required"}), 400
+        
+        try:
+            # Get data directory from config for validation
+            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            
+            # Verify the requested path is within the data directory or is an absolute path
+            if not os.path.isabs(directory_path) and not directory_path.startswith(data_dir):
+                directory_path = os.path.join(data_dir, directory_path)
+            
+            # Check if the directory exists
+            if not os.path.exists(directory_path) or not os.path.isdir(directory_path):
+                return jsonify({"error": f"Directory not found: {directory_path}"}), 404
+            
+            # List directories and zarr stores separately
+            directories = []
+            zarr_stores = []
+            
+            # List all entries in the directory
+            for entry in os.listdir(directory_path):
+                entry_path = os.path.join(directory_path, entry)
+                
+                # Check if it's a zarr store (directory with .zarr extension or contains a .zgroup file)
+                is_zarr = (os.path.isdir(entry_path) and entry.endswith(".zarr")) or \
+                          (os.path.isdir(entry_path) and os.path.exists(os.path.join(entry_path, ".zgroup")))
+                
+                if is_zarr:
+                    # Try to get some basic info about the zarr store
+                    try:
+                        # Try to open the zarr store to get shape information
+                        _, metadata = zarr_reader.open_dataset_by_path(entry_path)
+                        shape = metadata.get('shape', (0, 0))
+                        cells = shape[0] if len(shape) > 0 else 0
+                        genes = shape[1] if len(shape) > 1 else 0
+                    except Exception:
+                        # If we can't open the zarr store, just include basic info
+                        cells = 0
+                        genes = 0
+                    
+                    zarr_stores.append({
+                        "name": entry,
+                        "path": entry_path,
+                        "is_link": os.path.islink(entry_path),
+                        "cells": cells,
+                        "genes": genes
+                    })
+                elif os.path.isdir(entry_path):
+                    # It's a regular directory
+                    directories.append({
+                        "name": entry,
+                        "path": entry_path,
+                        "is_link": os.path.islink(entry_path)
+                    })
+            
+            # Sort zarr stores and directories by name
+            zarr_stores.sort(key=lambda x: x["name"])
+            directories.sort(key=lambda x: x["name"])
+            
+            return jsonify({
+                "directories": directories,
+                "zarr_stores": zarr_stores,
+                "path": directory_path
+            })
+        except Exception as e:
+            logger.error(f"Error listing directory {directory_path}: {e}")
+            return jsonify({"error": f"Failed to list directory: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/datasets", methods=["GET"])
+    def list_all_datasets():
+        """
+        List available datasets.
+        
+        Returns:
+            JSON response with available datasets
+        """
+        try:
+            # Get data directory from config
+            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            
+            # Find zarr stores recursively (limited depth)
+            zarr_stores = []
+            max_depth = 3  # Limit recursive search to 3 levels deep
+            
+            def find_zarr_stores(directory, current_depth=0):
+                if current_depth > max_depth:
+                    return
+                
+                try:
+                    for entry in os.listdir(directory):
+                        entry_path = os.path.join(directory, entry)
+                        
+                        # Check if it's a zarr store
+                        is_zarr = (os.path.isdir(entry_path) and entry.endswith(".zarr")) or \
+                                  (os.path.isdir(entry_path) and os.path.exists(os.path.join(entry_path, ".zgroup")))
+                        
+                        if is_zarr:
+                            # Try to get some basic info about the zarr store
+                            try:
+                                # Try to open the zarr store to get shape information
+                                _, metadata = zarr_reader.open_dataset_by_path(entry_path)
+                                shape = metadata.get('shape', (0, 0))
+                                cells = shape[0] if len(shape) > 0 else 0
+                                genes = shape[1] if len(shape) > 1 else 0
+                            except Exception:
+                                # If we can't open the zarr store, just include basic info
+                                cells = 0
+                                genes = 0
+                            
+                            zarr_stores.append({
+                                "name": entry,
+                                "path": entry_path,
+                                "is_link": os.path.islink(entry_path),
+                                "cells": cells,
+                                "genes": genes,
+                                "rel_path": os.path.relpath(entry_path, data_dir)
+                            })
+                        elif os.path.isdir(entry_path) and not entry.startswith('.'):
+                            # Recursively search subdirectories
+                            find_zarr_stores(entry_path, current_depth + 1)
+                except Exception as e:
+                    logger.warning(f"Error listing directory {directory}: {e}")
+            
+            # Start recursive search
+            find_zarr_stores(data_dir)
+            
+            # Sort datasets by name
+            zarr_stores.sort(key=lambda x: x["name"])
+            
+            return jsonify(zarr_stores)
+        except Exception as e:
+            logger.error(f"Error listing datasets: {e}")
+            return jsonify({"error": f"Failed to list datasets: {str(e)}"}), 500
+
+    def _get_sessions_dir():
+        """
+        Get the sessions directory path and ensure it exists.
+        
+        Returns:
+            Path to the sessions directory.
+        """
+        sessions_dir = os.path.join(app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data")), "sessions")
+        os.makedirs(sessions_dir, exist_ok=True)
+        return sessions_dir
+        
+    def _is_safe_session_path(file_path, sessions_dir=None):
+        """
+        Check if a file path is within the sessions directory.
+        
+        Args:
+            file_path: Path to check.
+            sessions_dir: Optional sessions directory path. If not provided, will be determined.
+            
+        Returns:
+            Boolean indicating if the path is safe.
+        """
+        if sessions_dir is None:
+            sessions_dir = _get_sessions_dir()
+            
+        # Resolve to absolute paths for comparison
+        sessions_dir = os.path.abspath(sessions_dir)
+        file_path = os.path.abspath(file_path)
+        
+        # Check if the file path is within the sessions directory
+        return file_path.startswith(sessions_dir)
+    
+    def _sanitize_session_name(name):
+        """
+        Sanitize a session name to prevent path traversal attacks.
+        
+        Args:
+            name: Session name to sanitize.
+            
+        Returns:
+            Sanitized session name.
+        """
+        # Remove any path separators or potentially dangerous characters
+        sanitized = name.replace('/', '_').replace('\\', '_').replace('..', '_')
+        # Allow only alphanumeric characters, underscore, hyphen, and space
+        return ''.join(c for c in sanitized if c.isalnum() or c in ' _-')
+
+    @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
+    def save_session():
+        """
+        Save a session.
+        
+        Expected JSON input:
+        {
+            "name": "Session name",
+            "dataset": "Dataset path",
+            ...
+        }
+        
+        Returns:
+            JSON response with save status
+        """
+        try:
+            # Get session data from request
+            session_data = request.json
+            
+            if not session_data:
+                return jsonify({"error": "No session data provided"}), 400
+            
+            if "name" not in session_data:
+                return jsonify({"error": "Session name is required"}), 400
+            
+            # Sanitize session name to prevent path traversal
+            original_name = session_data["name"]
+            session_data["name"] = _sanitize_session_name(session_data["name"])
+            
+            # Add timestamp if not present
+            if "timestamp" not in session_data:
+                from datetime import datetime
+                session_data["timestamp"] = datetime.now().isoformat()
+            
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Construct safe file path
+            session_file = os.path.join(sessions_dir, f"{session_data['name']}.json")
+            
+            # Verify the file is within the sessions directory
+            if not _is_safe_session_path(session_file, sessions_dir):
+                return jsonify({"error": "Invalid session name"}), 400
+            
+            # Save session file
+            with open(session_file, 'w') as f:
+                json.dump(session_data, f, indent=2)
+            
+            # Notice if sanitization changed the name
+            message = f"Session saved as {session_data['name']}"
+            if original_name != session_data["name"]:
+                message += f" (original name '{original_name}' was sanitized)"
+            
+            return jsonify({
+                "status": "success",
+                "message": message,
+                "file": session_file,
+                "sanitized_name": session_data["name"]
+            })
+        except Exception as e:
+            logger.error(f"Error saving session: {e}")
+            return jsonify({"error": f"Failed to save session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/list", methods=["GET"])
+    def list_sessions():
+        """
+        List available sessions.
+        
+        Returns:
+            JSON response with available sessions
+        """
+        try:
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # List session files
+            sessions = []
+            for entry in os.listdir(sessions_dir):
+                if entry.endswith(".json"):
+                    session_path = os.path.join(sessions_dir, entry)
+                    
+                    # Verify the file is within the sessions directory
+                    if not _is_safe_session_path(session_path, sessions_dir):
+                        logger.warning(f"Skipping file outside sessions directory: {session_path}")
+                        continue
+                    
+                    try:
+                        with open(session_path, 'r') as f:
+                            session_data = json.load(f)
+                            
+                            # Include basic information
+                            sessions.append({
+                                "name": session_data.get("name", entry.replace(".json", "")),
+                                "dataset": session_data.get("dataset", ""),
+                                "timestamp": session_data.get("timestamp", ""),
+                                "datasetName": session_data.get("datasetName", ""),
+                                "file": session_path
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error reading session file {entry}: {e}")
+            
+            # Sort sessions by timestamp (newest first)
+            sessions.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            
+            return jsonify(sessions)
+        except Exception as e:
+            logger.error(f"Error listing sessions: {e}")
+            return jsonify({"error": f"Failed to list sessions: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/load", methods=["GET"])
+    def load_session():
+        """
+        Load a session.
+        
+        Query parameters:
+            name: Session name to load.
+            file: Optional path to session file.
+            
+        Returns:
+            JSON response with session data
+        """
+        # Get session name
+        session_name = request.args.get("name")
+        session_file = request.args.get("file")
+        
+        if not session_name and not session_file:
+            return jsonify({"error": "Either name or file parameter is required"}), 400
+        
+        try:
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Find session file
+            if session_file:
+                # Use provided file path but verify it's in the sessions directory
+                file_path = session_file
+                if not _is_safe_session_path(file_path, sessions_dir):
+                    return jsonify({"error": "Invalid session file path"}), 400
+            else:
+                # Find by name
+                sanitized_name = _sanitize_session_name(session_name)
+                file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
+            
+            # Load session data
+            with open(file_path, 'r') as f:
+                session_data = json.load(f)
+            
+            return jsonify(session_data)
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            return jsonify({"error": f"Failed to load session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/delete", methods=["DELETE"])
+    def delete_session():
+        """
+        Delete a session.
+        
+        Query parameters:
+            name: Session name to delete.
+            file: Optional path to session file.
+            
+        Returns:
+            JSON response with deletion status
+        """
+        # Get session name
+        session_name = request.args.get("name")
+        session_file = request.args.get("file")
+        
+        if not session_name and not session_file:
+            return jsonify({"error": "Either name or file parameter is required"}), 400
+        
+        try:
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Find session file
+            if session_file:
+                # Use provided file path but verify it's in the sessions directory
+                file_path = session_file
+                if not _is_safe_session_path(file_path, sessions_dir):
+                    return jsonify({"error": "Invalid session file path"}), 400
+            else:
+                # Find by name
+                sanitized_name = _sanitize_session_name(session_name)
+                file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
+            
+            # Verify again that file is within sessions directory (belt and suspenders)
+            if not _is_safe_session_path(file_path, sessions_dir):
+                return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
+                
+            # Delete the file
+            os.remove(file_path)
+            
+            return jsonify({
+                "status": "success",
+                "message": f"Session {session_name or os.path.basename(file_path)} deleted successfully"
+            })
+        except Exception as e:
+            logger.error(f"Error deleting session: {e}")
+            return jsonify({"error": f"Failed to delete session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/export", methods=["GET"])
+    def export_session():
+        """
+        Export a session for download.
+        
+        Query parameters:
+            name: Session name to export.
+            file: Optional path to session file.
+            
+        Returns:
+            Session file as attachment for download
+        """
+        # Get session name
+        session_name = request.args.get("name")
+        session_file = request.args.get("file")
+        
+        if not session_name and not session_file:
+            return jsonify({"error": "Either name or file parameter is required"}), 400
+        
+        try:
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Find session file
+            if session_file:
+                # Use provided file path but verify it's in the sessions directory
+                file_path = session_file
+                if not _is_safe_session_path(file_path, sessions_dir):
+                    return jsonify({"error": "Invalid session file path"}), 400
+            else:
+                # Find by name
+                sanitized_name = _sanitize_session_name(session_name)
+                file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
+            
+            # Verify again that file is within sessions directory
+            if not _is_safe_session_path(file_path, sessions_dir):
+                return jsonify({"error": "Cannot export file outside sessions directory"}), 403
+            
+            # Load session data to get the original name for download
+            with open(file_path, 'r') as f:
+                session_data = json.load(f)
+                download_name = session_data.get("name", os.path.basename(file_path))
+            
+            # Send file as attachment
+            from flask import send_file
+            return send_file(
+                file_path,
+                mimetype='application/json',
+                as_attachment=True,
+                download_name=f"{download_name}.json"
+            )
+        except Exception as e:
+            logger.error(f"Error exporting session: {e}")
+            return jsonify({"error": f"Failed to export session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/exists", methods=["GET"])
+    def check_session_exists():
+        """
+        Check if a session with the given name exists.
+        
+        Query parameters:
+            name: Session name to check.
+            
+        Returns:
+            JSON response with existence status
+        """
+        # Get session name
+        session_name = request.args.get("name")
+        
+        if not session_name:
+            return jsonify({"error": "Name parameter is required"}), 400
+        
+        try:
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Sanitize the session name
+            sanitized_name = _sanitize_session_name(session_name)
+            
+            # Check if file exists
+            file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            exists = os.path.exists(file_path)
+            
+            return jsonify({
+                "exists": exists,
+                "file": file_path if exists else None,
+                "sanitized_name": sanitized_name
+            })
+        except Exception as e:
+            logger.error(f"Error checking session existence: {e}")
+            return jsonify({"error": f"Failed to check session existence: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/rename", methods=["POST"])
+    def rename_session():
+        """
+        Rename a session.
+        
+        Expected JSON input:
+        {
+            "old_name": "Current session name",
+            "new_name": "New session name"
+        }
+        
+        Returns:
+            JSON response with rename status
+        """
+        try:
+            # Get rename data from request
+            rename_data = request.json
+            
+            if not rename_data:
+                return jsonify({"error": "No rename data provided"}), 400
+            
+            if "old_name" not in rename_data or "new_name" not in rename_data:
+                return jsonify({"error": "Both old_name and new_name are required"}), 400
+            
+            old_name = rename_data["old_name"]
+            new_name = rename_data["new_name"]
+            
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Sanitize names to prevent path traversal
+            sanitized_old_name = _sanitize_session_name(old_name)
+            sanitized_new_name = _sanitize_session_name(new_name)
+            
+            # Find old session file
+            old_file_path = os.path.join(sessions_dir, f"{sanitized_old_name}.json")
+            
+            # Verify the file is within the sessions directory
+            if not _is_safe_session_path(old_file_path, sessions_dir):
+                return jsonify({"error": "Invalid session file path"}), 400
+            
+            # Check if old file exists
+            if not os.path.exists(old_file_path):
+                return jsonify({"error": f"Session not found: {old_name}"}), 404
+            
+            # Load session data
+            with open(old_file_path, 'r') as f:
+                session_data = json.load(f)
+            
+            # Update session name
+            session_data["name"] = new_name
+            
+            # Create new file path
+            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+            
+            # Verify the new file is within the sessions directory
+            if not _is_safe_session_path(new_file_path, sessions_dir):
+                return jsonify({"error": "Invalid new session name"}), 400
+            
+            # Check if new file already exists
+            if os.path.exists(new_file_path) and old_file_path != new_file_path:
+                return jsonify({
+                    "status": "conflict",
+                    "message": f"Session with name '{new_name}' already exists."
+                }), 409
+            
+            # Write session data to new file
+            with open(new_file_path, 'w') as f:
+                json.dump(session_data, f, indent=2)
+            
+            # Delete old file if names are different
+            if old_file_path != new_file_path:
+                os.remove(old_file_path)
+            
+            return jsonify({
+                "status": "success",
+                "message": f"Session renamed from '{old_name}' to '{new_name}'",
+                "old_file": old_file_path,
+                "new_file": new_file_path,
+                "session": session_data,
+                "sanitized_old_name": sanitized_old_name,
+                "sanitized_new_name": sanitized_new_name
+            })
+        except Exception as e:
+            logger.error(f"Error renaming session: {e}")
+            return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/duplicate", methods=["POST"])
+    def duplicate_session():
+        """
+        Create a duplicate copy of a session.
+        
+        Expected JSON input:
+        {
+            "source_name": "Source session name",
+            "new_name": "New session name"
+        }
+        
+        Returns:
+            JSON response with duplicate status
+        """
+        try:
+            # Get duplicate data from request
+            duplicate_data = request.json
+            
+            if not duplicate_data:
+                return jsonify({"error": "No duplicate data provided"}), 400
+            
+            if "source_name" not in duplicate_data or "new_name" not in duplicate_data:
+                return jsonify({"error": "Both source_name and new_name are required"}), 400
+            
+            source_name = duplicate_data["source_name"]
+            new_name = duplicate_data["new_name"]
+            
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Sanitize names to prevent path traversal
+            sanitized_source_name = _sanitize_session_name(source_name)
+            sanitized_new_name = _sanitize_session_name(new_name)
+            
+            # Find source session file
+            source_file_path = os.path.join(sessions_dir, f"{sanitized_source_name}.json")
+            
+            # Verify the source file is within the sessions directory
+            if not _is_safe_session_path(source_file_path, sessions_dir):
+                return jsonify({"error": "Invalid source session file path"}), 400
+            
+            # Check if source file exists
+            if not os.path.exists(source_file_path):
+                return jsonify({"error": f"Session not found: {source_name}"}), 404
+            
+            # Load session data
+            with open(source_file_path, 'r') as f:
+                session_data = json.load(f)
+            
+            # Update session name and timestamp
+            session_data["name"] = new_name
+            from datetime import datetime
+            session_data["timestamp"] = datetime.now().isoformat()
+            
+            # Create new file path
+            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+            
+            # Verify the new file is within the sessions directory
+            if not _is_safe_session_path(new_file_path, sessions_dir):
+                return jsonify({"error": "Invalid new session name"}), 400
+            
+            # Check if new file already exists
+            if os.path.exists(new_file_path):
+                return jsonify({
+                    "status": "conflict",
+                    "message": f"Session with name '{new_name}' already exists."
+                }), 409
+            
+            # Write session data to new file
+            with open(new_file_path, 'w') as f:
+                json.dump(session_data, f, indent=2)
+            
+            return jsonify({
+                "status": "success",
+                "message": f"Session duplicated from '{source_name}' to '{new_name}'",
+                "source_file": source_file_path,
+                "new_file": new_file_path,
+                "session": session_data,
+                "sanitized_source_name": sanitized_source_name,
+                "sanitized_new_name": sanitized_new_name
+            })
+        except Exception as e:
+            logger.error(f"Error duplicating session: {e}")
+            return jsonify({"error": f"Failed to duplicate session: {str(e)}"}), 500
+    
+    @app.route(f"/api/{api_version}/sessions/import", methods=["POST"])
+    def import_session():
+        """
+        Import a session from uploaded file.
+        
+        Form parameters:
+            file: Session file to upload.
+            overwrite: Optional boolean to overwrite existing session with the same name (default: false).
+            
+        Returns:
+            JSON response with import status
+        """
+        try:
+            # Check if file was uploaded
+            if 'file' not in request.files:
+                return jsonify({"error": "No file provided"}), 400
+            
+            file = request.files['file']
+            
+            # Check if file has a name
+            if file.filename == '':
+                return jsonify({"error": "No file selected"}), 400
+            
+            # Check if file has JSON extension
+            if not file.filename.endswith('.json'):
+                return jsonify({"error": "File must be a JSON file"}), 400
+            
+            # Get overwrite flag
+            overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+            
+            # Get sessions directory
+            sessions_dir = _get_sessions_dir()
+            
+            # Load session data to validate and get name
+            try:
+                session_data = json.loads(file.read())
+                file.seek(0)  # Reset file pointer after reading
+            except json.JSONDecodeError:
+                return jsonify({"error": "Invalid session file: not a valid JSON file"}), 400
+            
+            # Validate session data
+            if "name" not in session_data:
+                return jsonify({"error": "Invalid session file: missing name property"}), 400
+            
+            # Sanitize the session name
+            original_name = session_data["name"]
+            session_data["name"] = _sanitize_session_name(session_data["name"])
+            
+            # Construct safe file path
+            file_path = os.path.join(sessions_dir, f"{session_data['name']}.json")
+            
+            # Verify the file is within the sessions directory
+            if not _is_safe_session_path(file_path, sessions_dir):
+                return jsonify({"error": "Invalid session name in imported file"}), 400
+            
+            # Check if session with this name already exists
+            if os.path.exists(file_path) and not overwrite:
+                return jsonify({
+                    "status": "conflict",
+                    "message": f"Session with name '{session_data['name']}' already exists.",
+                    "exists": True
+                }), 409
+            
+            # Add timestamp if not present
+            if "timestamp" not in session_data:
+                from datetime import datetime
+                session_data["timestamp"] = datetime.now().isoformat()
+            
+            # Write session data to file
+            with open(file_path, 'w') as f:
+                json.dump(session_data, f, indent=2)
+            
+            # Notice if sanitization changed the name
+            message = f"Session imported as {session_data['name']}"
+            if original_name != session_data["name"]:
+                message += f" (original name '{original_name}' was sanitized)"
+            
+            return jsonify({
+                "status": "success",
+                "message": message,
+                "file": file_path,
+                "session": session_data,
+                "sanitized_name": session_data["name"]
+            })
+        except Exception as e:
+            logger.error(f"Error importing session: {e}")
+            return jsonify({"error": f"Failed to import session: {str(e)}"}), 500
 
 
 def _parse_indices(indices_str):

@@ -4,69 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Annzarro - Single Cell Visualization</title>
+    
+    <!-- CSS Libraries -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plotly.js@2.24.3/dist/plotly.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/searchbuilder/1.4.0/css/searchBuilder.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css">
+    
+    <!-- App CSS -->
     <link rel="stylesheet" href="css/styles.css">
     
-    <script>
-        // Configuration for API endpoints
-        window.Annzarro = window.Annzarro || {};
-        window.Annzarro.config = {
-            apiUrl: '/api/v1',  // Default API URL
-            useServer: true,    // Always use the Python server
-            // Feature flags
-            features: {
-                pythonBackend: true,  // Always use Python backend for zarr data access
-                lazyLoading: true,    // Use lazy loading for large datasets
-                embeddingSupport: true // Enable embedding visualization
-            }
-        };
-        
-        // Check if we're running from a file:// URL 
-        if (window.location.protocol === 'file:') {
-            // Inform user that the app requires a unified server
-            console.error('This application requires the unified server to be running.');
-            // Show a warning to the user in the UI
-            window.addEventListener('DOMContentLoaded', function() {
-                document.body.innerHTML = `
-                    <div class="container p-5 text-center">
-                        <div class="alert alert-danger">
-                            <h4>Unified Server Required</h4>
-                            <p>This application cannot run directly from a file:// URL.</p>
-                            <p>Please run the unified server using:</p>
-                            <pre class="bg-light p-3 mt-3">python run_annzarro.py --start</pre>
-                            <p>Then access the application at: <a href="http://localhost:8000">http://localhost:8000</a></p>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-    </script>
-    
-    <!-- Load dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
+    <!-- JavaScript Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.24.3/dist/plotly.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/searchbuilder/1.4.0/js/dataTables.searchBuilder.min.js"></script>
+    <script src="https://cdn.datatables.net/searchbuilder/1.4.0/js/searchBuilder.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/select/1.6.2/js/dataTables.select.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
     
-    <!-- Using Python backend exclusively for zarr operations -->
-    
-    <!-- Load application scripts -->
-    <script src="js/utils.js" defer></script>
-    <script src="js/module-loader.js" defer></script>
-    <script src="js/zarr-loader.js" defer></script>
+    <!-- App JavaScript -->
     <script src="js/data-manager.js" defer></script>
-    <script src="js/matrix-manager.js" defer></script>
+    <script src="js/file-browser.js" defer></script>
+    <script src="js/panel-manager.js" defer></script>
     <script src="js/plot-manager.js" defer></script>
     <script src="js/table-manager.js" defer></script>
-    <script src="js/string-db.js" defer></script>
-    <script src="js/ui-manager.js" defer></script>
-    <script src="js/dataframe-ui.js" defer></script>
+    <script src="js/session-manager.js" defer></script>
+    <script src="js/header-manager.js" defer></script>
     <script src="js/main.js" defer></script>
 </head>
 <body>
@@ -75,7 +50,7 @@
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
                 <span class="app-name">Annzarro</span>
-                <span class="app-version">v0.1.0</span>
+                <span class="app-version">v1.0.0</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -83,27 +58,30 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item active">
-                        <a class="nav-link" href="#" id="loadDataMenu">
-                            <i class="bi bi-folder-plus"></i> Load Data
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="#" id="browseDataMenu">
-                            <i class="bi bi-journals"></i> Browse Data
+                            <i class="bi bi-folder"></i> Browse Data
+                        </a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="sessionDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-save"></i> Session
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" id="newSessionBtn">New Session</a></li>
+                            <li><a class="dropdown-item" href="#" id="saveSessionBtn">Save Session</a></li>
+                            <li><a class="dropdown-item" href="#" id="loadSessionBtn">Load Session</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="exportSessionBtn">Export Session</a></li>
+                            <li><a class="dropdown-item" href="#" id="importSessionBtn">Import Session</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="addPanelBtn">
+                            <i class="bi bi-plus-square"></i> Add Panel
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" id="layoutMenu">
-                            <i class="bi bi-layout-split"></i> Layout
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" id="settingsMenu">
-                            <i class="bi bi-gear"></i> Settings
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" id="helpMenu">
+                        <a class="nav-link" href="#" id="helpBtn" data-bs-toggle="modal" data-bs-target="#helpModal">
                             <i class="bi bi-question-circle"></i> Help
                         </a>
                     </li>
@@ -118,11 +96,37 @@
             </div>
         </div>
     </nav>
+    
+    <!-- Persistent Header (hidden until data loaded) -->
+    <div class="persistent-header d-none">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-3 col-sm-6">
+                    <div class="mb-1"><label for="geneSearch" class="form-label small">Focused Gene</label></div>
+                    <select id="geneSearch" class="form-select"></select>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="mb-1"><label for="cellSearch" class="form-label small">Focused Cell</label></div>
+                    <select id="cellSearch" class="form-select"></select>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="mb-1"><label for="taxonomySelect" class="form-label small">Species/Taxonomy</label></div>
+                    <select id="taxonomySelect" class="form-select"></select>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="mb-1"><label class="form-label small">Dataset</label></div>
+                    <div id="datasetInfo" class="dataset-info">
+                        <div class="dataset-name">No dataset loaded</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Content -->
     <div class="container-fluid p-0">
         <div id="mainContainer" class="main-container">
-            <!-- Initial empty state -->
+            <!-- Empty State -->
             <div id="emptyState" class="empty-state p-5 d-flex flex-column align-items-center justify-content-center">
                 <h3>Welcome to Annzarro</h3>
                 <p class="text-center">
@@ -130,10 +134,7 @@
                 </p>
                 <div class="mt-4 d-flex gap-3">
                     <button id="loadDataBtn" class="btn btn-primary btn-lg">
-                        <i class="bi bi-folder-plus"></i> Load Data
-                    </button>
-                    <button id="browseDataBtn" class="btn btn-outline-secondary btn-lg">
-                        <i class="bi bi-journals"></i> Browse Data
+                        <i class="bi bi-folder"></i> Browse Data
                     </button>
                 </div>
                 
@@ -144,372 +145,153 @@
                 </div>
             </div>
             
-            <!-- Content panels (initially hidden) -->
+            <!-- Panel Container (hidden initially) -->
             <div id="panelContainer" class="panel-container d-none">
-                <!-- Panels will be dynamically added by the UI manager -->
+                <!-- Panels will be dynamically added by PanelManager -->
             </div>
         </div>
     </div>
-
-    <!-- Modals -->
     
-    <!-- Matrix Selector Modal -->
-    <div class="modal fade" id="matrixSelectorModal" tabindex="-1" aria-labelledby="matrixSelectorModalLabel" aria-hidden="true">
+    <!-- File Browser Modal -->
+    <div class="modal fade" id="fileBrowserModal" tabindex="-1" aria-labelledby="fileBrowserModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="matrixSelectorModalLabel">Select Matrix</h5>
+                    <h5 class="modal-title" id="fileBrowserModalLabel">Browse Data</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs" id="matrixTypeTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="obsp-tab" data-bs-toggle="tab" data-bs-target="#obsp-content" type="button" role="tab">
-                                Cell-Cell (obsp)
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="varp-tab" data-bs-toggle="tab" data-bs-target="#varp-content" type="button" role="tab">
-                                Gene-Gene (varp)
-                            </button>
-                        </li>
-                    </ul>
-                    
-                    <div class="tab-content mt-3" id="matrixTypeTabContent">
-                        <!-- Observation-Observation Matrices (obsp) -->
-                        <div class="tab-pane fade show active" id="obsp-content" role="tabpanel">
-                            <div class="mb-3">
-                                <label for="obspKeySelect" class="form-label">Select Cell-Cell Matrix:</label>
-                                <select class="form-select" id="obspKeySelect">
-                                    <option value="" selected disabled>-- Select a matrix --</option>
-                                </select>
-                                <div class="form-text">
-                                    Cell-cell relationship matrices showing connections between observations
-                                </div>
+                    <div class="directory-controls mb-3">
+                        <div class="btn-toolbar">
+                            <div class="btn-group me-2">
+                                <button type="button" id="goUpButton" class="btn btn-outline-secondary" title="Go Up">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <button type="button" id="goHomeButton" class="btn btn-outline-secondary" title="Go to Home Directory">
+                                    <i class="bi bi-house"></i>
+                                </button>
                             </div>
-                            <div id="obspMatrixPreview" class="matrix-preview mt-3">
-                                <div class="text-center text-muted">
-                                    <p>Select a matrix to see a preview</p>
-                                </div>
-                            </div>
+                            <button type="button" id="refreshButton" class="btn btn-outline-secondary" title="Refresh">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
                         </div>
-                        
-                        <!-- Variable-Variable Matrices (varp) -->
-                        <div class="tab-pane fade" id="varp-content" role="tabpanel">
-                            <div class="mb-3">
-                                <label for="varpKeySelect" class="form-label">Select Gene-Gene Matrix:</label>
-                                <select class="form-select" id="varpKeySelect">
-                                    <option value="" selected disabled>-- Select a matrix --</option>
-                                </select>
-                                <div class="form-text">
-                                    Gene-gene relationship matrices showing connections between variables
-                                </div>
-                            </div>
-                            <div id="varpMatrixPreview" class="matrix-preview mt-3">
-                                <div class="text-center text-muted">
-                                    <p>Select a matrix to see a preview</p>
-                                </div>
-                            </div>
+                    </div>
+                    
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb" id="directoryBreadcrumb">
+                            <li class="breadcrumb-item active">Loading...</li>
+                        </ol>
+                    </nav>
+                    
+                    <div id="fileList" class="file-list-container">
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-3">Loading directory contents...</p>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <div class="matrix-options">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" id="showLabelsCheck" checked>
-                            <label class="form-check-label" for="showLabelsCheck">Show Labels</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <label for="colorScaleSelect" class="form-label me-2">Color Scale:</label>
-                            <select class="form-select form-select-sm" id="colorScaleSelect" style="width: 120px">
-                                <option value="viridis">Viridis</option>
-                                <option value="plasma">Plasma</option>
-                                <option value="inferno">Inferno</option>
-                                <option value="magma">Magma</option>
-                                <option value="Greens">Greens</option>
-                                <option value="Blues">Blues</option>
-                                <option value="Reds">Reds</option>
-                                <option value="YlOrRd">YlOrRd</option>
-                                <option value="YlGnBu">YlGnBu</option>
-                            </select>
-                        </div>
-                    </div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="selectMatrixBtn">Create Matrix Panel</button>
+                    <button type="button" id="loadSelectedDataset" class="btn btn-primary" disabled>Load Dataset</button>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Load Data Modal -->
-    <div class="modal fade" id="loadDataModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Load Data</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <ul class="nav nav-tabs" id="loadDataTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="local-file-tab" data-bs-toggle="tab" data-bs-target="#local-file-content" type="button" role="tab">Local File</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-content" type="button" role="tab">URL</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="s3-tab" data-bs-toggle="tab" data-bs-target="#s3-content" type="button" role="tab">S3</button>
-                        </li>
-                    </ul>
-                    <div class="tab-content mt-3" id="loadDataTabContent">
-                        <!-- Local File Tab -->
-                        <div class="tab-pane fade show active" id="local-file-content" role="tabpanel">
-                            <div class="mb-3">
-                                <label for="localFile" class="form-label">Select .zarr directory:</label>
-                                <input type="file" class="form-control" id="localFile" webkitdirectory directory multiple>
-                                <div class="form-text">Select the root directory of a .zarr dataset</div>
-                            </div>
-                        </div>
-
-                        <!-- URL Tab -->
-                        <div class="tab-pane fade" id="url-content" role="tabpanel">
-                            <div class="mb-3">
-                                <label for="urlInput" class="form-label">Enter URL:</label>
-                                <input type="url" class="form-control" id="urlInput" placeholder="https://example.com/dataset.zarr">
-                                <div class="form-text">Enter the URL of a .zarr dataset</div>
-                            </div>
-                        </div>
-
-                        <!-- S3 Tab -->
-                        <div class="tab-pane fade" id="s3-content" role="tabpanel">
-                            <div class="mb-3">
-                                <label for="s3Bucket" class="form-label">S3 Bucket:</label>
-                                <input type="text" class="form-control" id="s3Bucket" placeholder="my-bucket">
-                            </div>
-                            <div class="mb-3">
-                                <label for="s3Key" class="form-label">S3 Key (Path):</label>
-                                <input type="text" class="form-control" id="s3Key" placeholder="path/to/dataset.zarr">
-                            </div>
-                            <div class="mb-3">
-                                <label for="s3Region" class="form-label">Region:</label>
-                                <input type="text" class="form-control" id="s3Region" placeholder="us-east-1" value="us-east-1">
-                            </div>
-                            <div class="mb-3 form-check">
-                                <input type="checkbox" class="form-check-input" id="s3Anonymous" checked>
-                                <label class="form-check-label" for="s3Anonymous">Anonymous Access</label>
-                            </div>
-                            <div id="s3CredentialsSection" class="d-none">
-                                <div class="mb-3">
-                                    <label for="s3AccessKey" class="form-label">Access Key:</label>
-                                    <input type="text" class="form-control" id="s3AccessKey">
-                                </div>
-                                <div class="mb-3">
-                                    <label for="s3SecretKey" class="form-label">Secret Key:</label>
-                                    <input type="password" class="form-control" id="s3SecretKey">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <div id="loadingProgress" class="progress w-100 d-none">
-                        <div id="loadingProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-                    </div>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="loadDataSubmit">Load Data</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Demo Data Modal -->
-    <div class="modal fade" id="browseDataModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Browse Datasets</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="datasetsLoading" class="text-center p-3">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-2">Loading available datasets...</p>
-                    </div>
-                    <div id="datasetsError" class="alert alert-danger d-none" role="alert">
-                        Error loading datasets.
-                    </div>
-                    <div id="datasetsEmpty" class="alert alert-info d-none" role="alert">
-                        No datasets found. Add .zarr datasets to the current directory.
-                    </div>
-                    <div id="datasetsList" class="list-group">
-                        <!-- Datasets will be populated here -->
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="loadDatasetSubmit">Load Selected Dataset</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Layout Selection Modal -->
-    <div class="modal fade" id="layoutModal" tabindex="-1" aria-hidden="true">
+    <!-- Save Session Modal -->
+    <div class="modal fade" id="saveSessionModal" tabindex="-1" aria-labelledby="saveSessionModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Layout Selection</h5>
+                    <h5 class="modal-title" id="saveSessionModalLabel">Save Session</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="d-flex flex-wrap gap-3 justify-content-center">
-                        <div class="layout-option" data-layout="single">
-                            <div class="layout-preview single-panel"></div>
-                            <div class="layout-name">Single Panel</div>
-                        </div>
-                        <div class="layout-option" data-layout="horizontal">
-                            <div class="layout-preview horiz-split"></div>
-                            <div class="layout-name">Horizontal Split</div>
-                        </div>
-                        <div class="layout-option" data-layout="vertical">
-                            <div class="layout-preview vert-split"></div>
-                            <div class="layout-name">Vertical Split</div>
-                        </div>
-                        <div class="layout-option" data-layout="quad">
-                            <div class="layout-preview quad-panel"></div>
-                            <div class="layout-name">Quad Panel</div>
+                    <div class="mb-3">
+                        <label for="sessionNameInput" class="form-label">Session Name</label>
+                        <input type="text" class="form-control" id="sessionNameInput" placeholder="Enter a name for this session">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="saveToServerCheck" checked>
+                        <label class="form-check-label" for="saveToServerCheck">
+                            Save to server (in addition to local storage)
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="SessionManager.saveSession()">Save Session</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Load Session Modal -->
+    <div class="modal fade" id="loadSessionModal" tabindex="-1" aria-labelledby="loadSessionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="loadSessionModalLabel">Load Session</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="sessionsListContainer">
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-3">Loading available sessions...</p>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="applyLayoutBtn">Apply Layout</button>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Settings Modal -->
-    <div class="modal fade" id="settingsModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Settings</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Data Processing</label>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="useServerSwitch" checked disabled>
-                            <label class="form-check-label" for="useServerSwitch">Use Unified Server</label>
-                        </div>
-                        <div class="form-text">Using unified server for zarr data access with lazy loading</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Application</label>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="darkModeSwitch">
-                            <label class="form-check-label" for="darkModeSwitch">Dark Mode</label>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Species Setting</label>
-                        <div class="d-flex">
-                          <select class="form-select" id="speciesSelect">
-                            <option value="9606">Homo sapiens (9606)</option>
-                            <option value="10090">Mus musculus (10090)</option>
-                            <option value="10116">Rattus norvegicus (10116)</option>
-                            <option value="7227">Drosophila melanogaster (7227)</option>
-                            <option value="6239">Caenorhabditis elegans (6239)</option>
-                            <option value="4932">Saccharomyces cerevisiae (4932)</option>
-                          </select>
-                          <button type="button" class="btn btn-sm btn-outline-secondary ms-1" data-bs-toggle="modal" data-bs-target="#customSpeciesModal" title="Add custom species">
-                            <i class="bi bi-plus"></i>
-                          </button>
-                        </div>
-                        <div class="form-text">Set species for resource links and database integration</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="geneNameColumn" class="form-label">Gene Name Column</label>
-                        <select class="form-select" id="geneNameColumn">
-                          <option value="">Default (_index)</option>
-                          <option value="gene_symbols">gene_symbols</option>
-                          <option value="gene_names">gene_names</option>
-                          <option value="name">name</option>
-                          <option value="symbol">symbol</option>
-                        </select>
-                        <div class="form-text">Select the var column containing gene names for resource linking</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="cacheSize" class="form-label">Cache Size (MB)</label>
-                        <input type="number" class="form-control" id="cacheSize" value="200" min="50" max="2000">
-                        <div class="form-text">Maximum memory to use for caching data (MB)</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
+    
     <!-- Help Modal -->
-    <div class="modal fade" id="helpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Help</h5>
+                    <h5 class="modal-title" id="helpModalLabel">Help</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <h4>Annzarro: Python-based Single-Cell Visualization</h4>
-                    <p>
-                        Annzarro is a tool for visualizing and analyzing single-cell data stored in the zarr format.
-                        It provides interactive visualizations and analysis capabilities for exploring your data.
-                    </p>
+                    <h4>Annzarro - Single-Cell Visualization Tool</h4>
                     
-                    <h5>Getting Started</h5>
+                    <h5 class="mt-4">Key Features</h5>
+                    <ul>
+                        <li><strong>Browser-based:</strong> No Python installation required</li>
+                        <li><strong>Lazy Loading:</strong> Efficiently handles large datasets with zarr</li>
+                        <li><strong>Interactive Visualizations:</strong> Explore data with interactive plots</li>
+                        <li><strong>Flexible Panels:</strong> Create custom layouts with different panel types</li>
+                        <li><strong>Selection Sets:</strong> Create and manage cell and gene sets</li>
+                        <li><strong>Session Management:</strong> Save and restore your analysis state</li>
+                    </ul>
+                    
+                    <h5 class="mt-4">Getting Started</h5>
                     <ol>
-                        <li>
-                            <strong>Load Data</strong>: Click on "Load Data" in the navigation bar to load a dataset 
-                            from a local file, URL, or S3 bucket.
-                        </li>
-                        <li>
-                            <strong>Demo Data</strong>: Click on "Demo Data" to browse and load available example datasets.
-                        </li>
-                        <li>
-                            <strong>Choose Layout</strong>: Select a layout to organize your visualization panels.
-                        </li>
+                        <li>Click "Browse Data" to select a zarr dataset</li>
+                        <li>Use the persistent header to select genes and cells of interest</li>
+                        <li>Add panels using the "Add Panel" button</li>
+                        <li>Create plots, tables, and other visualizations</li>
+                        <li>Save your session to continue later</li>
                     </ol>
                     
-                    <h5>Features</h5>
+                    <h5 class="mt-4">Panel Types</h5>
                     <ul>
-                        <li><strong>Unified Server</strong>: Efficient data loading with Python's zarr library on a single server</li>
-                        <li><strong>Lazy Loading</strong>: Load only the data you need when you need it</li>
-                        <li><strong>Interactive Visualizations</strong>: Explore your data with interactive plots</li>
-                        <li><strong>Data Selection</strong>: Select cells and genes of interest</li>
-                        <li><strong>Metadata Exploration</strong>: Examine cell and gene annotations</li>
+                        <li><strong>Plot:</strong> Interactive visualizations (scatter, violin, heatmap)</li>
+                        <li><strong>Cell Table:</strong> Browse and search cell data</li>
+                        <li><strong>Gene Table:</strong> Browse and search gene data</li>
+                        <li><strong>Gene Set:</strong> Analyze sets of selected genes</li>
                     </ul>
                     
-                    <h5>Data Requirements</h5>
-                    <p>
-                        Annzarro expects AnnData objects saved in zarr format with standard structure:
-                    </p>
+                    <h5 class="mt-4">Keyboard Shortcuts</h5>
                     <ul>
-                        <li><code>.X</code>: Main expression matrix</li>
-                        <li><code>.obs</code>: Cell annotations</li>
-                        <li><code>.var</code>: Gene annotations</li>
-                        <li><code>.obsm</code>: Multi-dimensional cell annotations (e.g., UMAP, PCA)</li>
-                        <li><code>.layers</code>: Named alternative expression matrices</li>
-                        <li><code>.uns</code>: Unstructured annotations</li>
+                        <li><kbd>Ctrl</kbd> + <kbd>Click</kbd>: Select multiple items</li>
+                        <li><kbd>Shift</kbd> + <kbd>Click</kbd>: Select a range of items</li>
+                        <li><kbd>Esc</kbd>: Clear current selection</li>
                     </ul>
                 </div>
                 <div class="modal-footer">
@@ -518,313 +300,15 @@
             </div>
         </div>
     </div>
-
-    <!-- Error Message Toast -->
-    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
-        <div id="errorToast" class="toast hide" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="toast-header bg-danger text-white">
-                <strong class="me-auto">Error</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body" id="errorToastBody">
-                An error occurred.
-            </div>
+    
+    <!-- Hidden file input for session import -->
+    <input type="file" id="sessionFileInput" style="display: none" accept=".json">
+    
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="loading-overlay d-none">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
         </div>
     </div>
-
-    <!-- Component Templates (hidden) -->
-    <template id="panelTemplate">
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">Panel</div>
-                <div class="panel-controls">
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-grid-1x2"></i>
-                        </button>
-                        <ul class="dropdown-menu panel-type-menu">
-                            <li><a class="dropdown-item" href="#" data-panel-type="scatter">Scatter Plot</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="heatmap">Heatmap</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="violin">Violin Plot</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="table">Data Table</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="gene">Gene Browser</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="cell">Cell Browser</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="matrix">Matrix Browser</a></li>
-                            <li><a class="dropdown-item" href="#" data-panel-type="dataframe">Dataframe Browser</a></li>
-                        </ul>
-                    </div>
-                    <button class="btn btn-sm btn-outline-secondary panel-settings-btn">
-                        <i class="bi bi-gear"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="panel-body">
-                <div class="panel-placeholder">
-                    <div>Select panel type</div>
-                </div>
-                <div class="panel-content"></div>
-            </div>
-        </div>
-    </template>
-  <!-- Custom Species Modal -->
-  <div class="modal fade" id="customSpeciesModal" tabindex="-1" aria-labelledby="customSpeciesModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="customSpeciesModalLabel">Add Custom Species</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <form id="customSpeciesForm">
-            <div class="mb-3">
-              <label for="customSpeciesName" class="form-label">Species Name</label>
-              <input type="text" class="form-control" id="customSpeciesName" required>
-            </div>
-            <div class="mb-3">
-              <label for="customTaxonomyId" class="form-label">Taxonomy ID</label>
-              <input type="number" class="form-control" id="customTaxonomyId" required>
-              <div class="form-text">Find taxonomy IDs at <a href="https://www.ncbi.nlm.nih.gov/taxonomy" target="_blank">NCBI Taxonomy</a></div>
-            </div>
-            <div class="d-flex justify-content-end">
-              <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary">Add Species</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Visualization Settings Modal -->
-  <div class="modal fade" id="vizSettingsModal" tabindex="-1" aria-labelledby="vizSettingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="vizSettingsModalLabel">Visualization Settings</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <form id="vizSettingsForm">
-            <div class="row mb-3">
-              <div class="col-4">
-                <label for="plotType" class="form-label">Plot Type</label>
-                <select class="form-select" id="plotType">
-                  <option value="scatter">Scatter Plot</option>
-                  <option value="heatmap">Heatmap</option>
-                  <option value="violin">Violin Plot</option>
-                  <option value="box">Box Plot</option>
-                  <option value="bar">Bar Chart</option>
-                </select>
-              </div>
-              <div class="col-4">
-                <label for="xAxis" class="form-label">X Axis</label>
-                <select class="form-select" id="xAxis">
-                  <option value="">--Select--</option>
-                </select>
-              </div>
-              <div class="col-4">
-                <label for="yAxis" class="form-label">Y Axis</label>
-                <select class="form-select" id="yAxis">
-                  <option value="">--Select--</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-4">
-                <label for="zAxis" class="form-label">Z Axis (optional)</label>
-                <select class="form-select" id="zAxis">
-                  <option value="">--None--</option>
-                </select>
-              </div>
-              <div class="col-8">
-                <label for="colorBy" class="form-label">Color By</label>
-                <select class="form-select" id="colorBy">
-                  <option value="">--None--</option>
-                </select>
-              </div>
-            </div>
-            
-            <div id="colorSettings" class="mb-3 d-none">
-              <div class="row">
-                <div class="col-6">
-                  <label for="colorMin" class="form-label">Min Value</label>
-                  <input type="number" class="form-control" id="colorMin" placeholder="Auto">
-                </div>
-                <div class="col-6">
-                  <label for="colorMax" class="form-label">Max Value</label>
-                  <input type="number" class="form-control" id="colorMax" placeholder="Auto">
-                </div>
-              </div>
-              <div class="mt-2">
-                <label class="form-label">Out of Range Values</label>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="outOfRangeAction" id="clipValues" value="clip" checked>
-                  <label class="form-check-label" for="clipValues">Clip to min/max</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="outOfRangeAction" id="hideValues" value="hide">
-                  <label class="form-check-label" for="hideValues">Hide points</label>
-                </div>
-              </div>
-            </div>
-            
-            <hr>
-            
-            <div class="row mb-3">
-              <div class="col-6">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="showFocusedGene" checked>
-                  <label class="form-check-label" for="showFocusedGene">Highlight Focused Gene</label>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="showFocusedCell" checked>
-                  <label class="form-check-label" for="showFocusedCell">Highlight Focused Cell</label>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="applyVizSettings">Apply Settings</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Matrix Selector Modal -->
-  <div class="modal fade" id="matrixSelectorModal" tabindex="-1" aria-labelledby="matrixSelectorModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="matrixSelectorModalLabel">Select Matrix</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <ul class="nav nav-tabs" id="matrixTypeTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="obsm-tab" data-bs-toggle="tab" data-bs-target="#obsm-content" type="button" role="tab">
-                Observation Matrices (obsm)
-              </button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="varm-tab" data-bs-toggle="tab" data-bs-target="#varm-content" type="button" role="tab">
-                Variable Matrices (varm)
-              </button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="obsp-tab" data-bs-toggle="tab" data-bs-target="#obsp-content" type="button" role="tab">
-                Cell-Cell Matrices (obsp)
-              </button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="varp-tab" data-bs-toggle="tab" data-bs-target="#varp-content" type="button" role="tab">
-                Gene-Gene Matrices (varp)
-              </button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="layers-tab" data-bs-toggle="tab" data-bs-target="#layers-content" type="button" role="tab">
-                Layers
-              </button>
-            </li>
-          </ul>
-          
-          <div class="tab-content mt-3" id="matrixTypeTabContent">
-            <!-- obsm Content -->
-            <div class="tab-pane fade show active" id="obsm-content" role="tabpanel">
-              <p class="text-muted">Observation matrices (obsm) contain cell embeddings like UMAP, PCA, and more.</p>
-              <div id="obsm-loading" class="text-center p-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">Loading...</span>
-                </div>
-                <span class="ms-2">Loading observation matrices...</span>
-              </div>
-              <div id="obsm-list" class="list-group">
-                <!-- Will be populated dynamically -->
-              </div>
-              <div id="obsm-empty" class="alert alert-info mt-3 d-none">
-                No observation matrices (obsm) found in the current dataset.
-              </div>
-            </div>
-            
-            <!-- varm Content -->
-            <div class="tab-pane fade" id="varm-content" role="tabpanel">
-              <p class="text-muted">Variable matrices (varm) contain gene-specific multi-dimensional annotations.</p>
-              <div id="varm-loading" class="text-center p-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">Loading...</span>
-                </div>
-                <span class="ms-2">Loading variable matrices...</span>
-              </div>
-              <div id="varm-list" class="list-group">
-                <!-- Will be populated dynamically -->
-              </div>
-              <div id="varm-empty" class="alert alert-info mt-3 d-none">
-                No variable matrices (varm) found in the current dataset.
-              </div>
-            </div>
-            
-            <!-- obsp Content -->
-            <div class="tab-pane fade" id="obsp-content" role="tabpanel">
-              <p class="text-muted">Cell-cell matrices (obsp) contain relationships between cells, such as distances or connectivity graphs.</p>
-              <div id="obsp-loading" class="text-center p-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">Loading...</span>
-                </div>
-                <span class="ms-2">Loading cell-cell matrices...</span>
-              </div>
-              <div id="obsp-list" class="list-group">
-                <!-- Will be populated dynamically -->
-              </div>
-              <div id="obsp-empty" class="alert alert-info mt-3 d-none">
-                No cell-cell matrices (obsp) found in the current dataset.
-              </div>
-            </div>
-            
-            <!-- varp Content -->
-            <div class="tab-pane fade" id="varp-content" role="tabpanel">
-              <p class="text-muted">Gene-gene matrices (varp) contain relationships between genes, such as correlation or regulatory networks.</p>
-              <div id="varp-loading" class="text-center p-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">Loading...</span>
-                </div>
-                <span class="ms-2">Loading gene-gene matrices...</span>
-              </div>
-              <div id="varp-list" class="list-group">
-                <!-- Will be populated dynamically -->
-              </div>
-              <div id="varp-empty" class="alert alert-info mt-3 d-none">
-                No gene-gene matrices (varp) found in the current dataset.
-              </div>
-            </div>
-            
-            <!-- Layers Content -->
-            <div class="tab-pane fade" id="layers-content" role="tabpanel">
-              <p class="text-muted">Layers contain alternative representations of the expression matrix, such as normalized counts.</p>
-              <div id="layers-loading" class="text-center p-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">Loading...</span>
-                </div>
-                <span class="ms-2">Loading layers...</span>
-              </div>
-              <div id="layers-list" class="list-group">
-                <!-- Will be populated dynamically -->
-              </div>
-              <div id="layers-empty" class="alert alert-info mt-3 d-none">
-                No layers found in the current dataset.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="selectMatrixBtn">Select Matrix</button>
-        </div>
-      </div>
-    </div>
-  </div>
 </body>
 </html>

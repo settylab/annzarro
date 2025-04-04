@@ -315,7 +315,7 @@ The following changes have been implemented:
 10. ✅ Added comprehensive metadata in initial dataset load
 11. ✅ Removed stateful POST/DELETE endpoints for selections and focus
 12. ✅ Made all endpoints accept dataset_path parameter
-13. ⚠️ PENDING: Frontend code needs updates to fully align with the stateless API
+13. ✅ COMPLETE: Frontend code updated to fully align with the stateless API
 14. ⚠️ PENDING: Server code refactoring for better maintainability
 15. ⚠️ PENDING: Enhanced remote dataset support for S3, HTTP, etc.
 16. ⚠️ PENDING: Caching layer for improved remote data performance

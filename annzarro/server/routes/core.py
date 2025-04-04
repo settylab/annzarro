@@ -26,10 +26,10 @@ def register_core_routes(app, api_version):
         api_version: API version string
     """
     
-    @app.route(f"/api/{api_version}/datasets", methods=["GET"])
-    def list_datasets():
+    @app.route(f"/api/{api_version}/core/datasets", methods=["GET"])
+    def list_legacy_datasets():
         """
-        List available datasets.
+        List available datasets (legacy endpoint).
         
         Returns:
             JSON response with dataset list

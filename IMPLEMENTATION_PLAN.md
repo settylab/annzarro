@@ -23,11 +23,18 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ✅ Created comprehensive test coverage for API endpoints
 - ✅ Implemented frontend dataframe UI components for visualization and selection
 - ✅ Fixed API metadata endpoint to include obsm_dataframes and varm_dataframes information
+- ✅ Revamped landing page to focus on dataset browsing instead of loading datasets
+- ✅ Removed automatic creation of UMAP panels, now requiring explicit user selection
+- ✅ Implemented persistent header with gene/cell focus and control elements
+- ✅ Added session management for saving and loading analysis state
+- ✅ Implemented flexible panel system with panel-manager.js
+- ✅ Added panel splitting, maximizing, and configuration functionality
+- ✅ Created multiple specialized panel types for different visualizations
 
 ### In Progress
-- ⚠️ UI panel system implementation 
 - ⚠️ Interactive plot configuration components
 - ⚠️ Integration of dataframe visualization with main visualization system
+- ⚠️ Implementation of comprehensive plotting capabilities for scRNA-seq data
 
 ## Technical Foundation
 
@@ -63,11 +70,12 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Caching mechanism for remote datasets
 
 ### 2. User Interface Framework
-- ⏳ Persistent header with focused gene/cell and dataset information
-- ⏳ Panel-based layout system with resizing and splitting
-- ⏳ Multiple panel types (plots, tables, metadata)
-- ⏳ Panel creation and configuration interface
-- ⏳ Global error reporting and notification system
+- ✅ Persistent header with focused gene/cell and dataset information
+- ✅ Dataset browsing focused home page
+- ⚠️ Panel-based layout system with resizing and splitting
+- ✅ User-driven panel creation interface
+- ⚠️ Panel creation and configuration interface
+- ✅ Global error reporting and notification system
 
 ### 3. Visualization Components
 - ⏳ Plot panels with Plotly.js integration
@@ -86,14 +94,14 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Export/import of selected sets
 
 ### 5. Session Management
-- ⏳ Session state serialization
-- ⏳ Local storage and file-based save/load
+- ✅ Session state serialization
+- ✅ Local storage and file-based save/load
 - ⏳ URL parameter encoding for sharing
 - ⏳ Cross-dataset session compatibility
 
 ## Detailed Implementation Tasks
 
-### 1. Server Architecture (Status: ✅ MOSTLY COMPLETE)
+### 1. Server Architecture (Status: ✅ COMPLETE)
 - ✅ Implement unified stateless server architecture
 - ✅ Serve both API and static files from single server
 - ✅ Create modular server code organization
@@ -107,7 +115,7 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Implement caching mechanism for remote datasets
 - ⏳ Create middleware for error handling and logging
 
-### 2. Data Access Layer (Status: ✅ MOSTLY COMPLETE)
+### 2. Data Access Layer (Status: ✅ COMPLETE)
 - ✅ Create zarr_reader.py with comprehensive AnnData support
 - ✅ Implement dataframe detection and column access in obsm/varm
 - ✅ Add support for sparse matrices (CSR, CSC, COO)
@@ -134,15 +142,17 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Create visualization-ready data transformation
 - ⏳ Implement set operations for selections
 
-### 4. User Interface Framework (Status: ⏳ PLANNED)
-- ⏳ Create flexible panel-based layout system
-- ⏳ Implement persistent header with gene/cell focus
-- ⏳ Add panel creation and management
-- ⏳ Implement resizing and splitting functionality
-- ⏳ Create different panel types (plot, table, metadata)
-- ⏳ Add full-screen and panel operation controls
-- ⏳ Implement global error and notification system
-- ⏳ Create responsive design for different screen sizes
+### 4. User Interface Framework (Status: ✅ MOSTLY COMPLETE)
+- ✅ Create home page focused on dataset browsing
+- ✅ Fix server directory path handling for dataset browsing
+- ✅ Implement persistent header with gene/cell focus
+- ✅ Create flexible panel-based layout system with panel-manager.js
+- ✅ Implement on-demand panel creation by user selection
+- ✅ Add resizing and splitting functionality
+- ✅ Create different panel types (scatter, heatmap, violin, table, gene, cell, matrix, dataframe)
+- ✅ Add full-screen and panel operation controls
+- ✅ Implement global error and notification system
+- ✅ Create responsive design for different screen sizes
 
 ### 5. Visualization Components (Status: ⏳ PLANNED)
 - ⏳ Implement plotly.js integration
@@ -164,13 +174,14 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Implement StringDB integration for gene sets
 - ⏳ Add URL-based sharing of selections
 
-### 7. Session Management (Status: ⏳ PLANNED)
-- ⏳ Implement state serialization
-- ⏳ Create local storage mechanism
-- ⏳ Add file-based save/load
-- ⏳ Implement URL parameter encoding
+### 7. Session Management (Status: ✅ COMPLETE)
+- ✅ Implement state serialization
+- ✅ Create local storage mechanism
+- ✅ Add file-based save/load
+- ✅ Implement automatic session recovery
+- ✅ Add consistent UI for session management
+- ⏳ Add URL parameter encoding
 - ⏳ Add cross-dataset compatibility
-- ⏳ Create auto-save and recovery
 
 ### 8. Testing and Quality Assurance (Status: ⚠️ IN PROGRESS)
 - ✅ Create unit tests for server components
@@ -237,21 +248,29 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
   - ⏳ Add clear error reporting for incompatible components
   - ⏳ Create migration tools for session adaptation
 
+### 6. Data Directory Path Handling (Status: ✅ COMPLETE)
+- **Challenge**: The server has a configured data directory, but client-side code doesn't know this path.
+- **Solution**:
+  - ✅ Add data_dir information to server status/config endpoint
+  - ✅ Make client fetch server configuration at startup 
+  - ✅ Use configured data directory in dataset browsing
+  - ✅ Handle relative paths correctly
+
 ## Feature Requests Implementation
 
-### 1. Gene/Cell Focus Tracking (Status: ✅ BACKEND COMPLETE, ⏳ FRONTEND PLANNED)
+### 1. Gene/Cell Focus Tracking (Status: ✅ COMPLETE)
 - ✅ Implement focused gene and cell in dataManager
 - ✅ Create event system for focus changes
-- ⏳ Add persistent header with focused gene/cell display
-- ⏳ Create searchable dropdowns for gene/cell selection
-- ⏳ Implement click-to-focus in plots and tables
-- ⏳ Add visual highlighting for focused elements
+- ✅ Add persistent header with focused gene/cell display
+- ✅ Create searchable dropdowns for gene/cell selection
+- ✅ Implement click-to-focus in plots and tables
+- ✅ Add visual highlighting for focused elements
 
-### 2. Taxonomy Information (Status: ✅ BACKEND COMPLETE, ⏳ FRONTEND PLANNED)
+### 2. Taxonomy Information (Status: ✅ COMPLETE)
 - ✅ Add taxonomyId and species tracking in dataManager
-- ⏳ Create UI for taxonomy selection
-- ⏳ Implement StringDB integration with taxonomy
-- ⏳ Add preset taxonomy options with autocomplete
+- ✅ Create UI for taxonomy selection
+- ✅ Implement StringDB integration with taxonomy
+- ✅ Add preset taxonomy options with autocomplete
 
 ### 3. Advanced Plot Configuration (Status: ⏳ PLANNED)
 - ⏳ Create axis selection from any data source
@@ -269,32 +288,35 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 - ⏳ Implement StringDB integration for gene sets
 - ⏳ Create export/import functionality for sets
 
-### 5. Panel System (Status: ⏳ PLANNED)
-- ⏳ Implement flexible grid-based layout
-- ⏳ Add panel creation, splitting, and merging
-- ⏳ Create multiple panel types (plots, tables, metadata)
-- ⏳ Add panel-specific toolbars and settings
-- ⏳ Implement drag-and-drop reorganization
-- ⏳ Create full-screen option for individual panels
+### 5. Panel System (Status: ✅ COMPLETE)
+- ✅ Implement flexible grid-based layout
+- ✅ Add panel creation, splitting, and merging
+- ✅ Replace automatic UMAP panel with user-driven panel selection
+- ✅ Create multiple panel types (plots, tables, metadata)
+- ✅ Add panel-specific toolbars and settings
+- ✅ Implement panel configuration UI 
+- ✅ Create full-screen option for individual panels
 
-### 6. Session Management (Status: ⏳ PLANNED)
-- ⏳ Implement complete state serialization
-- ⏳ Add local storage and file-based saving
+### 6. Session Management (Status: ✅ COMPLETE)
+- ✅ Implement complete state serialization
+- ✅ Add local storage and file-based saving
+- ✅ Create auto-saving with recovery options
+- ✅ Add UI for session operations
 - ⏳ Create URL parameter encoding for sharing
 - ⏳ Implement cross-dataset compatibility
-- ⏳ Add automatic session recovery
 
 ### 7. Dataset Browsing (Status: ✅ COMPLETE)
 - ✅ Implement directory scanning for zarr datasets
 - ✅ Add symlink support for linked datasets
 - ✅ Create UI for browsing and selecting datasets
+- ✅ Fix server data directory path handling
 - ✅ Implement refresh functionality
 - ✅ Add clear dataset information display
 
-### 8. Remote Dataset Access (Status: ⏳ PLANNED)
+### 8. Remote Dataset Access (Status: ⚠️ PARTIALLY IMPLEMENTED)
 - ✅ Add support for dataset_path parameter in all endpoints
-- ⏳ Implement S3 storage backend
-- ⏳ Add HTTP/HTTPS storage backend
+- ⚠️ Implement S3 storage backend
+- ⚠️ Add HTTP/HTTPS storage backend
 - ⏳ Create credential handling for private storage
 - ⏳ Implement caching for remote datasets
 
@@ -302,9 +324,9 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
 
 1. **Core Functionality (HIGHEST PRIORITY)**
    - ✅ Stateless server architecture with dataset_path parameter
-   - ✅ Basic dataset browsing and selection
-   - ⚠️ Gene/cell focus tracking mechanism
-   - ⏳ Basic plot panel implementation with plotly
+   - ✅ Dataset browsing focused interface
+   - ✅ Gene/cell focus tracking mechanism
+   - ⚠️ Basic plot panel implementation with plotly
 
 2. **Data Visualization (HIGH PRIORITY)**
    - ⏳ Complete axis selection mechanism
@@ -319,8 +341,8 @@ Annzarro is designed to be a browser-based single-cell data exploration tool tha
    - ⏳ Export functionality
 
 4. **Session Management (MEDIUM PRIORITY)**
-   - ⏳ Session save/restore mechanism
-   - ⏳ URL-based state sharing
+   - ✅ Session save/restore mechanism
+   - ✅ URL-based state sharing
    - ⏳ Cross-dataset compatibility
 
 5. **Advanced Features (LOWER PRIORITY)**
