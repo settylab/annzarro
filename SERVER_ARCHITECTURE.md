@@ -117,6 +117,58 @@ python run_annzarro.py --stop
        return jsonify({"datasets": datasets})
    ```
 
+3. **Dataframe Support**:
+   The API now supports working with dataframe-encoded matrices in obsm/varm:
+   
+   a. List columns in dataframe-encoded obsm matrices:
+   ```python
+   @app.route(f"/api/{API_VERSION}/data/obsm_dataframe_columns", methods=["GET"])
+   def get_obsm_dataframe_columns():
+       dataset_path = request.args.get("dataset_path")
+       obsm_key = request.args.get("key")
+       
+       # Return the list of column names for a dataframe-encoded obsm matrix
+       columns = zarr_reader.get_obsm_dataframe_columns(obsm_key, dataset_path=dataset_path)
+       return jsonify({"columns": columns, "obsm_key": obsm_key, "dataset_path": dataset_path})
+   ```
+
+   b. Access specific columns in obsm/varm dataframes:
+   ```python
+   @app.route(f"/api/{API_VERSION}/data/obsm/<path:obsm_key>", methods=["GET"])
+   def get_obsm(obsm_key: str):
+       dataset_path = request.args.get("dataset_path")
+       column_name = request.args.get("column_name")  # Optional column name for dataframes
+       
+       # Get obsm data, with optional column selection for dataframes
+       data = zarr_reader.get_obsm(obsm_key=obsm_key, dataset_path=dataset_path, 
+                                column_name=column_name)
+       return jsonify({"data": data, "obsm_key": obsm_key, "column_name": column_name})
+   ```
+
+   c. Path-based access for all data types, including dataframe columns:
+   ```python
+   @app.route(f"/api/{API_VERSION}/data/by_path", methods=["GET"])
+   def get_data_by_path():
+       dataset_path = request.args.get("dataset_path")
+       data_path = request.args.get("path")  # e.g., "varm/matrix_name/column_name"
+       
+       # Get data using path notation
+       data = zarr_reader.get_data_by_path(data_path, dataset_path=dataset_path)
+       return jsonify({"data": data.tolist(), "path": data_path, "dataset_path": dataset_path})
+   ```
+   
+   d. Statistical analysis for any data path:
+   ```python
+   @app.route(f"/api/{API_VERSION}/data/statistics", methods=["GET"])
+   def get_statistics():
+       dataset_path = request.args.get("dataset_path")
+       data_path = request.args.get("data_path")  # e.g., "varm/matrix_name/column_name"
+       
+       # Get statistics for the specified data
+       stats = zarr_reader.get_statistics(dataset_path, data_path=data_path)
+       return jsonify({"statistics": stats, "data_path": data_path})
+   ```
+
 3. **Frontend API URL Detection**:
    ```javascript
    // Simplified API URL configuration in main.js
@@ -253,6 +305,12 @@ The following changes have been implemented:
 14. ⚠️ PENDING: Server code refactoring for better maintainability
 15. ⚠️ PENDING: Enhanced remote dataset support for S3, HTTP, etc.
 16. ⚠️ PENDING: Caching layer for improved remote data performance
+17. ✅ ADDED: Support for obsm/varm dataframe-encoded matrices in zarr_reader.py
+18. ✅ ADDED: API endpoints to expose dataframe column access and path-based data access:
+    - `/api/v1/data/obsm_dataframe_columns`: List columns in obsm dataframes
+    - `/api/v1/data/varm_dataframe_columns`: List columns in varm dataframes
+    - `/api/v1/data/by_path`: Path-based data access (e.g., varm/matrix_name/column_name)
+    - Added column_name support to existing obsm, varm, and paginated endpoints
 
 ## Planned Server Refactoring
 
@@ -269,6 +327,8 @@ The server code will be refactored for better maintainability by splitting it in
    - Observation and variable annotations
    - Paginated data access
    - Statistical analysis endpoints
+   - Dataframe column access for obsm/varm matrices
+   - Path-based data access (e.g., varm/matrix_name/column_name)
 
 3. **zarr_routes.py**: Zarr-specific functionality
    - Upload endpoints

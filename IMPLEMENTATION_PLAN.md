@@ -48,11 +48,13 @@ Since this application has not yet been released, we DO NOT need to maintain bac
 - [x] Eliminate support for file:// protocol completely
 - [x] Remove all file:// protocol code paths from the codebase
 - [x] Document the server architecture clearly in README.md
-- [ ] Refactor server.py into multiple modules for better maintainability:
-  - [ ] Remove all selection and focus endpoints completely
-  - [ ] Split into core.py, data_routes.py, zarr_routes.py, static_routes.py
-  - [ ] Create a central routes registry
-  - [ ] Implement better error handling for all modules
+- [x] Refactor server.py into multiple modules for better maintainability:
+  - [x] Remove all selection and focus endpoints completely
+  - [x] Split into core.py, data_routes.py, zarr_routes.py, static_routes.py
+  - [x] Create a central routes registry
+  - [x] Implement better error handling for all modules
+  - [x] Completed initial implementation of core.py, routes/* modules
+  - [x] Updated server.py to use the new modular architecture
 - [ ] Enhance support for remote zarr archives:
   - [ ] Ensure all dataset_path parameters can handle URLs (S3, HTTP)
   - [ ] Add credential handling for remote storage
@@ -66,6 +68,44 @@ Since this application has not yet been released, we DO NOT need to maintain bac
 - [x] Add support for browsing from the startup directory
 - [ ] Remove all remaining references to "demo data" throughout the codebase
 - [ ] Implement better error handling for directory access issues
+
+## Enhanced Support for obsm/varm Dataframes
+
+Based on examination of the aging.zarr dataset, we've discovered that obsm and varm can contain complex dataframe structures with multiple columns. This is particularly evident in varm entries like `kompot_de_mean_lfc_Young_to_Old_groups` which has the following characteristics:
+
+1. Structure of dataframe-encoded obsm/varm matrices:
+   - Each dataframe is stored as a group with `.zattrs` containing:
+     - `encoding-type: "dataframe"`
+     - `encoding-version: "0.2.0"`
+     - `_index`: Name of the index column (usually "_index")
+     - `column-order`: List of column names in order
+   - Each column is stored as a separate directory containing the array data
+   - Column directories can have spaces in names (e.g., "B cells", "HSC & LMPP")
+
+2. Current Limitations:
+   - The zarr_reader.py implementation doesn't properly handle dataframe columns
+   - obsm/varm entries are treated as simple arrays, losing column information
+   - There's no way to query specific columns within a dataframe
+   - Metadata extraction doesn't expose column structures in dataframes
+   - UI has no way to select specific columns from a multi-column matrix
+
+3. Required Enhancements:
+   - Detect dataframe-encoded matrices in obsm/varm during metadata extraction
+   - Record column names for each dataframe in the metadata
+   - Add methods to query specific columns from dataframes
+   - Enable direct access to columns via path notation (e.g., `varm/kompot_de_mean_lfc_Young_to_Old_groups/B cells`)
+   - Add UI components to browse and select columns from dataframes
+   - Ensure proper serialization of dataframe data in API responses
+
+4. Implementation Strategy:
+   - Enhance `_extract_metadata` to detect and record dataframe structures
+   - Add helper methods for extracting column names from dataframes
+   - Extend get_obsm/get_varm to accept column names for dataframes
+   - Add new methods specifically for dataframe access
+   - Update API endpoints to support column-level access for dataframes
+   - Ensure proper handling of spaces in column names
+
+These enhancements are critical for working with differential expression analysis results and other multi-dimensional data frequently stored in obsm/varm dataframes.
 
 ## 3. Interface and UI Fixes
 - [x] Fix split lines going through headers issue
@@ -91,12 +131,27 @@ Since this application has not yet been released, we DO NOT need to maintain bac
   - [x] Add REST API endpoint to expose .varp data
   - [x] Implement client-side functions to retrieve .varp matrices
 - [ ] Complete support for obsm/varm multi-column matrices
-  - [ ] Fix metadata extraction for all obsm and varm matrices
-  - [ ] Ensure consistent handling for both obsm and varm matrices
-  - [ ] Properly expose all matrices (like kompot_de_* in varm) in aging.zarr
+  - [x] Fix metadata extraction for all obsm and varm matrices
+  - [x] Ensure consistent handling for both obsm and varm matrices
+  - [x] Properly expose all matrices (like kompot_de_* in varm) in aging.zarr
   - [ ] Add specialized visualization support for differential expression data in varm
   - [ ] Create frontend UI to work with both obsm and varm multi-dimensional data
-  - [ ] Handle non-standard matrix types consistently in both obsm and varm
+  - [x] Handle non-standard matrix types consistently in both obsm and varm
+  - [x] **Implement proper dataframe support for obsm/varm:**
+    - [x] Detect and record dataframe structure with columns during metadata extraction
+    - [x] Add methods to access specific columns within dataframes
+    - [x] Enable path-based notation for accessing dataframe columns
+    - [x] Handle spaces and special characters in column names
+    - [ ] Update API endpoints to support column-level querying
+    - [ ] Add UI components for browsing and selecting dataframe columns
+  - [x] Add support for multiple sparse matrix formats in layers (like logged_counts)
+  - [x] Support CSR, CSC, and COO formats
+  - [x] Improve metadata extraction for sparse matrices
+  - [x] Add helper methods for shape discovery and matrix info extraction
+  - [x] Maintain statelessness for multi-user support
+  - [x] Add comprehensive tests for all sparse matrix formats
+  - [x] Test helper methods for shape discovery and info extraction
+  - [x] Completely rewrite zarr_reader.py with better structure and maintainability
 - [x] Implement lazy loading with dataset-identifier architecture
   - [x] Return complete metadata in initial dataset load
   - [x] Include matrix dimensions, types, and summary statistics
@@ -159,6 +214,7 @@ Since this application has not yet been released, we DO NOT need to maintain bac
   - [x] Integration tests for unified server with both API and static content
   - [x] End-to-end tests for server endpoints
   - [x] Test configuration handling and environment variables
+  - [x] Add tests for modular server architecture
 - [ ] Implement command-line browser testing with console access
   - [ ] Configure headless browser testing using Puppeteer or similar
   - [ ] Set up test environment with mocked server responses
@@ -317,14 +373,20 @@ Since this application has not yet been released, we DO NOT need to maintain bac
    - [ ] Add caching layer for remote datasets to improve performance
    - [ ] Create utility functions for URL/path handling across all code
 
-3. 🔴 Fix obsm/varm Metadata and Data Access Issues (HIGH PRIORITY)
-   - [ ] Complete the metadata extraction for both obsm and varm in zarr_reader.py
-   - [ ] Ensure all multi-dimensional matrices are properly included in dataset metadata
-   - [ ] Add consistent handling for obsm and varm matrices including non-standard entries
-   - [ ] Add explicit support for multi-column dataframes like kompot_de_* matrices
-   - [ ] Create specialized visualization components for both cell-level and gene-level data
-   - [ ] Add frontend UI for exploring gene-level statistics from varm matrices
-   - [ ] Add visualization tools for obsm data beyond standard embeddings
+3. ✅ Fix obsm/varm Metadata and Dataframe Support (COMPLETED BACKEND FUNCTIONALITY)
+   - [x] Complete the metadata extraction for both obsm and varm in zarr_reader.py with full dataframe support
+   - [x] Detect and expose dataframe-encoded matrices with their column information in metadata
+   - [x] Add methods to extract column names from obsm/varm dataframes
+   - [x] Implement column-specific access for dataframes (e.g., get_obsm_column or extend get_obsm)
+   - [x] Ensure all dataframes are properly included in dataset metadata with column details
+   - [x] Add consistent handling for spaces and special characters in column names
+   - [x] Create specialized API endpoints for accessing dataframe columns
+   - [x] Update routes/data_routes.py to expose dataframe columns
+   - [x] Add explicit support for path-based column access like kompot_de_*/B cells
+   - [ ] Create specialized visualization components for differential expression data (frontend)
+   - [ ] Add frontend UI for exploring gene-level statistics from varm matrices (frontend)
+   - [ ] Create column selection UI components for dataframe-encoded matrices (frontend)
+   - [ ] Add visualization tools for obsm data beyond standard embeddings (frontend)
 
 3. ✅ Fix JavaScript errors - Critical issue preventing the application from working properly
    - ✅ Focus on the SyntaxError at line 1054 in main.js (unexpected 'else' token)
@@ -529,9 +591,9 @@ Required changes:
    - Update all documentation and tooltips
    - Maintain a consistent mental model across the application
 
-### 3. Incomplete obsm/varm Metadata and Access
+### 3. Incomplete obsm/varm Metadata and Access with Missing Dataframe Support
 
-Inspection of the aging.zarr dataset shows important multi-dimensional matrices in varm are not properly accessible. The same issue likely affects obsm data as well.
+Inspection of the aging.zarr dataset shows important multi-dimensional matrices in varm are not properly accessible, particularly dataframe-encoded matrices with named columns. The same issue affects obsm data as well.
 
 - File structure in data/aging.zarr/varm/ shows:
   - PCs
@@ -539,16 +601,25 @@ Inspection of the aging.zarr dataset shows important multi-dimensional matrices 
   - kompot_de_mean_lfc_Young_to_Old_groups
   - kompot_de_weighted_lfc_Young_to_Old_groups
 
-- Similar multi-dimensional matrices may exist in obsm beyond the standard embeddings.
+- These varm entries have dataframe structure with multiple named columns:
+  - Each dataframe has an `.zattrs` file with `encoding-type: "dataframe"` and `column-order` listing the column names
+  - Each column is stored as a separate directory (e.g., "B cells", "HSC & LMPP", "T cells")
+  - Column names often contain spaces and special characters
+
+- Similar dataframe-structured matrices likely exist in obsm beyond the standard embeddings.
 
 Issues to fix:
-- The metadata for both obsm and varm is incomplete in API responses
-- Ensure all obsm/varm matrices are exposed consistently in dataset info
-- Add explicit endpoint support for accessing both obsm/varm data
-- Update the frontend to properly display and interact with all multi-dimensional matrices
-- Ensure proper data typing for multi-column matrices in both obsm and varm
-- Add frontend visualization tools for differential expression data (varm) and cell-level metadata (obsm)
+- The metadata for both obsm and varm is incomplete in API responses and doesn't expose dataframe column information
+- The current implementation treats dataframes as simple matrices, losing column information
+- There's no way to query specific columns within dataframes
+- Ensure all obsm/varm matrices are exposed consistently in dataset info, including column details for dataframes
+- Add explicit endpoint support for accessing specific columns within dataframe-encoded obsm/varm matrices
+- Enable path-based column access (e.g., `varm/kompot_de_mean_lfc_Young_to_Old_groups/B cells`)
+- Update the frontend to properly display and interact with dataframe-encoded matrices
+- Ensure proper handling of spaces and special characters in column names
+- Add frontend visualization tools specifically for differential expression data (varm) and cell-level metadata (obsm)
 - Implement consistent handling across both obsm and varm matrices
+- Add UI components for browsing and selecting specific columns within dataframes
 
 ## TODOs for Next Implementation Session
 1. ✅ Fix the JavaScript errors in main.js:

@@ -51,10 +51,55 @@ class TestZarrReader(unittest.TestCase):
         gene_names = np.array([f'GENE_{i}' for i in range(50)])
         var_group.create_dataset('gene_name', data=gene_names)
         
-        # Create obsm
+        # Create obsm with a standard matrix
         obsm_group = root.create_group('obsm')
         umap = np.random.rand(100, 2).astype('float32')
         obsm_group.create_dataset('X_umap', data=umap)
+        
+        # Create a dataframe-encoded obsm matrix (like AbCapture in the aging.zarr dataset)
+        df_obsm = obsm_group.create_group('cell_markers')
+        # Set dataframe attributes
+        df_obsm.attrs['encoding-type'] = 'dataframe'
+        df_obsm.attrs['encoding-version'] = '0.2.0'
+        df_obsm.attrs['_index'] = '_index'
+        df_obsm.attrs['column-order'] = ['CD4', 'CD8', 'CD19']
+        
+        # Create index column
+        index_group = df_obsm.create_group('_index')
+        index_group.create_dataset('0', data=cell_ids)
+        index_group.attrs['encoding-type'] = 'string-array'
+        
+        # Create data columns
+        for col_name in ['CD4', 'CD8', 'CD19']:
+            col_group = df_obsm.create_group(col_name)
+            col_data = np.random.rand(100).astype('float32')
+            col_group.create_dataset('0', data=col_data)
+            col_group.attrs['encoding-type'] = 'array'
+        
+        # Create varm with a standard matrix
+        varm_group = root.create_group('varm')
+        pca_loadings = np.random.rand(50, 10).astype('float32')
+        varm_group.create_dataset('PCs', data=pca_loadings)
+        
+        # Create a dataframe-encoded varm matrix (like kompot_de_* in the aging.zarr dataset)
+        df_varm = varm_group.create_group('differential_expression')
+        # Set dataframe attributes
+        df_varm.attrs['encoding-type'] = 'dataframe'
+        df_varm.attrs['encoding-version'] = '0.2.0'
+        df_varm.attrs['_index'] = '_index'
+        df_varm.attrs['column-order'] = ['cell type A', 'cell type B', 'cell type C']
+        
+        # Create index column
+        index_group = df_varm.create_group('_index')
+        index_group.create_dataset('0', data=gene_ids)
+        index_group.attrs['encoding-type'] = 'string-array'
+        
+        # Create data columns with spaces in names
+        for col_name in ['cell type A', 'cell type B', 'cell type C']:
+            col_group = df_varm.create_group(col_name)
+            col_data = np.random.rand(50).astype('float32')
+            col_group.create_dataset('0', data=col_data)
+            col_group.attrs['encoding-type'] = 'array'
         
         # Create obsp (observation-observation matrices)
         obsp_group = root.create_group('obsp')
@@ -74,10 +119,87 @@ class TestZarrReader(unittest.TestCase):
         np.fill_diagonal(correlation, 1.0)  # Self-correlation is 1
         varp_group.create_dataset('correlation', data=correlation)
         
-        # Create layers
+        # Create layers group
         layers_group = root.create_group('layers')
+        
+        # Create a regular dense layer
         raw = np.random.rand(100, 50).astype('float32')
         layers_group.create_dataset('raw', data=raw)
+        
+        # 1. Create a CSR sparse matrix layer (Compressed Sparse Row)
+        csr_group = layers_group.create_group('logged_counts')
+        
+        # Create data for sparse matrix (around 10% non-zero values)
+        n_nonzero = int(100 * 50 * 0.1)
+        data = np.random.rand(n_nonzero).astype('float32')
+        
+        # Create random indices
+        indices = np.random.randint(0, 50, size=n_nonzero)
+        
+        # Create indptr (CSR format)
+        # Each row has approximately the same number of non-zero elements
+        nnz_per_row = n_nonzero // 100
+        indptr = np.zeros(101, dtype=np.int32)
+        for i in range(1, 101):
+            indptr[i] = indptr[i-1] + nnz_per_row
+        
+        # Create the CSR components
+        csr_group.create_dataset('data', data=data)
+        csr_group.create_dataset('indices', data=indices)
+        csr_group.create_dataset('indptr', data=indptr)
+        
+        # Set attributes for CSR sparse matrix
+        csr_group.attrs['encoding-type'] = 'csr_matrix'
+        csr_group.attrs['encoding-version'] = '0.1.0'
+        csr_group.attrs['shape'] = [100, 50]
+        
+        # 2. Create a CSC sparse matrix layer (Compressed Sparse Column)
+        csc_group = layers_group.create_group('csc_matrix')
+        
+        # Create data for sparse matrix (around 10% non-zero values)
+        n_nonzero = int(100 * 50 * 0.1)
+        data = np.random.rand(n_nonzero).astype('float32')
+        
+        # Create random indices
+        indices = np.random.randint(0, 100, size=n_nonzero)  # Row indices for CSC
+        
+        # Create indptr (CSC format)
+        # Each column has approximately the same number of non-zero elements
+        nnz_per_col = n_nonzero // 50
+        indptr = np.zeros(51, dtype=np.int32)
+        for i in range(1, 51):
+            indptr[i] = indptr[i-1] + nnz_per_col
+        
+        # Create the CSC components
+        csc_group.create_dataset('data', data=data)
+        csc_group.create_dataset('indices', data=indices)
+        csc_group.create_dataset('indptr', data=indptr)
+        
+        # Set attributes for CSC sparse matrix
+        csc_group.attrs['encoding-type'] = 'csc_matrix'
+        csc_group.attrs['encoding-version'] = '0.1.0'
+        csc_group.attrs['shape'] = [100, 50]
+        
+        # 3. Create a COO sparse matrix layer (Coordinate format)
+        coo_group = layers_group.create_group('coo_matrix')
+        
+        # Create data for sparse matrix (around 10% non-zero values)
+        n_nonzero = int(100 * 50 * 0.1)
+        data = np.random.rand(n_nonzero).astype('float32')
+        
+        # Create random row and column indices
+        row_indices = np.random.randint(0, 100, size=n_nonzero)
+        col_indices = np.random.randint(0, 50, size=n_nonzero)
+        
+        # Create the COO components
+        coo_group.create_dataset('data', data=data)
+        coo_group.create_dataset('row', data=row_indices)
+        coo_group.create_dataset('col', data=col_indices)
+        
+        # Set attributes for COO sparse matrix
+        coo_group.attrs['encoding-type'] = 'coo_matrix'
+        coo_group.attrs['encoding-version'] = '0.1.0'
+        coo_group.attrs['shape'] = [100, 50]
 
     def test_open_zarr(self):
         """Test opening zarr from local path."""
@@ -141,6 +263,30 @@ class TestZarrReader(unittest.TestCase):
                 self.assertIn('correlation', metadata['varp'])
             elif isinstance(metadata['varp'], dict) and 'keys' in metadata['varp']:
                 self.assertIn('correlation', metadata['varp']['keys'])
+                
+        # Check for dataframe metadata in obsm
+        self.assertIn('obsm_dataframes', metadata)
+        self.assertIn('cell_markers', metadata['obsm_dataframes'])
+        df_columns = metadata['obsm_dataframes']['cell_markers']['columns']
+        self.assertEqual(len(df_columns), 3)
+        self.assertIn('CD4', df_columns)
+        self.assertIn('CD8', df_columns)
+        self.assertIn('CD19', df_columns)
+        
+        # Check for dataframe metadata in varm
+        self.assertIn('varm_dataframes', metadata)
+        self.assertIn('differential_expression', metadata['varm_dataframes'])
+        df_columns = metadata['varm_dataframes']['differential_expression']['columns']
+        self.assertEqual(len(df_columns), 3)
+        self.assertIn('cell type A', df_columns)
+        self.assertIn('cell type B', df_columns)
+        self.assertIn('cell type C', df_columns)
+        
+        # Verify encoding type and version are included
+        self.assertEqual(metadata['obsm_dataframes']['cell_markers']['encoding_type'], 'dataframe')
+        self.assertEqual(metadata['obsm_dataframes']['cell_markers']['encoding_version'], '0.2.0')
+        self.assertEqual(metadata['varm_dataframes']['differential_expression']['encoding_type'], 'dataframe')
+        self.assertEqual(metadata['varm_dataframes']['differential_expression']['encoding_version'], '0.2.0')
     
     def test_load_zarr_with_dataset_id(self):
         """Test loading zarr with dataset ID."""
@@ -279,27 +425,114 @@ class TestZarrReader(unittest.TestCase):
         """Test getting layer data."""
         dataset_id = self.reader.open_zarr(self.zarr_path)
         
-        # Test getting the entire layer
+        # Test getting the entire dense layer
         raw = self.reader.get_layer('raw', dataset_id=dataset_id)
         self.assertEqual(raw.shape, (100, 50))
         
-        # Test getting a subset of rows
+        # Test getting a subset of rows from dense layer
         row_indices = [0, 1, 2]
         raw_rows = self.reader.get_layer('raw', row_indices=row_indices, dataset_id=dataset_id)
         self.assertEqual(raw_rows.shape, (3, 50))
         
-        # Test getting a subset of columns
+        # Test getting a subset of columns from dense layer
         col_indices = [0, 1, 2]
         raw_cols = self.reader.get_layer('raw', col_indices=col_indices, dataset_id=dataset_id)
         self.assertEqual(raw_cols.shape, (100, 3))
         
-        # Test getting a subset of both rows and columns
+        # Test getting a subset of both rows and columns from dense layer
         raw_subset = self.reader.get_layer('raw', row_indices=row_indices, col_indices=col_indices, dataset_id=dataset_id)
         self.assertEqual(raw_subset.shape, (3, 3))
         
         # Test getting a non-existent layer
         nonexistent = self.reader.get_layer('nonexistent', dataset_id=dataset_id)
         self.assertEqual(len(nonexistent), 0)
+        
+    def test_sparse_matrix_csr(self):
+        """Test getting CSR sparse matrix layer data."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        
+        # Test getting the entire CSR sparse matrix
+        csr_matrix = self.reader.get_layer('logged_counts', dataset_id=dataset_id)
+        self.assertEqual(csr_matrix.shape, (100, 50))
+        
+        # Test getting a subset of rows from CSR sparse matrix
+        row_indices = [0, 1, 2]
+        csr_rows = self.reader.get_layer('logged_counts', row_indices=row_indices, dataset_id=dataset_id)
+        self.assertEqual(csr_rows.shape, (3, 50))
+        
+        # Test getting a subset of columns from CSR sparse matrix
+        col_indices = [0, 1, 2]
+        csr_cols = self.reader.get_layer('logged_counts', col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(csr_cols.shape, (100, 3))
+        
+        # Test getting a subset of both rows and columns from CSR sparse matrix
+        csr_subset = self.reader.get_layer('logged_counts', row_indices=row_indices, col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(csr_subset.shape, (3, 3))
+        
+        # Check format and attributes of the CSR sparse matrix
+        root = self.reader._get_root(dataset_id)
+        self.assertIn('layers', root)
+        self.assertIn('logged_counts', root['layers'])
+        self.assertEqual(root['layers']['logged_counts'].attrs['encoding-type'], 'csr_matrix')
+        self.assertEqual(tuple(root['layers']['logged_counts'].attrs['shape']), (100, 50))
+        
+    def test_sparse_matrix_csc(self):
+        """Test getting CSC sparse matrix layer data."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        
+        # Test getting the entire CSC sparse matrix
+        csc_matrix = self.reader.get_layer('csc_matrix', dataset_id=dataset_id)
+        self.assertEqual(csc_matrix.shape, (100, 50))
+        
+        # Test getting a subset of rows from CSC sparse matrix
+        row_indices = [0, 1, 2]
+        csc_rows = self.reader.get_layer('csc_matrix', row_indices=row_indices, dataset_id=dataset_id)
+        self.assertEqual(csc_rows.shape, (3, 50))
+        
+        # Test getting a subset of columns from CSC sparse matrix
+        col_indices = [0, 1, 2]
+        csc_cols = self.reader.get_layer('csc_matrix', col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(csc_cols.shape, (100, 3))
+        
+        # Test getting a subset of both rows and columns from CSC sparse matrix
+        csc_subset = self.reader.get_layer('csc_matrix', row_indices=row_indices, col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(csc_subset.shape, (3, 3))
+        
+        # Check format and attributes of the CSC sparse matrix
+        root = self.reader._get_root(dataset_id)
+        self.assertIn('layers', root)
+        self.assertIn('csc_matrix', root['layers'])
+        self.assertEqual(root['layers']['csc_matrix'].attrs['encoding-type'], 'csc_matrix')
+        self.assertEqual(tuple(root['layers']['csc_matrix'].attrs['shape']), (100, 50))
+        
+    def test_sparse_matrix_coo(self):
+        """Test getting COO sparse matrix layer data."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        
+        # Test getting the entire COO sparse matrix
+        coo_matrix = self.reader.get_layer('coo_matrix', dataset_id=dataset_id)
+        self.assertEqual(coo_matrix.shape, (100, 50))
+        
+        # Test getting a subset of rows from COO sparse matrix
+        row_indices = [0, 1, 2]
+        coo_rows = self.reader.get_layer('coo_matrix', row_indices=row_indices, dataset_id=dataset_id)
+        self.assertEqual(coo_rows.shape, (3, 50))
+        
+        # Test getting a subset of columns from COO sparse matrix
+        col_indices = [0, 1, 2]
+        coo_cols = self.reader.get_layer('coo_matrix', col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(coo_cols.shape, (100, 3))
+        
+        # Test getting a subset of both rows and columns from COO sparse matrix
+        coo_subset = self.reader.get_layer('coo_matrix', row_indices=row_indices, col_indices=col_indices, dataset_id=dataset_id)
+        self.assertEqual(coo_subset.shape, (3, 3))
+        
+        # Check format and attributes of the COO sparse matrix
+        root = self.reader._get_root(dataset_id)
+        self.assertIn('layers', root)
+        self.assertIn('coo_matrix', root['layers'])
+        self.assertEqual(root['layers']['coo_matrix'].attrs['encoding-type'], 'coo_matrix')
+        self.assertEqual(tuple(root['layers']['coo_matrix'].attrs['shape']), (100, 50))
 
     def test_get_obs(self):
         """Test getting observation annotations."""
@@ -687,6 +920,205 @@ class TestZarrReader(unittest.TestCase):
         # Verify the reader doesn't store any state
         self.assertEqual(len(self.reader.dataset_stores), 0)
         self.assertIsNone(self.reader.active_dataset_id)
+
+    def test_get_dataset_shape_helper(self):
+        """Test the _get_dataset_shape helper method."""
+        # Load a dataset
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        root = self.reader._get_root(dataset_id)
+        
+        # Test shape discovery from X directly
+        shape = self.reader._get_dataset_shape(root)
+        self.assertEqual(shape, (100, 50))
+        
+        # Create a temporary directory for a new zarr file
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zarr_path = os.path.join(temp_dir, 'shape_test.zarr')
+            
+            # Test shape discovery from X attributes (shape in attributes)
+            test_root = zarr.open_group(zarr_path, mode='w')
+            # Create X as a group with shape attribute instead of direct array
+            x_group = test_root.create_group('X')
+            x_group.attrs['shape'] = [200, 100]
+            
+            shape = self.reader._get_dataset_shape(test_root)
+            self.assertEqual(shape, (200, 100))
+            
+            # Test shape inference from obs and var lengths
+            # Re-open the file (overwrite by default in zarr library)
+            test_root = zarr.open_group(zarr_path, mode='w')
+            obs_group = test_root.create_group('obs')
+            var_group = test_root.create_group('var')
+            
+            # Create _index arrays with known lengths
+            obs_index = np.array([f'cell_{i}' for i in range(150)])
+            var_index = np.array([f'gene_{i}' for i in range(75)])
+            
+            obs_group.create_dataset('_index', data=obs_index)
+            var_group.create_dataset('_index', data=var_index)
+            
+            # No X, should infer from obs and var lengths
+            shape = self.reader._get_dataset_shape(test_root)
+            self.assertEqual(shape, (150, 75))
+            
+            # Test shape discovery from layers
+            # Re-open the file (overwrite by default in zarr library)
+            test_root = zarr.open_group(zarr_path, mode='w')
+            layers_group = test_root.create_group('layers')
+            
+            # Create a layer with shape
+            raw = np.random.rand(180, 90).astype('float32')
+            layers_group.create_dataset('raw', data=raw)
+            
+            # Should discover from layer shape
+            shape = self.reader._get_dataset_shape(test_root)
+            self.assertEqual(shape, (180, 90))
+            
+            # Test shape discovery from sparse matrix in layers
+            # Re-open the file (overwrite by default in zarr library)
+            test_root = zarr.open_group(zarr_path, mode='w')
+            layers_group = test_root.create_group('layers')
+            sparse_group = layers_group.create_group('sparse')
+            
+            # Set shape attribute for sparse matrix
+            sparse_group.attrs['shape'] = [300, 150]
+            
+            # Should discover from layer attributes
+            shape = self.reader._get_dataset_shape(test_root)
+            self.assertEqual(shape, (300, 150))
+            
+    def test_get_matrix_info_helper(self):
+        """Test the _get_matrix_info helper method."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        root = self.reader._get_root(dataset_id)
+        
+        # Test getting info for dense array
+        dense_matrix = root['X']
+        info = self.reader._get_matrix_info(dense_matrix)
+        self.assertEqual(info['shape'], (100, 50))
+        self.assertIn('dtype', info)
+        
+        # Test getting info for sparse matrix (CSR)
+        csr_matrix = root['layers']['logged_counts']
+        info = self.reader._get_matrix_info(csr_matrix)
+        self.assertEqual(tuple(info['shape']), (100, 50))
+        self.assertEqual(info['encoding-type'], 'csr_matrix')
+        self.assertEqual(info['encoding-version'], '0.1.0')
+        
+        # Test getting info for sparse matrix (CSC)
+        csc_matrix = root['layers']['csc_matrix']
+        info = self.reader._get_matrix_info(csc_matrix)
+        self.assertEqual(tuple(info['shape']), (100, 50))
+        self.assertEqual(info['encoding-type'], 'csc_matrix')
+        self.assertEqual(info['encoding-version'], '0.1.0')
+        
+        # Test getting info for sparse matrix (COO)
+        coo_matrix = root['layers']['coo_matrix']
+        info = self.reader._get_matrix_info(coo_matrix)
+        self.assertEqual(tuple(info['shape']), (100, 50))
+        self.assertEqual(info['encoding-type'], 'coo_matrix')
+        self.assertEqual(info['encoding-version'], '0.1.0')
+        
+    def test_dataframe_detection_and_access(self):
+        """Test detection and access of dataframe columns."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        
+        # Test is_dataframe helper method
+        root = self.reader._get_root(dataset_id)
+        self.assertTrue(self.reader._is_dataframe(root['obsm']['cell_markers']))
+        self.assertTrue(self.reader._is_dataframe(root['varm']['differential_expression']))
+        self.assertFalse(self.reader._is_dataframe(root['obsm']['X_umap']))
+        
+        # Test get_dataframe_columns helper method
+        obsm_columns = self.reader._get_dataframe_columns(root['obsm']['cell_markers'])
+        self.assertEqual(len(obsm_columns), 3)
+        self.assertIn('CD4', obsm_columns)
+        self.assertIn('CD8', obsm_columns)
+        self.assertIn('CD19', obsm_columns)
+        
+        varm_columns = self.reader._get_dataframe_columns(root['varm']['differential_expression'])
+        self.assertEqual(len(varm_columns), 3)
+        self.assertIn('cell type A', varm_columns)
+        self.assertIn('cell type B', varm_columns)
+        self.assertIn('cell type C', varm_columns)
+        
+        # Test public API methods for getting dataframe columns
+        obsm_cols = self.reader.get_obsm_dataframe_columns('cell_markers', dataset_id=dataset_id)
+        self.assertEqual(len(obsm_cols), 3)
+        self.assertIn('CD4', obsm_cols)
+        
+        varm_cols = self.reader.get_varm_dataframe_columns('differential_expression', dataset_id=dataset_id)
+        self.assertEqual(len(varm_cols), 3)
+        self.assertIn('cell type B', varm_cols)
+        
+        # Test getting specific dataframe column
+        # For obsm
+        obsm_col_data = self.reader.get_obsm('cell_markers', column_name='CD4', dataset_id=dataset_id)
+        self.assertEqual(obsm_col_data.shape, (100,))  # Should be a 1D array of length 100
+        
+        # For varm
+        varm_col_data = self.reader.get_varm('differential_expression', column_name='cell type A', dataset_id=dataset_id)
+        self.assertEqual(varm_col_data.shape, (50,))  # Should be a 1D array of length 50
+        
+        # Test path-based access
+        obsm_data_path = self.reader.get_data_by_path('obsm/cell_markers/CD8', dataset_id=dataset_id)
+        self.assertEqual(obsm_data_path.shape, (100,))
+        
+        varm_data_path = self.reader.get_data_by_path('varm/differential_expression/cell type C', dataset_id=dataset_id)
+        self.assertEqual(varm_data_path.shape, (50,))
+        
+        # Test with indices
+        indices = [0, 1, 2]
+        obsm_subset = self.reader.get_obsm('cell_markers', column_name='CD4', indices=indices, dataset_id=dataset_id)
+        self.assertEqual(obsm_subset.shape, (3,))
+        
+        varm_subset = self.reader.get_varm('differential_expression', column_name='cell type A', 
+                                        indices=indices, dataset_id=dataset_id)
+        self.assertEqual(varm_subset.shape, (3,))
+        
+    def test_matrix_info_extraction(self):
+        """Test that matrix info extraction correctly identifies the sparse format and components."""
+        dataset_id = self.reader.open_zarr(self.zarr_path)
+        
+        # Get metadata for the dataset
+        metadata = self.reader.get_metadata(dataset_id)
+        
+        # Check that layers section includes all three sparse matrix types
+        self.assertIn('layers', metadata)
+        
+        # Depending on how layers are represented in metadata, assert they are present
+        if isinstance(metadata['layers'], list):
+            self.assertIn('logged_counts', metadata['layers'])
+            self.assertIn('csc_matrix', metadata['layers'])
+            self.assertIn('coo_matrix', metadata['layers'])
+        elif isinstance(metadata['layers'], dict) and 'keys' in metadata['layers']:
+            self.assertIn('logged_counts', metadata['layers']['keys'])
+            self.assertIn('csc_matrix', metadata['layers']['keys'])
+            self.assertIn('coo_matrix', metadata['layers']['keys'])
+            
+        # Create a test using open_dataset_by_path for stateless access
+        root, metadata = self.reader.open_dataset_by_path(self.zarr_path)
+        
+        # Check metadata includes sparse matrices in layers
+        self.assertTrue(metadata['has_layers'])
+        if isinstance(metadata['layers'], list):
+            self.assertIn('logged_counts', metadata['layers'])
+            self.assertIn('csc_matrix', metadata['layers'])
+            self.assertIn('coo_matrix', metadata['layers'])
+        elif isinstance(metadata['layers'], dict) and 'keys' in metadata['layers']:
+            self.assertIn('logged_counts', metadata['layers']['keys'])
+            self.assertIn('csc_matrix', metadata['layers']['keys'])
+            self.assertIn('coo_matrix', metadata['layers']['keys'])
+            
+        # Check that matrix info is properly extracted for each type
+        self.assertEqual(root['layers']['logged_counts'].attrs['encoding-type'], 'csr_matrix')
+        self.assertEqual(root['layers']['csc_matrix'].attrs['encoding-type'], 'csc_matrix')
+        self.assertEqual(root['layers']['coo_matrix'].attrs['encoding-type'], 'coo_matrix')
+        
+        # Check that shape information is correctly extracted
+        self.assertEqual(tuple(root['layers']['logged_counts'].attrs['shape']), (100, 50))
+        self.assertEqual(tuple(root['layers']['csc_matrix'].attrs['shape']), (100, 50))
+        self.assertEqual(tuple(root['layers']['coo_matrix'].attrs['shape']), (100, 50))
 
 if __name__ == '__main__':
     unittest.main()
