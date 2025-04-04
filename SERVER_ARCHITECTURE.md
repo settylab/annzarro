@@ -2,11 +2,13 @@
 
 ## Overview
 
-Annzarro now uses a **unified server architecture** that serves both the frontend static files and the backend API through a single Flask server running on a single port. This simplifies deployment, configuration, and makes the application easier to use.
+Annzarro uses a **unified stateless server architecture** that serves both the frontend static files and the backend API through a single Flask server running on a single port. This simplifies deployment, configuration, and makes the application easier to use.
 
 Previously, the application used a dual-server architecture (frontend on port 8080 and backend on port 8001), which caused configuration and CORS issues.
 
-## Unified Server Architecture
+The server is designed to be completely stateless, with all dataset state maintained on the client side. This enables enhanced scalability and reliability.
+
+## Unified Stateless Server Architecture
 
 ### Key Components
 
@@ -14,14 +16,24 @@ Previously, the application used a dual-server architecture (frontend on port 80
    - Serves static HTML, CSS, and JavaScript files from the project root directory
    - Provides API endpoints for data access under the `/api/v1/` path
    - Handles client-side routing by returning `index.html` for unknown paths
+   - Operates in a completely stateless manner with no session or dataset state
 
 2. **Data Access**: 
-   - The server provides access to zarr files through various API endpoints
+   - The server provides read-only access to zarr files through various API endpoints
+   - Each request is independent and contains all necessary context via parameters
+   - Supports both local zarr files and remote zarr archives (S3, HTTP, etc.)
    - Data directory is configurable via command-line, environment variables, or config file
 
 3. **Client-Server Communication**:
    - Frontend communicates with backend via HTTP requests to the API endpoints
+   - All state (selections, focused items) is maintained client-side
+   - Each request includes a dataset_path parameter for stateless operation
    - API requests use the same host and port as the frontend, eliminating CORS issues
+
+4. **Remote Dataset Support**:
+   - Supports zarr archives stored on S3, HTTP/HTTPS, and other remote storage
+   - Handles authentication for private repositories
+   - Uses caching for improved performance with remote data
 
 ## Configuration
 
@@ -135,6 +147,92 @@ If you encounter issues with the server:
    python server_status.py --stop
    ```
 
+## API Endpoints
+
+The following REST API endpoints are available for data access. All data endpoints require a `dataset_path` parameter that can be a local path or URL (S3, HTTP, etc.).
+
+### Server Information
+- `/api/v1/config` - Get server configuration
+- `/api/v1/status` - Get server status
+
+### Dataset Management
+- `/api/v1/datasets` - List available datasets in the data directory
+- `/api/v1/datasets/<dataset_path>` - Get info about a specific dataset
+- `/api/v1/datasets/<dataset_path>/info` - Get detailed metadata for a dataset
+- `/api/v1/zarr/upload` - Upload zarr files to the data directory
+- `/api/v1/zarr/url` - Validate a remote zarr URL
+- `/api/v1/zarr/s3` - Validate S3 zarr path
+- `/api/v1/zarr/to_anndata` - Get complete AnnData-like structure for a dataset
+
+### Data Access (all require dataset_path parameter)
+- `/api/v1/data/X` - Get data from the X matrix
+- `/api/v1/data/layer/<layer_name>` - Get data from a specific layer
+- `/api/v1/data/obs` - Get observation annotations
+- `/api/v1/data/var` - Get variable annotations
+- `/api/v1/data/obsm/<obsm_key>` - Get observation multidimensional data (e.g., embeddings)
+- `/api/v1/data/varm/<varm_key>` - Get variable multidimensional data
+- `/api/v1/data/obsp/<obsp_key>` - Get observation-observation matrices (cell-cell relationships)
+- `/api/v1/data/varp/<varp_key>` - Get variable-variable matrices (gene-gene relationships)
+- `/api/v1/data/genes` - Get list of gene names
+- `/api/v1/data/cells` - Get list of cell names
+
+<!-- Selection and focus endpoints removed since these states should be maintained entirely by the frontend -->
+
+### Specialized Data Access
+- `/api/v1/data/paginated` - Access any matrix type with pagination support
+- `/api/v1/data/statistics` - Get statistical analysis of expression data
+
+### Pagination Support
+
+To efficiently work with large matrices, the `/api/v1/data/paginated` endpoint provides paginated access to matrix data. Parameters:
+
+- `matrix_type`: One of 'X', 'layer', 'obsm', 'varm', 'obsp', 'varp'
+- `key`: Required for all matrix types except 'X' (e.g., layer name, obsm key)
+- `rows`: Required comma-separated list of row indices
+- `cols`: Optional comma-separated list of column indices
+- `page`: Required page number (0-based)
+- `page_size`: Required number of items per page (maximum 1000)
+- `dataset_path`: Path to the dataset (can be local path or URL)
+
+The response includes pagination metadata in both the JSON body and HTTP headers:
+
+```json
+{
+  "data": [[...]],
+  "dataset_path": "/path/to/dataset.zarr",
+  "pagination": {
+    "page": 0,
+    "page_size": 10,
+    "total_rows": 100,
+    "total_pages": 10,
+    "current_page_items": 10
+  }
+}
+```
+
+Headers:
+- `X-Pagination-Page`: Current page number
+- `X-Pagination-PageSize`: Items per page
+- `X-Pagination-TotalRows`: Total number of rows
+- `X-Pagination-TotalPages`: Total number of pages
+
+### Remote Dataset Support
+
+For remote datasets, the `dataset_path` parameter can be one of:
+
+1. **Local Path**: `/path/to/dataset.zarr`
+2. **HTTP URL**: `https://example.com/datasets/example.zarr`
+3. **S3 URI**: `s3://bucket-name/path/to/dataset.zarr`
+4. **GCS URI**: `gs://bucket-name/path/to/dataset.zarr` (future support)
+
+Authentication for private storage can be handled via:
+
+- Environment variables for cloud storage credentials
+- Special authentication endpoints for token-based auth (future)
+- AWS/GCP instance profiles when running in cloud environments
+
+The server implements intelligent caching for remote datasets to improve performance.
+
 ## Implementation Status
 
 The following changes have been implemented:
@@ -145,3 +243,47 @@ The following changes have been implemented:
 4. ✅ Added static directory configuration for serving frontend files
 5. ✅ Updated server startup scripts to start only one server
 6. ✅ Simplified client-side API URL detection to use same origin
+7. ✅ Implemented stateless server architecture with direct file access
+8. ✅ Added support for .obsp and .varp matrices
+9. ✅ Implemented paginated access to large matrices
+10. ✅ Added comprehensive metadata in initial dataset load
+11. ✅ Removed stateful POST/DELETE endpoints for selections and focus
+12. ✅ Made all endpoints accept dataset_path parameter
+13. ⚠️ PENDING: Frontend code needs updates to fully align with the stateless API
+14. ⚠️ PENDING: Server code refactoring for better maintainability
+15. ⚠️ PENDING: Enhanced remote dataset support for S3, HTTP, etc.
+16. ⚠️ PENDING: Caching layer for improved remote data performance
+
+## Planned Server Refactoring
+
+The server code will be refactored for better maintainability by splitting it into multiple modules:
+
+1. **core.py**: Core functionality and utility functions
+   - Server initialization and configuration
+   - Common validation and error handling
+   - Authentication and security functions
+   - Path and URL handling utilities
+
+2. **data_routes.py**: All data access endpoints
+   - Matrix data access (X, layers, obsm, varm, etc.)
+   - Observation and variable annotations
+   - Paginated data access
+   - Statistical analysis endpoints
+
+3. **zarr_routes.py**: Zarr-specific functionality
+   - Upload endpoints
+   - Remote zarr validation
+   - Dataset conversion and transformation
+
+4. **static_routes.py**: Static file serving
+   - Frontend HTML, JS, CSS serving
+   - Asset handling
+   - Client-side routing support
+
+5. **storage_adapters.py**: Adapters for different storage backends
+   - Local filesystem adapter
+   - S3 adapter
+   - HTTP adapter
+   - GCS adapter (future)
+
+This refactoring will make the codebase more maintainable, easier to test, and enable better extension for additional features.

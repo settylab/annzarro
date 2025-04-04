@@ -94,28 +94,30 @@ class ZarrLoader {
     }
 
     /**
-     * Initialize a zarr store from a URL
-     * @param {string} url - The URL to the zarr store
-     * @returns {Promise<Object>} A success status
+     * Initialize a zarr dataset from a URL using stateless API
+     * @param {string} url - The URL to the zarr dataset
+     * @param {string} datasetId - The client-side dataset ID to associate with this dataset
+     * @returns {Promise<Object>} Dataset metadata
      */
-    async loadFromUrl(url) {
+    async loadFromUrl(url, datasetId = null) {
         this.isLoading = true;
         this.loadingProgress = 0;
         this.cancellationToken = { cancelled: false };
         
         try {
+            // Generate dataset ID if not provided
+            if (!datasetId) {
+                datasetId = 'dataset_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            }
+            
             // Update initial progress
             this.loadingProgress = 20;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            // Send request to backend to load from URL
-            console.log(`Sending URL request to: ${this.apiUrl}/zarr/url`);
-            const response = await fetch(`${this.apiUrl}/zarr/url`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ url })
+            // Get dataset info using a stateless GET request
+            console.log(`Fetching dataset info from: ${this.apiUrl}/datasets/${encodeURIComponent(url)}/info`);
+            const response = await fetch(`${this.apiUrl}/datasets/${encodeURIComponent(url)}/info`, {
+                method: 'GET'
             });
             
             if (!response.ok) {
@@ -129,12 +131,25 @@ class ZarrLoader {
             
             const result = await response.json();
             
+            // Store dataset path and ID mapping client-side only
+            // This is purely a client-side operation, not a server-side state change
+            this.datasetInfo = this.datasetInfo || {};
+            this.datasetInfo[datasetId] = {
+                path: url,
+                metadata: result
+            };
+            
             // Final progress update
             this.loadingProgress = 100;
             this._notifyProgressUpdate(this.loadingProgress);
             
             this.isLoading = false;
-            return result;
+            
+            // Return an object containing both the result and the dataset ID
+            return {
+                datasetId: datasetId,
+                info: result
+            };
         } catch (error) {
             this.isLoading = false;
             this.loadingProgress = 0;
@@ -202,38 +217,53 @@ class ZarrLoader {
     }
 
     /**
-     * Converts the store into an AnnData-like structure through the Python backend
+     * Gets AnnData-like structure for a dataset using stateless API
+     * @param {string} datasetId - Client-side dataset ID
      * @returns {Promise<Object>} An object with AnnData-like structure
      */
-    async convertToAnnData() {
+    async convertToAnnData(datasetId = null) {
         this.isLoading = true;
         this.loadingProgress = 0;
         
         try {
-            console.log(`Converting to AnnData using endpoint: ${this.apiUrl}/zarr/to_anndata`);
+            if (!datasetId) {
+                throw new Error('Dataset ID is required for stateless operation');
+            }
+            
+            // Get the dataset path from our client-side mapping
+            if (!this.datasetInfo || !this.datasetInfo[datasetId] || !this.datasetInfo[datasetId].path) {
+                throw new Error(`No dataset path found for ID: ${datasetId}`);
+            }
+            
+            const datasetPath = this.datasetInfo[datasetId].path;
+            console.log(`Getting AnnData structure for dataset: ${datasetPath} with ID: ${datasetId}`);
             
             // Initial progress update
             this.loadingProgress = 10;
             this._notifyProgressUpdate(this.loadingProgress);
             
-            // Request conversion to AnnData from backend
-            const response = await fetch(`${this.apiUrl}/zarr/to_anndata`, {
+            // Fetch detailed dataset information using stateless API
+            const response = await fetch(`${this.apiUrl}/datasets/${encodeURIComponent(datasetPath)}/info`, {
                 method: 'GET'
             });
             
             if (!response.ok) {
                 const error = await response.text();
-                console.error(`Error converting to AnnData: ${error}`);
+                console.error(`Error getting dataset info: ${error}`);
                 throw new Error(`API error: ${error}`);
             }
             
-            console.log('Response from to_anndata endpoint:', response.status);
+            console.log('Response from datasets/info endpoint:', response.status);
             
             // Midway progress update
             this.loadingProgress = 50;
             this._notifyProgressUpdate(this.loadingProgress);
             
             const anndata = await response.json();
+            
+            // Add the dataset ID to the returned structure
+            anndata.dataset_id = datasetId;
+            anndata.dataset_path = datasetPath;
             
             // Final progress update
             this.loadingProgress = 100;

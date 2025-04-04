@@ -1331,11 +1331,11 @@ async function loadAvailableData() {
 }
 
 /**
- * Load data from a specified path using the unified server approach
+ * Select a dataset from a specified path using stateless API approach
  * @param {string} datasetName - Name of the dataset (used for display only)
  * @param {string} path - Path to the data
  * @param {string|null} datasetId - Optional dataset ID to use (if null, one will be generated)
- * @returns {Promise<string>} The dataset ID of the loaded dataset
+ * @returns {Promise<string>} The dataset ID of the selected dataset
  */
 async function loadDataFromPath(datasetName, path = null, datasetId = null) {
     try {
@@ -1352,7 +1352,7 @@ async function loadDataFromPath(datasetName, path = null, datasetId = null) {
             }
         }
         
-        console.log(`Loading data from path: ${path}`);
+        console.log(`Selecting dataset from path: ${path}`);
         
         // Make sure API URL is set
         if (!window.ANNZARRO_API_URL) {
@@ -1377,12 +1377,12 @@ async function loadDataFromPath(datasetName, path = null, datasetId = null) {
         // Create dataset metadata
         const metadata = {
             name: datasetName,
-            description: `Dataset loaded from ${path}`,
+            description: `Dataset selected from ${path}`,
             path: path
         };
         
-        // Show loading status in console
-        console.log(`Loading dataset via zarrLoader with ID: ${datasetId}...`);
+        // Show status in console
+        console.log(`Selecting dataset via stateless API with ID: ${datasetId}...`);
         
         try {
             // Check if zarrLoader is available
@@ -1390,15 +1390,24 @@ async function loadDataFromPath(datasetName, path = null, datasetId = null) {
                 throw new Error('ZarrLoader is not available. Please refresh the page and try again.');
             }
             
-            // Load from URL using zarrLoader (which will call the backend API)
-            console.log('Calling zarrLoader.loadFromUrl with path:', pathWithParams);
+            // Get dataset info using stateless API call
+            console.log('Calling zarrLoader.loadFromUrl with path:', pathWithParams, 'and dataset ID:', datasetId);
             const loadResult = await zarrLoader.loadFromUrl(pathWithParams, datasetId);
             
             if (!loadResult || loadResult.error) {
-                throw new Error(loadResult?.error || 'Failed to load dataset. Server returned an error.');
+                throw new Error(loadResult?.error || 'Failed to get dataset info. Server returned an error.');
             }
             
-            console.log('Initial load successful, retrieving AnnData structure...');
+            console.log('Initial dataset info retrieval successful, getting full AnnData structure...');
+            
+            // Enhance metadata with data from the server response
+            Object.assign(metadata, {
+                shape: loadResult.info.shape,
+                n_obs: loadResult.info.n_obs,
+                n_vars: loadResult.info.n_vars,
+                embeddings: loadResult.info.embeddings || [],
+                layers: loadResult.info.layers || {}
+            });
             
             // Convert to AnnData via the loadAnndataFromZarr function with dataset ID
             const loadedDatasetId = await loadAnndataFromZarr(datasetId, metadata);
@@ -1406,8 +1415,8 @@ async function loadDataFromPath(datasetName, path = null, datasetId = null) {
             // Return the dataset ID
             return loadedDatasetId;
         } catch (error) {
-            console.error('Error loading data from server:', error);
-            throw new Error(`Failed to load dataset: ${error.message}`);
+            console.error('Error accessing dataset via stateless API:', error);
+            throw new Error(`Failed to select dataset: ${error.message}`);
         }
     } catch (error) {
         console.error('Error in loadDataFromPath:', error);
@@ -1523,29 +1532,43 @@ function createHardcodedDataset(datasetType) {
 
 
 /**
- * Load AnnData from zarr store with dataset ID
- * @param {string} datasetId - Optional dataset ID to use (if null, one will be generated)
+ * Load AnnData from zarr store with dataset ID using stateless approach
+ * @param {string} datasetId - Client-side dataset ID to use
  * @param {Object} metadata - Optional metadata for the dataset
  * @returns {Promise<string>} The dataset ID that was loaded
  */
-async function loadAnndataFromZarr(datasetId = null, metadata = {}) {
+async function loadAnndataFromZarr(datasetId, metadata = {}) {
     try {
-        console.log('Starting to load AnnData from zarr');
+        if (!datasetId) {
+            throw new Error('Dataset ID is required for stateless operation');
+        }
         
-        // Convert zarr to AnnData structure using backend API
-        const anndata = await zarrLoader.convertToAnnData();
+        console.log('Starting to load AnnData from zarr with dataset ID:', datasetId);
+        
+        // Convert zarr to AnnData structure using stateless backend API
+        const anndata = await zarrLoader.convertToAnnData(datasetId);
         console.log('AnnData structure received:', anndata);
+        
+        // Add client-provided metadata
+        anndata.metadata = metadata;
         
         // Update data manager with the AnnData structure
         let loadedDatasetId = null;
         
         if (dataManager && typeof dataManager.setAnndata === 'function') {
-            console.log('Setting AnnData in dataManager.setAnndata with dataset ID');
+            console.log('Setting AnnData in dataManager.setAnndata with dataset ID:', datasetId);
             loadedDatasetId = dataManager.setAnndata(anndata, datasetId, metadata);
+            
+            // Store the dataset path for future stateless requests
+            if (dataManager.setDatasetPath && anndata.dataset_path) {
+                dataManager.setDatasetPath(datasetId, anndata.dataset_path);
+            }
         } else if (dataManager) {
             console.error('dataManager.setAnndata method not available, falling back to legacy approach');
-            // Legacy approach - just set directly and don't track dataset ID
+            // Legacy approach - just set directly but track dataset ID for stateless operation
             dataManager.anndata = anndata;
+            dataManager.currentDatasetId = datasetId;
+            dataManager.currentDatasetPath = anndata.dataset_path;
         } else {
             console.error('dataManager not available, cannot set AnnData');
             throw new Error('dataManager not available');
@@ -1557,16 +1580,17 @@ async function loadAnndataFromZarr(datasetId = null, metadata = {}) {
             detail: { 
                 source: 'zarr', 
                 data: anndata,
-                datasetId: loadedDatasetId,
-                metadata: metadata
+                datasetId: loadedDatasetId || datasetId,
+                metadata: metadata,
+                datasetPath: anndata.dataset_path
             }
         });
         document.dispatchEvent(event);
         
         // Update the UI
-        updateAfterDataLoad(loadedDatasetId);
+        updateAfterDataLoad(loadedDatasetId || datasetId);
         
-        return loadedDatasetId;
+        return loadedDatasetId || datasetId;
     } catch (error) {
         console.error('Error loading AnnData from zarr:', error);
         throw error;
@@ -1574,11 +1598,11 @@ async function loadAnndataFromZarr(datasetId = null, metadata = {}) {
 }
 
 /**
- * Update the UI after data is loaded
- * @param {string} datasetId - The ID of the loaded dataset
+ * Update the UI after a dataset is selected
+ * @param {string} datasetId - The ID of the selected dataset
  */
 function updateAfterDataLoad(datasetId = null) {
-    console.log('Updating UI after data load');
+    console.log('Updating UI after dataset selection');
     
     try {
         // Get the active dataset ID if not specified
@@ -1617,7 +1641,7 @@ function updateAfterDataLoad(datasetId = null) {
             }
             
             // Create the status badges
-            const loadedBadge = `<span class="badge bg-success">Data Loaded${dataInfo}</span>`;
+            const loadedBadge = `<span class="badge bg-success">Dataset Selected${dataInfo}</span>`;
             const idBadge = dsId ? `<span class="badge bg-primary ms-1" title="Dataset ID">${dsId}</span>` : '';
             const nameBadge = datasetInfo ? `<span class="badge bg-secondary ms-1">${datasetInfo}</span>` : '';
             

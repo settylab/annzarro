@@ -660,5 +660,95 @@ class TestStatelessAPI(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    @patch('annzarro.server.server.zarr_reader.open_dataset_by_path')
+    def test_paginated_data_endpoint(self, mock_open_dataset):
+        """Test the paginated data endpoint."""
+        # Instead of complex mocking, let's simplify by using a real numpy array
+        # and patching the server's zarr handling functions
+        
+        # First, let's modify our patch to use a simpler side_effect function
+        def mock_open_dataset_effect(dataset_path):
+            # Create a mock root that contains our test data
+            mock_root = {}
+            
+            # Create a simple X matrix (100x50) filled with ones
+            mock_root['X'] = np.ones((100, 50))
+            
+            # Create metadata
+            mock_metadata = {
+                'shape': (100, 50),
+                'has_X': True
+            }
+            
+            return mock_root, mock_metadata
+            
+        # Set the side effect for our mock
+        mock_open_dataset.side_effect = mock_open_dataset_effect
+        
+        # Test 1: Valid pagination request for X matrix
+        # Request the first page of 10 rows
+        row_indices = list(range(30))  # 30 rows total
+        url = (f'/api/v1/data/paginated?matrix_type=X&rows={",".join(map(str, row_indices))}'
+               f'&cols=0,1,2&page=0&page_size=10&dataset_path={self.test_dataset_path}')
+               
+        print(f"Testing paginated URL: {url}")
+        response = self.client.get(url)
+        
+        # Print response for debugging
+        print(f"Response status: {response.status_code}")
+        print(f"Response data: {response.data[:500]}")
+        print(f"Response headers: {dict(response.headers)}")
+        
+        # Check response code
+        self.assertEqual(response.status_code, 200)
+        
+        # Parse the response
+        data = json.loads(response.data)
+        self.assertIn('data', data)
+        self.assertIn('pagination', data)
+        
+        # Check pagination data
+        self.assertEqual(data['pagination']['page'], 0)
+        self.assertEqual(data['pagination']['page_size'], 10)
+        self.assertEqual(data['pagination']['total_rows'], 30)
+        self.assertEqual(data['pagination']['total_pages'], 3)
+        
+        # Check pagination headers
+        self.assertEqual(response.headers.get('X-Pagination-Page'), '0')
+        self.assertEqual(response.headers.get('X-Pagination-PageSize'), '10')
+        self.assertEqual(response.headers.get('X-Pagination-TotalRows'), '30')
+        self.assertEqual(response.headers.get('X-Pagination-TotalPages'), '3')
+        
+        # Check data shape - should be 10 rows (first page) and 3 columns
+        self.assertEqual(len(data['data']), 10)  # 10 rows
+        self.assertEqual(len(data['data'][0]), 3)  # 3 columns
+        
+        # Test 2: Request second page
+        url = (f'/api/v1/data/paginated?matrix_type=X&rows={",".join(map(str, row_indices))}'
+               f'&cols=0,1,2&page=1&page_size=10&dataset_path={self.test_dataset_path}')
+               
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        
+        data = json.loads(response.data)
+        self.assertEqual(data['pagination']['page'], 1)
+        
+        # Test 3: Request with invalid pagination parameters
+        url = (f'/api/v1/data/paginated?matrix_type=X&rows={",".join(map(str, row_indices))}'
+               f'&cols=0,1,2&page=-1&page_size=10&dataset_path={self.test_dataset_path}')
+               
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 400)  # Bad request
+        
+        # Test 4: Request with page out of bounds
+        url = (f'/api/v1/data/paginated?matrix_type=X&rows={",".join(map(str, row_indices))}'
+               f'&cols=0,1,2&page=10&page_size=10&dataset_path={self.test_dataset_path}')
+               
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 400)  # Bad request
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+        self.assertIn('Page out of bounds', data['error'])
+
 if __name__ == '__main__':
     unittest.main()

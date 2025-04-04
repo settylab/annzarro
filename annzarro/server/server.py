@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 
@@ -829,6 +830,8 @@ def get_X():
         cols: Required comma-separated list of column indices (genes) to select
         dataset_id: Optional dataset ID. If not provided, uses the active dataset.
         dataset_path: Optional path to the dataset. If provided, direct file access is used.
+        page: Optional page number for pagination (requires page_size)
+        page_size: Optional page size for pagination (requires page)
     
     Returns:
         JSON response with X matrix data for the requested rows and columns
@@ -838,6 +841,10 @@ def get_X():
     col_indices_str = request.args.get("cols")
     dataset_id = request.args.get("dataset_id")
     dataset_path = request.args.get("dataset_path")
+    
+    # Get pagination parameters
+    page = request.args.get("page", type=int)
+    page_size = request.args.get("page_size", type=int)
     
     # For X matrix access, we require at least one of rows or columns for efficient access
     if not row_indices_str and not col_indices_str:
@@ -1521,233 +1528,13 @@ def get_varp(varp_key: str):
         # Process and return response
         return jsonify(process_array_response(data, dataset_id))
 
-@app.route(f"/api/{API_VERSION}/data/selection/cells", methods=["GET", "POST", "DELETE"])
-def handle_cell_selection():
-    """
-    Handle cell selection operations.
-    
-    GET: Get the currently selected cells
-    POST: Add or set selected cells
-    DELETE: Remove or clear selected cells
-    
-    Query parameters (GET, DELETE) or request body (POST):
-        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
-    
-    Returns:
-        JSON response with selected cells
-    """
-    # Get dataset ID
-    dataset_id = None
-    if request.method == "GET" or request.method == "DELETE":
-        dataset_id = request.args.get("dataset_id")
-    else:  # POST
-        data = request.get_json() or {}
-        dataset_id = data.get("dataset_id")
-    
-    if request.method == "GET":
-        # Get selected cells
-        cells = list(data_manager.get_selected_cells(dataset_id))
-        response = {"selected_cells": cells}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "POST":
-        # Get request data
-        data = request.get_json() or {}
-        cells = data.get("cells", [])
-        operation = data.get("operation", "set")  # "set", "add", or "remove"
-        
-        # Perform the requested operation
-        if operation == "set":
-            data_manager.set_selected_cells(cells, dataset_id)
-        elif operation == "add":
-            data_manager.add_selected_cells(cells, dataset_id)
-        elif operation == "remove":
-            data_manager.remove_selected_cells(cells, dataset_id)
-        else:
-            return jsonify({"error": f"Invalid operation: {operation}"})
-        
-        # Return the updated selection
-        cells = list(data_manager.get_selected_cells(dataset_id))
-        response = {"selected_cells": cells}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "DELETE":
-        # Clear selection
-        data_manager.clear_selected_cells(dataset_id)
-        response = {"selected_cells": []}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
+# Cell selection endpoint removed - client-side concern only
 
-@app.route(f"/api/{API_VERSION}/data/selection/genes", methods=["GET", "POST", "DELETE"])
-def handle_gene_selection():
-    """
-    Handle gene selection operations.
-    
-    GET: Get the currently selected genes
-    POST: Add or set selected genes
-    DELETE: Remove or clear selected genes
-    
-    Query parameters (GET, DELETE) or request body (POST):
-        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
-    
-    Returns:
-        JSON response with selected genes
-    """
-    # Get dataset ID
-    dataset_id = None
-    if request.method == "GET" or request.method == "DELETE":
-        dataset_id = request.args.get("dataset_id")
-    else:  # POST
-        data = request.get_json() or {}
-        dataset_id = data.get("dataset_id")
-    
-    if request.method == "GET":
-        # Get selected genes
-        genes = list(data_manager.get_selected_genes(dataset_id))
-        response = {"selected_genes": genes}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "POST":
-        # Get request data
-        data = request.get_json() or {}
-        genes = data.get("genes", [])
-        operation = data.get("operation", "set")  # "set", "add", or "remove"
-        
-        # Perform the requested operation
-        if operation == "set":
-            data_manager.set_selected_genes(genes, dataset_id)
-        elif operation == "add":
-            data_manager.add_selected_genes(genes, dataset_id)
-        elif operation == "remove":
-            data_manager.remove_selected_genes(genes, dataset_id)
-        else:
-            return jsonify({"error": f"Invalid operation: {operation}"})
-        
-        # Return the updated selection
-        genes = list(data_manager.get_selected_genes(dataset_id))
-        response = {"selected_genes": genes}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "DELETE":
-        # Clear selection
-        data_manager.clear_selected_genes(dataset_id)
-        response = {"selected_genes": []}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
+# Gene selection endpoint removed - client-side concern only
 
-@app.route(f"/api/{API_VERSION}/data/focus/cell", methods=["GET", "POST", "DELETE"])
-def handle_cell_focus():
-    """
-    Handle cell focus operations.
-    
-    GET: Get the currently focused cell
-    POST: Set the focused cell
-    DELETE: Clear the focused cell
-    
-    Query parameters (GET, DELETE) or request body (POST):
-        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
-    
-    Returns:
-        JSON response with focused cell
-    """
-    # Get dataset ID
-    dataset_id = None
-    if request.method == "GET" or request.method == "DELETE":
-        dataset_id = request.args.get("dataset_id")
-    else:  # POST
-        data = request.get_json() or {}
-        dataset_id = data.get("dataset_id")
-    
-    if request.method == "GET":
-        # Get focused cell
-        cell = data_manager.get_focused_cell(dataset_id)
-        response = {"focused_cell": cell}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "POST":
-        # Get request data
-        data = request.get_json() or {}
-        cell = data.get("cell")
-        
-        # Set focused cell
-        data_manager.set_focused_cell(cell, dataset_id)
-        
-        response = {"focused_cell": cell}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "DELETE":
-        # Clear focused cell
-        data_manager.set_focused_cell(None, dataset_id)
-        response = {"focused_cell": None}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
+# Cell focus endpoint removed - client-side concern only
 
-@app.route(f"/api/{API_VERSION}/data/focus/gene", methods=["GET", "POST", "DELETE"])
-def handle_gene_focus():
-    """
-    Handle gene focus operations.
-    
-    GET: Get the currently focused gene
-    POST: Set the focused gene
-    DELETE: Clear the focused gene
-    
-    Query parameters (GET, DELETE) or request body (POST):
-        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
-    
-    Returns:
-        JSON response with focused gene
-    """
-    # Get dataset ID
-    dataset_id = None
-    if request.method == "GET" or request.method == "DELETE":
-        dataset_id = request.args.get("dataset_id")
-    else:  # POST
-        data = request.get_json() or {}
-        dataset_id = data.get("dataset_id")
-    
-    if request.method == "GET":
-        # Get focused gene
-        gene = data_manager.get_focused_gene(dataset_id)
-        response = {"focused_gene": gene}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "POST":
-        # Get request data
-        data = request.get_json() or {}
-        gene = data.get("gene")
-        
-        # Set focused gene
-        data_manager.set_focused_gene(gene, dataset_id)
-        
-        response = {"focused_gene": gene}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
-        
-    elif request.method == "DELETE":
-        # Clear focused gene
-        data_manager.set_focused_gene(None, dataset_id)
-        response = {"focused_gene": None}
-        if dataset_id:
-            response["dataset_id"] = dataset_id
-        return jsonify(response)
+# Gene focus endpoint removed - client-side concern only
         
 @app.route(f"/api/{API_VERSION}/data/statistics", methods=["GET"])
 def get_data_statistics():
@@ -1979,223 +1766,296 @@ def get_progressive_data(data_path):
 @app.route(f"/api/{API_VERSION}/zarr/upload", methods=["POST"])
 def upload_zarr_files():
     """
-    Upload zarr files to the server.
+    Upload zarr files to the server's data directory.
+    
+    This API supports stateless operation by saving the uploaded files
+    to the configured data directory and returning a dataset_path that
+    can be used with other stateless API endpoints.
     
     Query parameters or form data:
-        dataset_id: Optional dataset ID. If not provided, one will be generated.
+        target_name: Optional name for the dataset directory in the data dir
+                    (if not provided, a timestamp-based name will be generated)
     
     Returns:
-        JSON response with upload status
+        JSON response with upload status and dataset_path for future API calls
     """
     try:
-        # Get dataset ID if provided
-        dataset_id = request.form.get("dataset_id")
+        # Determine the data directory from app config
+        data_dir = app.config.get("data_dir", "data")
+        if not os.path.exists(data_dir):
+            try:
+                os.makedirs(data_dir, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to create data directory: {e}")
+                return jsonify({"error": f"Failed to create data directory: {str(e)}"}), 500
         
+        # Get target name if provided, otherwise create one
+        target_name = request.form.get("target_name")
+        if not target_name:
+            target_name = f"uploaded_dataset_{int(time.time())}"
+        
+        # Ensure the name is filesystem-safe
+        target_name = "".join(c for c in target_name if c.isalnum() or c in "._-")
+        target_path = os.path.join(data_dir, target_name)
+        
+        # Check for naming conflicts
+        if os.path.exists(target_path):
+            target_name = f"{target_name}_{int(time.time())}"
+            target_path = os.path.join(data_dir, target_name)
+        
+        # Check for files
         if 'files[]' not in request.files:
             return jsonify({"error": "No files uploaded"}), 400
             
         files = request.files.getlist('files[]')
         if not files:
             return jsonify({"error": "No files selected"}), 400
-            
-        # Create a temporary directory for the uploaded files
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Save all files to the temporary directory
-            for file in files:
-                # Get the path from the filename (might include subdirectories)
-                relative_path = file.filename
-                if not relative_path:
-                    continue
-                    
-                # Create subdirectories if needed
-                full_path = os.path.join(temp_dir, relative_path)
-                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        
+        # Create target zarr directory
+        try:
+            os.makedirs(target_path, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create target directory: {e}")
+            return jsonify({"error": f"Failed to create target directory: {str(e)}"}), 500
+        
+        # Save all files to the target directory
+        file_count = 0
+        for file in files:
+            # Get the path from the filename (might include subdirectories)
+            relative_path = file.filename
+            if not relative_path:
+                continue
                 
-                # Save the file
-                file.save(full_path)
+            # Create subdirectories if needed
+            full_path = os.path.join(target_path, relative_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
             
-            # Load the zarr dataset
-            zarr_path = temp_dir
-            try:
-                # Initialize the zarr reader with the uploaded files
-                loaded_dataset_id = zarr_reader.load_zarr(zarr_path, 'r', dataset_id)
-                
-                # Initialize the data manager with the zarr dataset
-                data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
+            # Save the file
+            file.save(full_path)
+            file_count += 1
+        
+        # Only validate the saved files, don't load them into memory
+        try:
+            dataset_path = target_path
+            
+            # Check if it's a valid zarr directory by trying to open it (without loading data)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            if root is None or metadata is None:
+                # Something went wrong, but we'll keep the files for manual inspection
+                logger.warning(f"Uploaded files don't appear to be a valid zarr directory: {dataset_path}")
                 
                 return jsonify({
                     "success": True,
-                    "message": "Zarr dataset loaded successfully",
-                    "dataset_id": loaded_dataset_id,
-                    "datasetInfo": {
-                        "name": os.path.basename(zarr_path),
-                        "path": zarr_path,
-                        "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
-                    }
+                    "warning": "Files uploaded but don't appear to be a valid zarr directory",
+                    "message": "Files uploaded successfully but may not be a valid zarr directory",
+                    "dataset_path": dataset_path,
+                    "file_count": file_count,
+                    "data_valid": False
                 })
-            except Exception as e:
-                logger.error(f"Error loading zarr dataset: {e}")
-                return jsonify({"error": f"Error loading zarr dataset: {str(e)}"}), 500
+            
+            # Get basic shape info
+            shape = metadata.get('shape', [0, 0])
+            
+            return jsonify({
+                "success": True,
+                "message": "Files uploaded successfully",
+                "dataset_path": dataset_path,
+                "name": target_name,
+                "file_count": file_count,
+                "data_valid": True,
+                "shape": shape,
+                "note": "Use this dataset_path with other API endpoints"
+            })
+        except Exception as e:
+            logger.error(f"Error validating uploaded dataset: {e}")
+            return jsonify({
+                "success": True,
+                "warning": f"Error validating dataset: {str(e)}",
+                "message": "Files uploaded successfully but validation failed",
+                "dataset_path": target_path,
+                "file_count": file_count,
+                "data_valid": False
+            })
     except Exception as e:
         logger.error(f"Error uploading files: {e}")
         return jsonify({"error": f"Error uploading files: {str(e)}"}), 500
 
 
-@app.route(f"/api/{API_VERSION}/zarr/url", methods=["POST"])
-def load_zarr_from_url():
+@app.route(f"/api/{API_VERSION}/zarr/url", methods=["GET", "POST"])
+def validate_zarr_url():
     """
-    Load zarr dataset from URL.
+    Validate a zarr dataset URL for client-side operations (stateless).
     
-    Request body:
+    This endpoint doesn't load the dataset into server memory.
+    It only validates if the URL points to a valid zarr path.
+    The client should manage dataset state.
+    
+    GET parameters or POST body:
         url: URL to the zarr dataset
-        dataset_id: Optional dataset ID. If not provided, one will be generated.
     
     Returns:
-        JSON response with loading status
+        JSON response with validation status and dataset_path for future API calls
     """
     try:
         # Get URL from request
-        data = request.get_json()
-        if not data or 'url' not in data:
-            return jsonify({"error": "No URL provided"}), 400
-            
-        url = data['url']
-        dataset_id = data.get('dataset_id')
+        url = None
+        if request.method == "GET":
+            url = request.args.get("url")
+        else:  # POST
+            data = request.get_json()
+            if data and 'url' in data:
+                url = data['url']
         
-        # Load the zarr dataset from URL
-        try:
-            # Initialize the zarr reader with the URL
-            if hasattr(zarr_reader, 'load_zarr_from_url'):
-                # Pass dataset_id to the custom URL loader if available
-                loaded_dataset_id = zarr_reader.load_zarr_from_url(url, dataset_id)
-            else:
-                # Fallback to regular load_zarr if from_url is not implemented
-                loaded_dataset_id = zarr_reader.load_zarr(url, 'r', dataset_id)
-            
-            # Initialize the data manager with the zarr dataset
-            data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
-            
+        if not url:
+            return jsonify({"error": "No URL provided"}), 400
+        
+        # Validate URL format
+        if not url.startswith(('http://', 'https://', 'file://', 's3://', '/')) and not os.path.exists(url):
             return jsonify({
-                "success": True,
-                "message": "Zarr dataset loaded successfully from URL",
-                "dataset_id": loaded_dataset_id,
-                "datasetInfo": {
-                    "name": os.path.basename(url),
-                    "path": url,
-                    "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
-                }
-            })
-        except Exception as e:
-            logger.error(f"Error loading zarr dataset from URL: {e}")
-            return jsonify({"error": f"Error loading zarr dataset from URL: {str(e)}"}), 500
+                "error": "Invalid URL format or inaccessible path", 
+                "url": url
+            }), 400
+        
+        # For stateless operation, we don't actually load the dataset
+        # Just validate if the URL/path looks reasonable
+        
+        # Generate a suggested dataset_path to use in future API calls
+        dataset_path = url
+        
+        # If it's a local path, check if it exists
+        if os.path.exists(url):
+            if not os.path.isdir(url) and not (url.endswith('.zarr') or url.endswith('.h5ad')):
+                return jsonify({"error": "Path does not appear to be a zarr directory or anndata file"}), 400
+        
+        return jsonify({
+            "success": True,
+            "message": "URL validated successfully. Use dataset_path in your API requests.",
+            "dataset_path": dataset_path,
+            "suggested_name": os.path.basename(url),
+            "note": "This endpoint is stateless. Store dataset_path client-side for use in API calls."
+        })
     except Exception as e:
-        logger.error(f"Error processing URL request: {e}")
-        return jsonify({"error": f"Error processing URL request: {str(e)}"}), 500
+        logger.error(f"Error validating URL: {e}")
+        return jsonify({"error": f"Error validating URL: {str(e)}"}), 500
 
 
-@app.route(f"/api/{API_VERSION}/zarr/s3", methods=["POST"])
-def load_zarr_from_s3():
+@app.route(f"/api/{API_VERSION}/zarr/s3", methods=["GET", "POST"])
+def validate_zarr_s3():
     """
-    Load zarr dataset from S3.
+    Validate a zarr dataset in S3 for client-side operations (stateless).
     
-    Request body:
+    This endpoint doesn't load the dataset into server memory.
+    It only validates if the S3 path is well-formed.
+    The client should manage dataset state.
+    
+    GET parameters or POST body:
         bucket: S3 bucket name
         key: Path within the bucket
         region: Optional AWS region (default: us-east-1)
         anonymous: Optional boolean indicating whether to use anonymous access (default: true)
         accessKey: Optional AWS access key ID (required if anonymous is false)
         secretKey: Optional AWS secret access key (required if anonymous is false)
-        dataset_id: Optional dataset ID. If not provided, one will be generated.
     
     Returns:
-        JSON response with loading status
+        JSON response with validation status and dataset_path for future API calls
     """
     try:
         # Get S3 configuration from request
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No S3 configuration provided"}), 400
-            
+        bucket = None
+        key = None
+        region = 'us-east-1'
+        anonymous = True
+        aws_access_key_id = None
+        aws_secret_access_key = None
+        
+        if request.method == "GET":
+            bucket = request.args.get("bucket")
+            key = request.args.get("key")
+            region = request.args.get("region", 'us-east-1')
+            anonymous_str = request.args.get("anonymous", "true").lower()
+            anonymous = anonymous_str == "true"
+            aws_access_key_id = request.args.get("accessKey")
+            aws_secret_access_key = request.args.get("secretKey")
+        else:  # POST
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No S3 configuration provided"}), 400
+                
+            bucket = data.get('bucket')
+            key = data.get('key')
+            region = data.get('region', 'us-east-1')
+            anonymous = data.get('anonymous', True)
+            aws_access_key_id = data.get('accessKey')
+            aws_secret_access_key = data.get('secretKey')
+        
         # Validate required fields
-        if 'bucket' not in data or 'key' not in data:
+        if not bucket or not key:
             return jsonify({"error": "S3 bucket and key are required"}), 400
-            
-        # Get dataset ID if provided
-        dataset_id = data.get('dataset_id')
-            
-        # Configure S3 parameters
-        s3_params = {
-            'bucket': data['bucket'],
-            'key': data['key'],
-            'region': data.get('region', 'us-east-1'),
-            'anonymous': data.get('anonymous', True)
+        
+        # Construct S3 URL for dataset_path
+        s3_url = f"s3://{bucket}/{key}"
+        
+        # For stateless operation, we don't actually load the dataset
+        # Just validate if the S3 path looks reasonable
+        
+        # Create a sanitized response (without secret key for security)
+        s3_config = {
+            'bucket': bucket,
+            'key': key,
+            'region': region,
+            'anonymous': anonymous
         }
         
-        # Add credentials if not anonymous
-        if not s3_params['anonymous'] and 'accessKey' in data and 'secretKey' in data:
-            s3_params['aws_access_key_id'] = data['accessKey']
-            s3_params['aws_secret_access_key'] = data['secretKey']
+        if not anonymous and aws_access_key_id:
+            s3_config['access_key_id_provided'] = True
+            # Don't include the actual secret key in the response
         
-        # Load the zarr dataset from S3
-        try:
-            # Initialize the zarr reader with the S3 parameters
-            loaded_dataset_id = None
-            if hasattr(zarr_reader, 'load_zarr_from_s3'):
-                # Add dataset_id to params if provided
-                if dataset_id:
-                    s3_params['dataset_id'] = dataset_id
-                loaded_dataset_id = zarr_reader.load_zarr_from_s3(**s3_params)
-            else:
-                # Fallback to url-based loading if S3 is not directly supported
-                s3_url = f"s3://{s3_params['bucket']}/{s3_params['key']}"
-                if hasattr(zarr_reader, 'load_zarr_from_url'):
-                    loaded_dataset_id = zarr_reader.load_zarr_from_url(s3_url, dataset_id)
-                else:
-                    return jsonify({"error": "S3 loading not supported by zarr reader"}), 501
-            
-            # Initialize the data manager with the zarr dataset
-            data_manager.load_from_zarr(zarr_reader, loaded_dataset_id)
-            
-            return jsonify({
-                "success": True,
-                "message": "Zarr dataset loaded successfully from S3",
-                "dataset_id": loaded_dataset_id,
-                "datasetInfo": {
-                    "name": os.path.basename(s3_params['key']),
-                    "path": f"s3://{s3_params['bucket']}/{s3_params['key']}",
-                    "shape": data_manager.get_shape(loaded_dataset_id) if hasattr(data_manager, 'get_shape') else None
-                }
-            })
-        except Exception as e:
-            logger.error(f"Error loading zarr dataset from S3: {e}")
-            return jsonify({"error": f"Error loading zarr dataset from S3: {str(e)}"}), 500
+        return jsonify({
+            "success": True,
+            "message": "S3 path validated. Use dataset_path in your API requests.",
+            "dataset_path": s3_url,
+            "suggested_name": os.path.basename(key),
+            "s3_config": s3_config,
+            "note": "This endpoint is stateless. Store dataset_path client-side for use in API calls."
+        })
     except Exception as e:
-        logger.error(f"Error processing S3 request: {e}")
-        return jsonify({"error": f"Error processing S3 request: {str(e)}"}), 500
+        logger.error(f"Error validating S3 path: {e}")
+        return jsonify({"error": f"Error validating S3 path: {str(e)}"}), 500
 
 
 @app.route(f"/api/{API_VERSION}/zarr/to_anndata", methods=["GET"])
-def convert_to_anndata():
+def get_anndata_structure():
     """
-    Convert current zarr store to AnnData-like structure.
+    Get AnnData-like structure for a dataset (stateless).
+    
+    Query parameters:
+        dataset_path: Path to the dataset (required)
     
     Returns:
         JSON response with AnnData structure
     """
     try:
-        # Check if zarr dataset is loaded
-        if not hasattr(zarr_reader, 'is_initialized') or not zarr_reader.is_initialized():
-            return jsonify({"error": "No zarr dataset loaded"}), 400
+        # Get the dataset path from the request
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
         
-        # Get basic shape and structure info
-        shape = data_manager.get_shape()
+        # Open the dataset by path (stateless)
+        root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+        if root is None or metadata is None:
+            return jsonify({"error": f"Cannot open dataset at path: {dataset_path}"}), 404
         
-        # Create a simplified AnnData structure based on available information
+        # Get basic shape and structure info from metadata
+        shape = metadata.get('shape', [0, 0])
+        
+        # Create a simplified AnnData structure based on available metadata
         result = {
+            "dataset_path": dataset_path,
             "shape": list(shape) if shape else [0, 0],
             "X": {
                 "shape": list(shape) if shape else [0, 0],
-                "dtype": "float32",
+                "dtype": metadata.get('X', {}).get('dtype', "float32"),
                 "path": "X"
             },
             "observations": shape[0] if shape else 0,
@@ -2206,10 +2066,53 @@ def convert_to_anndata():
             "layers": {}
         }
         
+        # Add observation (cell) metadata if available
+        if metadata.get('has_obs', False) and 'obs_columns' in metadata:
+            result['obs_names'] = True
+            result['obs_columns'] = metadata['obs_columns']
+        
+        # Add variable (gene) metadata if available
+        if metadata.get('has_var', False) and 'var_columns' in metadata:
+            result['var_names'] = True
+            result['var_columns'] = metadata['var_columns']
+        
+        # Add obsm information if available
+        if metadata.get('has_obsm', False) and 'obsm' in metadata:
+            obsm_info = metadata['obsm']
+            result['obsm'] = {
+                'keys': obsm_info.get('keys', [])
+            }
+            
+            # Add embeddings if available
+            if 'embeddings' in metadata:
+                result['embeddings'] = metadata['embeddings']
+        
+        # Add layers information if available
+        if metadata.get('has_layers', False):
+            result['layers'] = {
+                'keys': metadata.get('layers', {}).get('keys', [])
+            }
+        
+        # Include additional matrix types
+        if metadata.get('has_varm', False) and 'varm' in metadata:
+            result['varm'] = {
+                'keys': metadata['varm'].get('keys', [])
+            }
+        
+        if metadata.get('has_obsp', False) and 'obsp' in metadata:
+            result['obsp'] = {
+                'keys': metadata['obsp'].get('keys', [])
+            }
+        
+        if metadata.get('has_varp', False) and 'varp' in metadata:
+            result['varp'] = {
+                'keys': metadata['varp'].get('keys', [])
+            }
+        
         return jsonify(result)
     except Exception as e:
-        logger.error(f"Error converting to AnnData: {e}")
-        return jsonify({"error": f"Error converting to AnnData: {str(e)}"}), 500
+        logger.error(f"Error getting AnnData structure: {e}")
+        return jsonify({"error": f"Error getting AnnData structure: {str(e)}"}), 500
 
 
 @app.route(f"/api/{API_VERSION}/datasets/compare", methods=["GET"])
@@ -2350,6 +2253,216 @@ def get_zarr_data():
         logger.error(f"Error getting zarr data: {e}")
         return jsonify({"error": f"Error getting zarr data: {str(e)}"}), 500
 
+
+@app.route(f"/api/{API_VERSION}/data/paginated", methods=["GET"])
+def get_paginated_data():
+    """
+    Get matrix data with pagination support.
+    
+    This endpoint is optimized for efficiently accessing large matrices in chunks.
+    
+    Query parameters:
+        matrix_type: Type of matrix to access ('X', 'layer', 'obsm', 'varm', 'obsp', 'varp')
+        key: Required for all matrix types except 'X' (e.g., layer name, obsm key)
+        rows: Required comma-separated list of row indices
+        cols: Optional comma-separated list of column indices
+        page: Required page number (0-based)
+        page_size: Required number of items per page
+        dataset_id: Optional dataset ID. If not provided, uses the active dataset.
+        dataset_path: Optional path to the dataset. If provided, direct file access is used.
+    
+    Returns:
+        JSON response with paginated matrix data and pagination metadata in headers
+    """
+    # Get basic parameters
+    matrix_type = request.args.get("matrix_type")
+    key = request.args.get("key")
+    dataset_id = request.args.get("dataset_id")
+    dataset_path = request.args.get("dataset_path")
+    
+    # Get pagination parameters - these are required for this endpoint
+    try:
+        page = int(request.args.get("page", 0))
+        page_size = int(request.args.get("page_size", 100))
+    except (ValueError, TypeError):
+        return jsonify({
+            "error": "Invalid pagination parameters",
+            "message": "page and page_size must be valid integers"
+        }), 400
+    
+    # Validate matrix_type
+    valid_matrix_types = ["X", "layer", "obsm", "varm", "obsp", "varp"]
+    if not matrix_type or matrix_type not in valid_matrix_types:
+        return jsonify({
+            "error": "Invalid matrix_type",
+            "message": f"matrix_type must be one of: {', '.join(valid_matrix_types)}"
+        }), 400
+    
+    # Validate key for matrix types that need it
+    if matrix_type != "X" and not key:
+        return jsonify({
+            "error": "Missing key parameter",
+            "message": f"key is required for matrix_type '{matrix_type}'"
+        }), 400
+    
+    # Validate pagination parameters
+    if page < 0:
+        return jsonify({"error": "Page number must be non-negative"}), 400
+    if page_size <= 0 or page_size > 1000:
+        return jsonify({
+            "error": "Invalid page size",
+            "message": "page_size must be positive and not exceed 1000"
+        }), 400
+    
+    # Parse indices - rows are required
+    row_indices_str = request.args.get("rows")
+    if not row_indices_str:
+        return jsonify({
+            "error": "Missing rows parameter",
+            "message": "rows parameter is required with comma-separated list of indices"
+        }), 400
+    
+    try:
+        row_indices = [int(i) for i in row_indices_str.split(",")]
+    except ValueError:
+        return jsonify({"error": "Invalid row indices format"}), 400
+    
+    # Parse column indices if provided
+    col_indices = None
+    col_indices_str = request.args.get("cols")
+    if col_indices_str:
+        try:
+            col_indices = [int(i) for i in col_indices_str.split(",")]
+        except ValueError:
+            return jsonify({"error": "Invalid column indices format"}), 400
+    
+    # Calculate total rows and validate pagination
+    total_rows = len(row_indices)
+    total_pages = (total_rows + page_size - 1) // page_size
+    
+    # Check if page is out of bounds
+    if page >= total_pages:
+        return jsonify({
+            "error": "Page out of bounds",
+            "message": f"Page {page} exceeds available pages ({total_pages})",
+            "total_rows": total_rows,
+            "total_pages": total_pages,
+            "max_page": total_pages - 1 if total_pages > 0 else 0
+        }), 400
+    
+    # Apply pagination to row indices
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total_rows)
+    paginated_row_indices = row_indices[start_idx:end_idx]
+    
+    # Use stateless approach if dataset_path is provided
+    if dataset_path:
+        try:
+            # Open the dataset directly
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Get data based on matrix type
+            if matrix_type == "X":
+                # Check if X exists
+                if "X" not in root:
+                    return jsonify({"error": "Dataset has no X matrix"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["X"][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["X"][paginated_row_indices, :]
+                    
+            elif matrix_type == "layer":
+                # Check if layer exists
+                if "layers" not in root or key not in root["layers"]:
+                    return jsonify({"error": f"Layer '{key}' not found"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["layers"][key][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["layers"][key][paginated_row_indices, :]
+                    
+            elif matrix_type == "obsm":
+                # Check if obsm exists
+                if "obsm" not in root or key not in root["obsm"]:
+                    return jsonify({"error": f"Obsm key '{key}' not found"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["obsm"][key][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["obsm"][key][paginated_row_indices, :]
+                    
+            elif matrix_type == "varm":
+                # Check if varm exists
+                if "varm" not in root or key not in root["varm"]:
+                    return jsonify({"error": f"Varm key '{key}' not found"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["varm"][key][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["varm"][key][paginated_row_indices, :]
+                    
+            elif matrix_type == "obsp":
+                # Check if obsp exists
+                if "obsp" not in root or key not in root["obsp"]:
+                    return jsonify({"error": f"Obsp key '{key}' not found"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["obsp"][key][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["obsp"][key][paginated_row_indices, :]
+                    
+            elif matrix_type == "varp":
+                # Check if varp exists
+                if "varp" not in root or key not in root["varp"]:
+                    return jsonify({"error": f"Varp key '{key}' not found"}), 404
+                
+                # Get data with indices filtering
+                if col_indices is not None:
+                    data = root["varp"][key][paginated_row_indices, :][:, col_indices]
+                else:
+                    data = root["varp"][key][paginated_row_indices, :]
+            
+            # Generate a dataset ID from the path if needed
+            if not dataset_id:
+                dataset_id = os.path.basename(os.path.normpath(dataset_path))
+            
+            # Create response with pagination metadata
+            result = process_array_response(data, dataset_id)
+            
+            # Add pagination information to the response
+            result["pagination"] = {
+                "page": page,
+                "page_size": page_size,
+                "total_rows": total_rows,
+                "total_pages": total_pages,
+                "current_page_items": len(paginated_row_indices)
+            }
+            
+            # Also add pagination information to headers
+            response = jsonify(result)
+            response.headers["X-Pagination-Page"] = str(page)
+            response.headers["X-Pagination-PageSize"] = str(page_size)
+            response.headers["X-Pagination-TotalRows"] = str(total_rows)
+            response.headers["X-Pagination-TotalPages"] = str(total_pages)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error getting paginated data from {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
+    
+    # Legacy approach using DataManager (not implemented for all matrix types)
+    else:
+        return jsonify({
+            "error": "Stateful mode not supported for paginated endpoint",
+            "message": "Please provide a dataset_path parameter"
+        }), 400
 
 @app.route(f"/api/{API_VERSION}/zarr/chunked_data", methods=["GET"])
 def get_chunked_data():
