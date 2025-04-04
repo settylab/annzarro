@@ -2,11 +2,21 @@
 
 ## Overview
 
-Annzarro uses a **unified stateless server architecture** that serves both the frontend static files and the backend API through a single Flask server running on a single port. This simplifies deployment, configuration, and makes the application easier to use.
+Annzarro is a modern, browser-based visualization tool for AnnData in zarr format that uses a **unified stateless server architecture**. The server serves both the frontend static files and the backend API through a single Flask server running on a single port, which simplifies deployment, configuration, and makes the application easier to use.
 
-Previously, the application used a dual-server architecture (frontend on port 8080 and backend on port 8001), which caused configuration and CORS issues.
+### Core Principles:
 
-The server is designed to be completely stateless, with all dataset state maintained on the client side. This enables enhanced scalability and reliability.
+1. **Stateless API Design**: All dataset state, selections, and visualization settings are maintained on the client side, making the server highly scalable and reliable.
+
+2. **Unified Serving**: Both static assets and API endpoints are served from a single server process, eliminating CORS issues.
+
+3. **Lazy Loading**: Data is loaded on-demand in small chunks, enabling work with very large datasets without overwhelming memory constraints.
+
+4. **Client-side Visualization**: Rich interactive visualizations through plotly.js running entirely in the browser with server providing only the requested data.
+
+5. **Flexible Dataset Access**: Support for zarr archives via local filesystem, HTTP, S3, and other storage backends.
+
+Previously, the application used a dual-server architecture (frontend on port 8080 and backend on port 8001), which caused configuration and CORS issues that have been eliminated in the current unified approach.
 
 ## Unified Stateless Server Architecture
 
@@ -228,7 +238,11 @@ The following REST API endpoints are available for data access. All data endpoin
 - `/api/v1/data/genes` - Get list of gene names
 - `/api/v1/data/cells` - Get list of cell names
 
-<!-- Selection and focus endpoints removed since these states should be maintained entirely by the frontend -->
+### Dataframe Support
+- `/api/v1/data/obsm_dataframe_columns` - Get column names for dataframe-encoded obsm matrices
+- `/api/v1/data/varm_dataframe_columns` - Get column names for dataframe-encoded varm matrices
+- `/api/v1/data/by_path` - Access data using path notation (e.g., "varm/kompot_de_*/B cells")
+- Support for `column_name` parameter in obsm/varm endpoints for accessing specific dataframe columns
 
 ### Specialized Data Access
 - `/api/v1/data/paginated` - Access any matrix type with pagination support
@@ -311,6 +325,14 @@ The following changes have been implemented:
     - `/api/v1/data/varm_dataframe_columns`: List columns in varm dataframes
     - `/api/v1/data/by_path`: Path-based data access (e.g., varm/matrix_name/column_name)
     - Added column_name support to existing obsm, varm, and paginated endpoints
+
+19. ✅ ADDED: Frontend implementation for dataframe support in data-manager.js:
+    - Added enhanced loadObsm and loadVarm methods with column_name support
+    - Implemented isObsmDataframe and isVarmDataframe helper methods
+    - Added getObsmDataframeColumns and getVarmDataframeColumns methods
+    - Implemented loadDataByPath for path-based data access notation
+    - Enhanced getBasicInfo to include dataframe information
+    - Added dataframe metadata to AnnData structure in frontend
 
 ## Planned Server Refactoring
 

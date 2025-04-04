@@ -1,55 +1,28 @@
- Annzarro
+# Annzarro
 
 [![CI Status](https://github.com/settylab/annzarro/workflows/Annzarro%20CI/badge.svg)](https://github.com/settylab/annzarro/actions)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
-Annzarro is a modern, Python-based single-cell data visualization tool that allows for comprehensive analysis of AnnData objects stored in zarr format.
+Annzarro is a modern, browser-based single-cell data visualization tool that allows for comprehensive analysis of AnnData objects stored in zarr format. It runs in any modern browser with a lightweight Python backend for data access.
 
 ## Features
 
-- **Python-centric architecture** - efficient data handling with Python's zarr library
-- **Web UI** - clean, intuitive interface for visualization and exploration
-- **Lazy loading** - efficiently work with large datasets without loading everything into memory
-- **REST API** - programmatic access to all data and functionality
-- **Interactive visualizations** for scatter plots, heatmaps, and more
-- **Powerful data filtering** and exploration capabilities
-- **STRING-DB integration** for gene set enrichment and protein interaction networks
-- **Full access to AnnData structure** (.obs, .var, .obsm, .layers, etc.)
-- **Gene and cell selection tools** for focused analysis
+- **Browser-based Visualization** - Interactive plots using plotly.js with no Python required for visualization
+- **Stateless Architecture** - Efficient data handling with a stateless API for better scalability
+- **Lazy Loading** - Work with large datasets without loading everything into memory
+- **Flexible Panel System** - Customizable layout with multiple visualization and table panels
+- **Interactive DataTables** - Powerful search and filtering with the DataTables search builder
+- **Complete AnnData Support** - Access to all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers, etc.)
+- **Dataframe Support** - Special handling for dataframe-encoded matrices in obsm/varm
+- **Sparse Matrix Support** - Efficient handling of CSR, CSC, and COO formats
+- **Remote Dataset Access** - Connect to zarr archives via local filesystem, HTTP, or S3
+- **Session Management** - Save and restore your analysis setup
+- **StringDB Integration** - Gene set enrichment and protein interaction networks
 
-## Installation
+## Getting Started
 
-### Prerequisites
-
-- Python 3.8+ for the backend
-- Node.js 16+ (for development only)
-
-### Option 1: Install from PyPI (Recommended)
-
-```bash
-# Install the package
-pip install annzarro
-
-# Run the server
-annzarro server --port 8000
-```
-
-### Option 2: Install from source
-
-```bash
-# Clone the repository
-git clone https://github.com/settylab/annzarro.git
-cd annzarro
-
-# Install package in development mode
-pip install -e .
-
-# Run the server
-annzarro server --port 8000
-```
-
-### Option 3: Use the run_annzarro.py script
+### Starting the Server
 
 ```bash
 # Clone the repository
@@ -57,21 +30,9 @@ git clone https://github.com/settylab/annzarro.git
 cd annzarro
 
 # Install requirements
-pip install flask zarr numpy pandas matplotlib flask-cors
+pip install -r requirements.txt
 
-# Run the server
-python run_annzarro.py --start --port 8000
-```
-
-## Getting Started
-
-### Starting the Server
-
-```bash
-# Using the installed package
-annzarro server --port 8000
-
-# OR using the run_annzarro.py script
+# Start the server
 python run_annzarro.py --start
 ```
 
@@ -80,99 +41,64 @@ Then open your browser and navigate to:
 http://localhost:8000
 ```
 
-### Server Management
-
-AnnZarro provides tools to manage the unified server:
-
-1. Check server status:
-   ```bash
-   python server_status.py
-   ```
-
-2. Start the server:
-   ```bash
-   python run_annzarro.py --start
-   ```
-
-3. Stop the server:
-   ```bash
-   python run_annzarro.py --stop
-   ```
-
-4. Configure the server:
-   ```bash
-   python run_annzarro.py --start --port 8000 --data-dir /path/to/data
-   ```
-
-### Troubleshooting
-
-If you encounter "Address already in use" errors when starting the server:
-
-1. Check what's using the port:
-   ```bash
-   python server_status.py
-   ```
-
-2. Stop any conflicting processes:
-   ```bash
-   python run_annzarro.py --stop
-   ```
-
-3. If the issue persists, you can change the port in `annzarro/server/config.json` or use the `--port` command-line argument:
-   ```bash
-   python run_annzarro.py --start --port 8001
-   ```
-
-### Command Line Interface (CLI)
-
-Annzarro provides a comprehensive CLI for data management:
+### Configuration Options
 
 ```bash
-# List all available commands
-annzarro --help
+# Specify a custom port
+python run_annzarro.py --start --port 8080
 
-# List available datasets
-annzarro data list --directory /path/to/datasets
+# Specify a custom data directory
+python run_annzarro.py --start --data-dir /path/to/data
 
-# Get information about a specific dataset
-annzarro data info /path/to/dataset.zarr
+# Allow external connections
+python run_annzarro.py --start --host 0.0.0.0
 
-# Start the server
-annzarro server --port 8000 --host 0.0.0.0
+# Run in debug mode
+python run_annzarro.py --start --debug
 ```
 
-### Python API
+### Server Management
 
-You can also use Annzarro as a Python library:
+```bash
+# Check server status
+python server_status.py
 
-```python
-from annzarro.core.zarr_reader import zarr_reader
-from annzarro.data.manager import data_manager
-
-# Open a zarr dataset
-zarr_reader.open_zarr('/path/to/dataset.zarr')
-
-# Get metadata about the dataset
-metadata = zarr_reader.get_metadata()
-
-# Get observation names (cells)
-cells = zarr_reader.get_obs_names()
-
-# Get variable names (genes)
-genes = zarr_reader.get_var_names()
-
-# Get X matrix with lazy loading (only loads what you need)
-x_data = zarr_reader.get_X(row_indices=[0, 1, 2], col_indices=[0, 1, 2])
-
-# Use DataManager for higher-level operations
-data_manager.load_dataset('/path/to/dataset.zarr')
-data_manager.set_selected_cells(['cell1', 'cell2'])
-data_manager.get_obsm('X_umap', indices=[0, 1, 2])
+# Stop the server
+python run_annzarro.py --stop
 ```
 
-## Adding Demo Datasets
+## User Interface
 
-To add your own demo datasets, copy or symlink your .zarr directories to the `data/` folder:
+Annzarro provides a modern, intuitive interface for single-cell data exploration:
+
+### Global Components
+
+- **Dataset Selection** - Browse and select from available datasets
+- **Gene Focus** - Searchable dropdown to select a focused gene
+- **Cell Focus** - Searchable dropdown to select a focused cell
+- **Taxonomy Information** - Track species information for gene analysis
+- **Session Management** - Save and restore analysis sessions
+
+### Visualization Panels
+
+- **Plot Panels** - Create scatter plots, heatmaps, and other visualizations
+- **Table Panels** - Filter and select cells/genes with DataTables
+- **Metadata Panels** - Explore AnnData structure and dataset information
+
+### Plot Configuration
+
+Plots can be created with:
+- Data selection from any AnnData component (.obs, .var, .obsm, .varm, .layers, etc.)
+- Dimension mapping (X, Y, Z axes)
+- Color mapping based on data fields (numerical or categorical)
+- Custom hover information
+- Interactive selection and filtering
+
+## Working with Data
+
+### Adding Datasets
+
+To add your own datasets, copy or symlink your .zarr directories to the `data/` folder:
 
 ```bash
 # Copy a dataset
@@ -184,59 +110,33 @@ ln -s /path/to/your-dataset.zarr data/
 
 The application will automatically detect and display all .zarr directories in the data/ folder.
 
-## Data Requirements
+### Data Requirements
 
-AnnData objects should be saved in zarr format. The tool expects standard AnnData structure:
+AnnData objects should be saved in zarr format with standard components:
 
 - `.X` - Main expression matrix
 - `.obs` - Cell annotations
 - `.var` - Gene annotations
 - `.obsm` - Multi-dimensional cell annotations (e.g., UMAP, PCA)
+- `.varm` - Multi-dimensional gene annotations
+- `.obsp` - Cell-cell relationships
+- `.varp` - Gene-gene relationships
 - `.layers` - Named alternative expression matrices
 - `.uns` - Unstructured annotations
 
-## Testing
-
-Annzarro includes a comprehensive test suite:
-
-```bash
-# Run all tests
-python run_tests.py
-
-# Run specific test suites
-python run_tests.py --unit       # Run unit tests
-python run_tests.py --integration # Run integration tests
-python run_tests.py --js         # Run JavaScript tests
-python run_tests.py --e2e        # Run end-to-end tests
-
-# Run tests with specific options
-python run_tests.py --coverage   # Generate coverage reports
-python run_tests.py --ci         # Run in CI mode (skip certain tests)
-```
-
-You can also use the console script:
-
-```bash
-annzarro-tests --unit --integration
-```
-
-## Development Setup
+## Development
 
 ### Backend (Python)
 
 ```bash
-# Clone the repository
-git clone https://github.com/settylab/annzarro.git
-cd annzarro
-
-# Install in development mode with development dependencies
-pip install -e ".[dev]"
+# Install in development mode
+pip install -e .
 
 # Run tests
-pytest annzarro/tests
+python run_tests.py --unit
 
 # Start the server for development
-python -m annzarro.server
+python run_annzarro.py --start --debug
 ```
 
 ### Frontend (JavaScript)
@@ -250,32 +150,21 @@ npm test
 
 # Run linter
 npm run lint
-
-# Serve the web UI (if using the legacy dual-server approach)
-npm run serve
 ```
 
-## API Documentation
+## Architecture
 
-The Annzarro server exposes a RESTful API for programmatic access:
+Annzarro uses a unified stateless server architecture:
 
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `/api/v1/datasets` | GET | List available datasets |
-| `/api/v1/datasets/<path>` | GET | Get dataset information |
-| `/api/v1/datasets/<path>/load` | POST | Load a dataset |
-| `/api/v1/data/info` | GET | Get information about the loaded dataset |
-| `/api/v1/data/obs` | GET | Get observation annotations |
-| `/api/v1/data/var` | GET | Get variable annotations |
-| `/api/v1/data/X` | GET | Get X matrix data |
-| `/api/v1/data/layer/<layer_name>` | GET | Get layer data |
-| `/api/v1/data/obsm/<obsm_key>` | GET | Get obsm data |
-| `/api/v1/data/cells` | GET | Get cell names |
-| `/api/v1/data/genes` | GET | Get gene names |
-| `/api/v1/data/selection/cells` | GET/POST/DELETE | Handle cell selection operations |
-| `/api/v1/data/selection/genes` | GET/POST/DELETE | Handle gene selection operations |
-| `/api/v1/data/focus/cell` | GET/POST/DELETE | Handle cell focus operations |
-| `/api/v1/data/focus/gene` | GET/POST/DELETE | Handle gene focus operations |
+- **Frontend**: Pure JavaScript with plotly.js and DataTables
+- **Backend**: Flask server providing both API and static file serving
+- **API**: RESTful endpoints for data access with the dataset_path parameter
+- **Storage**: Support for local and remote zarr archives
+
+For more details, see:
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Overall implementation strategy
+- [SERVER_ARCHITECTURE.md](SERVER_ARCHITECTURE.md) - Server design and API endpoints
+- [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md) - Frontend component design
 
 ## Browser Requirements
 
@@ -287,4 +176,4 @@ Annzarro works best with recent versions of:
 
 ## License
 
-GPL-3.0-or-later (as specified in package.json)
+GPL-3.0-or-later

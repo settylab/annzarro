@@ -78,6 +78,10 @@ def register_zarr_routes(app, api_version):
                     except Exception as e:
                         logger.warning(f"Error getting shape for obsm/{key}: {e}")
                 info["obsm_details"] = obsm_info
+                
+            # Add obsm_dataframes information
+            if "obsm_dataframes" in metadata:
+                info["obsm_dataframes"] = metadata.get("obsm_dataframes", {})
             
             # Add detailed varm information
             if metadata.get("has_varm", False) and "varm" in root:
@@ -90,6 +94,10 @@ def register_zarr_routes(app, api_version):
                     except Exception as e:
                         logger.warning(f"Error getting shape for varm/{key}: {e}")
                 info["varm_details"] = varm_info
+                
+            # Add varm_dataframes information
+            if "varm_dataframes" in metadata:
+                info["varm_dataframes"] = metadata.get("varm_dataframes", {})
             
             # Add detailed layers information
             if metadata.get("has_layers", False) and "layers" in root:

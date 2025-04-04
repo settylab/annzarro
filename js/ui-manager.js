@@ -21,6 +21,7 @@ function getDependencies() {
         deps.tableManager = require('./table-manager');
         deps.stringDB = require('./string-db');
         deps.Utils = require('./utils');
+        deps.dataframeUI = require('./dataframe-ui');
     } 
     // Annzarro modules
     else if (typeof Annzarro !== 'undefined' && Annzarro.modules) {
@@ -30,6 +31,7 @@ function getDependencies() {
         deps.tableManager = Annzarro.modules.tableManager;
         deps.stringDB = Annzarro.modules.stringDB;
         deps.Utils = Annzarro.modules.Utils;
+        deps.dataframeUI = Annzarro.modules.dataframeUI;
     }
     // Global fallback
     else if (typeof window !== 'undefined') {
@@ -39,6 +41,7 @@ function getDependencies() {
         deps.tableManager = window.tableManager;
         deps.stringDB = window.stringDB;
         deps.Utils = window.Utils;
+        deps.dataframeUI = window.dataframeUI;
     }
     
     return deps;
@@ -68,7 +71,8 @@ class UIManager {
             'cell-info': this.createCellInfoPanel.bind(this),
             'data-explorer': this.createDataExplorerPanel.bind(this),
             'string-db': this.createStringDbPanel.bind(this),
-            'matrix': this.createMatrixPanel.bind(this)
+            'matrix': this.createMatrixPanel.bind(this),
+            'dataframe': this.createDataframePanel.bind(this)
         };
         
         // Initialize UI event handlers
@@ -1149,6 +1153,9 @@ class UIManager {
                     </button>
                     <button type="button" class="btn btn-outline-primary create-panel" data-type="matrix">
                         <i class="bi bi-grid-3x3"></i> Matrix
+                    </button>
+                    <button type="button" class="btn btn-outline-primary create-panel" data-type="dataframe">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> Dataframe
                     </button>
                 </div>
             </div>
@@ -2940,6 +2947,73 @@ class UIManager {
             // Hide the plot container and show placeholder
             panel.querySelector('.matrix-plot').style.display = 'none';
         }
+        
+        return this.panels.get(panelId);
+    }
+    
+    /**
+     * Create a dataframe panel
+     * @param {string} panelId - The ID of the panel to create
+     * @param {Object} config - Configuration options for the panel
+     * @returns {Object} The created panel info
+     */
+    createDataframePanel(panelId, config = {}) {
+        // Get dependencies
+        const deps = getDependencies();
+        const { dataManager, dataframeUI } = deps;
+        
+        if (!dataManager || !dataframeUI) {
+            console.error('Dependencies not found for dataframe panel');
+            const content = document.querySelector(`#${panelId} .panel-content`);
+            if (content) {
+                content.innerHTML = `
+                    <div class="alert alert-danger m-3">
+                        <h5>Error</h5>
+                        <p>Required dependencies not found</p>
+                    </div>
+                `;
+            }
+            return null;
+        }
+        
+        // Default config
+        config = {
+            title: 'Dataframe Browser',
+            type: 'obsm', // 'obsm' or 'varm'
+            matrix: null,
+            column: null,
+            ...config
+        };
+        
+        // Update panel title
+        this._setPanelTitle(panelId, config.title);
+        
+        // Get panel content
+        const content = document.querySelector(`#${panelId} .panel-content`);
+        content.innerHTML = '';
+        
+        // Hide panel placeholder
+        this._hidePanelPlaceholder(panelId);
+        
+        // Create the dataframe panel using the dataframeUI module
+        try {
+            dataframeUI.createDataframePanel(panelId, config);
+        } catch (error) {
+            console.error('Error creating dataframe panel:', error);
+            content.innerHTML = `
+                <div class="alert alert-danger m-3">
+                    <h5>Error</h5>
+                    <p>Failed to create dataframe panel: ${error.message}</p>
+                </div>
+            `;
+        }
+        
+        // Store panel info
+        this.panels.set(panelId, {
+            type: 'dataframe',
+            config,
+            element: content
+        });
         
         return this.panels.get(panelId);
     }

@@ -400,6 +400,204 @@ class DataManager {
     }
     
     /**
+     * Check if an obsm matrix is a dataframe (has columns)
+     * @param {string} obsmKey - The obsm matrix key
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {boolean} True if the obsm matrix is a dataframe
+     */
+    isObsmDataframe(obsmKey, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.obsm || !anndata.obsm[obsmKey]) {
+            return false;
+        }
+        
+        // Check if it has dataframe metadata
+        return !!(anndata.obsm_dataframes && anndata.obsm_dataframes[obsmKey]);
+    }
+    
+    /**
+     * Check if a varm matrix is a dataframe (has columns)
+     * @param {string} varmKey - The varm matrix key
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {boolean} True if the varm matrix is a dataframe
+     */
+    isVarmDataframe(varmKey, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.varm || !anndata.varm[varmKey]) {
+            return false;
+        }
+        
+        // Check if it has dataframe metadata
+        return !!(anndata.varm_dataframes && anndata.varm_dataframes[varmKey]);
+    }
+    
+    /**
+     * Get the column names for an obsm dataframe matrix
+     * @param {string} obsmKey - The obsm matrix key
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {Array<string>|null} Array of column names or null if not a dataframe
+     */
+    async getObsmDataframeColumns(obsmKey, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.obsm || !anndata.obsm[obsmKey]) {
+            return null;
+        }
+        
+        // Check if dataframe info is already in metadata
+        if (anndata.obsm_dataframes && 
+            anndata.obsm_dataframes[obsmKey] && 
+            anndata.obsm_dataframes[obsmKey].columns) {
+            return anndata.obsm_dataframes[obsmKey].columns;
+        }
+        
+        // If not available in metadata, try the API
+        if (window.ANNZARRO_API_URL) {
+            try {
+                // Build API URL
+                let url = `${window.ANNZARRO_API_URL}/data/obsm_dataframe_columns?matrix=${encodeURIComponent(obsmKey)}`;
+                
+                // Add dataset path parameter if available
+                if (anndata.dataset_path) {
+                    url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                }
+                
+                // Add dataset ID parameter
+                if (dsId) {
+                    url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                }
+                
+                // Fetch data
+                const response = await fetch(url);
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result && result.columns) {
+                        // Store in metadata for future reference
+                        if (!anndata.obsm_dataframes) {
+                            anndata.obsm_dataframes = {};
+                        }
+                        
+                        if (!anndata.obsm_dataframes[obsmKey]) {
+                            anndata.obsm_dataframes[obsmKey] = {
+                                encoding_type: 'dataframe'
+                            };
+                        }
+                        
+                        anndata.obsm_dataframes[obsmKey].columns = result.columns;
+                        
+                        return result.columns;
+                    }
+                }
+                
+                // If API fails, return empty array
+                return [];
+            } catch (error) {
+                console.error(`Error fetching obsm dataframe columns for ${obsmKey}:`, error);
+                return [];
+            }
+        }
+        
+        // If no API, return empty array
+        return [];
+    }
+    
+    /**
+     * Get the column names for a varm dataframe matrix
+     * @param {string} varmKey - The varm matrix key
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {Array<string>|null} Array of column names or null if not a dataframe
+     */
+    async getVarmDataframeColumns(varmKey, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.varm || !anndata.varm[varmKey]) {
+            return null;
+        }
+        
+        // Check if dataframe info is already in metadata
+        if (anndata.varm_dataframes && 
+            anndata.varm_dataframes[varmKey] && 
+            anndata.varm_dataframes[varmKey].columns) {
+            return anndata.varm_dataframes[varmKey].columns;
+        }
+        
+        // If not available in metadata, try the API
+        if (window.ANNZARRO_API_URL) {
+            try {
+                // Build API URL
+                let url = `${window.ANNZARRO_API_URL}/data/varm_dataframe_columns?matrix=${encodeURIComponent(varmKey)}`;
+                
+                // Add dataset path parameter if available
+                if (anndata.dataset_path) {
+                    url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                }
+                
+                // Add dataset ID parameter
+                if (dsId) {
+                    url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                }
+                
+                // Fetch data
+                const response = await fetch(url);
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result && result.columns) {
+                        // Store in metadata for future reference
+                        if (!anndata.varm_dataframes) {
+                            anndata.varm_dataframes = {};
+                        }
+                        
+                        if (!anndata.varm_dataframes[varmKey]) {
+                            anndata.varm_dataframes[varmKey] = {
+                                encoding_type: 'dataframe'
+                            };
+                        }
+                        
+                        anndata.varm_dataframes[varmKey].columns = result.columns;
+                        
+                        return result.columns;
+                    }
+                }
+                
+                // If API fails, return empty array
+                return [];
+            } catch (error) {
+                console.error(`Error fetching varm dataframe columns for ${varmKey}:`, error);
+                return [];
+            }
+        }
+        
+        // If no API, return empty array
+        return [];
+    }
+    
+    /**
      * Get the dimensions of an obsp matrix
      * @param {string} obspKey - The obsp matrix key
      * @returns {Array<number>|null} [rows, cols] or null if not found
@@ -932,23 +1130,110 @@ class DataManager {
     }
 
     /**
-     * Load obsm data
+     * Load obsm data with support for dataframe columns
      * @param {string} obsm - The obsm key
      * @param {Array<number>} rowIndices - Array of row indices or null for all
+     * @param {string} columnName - Optional column name for dataframe-encoded matrices
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
      * @returns {Promise<Array|null>} The obsm data
      */
-    async loadObsm(obsm, rowIndices = null) {
-        if (!this.anndata || !this.anndata.obsm || !this.anndata.obsm[obsm]) {
+    async loadObsm(obsm, rowIndices = null, columnName = null, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata || !anndata.obsm || !anndata.obsm[obsm]) {
             return null;
         }
         
         try {
-            // Generate cache key
-            const cacheKey = `obsm_${obsm}_${rowIndices ? rowIndices.join(',') : 'all'}`;
+            // Generate cache key that includes column name if provided
+            const cacheKey = `obsm_${obsm}${columnName ? '_col_' + columnName : ''}_${rowIndices ? rowIndices.join(',') : 'all'}`;
             
             // Check cache first
-            if (this.cache.has(cacheKey)) {
-                return this.cache.get(cacheKey);
+            if (this._hasInCache(cacheKey, dsId)) {
+                return this._getFromCache(cacheKey, dsId);
+            }
+            
+            // Check if this is a dataframe-encoded matrix and column name is provided
+            const isDataframe = anndata.obsm_dataframes && 
+                                anndata.obsm_dataframes[obsm] && 
+                                columnName !== null;
+            
+            // For dataframe with column, use API endpoint
+            if (isDataframe && columnName !== null && window.ANNZARRO_API_URL) {
+                try {
+                    // Build API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/obsm/${obsm}?column_name=${encodeURIComponent(columnName)}`;
+                    
+                    // Add dataset path parameter if available
+                    if (anndata.dataset_path) {
+                        url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                    }
+                    
+                    // Add dataset ID parameter
+                    if (dsId) {
+                        url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                    }
+                    
+                    // Add row indices if provided
+                    if (rowIndices && rowIndices.length > 0) {
+                        url += `&indices=${rowIndices.join(',')}`;
+                    }
+                    
+                    // Fetch data
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data, dsId);
+                            return result.data;
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('Error using API for dataframe column:', apiError);
+                    // Fall back to path-based access
+                }
+                
+                // Alternative: path-based access
+                try {
+                    // Build path-based API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/by_path?path=${encodeURIComponent(`obsm/${obsm}/${columnName}`)}`;
+                    
+                    // Add dataset path parameter if available
+                    if (anndata.dataset_path) {
+                        url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                    }
+                    
+                    // Add dataset ID parameter
+                    if (dsId) {
+                        url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                    }
+                    
+                    // Add row indices if provided
+                    if (rowIndices && rowIndices.length > 0) {
+                        url += `&indices=${rowIndices.join(',')}`;
+                    }
+                    
+                    // Fetch data
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data, dsId);
+                            return result.data;
+                        }
+                    }
+                } catch (pathError) {
+                    console.error('Error using path-based access for dataframe column:', pathError);
+                    // Fall back to regular loadData
+                }
             }
             
             // Define selection based on indices
@@ -965,18 +1250,30 @@ class DataManager {
                 ];
             }
             
-            // Load the data
+            // Load the data using standard path or zarr loader
             const zarrLoader = getZarrLoader();
             if (!zarrLoader) {
                 throw new Error('ZarrLoader not found');
             }
             
-            const result = await zarrLoader.loadData(`obsm/${obsm}`, selection);
-            
-            // Cache the result
-            this._addToCache(cacheKey, result);
-            
-            return result;
+            // For dataframe column access with zarrLoader
+            if (isDataframe && columnName !== null) {
+                // Use path notation for dataframe column access
+                const result = await zarrLoader.loadData(`obsm/${obsm}/${columnName}`, selection);
+                
+                // Cache the result
+                this._addToCache(cacheKey, result, dsId);
+                
+                return result;
+            } else {
+                // Standard obsm matrix access
+                const result = await zarrLoader.loadData(`obsm/${obsm}`, selection);
+                
+                // Cache the result
+                this._addToCache(cacheKey, result, dsId);
+                
+                return result;
+            }
         } catch (error) {
             console.error(`Error loading obsm ${obsm} data:`, error);
             return null;
@@ -984,23 +1281,110 @@ class DataManager {
     }
 
     /**
-     * Load varm data
+     * Load varm data with support for dataframe columns
      * @param {string} varm - The varm key
      * @param {Array<number>} rowIndices - Array of row indices or null for all
+     * @param {string} columnName - Optional column name for dataframe-encoded matrices
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
      * @returns {Promise<Array|null>} The varm data
      */
-    async loadVarm(varm, rowIndices = null) {
-        if (!this.anndata || !this.anndata.varm || !this.anndata.varm[varm]) {
+    async loadVarm(varm, rowIndices = null, columnName = null, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+        
+        if (!anndata || !anndata.varm || !anndata.varm[varm]) {
             return null;
         }
         
         try {
-            // Generate cache key
-            const cacheKey = `varm_${varm}_${rowIndices ? rowIndices.join(',') : 'all'}`;
+            // Generate cache key that includes column name if provided
+            const cacheKey = `varm_${varm}${columnName ? '_col_' + columnName : ''}_${rowIndices ? rowIndices.join(',') : 'all'}`;
             
             // Check cache first
-            if (this.cache.has(cacheKey)) {
-                return this.cache.get(cacheKey);
+            if (this._hasInCache(cacheKey, dsId)) {
+                return this._getFromCache(cacheKey, dsId);
+            }
+            
+            // Check if this is a dataframe-encoded matrix and column name is provided
+            const isDataframe = anndata.varm_dataframes && 
+                                anndata.varm_dataframes[varm] && 
+                                columnName !== null;
+            
+            // For dataframe with column, use API endpoint
+            if (isDataframe && columnName !== null && window.ANNZARRO_API_URL) {
+                try {
+                    // Build API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/varm/${varm}?column_name=${encodeURIComponent(columnName)}`;
+                    
+                    // Add dataset path parameter if available
+                    if (anndata.dataset_path) {
+                        url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                    }
+                    
+                    // Add dataset ID parameter
+                    if (dsId) {
+                        url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                    }
+                    
+                    // Add row indices if provided
+                    if (rowIndices && rowIndices.length > 0) {
+                        url += `&indices=${rowIndices.join(',')}`;
+                    }
+                    
+                    // Fetch data
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data, dsId);
+                            return result.data;
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('Error using API for dataframe column:', apiError);
+                    // Fall back to path-based access
+                }
+                
+                // Alternative: path-based access
+                try {
+                    // Build path-based API URL
+                    let url = `${window.ANNZARRO_API_URL}/data/by_path?path=${encodeURIComponent(`varm/${varm}/${columnName}`)}`;
+                    
+                    // Add dataset path parameter if available
+                    if (anndata.dataset_path) {
+                        url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                    }
+                    
+                    // Add dataset ID parameter
+                    if (dsId) {
+                        url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                    }
+                    
+                    // Add row indices if provided
+                    if (rowIndices && rowIndices.length > 0) {
+                        url += `&indices=${rowIndices.join(',')}`;
+                    }
+                    
+                    // Fetch data
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result && result.data) {
+                            // Cache the result
+                            this._addToCache(cacheKey, result.data, dsId);
+                            return result.data;
+                        }
+                    }
+                } catch (pathError) {
+                    console.error('Error using path-based access for dataframe column:', pathError);
+                    // Fall back to regular loadData
+                }
             }
             
             // Define selection based on indices
@@ -1017,18 +1401,30 @@ class DataManager {
                 ];
             }
             
-            // Load the data
+            // Load the data using standard path or zarr loader
             const zarrLoader = getZarrLoader();
             if (!zarrLoader) {
                 throw new Error('ZarrLoader not found');
             }
             
-            const result = await zarrLoader.loadData(`varm/${varm}`, selection);
-            
-            // Cache the result
-            this._addToCache(cacheKey, result);
-            
-            return result;
+            // For dataframe column access with zarrLoader
+            if (isDataframe && columnName !== null) {
+                // Use path notation for dataframe column access
+                const result = await zarrLoader.loadData(`varm/${varm}/${columnName}`, selection);
+                
+                // Cache the result
+                this._addToCache(cacheKey, result, dsId);
+                
+                return result;
+            } else {
+                // Standard varm matrix access
+                const result = await zarrLoader.loadData(`varm/${varm}`, selection);
+                
+                // Cache the result
+                this._addToCache(cacheKey, result, dsId);
+                
+                return result;
+            }
         } catch (error) {
             console.error(`Error loading varm ${varm} data:`, error);
             return null;
@@ -2024,11 +2420,129 @@ class DataManager {
     }
     
     /**
-     * Get basic information about the loaded data
+     * Load data using path notation (e.g., "varm/matrix_name/column_name")
+     * @param {string} path - The path notation (e.g., "varm/kompot_de_mean_lfc_Young_to_Old_groups/B cells")
+     * @param {Array<number>} indices - Optional indices to filter the data
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
+     * @returns {Promise<Array|null>} The data
+     */
+    async loadDataByPath(path, indices = null, datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata) {
+            return null;
+        }
+        
+        try {
+            // Generate cache key
+            const cacheKey = `path_${path}_${indices ? indices.join(',') : 'all'}`;
+            
+            // Check cache first
+            if (this._hasInCache(cacheKey, dsId)) {
+                return this._getFromCache(cacheKey, dsId);
+            }
+            
+            // Parse the path
+            const parts = path.split('/');
+            
+            // If path has at least 2 parts, interpret the first part as the data type
+            if (parts.length >= 2) {
+                const dataType = parts[0];
+                const key = parts[1];
+                const columnName = parts.length >= 3 ? parts.slice(2).join('/') : null;
+                
+                // Try API first if available
+                if (window.ANNZARRO_API_URL) {
+                    try {
+                        // Build API URL
+                        let url = `${window.ANNZARRO_API_URL}/data/by_path?path=${encodeURIComponent(path)}`;
+                        
+                        // Add dataset path parameter if available
+                        if (anndata.dataset_path) {
+                            url += `&dataset_path=${encodeURIComponent(anndata.dataset_path)}`;
+                        }
+                        
+                        // Add dataset ID parameter
+                        if (dsId) {
+                            url += `&dataset_id=${encodeURIComponent(dsId)}`;
+                        }
+                        
+                        // Add indices if provided
+                        if (indices && indices.length > 0) {
+                            url += `&indices=${indices.join(',')}`;
+                        }
+                        
+                        // Fetch data
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            const result = await response.json();
+                            if (result && result.data) {
+                                // Cache the result
+                                this._addToCache(cacheKey, result.data, dsId);
+                                return result.data;
+                            }
+                        }
+                    } catch (apiError) {
+                        console.error('Error using API for path-based access:', apiError);
+                        // Fall back to other methods
+                    }
+                }
+                
+                // If API fails or not available, try using existing methods
+                switch (dataType) {
+                    case 'obsm':
+                        return await this.loadObsm(key, indices, columnName, dsId);
+                    case 'varm':
+                        return await this.loadVarm(key, indices, columnName, dsId);
+                    case 'obsp':
+                        return await this.loadObsp(key, indices, dsId);
+                    case 'varp':
+                        return await this.loadVarp(key, indices, dsId);
+                    case 'X':
+                        return await this.loadX(indices, null, dsId);
+                    case 'layers':
+                        return await this.loadLayer(key, indices, null);
+                    case 'obs':
+                        const obsData = await this.loadObs(key, indices);
+                        return obsData;
+                    case 'var':
+                        const varData = await this.loadVar(key, indices);
+                        return varData;
+                    default:
+                        console.error(`Unknown data type: ${dataType}`);
+                        return null;
+                }
+            } else {
+                console.error('Invalid path notation. Expected at least 2 parts (e.g., "varm/matrix_name")');
+                return null;
+            }
+        } catch (error) {
+            console.error(`Error loading data by path ${path}:`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * Get basic information about the loaded data including dataframe info
+     * @param {string} datasetId - Optional dataset ID (defaults to active dataset)
      * @returns {Object} Basic information
      */
-    getBasicInfo() {
-        if (!this.isDataLoaded()) {
+    getBasicInfo(datasetId = null) {
+        // Use active dataset if not specified
+        const dsId = datasetId || this.activeDatasetId;
+        
+        // Get the dataset anndata
+        const anndata = dsId && this.datasets.has(dsId) 
+            ? this.datasets.get(dsId).anndata 
+            : this.anndata;
+            
+        if (!anndata) {
             return {};
         }
         
@@ -2036,46 +2550,90 @@ class DataManager {
         let nObs = 0;
         let nVars = 0;
         
-        if (this.anndata.shape && Array.isArray(this.anndata.shape)) {
-            nObs = this.anndata.shape[0] || 0;
-            nVars = this.anndata.shape[1] || 0;
-        } else if (this.anndata.observations !== undefined) {
-            nObs = this.anndata.observations;
-        } else if (this.anndata.X && this.anndata.X.shape) {
-            nObs = this.anndata.X.shape[0] || 0;
-            nVars = this.anndata.X.shape[1] || 0;
+        if (anndata.shape && Array.isArray(anndata.shape)) {
+            nObs = anndata.shape[0] || 0;
+            nVars = anndata.shape[1] || 0;
+        } else if (anndata.observations !== undefined) {
+            nObs = anndata.observations;
+        } else if (anndata.X && anndata.X.shape) {
+            nObs = anndata.X.shape[0] || 0;
+            nVars = anndata.X.shape[1] || 0;
         }
         
         // Get available embeddings
         const embeddings = [];
-        if (this.anndata.obsm && typeof this.anndata.obsm === 'object') {
-            Object.keys(this.anndata.obsm).forEach(key => {
+        if (anndata.obsm && typeof anndata.obsm === 'object') {
+            Object.keys(anndata.obsm).forEach(key => {
                 if (key.startsWith('X_')) {
                     embeddings.push(key); // Keep full key for consistency
                 }
             });
         }
         
-        // Get available matrix types
+        // Get available obsm matrices (including non-embeddings)
+        const obsmMatrices = [];
+        if (anndata.obsm && typeof anndata.obsm === 'object') {
+            Object.keys(anndata.obsm).forEach(key => {
+                obsmMatrices.push(key);
+            });
+        }
+        
+        // Get available varm matrices
+        const varmMatrices = [];
+        if (anndata.varm && typeof anndata.varm === 'object') {
+            Object.keys(anndata.varm).forEach(key => {
+                varmMatrices.push(key);
+            });
+        }
+        
+        // Get available obsp matrices
         const obspMatrices = [];
-        if (this.anndata.obsp && typeof this.anndata.obsp === 'object') {
-            Object.keys(this.anndata.obsp).forEach(key => {
+        if (anndata.obsp && typeof anndata.obsp === 'object') {
+            Object.keys(anndata.obsp).forEach(key => {
                 obspMatrices.push(key);
             });
         }
         
+        // Get available varp matrices
         const varpMatrices = [];
-        if (this.anndata.varp && typeof this.anndata.varp === 'object') {
-            Object.keys(this.anndata.varp).forEach(key => {
+        if (anndata.varp && typeof anndata.varp === 'object') {
+            Object.keys(anndata.varp).forEach(key => {
                 varpMatrices.push(key);
             });
         }
         
         // Get available layers
         const layerNames = [];
-        if (this.anndata.layers && typeof this.anndata.layers === 'object') {
-            Object.keys(this.anndata.layers).forEach(key => {
+        if (anndata.layers && typeof anndata.layers === 'object') {
+            Object.keys(anndata.layers).forEach(key => {
                 layerNames.push(key);
+            });
+        }
+        
+        // Get dataframe information for obsm and varm
+        const obsmDataframes = [];
+        const obsmDataframeInfo = {};
+        if (anndata.obsm_dataframes && typeof anndata.obsm_dataframes === 'object') {
+            Object.keys(anndata.obsm_dataframes).forEach(key => {
+                obsmDataframes.push(key);
+                obsmDataframeInfo[key] = {
+                    columns: anndata.obsm_dataframes[key].columns || [],
+                    encoding_type: anndata.obsm_dataframes[key].encoding_type || 'dataframe',
+                    encoding_version: anndata.obsm_dataframes[key].encoding_version || ''
+                };
+            });
+        }
+        
+        const varmDataframes = [];
+        const varmDataframeInfo = {};
+        if (anndata.varm_dataframes && typeof anndata.varm_dataframes === 'object') {
+            Object.keys(anndata.varm_dataframes).forEach(key => {
+                varmDataframes.push(key);
+                varmDataframeInfo[key] = {
+                    columns: anndata.varm_dataframes[key].columns || [],
+                    encoding_type: anndata.varm_dataframes[key].encoding_type || 'dataframe',
+                    encoding_version: anndata.varm_dataframes[key].encoding_version || ''
+                };
             });
         }
         
@@ -2083,11 +2641,19 @@ class DataManager {
             nObs,
             nVars,
             embeddings,
+            obsmMatrices,
+            varmMatrices,
             obspMatrices,
             varpMatrices,
             layerNames,
+            obsmDataframes,
+            varmDataframes,
+            obsmDataframeInfo,
+            varmDataframeInfo,
             hasObsp: obspMatrices.length > 0,
-            hasVarp: varpMatrices.length > 0
+            hasVarp: varpMatrices.length > 0,
+            hasObsmDataframes: obsmDataframes.length > 0,
+            hasVarmDataframes: varmDataframes.length > 0
         };
     }
 }

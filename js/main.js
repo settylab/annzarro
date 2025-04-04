@@ -461,6 +461,16 @@ async function initializeApp() {
         return;
     }
     
+    // Initialize dataframe UI if available
+    if (typeof dataframeUI === 'object' && typeof dataframeUI.initialize === 'function') {
+        try {
+            dataframeUI.initialize();
+        } catch (error) {
+            console.error('Error initializing dataframe UI:', error);
+            // Non-critical, continue anyway
+        }
+    }
+    
     // Set up event listeners
     try {
         setupEventListeners();

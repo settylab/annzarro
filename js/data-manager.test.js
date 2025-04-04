@@ -384,4 +384,104 @@ describe('DataManager', () => {
       expect(datasets.map(d => d.id).sort()).toEqual(['dataset_a', 'dataset_b', 'dataset_c']);
     });
   });
+
+  describe('dataframe support', () => {
+    // Sample anndata with dataframe information
+    const dataframeAnndata = {
+      X: {},
+      shape: [100, 200],
+      obsm: {
+        'X_umap': { shape: [100, 2] },
+        'dataframe_1': { shape: [100, 5] }
+      },
+      varm: {
+        'PCs': { shape: [200, 50] },
+        'de_results': { shape: [200, 10] }
+      },
+      obsm_dataframes: {
+        'dataframe_1': {
+          encoding_type: 'dataframe',
+          columns: ['col1', 'col2', 'col3', 'col4', 'col5'],
+          encoding_version: '0.2.0'
+        }
+      },
+      varm_dataframes: {
+        'de_results': {
+          encoding_type: 'dataframe',
+          columns: ['logFC', 'pval', 'qval', 'cluster1', 'cluster2'],
+          encoding_version: '0.2.0'
+        }
+      }
+    };
+
+    beforeEach(() => {
+      // Set up test dataset with dataframes
+      const datasetId = 'dataframe_test';
+      dataManager.setAnndata(dataframeAnndata, datasetId);
+    });
+
+    it('detects obsm dataframes correctly', () => {
+      // Should identify dataframe_1 as a dataframe
+      expect(dataManager.isObsmDataframe('dataframe_1')).toBe(true);
+      
+      // X_umap is not a dataframe
+      expect(dataManager.isObsmDataframe('X_umap')).toBe(false);
+      
+      // Non-existent key should return false
+      expect(dataManager.isObsmDataframe('nonexistent')).toBe(false);
+    });
+
+    it('detects varm dataframes correctly', () => {
+      // Should identify de_results as a dataframe
+      expect(dataManager.isVarmDataframe('de_results')).toBe(true);
+      
+      // PCs is not a dataframe
+      expect(dataManager.isVarmDataframe('PCs')).toBe(false);
+      
+      // Non-existent key should return false
+      expect(dataManager.isVarmDataframe('nonexistent')).toBe(false);
+    });
+
+    it('retrieves obsm dataframe columns', async () => {
+      // Get columns from a dataframe
+      const columns = await dataManager.getObsmDataframeColumns('dataframe_1');
+      expect(columns).toEqual(['col1', 'col2', 'col3', 'col4', 'col5']);
+      
+      // Non-existent dataframe should return null
+      const nonExistentColumns = await dataManager.getObsmDataframeColumns('nonexistent');
+      expect(nonExistentColumns).toBeNull();
+    });
+
+    it('retrieves varm dataframe columns', async () => {
+      // Get columns from a dataframe
+      const columns = await dataManager.getVarmDataframeColumns('de_results');
+      expect(columns).toEqual(['logFC', 'pval', 'qval', 'cluster1', 'cluster2']);
+      
+      // Non-existent dataframe should return null
+      const nonExistentColumns = await dataManager.getVarmDataframeColumns('nonexistent');
+      expect(nonExistentColumns).toBeNull();
+    });
+
+    it('includes dataframe information in basic info', () => {
+      const basicInfo = dataManager.getBasicInfo();
+      
+      // Check obsm dataframes
+      expect(basicInfo.hasObsmDataframes).toBe(true);
+      expect(basicInfo.obsmDataframes).toEqual(['dataframe_1']);
+      expect(basicInfo.obsmDataframeInfo.dataframe_1.columns).toEqual(['col1', 'col2', 'col3', 'col4', 'col5']);
+      expect(basicInfo.obsmDataframeInfo.dataframe_1.encoding_type).toBe('dataframe');
+      
+      // Check varm dataframes
+      expect(basicInfo.hasVarmDataframes).toBe(true);
+      expect(basicInfo.varmDataframes).toEqual(['de_results']);
+      expect(basicInfo.varmDataframeInfo.de_results.columns).toEqual(['logFC', 'pval', 'qval', 'cluster1', 'cluster2']);
+      expect(basicInfo.varmDataframeInfo.de_results.encoding_type).toBe('dataframe');
+    });
+
+    // Mock for testing loadDataByPath
+    it('has path-based data access method', () => {
+      // Check if the method exists
+      expect(typeof dataManager.loadDataByPath).toBe('function');
+    });
+  });
 });
