@@ -214,3 +214,79 @@ def register_zarr_routes(app, api_version):
                 "message": f"Error validating URL: {str(e)}",
                 "url": url
             }), 500
+            
+    @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/structure", methods=["GET"])
+    def get_uns_structure(dataset_path: str):
+        """
+        Get the structure of the uns section including keys and encoding types.
+        
+        Args:
+            dataset_path: Path to the dataset
+            
+        Returns:
+            JSON response with uns structure
+        """
+        try:
+            # Use the stateless approach to get dataset info
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if dataset has uns
+            if not metadata.get("has_uns", False):
+                return jsonify({
+                    "error": "Dataset does not have uns data"
+                }), 404
+                
+            # Get uns structure with encoding types
+            uns_structure = zarr_reader.get_uns_structure(dataset_path=dataset_path)
+            
+            return jsonify({
+                "dataset_path": dataset_path,
+                "uns_structure": uns_structure
+            })
+        except Exception as e:
+            logger.error(f"Error getting uns structure for {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
+            
+    @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/<path:uns_key>", methods=["GET"])
+    def get_uns_data(dataset_path: str, uns_key: str):
+        """
+        Get data from the uns section.
+        
+        Args:
+            dataset_path: Path to the dataset
+            uns_key: Key in uns to get
+            
+        Returns:
+            JSON response with uns data
+        """
+        try:
+            # Use the stateless approach to get dataset info
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if dataset has uns
+            if not metadata.get("has_uns", False):
+                return jsonify({
+                    "error": "Dataset does not have uns data"
+                }), 404
+                
+            # Skip the key existence check and let get_uns handle missing keys
+                
+            # Get the uns data
+            data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
+            
+            if data is None:
+                return jsonify({
+                    "dataset_path": dataset_path,
+                    "uns_key": uns_key,
+                    "data": None,
+                    "message": f"Uns key '{uns_key}' not found or contains no data"
+                })
+            
+            return jsonify({
+                "dataset_path": dataset_path,
+                "uns_key": uns_key,
+                "data": data
+            })
+        except Exception as e:
+            logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
+            return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

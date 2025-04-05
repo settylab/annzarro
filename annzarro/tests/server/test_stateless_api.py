@@ -35,7 +35,7 @@ class TestStatelessAPI(unittest.TestCase):
             'has_obsm': True,
             'has_varm': False,
             'has_layers': True,
-            'has_uns': False,
+            'has_uns': True,
             'obs_columns': ['cluster', 'cell_type'],
             'var_columns': ['gene_name', 'gene_id'],
             'layers': {'counts': {'shape': (100, 200)}}
@@ -111,6 +111,60 @@ class TestStatelessAPI(unittest.TestCase):
         
         # Verify the data
         self.assertEqual(data['data'], mock_data)
+        self.assertEqual(data['dataset_path'], 'test_dataset.zarr')
+        
+    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
+    @patch('annzarro.core.zarr_reader.zarr_reader.get_anndata_structure')
+    def test_get_anndata_structure_with_uns(self, mock_get_structure, mock_open_dataset):
+        """Test getting AnnData structure with uns data."""
+        # Mock the dataset root and metadata
+        mock_root = MagicMock()
+        mock_metadata = {
+            'shape': (100, 200),
+            'has_obs': True,
+            'has_var': True,
+            'has_obsm': True,
+            'has_varm': False,
+            'has_layers': True,
+            'has_uns': True
+        }
+        
+        # Set up the mock return value for open_dataset_by_path
+        mock_open_dataset.return_value = (mock_root, mock_metadata)
+        
+        # Mock the get_anndata_structure response
+        mock_structure = {
+            'n_obs': 100,
+            'n_vars': 200,
+            'var_names': ['gene1', 'gene2', 'gene3'],
+            'obs_names': ['cell1', 'cell2', 'cell3'],
+            'layers': ['counts', 'normalized'],
+            'obsm': ['X_pca', 'X_umap'],
+            'varm': [],
+            'obsp': [],
+            'varp': [],
+            'uns': ['spatial', 'neighbors', 'pca'],
+            'uns_structure': {
+                'spatial': {'encoding-type': 'dict'},
+                'neighbors': {'encoding-type': 'dict'},
+                'pca': {'encoding-type': 'array(float32)', 'shape': (50, 50)}
+            }
+        }
+        mock_get_structure.return_value = mock_structure
+        
+        # Make the request
+        response = self.client.get('/api/v1/zarr/to_anndata?dataset_path=test_dataset.zarr')
+        
+        # Check the response
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        
+        # Verify the data includes uns information
+        self.assertEqual(data['n_obs'], 100)
+        self.assertEqual(data['n_vars'], 200)
+        self.assertEqual(data['uns'], ['spatial', 'neighbors', 'pca'])
+        self.assertEqual(data['uns_structure']['spatial']['encoding-type'], 'dict')
+        self.assertEqual(data['uns_structure']['pca']['encoding-type'], 'array(float32)')
         self.assertEqual(data['dataset_path'], 'test_dataset.zarr')
 
     @patch('annzarro.core.zarr_reader.zarr_reader.get_X')

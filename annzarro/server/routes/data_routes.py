@@ -118,11 +118,13 @@ def register_data_routes(app, api_version):
                 "n_vars": shape[1] if len(shape) > 1 else 0,
                 "obs": {
                     "available": metadata.get("has_obs", False),
-                    "columns": metadata.get("obs_columns", [])
+                    "columns": metadata.get("obs_columns", []),
+                    "columns_info": metadata.get("obs_columns_info", {})
                 },
                 "var": {
                     "available": metadata.get("has_var", False),
-                    "columns": metadata.get("var_columns", [])
+                    "columns": metadata.get("var_columns", []),
+                    "columns_info": metadata.get("var_columns_info", {})
                 },
                 "X": {
                     "available": True,
@@ -131,19 +133,22 @@ def register_data_routes(app, api_version):
                 "layers": {
                     "available": metadata.get("has_layers", False),
                     "keys": list(metadata.get("layers", {}).keys()),
-                    "details": metadata.get("layers", {})
+                    "details": metadata.get("layers", {}),
+                    "info": metadata.get("layers_info", {})
                 },
                 "obsm": {
                     "available": metadata.get("has_obsm", False),
                     "keys": metadata.get("obsm_keys", []),
                     "dataframes": metadata.get("obsm_dataframes", {}),
-                    "matrices": metadata.get("obsm_matrices", {})
+                    "matrices": metadata.get("obsm_matrices", {}),
+                    "info": metadata.get("obsm_info", {})
                 },
                 "varm": {
                     "available": metadata.get("has_varm", False),
                     "keys": metadata.get("varm_keys", []),
                     "dataframes": metadata.get("varm_dataframes", {}),
-                    "matrices": metadata.get("varm_matrices", {})
+                    "matrices": metadata.get("varm_matrices", {}),
+                    "info": metadata.get("varm_info", {})
                 },
                 "obsp": {
                     "available": metadata.get("has_obsp", False),
@@ -350,12 +355,25 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_obs(dataset_path=dataset_path, indices=row_indices, column_names=column_names)
+            include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
+            result = zarr_reader.get_obs(dataset_path=dataset_path, indices=row_indices, column_names=column_names, include_categories=include_categories)
             
-            return jsonify({
-                "data": data,
-                "dataset_path": dataset_path
-            })
+            # Add dataset path to the response
+            response = {"dataset_path": dataset_path}
+            
+            # Handle both dict and array results
+            if isinstance(result, dict):
+                if 'data' in result:
+                    # New format with data and potentially categories
+                    response.update(result)
+                else:
+                    # Old format where result is just data dict
+                    response["data"] = result
+            else:
+                # Single column result
+                response["data"] = result
+                
+            return jsonify(response)
         except Exception as e:
             logger.error(f"Error getting obs data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get obs data: {str(e)}"}), 500
@@ -404,12 +422,25 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_var(dataset_path=dataset_path, indices=col_indices, column_names=column_names)
+            include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
+            result = zarr_reader.get_var(dataset_path=dataset_path, indices=col_indices, column_names=column_names, include_categories=include_categories)
             
-            return jsonify({
-                "data": data,
-                "dataset_path": dataset_path
-            })
+            # Add dataset path to the response
+            response = {"dataset_path": dataset_path}
+            
+            # Handle both dict and array results
+            if isinstance(result, dict):
+                if 'data' in result:
+                    # New format with data and potentially categories
+                    response.update(result)
+                else:
+                    # Old format where result is just data dict
+                    response["data"] = result
+            else:
+                # Single column result
+                response["data"] = result
+                
+            return jsonify(response)
         except Exception as e:
             logger.error(f"Error getting var data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get var data: {str(e)}"}), 500

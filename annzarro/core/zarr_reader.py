@@ -698,15 +698,73 @@ class ZarrReader:
         metadata['has_obsp'] = 'obsp' in root
         metadata['has_varp'] = 'varp' in root
         
-        # Get column names for obs and var
+        # Get column names and types for obs and var
         metadata['obs_columns'] = []
         metadata['var_columns'] = []
+        metadata['obs_columns_info'] = {}
+        metadata['var_columns_info'] = {}
         
         if metadata['has_obs'] and hasattr(root['obs'], 'keys'):
             metadata['obs_columns'] = list(root['obs'].keys())
+            
+            # Get column type information
+            for col in metadata['obs_columns']:
+                if col == '_index':
+                    continue
+                
+                col_info = {}
+                try:
+                    # Check if it's a categorical
+                    if hasattr(root['obs'][col], 'attrs') and 'encoding-type' in root['obs'][col].attrs:
+                        encoding_type = root['obs'][col].attrs['encoding-type']
+                        col_info['type'] = encoding_type
+                        
+                        # Include categories for categorical data
+                        if encoding_type == 'categorical' and 'categories' in root['obs'][col]:
+                            categories = root['obs'][col]['categories'][:]
+                            col_info['categories'] = categories.tolist() if hasattr(categories, 'tolist') else list(categories)
+                    else:
+                        # Regular array, get dtype
+                        if hasattr(root['obs'][col], 'dtype'):
+                            col_info['type'] = str(root['obs'][col].dtype)
+                        else:
+                            col_info['type'] = 'unknown'
+                    
+                    metadata['obs_columns_info'][col] = col_info
+                except Exception as e:
+                    logger.error(f"Error getting type info for obs column {col}: {e}")
+                    metadata['obs_columns_info'][col] = {'type': 'error', 'error': str(e)}
         
         if metadata['has_var'] and hasattr(root['var'], 'keys'):
             metadata['var_columns'] = list(root['var'].keys())
+            
+            # Get column type information
+            for col in metadata['var_columns']:
+                if col == '_index':
+                    continue
+                
+                col_info = {}
+                try:
+                    # Check if it's a categorical
+                    if hasattr(root['var'][col], 'attrs') and 'encoding-type' in root['var'][col].attrs:
+                        encoding_type = root['var'][col].attrs['encoding-type']
+                        col_info['type'] = encoding_type
+                        
+                        # Include categories for categorical data
+                        if encoding_type == 'categorical' and 'categories' in root['var'][col]:
+                            categories = root['var'][col]['categories'][:]
+                            col_info['categories'] = categories.tolist() if hasattr(categories, 'tolist') else list(categories)
+                    else:
+                        # Regular array, get dtype
+                        if hasattr(root['var'][col], 'dtype'):
+                            col_info['type'] = str(root['var'][col].dtype)
+                        else:
+                            col_info['type'] = 'unknown'
+                    
+                    metadata['var_columns_info'][col] = col_info
+                except Exception as e:
+                    logger.error(f"Error getting type info for var column {col}: {e}")
+                    metadata['var_columns_info'][col] = {'type': 'error', 'error': str(e)}
             
         # Get embeddings from obsm
         metadata['embeddings'] = []
@@ -716,11 +774,64 @@ class ZarrReader:
         # Get layer names
         if metadata['has_layers'] and hasattr(root['layers'], 'keys'):
             metadata['layers'] = {'keys': list(root['layers'].keys())}
+            metadata['layers_info'] = {}
+            
+            # Get layer data types
+            for layer_key in metadata['layers']['keys']:
+                try:
+                    if hasattr(root['layers'][layer_key], 'dtype'):
+                        metadata['layers_info'][layer_key] = {
+                            'type': str(root['layers'][layer_key].dtype)
+                        }
+                    else:
+                        metadata['layers_info'][layer_key] = {'type': 'unknown'}
+                except Exception as e:
+                    logger.error(f"Error getting type info for layer {layer_key}: {e}")
+                    metadata['layers_info'][layer_key] = {'type': 'error', 'error': str(e)}
             
         # Get obsm keys and dataframe information
         if metadata['has_obsm'] and hasattr(root['obsm'], 'keys'):
             obsm_keys = list(root['obsm'].keys())
             metadata['obsm'] = {'keys': obsm_keys}
+            metadata['obsm_info'] = {}
+            
+            # Get obsm data types
+            for obsm_key in obsm_keys:
+                try:
+                    if hasattr(root['obsm'][obsm_key], 'dtype'):
+                        metadata['obsm_info'][obsm_key] = {
+                            'type': str(root['obsm'][obsm_key].dtype),
+                            'shape': root['obsm'][obsm_key].shape
+                        }
+                    elif hasattr(root['obsm'][obsm_key], 'keys'):
+                        # It's a group (likely a dataframe)
+                        columns = list(root['obsm'][obsm_key].keys())
+                        col_info = {}
+                        
+                        for col in columns:
+                            if hasattr(root['obsm'][obsm_key][col], 'dtype'):
+                                col_info[col] = {
+                                    'type': str(root['obsm'][obsm_key][col].dtype)
+                                }
+                                # Check for categorical
+                                if (hasattr(root['obsm'][obsm_key][col], 'attrs') and 
+                                    'encoding-type' in root['obsm'][obsm_key][col].attrs and
+                                    root['obsm'][obsm_key][col].attrs['encoding-type'] == 'categorical'):
+                                    
+                                    if 'categories' in root['obsm'][obsm_key][col]:
+                                        categories = root['obsm'][obsm_key][col]['categories'][:]
+                                        col_info[col]['categories'] = categories.tolist() if hasattr(categories, 'tolist') else list(categories)
+                        
+                        metadata['obsm_info'][obsm_key] = {
+                            'type': 'dataframe', 
+                            'columns': columns,
+                            'column_info': col_info
+                        }
+                    else:
+                        metadata['obsm_info'][obsm_key] = {'type': 'unknown'}
+                except Exception as e:
+                    logger.error(f"Error getting type info for obsm {obsm_key}: {e}")
+                    metadata['obsm_info'][obsm_key] = {'type': 'error', 'error': str(e)}
             
             # Check for dataframe structures in obsm
             metadata['obsm_dataframes'] = {}
@@ -755,6 +866,45 @@ class ZarrReader:
         if metadata['has_varm'] and hasattr(root['varm'], 'keys'):
             varm_keys = list(root['varm'].keys())
             metadata['varm'] = {'keys': varm_keys}
+            metadata['varm_info'] = {}
+            
+            # Get varm data types
+            for varm_key in varm_keys:
+                try:
+                    if hasattr(root['varm'][varm_key], 'dtype'):
+                        metadata['varm_info'][varm_key] = {
+                            'type': str(root['varm'][varm_key].dtype),
+                            'shape': root['varm'][varm_key].shape
+                        }
+                    elif hasattr(root['varm'][varm_key], 'keys'):
+                        # It's a group (likely a dataframe)
+                        columns = list(root['varm'][varm_key].keys())
+                        col_info = {}
+                        
+                        for col in columns:
+                            if hasattr(root['varm'][varm_key][col], 'dtype'):
+                                col_info[col] = {
+                                    'type': str(root['varm'][varm_key][col].dtype)
+                                }
+                                # Check for categorical
+                                if (hasattr(root['varm'][varm_key][col], 'attrs') and 
+                                    'encoding-type' in root['varm'][varm_key][col].attrs and
+                                    root['varm'][varm_key][col].attrs['encoding-type'] == 'categorical'):
+                                    
+                                    if 'categories' in root['varm'][varm_key][col]:
+                                        categories = root['varm'][varm_key][col]['categories'][:]
+                                        col_info[col]['categories'] = categories.tolist() if hasattr(categories, 'tolist') else list(categories)
+                        
+                        metadata['varm_info'][varm_key] = {
+                            'type': 'dataframe', 
+                            'columns': columns,
+                            'column_info': col_info
+                        }
+                    else:
+                        metadata['varm_info'][varm_key] = {'type': 'unknown'}
+                except Exception as e:
+                    logger.error(f"Error getting type info for varm {varm_key}: {e}")
+                    metadata['varm_info'][varm_key] = {'type': 'error', 'error': str(e)}
             
             # Check for dataframe structures in varm
             metadata['varm_dataframes'] = {}
@@ -1119,7 +1269,7 @@ class ZarrReader:
 
     def get_obs(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               dataset_id: Optional[str] = None) -> Union[Dict[str, List], List]:
+               dataset_id: Optional[str] = None, include_categories: bool = True) -> Union[Dict[str, Any], List]:
         """
         Get observation annotations.
         
@@ -1129,22 +1279,25 @@ class ZarrReader:
             indices: Optional list of indices to select
             column_names: Optional list of column names to get
             dataset_id: Optional dataset ID (alternative to dataset_path)
+            include_categories: Include category lists for categorical columns
             
         Returns:
             Dict of column name -> list of values, or list of values for a specific column
         """
         root = None
+        metadata = {}
         
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root, metadata = self.open_dataset_by_path(dataset_path)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return {} if column_name is None else []
         else:
             # Get the root for the specified dataset ID
             root = self._get_root(dataset_id)
+            metadata = self.get_metadata(dataset_id) if dataset_id else {}
         
         if root is None or 'obs' not in root:
             return {} if column_name is None else []
@@ -1161,13 +1314,24 @@ class ZarrReader:
                 values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
-                return values.tolist() if hasattr(values, 'tolist') else list(values)
+                data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                
+                # If it's categorical and include_categories is True, include category list
+                if include_categories and 'obs_columns_info' in metadata:
+                    if column_name in metadata['obs_columns_info'] and 'categories' in metadata['obs_columns_info'][column_name]:
+                        return {
+                            'data': data,
+                            'categories': metadata['obs_columns_info'][column_name]['categories']
+                        }
+                
+                return data
             except Exception as e:
                 logger.error(f"Error getting obs column {column_name}: {e}")
                 return []
         
         # Get multiple columns
-        result = {}
+        result = {'data': {}}
+        categories_dict = {}
         
         # Determine which columns to get
         if column_names is not None:
@@ -1184,16 +1348,25 @@ class ZarrReader:
                 values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
-                result[col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                
+                # Add categories info if available
+                if include_categories and 'obs_columns_info' in metadata:
+                    if col in metadata['obs_columns_info'] and 'categories' in metadata['obs_columns_info'][col]:
+                        categories_dict[col] = metadata['obs_columns_info'][col]['categories']
             except Exception as e:
                 logger.error(f"Error getting obs column {col}: {e}")
-                result[col] = []
+                result['data'][col] = []
+        
+        # Add categories if any were found
+        if categories_dict and include_categories:
+            result['categories'] = categories_dict
         
         return result
     
     def get_var(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               dataset_id: Optional[str] = None) -> Union[Dict[str, List], List]:
+               dataset_id: Optional[str] = None, include_categories: bool = True) -> Union[Dict[str, Any], List]:
         """
         Get variable annotations.
         
@@ -1203,22 +1376,25 @@ class ZarrReader:
             indices: Optional list of indices to select
             column_names: Optional list of column names to get
             dataset_id: Optional dataset ID (alternative to dataset_path)
+            include_categories: Include category lists for categorical columns
             
         Returns:
             Dict of column name -> list of values, or list of values for a specific column
         """
         root = None
+        metadata = {}
         
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root, metadata = self.open_dataset_by_path(dataset_path)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return {} if column_name is None else []
         else:
             # Get the root for the specified dataset ID
             root = self._get_root(dataset_id)
+            metadata = self.get_metadata(dataset_id) if dataset_id else {}
         
         if root is None or 'var' not in root:
             return {} if column_name is None else []
@@ -1235,13 +1411,24 @@ class ZarrReader:
                 values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
-                return values.tolist() if hasattr(values, 'tolist') else list(values)
+                data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                
+                # If it's categorical and include_categories is True, include category list
+                if include_categories and 'var_columns_info' in metadata:
+                    if column_name in metadata['var_columns_info'] and 'categories' in metadata['var_columns_info'][column_name]:
+                        return {
+                            'data': data,
+                            'categories': metadata['var_columns_info'][column_name]['categories']
+                        }
+                
+                return data
             except Exception as e:
                 logger.error(f"Error getting var column {column_name}: {e}")
                 return []
         
         # Get multiple columns
-        result = {}
+        result = {'data': {}}
+        categories_dict = {}
         
         # Determine which columns to get
         if column_names is not None:
@@ -1258,10 +1445,19 @@ class ZarrReader:
                 values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
-                result[col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                
+                # Add categories info if available
+                if include_categories and 'var_columns_info' in metadata:
+                    if col in metadata['var_columns_info'] and 'categories' in metadata['var_columns_info'][col]:
+                        categories_dict[col] = metadata['var_columns_info'][col]['categories']
             except Exception as e:
                 logger.error(f"Error getting var column {col}: {e}")
-                result[col] = []
+                result['data'][col] = []
+        
+        # Add categories if any were found
+        if categories_dict and include_categories:
+            result['categories'] = categories_dict
         
         return result
     
@@ -2026,6 +2222,163 @@ class ZarrReader:
         
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
+        
+    def get_uns_keys(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> List[str]:
+        """
+        Get the keys in the uns section.
+        
+        Args:
+            dataset_path: Path to the dataset (stateless operation)
+            dataset_id: Optional dataset ID (alternative to dataset_path)
+            
+        Returns:
+            List of keys in the uns section
+        """
+        root = None
+        
+        # Stateless operation if dataset_path is provided
+        if dataset_path is not None:
+            try:
+                root, _ = self.open_dataset_by_path(dataset_path)
+            except Exception as e:
+                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+                return []
+        else:
+            # Get the root for the specified dataset ID
+            root = self._get_root(dataset_id)
+        
+        if root is None or 'uns' not in root:
+            return []
+        
+        # Return the keys in the uns section
+        if hasattr(root['uns'], 'keys'):
+            return list(root['uns'].keys())
+        
+        return []
+    
+    def get_uns_structure(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get the structure of the uns section including keys and their encoding types.
+        
+        Args:
+            dataset_path: Path to the dataset (stateless operation)
+            dataset_id: Optional dataset ID (alternative to dataset_path)
+            
+        Returns:
+            Dict with keys and their encoding types
+        """
+        root = None
+        
+        # Stateless operation if dataset_path is provided
+        if dataset_path is not None:
+            try:
+                root, _ = self.open_dataset_by_path(dataset_path)
+            except Exception as e:
+                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+                return {}
+        else:
+            # Get the root for the specified dataset ID
+            root = self._get_root(dataset_id)
+        
+        if root is None or 'uns' not in root:
+            return {}
+        
+        # Get the structure of the uns section
+        uns_structure = {}
+        
+        for key in self.get_uns_keys(dataset_path, dataset_id):
+            try:
+                # Check if it has encoding-type attribute
+                if hasattr(root['uns'][key], 'attrs') and 'encoding-type' in root['uns'][key].attrs:
+                    encoding_type = root['uns'][key].attrs['encoding-type']
+                else:
+                    # Infer the type
+                    if hasattr(root['uns'][key], 'shape'):
+                        # It's a dataset/array
+                        dtype = str(root['uns'][key].dtype)
+                        shape = root['uns'][key].shape
+                        encoding_type = f"array({dtype})"
+                    elif hasattr(root['uns'][key], 'keys'):
+                        # It's a group/dictionary
+                        encoding_type = "dict"
+                    else:
+                        # Unknown
+                        encoding_type = "unknown"
+                
+                uns_structure[key] = {"encoding-type": encoding_type}
+                
+                # Add shape information if available
+                if hasattr(root['uns'][key], 'shape'):
+                    uns_structure[key]["shape"] = root['uns'][key].shape
+                
+            except Exception as e:
+                logger.error(f"Error getting encoding type for uns/{key}: {e}")
+                uns_structure[key] = {"encoding-type": "error", "error": str(e)}
+        
+        return uns_structure
+    
+    def get_uns(self, key: str, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> Any:
+        """
+        Get data from the uns section.
+        
+        Args:
+            key: Key in uns to get
+            dataset_path: Path to the dataset (stateless operation)
+            dataset_id: Optional dataset ID (alternative to dataset_path)
+            
+        Returns:
+            The data from the uns section. Could be a numpy array, dict, or other structure.
+        """
+        root = None
+        
+        # Stateless operation if dataset_path is provided
+        if dataset_path is not None:
+            try:
+                root, _ = self.open_dataset_by_path(dataset_path)
+            except Exception as e:
+                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+                return None
+        else:
+            # Get the root for the specified dataset ID
+            root = self._get_root(dataset_id)
+        
+        if root is None or 'uns' not in root or key not in root['uns']:
+            return None
+        
+        try:
+            # Check if it's a group (dict-like)
+            if hasattr(root['uns'][key], 'keys'):
+                # Create a dictionary representation
+                result = {}
+                for subkey in root['uns'][key].keys():
+                    # Recursively convert zarr object to Python native type
+                    if hasattr(root['uns'][key][subkey], 'keys'):
+                        # It's a nested group
+                        subresult = {}
+                        for subsubkey in root['uns'][key][subkey].keys():
+                            try:
+                                value = root['uns'][key][subkey][subsubkey][:]
+                                subresult[subsubkey] = value.tolist() if hasattr(value, 'tolist') else value
+                            except Exception as e:
+                                logger.warning(f"Error converting uns/{key}/{subkey}/{subsubkey}: {e}")
+                                subresult[subsubkey] = str(root['uns'][key][subkey][subsubkey])
+                        result[subkey] = subresult
+                    else:
+                        # It's a dataset
+                        try:
+                            value = root['uns'][key][subkey][:]
+                            result[subkey] = value.tolist() if hasattr(value, 'tolist') else value
+                        except Exception as e:
+                            logger.warning(f"Error converting uns/{key}/{subkey}: {e}")
+                            result[subkey] = str(root['uns'][key][subkey])
+                return result
+            else:
+                # It's a dataset, get the data
+                value = root['uns'][key][:]
+                return value.tolist() if hasattr(value, 'tolist') else value
+        except Exception as e:
+            logger.error(f"Error getting uns data for {key}: {e}")
+            return None
     
     def get_gene_names(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> List[str]:
         """
@@ -2275,7 +2628,13 @@ class ZarrReader:
             "obsm": [],
             "varm": [],
             "obsp": [],
-            "varp": []
+            "varp": [],
+            "uns": [],
+            "obs_columns_info": {},
+            "var_columns_info": {},
+            "obsm_info": {},
+            "varm_info": {},
+            "layers_info": {}
         }
         
         # Add variable names
@@ -2360,6 +2719,60 @@ class ZarrReader:
         # Add varp
         if metadata.get("has_varp", False):
             result["varp"] = list(root['varp'].keys()) if hasattr(root['varp'], 'keys') else []
+        
+        # Add uns
+        if metadata.get("has_uns", False):
+            result["uns"] = list(root['uns'].keys()) if hasattr(root['uns'], 'keys') else []
+            
+            # Add uns structure with encoding types directly from root
+            uns_structure = {}
+            for key in result["uns"]:
+                try:
+                    # Check if it has encoding-type attribute
+                    if hasattr(root['uns'][key], 'attrs') and 'encoding-type' in root['uns'][key].attrs:
+                        encoding_type = root['uns'][key].attrs['encoding-type']
+                    else:
+                        # Infer the type
+                        if hasattr(root['uns'][key], 'shape'):
+                            # It's a dataset/array
+                            dtype = str(root['uns'][key].dtype)
+                            shape = root['uns'][key].shape
+                            encoding_type = f"array({dtype})"
+                        elif hasattr(root['uns'][key], 'keys'):
+                            # It's a group/dictionary
+                            encoding_type = "dict"
+                        else:
+                            # Unknown
+                            encoding_type = "unknown"
+                    
+                    uns_structure[key] = {"encoding-type": encoding_type}
+                    
+                    # Add shape information if available
+                    if hasattr(root['uns'][key], 'shape'):
+                        uns_structure[key]["shape"] = root['uns'][key].shape
+                    
+                except Exception as e:
+                    logger.error(f"Error getting encoding type for uns/{key}: {e}")
+                    uns_structure[key] = {"encoding-type": "error", "error": str(e)}
+            
+            if uns_structure:
+                result["uns_structure"] = uns_structure
+        
+        # Add column type information
+        if "obs_columns_info" in metadata:
+            result["obs_columns_info"] = metadata["obs_columns_info"]
+        
+        if "var_columns_info" in metadata:
+            result["var_columns_info"] = metadata["var_columns_info"]
+        
+        if "obsm_info" in metadata:
+            result["obsm_info"] = metadata["obsm_info"]
+        
+        if "varm_info" in metadata:
+            result["varm_info"] = metadata["varm_info"]
+        
+        if "layers_info" in metadata:
+            result["layers_info"] = metadata["layers_info"]
         
         return result
     

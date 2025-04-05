@@ -22,6 +22,28 @@ Annzarro works with AnnData objects in zarr format, which have the following mai
 - **layers**: Alternative views of the expression matrix
 - **obsp**: Cell-cell relationships (square matrices)
 - **varp**: Gene-gene relationships (square matrices)
+- **uns**: Unstructured annotations and metadata
+  - Can contain various data types (dicts, arrays, etc.)
+  - Often includes analysis parameters, plotting configurations, and spatial information
+
+### Data Types and Categories
+
+The API provides detailed type information for all components:
+
+- **Column Types**: Each column in obs and var dataframes includes type information (float, categorical, etc.)
+- **Categorical Data**: For categorical data, the API returns both the values and the complete list of categories
+- **Array Types**: Numeric arrays include dtype and shape information
+- **Hierarchical Data**: Complex structures (like dictionaries in uns) include encoding type information
+
+When requesting data from categorical columns, the API returns:
+```json
+{
+  "data": ["category_A", "category_B", ...],
+  "categories": ["category_A", "category_B", "category_C", ...]
+}
+```
+
+This ensures the frontend has complete information about all possible values and can render UI elements appropriately (e.g., dropdown menus, color legends).
 
 ### API Endpoints
 
@@ -77,11 +99,29 @@ GET /api/v1/data/dataset_structure
   "n_vars": 20000,
   "obs": {
     "available": true,
-    "columns": ["cell_type", "n_genes", "..."]
+    "columns": ["cell_type", "n_genes", "..."],
+    "columns_info": {
+      "cell_type": {
+        "type": "categorical",
+        "categories": ["B cell", "T cell", "NK cell", "..."]
+      },
+      "n_genes": {
+        "type": "float64"
+      }
+    }
   },
   "var": {
     "available": true,
-    "columns": ["highly_variable", "gene_name", "..."]
+    "columns": ["highly_variable", "gene_name", "..."],
+    "columns_info": {
+      "highly_variable": {
+        "type": "bool"
+      },
+      "gene_name": {
+        "type": "categorical",
+        "categories": ["FOXP3", "CD4", "CD8", "..."]
+      }
+    }
   },
   "X": {
     "available": true,
@@ -90,7 +130,15 @@ GET /api/v1/data/dataset_structure
   "layers": {
     "available": true,
     "keys": ["counts", "normalized"],
-    "details": {...}
+    "details": {...},
+    "info": {
+      "counts": {
+        "type": "float32" 
+      },
+      "normalized": {
+        "type": "float32"
+      }
+    }
   },
   "obsm": {
     "available": true,
@@ -108,11 +156,33 @@ GET /api/v1/data/dataset_structure
         "array_dtype": "float32"
       }
     },
-    "matrices": {...}
+    "matrices": {...},
+    "info": {
+      "X_umap": {
+        "type": "float32",
+        "shape": [10000, 2]
+      },
+      "X_pca": {
+        "type": "float32",
+        "shape": [10000, 50]
+      },
+      "dataframe_example": {
+        "type": "dataframe",
+        "columns": ["a", "b", "c"],
+        "column_info": {
+          "a": {"type": "float64"},
+          "b": {"type": "str"},
+          "c": {
+            "type": "categorical",
+            "categories": ["group1", "group2", "group3"]
+          }
+        }
+      }
+    }
   },
   "varm": {
     "available": true,
-    "keys": [...],
+    "keys": ["PCs", "UMAP_loadings"],
     "dataframes": {
       "dataframe_key": {
         "columns": ["col1", "col2"],
@@ -126,7 +196,26 @@ GET /api/v1/data/dataset_structure
         "array_dtype": "float32"
       }
     },
-    "matrices": {...}
+    "matrices": {...},
+    "info": {
+      "PCs": {
+        "type": "float32",
+        "shape": [20000, 50]
+      },
+      "UMAP_loadings": {
+        "type": "float32",
+        "shape": [20000, 2]
+      },
+      "dataframe_example": {
+        "type": "dataframe",
+        "columns": ["score", "p_value", "fdr"],
+        "column_info": {
+          "score": {"type": "float64"},
+          "p_value": {"type": "float64"},
+          "fdr": {"type": "float64"}
+        }
+      }
+    }
   },
   "obsp": {
     "available": true,
@@ -138,7 +227,12 @@ GET /api/v1/data/dataset_structure
   },
   "uns": {
     "available": true,
-    "keys": [...]
+    "keys": ["spatial", "neighbors", "pca"],
+    "structure": {
+      "spatial": {"encoding-type": "dict"},
+      "neighbors": {"encoding-type": "dict"},
+      "pca": {"encoding-type": "array(float32)", "shape": [50, 50]}
+    }
   },
   "embeddings": ["X_umap", "X_pca"]
 }
@@ -166,6 +260,62 @@ GET /api/v1/datasets
 ```
 
 ## Data Access
+
+### Get Unstructured Data (uns)
+
+Get metadata about the unstructured data in the dataset.
+
+```
+GET /api/v1/datasets/{dataset_path}/uns/structure
+```
+
+**Parameters:**
+- None (dataset_path is in the URL)
+
+**Response:**
+```json
+{
+  "dataset_path": "/path/to/dataset.zarr",
+  "uns_structure": {
+    "spatial": {"encoding-type": "dict"},
+    "neighbors": {"encoding-type": "dict"},
+    "pca": {"encoding-type": "array(float32)", "shape": [50, 50]}
+  }
+}
+```
+
+### Get Unstructured Data Content
+
+Get content from a specific key in the uns section.
+
+```
+GET /api/v1/datasets/{dataset_path}/uns/{uns_key}
+```
+
+**Parameters:**
+- None (dataset_path and uns_key are in the URL)
+
+**Response for successful retrieval:**
+```json
+{
+  "dataset_path": "/path/to/dataset.zarr",
+  "uns_key": "spatial",
+  "data": {
+    "images": {"hires": [...array data...]},
+    "scalefactors": {"spot_diameter_fullres": 0.8}
+  }
+}
+```
+
+**Response for missing key:**
+```json
+{
+  "dataset_path": "/path/to/dataset.zarr",
+  "uns_key": "missing_key",
+  "data": null,
+  "message": "Uns key 'missing_key' not found or contains no data"
+}
+```
 
 ### Get X Matrix Data
 
@@ -225,6 +375,7 @@ GET /api/v1/data/obs
 - `rows`: (Optional) Comma-separated list of row indices
 - `columns`: (Optional) Comma-separated list of column names
 - `max_cells`: (Optional) Maximum number of cells to return (default: 10000)
+- `include_categories`: (Optional) Whether to include category lists for categorical data (default: true)
 
 **Response:**
 ```json
@@ -233,6 +384,9 @@ GET /api/v1/data/obs
     "cell_type": ["B cell", "T cell", ...],
     "n_genes": [1000, 1200, ...],
     "...": [...]
+  },
+  "categories": {
+    "cell_type": ["B cell", "T cell", "NK cell", "Monocyte", ...]
   },
   "dataset_path": "/path/to/dataset.zarr"
 }
@@ -251,6 +405,7 @@ GET /api/v1/data/var
 - `cols`: (Optional) Comma-separated list of column indices
 - `columns`: (Optional) Comma-separated list of column names
 - `max_genes`: (Optional) Maximum number of genes to return (default: 10000)
+- `include_categories`: (Optional) Whether to include category lists for categorical data (default: true)
 
 **Response:**
 ```json
@@ -259,6 +414,9 @@ GET /api/v1/data/var
     "gene_name": ["FOXP3", "CD4", ...],
     "highly_variable": [true, false, ...],
     "...": [...]
+  },
+  "categories": {
+    "gene_set": ["immune", "housekeeping", "cell_cycle", ...]
   },
   "dataset_path": "/path/to/dataset.zarr"
 }
@@ -501,6 +659,33 @@ For scatter plots with embeddings:
    fetch(`/api/v1/data/obs?dataset_path=${encodeURIComponent(path)}&columns=cell_type`)
    ```
 
+### Accessing Unstructured Data (uns)
+
+1. **Get uns metadata and structure**:
+   ```javascript
+   fetch(`/api/v1/datasets/${encodeURIComponent(path)}/uns/structure`)
+   ```
+
+2. **Load specific uns data (e.g., spatial information)**:
+   ```javascript
+   fetch(`/api/v1/datasets/${encodeURIComponent(path)}/uns/spatial`)
+   ```
+
+3. **Process uns data based on encoding type**:
+   ```javascript
+   // Example handling of spatial data for visualization
+   fetch(`/api/v1/datasets/${encodeURIComponent(path)}/uns/spatial`)
+     .then(response => response.json())
+     .then(data => {
+       if (data.data && data.data.images && data.data.scalefactors) {
+         // Use image data and scale factors for spatial visualization
+         const imageData = data.data.images.hires;
+         const scaleFactor = data.data.scalefactors.spot_diameter_fullres;
+         // Render spatial plot with this information
+       }
+     })
+   ```
+
 ### Loading Gene Expression
 
 1. **Get gene names**:
@@ -572,6 +757,330 @@ When using the API, be careful with parameter names:
 - Use `dataset_path` to specify the zarr dataset location
 - Use explicit named parameters when calling internal methods
 - Always provide column names as a comma-separated list to the `columns` parameter, not as separate arguments
+
+## Sessions API
+
+The Sessions API allows saving, loading, and managing user sessions. Sessions store the state of the UI, including selected datasets, visualizations, and other user preferences.
+
+### Session Structure
+
+Sessions are stored as JSON files with the following structure:
+```json
+{
+  "name": "Session name",
+  "dataset": "Path to the dataset",
+  "timestamp": "2023-01-01T12:00:00.000Z",
+  "datasetName": "User-friendly dataset name",
+  ...other session-specific data
+}
+```
+
+### Save Session
+
+Save a new session or update an existing one.
+
+```
+POST /api/v1/sessions/save
+```
+
+**Request Body:**
+```json
+{
+  "name": "My Analysis Session",
+  "dataset": "/path/to/dataset.zarr",
+  "datasetName": "Human PBMC Dataset",
+  ...
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Session saved as My_Analysis_Session",
+  "file": "/path/to/sessions/My_Analysis_Session.json",
+  "sanitized_name": "My_Analysis_Session"
+}
+```
+
+**Notes:**
+- Session names are sanitized to remove invalid characters and prevent path traversal
+- If the provided name contains invalid characters, the sanitized name will be returned
+- Timestamps are automatically added if not provided
+
+### List Sessions
+
+List all available sessions.
+
+```
+GET /api/v1/sessions/list
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "My Analysis Session",
+    "dataset": "/path/to/dataset.zarr",
+    "timestamp": "2023-01-01T12:00:00.000Z",
+    "datasetName": "Human PBMC Dataset",
+    "file": "/path/to/sessions/My_Analysis_Session.json"
+  },
+  ...
+]
+```
+
+**Notes:**
+- Sessions are sorted by timestamp with newest first
+- Basic session metadata is included in the response
+
+### Load Session
+
+Load a session by name or file path.
+
+```
+GET /api/v1/sessions/load
+```
+
+**Parameters:**
+- `name`: Name of the session to load
+- `file`: (Optional) Path to the session file
+
+**Response:**
+```json
+{
+  "name": "My Analysis Session",
+  "dataset": "/path/to/dataset.zarr",
+  "timestamp": "2023-01-01T12:00:00.000Z",
+  "datasetName": "Human PBMC Dataset",
+  ...
+}
+```
+
+**Notes:**
+- Either `name` or `file` parameter must be provided
+- If both are provided, `file` takes precedence
+
+### Delete Session
+
+Delete a session by name or file path.
+
+```
+DELETE /api/v1/sessions/delete
+```
+
+**Parameters:**
+- `name`: Name of the session to delete
+- `file`: (Optional) Path to the session file
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Session My Analysis Session deleted successfully"
+}
+```
+
+**Notes:**
+- Either `name` or `file` parameter must be provided
+- If both are provided, `file` takes precedence
+
+### Export Session
+
+Export a session as a downloadable file.
+
+```
+GET /api/v1/sessions/export
+```
+
+**Parameters:**
+- `name`: Name of the session to export
+- `file`: (Optional) Path to the session file
+
+**Response:**
+The session file is returned as an attachment with Content-Type `application/json`.
+
+**Notes:**
+- Either `name` or `file` parameter must be provided
+- If both are provided, `file` takes precedence
+
+### Check Session Exists
+
+Check if a session with a given name exists.
+
+```
+GET /api/v1/sessions/exists
+```
+
+**Parameters:**
+- `name`: Name of the session to check
+
+**Response:**
+```json
+{
+  "exists": true,
+  "file": "/path/to/sessions/My_Analysis_Session.json",
+  "sanitized_name": "My_Analysis_Session"
+}
+```
+
+### Rename Session
+
+Rename an existing session.
+
+```
+POST /api/v1/sessions/rename
+```
+
+**Request Body:**
+```json
+{
+  "old_name": "My Analysis Session",
+  "new_name": "Updated Analysis Session"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Session renamed from 'My Analysis Session' to 'Updated Analysis Session'",
+  "old_file": "/path/to/sessions/My_Analysis_Session.json",
+  "new_file": "/path/to/sessions/Updated_Analysis_Session.json",
+  "session": {...session data...},
+  "sanitized_old_name": "My_Analysis_Session",
+  "sanitized_new_name": "Updated_Analysis_Session"
+}
+```
+
+**Notes:**
+- Returns a 409 Conflict if a session with `new_name` already exists
+- Both names are sanitized to prevent path traversal
+
+### Duplicate Session
+
+Create a copy of an existing session with a new name.
+
+```
+POST /api/v1/sessions/duplicate
+```
+
+**Request Body:**
+```json
+{
+  "source_name": "My Analysis Session",
+  "new_name": "Copy of Analysis Session"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Session duplicated from 'My Analysis Session' to 'Copy of Analysis Session'",
+  "source_file": "/path/to/sessions/My_Analysis_Session.json",
+  "new_file": "/path/to/sessions/Copy_of_Analysis_Session.json",
+  "session": {...session data...},
+  "sanitized_source_name": "My_Analysis_Session",
+  "sanitized_new_name": "Copy_of_Analysis_Session"
+}
+```
+
+**Notes:**
+- Returns a 409 Conflict if a session with `new_name` already exists
+- Both names are sanitized to prevent path traversal
+- A new timestamp is generated for the duplicate
+
+### Import Session
+
+Import a session from an uploaded file.
+
+```
+POST /api/v1/sessions/import
+```
+
+**Form Parameters:**
+- `file`: Session file to upload (must be a valid JSON file)
+- `overwrite`: (Optional) Boolean to overwrite existing session with the same name (default: false)
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Session imported as Imported_Session",
+  "file": "/path/to/sessions/Imported_Session.json",
+  "session": {...session data...},
+  "sanitized_name": "Imported_Session"
+}
+```
+
+**Notes:**
+- Returns a 409 Conflict if a session with the same name exists and `overwrite` is false
+- Session name from the file is sanitized to prevent path traversal
+
+### Example Usage Workflows
+
+#### Saving and Loading a Session
+
+1. **Save the current state**:
+   ```javascript
+   fetch('/api/v1/sessions/save', {
+     method: 'POST',
+     headers: {
+       'Content-Type': 'application/json',
+     },
+     body: JSON.stringify({
+       name: 'My Analysis',
+       dataset: '/path/to/dataset.zarr',
+       datasetName: 'PBMC Dataset',
+       // Include application state
+       selectedGenes: ['CD4', 'CD8', 'FOXP3'],
+       activePanel: 'umap',
+       colorBy: 'cell_type',
+     }),
+   })
+   ```
+
+2. **List available sessions**:
+   ```javascript
+   fetch('/api/v1/sessions/list')
+     .then(response => response.json())
+     .then(sessions => {
+       // Display sessions in a dropdown or list
+       const sessionList = sessions.map(s => s.name);
+     })
+   ```
+
+3. **Load a selected session**:
+   ```javascript
+   fetch(`/api/v1/sessions/load?name=${encodeURIComponent('My Analysis')}`)
+     .then(response => response.json())
+     .then(session => {
+       // Restore application state
+       const { selectedGenes, activePanel, colorBy } = session;
+       // Update UI based on loaded state
+     })
+   ```
+
+#### Working with Session Files
+
+1. **Export a session for sharing**:
+   ```javascript
+   // Redirects browser to download the file
+   window.location.href = `/api/v1/sessions/export?name=${encodeURIComponent('My Analysis')}`;
+   ```
+
+2. **Import a shared session**:
+   ```javascript
+   const formData = new FormData();
+   formData.append('file', sessionFile); // File from input element
+   formData.append('overwrite', 'false');
+   
+   fetch('/api/v1/sessions/import', {
+     method: 'POST',
+     body: formData,
+   })
+   ```
 
 ## API Versioning
 
