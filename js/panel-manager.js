@@ -878,6 +878,11 @@ const PanelManager = (function() {
                 </button>
                 <div class="dropdown-menu axis-dropdown p-3" id="${panelId}-color-dropdown" style="width: 300px;">
                     <h6 class="dropdown-header">Select Color Data</h6>
+                    <div class="mb-2 d-flex justify-content-end">
+                        <button class="btn btn-sm btn-outline-danger" id="${panelId}-color-clear">
+                            <i class="bi bi-x"></i> Clear Color
+                        </button>
+                    </div>
                     <div class="mb-2">
                         <input type="text" class="form-control form-control-sm" id="${panelId}-color-search" placeholder="Search data fields...">
                     </div>
@@ -1056,9 +1061,12 @@ const PanelManager = (function() {
                         const key = pathParts[1];
                         let label = config[`${axis}Axis`].label || `${key} ${axis.toUpperCase()}`;
                         
-                        // Update dropdown button text
+                        // Update dropdown button text and style
                         if (axisButton) {
                             axisButton.textContent = label;
+                            // Set button style to indicate selection
+                            axisButton.classList.remove('btn-outline-secondary');
+                            axisButton.classList.add('btn-outline-primary');
                         }
                         
                         // Select the right category
@@ -1125,6 +1133,9 @@ const PanelManager = (function() {
                                 const axisButton = document.getElementById(`${panelId}-z-axis-btn`);
                                 if (axisButton) {
                                     axisButton.textContent = "Z Axis";
+                                    // Reset button style when clearing
+                                    axisButton.classList.remove('btn-outline-primary');
+                                    axisButton.classList.add('btn-outline-secondary');
                                 }
                                 
                                 // Close dropdown
@@ -1199,9 +1210,12 @@ const PanelManager = (function() {
                         const key = pathParts[1];
                         let label = config.color.label || key;
                         
-                        // Update dropdown button text
+                        // Update dropdown button text and style
                         if (colorButton) {
                             colorButton.textContent = `Color: ${label}`;
+                            // Set button style to indicate selection
+                            colorButton.classList.remove('btn-outline-secondary');
+                            colorButton.classList.add('btn-outline-primary');
                         }
                         
                         // Select the right category
@@ -1259,6 +1273,47 @@ const PanelManager = (function() {
                                 item.style.display = 'none';
                             }
                         });
+                    });
+                }
+                
+                // Add clear button handler for Color
+                const clearColorButton = document.getElementById(`${panelId}-color-clear`);
+                if (clearColorButton) {
+                    clearColorButton.addEventListener('click', () => {
+                        console.log(`Clearing color for panel ${panelId}`);
+                        
+                        // Get panel
+                        const panel = _panels[panelId];
+                        if (panel) {
+                            // Set the color path to null to clear the coloring
+                            panel.config.color = {
+                                path: null,
+                                label: null,
+                                scale: 'Viridis',
+                                range: [null, null],
+                                clipValues: true
+                            };
+                            
+                            // Update the plot
+                            if (window.PlotManager) {
+                                PlotManager.updatePlot(panelId, panel.config);
+                            }
+                            
+                            // Update button text and style
+                            const colorButton = document.getElementById(`${panelId}-color-btn`);
+                            if (colorButton) {
+                                colorButton.textContent = "Color By";
+                                // Reset button style when clearing
+                                colorButton.classList.remove('btn-outline-primary');
+                                colorButton.classList.add('btn-outline-secondary');
+                            }
+                            
+                            // Close dropdown
+                            const dropdown = bootstrap.Dropdown.getInstance(document.getElementById(`${panelId}-color-btn`));
+                            if (dropdown) {
+                                dropdown.hide();
+                            }
+                        }
                     });
                 }
                 
@@ -1599,10 +1654,13 @@ const PanelManager = (function() {
         // Update the panel config
         panel.config[`${axis}Axis`] = axisConfig;
         
-        // Update button text
+        // Update button text and style
         const axisButton = document.getElementById(`${panelId}-${axis}-axis-btn`);
         if (axisButton) {
             axisButton.textContent = label;
+            // Update button style to indicate selection
+            axisButton.classList.remove('btn-outline-secondary');
+            axisButton.classList.add('btn-outline-primary');
         } else {
             console.warn(`Axis button for ${axis} not found`);
         }
@@ -1712,10 +1770,13 @@ const PanelManager = (function() {
         // Update the panel config
         panel.config.color = colorConfig;
         
-        // Update button text
+        // Update button text and style
         const colorButton = document.getElementById(`${panelId}-color-btn`);
         if (colorButton) {
             colorButton.textContent = `Color: ${label}`;
+            // Update button style to indicate selection
+            colorButton.classList.remove('btn-outline-secondary');
+            colorButton.classList.add('btn-outline-primary');
         } else {
             console.warn(`Color button not found`);
         }

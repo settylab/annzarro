@@ -247,16 +247,19 @@ const PlotManager = (function() {
                     delete trace.marker.colorbar;
                     
                     // Set up legend for categorical data
-                    trace.showlegend = true;
-                    trace.name = mergedConfig.color.label || 'Categories';
+                    trace.showlegend = false; // Don't show the primary trace in legend
+                    
+                    // Determine if we're in 3D mode
+                    const is3DPlot = zData && zData.length > 0;
                     
                     // Create a separate trace for each category to build the legend
                     const traces = [trace];
+                    
                     uniqueCategories.forEach((cat, i) => {
                         // Only show a subset of categories in legend if there are too many
                         if (uniqueCategories.length > 20 && i >= 20) return;
                         
-                        // Find indices for this category
+                        // Find indices for this category 
                         const catIndices = [];
                         for (let j = 0; j < colorData.length; j++) {
                             if (colorData[j] === cat) {
@@ -264,25 +267,40 @@ const PlotManager = (function() {
                             }
                         }
                         
-                        // Create a small sample trace for legend
-                        traces.push({
+                        // Create filtered points for each category to handle selection events
+                        // This approach creates actual points allowing legend click to work properly
+                        
+                        const catTrace = {
                             name: cat,
                             mode: 'markers',
-                            x: [null],
-                            y: [null],
                             marker: {
                                 color: categoryToColor[cat],
-                                size: mergedConfig.marker.size
+                                size: mergedConfig.marker.size,
+                                opacity: mergedConfig.marker.opacity
                             },
-                            showlegend: true,
                             legendgroup: cat,
-                            hoverinfo: 'none'
-                        });
+                            showlegend: true,
+                            x: catIndices.map(i => trace.x[i]),
+                            y: catIndices.map(i => trace.y[i])
+                        };
+                        
+                        // Add z data if this is a 3D plot
+                        if (is3DPlot) {
+                            catTrace.z = catIndices.map(i => trace.z[i]);
+                            catTrace.type = 'scatter3d';
+                        } else {
+                            catTrace.type = 'scatter';
+                        }
+                        
+                        traces.push(catTrace);
                     });
+                    
+                    // Remove the original trace as it's now replaced by categorized traces
+                    traces.shift();
                     
                     // Save the traces array to be used later when creating the plot
                     mergedConfig._categoryTraces = traces;
-                    console.log(`Created ${traces.length} traces for categorical legend`);
+                    console.log(`Created ${traces.length} categorical traces for legend`);
                 } else {
                     // For numeric data, proceed with the normal colorscale approach
                     trace.marker.color = colorData;
@@ -325,26 +343,36 @@ const PlotManager = (function() {
                 }
             }
             
+            // Determine if plot is 3D
+            const is3DPlot = zData && zData.length > 0;
+            
             // Create layout
             const layout = {
                 title: mergedConfig.layout.title || '',
                 showlegend: mergedConfig.layout.showLegend,
                 hovermode: 'closest',
-                margin: { l: 60, r: 40, t: 50, b: 60, pad: 10 },
-                xaxis: {
-                    title: mergedConfig.xAxis.label || 'X Axis'
-                },
-                yaxis: {
-                    title: mergedConfig.yAxis.label || 'Y Axis'
-                }
+                margin: { l: 60, r: 40, t: 50, b: 60, pad: 10 }
             };
             
-            // Add z-axis for 3D plots
-            if (zData && zData.length > 0) {
+            // Set up axes based on 2D or 3D plot
+            if (is3DPlot) {
+                // 3D plot - use scene configuration
                 layout.scene = {
                     xaxis: { title: mergedConfig.xAxis.label || 'X Axis' },
                     yaxis: { title: mergedConfig.yAxis.label || 'Y Axis' },
                     zaxis: { title: mergedConfig.zAxis.label || 'Z Axis' }
+                };
+                
+                // Remove 2D axes if present (avoids axis display issues in 3D plots)
+                delete layout.xaxis;
+                delete layout.yaxis;
+            } else {
+                // 2D plot - set regular axes
+                layout.xaxis = {
+                    title: mergedConfig.xAxis.label || 'X Axis'
+                };
+                layout.yaxis = {
+                    title: mergedConfig.yAxis.label || 'Y Axis'
                 };
             }
             
