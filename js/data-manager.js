@@ -477,39 +477,118 @@ const DataManager = (function() {
      * Load obs metadata
      * @param {Array} rowIndices - Array of row indices
      * @param {Array} columns - Array of column names
+     * @param {boolean} debug - Whether to output debug information
      * @returns {Promise} - Promise that resolves with obs data
      */
-    async function loadObs(rowIndices, columns = null) {
+    /**
+     * Direct API call to get column information from obs data
+     * @param {string} columnName - Name of the obs column to fetch
+     * @returns {Promise} - Promise that resolves with column data
+     */
+    async function getColumnFromObs(columnName) {
         const dataset = _activeDataset;
         if (!dataset) {
             throw new Error("No dataset loaded");
         }
         
+        console.log(`Making direct API call to get column '${columnName}' from obs`);
+        
+        try {
+            // Use alternative endpoint that's known to work
+            const params = new URLSearchParams({
+                dataset_path: dataset,
+                column: columnName
+            });
+            
+            const response = await fetch(`/api/v1/data/obs_column?${params}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch obs column '${columnName}': ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            return result.data;
+        } catch (error) {
+            console.error(`Failed to fetch obs column '${columnName}':`, error);
+            throw error;
+        }
+    }
+    
+    async function loadObs(rowIndices = [], columns = null, debug = false) {
+        const dataset = _activeDataset;
+        if (!dataset) {
+            throw new Error("No dataset loaded");
+        }
+        
+        if (debug) {
+            console.log(`loadObs called with rowIndices:`, rowIndices, `columns:`, columns);
+        }
+        
+        // Special case: if asking for a single column, use direct column API
+        if (columns && columns.length === 1) {
+            const columnName = columns[0];
+            
+            try {
+                console.log(`Using direct column API for '${columnName}'`);
+                const columnData = await getColumnFromObs(columnName);
+                
+                // Return in expected format with column as key
+                const result = {};
+                result[columnName] = columnData;
+                return result;
+            } catch (directError) {
+                console.warn(`Direct column API failed, falling back to standard method:`, directError);
+                // Continue with standard method
+            }
+        }
+        
         // Create cache key
         const columnsKey = columns ? columns.join(',') : 'all';
-        const cacheKey = `obs_${rowIndices.join(',')}_${columnsKey}`;
+        const rowKey = rowIndices && rowIndices.length > 0 ? rowIndices.join(',') : 'all';
+        const cacheKey = `obs_${rowKey}_${columnsKey}`;
         
         // Check cache first
         if (_dataCache[cacheKey]) {
+            if (debug) console.log(`Returning cached data for ${cacheKey}`);
             return _dataCache[cacheKey];
         }
         
         try {
+            // Create parameters based on backend API expectations
             const params = new URLSearchParams({
                 dataset_path: dataset,
-                rows: rowIndices.join(',')
+                // Set a high maximum cells limit to ensure we get all requested data
+                max_cells: 100000
             });
             
+            // Only add rows parameter if rowIndices is not empty
+            if (rowIndices && rowIndices.length > 0) {
+                params.append('rows', rowIndices.join(','));
+            }
+            
+            // Add column names if specified
             if (columns) {
                 params.append('columns', columns.join(','));
             }
             
+            if (debug) console.log(`Fetching: /api/v1/data/obs with params:`, params.toString());
+            
             const response = await fetch(`/api/v1/data/obs?${params}`);
             if (!response.ok) {
-                throw new Error(`Failed to load obs data: ${response.statusText}`);
+                const errorText = await response.text();
+                console.error(`Failed to load obs data: ${response.status} ${response.statusText}`, errorText);
+                throw new Error(`Failed to load obs data: ${response.statusText} (${errorText})`);
             }
             
             const result = await response.json();
+            
+            if (debug) {
+                console.log(`API response for obs data:`, result);
+            }
+            
+            if (!result.data) {
+                console.error(`API returned success but data is missing:`, result);
+                throw new Error(`API returned success but data is missing`);
+            }
             
             // Cache the result
             _dataCache[cacheKey] = result.data;

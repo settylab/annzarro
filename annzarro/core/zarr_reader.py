@@ -1047,6 +1047,48 @@ class ZarrReader:
         # Handle as dense array
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
     
+    def _get_categorical_values(self, group, indices=None):
+        """
+        Get values from a categorical data structure in AnnData.
+        
+        In AnnData zarr format, categorical data is stored as a group with:
+        - 'codes': Array of category indices
+        - 'categories': Array of category values
+        
+        Args:
+            group: Zarr group containing categorical data
+            indices: Optional list of row indices to select
+            
+        Returns:
+            List of category values
+        """
+        try:
+            # Check if this is a categorical encoding
+            if (hasattr(group, 'attrs') and 
+                'encoding-type' in group.attrs and 
+                group.attrs['encoding-type'] == 'categorical' and
+                'codes' in group and 'categories' in group):
+                
+                # Get codes and categories
+                categories = group['categories'][:]
+                if indices is not None:
+                    codes = group['codes'][indices]
+                else:
+                    codes = group['codes'][:]
+                
+                # Map codes to categories
+                values = [categories[code] if 0 <= code < len(categories) else None for code in codes]
+                return values
+            
+            # Not a categorical, just return the array directly
+            if indices is not None:
+                return group[indices]
+            else:
+                return group[:]
+        except Exception as e:
+            logger.error(f"Error processing categorical data: {e}")
+            return []
+
     def get_obs(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
                dataset_id: Optional[str] = None) -> Union[Dict[str, List], List]:
@@ -1086,10 +1128,9 @@ class ZarrReader:
             
             # Handle subsetting
             try:
-                if indices is not None:
-                    values = root['obs'][column_name][indices]
-                else:
-                    values = root['obs'][column_name][:]
+                # Check if it's a categorical
+                col_data = root['obs'][column_name]
+                values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
                 return values.tolist() if hasattr(values, 'tolist') else list(values)
@@ -1104,15 +1145,15 @@ class ZarrReader:
         if column_names is not None:
             columns_to_get = [col for col in column_names if col in root['obs']]
         else:
-            columns_to_get = list(root['obs'].keys())
+            # Filter out _index as it's a special key
+            columns_to_get = [col for col in root['obs'].keys() if col != '_index']
         
         # Get each column
         for col in columns_to_get:
             try:
-                if indices is not None:
-                    values = root['obs'][col][indices]
-                else:
-                    values = root['obs'][col][:]
+                # Check if it's a categorical
+                col_data = root['obs'][col]
+                values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
                 result[col] = values.tolist() if hasattr(values, 'tolist') else list(values)
@@ -1161,10 +1202,9 @@ class ZarrReader:
             
             # Handle subsetting
             try:
-                if indices is not None:
-                    values = root['var'][column_name][indices]
-                else:
-                    values = root['var'][column_name][:]
+                # Check if it's a categorical
+                col_data = root['var'][column_name]
+                values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
                 return values.tolist() if hasattr(values, 'tolist') else list(values)
@@ -1179,15 +1219,15 @@ class ZarrReader:
         if column_names is not None:
             columns_to_get = [col for col in column_names if col in root['var']]
         else:
-            columns_to_get = list(root['var'].keys())
+            # Filter out _index as it's a special key
+            columns_to_get = [col for col in root['var'].keys() if col != '_index']
         
         # Get each column
         for col in columns_to_get:
             try:
-                if indices is not None:
-                    values = root['var'][col][indices]
-                else:
-                    values = root['var'][col][:]
+                # Check if it's a categorical
+                col_data = root['var'][col]
+                values = self._get_categorical_values(col_data, indices)
                 
                 # Convert to Python list for JSON serialization
                 result[col] = values.tolist() if hasattr(values, 'tolist') else list(values)

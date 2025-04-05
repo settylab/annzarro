@@ -49,6 +49,7 @@ const PlotManager = (function() {
         try {
             // Default config
             const defaultConfig = {
+                type: 'scatter',
                 xAxis: {
                     path: 'obsm/X_umap',
                     index: 0,
@@ -59,7 +60,11 @@ const PlotManager = (function() {
                     index: 1,
                     label: 'UMAP 2'
                 },
-                zAxis: null,
+                zAxis: {
+                    path: null,
+                    index: null,
+                    label: null
+                },
                 color: {
                     path: null,
                     label: null,
@@ -136,7 +141,7 @@ const PlotManager = (function() {
             }
             
             // Get Z axis data if 3D plot
-            if (mergedConfig.zAxis) {
+            if (mergedConfig.zAxis && mergedConfig.zAxis.path) {
                 zData = await loadAxisData(mergedConfig.zAxis.path, mergedConfig.zAxis.index);
             }
             
@@ -167,7 +172,7 @@ const PlotManager = (function() {
             
             // Create plot data
             const trace = {
-                type: 'scatter' + (zData ? '3d' : ''),
+                type: 'scatter' + (zData && zData.length > 0 ? '3d' : ''),
                 mode: 'markers',
                 x: xData,
                 y: yData,
@@ -178,49 +183,146 @@ const PlotManager = (function() {
             };
             
             // Add z data if 3D
-            if (zData) {
+            if (zData && zData.length > 0) {
                 trace.z = zData;
             }
             
             // Add color data if available
             if (colorData) {
-                trace.marker.color = colorData;
+                // Check if color data is categorical (strings/non-numeric)
+                const isColorDataCategorical = colorData.some(value => 
+                    typeof value === 'string' || isNaN(value)
+                );
                 
-                // Apply color range if specified
-                if (mergedConfig.color.range[0] !== null && mergedConfig.color.range[1] !== null) {
-                    const [min, max] = mergedConfig.color.range;
+                if (isColorDataCategorical) {
+                    // For categorical data, create a mapping of categories to colors
+                    const uniqueCategories = [...new Set(colorData)].filter(val => val !== null);
+                    console.log(`Detected categorical color data with ${uniqueCategories.length} unique values:`, uniqueCategories);
                     
-                    if (mergedConfig.color.clipValues) {
-                        // Clip values to range
-                        trace.marker.cmin = min;
-                        trace.marker.cmax = max;
+                    // Get categorical color palette based on number of categories
+                    let colorPalette;
+                    if (uniqueCategories.length <= 10) {
+                        // Use one of the categorical color scales
+                        const categoryScale = mergedConfig.color.scale || _colorScales.categorical[0];
+                        
+                        // Create a color palette based on the number of categories
+                        const getCategoryColors = (scale, count) => {
+                            // Simplified color mapping for common scales
+                            const colorMaps = {
+                                'Paired': ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928'],
+                                'Set1': ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
+                                'Set2': ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
+                                'Set3': ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
+                                'Dark2': ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
+                                'Pastel1': ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec', '#f2f2f2']
+                            };
+                            
+                            // Use the color map if available, otherwise fall back to simple colors
+                            return colorMaps[scale] || 
+                                ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+                        };
+                        
+                        colorPalette = getCategoryColors(categoryScale, uniqueCategories.length);
                     } else {
-                        // Filter out points outside the range
-                        const indices = [];
-                        for (let i = 0; i < colorData.length; i++) {
-                            if (colorData[i] >= min && colorData[i] <= max) {
-                                indices.push(i);
+                        // For too many categories, use a hash function to assign colors
+                        colorPalette = [];
+                        for (let i = 0; i < uniqueCategories.length; i++) {
+                            // Generate colors across the hue spectrum
+                            const hue = (i * 137.5) % 360; // golden ratio to spread colors
+                            colorPalette.push(`hsl(${hue}, 70%, 60%)`);
+                        }
+                    }
+                    
+                    // Create a mapping from category to color
+                    const categoryToColor = {};
+                    uniqueCategories.forEach((cat, i) => {
+                        categoryToColor[cat] = colorPalette[i % colorPalette.length];
+                    });
+                    
+                    // Map each data point to its color
+                    trace.marker.color = colorData.map(cat => categoryToColor[cat] || '#cccccc');
+                    
+                    // Remove colorscale and colorbar for categorical data
+                    delete trace.marker.colorscale;
+                    delete trace.marker.colorbar;
+                    
+                    // Set up legend for categorical data
+                    trace.showlegend = true;
+                    trace.name = mergedConfig.color.label || 'Categories';
+                    
+                    // Create a separate trace for each category to build the legend
+                    const traces = [trace];
+                    uniqueCategories.forEach((cat, i) => {
+                        // Only show a subset of categories in legend if there are too many
+                        if (uniqueCategories.length > 20 && i >= 20) return;
+                        
+                        // Find indices for this category
+                        const catIndices = [];
+                        for (let j = 0; j < colorData.length; j++) {
+                            if (colorData[j] === cat) {
+                                catIndices.push(j);
                             }
                         }
                         
-                        trace.x = indices.map(i => trace.x[i]);
-                        trace.y = indices.map(i => trace.y[i]);
-                        trace.marker.color = indices.map(i => colorData[i]);
+                        // Create a small sample trace for legend
+                        traces.push({
+                            name: cat,
+                            mode: 'markers',
+                            x: [null],
+                            y: [null],
+                            marker: {
+                                color: categoryToColor[cat],
+                                size: mergedConfig.marker.size
+                            },
+                            showlegend: true,
+                            legendgroup: cat,
+                            hoverinfo: 'none'
+                        });
+                    });
+                    
+                    // Save the traces array to be used later when creating the plot
+                    mergedConfig._categoryTraces = traces;
+                    console.log(`Created ${traces.length} traces for categorical legend`);
+                } else {
+                    // For numeric data, proceed with the normal colorscale approach
+                    trace.marker.color = colorData;
+                    
+                    // Apply color range if specified
+                    if (mergedConfig.color.range[0] !== null && mergedConfig.color.range[1] !== null) {
+                        const [min, max] = mergedConfig.color.range;
                         
-                        if (trace.z) {
-                            trace.z = indices.map(i => trace.z[i]);
+                        if (mergedConfig.color.clipValues) {
+                            // Clip values to range
+                            trace.marker.cmin = min;
+                            trace.marker.cmax = max;
+                        } else {
+                            // Filter out points outside the range
+                            const indices = [];
+                            for (let i = 0; i < colorData.length; i++) {
+                                if (colorData[i] >= min && colorData[i] <= max) {
+                                    indices.push(i);
+                                }
+                            }
+                            
+                            trace.x = indices.map(i => trace.x[i]);
+                            trace.y = indices.map(i => trace.y[i]);
+                            trace.marker.color = indices.map(i => colorData[i]);
+                            
+                            if (trace.z) {
+                                trace.z = indices.map(i => trace.z[i]);
+                            }
                         }
                     }
+                    
+                    // Set color scale
+                    trace.marker.colorscale = mergedConfig.color.scale;
+                    
+                    // Add color bar
+                    trace.marker.colorbar = {
+                        title: mergedConfig.color.label || '',
+                        titleside: 'right'
+                    };
                 }
-                
-                // Set color scale
-                trace.marker.colorscale = mergedConfig.color.scale;
-                
-                // Add color bar
-                trace.marker.colorbar = {
-                    title: mergedConfig.color.label || '',
-                    titleside: 'right'
-                };
             }
             
             // Create layout
@@ -238,7 +340,7 @@ const PlotManager = (function() {
             };
             
             // Add z-axis for 3D plots
-            if (zData) {
+            if (zData && zData.length > 0) {
                 layout.scene = {
                     xaxis: { title: mergedConfig.xAxis.label || 'X Axis' },
                     yaxis: { title: mergedConfig.yAxis.label || 'Y Axis' },
@@ -257,7 +359,10 @@ const PlotManager = (function() {
             element.style.visibility = 'visible';
             element.style.minHeight = '300px';
             
-            await Plotly.newPlot(element, [trace], layout, {
+            // Use category traces if available for categorical data
+            const plotData = mergedConfig._categoryTraces || [trace];
+            
+            await Plotly.newPlot(element, plotData, layout, {
                 responsive: true,
                 displayModeBar: true,
                 modeBarButtonsToRemove: ['toImage', 'sendDataToCloud', 'resetScale2d']
@@ -287,30 +392,35 @@ const PlotManager = (function() {
             // Show detailed error in element
             console.error('Error stack trace:', error.stack);
             
-            if (mergedConfig.error) {
-                // Use the provided error message from the config
-                element.innerHTML = `
-                    <div class="alert alert-danger">
-                        <h5>Error Creating Plot</h5>
-                        <p>${mergedConfig.error}</p>
-                    </div>
-                `;
-            } else {
-                // Show the error message with detailed information
-                element.innerHTML = `
-                    <div class="alert alert-danger">
-                        <h5>Error Creating Plot</h5>
-                        <p>${error.message}</p>
-                        <div class="mt-3">
-                            <strong>Troubleshooting:</strong>
-                            <ul>
-                                <li>Check if the dataset contains embedding data (UMAP, tSNE, PCA)</li>
-                                <li>Verify that 'obsm' section exists and contains embedding matrices</li>
-                                <li>Check browser console for detailed error logs</li>
-                            </ul>
+            try {
+                if (config.error) {
+                    // Use the provided error message from the config
+                    element.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5>Error Creating Plot</h5>
+                            <p>${config.error}</p>
                         </div>
-                    </div>
-                `;
+                    `;
+                } else {
+                    // Show the error message with detailed information
+                    element.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5>Error Creating Plot</h5>
+                            <p>${error.message}</p>
+                            <div class="mt-3">
+                                <strong>Troubleshooting:</strong>
+                                <ul>
+                                    <li>Check if the dataset contains embedding data (UMAP, tSNE, PCA)</li>
+                                    <li>Verify that 'obsm' section exists and contains embedding matrices</li>
+                                    <li>Check browser console for detailed error logs</li>
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (errorHandlingError) {
+                console.error('Error displaying error message:', errorHandlingError);
+                element.innerHTML = '<div class="alert alert-danger">Error creating plot</div>';
             }
             
             return null;
@@ -789,13 +899,56 @@ const PlotManager = (function() {
                     const colName = pathParts[1];
                     console.log(`Loading obs data for column: ${colName}`);
                     
-                    const obsData = await DataManager.loadObs(null, [colName]);
-                    if (!obsData || !obsData[colName] || obsData[colName].length === 0) {
-                        throw new Error(`No data available for obs column: ${colName}`);
+                    try {
+                        // Get dataset info to check if column exists
+                        const datasetInfo = DataManager.getDatasetInfo();
+                        if (!datasetInfo || !datasetInfo.obs || !datasetInfo.obs.columns) {
+                            console.error('No obs data available in dataset');
+                            throw new Error(`Cannot load obs data: dataset info is missing`);
+                        }
+                        
+                        console.log(`Available obs columns:`, datasetInfo.obs.columns);
+                        
+                        // Check if the column exists
+                        if (!datasetInfo.obs.columns.includes(colName)) {
+                            console.error(`Column '${colName}' not found in obs. Available columns: ${datasetInfo.obs.columns.join(', ')}`);
+                            throw new Error(`Column '${colName}' not found in obs data. Available columns: ${datasetInfo.obs.columns.join(', ')}`);
+                        }
+                        
+                        // Use empty array for row indices instead of null
+                        // Pass true as the third parameter to get all cells
+                        console.log(`Calling DataManager.loadObs with column: ${colName}`);
+                        const obsData = await DataManager.loadObs([], [colName], true);
+                        console.log(`Result from loadObs:`, obsData);
+                        
+                        // More detailed error checking
+                        if (!obsData) {
+                            throw new Error(`DataManager.loadObs returned null or undefined for column: ${colName}`);
+                        }
+                        
+                        if (!obsData[colName]) {
+                            console.error(`Column ${colName} not found in returned data:`, obsData);
+                            
+                            // Special case for empty response from server
+                            if (Array.isArray(obsData) && obsData.length === 0) {
+                                console.error(`Server returned empty data array for obs/${colName}`);
+                                throw new Error(`Server API issue: Unable to load data for column '${colName}'. The backend returned an empty array. Please contact the server administrator.`);
+                            } else {
+                                throw new Error(`Column '${colName}' not found in returned data. Available: ${Object.keys(obsData).join(', ')}`);
+                            }
+                        }
+                        
+                        if (obsData[colName].length === 0) {
+                            throw new Error(`Column '${colName}' exists but contains no data (empty array)`);
+                        }
+                        
+                        console.log(`Loaded obs data for ${colName}: ${obsData[colName].length} values`);
+                        return obsData[colName];
+                    } catch (error) {
+                        console.error(`Error loading obs column ${colName}:`, error);
+                        // Rethrow with more helpful message
+                        throw new Error(`Failed to load obs/${colName}: ${error.message}`);
                     }
-                    
-                    console.log(`Loaded obs data for ${colName}: ${obsData[colName].length} values`);
-                    return obsData[colName];
                 
                 case 'var':
                     if (pathParts.length < 2) {
@@ -805,7 +958,8 @@ const PlotManager = (function() {
                     const varName = pathParts[1];
                     console.log(`Loading var data for column: ${varName}`);
                     
-                    const varData = await DataManager.loadVar(null, [varName]);
+                    // Use empty array for row indices instead of null
+                    const varData = await DataManager.loadVar([], [varName]);
                     if (!varData || !varData[varName] || varData[varName].length === 0) {
                         throw new Error(`No data available for var column: ${varName}`);
                     }
@@ -837,7 +991,7 @@ const PlotManager = (function() {
                         // Matrix column
                         console.log(`Loading matrix column from obsm/${obsmKey}, index: ${index || 0}`);
                         
-                        const matrix = await DataManager.loadObsm(obsmKey, null, null);
+                        const matrix = await DataManager.loadObsm(obsmKey, [], null);
                         if (!matrix || matrix.length === 0) {
                             throw new Error(`No data available for obsm matrix: ${obsmKey}`);
                         }
@@ -876,7 +1030,7 @@ const PlotManager = (function() {
                         // Matrix column
                         console.log(`Loading matrix column from varm/${varmKey}, index: ${index || 0}`);
                         
-                        const matrix = await DataManager.loadVarm(varmKey, null, null);
+                        const matrix = await DataManager.loadVarm(varmKey, [], null);
                         if (!matrix || matrix.length === 0) {
                             throw new Error(`No data available for varm matrix: ${varmKey}`);
                         }
@@ -994,10 +1148,28 @@ const PlotManager = (function() {
      * @param {Object} config - Updated configuration
      */
     function updatePlot(plotId, config = {}) {
-        const plot = _plots[plotId];
+        // Normalize plotId to handle different formats
+        const normalizedPlotId = plotId.includes('plot-') ? plotId : `plot-${plotId.replace('panel-', '')}`;
+        console.log(`Looking for plot with ID: ${plotId} (normalized: ${normalizedPlotId})`);
+        
+        // Try multiple plot ID formats
+        let plot = _plots[plotId] || _plots[normalizedPlotId];
+        
+        // Log all available plots for debugging
+        console.log('Available plots:', Object.keys(_plots));
+        
         if (!plot) {
-            console.error(`Plot not found: ${plotId}`);
-            return;
+            console.error(`Plot not found: ${plotId} (or ${normalizedPlotId})`);
+            
+            // If we have at least one plot and we're in a desperate situation, use the first one
+            const plotIds = Object.keys(_plots);
+            if (plotIds.length > 0) {
+                const firstPlotId = plotIds[0];
+                console.log(`Falling back to first available plot: ${firstPlotId}`);
+                plot = _plots[firstPlotId];
+            } else {
+                return;
+            }
         }
         
         console.log(`Updating plot ${plotId} with config:`, config);
@@ -1034,21 +1206,30 @@ const PlotManager = (function() {
             console.error('Error updating plot:', error);
             
             // Show error in plot area
+            console.error('Error updating plot with config:', plot.config);
+            console.error('Error details:', error);
+            
             if (plot.element) {
-                plot.element.innerHTML = `
-                    <div class="alert alert-danger">
-                        <h5>Error Updating Plot</h5>
-                        <p>${error.message}</p>
-                        <div class="mt-3">
-                            <strong>Troubleshooting:</strong>
-                            <ul>
-                                <li>Verify that the selected data exists in the dataset</li>
-                                <li>Check that any required focused gene/cell is selected</li>
-                                <li>Try a different combination of axes</li>
-                            </ul>
+                try {
+                    const mergedConfig = plot.config; // Ensure mergedConfig is defined for error handling
+                    plot.element.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5>Error Updating Plot</h5>
+                            <p>${error.message}</p>
+                            <div class="mt-3">
+                                <strong>Troubleshooting:</strong>
+                                <ul>
+                                    <li>Verify that the selected data exists in the dataset</li>
+                                    <li>Check that any required focused gene/cell is selected</li>
+                                    <li>Try a different combination of axes</li>
+                                </ul>
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                } catch (errorHandlingError) {
+                    console.error('Error displaying error message:', errorHandlingError);
+                    plot.element.innerHTML = '<div class="alert alert-danger">Error updating plot</div>';
+                }
             }
         }
     }

@@ -350,7 +350,7 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_obs(dataset_path, row_indices, column_names)
+            data = zarr_reader.get_obs(dataset_path=dataset_path, indices=row_indices, column_names=column_names)
             
             return jsonify({
                 "data": data,
@@ -404,7 +404,7 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_var(dataset_path, col_indices, column_names)
+            data = zarr_reader.get_var(dataset_path=dataset_path, indices=col_indices, column_names=column_names)
             
             return jsonify({
                 "data": data,

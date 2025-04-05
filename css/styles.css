@@ -316,9 +316,10 @@ body {
 /* Axis selection dropdown */
 .axis-dropdown {
     max-width: 350px;
-    width: 350px !important;
+    width: 350px;
     max-height: 80vh;
     overflow-y: auto;
+    z-index: 1050 !important;
 }
 
 .field-list {

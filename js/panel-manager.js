@@ -845,6 +845,11 @@ const PanelManager = (function() {
                 </button>
                 <div class="dropdown-menu axis-dropdown p-3" id="${panelId}-z-axis-dropdown" style="width: 300px;">
                     <h6 class="dropdown-header">Select Z Axis Data</h6>
+                    <div class="mb-2 d-flex justify-content-end">
+                        <button class="btn btn-sm btn-outline-danger" id="${panelId}-z-axis-clear">
+                            <i class="bi bi-x"></i> Clear Z Axis
+                        </button>
+                    </div>
                     <div class="mb-2">
                         <input type="text" class="form-control form-control-sm" id="${panelId}-z-axis-search" placeholder="Search data fields...">
                     </div>
@@ -1094,21 +1099,68 @@ const PanelManager = (function() {
                     });
                 }
                 
+                // Add clear button handler for Z axis
+                if (axis === 'z') {
+                    const clearButton = document.getElementById(`${panelId}-z-axis-clear`);
+                    if (clearButton) {
+                        clearButton.addEventListener('click', () => {
+                            console.log(`Clearing Z axis for panel ${panelId}`);
+                            
+                            // Get panel
+                            const panel = _panels[panelId];
+                            if (panel) {
+                                // Set the path to null to clear the Z axis
+                                panel.config.zAxis = {
+                                    path: null,
+                                    index: null,
+                                    label: null
+                                };
+                                
+                                // Update the plot
+                                if (window.PlotManager) {
+                                    PlotManager.updatePlot(panelId, panel.config);
+                                }
+                                
+                                // Update button text
+                                const axisButton = document.getElementById(`${panelId}-z-axis-btn`);
+                                if (axisButton) {
+                                    axisButton.textContent = "Z Axis";
+                                }
+                                
+                                // Close dropdown
+                                const dropdown = bootstrap.Dropdown.getInstance(document.getElementById(`${panelId}-z-axis-btn`));
+                                if (dropdown) {
+                                    dropdown.hide();
+                                }
+                            }
+                        });
+                    }
+                }
+                
                 // Add apply button handler
                 if (applyButton) {
                     applyButton.addEventListener('click', () => {
                         const selectedField = fieldsContainer.querySelector('input[name="' + panelId + '-' + axis + '-field"]:checked');
                         if (selectedField) {
-                            const fieldInfo = JSON.parse(selectedField.dataset.fieldInfo);
-                            applyAxisSelection(panelId, axis, fieldInfo);
-                            
-                            // Close dropdown
-                            const dropdown = document.getElementById(`${panelId}-${axis}-axis-dropdown`);
-                            if (dropdown) {
-                                const bootstrapDropdown = bootstrap.Dropdown.getInstance(axisButton);
-                                if (bootstrapDropdown) {
-                                    bootstrapDropdown.hide();
+                            try {
+                                const fieldInfo = JSON.parse(selectedField.dataset.fieldInfo);
+                                console.log(`Selected field info:`, fieldInfo);
+                                
+                                // For obs columns, fix the type to ensure proper loading
+                                if (categorySelect && categorySelect.value === 'obs') {
+                                    // This fixes the issue with 'Age' loading
+                                    console.log(`Detected obs selection, ensuring type is set to 'column'`);
+                                    fieldInfo.type = 'column';
                                 }
+                                
+                                // Apply selection first - important to update data before closing
+                                applyAxisSelection(panelId, axis, fieldInfo);
+                                
+                                // Let the dropdown close naturally via Bootstrap's built-in behavior
+                                // The button click will propagate and Bootstrap will handle closing
+                            } catch (error) {
+                                console.error(`Error applying axis selection:`, error);
+                                alert(`Error applying selection: ${error.message}`);
                             }
                         }
                     });
@@ -1117,11 +1169,8 @@ const PanelManager = (function() {
                 // Add cancel button handler
                 if (cancelButton) {
                     cancelButton.addEventListener('click', () => {
-                        // Close dropdown
-                        const bootstrapDropdown = bootstrap.Dropdown.getInstance(axisButton);
-                        if (bootstrapDropdown) {
-                            bootstrapDropdown.hide();
-                        }
+                        // Let Bootstrap handle closing the dropdown naturally
+                        // No need to call hide() manually
                     });
                 }
             }
@@ -1218,29 +1267,40 @@ const PanelManager = (function() {
                     colorApplyButton.addEventListener('click', () => {
                         const selectedField = colorFieldsContainer.querySelector('input[name="' + panelId + '-color-field"]:checked');
                         if (selectedField) {
-                            const fieldInfo = JSON.parse(selectedField.dataset.fieldInfo);
-                            
-                            // Get color range values
-                            let colorRange = [null, null];
-                            if (colorMinInput && colorMinInput.value !== '') {
-                                colorRange[0] = parseFloat(colorMinInput.value);
-                            }
-                            if (colorMaxInput && colorMaxInput.value !== '') {
-                                colorRange[1] = parseFloat(colorMaxInput.value);
-                            }
-                            
-                            // Get clip option
-                            const clipValues = colorClipCheckbox ? colorClipCheckbox.checked : true;
-                            
-                            // Get color scale
-                            const colorScale = colorScaleSelect ? colorScaleSelect.value : 'Viridis';
-                            
-                            applyColorSelection(panelId, fieldInfo, colorRange, clipValues, colorScale);
-                            
-                            // Close dropdown
-                            const bootstrapDropdown = bootstrap.Dropdown.getInstance(colorButton);
-                            if (bootstrapDropdown) {
-                                bootstrapDropdown.hide();
+                            try {
+                                const fieldInfo = JSON.parse(selectedField.dataset.fieldInfo);
+                                console.log(`Selected color field info:`, fieldInfo);
+                                
+                                // For obs columns, fix the type to ensure proper loading
+                                if (colorCategorySelect && colorCategorySelect.value === 'obs') {
+                                    // This fixes the issue with 'Age' loading
+                                    console.log(`Detected obs selection for color, ensuring type is set to 'column'`);
+                                    fieldInfo.type = 'column';
+                                }
+                                
+                                // Get color range values
+                                let colorRange = [null, null];
+                                if (colorMinInput && colorMinInput.value !== '') {
+                                    colorRange[0] = parseFloat(colorMinInput.value);
+                                }
+                                if (colorMaxInput && colorMaxInput.value !== '') {
+                                    colorRange[1] = parseFloat(colorMaxInput.value);
+                                }
+                                
+                                // Get clip option
+                                const clipValues = colorClipCheckbox ? colorClipCheckbox.checked : true;
+                                
+                                // Get color scale
+                                const colorScale = colorScaleSelect ? colorScaleSelect.value : 'Viridis';
+                                
+                                // Apply selection first - important to update data before closing
+                                applyColorSelection(panelId, fieldInfo, colorRange, clipValues, colorScale);
+                                
+                                // Let the dropdown close naturally via Bootstrap's built-in behavior
+                                // The button click will propagate and Bootstrap will handle closing
+                            } catch (error) {
+                                console.error(`Error applying color selection:`, error);
+                                alert(`Error applying color selection: ${error.message}`);
                             }
                         }
                     });
@@ -1249,11 +1309,8 @@ const PanelManager = (function() {
                 // Add cancel button handler
                 if (colorCancelButton) {
                     colorCancelButton.addEventListener('click', () => {
-                        // Close dropdown
-                        const bootstrapDropdown = bootstrap.Dropdown.getInstance(colorButton);
-                        if (bootstrapDropdown) {
-                            bootstrapDropdown.hide();
-                        }
+                        // Let Bootstrap handle closing the dropdown naturally
+                        // No need to call hide() manually
                     });
                 }
             }
@@ -1384,7 +1441,20 @@ const PanelManager = (function() {
                 return;
             }
             
+            // Debug - get dataset info
+            const datasetInfo = DataManager.getDatasetInfo();
+            console.log(`Dataset info:`, datasetInfo);
+            
+            if (category === 'obs') {
+                console.log(`Available obs columns:`, datasetInfo?.obs?.columns || []);
+            } else if (category === 'var') {
+                console.log(`Available var columns:`, datasetInfo?.var?.columns || []);
+            } else if (category === 'obsm') {
+                console.log(`Available obsm keys:`, datasetInfo?.obsm?.keys || []);
+            }
+            
             const fields = await categoryInfo.loadFields();
+            console.log(`Loaded fields for ${category}:`, fields);
             
             if (!fields || fields.length === 0) {
                 container.innerHTML = '<div class="text-muted">No fields available for this category</div>';
@@ -1457,9 +1527,25 @@ const PanelManager = (function() {
      * @param {Object} fieldInfo - Field information
      */
     function applyAxisSelection(panelId, axis, fieldInfo) {
+        console.log(`Applying ${axis} axis selection for panel ${panelId}:`, fieldInfo);
+        
+        // Extract numerical panel ID (handle both 'panel-0' and just '0' formats)
+        const panelIdNum = panelId.replace('panel-', '');
+        const fullPanelId = panelId.startsWith('panel-') ? panelId : `panel-${panelId}`;
+        console.log(`Normalized panel ID: ${fullPanelId}`);
+        
         // Get panel
-        const panel = _panels[panelId];
-        if (!panel) return;
+        let panel = _panels[fullPanelId];
+        if (!panel) {
+            // Try alternate formats
+            panel = _panels[panelIdNum] || _panels[`plot-${panelIdNum}`] || _panels[panelId];
+            console.log(`Tried alternate panel IDs, found:`, panel ? 'panel' : 'nothing');
+        }
+        
+        if (!panel) {
+            console.error(`Panel not found: ${panelId} (or ${fullPanelId})`);
+            return;
+        }
         
         // Create axis config
         let path = '';
@@ -1467,11 +1553,11 @@ const PanelManager = (function() {
         
         switch (fieldInfo.type) {
             case 'matrix':
-                path = `${fieldInfo.key}`;
+                path = `obsm/${fieldInfo.key}`;
                 break;
                 
             case 'matrix_dimension':
-                path = `${fieldInfo.key}`;
+                path = `obsm/${fieldInfo.key}`;
                 break;
                 
             case 'dataframe_column':
@@ -1479,7 +1565,7 @@ const PanelManager = (function() {
                 break;
                 
             case 'column':
-                path = `${fieldInfo.key}`;
+                path = `obs/${fieldInfo.key}`;
                 break;
                 
             case 'expression':
@@ -1487,12 +1573,15 @@ const PanelManager = (function() {
                 break;
                 
             case 'layer':
-                path = `${fieldInfo.key}`;
+                path = `layers/${fieldInfo.key}`;
                 break;
                 
             case 'obsp':
+                path = `obsp/${fieldInfo.key}`;
+                break;
+                
             case 'varp':
-                path = `${fieldInfo.key}`;
+                path = `varp/${fieldInfo.key}`;
                 break;
         }
         
@@ -1514,11 +1603,28 @@ const PanelManager = (function() {
         const axisButton = document.getElementById(`${panelId}-${axis}-axis-btn`);
         if (axisButton) {
             axisButton.textContent = label;
+        } else {
+            console.warn(`Axis button for ${axis} not found`);
         }
         
-        // Update the plot
+        // Update the plot - use plotId from the panel configuration if available,
+        // otherwise try to construct it from the panel ID
         if (window.PlotManager) {
-            PlotManager.updatePlot(panelId, panel.config);
+            console.log(`Updating plot with new ${axis} axis configuration:`, axisConfig);
+            
+            // Try to get the plot ID from various sources
+            const plotElement = document.getElementById(`${fullPanelId}-plot`);
+            if (plotElement && plotElement.id) {
+                // Try updating using the element ID
+                console.log(`Updating plot using element ID: ${plotElement.id}`);
+                PlotManager.updatePlot(plotElement.id, panel.config);
+            } else {
+                // Try with the panel ID
+                console.log(`Updating plot using panel ID: ${fullPanelId}`);
+                PlotManager.updatePlot(fullPanelId, panel.config);
+            }
+        } else {
+            console.error('PlotManager is not available');
         }
     }
     
@@ -1531,9 +1637,25 @@ const PanelManager = (function() {
      * @param {string} scale - Color scale name
      */
     function applyColorSelection(panelId, fieldInfo, range, clipValues, scale) {
+        console.log(`Applying color selection for panel ${panelId}:`, fieldInfo);
+        
+        // Extract numerical panel ID (handle both 'panel-0' and just '0' formats)
+        const panelIdNum = panelId.replace('panel-', '');
+        const fullPanelId = panelId.startsWith('panel-') ? panelId : `panel-${panelId}`;
+        console.log(`Normalized panel ID: ${fullPanelId}`);
+        
         // Get panel
-        const panel = _panels[panelId];
-        if (!panel) return;
+        let panel = _panels[fullPanelId];
+        if (!panel) {
+            // Try alternate formats
+            panel = _panels[panelIdNum] || _panels[`plot-${panelIdNum}`] || _panels[panelId];
+            console.log(`Tried alternate panel IDs, found:`, panel ? 'panel' : 'nothing');
+        }
+        
+        if (!panel) {
+            console.error(`Panel not found: ${panelId} (or ${fullPanelId})`);
+            return;
+        }
         
         // Create color config
         let path = '';
@@ -1541,11 +1663,11 @@ const PanelManager = (function() {
         
         switch (fieldInfo.type) {
             case 'matrix':
-                path = `${fieldInfo.key}`;
+                path = `obsm/${fieldInfo.key}`;
                 break;
                 
             case 'matrix_dimension':
-                path = `${fieldInfo.key}`;
+                path = `obsm/${fieldInfo.key}`;
                 break;
                 
             case 'dataframe_column':
@@ -1553,7 +1675,7 @@ const PanelManager = (function() {
                 break;
                 
             case 'column':
-                path = `${fieldInfo.key}`;
+                path = `obs/${fieldInfo.key}`;
                 break;
                 
             case 'expression':
@@ -1561,12 +1683,15 @@ const PanelManager = (function() {
                 break;
                 
             case 'layer':
-                path = `${fieldInfo.key}`;
+                path = `layers/${fieldInfo.key}`;
                 break;
                 
             case 'obsp':
+                path = `obsp/${fieldInfo.key}`;
+                break;
+                
             case 'varp':
-                path = `${fieldInfo.key}`;
+                path = `varp/${fieldInfo.key}`;
                 break;
         }
         
@@ -1591,11 +1716,28 @@ const PanelManager = (function() {
         const colorButton = document.getElementById(`${panelId}-color-btn`);
         if (colorButton) {
             colorButton.textContent = `Color: ${label}`;
+        } else {
+            console.warn(`Color button not found`);
         }
         
-        // Update the plot
+        // Update the plot - use plotId from the panel configuration if available,
+        // otherwise try to construct it from the panel ID
         if (window.PlotManager) {
-            PlotManager.updatePlot(panelId, panel.config);
+            console.log(`Updating plot with new color configuration:`, colorConfig);
+            
+            // Try to get the plot ID from various sources
+            const plotElement = document.getElementById(`${fullPanelId}-plot`);
+            if (plotElement && plotElement.id) {
+                // Try updating using the element ID
+                console.log(`Updating plot using element ID: ${plotElement.id}`);
+                PlotManager.updatePlot(plotElement.id, panel.config);
+            } else {
+                // Try with the panel ID
+                console.log(`Updating plot using panel ID: ${fullPanelId}`);
+                PlotManager.updatePlot(fullPanelId, panel.config);
+            }
+        } else {
+            console.error('PlotManager is not available');
         }
     }
     
