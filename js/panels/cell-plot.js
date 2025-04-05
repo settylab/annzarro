@@ -17,21 +17,35 @@ const CellPlotPanel = (function() {
         let _controlsContainer = null;
         let _plot = null;
         
-        // Plot settings
+        // Initialize settings with initial default options
         const _settings = {
-            x: options.x || { type: 'obsm', key: 'X_umap', column: '0' },
-            y: options.y || { type: 'obsm', key: 'X_umap', column: '1' },
-            z: options.z || null, // Optional for 3D plots
-            color: options.color || { type: 'obs', key: 'cell_type' },
-            pointSize: options.pointSize || Config.DEFAULTS.POINT_SIZE,
-            pointOpacity: options.pointOpacity || Config.DEFAULTS.POINT_OPACITY,
-            colorScale: options.colorScale || Config.DEFAULTS.COLOR_SCALE,
-            colorMin: options.colorMin || null,
-            colorMax: options.colorMax || null,
-            hoverInfo: options.hoverInfo || [{ type: 'obs', key: '_index' }],
-            subsettedCells: options.subsettedCells || null,
-            hideNonSubset: options.hideNonSubset || false
+            x: { type: 'obsm', key: 'X_umap', column: '0' },
+            y: { type: 'obsm', key: 'X_umap', column: '1' },
+            z: null, // Optional for 3D plots
+            color: { type: 'none', key: '', column: '' }, // Start with no coloring
+            pointSize: Config.DEFAULTS.POINT_SIZE,
+            pointOpacity: Config.DEFAULTS.POINT_OPACITY,
+            colorScale: Config.DEFAULTS.COLOR_SCALE,
+            colorMin: null,
+            colorMax: null,
+            hoverInfo: [{ type: 'obs', key: '_index' }],
+            subsettedCells: null,
+            hideNonSubset: false
         };
+        
+        // Override with provided options, if any
+        if (options.x) _settings.x = options.x;
+        if (options.y) _settings.y = options.y;
+        if (options.z) _settings.z = options.z;
+        if (options.color) _settings.color = options.color;
+        if (options.pointSize) _settings.pointSize = options.pointSize;
+        if (options.pointOpacity) _settings.pointOpacity = options.pointOpacity;
+        if (options.colorScale) _settings.colorScale = options.colorScale;
+        if (options.colorMin !== undefined) _settings.colorMin = options.colorMin;
+        if (options.colorMax !== undefined) _settings.colorMax = options.colorMax;
+        if (options.hoverInfo) _settings.hoverInfo = options.hoverInfo;
+        if (options.subsettedCells) _settings.subsettedCells = options.subsettedCells;
+        if (options.hideNonSubset !== undefined) _settings.hideNonSubset = options.hideNonSubset;
         
         // Cached data
         let _data = {
@@ -51,8 +65,18 @@ const CellPlotPanel = (function() {
             // Set up event listeners
             _setupEventListeners();
             
-            // Load data and create plot
-            _loadDataAndCreatePlot();
+            // Initialize UI state and then load data
+            console.log('Initializing UI state...');
+            _initializeUIState().then(() => {
+                console.log('UI state initialized, loading data...');
+                // Load data and create plot
+                _loadDataAndCreatePlot();
+            }).catch(error => {
+                console.error('Error initializing UI state:', error);
+                _plotContainer.innerHTML = `<div class="alert alert-danger">
+                    Error initializing panel: ${error.message}
+                </div>`;
+            });
         }
         
         /**
@@ -109,7 +133,8 @@ const CellPlotPanel = (function() {
                             <div class="axis-selector-label">Color</div>
                             <div class="axis-selector">
                                 <select class="form-select form-select-sm axis-type-select" data-axis="color">
-                                    <option value="obs" selected>obs</option>
+                                    <option value="none">None (constant)</option>
+                                    <option value="obs">obs</option>
                                     <option value="obsm">obsm</option>
                                     <option value="obsp">obsp</option>
                                     <option value="layer">layer</option>
@@ -165,37 +190,112 @@ const CellPlotPanel = (function() {
         
         /**
          * Initialize UI controls to match settings
+         * @returns {Promise} - Resolves when initialization is complete
          * @private
          */
         function _initializeUIState() {
-            // Set initial axis selectors
-            _setupAxisSelector('x', _settings.x);
-            _setupAxisSelector('y', _settings.y);
-            if (_settings.z) {
-                document.getElementById(`z-axis-toggle-${_id}`).checked = true;
-                document.getElementById(`z-axis-container-${_id}`).style.display = 'block';
-                _setupAxisSelector('z', _settings.z);
+            console.log('Initializing UI state with settings:', _settings);
+            
+            // Return a promise that resolves when all setup is complete
+            return new Promise(async (resolve, reject) => {
+                try {
+                    // First, make sure we have the embeddings list by getting the dataset structure
+                    const datasetStructure = await _ensureDatasetStructure();
+                    if (!datasetStructure) {
+                        throw new Error('Failed to load dataset structure');
+                    }
+                    
+                    // Set defaults from the actual dataset (using embeddings directly)
+                    if (datasetStructure.embeddings && datasetStructure.embeddings.length > 0) {
+                        const defaultEmbedding = datasetStructure.embeddings[0]; // First embedding
+                        
+                        // Set defaults if not already specified
+                        if (!_settings.x.key || _settings.x.key === '') {
+                            _settings.x.key = defaultEmbedding;
+                            _settings.x.column = '0';
+                            console.log(`Setting default x-axis to ${defaultEmbedding} column 0`);
+                        }
+                        
+                        if (!_settings.y.key || _settings.y.key === '') {
+                            _settings.y.key = defaultEmbedding;
+                            _settings.y.column = '1';
+                            console.log(`Setting default y-axis to ${defaultEmbedding} column 1`);
+                        }
+                    } else {
+                        console.warn('No embeddings found in dataset structure');
+                    }
+                    
+                    // Set up axis selectors sequentially to avoid race conditions
+                    await _setupAxisSelector('x', _settings.x);
+                    console.log('X-axis selector setup complete');
+                    
+                    await _setupAxisSelector('y', _settings.y);
+                    console.log('Y-axis selector setup complete');
+                    
+                    if (_settings.z) {
+                        document.getElementById(`z-axis-toggle-${_id}`).checked = true;
+                        document.getElementById(`z-axis-container-${_id}`).style.display = 'block';
+                        await _setupAxisSelector('z', _settings.z);
+                        console.log('Z-axis selector setup complete');
+                    }
+                    
+                    // Set color selector
+                    await _setupAxisSelector('color', _settings.color);
+                    console.log('Color selector setup complete');
+                    
+                    // Setup point controls
+                    document.getElementById(`point-size-${_id}`).value = _settings.pointSize;
+                    document.getElementById(`point-opacity-${_id}`).value = _settings.pointOpacity;
+                    
+                    // Re-validate our settings after UI setup
+                    console.log('Final settings after UI initialization:', _settings);
+                    
+                    // Check for critical errors
+                    for (const axis of ['x', 'y']) {
+                        if (!_settings[axis] || !_settings[axis].key || _settings[axis].key === '') {
+                            throw new Error(`No key selected for ${axis}-axis after initialization`);
+                        }
+                    }
+                    
+                    resolve();
+                } catch (error) {
+                    console.error('Error in _initializeUIState:', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        /**
+         * Ensure we have the dataset structure, load if needed
+         * @returns {Promise<Object>} - Dataset structure
+         * @private
+         */
+        async function _ensureDatasetStructure() {
+            const datasetPath = DataManager.getCurrentDataset();
+            if (!datasetPath) {
+                console.error('No dataset path available');
+                _plotContainer.innerHTML = '<div class="alert alert-danger">No dataset selected</div>';
+                return null;
             }
             
-            // Set color selector
-            _setupAxisSelector('color', _settings.color);
-            
-            // Setup point controls
-            document.getElementById(`point-size-${_id}`).value = _settings.pointSize;
-            document.getElementById(`point-opacity-${_id}`).value = _settings.pointOpacity;
-            
-            // Setup color range if numerical
-            if (_settings.color.isNumerical) {
-                document.getElementById(`color-range-container-${_id}`).style.display = 'flex';
-                document.getElementById(`color-scale-${_id}`).value = _settings.colorScale;
-                
-                if (_settings.colorMin !== null) {
-                    document.getElementById(`color-min-${_id}`).value = _settings.colorMin;
+            try {
+                // Load dataset structure directly to avoid race conditions with DataManager
+                console.log(`Loading dataset structure for ${datasetPath}`);
+                const response = await fetch(`${Config.API.DATASET_STRUCTURE}?dataset_path=${encodeURIComponent(datasetPath)}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load dataset structure: ${response.statusText}`);
                 }
                 
-                if (_settings.colorMax !== null) {
-                    document.getElementById(`color-max-${_id}`).value = _settings.colorMax;
-                }
+                const data = await response.json();
+                console.log('Loaded dataset structure directly:', data);
+                
+                return data;
+            } catch (error) {
+                console.error('Error loading dataset structure:', error);
+                _plotContainer.innerHTML = `<div class="alert alert-danger">
+                    Error loading dataset structure: ${error.message}
+                </div>`;
+                return null;
             }
         }
         
@@ -210,19 +310,66 @@ const CellPlotPanel = (function() {
             const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
             const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
             
-            if (!typeSelect || !keySelect || !columnSelect) return;
+            if (!typeSelect || !keySelect || !columnSelect) {
+                console.error(`Missing select elements for ${axis} axis`);
+                return;
+            }
             
-            // Set type
+            console.log(`Setting up ${axis} axis selector with settings:`, settings);
+            
+            // Set type (default to obsm if not specified)
+            if (!settings.type) {
+                settings.type = 'obsm';
+                console.log(`Defaulting ${axis} axis type to 'obsm'`);
+            }
             typeSelect.value = settings.type;
             
-            // Populate key select based on type
-            _populateKeySelect(settings.type, keySelect).then(() => {
-                keySelect.value = settings.key;
+            // Populate key select based on type, waiting for it to complete
+            return _populateKeySelect(settings.type, keySelect).then(() => {
+                console.log(`Key select populated for ${axis} axis with options:`, 
+                    Array.from(keySelect.options).map(o => o.value));
+                
+                // If we have a key and it exists in the select options, use it
+                if (settings.key && Array.from(keySelect.options).some(option => option.value === settings.key)) {
+                    keySelect.value = settings.key;
+                    console.log(`Using provided ${axis} key: ${settings.key}`);
+                } else {
+                    // Otherwise, select the first available option
+                    if (keySelect.options.length > 0) {
+                        keySelect.selectedIndex = 0;
+                        settings.key = keySelect.value;
+                        console.log(`Setting default ${axis} key to '${settings.key}'`);
+                    } else {
+                        console.warn(`No options available for ${axis} key`);
+                        // Initialize with an empty string, but we'll validate later
+                        settings.key = '';
+                    }
+                }
                 
                 // Populate column select based on key
-                _populateColumnSelect(settings.type, settings.key, columnSelect).then(() => {
-                    if (settings.column) {
+                return _populateColumnSelect(settings.type, settings.key, columnSelect).then(() => {
+                    console.log(`Column select populated for ${axis} axis with options:`, 
+                        Array.from(columnSelect.options).map(o => o.value));
+                    
+                    if (settings.column && Array.from(columnSelect.options).some(option => option.value === settings.column)) {
                         columnSelect.value = settings.column;
+                        console.log(`Using provided ${axis} column: ${settings.column}`);
+                    } else {
+                        // Select the first available column
+                        if (columnSelect.options.length > 0) {
+                            columnSelect.selectedIndex = 0;
+                            settings.column = columnSelect.value;
+                            console.log(`Setting default ${axis} column to '${settings.column}'`);
+                        } else {
+                            console.warn(`No options available for ${axis} column`);
+                            // For obsm, default to column "0"
+                            if (settings.type === 'obsm') {
+                                settings.column = '0';
+                                console.log(`Default: Setting ${axis} obsm column to "0"`);
+                            } else {
+                                settings.column = '';
+                            }
+                        }
                     }
                 });
             });
@@ -238,7 +385,15 @@ const CellPlotPanel = (function() {
         async function _populateKeySelect(type, select) {
             select.innerHTML = '<option value="">Loading...</option>';
             
-            const datasetStructure = DataManager.getDatasetStructure();
+            // Special case for 'none' type - used for no coloring
+            if (type === 'none') {
+                select.innerHTML = '<option value="">None (constant color)</option>';
+                return Promise.resolve();
+            }
+            
+            // Load dataset structure directly to avoid race conditions
+            const datasetStructure = await _ensureDatasetStructure();
+            
             if (!datasetStructure) {
                 select.innerHTML = '<option value="">No dataset loaded</option>';
                 return Promise.resolve();
@@ -248,38 +403,103 @@ const CellPlotPanel = (function() {
             
             switch (type) {
                 case 'obs':
+                    // Get obs columns from the structure
                     if (datasetStructure.obs && datasetStructure.obs.columns) {
+                        console.log(`Found ${datasetStructure.obs.columns.length} obs columns in standard format`);
                         options = datasetStructure.obs.columns.map(col => 
                             `<option value="${col}">${col}</option>`
                         );
                     }
+                    else if (datasetStructure.obs && Array.isArray(datasetStructure.obs)) {
+                        // Alternative format - array of columns
+                        console.log(`Found ${datasetStructure.obs.length} obs columns in array format`);
+                        options = datasetStructure.obs.map(col => 
+                            `<option value="${col}">${col}</option>`
+                        );
+                    }
+                    else if (datasetStructure.obs) {
+                        // Alternative format - direct object with keys as columns
+                        const columns = Object.keys(datasetStructure.obs);
+                        console.log(`Found ${columns.length} obs columns in object format`);
+                        options = columns.map(col => 
+                            `<option value="${col}">${col}</option>`
+                        );
+                    }
                     break;
+                    
                 case 'obsm':
-                    if (datasetStructure.obsm && datasetStructure.obsm.keys) {
-                        options = datasetStructure.obsm.keys.map(key => 
-                            `<option value="${key}">${key}</option>`
-                        );
+                    // Direct reference to embeddings in the dataset structure
+                    if (datasetStructure.embeddings && Array.isArray(datasetStructure.embeddings)) {
+                        console.log(`Found ${datasetStructure.embeddings.length} embeddings:`, datasetStructure.embeddings);
+                        
+                        if (datasetStructure.embeddings.length > 0) {
+                            options = datasetStructure.embeddings.map(key => 
+                                `<option value="${key}">${key}</option>`
+                            );
+                        }
+                    }
+                    // Try other ways it might be available
+                    else if (datasetStructure.obsm && datasetStructure.obsm.keys) {
+                        const keys = datasetStructure.obsm.keys;
+                        console.log(`Found ${keys.length} obsm keys in standard format`);
+                        
+                        if (keys.length > 0) {
+                            options = keys.map(key => 
+                                `<option value="${key}">${key}</option>`
+                            );
+                        }
                     }
                     break;
+                    
                 case 'obsp':
+                    // Check if obsp exists and has keys
                     if (datasetStructure.obsp && datasetStructure.obsp.keys) {
-                        options = datasetStructure.obsp.keys.map(key => 
-                            `<option value="${key}">${key}</option>`
-                        );
+                        const keys = datasetStructure.obsp.keys;
+                        console.log(`Found ${keys.length} obsp keys`);
+                        
+                        if (keys.length > 0) {
+                            options = keys.map(key => 
+                                `<option value="${key}">${key}</option>`
+                            );
+                        }
                     }
                     break;
+                    
                 case 'layer':
-                    if (datasetStructure.layers && datasetStructure.layers.keys) {
-                        options = datasetStructure.layers.keys.map(key => 
-                            `<option value="${key}">${key}</option>`
-                        );
+                    // Try different ways layers might be available
+                    if (datasetStructure.layers && datasetStructure.layers.details && 
+                        datasetStructure.layers.details.keys) {
+                        // Format from the API we've observed
+                        const keys = datasetStructure.layers.details.keys;
+                        console.log(`Found ${keys.length} layer keys in details:`, keys);
+                        
+                        if (keys.length > 0) {
+                            options = keys.map(key => 
+                                `<option value="${key}">${key}</option>`
+                            );
+                        }
+                    }
+                    else if (datasetStructure.layers && datasetStructure.layers.keys) {
+                        // Standard format
+                        const keys = datasetStructure.layers.keys;
+                        console.log(`Found ${keys.length} layer keys in standard format`);
+                        
+                        if (keys.length > 0) {
+                            options = keys.map(key => 
+                                `<option value="${key}">${key}</option>`
+                            );
+                        }
                     }
                     break;
             }
             
-            select.innerHTML = options.length 
-                ? options.join('') 
-                : '<option value="">No options available</option>';
+            if (options.length) {
+                console.log(`Setting ${options.length} options for ${type} select`);
+                select.innerHTML = options.join('');
+            } else {
+                console.warn(`No options available for ${type}`);
+                select.innerHTML = '<option value="">No options available</option>';
+            }
             
             return Promise.resolve();
         }
@@ -319,37 +539,18 @@ const CellPlotPanel = (function() {
                     
                 case 'obsm':
                     try {
-                        // Check if this obsm matrix has known columns
-                        const isArray = datasetStructure.obsm.info && 
-                                       datasetStructure.obsm.info[key] && 
-                                       (datasetStructure.obsm.info[key].type === 'array' ||
-                                        !datasetStructure.obsm.info[key].column_info);
+                        // For obsm, we will always use numeric column indices for now
+                        // since we found these work reliably with our backend
                         
-                        if (isArray) {
-                            // For array-based obsm, generate columns as indices
-                            const shape = datasetStructure.obsm.info[key].shape;
-                            if (shape && shape.length > 1) {
-                                const columnCount = shape[1];
-                                for (let i = 0; i < columnCount; i++) {
-                                    options.push(`<option value="${i}">${i}</option>`);
-                                }
-                            }
-                        } else {
-                            // For dataframe-encoded obsm, get actual column names
-                            // Use API to get columns for this obsm key
-                            const response = await fetch(
-                                `${Config.API.OBSM}_dataframe_columns?dataset_path=${encodeURIComponent(DataManager.getCurrentDataset())}&key=${encodeURIComponent(key)}`
-                            );
-                            const data = await response.json();
-                            
-                            if (data.columns && data.columns.length) {
-                                options = data.columns.map(col => 
-                                    `<option value="${col}">${col}</option>`
-                                );
-                            }
+                        // Default to 3 dimensions
+                        const numDimensions = 3;
+                        console.log(`Creating ${numDimensions} column options for obsm key: ${key}`);
+                        
+                        for (let i = 0; i < numDimensions; i++) {
+                            options.push(`<option value="${i}">${i}</option>`);
                         }
                     } catch (error) {
-                        console.error('Error loading obsm columns:', error);
+                        console.error('Error creating obsm columns:', error);
                     }
                     break;
                     
@@ -557,6 +758,43 @@ const CellPlotPanel = (function() {
                 // Show loading indicator
                 _plotContainer.innerHTML = '<div class="spinner"></div> Loading plot data...';
                 
+                // Validate settings before loading data
+                for (const axis of ['x', 'y', 'z', 'color']) {
+                    if (axis === 'z' && !_settings.z) continue; // Skip z-axis if not used
+                    
+                    const settings = _settings[axis];
+                    console.log(`Validating ${axis} axis settings:`, settings);
+                    
+                    if (!settings) {
+                        throw new Error(`No settings found for ${axis} axis`);
+                    }
+                    
+                    // Validate type
+                    if (!settings.type) {
+                        _plotContainer.innerHTML = `<div class="alert alert-warning">
+                            Missing type for ${axis}-axis
+                        </div>`;
+                        return;
+                    }
+                    
+                    // For obsm, ensure we have a key
+                    if (settings.type === 'obsm') {
+                        if (!settings.key || settings.key === '') {
+                            _plotContainer.innerHTML = `<div class="alert alert-warning">
+                                Please select an obsm key for the ${axis}-axis
+                            </div>`;
+                            return;
+                        }
+                        
+                        // Ensure we have a column specified
+                        if (settings.column === undefined || settings.column === null || settings.column === '') {
+                            // Default to column 0 if not specified
+                            console.log(`Setting default column '0' for ${axis}-axis obsm.${settings.key}`);
+                            settings.column = '0';
+                        }
+                    }
+                }
+                
                 // Reset cached data
                 _data = {
                     x: null,
@@ -573,24 +811,39 @@ const CellPlotPanel = (function() {
                 }
                 
                 // Load X-axis data
+                console.log('Loading X-axis data:', _settings.x);
                 _data.x = await _loadAxisData('x', filteredCellIndices);
                 
                 // Load Y-axis data
+                console.log('Loading Y-axis data:', _settings.y);
                 _data.y = await _loadAxisData('y', filteredCellIndices);
                 
                 // Load Z-axis data if needed
                 if (_settings.z) {
+                    console.log('Loading Z-axis data:', _settings.z);
                     _data.z = await _loadAxisData('z', filteredCellIndices);
                 }
                 
                 // Load color data
+                console.log('Loading color data:', _settings.color);
                 const colorData = await _loadAxisData('color', filteredCellIndices);
                 _data.color = colorData.values;
                 _data.colorType = colorData.type;
                 _data.colorCategories = colorData.categories;
                 
-                // Create plot
-                _createPlot();
+                // Validate data before creating plot
+                if (_data.x && _data.x.values && _data.x.values.length > 0 &&
+                    _data.y && _data.y.values && _data.y.values.length > 0) {
+                    console.log(`Creating plot with ${_data.x.values.length} data points`);
+                    _createPlot();
+                } else {
+                    console.error('Insufficient data for plotting');
+                    _plotContainer.innerHTML = `<div class="alert alert-warning">
+                        Insufficient data for plotting. X axis has 
+                        ${_data.x && _data.x.values ? _data.x.values.length : 0} points, 
+                        Y axis has ${_data.y && _data.y.values ? _data.y.values.length : 0} points.
+                    </div>`;
+                }
                 
             } catch (error) {
                 console.error('Error loading plot data:', error);
@@ -623,6 +876,23 @@ const CellPlotPanel = (function() {
             let categories = null;
             
             try {
+                // Special case for 'none' type (constant color)
+                if (type === 'none') {
+                    // Return constant values for all cells
+                    const cells = DataManager.getCells();
+                    const cellCount = cells ? cells.length : 100;
+                    
+                    // Return an array of ones (for constant coloring)
+                    values = Array(cellCount).fill(1);
+                    dataType = 'constant';
+                    
+                    return {
+                        values,
+                        type: dataType,
+                        categories
+                    };
+                }
+                
                 switch (type) {
                     case 'obs':
                         // Load cell annotations
@@ -632,7 +902,24 @@ const CellPlotPanel = (function() {
                             rows: rows ? rows.split(',') : null
                         });
                         
+                        console.log(`Received obs data for ${key}:`, data);
+                        
+                        if (!data.data || !data.data[key]) {
+                            console.warn(`No data found for obs.${key}`);
+                            throw new Error(`No data found for column '${key}' in obs table`);
+                        }
+                        
                         values = data.data[key];
+                        
+                        // Log data statistics to help debug
+                        if (Array.isArray(values)) {
+                            console.log(`Loaded ${values.length} data points for ${axis} axis (obs.${key})`);
+                            
+                            // Check if sample values look reasonable
+                            if (values.length > 0) {
+                                console.log(`Sample values: ${values.slice(0, 5)}`);
+                            }
+                        }
                         
                         // Check if categorical
                         if (data.categories && data.categories[key]) {
@@ -652,8 +939,25 @@ const CellPlotPanel = (function() {
                             rows: rows ? rows.split(',') : null
                         });
                         
+                        console.log(`Received obsm data for ${key} column ${column}:`, data);
+                        
+                        if (!data.data || data.data.length === 0) {
+                            console.warn(`No data points received for obsm.${key}.${column}`);
+                            throw new Error(`No data points found for ${key}.${column}`);
+                        }
+                        
                         values = data.data;
                         dataType = 'numerical';
+                        
+                        // Log data statistics to help debug
+                        if (Array.isArray(values)) {
+                            console.log(`Loaded ${values.length} data points for ${axis} axis (obsm.${key}.${column})`);
+                            
+                            // Check if sample values look reasonable
+                            if (values.length > 0) {
+                                console.log(`Sample values: ${values.slice(0, 5)}`);
+                            }
+                        }
                         break;
                         
                     case 'obsp':
@@ -713,7 +1017,9 @@ const CellPlotPanel = (function() {
                 
             } catch (error) {
                 console.error(`Error loading ${axis} axis data:`, error);
-                throw error;
+                
+                // We can't display the plot without data
+                throw new Error(`Failed to load data for ${axis} axis (${type}.${key}.${column})`);
             }
         }
         
@@ -725,6 +1031,23 @@ const CellPlotPanel = (function() {
             if (!_data.x || !_data.y) {
                 _plotContainer.innerHTML = '<div class="alert alert-warning">Insufficient data for plotting</div>';
                 return;
+            }
+            
+            // Check if we have cell names and they match the data
+            if (!_data.cells || _data.cells.length === 0) {
+                console.error('Cell names missing - cannot create plot');
+                _plotContainer.innerHTML = '<div class="alert alert-danger">Error: Cell names missing or unavailable</div>';
+                return;
+            }
+            
+            // Ensure cell names match data point count
+            if (_data.cells.length !== _data.x.values.length) {
+                console.warn(`Cell names count (${_data.cells.length}) doesn't match data points count (${_data.x.values.length})`);
+                
+                // If we have more cells than data points, trim the list
+                if (_data.cells.length > _data.x.values.length) {
+                    _data.cells = _data.cells.slice(0, _data.x.values.length);
+                }
             }
             
             // Prepare plot data
@@ -809,6 +1132,12 @@ const CellPlotPanel = (function() {
                     title: `${_settings.color.type}.${_settings.color.key}` +
                           (_settings.color.column ? `.${_settings.color.column}` : '')
                 };
+            } else if (_data.colorType === 'constant') {
+                // Use a constant color (default to light grey)
+                trace.marker.color = 'rgba(150, 150, 150, 0.7)';
+                delete trace.marker.colorscale;
+                
+                console.log('Using constant color for all points');
             }
             
             // Create layout

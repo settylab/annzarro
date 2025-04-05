@@ -1540,12 +1540,7 @@ class ZarrReader:
             return np.array([])
         
         # Check if this is a dataframe and column_name is specified
-        is_dataframe = False
-        if metadata and 'obsm_dataframes' in metadata and obsm_key in metadata.get('obsm_dataframes', {}):
-            is_dataframe = True
-        else:
-            # Direct check if metadata is not available
-            is_dataframe = self._is_dataframe(root['obsm'][obsm_key])
+        is_dataframe = self._is_dataframe(root['obsm'][obsm_key])
         
         if is_dataframe and column_name is not None:
             # Get specific column from dataframe
@@ -1602,12 +1597,7 @@ class ZarrReader:
             return np.array([])
         
         # Check if this is a dataframe and column_name is specified
-        is_dataframe = False
-        if metadata and 'varm_dataframes' in metadata and varm_key in metadata.get('varm_dataframes', {}):
-            is_dataframe = True
-        else:
-            # Direct check if metadata is not available
-            is_dataframe = self._is_dataframe(root['varm'][varm_key])
+        is_dataframe = self._is_dataframe(root['varm'][varm_key])
         
         if is_dataframe and column_name is not None:
             # Get specific column from dataframe

@@ -121,7 +121,45 @@ const DataManager = (function() {
      */
     async function loadDatasetStructure(datasetPath) {
         try {
+            console.log(`Loading dataset structure from ${Config.API.DATASET_STRUCTURE} with path ${datasetPath}`);
             const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: datasetPath });
+            
+            // Debug: log the structure to help diagnose issues
+            console.log('Dataset structure loaded:', data);
+            
+            // Validate the structure
+            if (!data) {
+                throw new Error('Received empty dataset structure from API');
+            }
+            
+            // The backend may have a different format than what we expect
+            // Transform it to fit our expected structure if needed
+            
+            // If obsm is not in the expected format, try to adapt it
+            if (!data.obsm || !data.obsm.keys) {
+                console.warn('Dataset structure missing expected obsm.keys format, trying to adapt');
+                
+                // Check if we have embeddings property which might contain obsm keys
+                if (data.embeddings && Array.isArray(data.embeddings)) {
+                    console.log('Found embeddings array, using as obsm keys');
+                    data.obsm = {
+                        available: true,
+                        keys: data.embeddings,
+                        info: {}
+                    };
+                    
+                    // If we have shape information, add it to the info structure
+                    if (data.X && data.X.shape) {
+                        data.embeddings.forEach(key => {
+                            data.obsm.info[key] = {
+                                type: 'array',
+                                shape: [data.X.shape[0], 2] // Assuming 2D embeddings
+                            };
+                        });
+                    }
+                }
+            }
+            
             return data;
         } catch (error) {
             console.error('Error loading dataset structure:', error);
@@ -268,8 +306,88 @@ const DataManager = (function() {
         }
         
         try {
+            if (!obsmKey || obsmKey === '') {
+                throw new Error('obsm key is required');
+            }
+            
+            // Fix the URL format to match the API specification from BACKEND_API_REFERENCE.md
+            // GET /api/v1/data/obsm/{obsm_key} is the correct format
             const url = `${Config.API.OBSM}/${obsmKey}`;
+            console.log(`Requesting obsm data from: ${url} with params:`, params);
             const data = await _fetchWithCache(url, params);
+            
+            console.log(`Full response data from obsm endpoint:`, data);
+            
+            // Check if we actually have data
+            if (!data || !data.data) {
+                console.warn('API response does not contain the expected data format');
+                return {
+                    data: [],
+                    obsm_key: obsmKey,
+                    dataset_path: datasetPath
+                };
+            }
+            
+            // Check if we have the expected data format
+            if (Array.isArray(data.data)) {
+                console.log(`Received array data with ${data.data.length} rows`);
+                
+                // If the column name was specified and we got a 2D array, extract a column
+                if (columnName !== undefined && columnName !== null && data.data.length > 0) {
+                    console.log(`Extracting column ${columnName} from full obsm data with ${data.data.length} rows`);
+                    
+                    // First, check if any row exists
+                    if (data.data.length === 0) {
+                        console.warn('No data points returned from API');
+                        return {
+                            data: [],
+                            obsm_key: obsmKey,
+                            dataset_path: datasetPath
+                        };
+                    }
+                    
+                    // Then check if row has the column index
+                    const firstRow = data.data[0];
+                    if (!Array.isArray(firstRow)) {
+                        console.warn('Expected 2D array but first row is not an array');
+                        return {
+                            data: data.data, // Return the original data
+                            obsm_key: obsmKey,
+                            dataset_path: datasetPath
+                        };
+                    }
+                    
+                    const columnIndex = parseInt(columnName);
+                    console.log(`First row has ${firstRow.length} columns, extracting index ${columnIndex}`);
+                    
+                    if (!isNaN(columnIndex) && columnIndex >= 0 && columnIndex < firstRow.length) {
+                        // Extract a specific column from the 2D array
+                        const extractedData = data.data.map(row => row[columnIndex]);
+                        console.log(`Extracted ${extractedData.length} data points for column ${columnIndex}`);
+                        
+                        return {
+                            data: extractedData,
+                            obsm_key: obsmKey,
+                            dataset_path: datasetPath
+                        };
+                    } else {
+                        console.warn(`Column index ${columnIndex} is out of bounds (0-${firstRow.length-1})`);
+                        // If requested column is out of bounds, return an empty array
+                        return {
+                            data: [],
+                            obsm_key: obsmKey,
+                            dataset_path: datasetPath
+                        };
+                    }
+                } else {
+                    // No column specified, return the full array
+                    return data;
+                }
+            } else {
+                // Data is not an array, just return it as-is
+                console.warn('Expected array data but received something else');
+            }
+            
             return data;
         } catch (error) {
             console.error(`Error loading obsm.${obsmKey} data:`, error);

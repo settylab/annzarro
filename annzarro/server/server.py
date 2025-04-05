@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 
 from flask import Flask
 
-from annzarro.server.core import create_app, DEFAULT_CONFIG, load_config_from_file
+from .core import create_app, DEFAULT_CONFIG, load_config_from_file
 
 # Set up logging
 logger = logging.getLogger(__name__)

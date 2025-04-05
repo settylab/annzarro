@@ -12,8 +12,8 @@ from pathlib import Path
 from flask import jsonify, request, current_app as app
 import json
 
-from annzarro.core.zarr_reader import zarr_reader
-from annzarro.data.manager import data_manager
+from ...core.zarr_reader import zarr_reader
+from ...data.manager import data_manager
 
 logger = logging.getLogger(__name__)
 

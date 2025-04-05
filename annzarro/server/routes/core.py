@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import request, jsonify, current_app as app
 
-from annzarro.data.manager import data_manager
+from ...data.manager import data_manager
 
 logger = logging.getLogger(__name__)
 

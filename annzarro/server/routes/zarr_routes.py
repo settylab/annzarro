@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
-from annzarro.core.zarr_reader import zarr_reader
+from ...core.zarr_reader import zarr_reader
 
 logger = logging.getLogger(__name__)
 

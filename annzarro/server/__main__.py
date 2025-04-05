@@ -3,7 +3,7 @@
 import sys
 import argparse
 import os
-from annzarro.server.server import run_server
+from .server import run_server
 
 def main():
     """Main entry point when module is run directly."""
