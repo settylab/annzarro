@@ -287,8 +287,8 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_layer(dataset_path, layer_name, row_indices, col_indices)
-            
+            data = zarr_reader.get_layer(layer_name, dataset_path, row_indices, col_indices)
+
             # Convert NumPy arrays to Python lists for JSON serialization
             if hasattr(data, 'tolist'):
                 # Direct conversion for simple ndarray
