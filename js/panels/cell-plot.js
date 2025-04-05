@@ -623,8 +623,14 @@ const CellPlotPanel = (function() {
                                     columnSelect.selectedIndex = 0;
                                     _settings[axis].column = columnSelect.value;
                                     
-                                    // Update plot
-                                    _loadDataAndCreatePlot();
+                                    // Check if this is a color axis change
+                                    if (axis === 'color' && _plot) {
+                                        console.log('Color setting changed, using optimized update');
+                                        _loadColorDataAndUpdatePlot();
+                                    } else {
+                                        // For other axes, recreate the plot
+                                        _loadDataAndCreatePlot();
+                                    }
                                 }
                             });
                         }
@@ -648,8 +654,14 @@ const CellPlotPanel = (function() {
                             columnSelect.selectedIndex = 0;
                             _settings[axis].column = columnSelect.value;
                             
-                            // Update plot
-                            _loadDataAndCreatePlot();
+                            // Check if this is a color axis change
+                            if (axis === 'color' && _plot) {
+                                console.log('Color key changed, using optimized update');
+                                _loadColorDataAndUpdatePlot();
+                            } else {
+                                // For other axes, recreate the plot
+                                _loadDataAndCreatePlot();
+                            }
                         }
                     });
                 });
@@ -661,8 +673,14 @@ const CellPlotPanel = (function() {
                     const axis = e.target.dataset.axis;
                     _settings[axis].column = e.target.value;
                     
-                    // Update plot
-                    _loadDataAndCreatePlot();
+                    // Check if this is a color axis change
+                    if (axis === 'color' && _plot) {
+                        console.log('Color column changed, using optimized update');
+                        _loadColorDataAndUpdatePlot();
+                    } else {
+                        // For other axes, recreate the plot
+                        _loadDataAndCreatePlot();
+                    }
                 });
             });
             
@@ -718,7 +736,18 @@ const CellPlotPanel = (function() {
             const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
             categoryPaletteSelect.addEventListener('change', (e) => {
                 _settings.categoryPalette = e.target.value;
-                _loadDataAndCreatePlot(); // Redraw the plot with new palette
+                
+                // Check if we can update without recreating
+                if (_plot && _data.colorType === 'categorical') {
+                    // For categorical coloring with palette changes, we need to recreate
+                    _loadDataAndCreatePlot();
+                } else if (_plot) {
+                    // For other cases, try to update just the colors
+                    _loadColorDataAndUpdatePlot(); 
+                } else {
+                    // If no plot exists yet, create it
+                    _loadDataAndCreatePlot();
+                }
             });
             
             // Color range inputs
@@ -743,25 +772,107 @@ const CellPlotPanel = (function() {
             
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', (e) => {
-                // Update if using obsp data
-                if (_settings.x.type === 'obsp' || 
-                    _settings.y.type === 'obsp' || 
-                    (_settings.z && _settings.z.type === 'obsp') ||
-                    _settings.color.type === 'obsp') {
-                    _loadDataAndCreatePlot();
+                console.log(`Focused cell changed to: ${e.detail.cell}`);
+                // Check if we're using obsp data
+                const usesObspData = _settings.x.type === 'obsp' || 
+                                    _settings.y.type === 'obsp' || 
+                                    (_settings.z && _settings.z.type === 'obsp') ||
+                                    _settings.color.type === 'obsp';
+                
+                if (usesObspData) {
+                    // If only color uses obsp data, optimize the update
+                    if (_settings.color.type === 'obsp' && 
+                        _settings.x.type !== 'obsp' && 
+                        _settings.y.type !== 'obsp' && 
+                        (!_settings.z || _settings.z.type !== 'obsp')) {
+                        
+                        console.log('Focused cell changed, optimizing update for color only');
+                        _loadColorDataAndUpdatePlot();
+                    } else {
+                        // Position axes (x, y, z) use obsp data, need to recreate the plot
+                        console.log('Focused cell changed, recreating plot');
+                        _loadDataAndCreatePlot();
+                    }
                 }
             });
             
             // Listen for focused gene changes
             document.addEventListener('focusedGeneChanged', (e) => {
-                // Update if using layer data
-                if (_settings.x.type === 'layer' || 
-                    _settings.y.type === 'layer' || 
-                    (_settings.z && _settings.z.type === 'layer') ||
-                    _settings.color.type === 'layer') {
-                    _loadDataAndCreatePlot();
+                // Check if we're using layer data
+                const usesLayerData = _settings.x.type === 'layer' || 
+                                     _settings.y.type === 'layer' || 
+                                     (_settings.z && _settings.z.type === 'layer') ||
+                                     _settings.color.type === 'layer';
+                
+                if (usesLayerData) {
+                    // If only color uses layer data, optimize the update
+                    if (_settings.color.type === 'layer' && 
+                        _settings.x.type !== 'layer' && 
+                        _settings.y.type !== 'layer' && 
+                        (!_settings.z || _settings.z.type !== 'layer')) {
+                        
+                        console.log('Focused gene changed, optimizing update for color only');
+                        _loadColorDataAndUpdatePlot();
+                    } else {
+                        // Position axes (x, y, z) use layer data, need to recreate the plot
+                        console.log('Focused gene changed, recreating plot');
+                        _loadDataAndCreatePlot();
+                    }
                 }
             });
+        }
+        
+        /**
+         * Load only color data and update the plot without recreating it
+         * @private 
+         */
+        async function _loadColorDataAndUpdatePlot() {
+            try {
+                const filteredCellIndices = _settings.subsettedCells && _settings.hideNonSubset
+                    ? _settings.subsettedCells.map(cell => DataManager.getCellIndex(cell))
+                    : null;
+                
+                // Load only color data
+                console.log('Loading color data for plot update:', _settings.color);
+                const colorData = await _loadAxisData('color', filteredCellIndices);
+                console.log('Color data for update:', colorData);
+                
+                // Make sure we have valid values
+                if (colorData && colorData.values) {
+                    _data.color = colorData.values;
+                    _data.colorType = colorData.type;
+                    _data.colorCategories = colorData.categories;
+                    console.log(`Updated _data.color to array with ${_data.color.length} elements, type: ${_data.colorType}`);
+                    
+                    // Check if we have many NaN values - as they're treated specially in the plot
+                    const nanCount = _data.color.filter(val => val === null || val === undefined || isNaN(val)).length;
+                    console.log(`Color data contains ${nanCount} NaN values out of ${_data.color.length} total`);
+                    
+                    // If we have many NaN values or categorical data, we should recreate the plot
+                    // as these require special treatment in the full plot creation flow
+                    if (nanCount > 0 && nanCount > _data.color.length * 0.1) { // More than 10% NaNs
+                        console.log('Many NaN values detected, recreating full plot for proper handling');
+                        _loadDataAndCreatePlot();
+                        return;
+                    } 
+                    
+                    if (_data.colorType === 'categorical') {
+                        console.log('Categorical color data requires recreating the plot with legends');
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // Update the existing plot without recreating it 
+                    _updatePlot(true); // true = full data update
+                } else {
+                    console.warn('No valid color data returned, falling back to full plot reload');
+                    _loadDataAndCreatePlot();
+                }
+            } catch (error) {
+                console.error('Error updating color data:', error);
+                // Fall back to recreating the plot
+                _loadDataAndCreatePlot();
+            }
         }
         
         /**
@@ -993,13 +1104,54 @@ const CellPlotPanel = (function() {
                             throw new Error('Focused cell not found in dataset');
                         }
                         
+                        // Log the request details for debugging
+                        console.log(`Loading obsp data for ${key} with focused cell ${focusedCell} (index ${focusedCellIndex})`);
+                        
                         data = await DataManager.loadObsp({
                             datasetPath,
                             obspKey: key,
                             rows: [focusedCellIndex]
                         });
                         
-                        values = data.data[0]; // Row for focused cell
+                        // Debug the returned data structure
+                        console.log(`Received obsp data:`, data.data ? 
+                            `Array of ${data.data.length} elements` : 'No data array');
+                        
+                        // Extract and handle values with robust error checking
+                        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                            // Check if the first row is an array as expected
+                            const firstRow = data.data[0];
+                            
+                            if (Array.isArray(firstRow)) {
+                                console.log(`Obsp data is an array with ${firstRow.length} connections`);
+                                console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
+                                values = firstRow;
+                            } else {
+                                console.warn(`Expected array for obsp row, got:`, typeof firstRow);
+                                // Try to handle the case where it's not an array
+                                if (firstRow !== undefined && firstRow !== null) {
+                                    // Convert to array if possible
+                                    values = [firstRow];
+                                    console.log(`Converted non-array obsp data to array`);
+                                } else {
+                                    // Create empty array for safety
+                                    values = [];
+                                    console.warn(`No usable obsp data found`);
+                                }
+                            }
+                        } else {
+                            console.warn(`Invalid or empty obsp data received`);
+                            values = [];
+                        }
+                        
+                        // Check and handle NaN values
+                        if (values) {
+                            const nanCount = values.filter(val => val === null || val === undefined || isNaN(val)).length;
+                            if (nanCount > 0) {
+                                console.log(`Obsp data contains ${nanCount} NaN values out of ${values.length} total`);
+                            }
+                        }
+                        
                         dataType = 'numerical';
                         break;
                         
@@ -1015,6 +1167,9 @@ const CellPlotPanel = (function() {
                             throw new Error('Focused gene not found in dataset');
                         }
                         
+                        // Log the request details for debugging
+                        console.log(`Loading layer data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
+                        
                         data = await DataManager.loadLayer({
                             datasetPath,
                             layerName: key,
@@ -1022,7 +1177,50 @@ const CellPlotPanel = (function() {
                             cols: [focusedGeneIndex]
                         });
                         
-                        values = data.data.map(row => row[0]); // Single column for focused gene
+                        // Debug the returned data structure
+                        console.log(`Received layer data:`, data.data ? 
+                            `Array of ${data.data.length} elements` : 'No data array');
+                        
+                        // Extract and handle values with NaN checks
+                        if (data.data && typeof data.data === 'object') {
+                            if (Array.isArray(data.data)) {
+                                if (data.data.length > 0) {
+                                    if (Array.isArray(data.data[0])) {
+                                        // 2D array format (rows with columns)
+                                        console.log(`Layer data is 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
+                                        // Log first few values for debugging
+                                        console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
+                                        
+                                        try {
+                                            values = data.data.map(row => {
+                                                // Directly access first element, with fallback for safety
+                                                const val = row[0];
+                                                return val === undefined ? NaN : val;
+                                            });
+                                            console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
+                                        } catch (e) {
+                                            console.error(`Error extracting values from 2D array:`, e);
+                                            values = Array(data.data.length).fill(NaN); // Fallback
+                                        }
+                                    } else {
+                                        // Already 1D array
+                                        console.log(`Layer data is 1D array with ${data.data.length} elements`);
+                                        console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
+                                        values = data.data;
+                                    }
+                                } else {
+                                    console.warn(`Empty layer data array received`);
+                                    values = [];
+                                }
+                            } else {
+                                console.warn(`Unexpected data format received:`, typeof data.data);
+                                values = [];
+                            }
+                        } else {
+                            console.warn(`No valid data array received from layer endpoint`);
+                            values = [];
+                        }
+                        
                         dataType = 'numerical';
                         break;
                         
@@ -1487,42 +1685,145 @@ const CellPlotPanel = (function() {
         }
         
         /**
-         * Update plot with current settings
+         * Update plot with current settings without recreating it
+         * @param {boolean} fullDataUpdate - Whether to update all data or just visual properties 
          * @private
          */
-        function _updatePlot() {
-            if (!_plot) return;
+        function _updatePlot(fullDataUpdate = false) {
+            console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
             
-            // Update marker properties
-            const update = {
-                'marker.size': _settings.pointSize,
-                'marker.opacity': _settings.pointOpacity
-            };
+            if (!_plot) {
+                console.warn("Plot doesn't exist yet, creating it instead of updating");
+                _loadDataAndCreatePlot();
+                return;
+            }
             
-            // Update color scale for numerical data
-            if (_data.colorType === 'numerical') {
-                update['marker.colorscale'] = _settings.colorScale;
-                
-                // Update color range if specified
-                if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                    const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
-                    const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+            try {
+                // If it's a full data update (e.g. when changing the color data)
+                if (fullDataUpdate) {
+                    console.log("Performing full data update");
                     
-                    update['marker.cmin'] = cmin;
-                    update['marker.cmax'] = cmax;
-                    
-                    // If hideOutliers changed, we need to reload the plot
-                    if (_plot.data[0].marker.cmin !== cmin || 
-                        _plot.data[0].marker.cmax !== cmax || 
-                        (_settings.hideOutliers && (_plot.data[0].x.length === _data.x.values.length))) {
+                    // If we have multiple traces, we need to recreate the plot
+                    if (_plot.data && _plot.data.length > 1) {
+                        console.log("Plot has multiple traces, recreating instead of updating");
                         _loadDataAndCreatePlot();
                         return;
                     }
+                    
+                    if (_data.colorType === 'categorical') {
+                        console.log("Categorical coloring requires recreating the plot");
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // For numerical data, update the color array and scales
+                    if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
+                        console.log(`Updating plot with ${_data.color.length} color values`);
+                        
+                        // Handle NaN values
+                        const validIndices = [];
+                        const nanIndices = [];
+                        
+                        for (let i = 0; i < _data.color.length; i++) {
+                            const val = _data.color[i];
+                            if (val === null || val === undefined || isNaN(val)) {
+                                nanIndices.push(i);
+                            } else {
+                                validIndices.push(i);
+                            }
+                        }
+                        
+                        console.log(`Found ${nanIndices.length} NaN values and ${validIndices.length} valid values`);
+                        
+                        // If we have NaN values, we need to recreate the plot
+                        if (nanIndices.length > 0) {
+                            console.log("Data contains NaN values, recreating plot for proper handling");
+                            _loadDataAndCreatePlot();
+                            return;
+                        }
+                        
+                        // Update color scale and data
+                        const update = {
+                            'marker.color': [_data.color],
+                            'marker.colorscale': [_settings.colorScale]
+                        };
+                        
+                        // Set color range if specified
+                        if (_settings.colorMin !== null || _settings.colorMax !== null) {
+                            const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
+                            const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+                            
+                            update['marker.cmin'] = [cmin];
+                            update['marker.cmax'] = [cmax];
+                            
+                            // If hideOutliers is enabled, we need to recreate the plot
+                            if (_settings.hideOutliers) {
+                                console.log("Hide outliers enabled, recreating plot");
+                                _loadDataAndCreatePlot();
+                                return;
+                            }
+                        }
+                        
+                        // Update the colorbar title
+                        const layout = {
+                            'coloraxis.colorbar.title': {
+                                text: `${_settings.color.type}.${_settings.color.key}` +
+                                      (_settings.color.column ? `.${_settings.color.column}` : '')
+                            }
+                        };
+                        
+                        // Apply updates
+                        console.log("Applying updates to existing plot:", update);
+                        Plotly.update(_plotContainer, update, layout);
+                        console.log("Plot updated successfully");
+                    } else {
+                        console.log("Recreating plot due to color data issues");
+                        _loadDataAndCreatePlot();
+                    }
+                } else {
+                    // Simple visual property updates
+                    console.log("Updating visual properties only");
+                    
+                    // Update common marker properties
+                    const update = {
+                        'marker.size': _settings.pointSize,
+                        'marker.opacity': _settings.pointOpacity
+                    };
+                    
+                    // Update color scale for numerical data
+                    if (_data.colorType === 'numerical') {
+                        update['marker.colorscale'] = _settings.colorScale;
+                        
+                        // Update color range if specified
+                        if (_settings.colorMin !== null || _settings.colorMax !== null) {
+                            const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
+                            const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+                            
+                            update['marker.cmin'] = cmin;
+                            update['marker.cmax'] = cmax;
+                            
+                            // If hideOutliers changed, we need to reload the plot
+                            if (_plot.data[0].marker.cmin !== cmin || 
+                                _plot.data[0].marker.cmax !== cmax || 
+                                (_settings.hideOutliers && (_plot.data[0].x.length === _data.x.values.length))) {
+                                console.log("Color range or outlier settings changed, recreating plot");
+                                _loadDataAndCreatePlot();
+                                return;
+                            }
+                        }
+                    }
+                    
+                    // Apply updates to all traces
+                    const traceIndices = Array.from({length: _plot.data.length}, (_, i) => i);
+                    console.log(`Applying updates to ${traceIndices.length} traces:`, update);
+                    Plotly.update(_plotContainer, update, {}, traceIndices);
+                    console.log("Visual properties updated successfully");
                 }
+            } catch (error) {
+                console.error("Error updating plot:", error);
+                console.log("Falling back to recreating the plot");
+                _loadDataAndCreatePlot();
             }
-            
-            // Apply updates
-            Plotly.update(_plotContainer, update, {}, [0]);
         }
         
         /**

@@ -465,8 +465,44 @@ const DataManager = (function() {
         }
         
         try {
+            // Log focused cell details if we're loading for a specific cell
+            const focusedCellIndex = rows && rows.length === 1 ? rows[0] : -1;
+            const focusedCell = focusedCellIndex >= 0 && _cells ? _cells[focusedCellIndex] : null;
+            
+            console.log(`Loading obsp data: ${obspKey}, cell: ${focusedCell}, index: ${focusedCellIndex}`);
+            console.log(`Obsp request params: dataset_path=${datasetPath}, rows=${params.rows}`);
+            
             const url = `${Config.API.OBSP}/${obspKey}`;
             const data = await _fetchWithCache(url, params);
+            
+            // Log and debug the data structure
+            console.log(`Obsp data format for ${obspKey} (cell: ${focusedCell}, index: ${focusedCellIndex}):`,
+                        data && data.data ? `Array of ${data.data.length} items` : 'No data');
+            
+            // Process the data to ensure consistent format
+            if (data && data.data && rows && rows.length === 1) {
+                // We're loading data for a single focused cell
+                if (data.data.length === 1) {
+                    // The data is already for a single cell, check its format
+                    const cellData = data.data[0];
+                    
+                    if (!Array.isArray(cellData)) {
+                        console.warn(`Expected array data for obsp row, got:`, typeof cellData);
+                        // Try to convert to array if not already
+                        data.data[0] = Array.isArray(cellData) ? cellData : [cellData];
+                    } else {
+                        console.log(`Obsp data for cell ${focusedCell} has ${cellData.length} connections`);
+                        console.log(`Sample values:`, cellData.slice(0, 5));
+                    }
+                } else if (data.data.length > 1) {
+                    console.warn(`Received multiple rows (${data.data.length}) when requesting single cell ${focusedCell}`);
+                    // Extract only the first row to maintain consistency
+                    data.data = [data.data[0]];
+                } else {
+                    console.warn(`No data rows received for focused cell ${focusedCell}`);
+                }
+            }
+            
             return data;
         } catch (error) {
             console.error(`Error loading obsp.${obspKey} data:`, error);
@@ -538,8 +574,60 @@ const DataManager = (function() {
         }
         
         try {
+            const focusedGene = cols && cols.length === 1 ? _genes[cols[0]] : null;
+            const focusedGeneIndex = focusedGene ? cols[0] : -1;
+            
+            console.log(`Loading layer data: ${layerName}, gene: ${focusedGene}, index: ${focusedGeneIndex}`);
+            console.log(`Layer request params: dataset_path=${datasetPath}, rows=${params.rows}, cols=${params.cols}`);
+            
             const url = `${Config.API.LAYER}/${layerName}`;
             const data = await _fetchWithCache(url, params);
+            
+            // Log and debug the data structure
+            console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
+                        data && data.data ? `Array of ${data.data.length} items` : 'No data');
+            
+            // Process the data to ensure consistent format
+            if (data && data.data) {
+                // Check if we need to extract a single column from a 2D array
+                if (cols && cols.length === 1 && data.data.length > 0) {
+                    // Check if the data is already a 1D array
+                    if (!Array.isArray(data.data[0])) {
+                        console.log(`Layer data already in 1D format with ${data.data.length} elements`);
+                        // It's already a 1D array, nothing to do
+                        return data;
+                    } else {
+                        // We have a 2D array, need to extract the first column
+                        console.log(`Converting 2D array to 1D for focused gene: ${data.data.length} rows`);
+                        
+                        try {
+                            // Create a new array by extracting the first column from each row
+                            const processedData = data.data.map(row => {
+                                // Handle edge cases and ensure we always get a number (or NaN)
+                                if (Array.isArray(row)) {
+                                    return row[0] === undefined ? NaN : row[0];
+                                } else {
+                                    return row === undefined ? NaN : row;
+                                }
+                            });
+                            
+                            console.log(`Processed layer data to 1D array with ${processedData.length} elements`);
+                            console.log(`Sample values:`, processedData.slice(0, 5));
+                            
+                            // Return processed data
+                            return {
+                                ...data,
+                                data: processedData
+                            };
+                        } catch (e) {
+                            console.error(`Error processing layer data:`, e);
+                            // Return original data if processing fails
+                            return data;
+                        }
+                    }
+                }
+            }
+            
             return data;
         } catch (error) {
             console.error(`Error loading layer.${layerName} data:`, error);
