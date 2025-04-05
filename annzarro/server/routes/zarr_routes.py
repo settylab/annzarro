@@ -247,10 +247,63 @@ def register_zarr_routes(app, api_version):
             logger.error(f"Error getting uns structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
             
-    @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/<path:uns_key>", methods=["GET"])
-    def get_uns_data(dataset_path: str, uns_key: str):
+    @app.route(f"/api/{api_version}/datasets/uns/<path:uns_key>", methods=["GET"])
+    def get_uns_data(uns_key: str):
         """
         Get data from the uns section.
+        
+        Path parameters:
+            uns_key: Key in uns to get
+            
+        Query parameters:
+            dataset_path: Path to the dataset
+            
+        Returns:
+            JSON response with uns data
+        """
+        # Get dataset_path from query parameters
+        dataset_path = request.args.get("dataset_path")
+        
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+            
+        try:
+            # Use the stateless approach to get dataset info
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            
+            # Check if dataset has uns
+            if not metadata.get("has_uns", False):
+                return jsonify({
+                    "error": "Dataset does not have uns data"
+                }), 404
+                
+            # Skip the key existence check and let get_uns handle missing keys
+                
+            # Get the uns data
+            data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
+            
+            if data is None:
+                return jsonify({
+                    "dataset_path": dataset_path,
+                    "uns_key": uns_key,
+                    "data": None,
+                    "message": f"Uns key '{uns_key}' not found or contains no data"
+                })
+            
+            return jsonify({
+                "dataset_path": dataset_path,
+                "uns_key": uns_key,
+                "data": data
+            })
+        except Exception as e:
+            logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
+            return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
+        
+    @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/<path:uns_key>", methods=["GET"])
+    def get_uns_data_alt(dataset_path: str, uns_key: str):
+        """
+        Alternative route for getting data from the uns section.
+        This maintains backward compatibility with the path-based approach.
         
         Args:
             dataset_path: Path to the dataset

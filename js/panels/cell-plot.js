@@ -26,6 +26,7 @@ const CellPlotPanel = (function() {
             pointSize: Config.DEFAULTS.POINT_SIZE,
             pointOpacity: Config.DEFAULTS.POINT_OPACITY,
             colorScale: Config.DEFAULTS.COLOR_SCALE,
+            categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
             colorMax: null,
             hoverInfo: [{ type: 'obs', key: '_index' }],
@@ -41,6 +42,7 @@ const CellPlotPanel = (function() {
         if (options.pointSize) _settings.pointSize = options.pointSize;
         if (options.pointOpacity) _settings.pointOpacity = options.pointOpacity;
         if (options.colorScale) _settings.colorScale = options.colorScale;
+        if (options.categoryPalette) _settings.categoryPalette = options.categoryPalette;
         if (options.colorMin !== undefined) _settings.colorMin = options.colorMin;
         if (options.colorMax !== undefined) _settings.colorMax = options.colorMax;
         if (options.hoverInfo) _settings.hoverInfo = options.hoverInfo;
@@ -161,11 +163,23 @@ const CellPlotPanel = (function() {
                                 </div>
                                 
                                 <div class="color-range-controls" id="color-range-container-${_id}" style="display:none;">
-                                    <label>Color Range:</label>
+                                    <label class="numerical-color-label">Color Range:</label>
+                                    <label class="categorical-color-label" style="display:none;">Color Palette:</label>
                                     <select class="form-select form-select-sm color-palette-selector" id="color-scale-${_id}">
                                         ${Config.DEFAULTS.COLOR_SCALES.map(scale => 
                                             `<option value="${scale}" ${scale === _settings.colorScale ? 'selected' : ''}>${scale}</option>`
                                         ).join('')}
+                                    </select>
+                                    <select class="form-select form-select-sm category-palette-selector" id="category-palette-${_id}" style="display:none;">
+                                        <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
+                                        <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
+                                        <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
+                                        <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
+                                        <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
+                                        <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
+                                        <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
+                                        <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
+                                        <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
                                     </select>
                                     <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}">
                                     <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}">
@@ -700,6 +714,13 @@ const CellPlotPanel = (function() {
                 _updatePlot();
             });
             
+            // Category palette selector
+            const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
+            categoryPaletteSelect.addEventListener('change', (e) => {
+                _settings.categoryPalette = e.target.value;
+                _loadDataAndCreatePlot(); // Redraw the plot with new palette
+            });
+            
             // Color range inputs
             const colorMinInput = document.getElementById(`color-min-${_id}`);
             colorMinInput.addEventListener('change', (e) => {
@@ -1071,28 +1092,207 @@ const CellPlotPanel = (function() {
             
             // Set colors based on color data type
             if (_data.colorType === 'categorical') {
-                // Categorical coloring
-                trace.marker.color = _data.color;
+                // Rather than using a colorscale, we'll use discrete colors with a legend
+                // Remove the colorscale property that would force a colorbar
+                delete trace.marker.colorscale;
                 
-                // Use custom color palette if available from uns
-                const datasetStructure = DataManager.getDatasetStructure();
+                // Data preparation and color assignment depends on whether we have categories or unique values
+                const catValues = _data.categories || [...new Set(_data.color)];
+                console.log(`Found ${catValues.length} categories:`, catValues);
+                
+                // Set up an object to hold all distinct traces (one per category)
+                const traces = [];
+                const datasetPath = DataManager.getCurrentDataset();
                 const colorKey = `${_settings.color.key}_colors`;
-                let customColors = null;
                 
-                if (datasetStructure && 
-                    datasetStructure.uns && 
-                    datasetStructure.uns.structure && 
-                    datasetStructure.uns.structure[colorKey]) {
-                    
-                    // Attempt to load custom colors from uns
-                    try {
-                        // This would require a separate API call in a real implementation
-                        // For now, we'll just use Plotly's default colors
-                    } catch (error) {
-                        console.warn('Unable to load custom colors:', error);
+                // Define color palettes to select from
+                const colorPalettes = {
+                    default: [
+                        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+                    ],
+                    G10: [
+                        '#3366CC', '#DC3912', '#FF9900', '#109618', '#990099',
+                        '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'
+                    ],
+                    Alphabet: [
+                        '#AA0DFE', '#3283FE', '#85660D', '#782AB6', '#565656',
+                        '#1C8356', '#16FF32', '#F7E1A0', '#E2E2E2', '#1CBE4F',
+                        '#C4451C', '#DEA0FD', '#FE00FA', '#325A9B', '#FEAF16',
+                        '#F8A19F', '#90AD1C', '#F6222E', '#1CFFCE', '#2ED9FF',
+                        '#B10DA1', '#C075A6', '#FC1CBF', '#B00068', '#FBE426', 
+                        '#FA0087'
+                    ],
+                    Dark2: [
+                        '#1B9E77', '#D95F02', '#7570B3', '#E7298A',
+                        '#66A61E', '#E6AB02', '#A6761D', '#666666'
+                    ],
+                    Pastel1: [
+                        '#FBB4AE', '#B3CDE3', '#CCEBC5', '#DECBE4',
+                        '#FED9A6', '#FFFFCC', '#E5D8BD', '#FDDAEC'
+                    ],
+                    Set1: [
+                        '#E41A1C', '#377EB8', '#4DAF4A', '#984EA3',
+                        '#FF7F00', '#FFFF33', '#A65628', '#F781BF', '#999999'
+                    ],
+                    Set2: [
+                        '#66C2A5', '#FC8D62', '#8DA0CB', '#E78AC3',
+                        '#A6D854', '#FFD92F', '#E5C494', '#B3B3B3'
+                    ],
+                    Paired: [
+                        '#A6CEE3', '#1F78B4', '#B2DF8A', '#33A02C',
+                        '#FB9A99', '#E31A1C', '#FDBF6F', '#FF7F00',
+                        '#CAB2D6', '#6A3D9A', '#FFFF99', '#B15928'
+                    ]
+                };
+                
+                // Check for colors in uns
+                let unsColors = null;
+                
+                const processCategories = (customColors = null) => {
+                    // Store the custom colors from uns if they exist
+                    if (customColors) {
+                        unsColors = customColors;
                     }
-                }
+                    
+                    // Choose the color palette based on settings
+                    let selectedPalette = colorPalettes.default;
+                    
+                    if (_settings.categoryPalette === 'uns' && unsColors) {
+                        selectedPalette = unsColors;
+                        console.log('Using custom colors from uns:', selectedPalette);
+                    } else if (_settings.categoryPalette !== 'uns' && _settings.categoryPalette !== 'default') {
+                        selectedPalette = colorPalettes[_settings.categoryPalette] || colorPalettes.default;
+                        console.log(`Using color palette ${_settings.categoryPalette}:`, selectedPalette);
+                    }
+                    
+                    // Create one trace per category for the legend
+                    catValues.forEach((category, i) => {
+                        // Find all points belonging to this category
+                        const indices = [];
+                        _data.color.forEach((val, idx) => {
+                            if (val === category) indices.push(idx);
+                        });
+                        
+                        if (indices.length === 0) return; // Skip if no points in this category
+                        
+                        // Create a trace for this category
+                        const catTrace = {
+                            type: _settings.z ? 'scatter3d' : 'scattergl',
+                            mode: 'markers',
+                            name: category,
+                            text: indices.map(idx => _data.cells[idx]),
+                            hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
+                            x: indices.map(idx => _data.x.values[idx]),
+                            y: indices.map(idx => _data.y.values[idx]),
+                            marker: {
+                                size: _settings.pointSize,
+                                opacity: _settings.pointOpacity,
+                                color: selectedPalette[i % selectedPalette.length]
+                            },
+                            showlegend: true
+                        };
+                        
+                        // Add z coordinates for 3D plots
+                        if (_settings.z && _data.z) {
+                            catTrace.z = indices.map(idx => _data.z.values[idx]);
+                        }
+                        
+                        traces.push(catTrace);
+                    });
+                    
+                    // Return an empty array if we're going to create multiple traces
+                    return traces;
+                };
                 
+                // Check for custom colors in uns if we're using them
+                if (_settings.categoryPalette === 'uns') {
+                    fetch(`${Config.API.UNS}/${encodeURIComponent(colorKey)}?dataset_path=${encodeURIComponent(datasetPath)}`)
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            }
+                            return null;
+                        })
+                        .then(data => {
+                            if (data && data.data) {
+                                console.log(`Found custom colors in uns.${colorKey}:`, data.data);
+                                const customColors = Array.isArray(data.data) ? data.data : [data.data];
+                                
+                                // Process with custom colors 
+                                const traces = processCategories(customColors);
+                                
+                                // Update layout to show the legend
+                                const layout = {
+                                    showlegend: true,
+                                    legend: {
+                                        title: { text: _settings.color.key }
+                                    }
+                                };
+                                
+                                // Create the plot with multiple traces
+                                Plotly.newPlot(_plotContainer, traces, layout, {
+                                    responsive: true,
+                                    displayModeBar: true,
+                                    displaylogo: false,
+                                    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+                                });
+                                
+                                // Set up click handler to set focused cell
+                                _plotContainer.on('plotly_click', (data) => {
+                                    const pointIndex = data.points[0].pointIndex;
+                                    const traceIndex = data.points[0].curveNumber;
+                                    const cellName = traces[traceIndex].text[pointIndex];
+                                    
+                                    if (cellName) {
+                                        DataManager.setFocusedCell(cellName);
+                                    }
+                                });
+                                
+                                // Store plot reference
+                                _plot = _plotContainer;
+                            }
+                        })
+                        .catch(error => {
+                            console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
+                            
+                            // Process without custom colors as fallback
+                            const traces = processCategories();
+                            
+                            // Create the plot with multiple traces
+                            Plotly.newPlot(_plotContainer, traces, {
+                                showlegend: true,
+                                legend: {
+                                    title: { text: _settings.color.key }
+                                }
+                            }, {
+                                responsive: true,
+                                displayModeBar: true,
+                                displaylogo: false,
+                                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+                            });
+                            
+                            // Set up click handler
+                            _plotContainer.on('plotly_click', (data) => {
+                                const pointIndex = data.points[0].pointIndex;
+                                const traceIndex = data.points[0].curveNumber;
+                                const cellName = traces[traceIndex].text[pointIndex];
+                                
+                                if (cellName) {
+                                    DataManager.setFocusedCell(cellName);
+                                }
+                            });
+                            
+                            // Store plot reference
+                            _plot = _plotContainer;
+                        });
+                        
+                    // Return empty trace here - we'll replace it with the processed traces
+                    return [];
+                } else {
+                    // Not using uns colors or waiting for them, process immediately
+                    return processCategories();
+                }
             } else if (_data.colorType === 'numerical') {
                 // Numerical coloring
                 trace.marker.color = _data.color;
@@ -1191,8 +1391,20 @@ const CellPlotPanel = (function() {
                 // ... (would implement this in a real application)
             }
             
+            // The traces array will either contain a single trace (for numerical data)
+            // or multiple traces (for categorical data with legend)
+            const traces = Array.isArray(trace) ? trace : [trace];
+            
+            // For categorical data with multiple traces, ensure legend is enabled
+            if (traces.length > 1) {
+                layout.showlegend = true;
+                layout.legend = { 
+                    title: { text: _settings.color.key } 
+                };
+            }
+            
             // Create the plot
-            Plotly.newPlot(_plotContainer, [trace], layout, {
+            Plotly.newPlot(_plotContainer, traces, layout, {
                 responsive: true,
                 displayModeBar: true,
                 displaylogo: false,
@@ -1202,7 +1414,17 @@ const CellPlotPanel = (function() {
             // Set up click handler to set focused cell
             _plotContainer.on('plotly_click', (data) => {
                 const pointIndex = data.points[0].pointIndex;
-                const cellName = _data.cells[pointIndex];
+                const traceIndex = data.points[0].curveNumber;
+                let cellName;
+                
+                // Handle both single trace and multiple traces
+                if (traces.length > 1 && traces[traceIndex].text) {
+                    // For categorical data with multiple traces
+                    cellName = traces[traceIndex].text[pointIndex];
+                } else {
+                    // For single trace (numerical data)
+                    cellName = _data.cells[pointIndex];
+                }
                 
                 if (cellName) {
                     DataManager.setFocusedCell(cellName);
@@ -1212,15 +1434,30 @@ const CellPlotPanel = (function() {
             // Store plot reference
             _plot = _plotContainer;
             
-            // Show color range controls if numerical
+            // Show appropriate color controls based on data type
             const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
+            const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
+            const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
+            const colorMinInput = document.getElementById(`color-min-${_id}`);
+            const colorMaxInput = document.getElementById(`color-max-${_id}`);
+            const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
+            const numericalLabel = _container.querySelector('.numerical-color-label');
+            const categoricalLabel = _container.querySelector('.categorical-color-label');
+            
             if (_data.colorType === 'numerical') {
+                // Show numerical color controls
                 colorRangeContainer.style.display = 'flex';
+                colorScaleSelect.style.display = 'block';
+                categoryPaletteSelect.style.display = 'none';
+                colorMinInput.style.display = 'block';
+                colorMaxInput.style.display = 'block';
+                hideOutliersToggle.parentElement.style.display = 'block';
+                
+                // Show numerical label, hide categorical label
+                numericalLabel.style.display = 'inline';
+                categoricalLabel.style.display = 'none';
                 
                 // Set min/max input defaults if not already set
-                const colorMinInput = document.getElementById(`color-min-${_id}`);
-                const colorMaxInput = document.getElementById(`color-max-${_id}`);
-                
                 if (colorMinInput.value === '') {
                     colorMinInput.placeholder = Math.min(..._data.color).toFixed(2);
                 }
@@ -1228,7 +1465,23 @@ const CellPlotPanel = (function() {
                 if (colorMaxInput.value === '') {
                     colorMaxInput.placeholder = Math.max(..._data.color).toFixed(2);
                 }
+            } else if (_data.colorType === 'categorical') {
+                // Show categorical color controls
+                colorRangeContainer.style.display = 'flex';
+                colorScaleSelect.style.display = 'none';
+                categoryPaletteSelect.style.display = 'block';
+                colorMinInput.style.display = 'none';
+                colorMaxInput.style.display = 'none';
+                hideOutliersToggle.parentElement.style.display = 'none';
+                
+                // Show categorical label, hide numerical label
+                numericalLabel.style.display = 'none';
+                categoricalLabel.style.display = 'inline';
+                
+                // Ensure the correct palette is selected
+                categoryPaletteSelect.value = _settings.categoryPalette;
             } else {
+                // Hide all color controls
                 colorRangeContainer.style.display = 'none';
             }
         }

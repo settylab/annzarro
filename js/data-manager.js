@@ -346,17 +346,18 @@ const DataManager = (function() {
                         };
                     }
                     
-                    // Then check if row has the column index
-                    const firstRow = data.data[0];
-                    if (!Array.isArray(firstRow)) {
-                        console.warn('Expected 2D array but first row is not an array');
+                    // Check if the data is already a 1D array (backend already extracted the column)
+                    if (!Array.isArray(data.data[0])) {
+                        console.log(`Received 1D array with ${data.data.length} data points`);
                         return {
-                            data: data.data, // Return the original data
+                            data: data.data, // Return the data as-is
                             obsm_key: obsmKey,
                             dataset_path: datasetPath
                         };
                     }
                     
+                    // We have a 2D array, need to extract column
+                    const firstRow = data.data[0];
                     const columnIndex = parseInt(columnName);
                     console.log(`First row has ${firstRow.length} columns, extracting index ${columnIndex}`);
                     
