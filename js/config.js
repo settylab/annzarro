@@ -34,11 +34,13 @@ const Config = (function() {
         MAX_CELLS: 10000,
         MAX_GENES: 10000,
         POINT_SIZE: 5,
-        POINT_OPACITY: 0.7,
-        COLOR_SCALE: 'Viridis',
+        POINT_OPACITY: 1.0,
+        COLOR_SCALE: 'Portland',
         COLOR_SCALES: [
-            'Viridis', 'Plasma', 'Inferno', 'Magma', 'Cividis',
-            'Greys', 'Blues', 'Greens', 'Reds', 'Purples', 'Oranges'
+            "Greys", "YlGnBu", "Greens", "YlOrRd", "Bluered", "RdBu",
+            "Reds", "Blues", "Picnic", "Rainbow", "Portland", "Jet",
+            "Hot", "Blackbody", "Earth", "Electric", "Viridis", "Cividis",
+            "Inferno", "Magma", "Plasma"
         ],
         POINT_SHAPES: ['circle', 'square', 'diamond', 'cross', 'x'],
         TAXONOMY_ID: '9606', // Homo sapiens by default
