@@ -9,6 +9,14 @@ const AnnzarroApp = (function() {
     let _initialized = false;
     
     /**
+     * Get the panel manager instance
+     * @returns {Object} - The panel manager implementation
+     */
+    function getPanelManager() {
+        return window.PanelManagerAdapter || window.PanelManager;
+    }
+    
+    /**
      * Initialize the application
      */
     function init() {
@@ -47,8 +55,9 @@ const AnnzarroApp = (function() {
         const addPanelBtn = document.getElementById('addPanelBtn');
         if (addPanelBtn) {
             addPanelBtn.addEventListener('click', () => {
-                if (window.PanelManager) {
-                    PanelManager.addPanelRow();
+                const panelManager = getPanelManager();
+                if (panelManager) {
+                    panelManager.addPanelRow();
                 }
             });
         }
@@ -61,8 +70,9 @@ const AnnzarroApp = (function() {
                 const confirmMsg = 'This will clear all panels and start a new session. Continue?';
                 if (confirm(confirmMsg)) {
                     // Clear all panels and setup new ones
-                    if (window.PanelManager) {
-                        PanelManager.restoreLayoutState({ panels: {}, minimized: {}, recentlyClosed: [] });
+                    const panelManager = getPanelManager();
+                    if (panelManager) {
+                        panelManager.restoreLayoutState({ panels: {}, minimized: {}, recentlyClosed: [] });
                     }
                 }
             });
@@ -131,7 +141,8 @@ const AnnzarroApp = (function() {
                 hideEmptyState();
                 
                 // Create default layout if none exists - using await since it's now async
-                if (PanelManager && Object.keys(PanelManager.getLayoutState().panels).length === 0) {
+                const panelManager = getPanelManager();
+                if (panelManager && Object.keys(panelManager.getLayoutState().panels).length === 0) {
                     console.log("No existing panels found. Will create default layout.");
                     
                     // Longer delay to ensure data is fully loaded and reflected in metadata
@@ -194,7 +205,8 @@ const AnnzarroApp = (function() {
      * Create a default layout with common panels
      */
     async function createDefaultLayout() {
-        if (!PanelManager) return;
+        const panelManager = getPanelManager();
+        if (!panelManager) return;
         
         console.log('Creating default layout with panels');
         
@@ -348,7 +360,7 @@ const AnnzarroApp = (function() {
             console.log('Creating scatter plot panel with config:', plotConfig);
             // Add entity type to config
             plotConfig.entityType = 'cell';
-            const panelId = PanelManager.createPanel('plot', plotConfig);
+            const panelId = panelManager.createPanel('plot', plotConfig);
             
             // Add a short delay, then explicitly trigger the plot creation via PlotManager
             // This helps ensure the DOM is ready and the plot container exists
@@ -361,14 +373,14 @@ const AnnzarroApp = (function() {
             
             // Create genes table
             console.log('Creating genes table panel');
-            PanelManager.createPanel('geneTable', {
+            panelManager.createPanel('geneTable', {
                 title: 'Genes',
                 selectionSet: 'defaultGenes'
             });
             
             // Create cells table
             console.log('Creating cells table panel');
-            PanelManager.createPanel('cellTable', {
+            panelManager.createPanel('cellTable', {
                 title: 'Cells',
                 selectionSet: 'defaultCells'
             });
@@ -377,7 +389,7 @@ const AnnzarroApp = (function() {
         } catch (error) {
             console.error('Error creating default layout:', error);
             // Create an error notification panel
-            PanelManager.createPanel('plot', {
+            panelManager.createPanel('plot', {
                 title: 'Error Creating Layout',
                 error: error.message
             });

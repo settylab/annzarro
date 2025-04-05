@@ -16,7 +16,9 @@ Annzarro works with AnnData objects in zarr format, which have the following mai
 - **obs**: Cell annotations (dataframe, rows = cells)
 - **var**: Gene annotations (dataframe, rows = genes)
 - **obsm**: Multi-dimensional cell annotations (e.g., embeddings like UMAP, PCA)
+  - Can be either dataframes or arrays
 - **varm**: Multi-dimensional gene annotations
+  - Can be either dataframes or arrays
 - **layers**: Alternative views of the expression matrix
 - **obsp**: Cell-cell relationships (square matrices)
 - **varp**: Gene-gene relationships (square matrices)
@@ -93,13 +95,37 @@ GET /api/v1/data/dataset_structure
   "obsm": {
     "available": true,
     "keys": ["X_umap", "X_pca"],
-    "dataframes": {...},
+    "dataframes": {
+      "dataframe_key": {
+        "columns": ["col1", "col2"],
+        "encoding_type": "dataframe",
+        "encoding_version": "0.1.0"
+      },
+      "array_key": {
+        "columns": ["0", "1", "2"],
+        "is_array": true,
+        "array_shape": [1000, 3],
+        "array_dtype": "float32"
+      }
+    },
     "matrices": {...}
   },
   "varm": {
     "available": true,
     "keys": [...],
-    "dataframes": {...},
+    "dataframes": {
+      "dataframe_key": {
+        "columns": ["col1", "col2"],
+        "encoding_type": "dataframe",
+        "encoding_version": "0.1.0"
+      },
+      "array_key": {
+        "columns": ["0", "1", "2"],
+        "is_array": true,
+        "array_shape": [2000, 3],
+        "array_dtype": "float32"
+      }
+    },
     "matrices": {...}
   },
   "obsp": {
@@ -251,7 +277,7 @@ GET /api/v1/data/obsm/{obsm_key}
 - `rows`: (Optional) Comma-separated list of row indices
 - `cols`: (Optional) Comma-separated list of column indices
 - `max_cells`: (Optional) Maximum number of cells to return (default: 10000)
-- `column_name`: (Optional) Column name for dataframe-encoded obsm matrices
+- `column_name`: (Optional) Column name for dataframe-encoded obsm matrices, or numeric index (as string, e.g., "0", "1", "2") for array-based obsm matrices
 
 **Response:**
 ```json
@@ -261,6 +287,8 @@ GET /api/v1/data/obsm/{obsm_key}
   "dataset_path": "/path/to/dataset.zarr"
 }
 ```
+
+**Note:** For array-based obsm matrices, the API automatically generates numeric column names ("0", "1", "2", etc.) that can be used with the `column_name` parameter to extract specific columns.
 
 ### Get Variable Multi-dimensional Data (varm)
 
@@ -275,7 +303,7 @@ GET /api/v1/data/varm/{varm_key}
 - `rows`: (Optional) Comma-separated list of row indices
 - `cols`: (Optional) Comma-separated list of column indices
 - `max_genes`: (Optional) Maximum number of genes to return (default: 10000)
-- `column_name`: (Optional) Column name for dataframe-encoded varm matrices
+- `column_name`: (Optional) Column name for dataframe-encoded varm matrices, or numeric index (as string, e.g., "0", "1", "2") for array-based varm matrices
 
 **Response:**
 ```json
@@ -285,6 +313,8 @@ GET /api/v1/data/varm/{varm_key}
   "dataset_path": "/path/to/dataset.zarr"
 }
 ```
+
+**Note:** For array-based varm matrices, the API automatically generates numeric column names ("0", "1", "2", etc.) that can be used with the `column_name` parameter to extract specific columns.
 
 ### Get Observation-Observation Matrices (obsp)
 
@@ -340,7 +370,7 @@ GET /api/v1/data/by_path
 
 **Parameters:**
 - `dataset_path`: Path to the dataset
-- `path`: Path to the data (e.g., "varm/matrix_name/column_name" or "obsm/X_umap")
+- `path`: Path to the data (e.g., "varm/matrix_name/column_name", "obsm/X_umap", or "varm/array_matrix/0" for numeric column in array)
 - `rows`: (Optional) Comma-separated list of row indices
 - `cols`: (Optional) Comma-separated list of column indices
 
@@ -352,6 +382,8 @@ GET /api/v1/data/by_path
   "dataset_path": "/path/to/dataset.zarr"
 }
 ```
+
+**Note:** For array-based obsm/varm matrices, you can access specific columns using numeric indices in the path (e.g., "obsm/X_pca/0" for the first dimension).
 
 ### Get Gene and Cell Names
 
@@ -382,7 +414,7 @@ GET /api/v1/data/cells
 
 ### Get DataFrame Column Information
 
-Get column names for dataframe-encoded matrices.
+Get column names for dataframe-encoded or array-based matrices.
 
 ```
 GET /api/v1/data/obsm_dataframe_columns
@@ -393,7 +425,7 @@ GET /api/v1/data/varm_dataframe_columns
 - `dataset_path`: Path to the dataset
 - `key`: Key in obsm/varm to get columns for
 
-**Response:**
+**Response for dataframe-encoded matrices:**
 ```json
 {
   "columns": ["column1", "column2", ...],
@@ -401,6 +433,17 @@ GET /api/v1/data/varm_dataframe_columns
   "dataset_path": "/path/to/dataset.zarr"
 }
 ```
+
+**Response for array-based matrices:**
+```json
+{
+  "columns": ["0", "1", "2", ...],
+  "obsm_key": "key",
+  "dataset_path": "/path/to/dataset.zarr"
+}
+```
+
+**Note:** For arrays, the API automatically generates numeric column names corresponding to the array dimensions (0, 1, 2, etc.).
 
 ## Performance Considerations
 
@@ -501,6 +544,12 @@ For scatter plots with embeddings:
    - AnnData's obs and var dataframes often contain categorical data
    - These are stored in a special format in zarr with 'codes' and 'categories'
    - The API converts these to their string values automatically
+
+5. **Array vs. DataFrame Encoded Matrices**:
+   - In AnnData, obsm and varm matrices can be either dataframes or arrays
+   - For dataframe-encoded matrices, column names are preserved from the original data
+   - For array-based matrices, column names are auto-generated as strings of indices ("0", "1", "2", etc.)
+   - You can check if a matrix is an array by looking for the `is_array` property in the dataset structure response
 
 ### Error Responses
 

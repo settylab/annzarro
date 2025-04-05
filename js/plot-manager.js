@@ -182,6 +182,9 @@ const PlotManager = (function() {
                 }
             };
             
+            // Log marker settings for debugging
+            console.log(`Creating trace with marker size: ${mergedConfig.marker.size}, opacity: ${mergedConfig.marker.opacity}`);
+            
             // Add z data if 3D
             if (zData && zData.length > 0) {
                 trace.z = zData;
@@ -283,6 +286,9 @@ const PlotManager = (function() {
                             x: catIndices.map(i => trace.x[i]),
                             y: catIndices.map(i => trace.y[i])
                         };
+                        
+                        // Log marker settings for this category
+                        console.log(`Category ${cat} using marker size: ${mergedConfig.marker.size}, opacity: ${mergedConfig.marker.opacity}`);
                         
                         // Add z data if this is a 3D plot
                         if (is3DPlot) {
@@ -1176,34 +1182,63 @@ const PlotManager = (function() {
      * @param {Object} config - Updated configuration
      */
     function updatePlot(plotId, config = {}) {
-        // Normalize plotId to handle different formats
-        const normalizedPlotId = plotId.includes('plot-') ? plotId : `plot-${plotId.replace('panel-', '')}`;
+        // Normalize plotId to handle different formats - cover all possible ID formats
+        let normalizedPlotId;
+        
+        if (plotId.includes('plot-')) {
+            normalizedPlotId = plotId;
+        } else if (plotId.includes('panel-')) {
+            normalizedPlotId = `plot-${plotId.replace('panel-', '')}`;
+        } else {
+            normalizedPlotId = `plot-${plotId}`;
+        }
+        
         console.log(`Looking for plot with ID: ${plotId} (normalized: ${normalizedPlotId})`);
         
-        // Try multiple plot ID formats
+        // Try to find the plot by looking at: 
+        // 1. Exact ID match
+        // 2. Normalized ID match
+        // 3. Element ID containing the original ID as a substring (for element IDs like 'panel-0-plot')
         let plot = _plots[plotId] || _plots[normalizedPlotId];
         
+        // If still not found, try to find by matching element id
+        if (!plot) {
+            console.log(`Plot not found by direct ID lookup, trying element ID lookup...`);
+            // Search plots for an element with an ID that contains our plotId
+            for (const id in _plots) {
+                const candidate = _plots[id];
+                if (candidate.element && candidate.element.id) {
+                    // Handle cases like "panel-0-plot" that contain the plotId "panel-0"
+                    if (candidate.element.id.includes(plotId) || 
+                        (plotId.includes('panel-') && candidate.element.id.includes(plotId.replace('panel-', '')))) {
+                        console.log(`Found plot by element ID: ${candidate.element.id}`);
+                        plot = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+        
         // Log all available plots for debugging
-        console.log('Available plots:', Object.keys(_plots));
+        console.log('Available plots:', Object.keys(_plots).map(id => ({ 
+            id, 
+            elementId: _plots[id].element ? _plots[id].element.id : 'no-element'
+        })));
         
         if (!plot) {
-            console.error(`Plot not found: ${plotId} (or ${normalizedPlotId})`);
-            
-            // If we have at least one plot and we're in a desperate situation, use the first one
-            const plotIds = Object.keys(_plots);
-            if (plotIds.length > 0) {
-                const firstPlotId = plotIds[0];
-                console.log(`Falling back to first available plot: ${firstPlotId}`);
-                plot = _plots[firstPlotId];
-            } else {
-                return;
-            }
+            console.error(`Plot not found: ${plotId} (normalized: ${normalizedPlotId}). Update was NOT applied.`);
+            return;
         }
         
         console.log(`Updating plot ${plotId} with config:`, config);
         
         // Update config
         plot.config = deepMerge(plot.config, config);
+        
+        // Debug log for marker settings
+        if (config.marker) {
+            console.log(`Updating plot with marker settings: size=${config.marker.size}, opacity=${config.marker.opacity}`);
+        }
         
         try {
             // Re-create the plot based on its type

@@ -725,17 +725,31 @@ class ZarrReader:
             # Check for dataframe structures in obsm
             metadata['obsm_dataframes'] = {}
             for key in obsm_keys:
-                if key in root['obsm'] and self._is_dataframe(root['obsm'][key]):
-                    # Add dataframe column information
-                    columns = self._get_dataframe_columns(root['obsm'][key])
-                    columns_info = self._get_dataframe_columns_info(root['obsm'][key])
-                    
-                    metadata['obsm_dataframes'][key] = {
-                        'columns': columns,
-                        'columns_info': columns_info,
-                        'encoding_type': root['obsm'][key].attrs.get('encoding-type'),
-                        'encoding_version': root['obsm'][key].attrs.get('encoding-version', ''),
-                    }
+                if key in root['obsm']:
+                    if self._is_dataframe(root['obsm'][key]):
+                        # Add dataframe column information
+                        columns = self._get_dataframe_columns(root['obsm'][key])
+                        columns_info = self._get_dataframe_columns_info(root['obsm'][key])
+                        
+                        metadata['obsm_dataframes'][key] = {
+                            'columns': columns,
+                            'columns_info': columns_info,
+                            'encoding_type': root['obsm'][key].attrs.get('encoding-type'),
+                            'encoding_version': root['obsm'][key].attrs.get('encoding-version', ''),
+                        }
+                    elif hasattr(root['obsm'][key], 'shape'):
+                        # Handle regular arrays - create numbered column names
+                        shape = root['obsm'][key].shape
+                        if len(shape) > 1:  # Only process 2D arrays
+                            # Create numbered column names (0, 1, 2, ...)
+                            columns = [str(i) for i in range(shape[1])]
+                            
+                            metadata['obsm_dataframes'][key] = {
+                                'columns': columns,
+                                'is_array': True,  # Mark as array rather than dataframe
+                                'array_shape': shape,
+                                'array_dtype': str(root['obsm'][key].dtype),
+                            }
             
         # Get varm keys and dataframe information
         if metadata['has_varm'] and hasattr(root['varm'], 'keys'):
@@ -745,17 +759,31 @@ class ZarrReader:
             # Check for dataframe structures in varm
             metadata['varm_dataframes'] = {}
             for key in varm_keys:
-                if key in root['varm'] and self._is_dataframe(root['varm'][key]):
-                    # Add dataframe column information
-                    columns = self._get_dataframe_columns(root['varm'][key])
-                    columns_info = self._get_dataframe_columns_info(root['varm'][key])
-                    
-                    metadata['varm_dataframes'][key] = {
-                        'columns': columns,
-                        'columns_info': columns_info,
-                        'encoding_type': root['varm'][key].attrs.get('encoding-type'),
-                        'encoding_version': root['varm'][key].attrs.get('encoding-version', ''),
-                    }
+                if key in root['varm']:
+                    if self._is_dataframe(root['varm'][key]):
+                        # Add dataframe column information
+                        columns = self._get_dataframe_columns(root['varm'][key])
+                        columns_info = self._get_dataframe_columns_info(root['varm'][key])
+                        
+                        metadata['varm_dataframes'][key] = {
+                            'columns': columns,
+                            'columns_info': columns_info,
+                            'encoding_type': root['varm'][key].attrs.get('encoding-type'),
+                            'encoding_version': root['varm'][key].attrs.get('encoding-version', ''),
+                        }
+                    elif hasattr(root['varm'][key], 'shape'):
+                        # Handle regular arrays - create numbered column names
+                        shape = root['varm'][key].shape
+                        if len(shape) > 1:  # Only process 2D arrays
+                            # Create numbered column names (0, 1, 2, ...)
+                            columns = [str(i) for i in range(shape[1])]
+                            
+                            metadata['varm_dataframes'][key] = {
+                                'columns': columns,
+                                'is_array': True,  # Mark as array rather than dataframe
+                                'array_shape': shape,
+                                'array_dtype': str(root['varm'][key].dtype),
+                            }
             
         # Get obsp keys
         if metadata['has_obsp'] and hasattr(root['obsp'], 'keys'):
@@ -1327,6 +1355,18 @@ class ZarrReader:
             # Get specific column from dataframe
             return self._get_dataframe_column(root['obsm'][obsm_key], column_name, indices)
         
+        # Check if we're dealing with a regular array but requested a specific column
+        if not is_dataframe and column_name is not None and hasattr(root['obsm'][obsm_key], 'shape'):
+            # Try to interpret column_name as an integer index
+            try:
+                col_idx = int(column_name)
+                arr = self._get_dense_array(f'obsm/{obsm_key}', root, indices, None)
+                if len(arr.shape) > 1 and col_idx < arr.shape[1]:
+                    # Return specific column from the array
+                    return arr[:, col_idx]
+            except (ValueError, IndexError) as e:
+                logger.error(f"Error extracting column {column_name} from array obsm/{obsm_key}: {e}")
+        
         # Get the obsm data as a regular array
         return self._get_dense_array(f'obsm/{obsm_key}', root, indices, col_indices)
     
@@ -1376,6 +1416,18 @@ class ZarrReader:
         if is_dataframe and column_name is not None:
             # Get specific column from dataframe
             return self._get_dataframe_column(root['varm'][varm_key], column_name, indices)
+        
+        # Check if we're dealing with a regular array but requested a specific column
+        if not is_dataframe and column_name is not None and hasattr(root['varm'][varm_key], 'shape'):
+            # Try to interpret column_name as an integer index
+            try:
+                col_idx = int(column_name)
+                arr = self._get_dense_array(f'varm/{varm_key}', root, indices, None)
+                if len(arr.shape) > 1 and col_idx < arr.shape[1]:
+                    # Return specific column from the array
+                    return arr[:, col_idx]
+            except (ValueError, IndexError) as e:
+                logger.error(f"Error extracting column {column_name} from array varm/{varm_key}: {e}")
         
         # Get the varm data as a regular array
         return self._get_dense_array(f'varm/{varm_key}', root, indices, col_indices)
@@ -1884,6 +1936,13 @@ class ZarrReader:
         # Check if the component has dataframe encoding
         if self._is_dataframe(root[component][key]):
             return self._get_dataframe_columns(root[component][key])
+            
+        # Check if it's a regular array and generate numbered column names
+        if hasattr(root[component][key], 'shape'):
+            shape = root[component][key].shape
+            if len(shape) > 1:  # Only process 2D arrays
+                # Return numbered columns (0, 1, 2, ...)
+                return [str(i) for i in range(shape[1])]
         
         # If we have metadata, try to get column names from there
         if metadata:
@@ -2254,11 +2313,21 @@ class ZarrReader:
             if "obsm_dataframes" in metadata:
                 result["obsm_dataframes"] = {}
                 for key, df_info in metadata["obsm_dataframes"].items():
-                    result["obsm_dataframes"][key] = {
+                    info_dict = {
                         "columns": df_info.get("columns", []),
-                        "encoding_type": df_info.get("encoding_type", ""),
-                        "encoding_version": df_info.get("encoding_version", "")
                     }
+                    
+                    # Add array specific information if this is an array
+                    if df_info.get("is_array", False):
+                        info_dict["is_array"] = True
+                        info_dict["array_shape"] = df_info.get("array_shape", ())
+                        info_dict["array_dtype"] = df_info.get("array_dtype", "")
+                    else:
+                        # Add dataframe specific information
+                        info_dict["encoding_type"] = df_info.get("encoding_type", "")
+                        info_dict["encoding_version"] = df_info.get("encoding_version", "")
+                    
+                    result["obsm_dataframes"][key] = info_dict
         
         # Add varm
         if metadata.get("has_varm", False):
@@ -2268,11 +2337,21 @@ class ZarrReader:
             if "varm_dataframes" in metadata:
                 result["varm_dataframes"] = {}
                 for key, df_info in metadata["varm_dataframes"].items():
-                    result["varm_dataframes"][key] = {
+                    info_dict = {
                         "columns": df_info.get("columns", []),
-                        "encoding_type": df_info.get("encoding_type", ""),
-                        "encoding_version": df_info.get("encoding_version", "")
                     }
+                    
+                    # Add array specific information if this is an array
+                    if df_info.get("is_array", False):
+                        info_dict["is_array"] = True
+                        info_dict["array_shape"] = df_info.get("array_shape", ())
+                        info_dict["array_dtype"] = df_info.get("array_dtype", "")
+                    else:
+                        # Add dataframe specific information
+                        info_dict["encoding_type"] = df_info.get("encoding_type", "")
+                        info_dict["encoding_version"] = df_info.get("encoding_version", "")
+                    
+                    result["varm_dataframes"][key] = info_dict
         
         # Add obsp
         if metadata.get("has_obsp", False):
