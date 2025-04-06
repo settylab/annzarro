@@ -31,7 +31,9 @@ const CellPlotPanel = (function() {
             colorMax: null,
             hoverInfo: [{ type: 'obs', key: '_index' }],
             subsettedCells: null,
-            hideNonSubset: false
+            hideNonSubset: false,
+            showGrid: true,    // Show grid lines by default
+            lockColorRange: false  // Don't lock color range by default
         };
         
         // Override with provided options, if any
@@ -48,6 +50,8 @@ const CellPlotPanel = (function() {
         if (options.hoverInfo) _settings.hoverInfo = options.hoverInfo;
         if (options.subsettedCells) _settings.subsettedCells = options.subsettedCells;
         if (options.hideNonSubset !== undefined) _settings.hideNonSubset = options.hideNonSubset;
+        if (options.showGrid !== undefined) _settings.showGrid = options.showGrid;
+        if (options.lockColorRange !== undefined) _settings.lockColorRange = options.lockColorRange;
         
         // Cached data
         let _data = {
@@ -202,6 +206,17 @@ const CellPlotPanel = (function() {
                                         <div class="form-check form-check-inline">
                                             <input class="form-check-input" type="checkbox" id="hide-outliers-${_id}">
                                             <label class="form-check-label" for="hide-outliers-${_id}">Hide Outliers</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="checkbox" id="lock-color-range-${_id}">
+                                            <label class="form-check-label" for="lock-color-range-${_id}">Lock Range</label>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="general-plot-options mt-2">
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="checkbox" id="show-grid-${_id}" checked>
+                                            <label class="form-check-label" for="show-grid-${_id}">Show Grid</label>
                                         </div>
                                     </div>
                                 </div>
@@ -1265,6 +1280,38 @@ const CellPlotPanel = (function() {
                 _updatePlot();
             });
             
+            // Show grid toggle
+            const showGridToggle = document.getElementById(`show-grid-${_id}`);
+            // Initialize checked state from settings
+            showGridToggle.checked = _settings.showGrid;
+            showGridToggle.addEventListener('change', (e) => {
+                _settings.showGrid = e.target.checked;
+                
+                // Update just the grid visibility without redrawing the plot
+                if (_plot) {
+                    const update = {
+                        'xaxis.showgrid': _settings.showGrid,
+                        'yaxis.showgrid': _settings.showGrid
+                    };
+                    
+                    // For 3D plots, add the z-axis grid setting
+                    if (_settings.z) {
+                        update['zaxis.showgrid'] = _settings.showGrid;
+                    }
+                    
+                    Plotly.relayout(_plotContainer, update);
+                }
+            });
+            
+            // Lock color range toggle
+            const lockColorRangeToggle = document.getElementById(`lock-color-range-${_id}`);
+            // Initialize checked state from settings
+            lockColorRangeToggle.checked = _settings.lockColorRange;
+            lockColorRangeToggle.addEventListener('change', (e) => {
+                _settings.lockColorRange = e.target.checked;
+                console.log(`Color range lock: ${_settings.lockColorRange ? 'enabled' : 'disabled'}`);
+            });
+            
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', (e) => {
                 console.log(`Focused cell changed to: ${e.detail.cell}`);
@@ -1468,6 +1515,8 @@ const CellPlotPanel = (function() {
                     if (_data.colorType === 'numerical') {
                         const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
                         const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                        const colorMinInput = document.getElementById(`color-min-${_id}`);
+                        const colorMaxInput = document.getElementById(`color-max-${_id}`);
                         
                         if (colorMinSlider && colorMaxSlider) {
                             // Filter out NaN values for min/max calculations
@@ -1486,6 +1535,32 @@ const CellPlotPanel = (function() {
                             const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
                             colorMinSlider.step = step;
                             colorMaxSlider.step = step;
+                            
+                            // If color range is not locked, update to the new data range
+                            // Otherwise, keep the existing values
+                            if (!_settings.lockColorRange) {
+                                // Update the actual values if not locked
+                                colorMinSlider.value = dataMin;
+                                colorMaxSlider.value = dataMax;
+                                colorMinInput.value = dataMin.toFixed(2);
+                                colorMaxInput.value = dataMax.toFixed(2);
+                                _settings.colorMin = dataMin;
+                                _settings.colorMax = dataMax;
+                            } else {
+                                console.log("Color range is locked, keeping previous min/max values");
+                                // Ensure values are within the new data range
+                                // This prevents errors when data range changes significantly
+                                if (_settings.colorMin < dataMin) {
+                                    _settings.colorMin = dataMin;
+                                    colorMinSlider.value = dataMin;
+                                    colorMinInput.value = dataMin.toFixed(2);
+                                }
+                                if (_settings.colorMax > dataMax) {
+                                    _settings.colorMax = dataMax;
+                                    colorMaxSlider.value = dataMax;
+                                    colorMaxInput.value = dataMax.toFixed(2);
+                                }
+                            }
                         }
                     }
                     
@@ -2231,22 +2306,36 @@ const CellPlotPanel = (function() {
                 hovermode: 'closest',
                 xaxis: {
                     title: `${_settings.x.type}.${_settings.x.key}` +
-                           (_settings.x.column ? `.${_settings.x.column}` : '')
+                           (_settings.x.column ? `.${_settings.x.column}` : ''),
+                    showgrid: _settings.showGrid,
+                    gridcolor: 'rgba(200, 200, 200, 0.2)'
                 },
                 yaxis: {
                     title: `${_settings.y.type}.${_settings.y.key}` +
-                           (_settings.y.column ? `.${_settings.y.column}` : '')
+                           (_settings.y.column ? `.${_settings.y.column}` : ''),
+                    showgrid: _settings.showGrid,
+                    gridcolor: 'rgba(200, 200, 200, 0.2)'
                 }
             };
             
             // Add z-axis title for 3D plots
             if (_settings.z) {
                 layout.scene = {
-                    xaxis: { title: layout.xaxis.title },
-                    yaxis: { title: layout.yaxis.title },
+                    xaxis: { 
+                        title: layout.xaxis.title,
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)'
+                    },
+                    yaxis: { 
+                        title: layout.yaxis.title,
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)'
+                    },
                     zaxis: {
                         title: `${_settings.z.type}.${_settings.z.key}` +
-                               (_settings.z.column ? `.${_settings.z.column}` : '')
+                               (_settings.z.column ? `.${_settings.z.column}` : ''),
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)'
                     }
                 };
                 
@@ -2492,15 +2581,20 @@ const CellPlotPanel = (function() {
                     const isCategorical = _data.colorType === 'categorical';
                     const hasMultipleTraces = _plot.data && _plot.data.length > 1;
                     
-                    // If changing between categorical and numerical, we need a complete recreation
-                    if ((isCategorical && !hasMultipleTraces) || (!isCategorical && hasMultipleTraces)) {
-                        console.log("Switching between categorical and numerical coloring - recreating plot");
-                        _loadDataAndCreatePlot();
-                        return;
+                    // Only check categorical vs. numerical transitions when we're actually 
+                    // changing the color data, not just updating ranges
+                    if (updateOptions.colorData) {
+                        // If changing between categorical and numerical, we need a complete recreation
+                        if ((isCategorical && !hasMultipleTraces) || (!isCategorical && hasMultipleTraces)) {
+                            console.log("Switching between categorical and numerical coloring - recreating plot");
+                            _loadDataAndCreatePlot();
+                            return;
+                        }
                     }
                     
                     // For categorical coloring, we need to recreate as we use multiple traces
-                    if (isCategorical) {
+                    // But only when we're actually changing color data
+                    if (isCategorical && updateOptions.colorData) {
                         console.log("Categorical coloring requires recreating the plot");
                         _loadDataAndCreatePlot();
                         return;
@@ -2510,7 +2604,7 @@ const CellPlotPanel = (function() {
                     if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
                         // Only check for NaN counts when we have actually loaded new color data
                         // This prevents unnecessary checks when just updating color range
-                        if ('color' in updateOptions && updateOptions.color === true) {
+                        if (updateOptions.colorData) {
                             const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
                             const nanPercentage = nanCount / _data.color.length;
                             
@@ -2560,13 +2654,16 @@ const CellPlotPanel = (function() {
                         }
                         
                         // Update colorbar title with separate layout update
-                        if (updateOptions.layout) {
-                            const newTitle = `${_settings.color.type}.${_settings.color.key}` +
-                                            (_settings.color.column ? `.${_settings.color.column}` : '');
-                            
-                            Plotly.relayout(_plotContainer, {
-                                'coloraxis.colorbar.title.text': newTitle
-                            });
+                        if (updateOptions.layout || updateOptions.colorData) {
+                            // Only update title if we have a real color type (not 'none')
+                            if (_settings.color.type !== 'none') {
+                                const newTitle = `${_settings.color.type}.${_settings.color.key}` +
+                                                (_settings.color.column ? `.${_settings.color.column}` : '');
+                                
+                                Plotly.relayout(_plotContainer, {
+                                    'coloraxis.colorbar.title.text': newTitle
+                                });
+                            }
                         }
                     }
                 }
