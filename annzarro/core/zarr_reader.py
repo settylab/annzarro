@@ -1626,24 +1626,27 @@ class ZarrReader:
         # Get the varm data as a regular array
         return self._get_dense_array(f'varm/{varm_key}', root, indices, col_indices)
     
-    def get_obsp(self, obsp_key: str, dataset_path: Optional[str] = None,
-                indices: Optional[List[int]] = None, 
-                dataset_id: Optional[str] = None) -> np.ndarray:
+    def get_obsp(self, obsp_key: str,
+                 dataset_path: Optional[str] = None,
+                 row_indices: Optional[List[int]] = None,
+                 col_indices: Optional[List[int]] = None,
+                 dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get observation-observation matrices.
-        
+    
         Args:
-            obsp_key: Key in obsp to get
-            dataset_path: Path to the dataset (stateless operation)
-            indices: Optional list of indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
-            
+            obsp_key: Key in obsp to get.
+            dataset_path: Path to the dataset (stateless operation).
+            row_indices: Optional list of row indices to select.
+            col_indices: Optional list of column indices to select.
+            dataset_id: Optional dataset ID (alternative to dataset_path).
+    
         Returns:
-            numpy.ndarray: The obsp data
+            numpy.ndarray: The obsp data.
         """
         root = None
-        
-        # Stateless operation if dataset_path is provided
+    
+        # Stateless operation if dataset_path is provided.
         if dataset_path is not None:
             try:
                 root = self.open_dataset_by_path(dataset_path, metadata=False)
@@ -1651,57 +1654,53 @@ class ZarrReader:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
         else:
-            # Get the root for the specified dataset ID
+            # Get the root for the specified dataset ID.
             root = self._get_root(dataset_id)
-        
+    
         if root is None or 'obsp' not in root or obsp_key not in root['obsp']:
             return np.array([])
-        
-        # Check if it's a sparse matrix
+    
         obsp = root['obsp'][obsp_key]
         is_sparse, _ = self._is_sparse_matrix(obsp)
-        
+    
         if is_sparse:
-            # We get both row and column indices from the same 'indices' parameter
-            # since obsp matrices are square (cells x cells)
-            sparse_matrix = self._load_sparse_matrix(obsp, indices, indices)
+            # For sparse matrices, pass distinct row and column indices.
+            sparse_matrix = self._load_sparse_matrix(obsp, row_indices, col_indices)
             if sparse_matrix is not None:
                 return sparse_matrix.toarray()
-                
-        # For obsp, row and column indices are the same (cell x cell matrix)
-        if indices is not None:
-            try:
-                data = root['obsp'][obsp_key][indices, :][:, indices]
-                return np.asarray(data)
-            except Exception as e:
-                logger.error(f"Error getting obsp data with indices: {e}")
-                return np.array([])
-        else:
-            try:
-                data = root['obsp'][obsp_key][:]
-                return np.asarray(data)
-            except Exception as e:
-                logger.error(f"Error getting obsp data: {e}")
-                return np.array([])
     
-    def get_varp(self, varp_key: str, dataset_path: Optional[str] = None,
-                indices: Optional[List[int]] = None, 
-                dataset_id: Optional[str] = None) -> np.ndarray:
+        # For dense obsp matrices, allow separate row and column selection.
+        try:
+            # Use provided indices, or default to full slice if None.
+            row_sel = row_indices if row_indices is not None else slice(None)
+            col_sel = col_indices if col_indices is not None else slice(None)
+            data = root['obsp'][obsp_key][row_sel, :][:, col_sel]
+            return np.asarray(data)
+        except Exception as e:
+            logger.error(f"Error getting obsp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
+            return np.array([])
+    
+    def get_varp(self, varp_key: str,
+                 dataset_path: Optional[str] = None,
+                 row_indices: Optional[List[int]] = None,
+                 col_indices: Optional[List[int]] = None,
+                 dataset_id: Optional[str] = None) -> np.ndarray:
         """
         Get variable-variable matrices.
-        
+    
         Args:
-            varp_key: Key in varp to get
-            dataset_path: Path to the dataset (stateless operation)
-            indices: Optional list of indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
-            
+            varp_key: Key in varp to get.
+            dataset_path: Path to the dataset (stateless operation).
+            row_indices: Optional list of row indices to select.
+            col_indices: Optional list of column indices to select.
+            dataset_id: Optional dataset ID (alternative to dataset_path).
+    
         Returns:
-            numpy.ndarray: The varp data
+            numpy.ndarray: The varp data.
         """
         root = None
-        
-        # Stateless operation if dataset_path is provided
+    
+        # Stateless operation if dataset_path is provided.
         if dataset_path is not None:
             try:
                 root = self.open_dataset_by_path(dataset_path, metadata=False)
@@ -1709,38 +1708,30 @@ class ZarrReader:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
         else:
-            # Get the root for the specified dataset ID
+            # Get the root for the specified dataset ID.
             root = self._get_root(dataset_id)
-        
+    
         if root is None or 'varp' not in root or varp_key not in root['varp']:
             return np.array([])
-        
-        # Check if it's a sparse matrix
+    
         varp = root['varp'][varp_key]
         is_sparse, _ = self._is_sparse_matrix(varp)
-        
+    
         if is_sparse:
-            # We get both row and column indices from the same 'indices' parameter
-            # since varp matrices are square (genes x genes)
-            sparse_matrix = self._load_sparse_matrix(varp, indices, indices)
+            # For sparse matrices, pass distinct row and column indices.
+            sparse_matrix = self._load_sparse_matrix(varp, row_indices, col_indices)
             if sparse_matrix is not None:
                 return sparse_matrix.toarray()
-                
-        # For varp, row and column indices are the same (gene x gene matrix)
-        if indices is not None:
-            try:
-                data = root['varp'][varp_key][indices, :][:, indices]
-                return np.asarray(data)
-            except Exception as e:
-                logger.error(f"Error getting varp data with indices: {e}")
-                return np.array([])
-        else:
-            try:
-                data = root['varp'][varp_key][:]
-                return np.asarray(data)
-            except Exception as e:
-                logger.error(f"Error getting varp data: {e}")
-                return np.array([])
+    
+        try:
+            # Use provided indices or default to full slice if None.
+            row_sel = row_indices if row_indices is not None else slice(None)
+            col_sel = col_indices if col_indices is not None else slice(None)
+            data = root['varp'][varp_key][row_sel, :][:, col_sel]
+            return np.asarray(data)
+        except Exception as e:
+            logger.error(f"Error getting varp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
+            return np.array([])
     
     def _downsample_array(self, path: str, max_size: int = 1000, dataset_id: Optional[str] = None) -> np.ndarray:
         """

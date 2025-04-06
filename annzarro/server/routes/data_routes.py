@@ -667,7 +667,7 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_obsp(dataset_path, obsp_key, row_indices, col_indices)
+            data = zarr_reader.get_obsp(obsp_key, dataset_path, row_indices, col_indices)
             
             # Convert NumPy arrays to Python lists for JSON serialization
             if hasattr(data, 'tolist'):
@@ -738,7 +738,7 @@ def register_data_routes(app, api_version):
                 }), 400
 
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_varp(dataset_path, varp_key, row_indices, col_indices)
+            data = zarr_reader.get_varp(varp_key, dataset_path, row_indices, col_indices)
             
             # Convert NumPy arrays to Python lists for JSON serialization
             if hasattr(data, 'tolist'):
