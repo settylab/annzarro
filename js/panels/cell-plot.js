@@ -230,7 +230,7 @@ const CellPlotPanel = (function() {
             _plotContainer = document.getElementById(`plot-container-${_id}`);
             _controlsContainer = _container.querySelector('.plot-controls');
         }
-        
+                
         /**
          * Initialize UI controls to match settings
          * @returns {Promise} - Resolves when initialization is complete
@@ -249,26 +249,65 @@ const CellPlotPanel = (function() {
                     }
                     
                     // Set defaults from the actual dataset (using embeddings directly)
-                    if (datasetStructure.embeddings && datasetStructure.embeddings.length > 0) {
-                        const defaultEmbedding = datasetStructure.embeddings[0]; // First embedding
-
-                        console.log("-------------------------------------------------------")
-                        console.log(datasetStructure.obsm.dataframes)
-                        // Set defaults if not already specified
+                    if (datasetStructure.obsm &&
+                    datasetStructure.obsm.dataframes &&
+                    Object.keys(datasetStructure.obsm.dataframes).length > 0) {
+                
+                    let dataframeKeys = Object.keys(datasetStructure.obsm.dataframes);
+                    let defaultDataFrameKey;
+                
+                    // Preferred order: Exact "X_umap"
+                    if (dataframeKeys.includes("X_umap")) {
+                        defaultDataFrameKey = "X_umap";
+                    } else {
+                        // If none, look for a key that starts with "X_umap"
+                        defaultDataFrameKey = dataframeKeys.find(key => key.startsWith("X_umap"));
+                        if (!defaultDataFrameKey) {
+                            // Next, check for "X_pca"
+                            if (dataframeKeys.includes("X_pca")) {
+                                defaultDataFrameKey = "X_pca";
+                            } else {
+                                // Fallback to the first key if none of the preferred keys are found
+                                defaultDataFrameKey = dataframeKeys[0];
+                            }
+                        }
+                    }
+                
+                    const defaultDataFrame = datasetStructure.obsm.dataframes[defaultDataFrameKey];
+                
+                    if (defaultDataFrame.columns && defaultDataFrame.columns.length >= 2) {
                         if (!_settings.x.key || _settings.x.key === '') {
-                            _settings.x.key = defaultEmbedding;
-                            _settings.x.column = '0';
-                            console.log(`Setting default x-axis to ${defaultEmbedding} column 0`);
+                            _settings.x.key = defaultDataFrameKey;
+                            _settings.x.column = defaultDataFrame.columns[0]; // First available column
+                            console.log(`Setting default x-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[0]}`);
                         }
                         
                         if (!_settings.y.key || _settings.y.key === '') {
-                            _settings.y.key = defaultEmbedding;
-                            _settings.y.column = '1';
-                            console.log(`Setting default y-axis to ${defaultEmbedding} column 1`);
+                            _settings.y.key = defaultDataFrameKey;
+                            _settings.y.column = defaultDataFrame.columns[1]; // Second available column
+                            console.log(`Setting default y-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[1]}`);
+                        }
+                        
+                        if (_settings.z && defaultDataFrame.columns.length >= 3) {
+                            if (!_settings.z) {
+                                _settings.z = {
+                                    type: 'obsm',
+                                    key: defaultDataFrameKey,
+                                    column: defaultDataFrame.columns[2]
+                                }
+                                console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
+                            } else if (!_settings.z.key || _settings.z.key === '') {
+                                _settings.z.key = defaultDataFrameKey;
+                                _settings.z.column = defaultDataFrame.columns[2]; 
+                                console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
+                            }
                         }
                     } else {
-                        console.warn('No embeddings found in dataset structure');
+                        console.warn(`No available columns in obsm dataframe "${defaultDataFrameKey}"`);
                     }
+                } else {
+                    console.warn('No obsm dataframes found in dataset structure');
+                }
                     
                     // Set up axis selectors sequentially to avoid race conditions
                     await _setupAxisSelector('x', _settings.x);
@@ -315,33 +354,49 @@ const CellPlotPanel = (function() {
          * @returns {Promise<Object>} - Dataset structure
          * @private
          */
-        async function _ensureDatasetStructure() {
+
+        // Global (within the CellPlotPanel closure) variable to hold the dataset structure.
+        let globalDatasetStructure = null;
+        
+        // Function to update (or force-refresh) the global dataset structure.
+        async function updateGlobalDatasetStructure() {
             const datasetPath = DataManager.getCurrentDataset();
             if (!datasetPath) {
                 console.error('No dataset path available');
-                _plotContainer.innerHTML = '<div class="alert alert-danger">No dataset selected</div>';
                 return null;
             }
-            
             try {
-                // Load dataset structure directly to avoid race conditions with DataManager
                 console.log(`Loading dataset structure for ${datasetPath}`);
                 const response = await fetch(`${Config.API.DATASET_STRUCTURE}?dataset_path=${encodeURIComponent(datasetPath)}`);
                 if (!response.ok) {
                     throw new Error(`Failed to load dataset structure: ${response.statusText}`);
                 }
-                
-                const data = await response.json();
-                console.log('Loaded dataset structure directly:', data);
-                
-                return data;
+                globalDatasetStructure = await response.json();
+                console.log('Updated global dataset structure:', globalDatasetStructure);
+                return globalDatasetStructure;
             } catch (error) {
-                console.error('Error loading dataset structure:', error);
-                _plotContainer.innerHTML = `<div class="alert alert-danger">
-                    Error loading dataset structure: ${error.message}
-                </div>`;
+                console.error('Error updating global dataset structure:', error);
                 return null;
             }
+        }
+        
+        // Getter function that uses the global variable
+        function getGlobalDatasetStructure() {
+            return globalDatasetStructure;
+        }
+
+        
+        async function _ensureDatasetStructure() {
+            // If we haven't loaded the structure yet, update it
+            if (!globalDatasetStructure) {
+                const ds = await updateGlobalDatasetStructure();
+                if (!ds) {
+                    _plotContainer.innerHTML = '<div class="alert alert-danger">No dataset selected</div>';
+                    return null;
+                }
+                return ds;
+            }
+            return globalDatasetStructure;
         }
         
         /**
@@ -404,7 +459,7 @@ const CellPlotPanel = (function() {
                         if (columnSelect.options.length > 0) {
                             columnSelect.selectedIndex = 0;
                             settings.column = columnSelect.value;
-                            console.log(`Setting default ${axis} column to '${settings.column}'`);
+                            console.log(`Setting default ${axis} column to '${settings.column}'`); // Todo: fix default
                         } else {
                             console.warn(`No options available for ${axis} column`);
                             // For obsm, default to column "0"
@@ -437,6 +492,7 @@ const CellPlotPanel = (function() {
             }
             
             // Load dataset structure directly to avoid race conditions
+            await updateGlobalDatasetStructure();
             const datasetStructure = await _ensureDatasetStructure();
             
             if (!datasetStructure) {
@@ -474,14 +530,16 @@ const CellPlotPanel = (function() {
                     
                 case 'obsm':
                     // Direct reference to embeddings in the dataset structure
-                    if (datasetStructure.embeddings && Array.isArray(datasetStructure.embeddings)) {
-                        console.log(`Found ${datasetStructure.embeddings.length} embeddings:`, datasetStructure.embeddings);
+                    if (datasetStructure.obsm &&
+                        datasetStructure.obsm.dataframes &&
+                        Object.keys(datasetStructure.obsm.dataframes).length > 0) {
                         
-                        if (datasetStructure.embeddings.length > 0) {
-                            options = datasetStructure.embeddings.map(key => 
-                                `<option value="${key}">${key}</option>`
-                            );
-                        }
+                        const obsmDataFrameKeys = Object.keys(datasetStructure.obsm.dataframes);
+                        console.log(`Found ${obsmDataFrameKeys.length} obsm dataframe keys:`, obsmDataFrameKeys);
+                        
+                        options = obsmDataFrameKeys.map(key =>
+                            `<option value="${key}">${key}</option>`
+                        );
                     }
                     // Try other ways it might be available
                     else if (datasetStructure.obsm && datasetStructure.obsm.keys) {
@@ -584,15 +642,18 @@ const CellPlotPanel = (function() {
                     
                 case 'obsm':
                     try {
-                        // For obsm, we will always use numeric column indices for now
-                        // since we found these work reliably with our backend
-                        
-                        // Default to 3 dimensions
-                        const numDimensions = 3;
-                        console.log(`Creating ${numDimensions} column options for obsm key: ${key}`);
-                        
-                        for (let i = 0; i < numDimensions; i++) {
-                            options.push(`<option value="${i}">${i}</option>`);
+                        // Look for the selected obsm dataframe by key
+                        const df = datasetStructure.obsm && datasetStructure.obsm.dataframes && datasetStructure.obsm.dataframes[key];
+                        if (df && df.columns && df.columns.length > 0) {
+                            console.log(`Found ${df.columns.length} columns for obsm key: ${key}`);
+                            options = df.columns.map(col => `<option value="${col}">${col}</option>`);
+                        } else {
+                            // Fallback if column info isn't available
+                            const numDimensions = 3;
+                            console.log(`No columns found for obsm key: ${key}, defaulting to ${numDimensions} dimensions`);
+                            for (let i = 0; i < numDimensions; i++) {
+                                options.push(`<option value="${i}">${i}</option>`);
+                            }
                         }
                     } catch (error) {
                         console.error('Error creating obsm columns:', error);
@@ -789,20 +850,34 @@ const CellPlotPanel = (function() {
                     
                     // Initialize z-axis if not already set
                     if (!_settings.z) {
-                        _settings.z = { 
-                            type: 'obsm', 
-                            key: _settings.x.key, // Default to same key as x-axis
-                            column: '2' // Default to third component
-                        };
-                        
+                        // Use the same obsm key as the y-axis
+                        const yKey = _settings.y.key;
+                        let zColumn = '2'; // fallback default
+                
+                        // Get the current dataset structure
+                        const ds = getGlobalDatasetStructure();
+                        if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[yKey]) {
+                            const df = ds.obsm.dataframes[yKey];
+                            if (df.columns && df.columns.length > 0) {
+                                // Find index of the y-axis column in the dataframe columns
+                                const yColIndex = df.columns.indexOf(_settings.y.column);
+                                if (yColIndex !== -1 && yColIndex + 1 < df.columns.length) {
+                                    // Use the next available column
+                                    zColumn = df.columns[yColIndex + 1];
+                                } else {
+                                    // If y's column is the last one, fall back to the last available column
+                                    zColumn = df.columns[df.columns.length - 1];
+                                }
+                            }
+                        }
+                
+                        _settings.z = { type: 'obsm', key: yKey, column: zColumn };
                         _setupAxisSelector('z', _settings.z);
                     }
+                    _loadDataAndCreatePlot();
                 } else {
                     zAxisContainer.style.display = 'none';
                     _settings.z = null;
-                    
-                    // Update plot - 2D/3D change always requires recreation
-                    console.log('Switching from 3D to 2D, recreating plot');
                     _loadDataAndCreatePlot();
                 }
             });
@@ -1509,9 +1584,90 @@ const CellPlotPanel = (function() {
                 }
             });
             
+            /**
+             * Update axis titles and menu labels to reflect the current focused gene
+             * @private
+             */
+            function _updateAxisLabelsForGene(focusedGene) {
+                if (!_plot) return;
+                
+                // Update UI controls in menus to show correct gene name
+                const updateColumnSelectOptions = (axis) => {
+                    if (_settings[axis] && _settings[axis].type === 'layer') {
+                        const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+                        if (columnSelect && columnSelect.options.length > 0) {
+                            // Update the option text to show the new gene name
+                            columnSelect.options[0].text = `Expression of ${focusedGene}`;
+                        }
+                    }
+                };
+                
+                // Update all axis column selects
+                updateColumnSelectOptions('x');
+                updateColumnSelectOptions('y');
+                updateColumnSelectOptions('z');
+                updateColumnSelectOptions('color');
+                
+                // Create layout update for axis titles
+                const layoutUpdate = {};
+                
+                // Update axis titles in the plot
+                if (_settings.x.type === 'layer') {
+                    const newTitle = `${_settings.x.type}.${_settings.x.key}.${focusedGene}`;
+                    if (_settings.z) {
+                        // 3D plot
+                        layoutUpdate['scene.xaxis.title'] = newTitle;
+                    } else {
+                        // 2D plot
+                        layoutUpdate['xaxis.title'] = newTitle;
+                    }
+                }
+                
+                if (_settings.y.type === 'layer') {
+                    const newTitle = `${_settings.y.type}.${_settings.y.key}.${focusedGene}`;
+                    if (_settings.z) {
+                        // 3D plot
+                        layoutUpdate['scene.yaxis.title'] = newTitle;
+                    } else {
+                        // 2D plot
+                        layoutUpdate['yaxis.title'] = newTitle;
+                    }
+                }
+                
+                if (_settings.z && _settings.z.type === 'layer') {
+                    const newTitle = `${_settings.z.type}.${_settings.z.key}.${focusedGene}`;
+                    layoutUpdate['scene.zaxis.title'] = newTitle;
+                }
+                
+                // Update colorbar title if needed
+                if (_settings.color.type === 'layer') {
+                    // Create a title object with proper vertical formatting
+                    // Note: we only set the properties on the title object itself
+                    // and don't set titleside separately to avoid Plotly errors
+                    const newTitle = {
+                        text: `${_settings.color.type}.${_settings.color.key}.${focusedGene}`,
+                        side: 'right',
+                        font: {
+                            size: 12
+                        }
+                    };
+                    
+                    // Only update the title object itself
+                    layoutUpdate['coloraxis.colorbar.title'] = newTitle;
+                    // Do NOT set titleside separately - it's already in the title object
+                }
+                
+                // Apply all layout updates at once if we have any
+                if (Object.keys(layoutUpdate).length > 0) {
+                    console.log("Updating axis titles for new focused gene:", layoutUpdate);
+                    Plotly.relayout(_plotContainer, layoutUpdate);
+                }
+            }
+            
             // Listen for focused gene changes
             document.addEventListener('focusedGeneChanged', (e) => {
                 console.log(`Focused gene changed to: ${e.detail.gene}`);
+                const focusedGene = e.detail.gene;
                 
                 // Check if we're using layer data anywhere in the plot
                 const usesLayerData = _settings.x.type === 'layer' || 
@@ -1520,74 +1676,87 @@ const CellPlotPanel = (function() {
                                      _settings.color.type === 'layer';
                 
                 if (usesLayerData) {
-                    // Track which axes need updates
+                    // Update all the labels that reference genes even before loading any data
+                    _updateAxisLabelsForGene(focusedGene);
+                    
+                    // Track which axes need data updates
                     const updates = {
                         xAxis: _settings.x.type === 'layer',
                         yAxis: _settings.y.type === 'layer',
                         zAxis: _settings.z && _settings.z.type === 'layer',
-                        colors: _settings.color.type === 'layer',
-                        layout: false
+                        colors: _settings.color.type === 'layer'
                     };
                     
-                    // If this affects multiple axes, it's more efficient to recreate
-                    const multiAxisUpdate = (updates.xAxis ? 1 : 0) + 
-                                            (updates.yAxis ? 1 : 0) + 
-                                            (updates.zAxis ? 1 : 0) > 1;
+                    // For position data updates, we now handle them individually without redrawing
+                    const dataUpdatePromises = [];
                     
-                    if (multiAxisUpdate) {
-                        // Multiple position axes use layer data, need to recreate the plot
-                        console.log('Focused gene changed affects multiple position axes, recreating plot');
-                        _loadDataAndCreatePlot();
-                        return;
-                    }
-                    
-                    // Handle specific update scenarios
+                    // If x-axis uses layer data, load new data
                     if (updates.xAxis) {
                         console.log('Focused gene changed affects x-axis, loading new data');
-                        _loadAxisData('x').then(xData => {
+                        const xPromise = _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
-                                _updatePlotElements({ 
-                                    xAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                _loadDataAndCreatePlot();
+                                // Update just the x-axis data without redrawing
+                                return Plotly.restyle(_plotContainer, { 'x': [xData.values] }, [0]);
                             }
-                        }).catch(() => _loadDataAndCreatePlot());
+                        }).catch(err => {
+                            console.error("Error loading x-axis data:", err);
+                        });
+                        dataUpdatePromises.push(xPromise);
                     }
-                    else if (updates.yAxis) {
+                    
+                    // If y-axis uses layer data, load new data
+                    if (updates.yAxis) {
                         console.log('Focused gene changed affects y-axis, loading new data');
-                        _loadAxisData('y').then(yData => {
+                        const yPromise = _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
-                                _updatePlotElements({ 
-                                    yAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                _loadDataAndCreatePlot();
+                                // Update just the y-axis data without redrawing
+                                return Plotly.restyle(_plotContainer, { 'y': [yData.values] }, [0]);
                             }
-                        }).catch(() => _loadDataAndCreatePlot());
+                        }).catch(err => {
+                            console.error("Error loading y-axis data:", err);
+                        });
+                        dataUpdatePromises.push(yPromise);
                     }
-                    else if (updates.zAxis) {
+                    
+                    // If z-axis uses layer data, load new data
+                    if (updates.zAxis) {
                         console.log('Focused gene changed affects z-axis, loading new data');
-                        _loadAxisData('z').then(zData => {
+                        const zPromise = _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
-                                _updatePlotElements({ 
-                                    zAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                _loadDataAndCreatePlot();
+                                // Update just the z-axis data without redrawing
+                                return Plotly.restyle(_plotContainer, { 'z': [zData.values] }, [0]);
                             }
-                        }).catch(() => _loadDataAndCreatePlot());
+                        }).catch(err => {
+                            console.error("Error loading z-axis data:", err);
+                        });
+                        dataUpdatePromises.push(zPromise);
                     }
-                    else if (updates.colors) {
-                        // Only color uses layer data - we can use optimized update
-                        console.log('Focused gene changed, only affects color data - using optimized update');
+                    
+                    // If color uses layer data, load and update new data
+                    if (updates.colors) {
+                        console.log('Focused gene changed affects color data, loading new data');
+                        // Load just the color data and update
                         _loadColorDataAndUpdatePlot();
+                    }
+                    
+                    // After all position data updates complete (if any), handle edge cases
+                    if (dataUpdatePromises.length > 0) {
+                        Promise.all(dataUpdatePromises)
+                            .then(() => {
+                                console.log("All position data updates completed");
+                                // If hiding outliers is active, update visibility
+                                if (_settings.hideOutliers && _data.colorType === 'numerical') {
+                                    _updateOutlierVisibility();
+                                }
+                            })
+                            .catch(err => {
+                                console.error("Error during position data updates:", err);
+                                // Only redraw as a last resort if we hit errors
+                                _loadDataAndCreatePlot();
+                            });
                     }
                 } else {
                     console.log('Focused gene changed does not affect this plot');
@@ -2793,7 +2962,7 @@ const CellPlotPanel = (function() {
                         if (Object.keys(update).length > 0) {
                             // Apply color updates
                             console.log("Applying color updates:", update);
-                            Plotly.restyle(_plotContainer, update, [0]);
+                            //Plotly.restyle(_plotContainer, update, [0]);
                         }
                         
                         // Update colorbar title with separate layout update
