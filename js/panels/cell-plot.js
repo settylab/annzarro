@@ -268,15 +268,46 @@ const CellPlotPanel = (function() {
                                             ).join('')}
                                         </select>
                                         <select class="form-select form-select-sm category-palette-selector flex-grow-1" id="category-palette-${_id}" style="display:none;">
-                                            <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
-                                            <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
-                                            <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
-                                            <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
-                                            <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
-                                            <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
-                                            <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
-                                            <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
-                                            <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
+                                            <optgroup label="Dataset Colors">
+                                                <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
+                                            </optgroup>
+                                            <optgroup label="Custom Discrete Palettes">
+                                                <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
+                                                <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
+                                                <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
+                                                <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
+                                                <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
+                                                <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
+                                                <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
+                                                <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
+                                            </optgroup>
+                                            <optgroup label="Plotly Discrete Palettes">
+                                                <option value="Plotly_Discrete_D3" ${_settings.categoryPalette === 'Plotly_Discrete_D3' ? 'selected' : ''}>D3 Colors</option>
+                                                <option value="Plotly_Discrete_G10" ${_settings.categoryPalette === 'Plotly_Discrete_G10' ? 'selected' : ''}>G10</option>
+                                                <option value="Plotly_Discrete_Set1" ${_settings.categoryPalette === 'Plotly_Discrete_Set1' ? 'selected' : ''}>Set1</option>
+                                                <option value="Plotly_Discrete_Set2" ${_settings.categoryPalette === 'Plotly_Discrete_Set2' ? 'selected' : ''}>Set2</option>
+                                                <option value="Plotly_Discrete_Set3" ${_settings.categoryPalette === 'Plotly_Discrete_Set3' ? 'selected' : ''}>Set3</option>
+                                                <option value="Plotly_Discrete_Pastel1" ${_settings.categoryPalette === 'Plotly_Discrete_Pastel1' ? 'selected' : ''}>Pastel1</option>
+                                                <option value="Plotly_Discrete_Pastel2" ${_settings.categoryPalette === 'Plotly_Discrete_Pastel2' ? 'selected' : ''}>Pastel2</option>
+                                                <option value="Plotly_Discrete_Accent" ${_settings.categoryPalette === 'Plotly_Discrete_Accent' ? 'selected' : ''}>Accent</option>
+                                                <option value="Plotly_Discrete_Dark2" ${_settings.categoryPalette === 'Plotly_Discrete_Dark2' ? 'selected' : ''}>Dark2</option>
+                                                <option value="Plotly_Discrete_Paired" ${_settings.categoryPalette === 'Plotly_Discrete_Paired' ? 'selected' : ''}>Paired</option>
+                                            </optgroup>
+                                            <optgroup label="Plotly Sequential Palettes">
+                                                <option value="Plotly_Viridis" ${_settings.categoryPalette === 'Plotly_Viridis' ? 'selected' : ''}>Viridis</option>
+                                                <option value="Plotly_Plasma" ${_settings.categoryPalette === 'Plotly_Plasma' ? 'selected' : ''}>Plasma</option>
+                                                <option value="Plotly_Inferno" ${_settings.categoryPalette === 'Plotly_Inferno' ? 'selected' : ''}>Inferno</option>
+                                                <option value="Plotly_Magma" ${_settings.categoryPalette === 'Plotly_Magma' ? 'selected' : ''}>Magma</option>
+                                                <option value="Plotly_Cividis" ${_settings.categoryPalette === 'Plotly_Cividis' ? 'selected' : ''}>Cividis</option>
+                                                <option value="Plotly_Turbo" ${_settings.categoryPalette === 'Plotly_Turbo' ? 'selected' : ''}>Turbo</option>
+                                                <option value="Plotly_Blues" ${_settings.categoryPalette === 'Plotly_Blues' ? 'selected' : ''}>Blues</option>
+                                                <option value="Plotly_Greens" ${_settings.categoryPalette === 'Plotly_Greens' ? 'selected' : ''}>Greens</option>
+                                                <option value="Plotly_Reds" ${_settings.categoryPalette === 'Plotly_Reds' ? 'selected' : ''}>Reds</option>
+                                                <option value="Plotly_Oranges" ${_settings.categoryPalette === 'Plotly_Oranges' ? 'selected' : ''}>Oranges</option>
+                                                <option value="Plotly_Purples" ${_settings.categoryPalette === 'Plotly_Purples' ? 'selected' : ''}>Purples</option>
+                                                <option value="Plotly_BuPu" ${_settings.categoryPalette === 'Plotly_BuPu' ? 'selected' : ''}>BuPu</option>
+                                                <option value="Plotly_YlGn" ${_settings.categoryPalette === 'Plotly_YlGn' ? 'selected' : ''}>YlGn</option>
+                                            </optgroup>
                                         </select>
                                     </div>
                                     
@@ -1044,12 +1075,90 @@ const CellPlotPanel = (function() {
             // Category palette selector
             const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
             categoryPaletteSelect.addEventListener('change', (e) => {
+                const oldPalette = _settings.categoryPalette;
                 _settings.categoryPalette = e.target.value;
                 
-                // Check if we can update without recreating
+                // Check if we have a plot and valid data
                 if (_plot && _data.colorType === 'categorical') {
-                    // For categorical coloring with palette changes, we need to recreate
-                    _loadDataAndCreatePlot();
+                    try {
+                        // For categorical data, we can directly update colors without reloading data
+                        // We just need to get the right palette and update trace colors
+                        const isOldUns = oldPalette === 'uns';
+                        const isNewUns = _settings.categoryPalette === 'uns';
+                        
+                        // When switching to/from UNS, we need a full redraw
+                        // because UNS colors need to be fetched from server
+                        if (isOldUns || isNewUns) {
+                            console.log('Switching to/from UNS palette requires full redraw');
+                            _loadDataAndCreatePlot();
+                            return;
+                        }
+                        
+                        console.log('Updating categorical colors without full redraw');
+                        
+                        // Get categories from existing data
+                        const catValues = _data.categories || [...new Set(_data.color)];
+                        
+                        // Get the selected palette
+                        let paletteSource = 'default'; 
+                        let selectedPalette = colorPalettes.default;
+                        
+                        if (_settings.categoryPalette.startsWith('Plotly_Discrete_')) {
+                            // Use Plotly's discrete color palettes
+                            selectedPalette = _settings.categoryPalette.substring(16); // Remove 'Plotly_Discrete_' prefix
+                            paletteSource = 'plotly-discrete';
+                            console.log(`Using Plotly.js discrete colorscale: ${selectedPalette}`);
+                        } else if (_settings.categoryPalette.startsWith('Plotly_')) {
+                            // Use Plotly's sequential color scales - good for continuous values
+                            selectedPalette = _settings.categoryPalette.substring(7); // Remove 'Plotly_' prefix
+                            paletteSource = 'plotly-sequential';
+                            console.log(`Using Plotly.js sequential colorscale: ${selectedPalette}`);
+                        } else if (colorPalettes[_settings.categoryPalette]) {
+                            selectedPalette = colorPalettes[_settings.categoryPalette];
+                            paletteSource = 'custom';
+                        }
+                        
+                        // Update each trace's color based on its category
+                        const update = { 'marker.color': [] };
+                        
+                        // Build marker updates for each trace
+                        _plot.data.forEach((trace, i) => {
+                            if (paletteSource === 'plotly-discrete') {
+                                // For Plotly discrete palettes, get the color directly from the palette
+                                // We need to map D3 colors to hex values
+                                const discreteColors = {
+                                    'D3': ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
+                                    'G10': ['#3366CC', '#DC3912', '#FF9900', '#109618', '#990099', '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'],
+                                    'Set1': ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
+                                    'Set2': ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
+                                    'Set3': ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
+                                    'Pastel1': ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec'],
+                                    'Pastel2': ['#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae', '#f1e2cc', '#cccccc'],
+                                    'Accent': ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f', '#bf5b17', '#666666'],
+                                    'Dark2': ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
+                                    'Paired': ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
+                                };
+                                const colors = discreteColors[selectedPalette] || discreteColors['D3'];
+                                update['marker.color'][i] = colors[i % colors.length];
+                                // Remove colorscale if it was previously set
+                                update['marker.colorscale'] = null;
+                            } else if (paletteSource === 'plotly-sequential') {
+                                // For Plotly sequential palettes, set colorscale and use index
+                                update['marker.colorscale'] = selectedPalette;
+                                update['marker.color'][i] = i;
+                            } else {
+                                // For custom palettes, directly set color
+                                update['marker.color'][i] = selectedPalette[i % selectedPalette.length];
+                            }
+                        });
+                        
+                        // Apply the updates
+                        Plotly.restyle(_plotContainer, update);
+                    } catch (error) {
+                        console.error('Error updating categorical colors:', error);
+                        // Fall back to full recreate if updating fails
+                        _loadDataAndCreatePlot();
+                    }
                 } else if (_plot) {
                     // For other cases, try to update just the colors
                     _loadColorDataAndUpdatePlot(); 
@@ -2741,13 +2850,42 @@ const CellPlotPanel = (function() {
                     
                     // Choose the color palette based on settings
                     let selectedPalette = colorPalettes.default;
+                    let paletteSource = 'default';
                     
-                    if (_settings.categoryPalette === 'uns' && unsColors) {
-                        selectedPalette = unsColors;
-                        console.log('Using custom colors from uns:', selectedPalette);
-                    } else if (_settings.categoryPalette !== 'uns' && _settings.categoryPalette !== 'default') {
-                        selectedPalette = colorPalettes[_settings.categoryPalette] || colorPalettes.default;
-                        console.log(`Using color palette ${_settings.categoryPalette}:`, selectedPalette);
+                    try {
+                        if (_settings.categoryPalette === 'uns' && unsColors && unsColors.length > 0) {
+                            selectedPalette = unsColors;
+                            paletteSource = 'uns';
+                            console.log('Using custom colors from uns:', selectedPalette);
+                        } else if (_settings.categoryPalette !== 'uns' && _settings.categoryPalette !== 'default') {
+                            // Check if this is a Plotly.js discrete palette
+                            if (_settings.categoryPalette.startsWith('Plotly_Discrete_')) {
+                                // Use Plotly's discrete color palettes
+                                selectedPalette = _settings.categoryPalette.substring(16); // Remove 'Plotly_Discrete_' prefix
+                                paletteSource = 'plotly-discrete';
+                                console.log(`Using Plotly.js discrete colorscale: ${selectedPalette}`);
+                            }
+                            // Check if this is a Plotly.js sequential colorscale
+                            else if (_settings.categoryPalette.startsWith('Plotly_')) {
+                                // Just save the name - we'll use Plotly's built-in sequential colorscales
+                                selectedPalette = _settings.categoryPalette.substring(7); // Remove 'Plotly_' prefix
+                                paletteSource = 'plotly-sequential';
+                                console.log(`Using Plotly.js sequential colorscale: ${selectedPalette}`);
+                            } else if (colorPalettes[_settings.categoryPalette]) {
+                                // Use our custom color palettes
+                                selectedPalette = colorPalettes[_settings.categoryPalette];
+                                paletteSource = 'custom';
+                                console.log(`Using custom color palette ${_settings.categoryPalette}:`, selectedPalette);
+                            } else {
+                                console.warn(`Palette ${_settings.categoryPalette} not found, using default`);
+                                selectedPalette = colorPalettes.default;
+                                paletteSource = 'default';
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error selecting color palette:', error);
+                        selectedPalette = colorPalettes.default;
+                        paletteSource = 'default';
                     }
                     
                     // Create one trace per category for the legend
@@ -2760,6 +2898,49 @@ const CellPlotPanel = (function() {
                         
                         if (indices.length === 0) return; // Skip if no points in this category
                         
+                        // Get the color for this category
+                        let categoryColor;
+                        
+                        if (paletteSource === 'uns' && unsColors) {
+                            // If using uns colors, we need to match by category index in original category order
+                            // from the dataset structure, not by the iteration order in catValues
+                            // Try to find category in _data.colorCategories first
+                            if (_data.colorCategories && Array.isArray(_data.colorCategories)) {
+                                const catIndex = _data.colorCategories.indexOf(category);
+                                if (catIndex !== -1 && catIndex < unsColors.length) {
+                                    categoryColor = unsColors[catIndex];
+                                } else {
+                                    // Fallback to position in catValues if category not found
+                                    categoryColor = unsColors[i % unsColors.length];
+                                }
+                            } else {
+                                // Fallback to position in catValues if colorCategories not available
+                                categoryColor = unsColors[i % unsColors.length];
+                            }
+                        } else if (paletteSource === 'plotly-discrete') {
+                            // For Plotly discrete palettes, get color directly from the discrete color map
+                            const discreteColors = {
+                                'D3': ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
+                                'G10': ['#3366CC', '#DC3912', '#FF9900', '#109618', '#990099', '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'],
+                                'Set1': ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
+                                'Set2': ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
+                                'Set3': ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
+                                'Pastel1': ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec'],
+                                'Pastel2': ['#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae', '#f1e2cc', '#cccccc'],
+                                'Accent': ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f', '#bf5b17', '#666666'],
+                                'Dark2': ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
+                                'Paired': ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
+                            };
+                            const colors = discreteColors[selectedPalette] || discreteColors['D3'];
+                            categoryColor = colors[i % colors.length];
+                        } else if (paletteSource === 'plotly-sequential') {
+                            // For Plotly sequential palettes, we'll set the sequential color scale in the trace options
+                            categoryColor = undefined; // Will be set by Plotly
+                        } else {
+                            // For other custom palettes, use the index in catValues
+                            categoryColor = selectedPalette[i % selectedPalette.length];
+                        }
+                        
                         // Create a trace for this category
                         const catTrace = {
                             type: _settings.z ? 'scatter3d' : 'scattergl',
@@ -2769,11 +2950,21 @@ const CellPlotPanel = (function() {
                             hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
                             x: indices.map(idx => _data.x.values[idx]),
                             y: indices.map(idx => _data.y.values[idx]),
-                            marker: {
-                                size: _settings.pointSize,
-                                opacity: _settings.pointOpacity,
-                                color: selectedPalette[i % selectedPalette.length]
-                            },
+                            marker: paletteSource === 'plotly-sequential'
+                                ? {
+                                    size: _settings.pointSize,
+                                    opacity: _settings.pointOpacity,
+                                    // Use Plotly's built-in sequential colorscale
+                                    colorscale: selectedPalette,
+                                    // For sequential colorscales, each trace needs a custom color value
+                                    color: i, // Use index as the color value
+                                    showscale: false // Don't show color scale, we have the legend
+                                } 
+                                : {
+                                    size: _settings.pointSize,
+                                    opacity: _settings.pointOpacity,
+                                    color: categoryColor
+                                },
                             showlegend: true
                         };
                         
