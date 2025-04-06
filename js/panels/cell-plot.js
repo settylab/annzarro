@@ -984,7 +984,46 @@ const CellPlotPanel = (function() {
                     _settings.centeringActive = false;
                     _updateCenteringUI();
                 }
+                
+                // Update outliers if hiding is active
+                if (_settings.hideOutliers) {
+                    _updateOutlierVisibility();
+                }
             });
+            
+            // Helper function to update point visibility based on color range
+            function _updateOutlierVisibility() {
+                if (!_plot || !_data.color || _data.colorType !== 'numerical') return;
+                
+                try {
+                    const pointVisibility = [];
+                    
+                    // Create an array of true/false for each point based on range
+                    for (let i = 0; i < _data.color.length; i++) {
+                        const val = _data.color[i];
+                        if (isNaN(val)) {
+                            // NaN values are always visible
+                            pointVisibility.push(true);
+                        } else if (_settings.hideOutliers) {
+                            // When hiding outliers, only show points within range
+                            const inRange = (_settings.colorMin === null || val >= _settings.colorMin) && 
+                                          (_settings.colorMax === null || val <= _settings.colorMax);
+                            pointVisibility.push(inRange);
+                        } else {
+                            // When not hiding outliers, show all points
+                            pointVisibility.push(true);
+                        }
+                    }
+                    
+                    // Apply visibility update
+                    Plotly.restyle(_plotContainer, {
+                        'visible': [pointVisibility]
+                    }, [0]);
+                    
+                } catch (error) {
+                    console.error('Error updating point visibility:', error);
+                }
+            }
             
             // Max slider - use input for real-time updates
             colorMaxSlider.addEventListener('input', (e) => {
@@ -1011,6 +1050,11 @@ const CellPlotPanel = (function() {
                 if (_settings.centeringActive) {
                     _settings.centeringActive = false;
                     _updateCenteringUI();
+                }
+                
+                // Update outliers if hiding is active
+                if (_settings.hideOutliers) {
+                    _updateOutlierVisibility();
                 }
             });
             
@@ -1277,7 +1321,44 @@ const CellPlotPanel = (function() {
             const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
             hideOutliersToggle.addEventListener('change', (e) => {
                 _settings.hideOutliers = e.target.checked;
-                _updatePlot();
+                
+                // Directly update the visibility of points without redrawing the plot
+                if (_plot && _data.color && _data.colorType === 'numerical') {
+                    try {
+                        const pointVisibility = [];
+                        
+                        // Create an array of true/false for each point based on range
+                        for (let i = 0; i < _data.color.length; i++) {
+                            const val = _data.color[i];
+                            if (isNaN(val)) {
+                                // NaN values are always visible
+                                pointVisibility.push(true);
+                            } else if (_settings.hideOutliers) {
+                                // When hiding outliers, only show points within range
+                                const inRange = (_settings.colorMin === null || val >= _settings.colorMin) && 
+                                              (_settings.colorMax === null || val <= _settings.colorMax);
+                                pointVisibility.push(inRange);
+                            } else {
+                                // When not hiding outliers, show all points
+                                pointVisibility.push(true);
+                            }
+                        }
+                        
+                        // Direct Plotly update for efficiency
+                        Plotly.restyle(_plotContainer, {
+                            'visible': [pointVisibility]
+                        }, [0]);
+                        
+                        console.log(`Updated point visibility based on outlier setting: hide=${_settings.hideOutliers}`);
+                    } catch (error) {
+                        console.error('Error updating point visibility:', error);
+                        // Fall back to standard update
+                        _updatePlot();
+                    }
+                } else {
+                    // Fall back to standard update for non-numerical data
+                    _updatePlot();
+                }
             });
             
             // Show grid toggle
@@ -1287,16 +1368,47 @@ const CellPlotPanel = (function() {
             showGridToggle.addEventListener('change', (e) => {
                 _settings.showGrid = e.target.checked;
                 
-                // Update just the grid visibility without redrawing the plot
+                // Update grid, axes, and other line visibility without redrawing the plot
                 if (_plot) {
                     const update = {
+                        // Grid lines
                         'xaxis.showgrid': _settings.showGrid,
-                        'yaxis.showgrid': _settings.showGrid
+                        'yaxis.showgrid': _settings.showGrid,
+                        // Axis lines
+                        'xaxis.showline': _settings.showGrid,
+                        'yaxis.showline': _settings.showGrid,
+                        // Zero lines
+                        'xaxis.zeroline': _settings.showGrid,
+                        'yaxis.zeroline': _settings.showGrid,
+                        // Tick marks
+                        'xaxis.ticks': _settings.showGrid ? '' : 'none',
+                        'yaxis.ticks': _settings.showGrid ? '' : 'none',
+                        // Tick labels
+                        'xaxis.showticklabels': _settings.showGrid,
+                        'yaxis.showticklabels': _settings.showGrid
                     };
                     
-                    // For 3D plots, add the z-axis grid setting
+                    // For 3D plots, add the z-axis settings
                     if (_settings.z) {
-                        update['zaxis.showgrid'] = _settings.showGrid;
+                        update['scene.xaxis.showgrid'] = _settings.showGrid;
+                        update['scene.yaxis.showgrid'] = _settings.showGrid;
+                        update['scene.zaxis.showgrid'] = _settings.showGrid;
+                        
+                        update['scene.xaxis.showline'] = _settings.showGrid;
+                        update['scene.yaxis.showline'] = _settings.showGrid;
+                        update['scene.zaxis.showline'] = _settings.showGrid;
+                        
+                        update['scene.xaxis.zeroline'] = _settings.showGrid;
+                        update['scene.yaxis.zeroline'] = _settings.showGrid;
+                        update['scene.zaxis.zeroline'] = _settings.showGrid;
+                        
+                        update['scene.xaxis.ticks'] = _settings.showGrid ? '' : 'none';
+                        update['scene.yaxis.ticks'] = _settings.showGrid ? '' : 'none';
+                        update['scene.zaxis.ticks'] = _settings.showGrid ? '' : 'none';
+                        
+                        update['scene.xaxis.showticklabels'] = _settings.showGrid;
+                        update['scene.yaxis.showticklabels'] = _settings.showGrid;
+                        update['scene.zaxis.showticklabels'] = _settings.showGrid;
                     }
                     
                     Plotly.relayout(_plotContainer, update);
@@ -1548,18 +1660,22 @@ const CellPlotPanel = (function() {
                                 _settings.colorMax = dataMax;
                             } else {
                                 console.log("Color range is locked, keeping previous min/max values");
-                                // Ensure values are within the new data range
-                                // This prevents errors when data range changes significantly
-                                if (_settings.colorMin < dataMin) {
-                                    _settings.colorMin = dataMin;
-                                    colorMinSlider.value = dataMin;
-                                    colorMinInput.value = dataMin.toFixed(2);
-                                }
-                                if (_settings.colorMax > dataMax) {
-                                    _settings.colorMax = dataMax;
-                                    colorMaxSlider.value = dataMax;
-                                    colorMaxInput.value = dataMax.toFixed(2);
-                                }
+                                // When locked, keep the existing min/max values even if outside data range
+                                // We'll just expand the slider UI range to include both data and user values
+                                
+                                // Expand slider range if needed to include both data and user values
+                                const minSliderRange = Math.min(_settings.colorMin, dataMin);
+                                const maxSliderRange = Math.max(_settings.colorMax, dataMax);
+                                
+                                // Update slider ranges to accommodate all values
+                                colorMinSlider.min = minSliderRange;
+                                colorMaxSlider.min = minSliderRange;
+                                colorMinSlider.max = maxSliderRange;
+                                colorMaxSlider.max = maxSliderRange;
+                                
+                                // Keep the current values (not changing them)
+                                colorMinSlider.value = _settings.colorMin;
+                                colorMaxSlider.value = _settings.colorMax;
                             }
                         }
                     }
@@ -2286,10 +2402,17 @@ const CellPlotPanel = (function() {
                     }
                 }
                 
-                // Add colorbar
+                // Add colorbar with vertical title
                 trace.marker.colorbar = {
-                    title: `${_settings.color.type}.${_settings.color.key}` +
-                          (_settings.color.column ? `.${_settings.color.column}` : '')
+                    title: {
+                        text: `${_settings.color.type}.${_settings.color.key}` +
+                              (_settings.color.column ? `.${_settings.color.column}` : ''),
+                        side: 'right',  // Place title on right side
+                        font: {
+                            size: 12
+                        }
+                    },
+                    titleside: 'right'  // Right side vertical text
                 };
             } else if (_data.colorType === 'constant') {
                 // Use a constant color (default to light grey)
@@ -2308,13 +2431,21 @@ const CellPlotPanel = (function() {
                     title: `${_settings.x.type}.${_settings.x.key}` +
                            (_settings.x.column ? `.${_settings.x.column}` : ''),
                     showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)'
+                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    showline: _settings.showGrid,
+                    zeroline: _settings.showGrid,
+                    ticks: _settings.showGrid ? '' : 'none',
+                    showticklabels: _settings.showGrid
                 },
                 yaxis: {
                     title: `${_settings.y.type}.${_settings.y.key}` +
                            (_settings.y.column ? `.${_settings.y.column}` : ''),
                     showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)'
+                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    showline: _settings.showGrid,
+                    zeroline: _settings.showGrid,
+                    ticks: _settings.showGrid ? '' : 'none',
+                    showticklabels: _settings.showGrid
                 }
             };
             
@@ -2324,18 +2455,30 @@ const CellPlotPanel = (function() {
                     xaxis: { 
                         title: layout.xaxis.title,
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)'
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
                     },
                     yaxis: { 
                         title: layout.yaxis.title,
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)'
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
                     },
                     zaxis: {
                         title: `${_settings.z.type}.${_settings.z.key}` +
                                (_settings.z.column ? `.${_settings.z.column}` : ''),
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)'
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
                     }
                 };
                 
@@ -2657,11 +2800,19 @@ const CellPlotPanel = (function() {
                         if (updateOptions.layout || updateOptions.colorData) {
                             // Only update title if we have a real color type (not 'none')
                             if (_settings.color.type !== 'none') {
-                                const newTitle = `${_settings.color.type}.${_settings.color.key}` +
-                                                (_settings.color.column ? `.${_settings.color.column}` : '');
+                                // Create a title object with proper vertical formatting
+                                const newTitle = {
+                                    text: `${_settings.color.type}.${_settings.color.key}` +
+                                         (_settings.color.column ? `.${_settings.color.column}` : ''),
+                                    side: 'right',
+                                    font: {
+                                        size: 12
+                                    }
+                                };
                                 
                                 Plotly.relayout(_plotContainer, {
-                                    'coloraxis.colorbar.title.text': newTitle
+                                    'coloraxis.colorbar.title': newTitle,
+                                    'coloraxis.colorbar.titleside': 'right'
                                 });
                             }
                         }
