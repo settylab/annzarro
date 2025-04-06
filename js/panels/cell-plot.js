@@ -214,9 +214,6 @@ const CellPlotPanel = (function() {
             
             _plotContainer = document.getElementById(`plot-container-${_id}`);
             _controlsContainer = _container.querySelector('.plot-controls');
-            
-            // Setup initial UI state
-            _initializeUIState();
         }
         
         /**
@@ -239,7 +236,9 @@ const CellPlotPanel = (function() {
                     // Set defaults from the actual dataset (using embeddings directly)
                     if (datasetStructure.embeddings && datasetStructure.embeddings.length > 0) {
                         const defaultEmbedding = datasetStructure.embeddings[0]; // First embedding
-                        
+
+                        console.log("-------------------------------------------------------")
+                        console.log(datasetStructure.obsm.dataframes)
                         // Set defaults if not already specified
                         if (!_settings.x.key || _settings.x.key === '') {
                             _settings.x.key = defaultEmbedding;
@@ -649,10 +648,44 @@ const CellPlotPanel = (function() {
                                         // Z-axis changes mean switching between 2D and 3D
                                         console.log('Z-axis changed (2D/3D change), recreating plot');
                                         _loadDataAndCreatePlot();
-                                    } else if (axis === 'x' || axis === 'y') {
-                                        // Position axes changes require recreation
-                                        console.log('Position axis (x/y) changed, recreating plot');
-                                        _loadDataAndCreatePlot();
+                                    } else if (axis === 'x') {
+                                        // Position axes changes for X can be optimized if we already have a plot
+                                        if (_plot) {
+                                            console.log('X-axis changed, loading data and updating plot');
+                                            // Load new X data and update only X axis
+                                            _loadAxisData('x').then(xData => {
+                                                if (xData && xData.values) {
+                                                    _data.x = xData;
+                                                    _updatePlotElements({
+                                                        xAxis: true,
+                                                        layout: true
+                                                    });
+                                                } else {
+                                                    _loadDataAndCreatePlot();
+                                                }
+                                            }).catch(() => _loadDataAndCreatePlot());
+                                        } else {
+                                            _loadDataAndCreatePlot();
+                                        }
+                                    } else if (axis === 'y') {
+                                        // Position axes changes for Y can be optimized if we already have a plot
+                                        if (_plot) {
+                                            console.log('Y-axis changed, loading data and updating plot');
+                                            // Load new Y data and update only Y axis
+                                            _loadAxisData('y').then(yData => {
+                                                if (yData && yData.values) {
+                                                    _data.y = yData;
+                                                    _updatePlotElements({
+                                                        yAxis: true,
+                                                        layout: true
+                                                    });
+                                                } else {
+                                                    _loadDataAndCreatePlot();
+                                                }
+                                            }).catch(() => _loadDataAndCreatePlot());
+                                        } else {
+                                            _loadDataAndCreatePlot();
+                                        }
                                     } else {
                                         // Fallback
                                         _loadDataAndCreatePlot();
@@ -759,53 +792,42 @@ const CellPlotPanel = (function() {
                 }
             });
             
-            // Point size slider - use direct Plotly update for efficiency
+            // Point size slider - use centralized update system
             const pointSizeSlider = document.getElementById(`point-size-${_id}`);
             pointSizeSlider.addEventListener('input', (e) => {
                 const newSize = parseFloat(e.target.value);
                 _settings.pointSize = newSize;
                 
-                // Update directly without recreating plot
-                if (_plot && _plot.data) {
-                    // Apply to all traces
-                    const update = {'marker.size': newSize};
-                    const indices = Array.from({length: _plot.data.length}, (_, i) => i);
-                    Plotly.restyle(_plotContainer, update, indices);
-                } else {
-                    // Fallback to standard update
-                    _updatePlot(false);
-                }
+                // Update styling only
+                _updatePlotElements({
+                    styling: true
+                });
             });
             
-            // Point opacity slider - use direct Plotly update for efficiency
+            // Point opacity slider - use centralized update system
             const pointOpacitySlider = document.getElementById(`point-opacity-${_id}`);
             pointOpacitySlider.addEventListener('input', (e) => {
                 const newOpacity = parseFloat(e.target.value);
                 _settings.pointOpacity = newOpacity;
                 
-                // Update directly without recreating plot
-                if (_plot && _plot.data) {
-                    // Apply to all traces
-                    const update = {'marker.opacity': newOpacity};
-                    const indices = Array.from({length: _plot.data.length}, (_, i) => i);
-                    Plotly.restyle(_plotContainer, update, indices);
-                } else {
-                    // Fallback to standard update
-                    _updatePlot(false);
-                }
+                // Update styling only
+                _updatePlotElements({
+                    styling: true
+                });
             });
             
-            // Color scale selector - use direct Plotly update for efficiency
+            // Color scale selector - use centralized update system
             const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
             colorScaleSelect.addEventListener('change', (e) => {
                 const newColorScale = e.target.value;
                 _settings.colorScale = newColorScale;
                 
                 // Only update for numerical data, categorical uses discrete colors
-                if (_data.colorType === 'numerical' && _plot && _plot.data) {
-                    // Direct update of colorscale only
-                    const update = {'marker.colorscale': newColorScale};
-                    Plotly.restyle(_plotContainer, update, [0]);
+                if (_data.colorType === 'numerical' && _plot) {
+                    // Use centralized update system for color updates
+                    _updatePlotElements({
+                        colors: true
+                    });
                     console.log(`Updated colorscale to ${newColorScale} without redrawing`);
                 } else {
                     // For categorical data, we need to recreate the plot with proper legend
@@ -897,13 +919,8 @@ const CellPlotPanel = (function() {
                 // Update settings but don't update sliders again to avoid recursion
                 _settings.colorMin = minValue;
                 
-                // Update just the color range directly without triggering full update
-                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
-                    Plotly.restyle(_plotContainer, {'marker.cmin': minValue}, [0]);
-                } else {
-                    // Fallback if for some reason we can't access the plot directly
-                    _updatePlotColorRangeOnly();
-                }
+                // Update using centralized system, color ranges only
+                _updatePlotColorRangeOnly();
                 
                 // Turn off centering when manually adjusting
                 _settings.centeringActive = false;
@@ -924,13 +941,8 @@ const CellPlotPanel = (function() {
                 // Update settings but don't update sliders again to avoid recursion
                 _settings.colorMax = maxValue;
                 
-                // Update just the color range directly without triggering full update
-                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
-                    Plotly.restyle(_plotContainer, {'marker.cmax': maxValue}, [0]);
-                } else {
-                    // Fallback if for some reason we can't access the plot directly
-                    _updatePlotColorRangeOnly();
-                }
+                // Update using centralized system, color ranges only
+                _updatePlotColorRangeOnly();
                 
                 // Turn off centering when manually adjusting
                 _settings.centeringActive = false;
@@ -945,27 +957,12 @@ const CellPlotPanel = (function() {
             
             // Helper function to update only the color range
             function _updatePlotColorRangeOnly() {
-                if (!_plot) return;
-                
-                try {
-                    // Only update the color range, nothing else
-                    const update = {};
-                    
-                    if (_settings.colorMin !== null) {
-                        update['marker.cmin'] = _settings.colorMin;
-                    }
-                    
-                    if (_settings.colorMax !== null) {
-                        update['marker.cmax'] = _settings.colorMax;
-                    }
-                    
-                    // Apply only to the first trace (for numerical data we only have one trace)
-                    if (Object.keys(update).length > 0) {
-                        Plotly.restyle(_plotContainer, update, [0]);
-                    }
-                } catch (error) {
-                    console.error('Error updating color range:', error);
-                }
+                // Use the centralized update system with only the color ranges
+                _updatePlotElements({
+                    colors: true,
+                    layout: false,
+                    styling: false
+                });
             }
             
             // Function to apply centering to colormap
@@ -1232,19 +1229,65 @@ const CellPlotPanel = (function() {
                                     _settings.color.type === 'obsp';
                 
                 if (usesObspData) {
-                    // First check if it affects only color or also position axes
-                    if (_settings.color.type === 'obsp' && 
-                        _settings.x.type !== 'obsp' && 
-                        _settings.y.type !== 'obsp' && 
-                        (!_settings.z || _settings.z.type !== 'obsp')) {
-                        
+                    // Track which axes need updates
+                    const updates = {
+                        xAxis: _settings.x.type === 'obsp',
+                        yAxis: _settings.y.type === 'obsp',
+                        zAxis: _settings.z && _settings.z.type === 'obsp',
+                        colors: _settings.color.type === 'obsp',
+                        layout: false
+                    };
+                    
+                    // If this affects multiple axes, it's more efficient to recreate
+                    const multiAxisUpdate = (updates.xAxis ? 1 : 0) + 
+                                            (updates.yAxis ? 1 : 0) + 
+                                            (updates.zAxis ? 1 : 0) > 1;
+                    
+                    if (multiAxisUpdate) {
+                        // Multiple position axes use obsp data, need to recreate the plot
+                        console.log('Focused cell changed affects multiple position axes, recreating plot');
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // Handle specific update scenarios
+                    if (updates.xAxis) {
+                        console.log('Focused cell changed affects x-axis, loading new data');
+                        _loadAxisData('x').then(xData => {
+                            if (xData && xData.values) {
+                                _data.x = xData;
+                                _updatePlotElements({ xAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.yAxis) {
+                        console.log('Focused cell changed affects y-axis, loading new data');
+                        _loadAxisData('y').then(yData => {
+                            if (yData && yData.values) {
+                                _data.y = yData;
+                                _updatePlotElements({ yAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.zAxis) {
+                        console.log('Focused cell changed affects z-axis, loading new data');
+                        _loadAxisData('z').then(zData => {
+                            if (zData && zData.values) {
+                                _data.z = zData;
+                                _updatePlotElements({ zAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.colors) {
                         // Only color uses obsp data - we can use optimized update
                         console.log('Focused cell changed, only affects color data - using optimized update');
                         _loadColorDataAndUpdatePlot();
-                    } else {
-                        // Position axes (x, y, z) use obsp data, need to recreate the plot
-                        console.log('Focused cell changed affects position axes, recreating plot');
-                        _loadDataAndCreatePlot();
                     }
                 } else {
                     console.log('Focused cell changed does not affect this plot');
@@ -1262,19 +1305,65 @@ const CellPlotPanel = (function() {
                                      _settings.color.type === 'layer';
                 
                 if (usesLayerData) {
-                    // First check if it affects only color or also position axes
-                    if (_settings.color.type === 'layer' && 
-                        _settings.x.type !== 'layer' && 
-                        _settings.y.type !== 'layer' && 
-                        (!_settings.z || _settings.z.type !== 'layer')) {
-                        
+                    // Track which axes need updates
+                    const updates = {
+                        xAxis: _settings.x.type === 'layer',
+                        yAxis: _settings.y.type === 'layer',
+                        zAxis: _settings.z && _settings.z.type === 'layer',
+                        colors: _settings.color.type === 'layer',
+                        layout: false
+                    };
+                    
+                    // If this affects multiple axes, it's more efficient to recreate
+                    const multiAxisUpdate = (updates.xAxis ? 1 : 0) + 
+                                            (updates.yAxis ? 1 : 0) + 
+                                            (updates.zAxis ? 1 : 0) > 1;
+                    
+                    if (multiAxisUpdate) {
+                        // Multiple position axes use layer data, need to recreate the plot
+                        console.log('Focused gene changed affects multiple position axes, recreating plot');
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // Handle specific update scenarios
+                    if (updates.xAxis) {
+                        console.log('Focused gene changed affects x-axis, loading new data');
+                        _loadAxisData('x').then(xData => {
+                            if (xData && xData.values) {
+                                _data.x = xData;
+                                _updatePlotElements({ xAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.yAxis) {
+                        console.log('Focused gene changed affects y-axis, loading new data');
+                        _loadAxisData('y').then(yData => {
+                            if (yData && yData.values) {
+                                _data.y = yData;
+                                _updatePlotElements({ yAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.zAxis) {
+                        console.log('Focused gene changed affects z-axis, loading new data');
+                        _loadAxisData('z').then(zData => {
+                            if (zData && zData.values) {
+                                _data.z = zData;
+                                _updatePlotElements({ zAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
+                    }
+                    else if (updates.colors) {
                         // Only color uses layer data - we can use optimized update
                         console.log('Focused gene changed, only affects color data - using optimized update');
                         _loadColorDataAndUpdatePlot();
-                    } else {
-                        // Position axes (x, y, z) use layer data, need to recreate the plot
-                        console.log('Focused gene changed affects position axes, recreating plot');
-                        _loadDataAndCreatePlot();
                     }
                 } else {
                     console.log('Focused gene changed does not affect this plot');
@@ -1307,32 +1396,8 @@ const CellPlotPanel = (function() {
                     _data.colorCategories = colorData.categories;
                     console.log(`Updated _data.color to array with ${_data.color.length} elements, type: ${_data.colorType}`);
                     
-                    // Check if we have many NaN values - as they're treated specially in the plot
-                    const nanCount = _data.color.filter(val => val === null || val === undefined || isNaN(val)).length;
-                    console.log(`Color data contains ${nanCount} NaN values out of ${_data.color.length} total`);
-                    
-                    // If we have many NaN values or categorical data, we should recreate the plot
-                    // as these require special treatment in the full plot creation flow
-                    if (nanCount > 0 && nanCount > _data.color.length * 0.1) { // More than 10% NaNs
-                        console.log('Many NaN values detected, recreating full plot for proper handling');
-                        _loadDataAndCreatePlot();
-                        return;
-                    } 
-                    
-                    if (_data.colorType === 'categorical') {
-                        console.log('Categorical color data requires recreating the plot with legends');
-                        _loadDataAndCreatePlot();
-                        return;
-                    }
-                    
                     // Restore centering state
                     _settings.centeringActive = wasCenteringActive;
-                    
-                    // If centering was active, apply it before updating
-                    if (_settings.centeringActive) {
-                        console.log('Centering was active, applying before update');
-                        // This will be done by _updatePlot
-                    }
                     
                     // Update min and max slider ranges based on new data before updating plot
                     if (_data.colorType === 'numerical') {
@@ -1359,65 +1424,12 @@ const CellPlotPanel = (function() {
                         }
                     }
                     
-                    // Check if we need to handle categorical vs numerical transition
-                    const wasCategorical = _plot && _plot.data && _plot.data.length > 1;
-                    const isCategorical = _data.colorType === 'categorical';
+                    // Use the centralized update system to handle the color update
+                    _updatePlotElements({
+                        colors: true,
+                        layout: true
+                    });
                     
-                    // If switching between categorical and numerical, we need to recreate the plot
-                    if (wasCategorical || isCategorical) {
-                        console.log('Switching between categorical and numerical coloring, recreating plot');
-                        _loadDataAndCreatePlot();
-                        return;
-                    }
-                    
-                    // For continuous to continuous color changes, just update the color data
-                    if (_plot && _plot.data && _plot.data[0]) {
-                        console.log('Directly updating plot with new color data without redrawing');
-                        
-                        try {
-                            // Create a direct update with just the color information
-                            const update = {
-                                'marker.color': [_data.color]
-                            };
-                            
-                            // Update colorscale properties for numerical data
-                            if (_data.colorType === 'numerical') {
-                                update['marker.colorscale'] = _settings.colorScale;
-                                
-                                // Add color range if specified
-                                if (_settings.colorMin !== null) {
-                                    update['marker.cmin'] = _settings.colorMin;
-                                }
-                                if (_settings.colorMax !== null) {
-                                    update['marker.cmax'] = _settings.colorMax;
-                                }
-                                
-                                // Update colorbar title if needed
-                                const newTitle = `${_settings.color.type}.${_settings.color.key}` +
-                                                (_settings.color.column ? `.${_settings.color.column}` : '');
-                                
-                                // Apply title update separately (it's in the layout, not the trace)
-                                Plotly.relayout(_plotContainer, {
-                                    'coloraxis.colorbar.title.text': newTitle
-                                });
-                            }
-                            
-                            // Apply the update directly to avoid redrawing
-                            Plotly.restyle(_plotContainer, update, [0]);
-                            console.log('Successfully updated plot colors without redrawing');
-                        } catch (error) {
-                            console.error('Error updating plot colors directly:', error);
-                            // Fallback to normal update method
-                            _updatePlot(true);
-                        }
-                    } else {
-                        // Fallback if plot structure isn't as expected
-                        console.log('Using standard update method');
-                        _updatePlot(true); // true = full data update
-                    }
-                    
-                    // Update UI to reflect current state
-                    _updateCenteringUI();
                 } else {
                     console.warn('No valid color data returned, falling back to full plot reload');
                     _loadDataAndCreatePlot();
@@ -2033,6 +2045,7 @@ const CellPlotPanel = (function() {
                                 };
                                 
                                 // Create the plot with multiple traces
+                                _plotContainer.innerHTML = ''
                                 Plotly.newPlot(_plotContainer, traces, layout, {
                                     responsive: true,
                                     displayModeBar: true,
@@ -2062,6 +2075,7 @@ const CellPlotPanel = (function() {
                             const traces = processCategories();
                             
                             // Create the plot with multiple traces
+                            _plotContainer.innerHTML = ''
                             Plotly.newPlot(_plotContainer, traces, {
                                 showlegend: true,
                                 legend: {
@@ -2206,6 +2220,7 @@ const CellPlotPanel = (function() {
             }
             
             // Create the plot
+            _plotContainer.innerHTML = ''
             Plotly.newPlot(_plotContainer, traces, layout, {
                 responsive: true,
                 displayModeBar: true,
@@ -2325,14 +2340,36 @@ const CellPlotPanel = (function() {
          * @param {boolean} fullDataUpdate - Whether to update all data or just visual properties 
          * @private
          */
-        function _updatePlot(fullDataUpdate = false) {
-            console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
+        /**
+         * Centralized function to efficiently update plot elements
+         * @param {Object} options - Update options
+         * @param {boolean} options.xAxis - Whether to update x-axis data
+         * @param {boolean} options.yAxis - Whether to update y-axis data
+         * @param {boolean} options.zAxis - Whether to update z-axis data
+         * @param {boolean} options.colors - Whether to update coloring data
+         * @param {boolean} options.styling - Whether to update visual styling
+         * @param {boolean} options.layout - Whether to update layout properties 
+         * @private
+         */
+        function _updatePlotElements(options = {}) {
+            const defaultOptions = {
+                xAxis: false,
+                yAxis: false,
+                zAxis: false,
+                colors: false,
+                styling: false,
+                layout: false
+            };
             
-            // Apply centering if active
-            if (_settings.centeringActive) {
+            // Merge provided options with defaults
+            const updateOptions = { ...defaultOptions, ...options };
+            
+            // Apply centering if active (before any updates)
+            if (_settings.centeringActive && updateOptions.colors) {
                 _applyCentering();
             }
             
+            // If plot doesn't exist, create it
             if (!_plot) {
                 console.warn("Plot doesn't exist yet, creating it instead of updating");
                 _loadDataAndCreatePlot();
@@ -2340,139 +2377,164 @@ const CellPlotPanel = (function() {
             }
             
             try {
-                // If it's a full data update (e.g. when changing the color data)
-                if (fullDataUpdate) {
-                    console.log("Performing full data update");
+                // POSITION DATA UPDATES (most significant changes)
+                // If position axes data change is needed, check if we need a full redraw
+                const positionChange = updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis;
+                
+                if (positionChange) {
+                    // Check if we're switching between 2D and 3D - always need complete redraw
+                    const is3D = _plot.data[0].type === 'scatter3d';
+                    const shouldBe3D = _settings.z !== null;
                     
-                    // If we have multiple traces, we need to recreate the plot
-                    if (_plot.data && _plot.data.length > 1) {
-                        console.log("Plot has multiple traces, recreating instead of updating");
+                    if (is3D !== shouldBe3D) {
+                        console.log("Switching between 2D and 3D plot types - recreating plot");
                         _loadDataAndCreatePlot();
                         return;
                     }
                     
-                    if (_data.colorType === 'categorical') {
+                    // Update position data
+                    const update = {};
+                    if (updateOptions.xAxis && _data.x && _data.x.values) {
+                        update.x = [_data.x.values];
+                    }
+                    
+                    if (updateOptions.yAxis && _data.y && _data.y.values) {
+                        update.y = [_data.y.values];
+                    }
+                    
+                    if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
+                        update.z = [_data.z.values];
+                    }
+                    
+                    if (Object.keys(update).length > 0) {
+                        console.log("Updating position data:", update);
+                        Plotly.restyle(_plotContainer, update, [0]);
+                    }
+                }
+                
+                // COLOR DATA UPDATES
+                if (updateOptions.colors && _data.color) {
+                    // Check if we need to handle categorical vs numerical transition
+                    const isCategorical = _data.colorType === 'categorical';
+                    const hasMultipleTraces = _plot.data && _plot.data.length > 1;
+                    
+                    // If changing between categorical and numerical, we need a complete recreation
+                    if ((isCategorical && !hasMultipleTraces) || (!isCategorical && hasMultipleTraces)) {
+                        console.log("Switching between categorical and numerical coloring - recreating plot");
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // For categorical coloring, we need to recreate as we use multiple traces
+                    if (isCategorical) {
                         console.log("Categorical coloring requires recreating the plot");
                         _loadDataAndCreatePlot();
                         return;
                     }
                     
-                    // For numerical data, update the color array and scales
+                    // For numerical data with many NaN values, recreation is safer
                     if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
-                        console.log(`Updating plot with ${_data.color.length} color values`);
-                        
-                        // Handle NaN values but don't recreate just for NaN values - we'll show them as grey
-                        // Count NaN values for logging only
                         const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
-                        console.log(`Found ${nanCount} NaN values out of ${_data.color.length} total`);
+                        const nanPercentage = nanCount / _data.color.length;
                         
-                        // Only recreate if we're hiding outliers, otherwise just update the colors
-                        if (_settings.hideOutliers) {
-                            console.log("Hide outliers enabled, recreating plot");
+                        if (nanPercentage > 0.1) {
+                            console.log(`High NaN percentage (${(nanPercentage*100).toFixed(1)}%) - recreating plot`);
                             _loadDataAndCreatePlot();
                             return;
                         }
                         
-                        // For continuous-to-continuous transitions, update efficiently
-                        try {
-                            // Create the update object with just the color information 
-                            const update = {
-                                'marker.color': [_data.color],
-                                'marker.colorscale': [_settings.colorScale]
-                            };
-                            
-                            // Set color range if specified
-                            if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                                if (_settings.colorMin !== null) {
-                                    update['marker.cmin'] = [_settings.colorMin];
-                                }
-                                
-                                if (_settings.colorMax !== null) {
-                                    update['marker.cmax'] = [_settings.colorMax];
-                                }
-                            }
-                            
-                            // Apply color updates first
-                            console.log("Applying color updates to existing plot:", update);
-                            Plotly.restyle(_plotContainer, update, [0]);
-                            
-                            // Update the colorbar title separately (it's in the layout)
+                        // If we're hiding outliers, we need to recreate the plot for proper filtering
+                        if (_settings.hideOutliers) {
+                            console.log("Hide outliers enabled - recreating plot");
+                            _loadDataAndCreatePlot();
+                            return;
+                        }
+                        
+                        // Create color update object
+                        const update = {
+                            'marker.color': [_data.color],
+                            'marker.colorscale': _settings.colorScale
+                        };
+                        
+                        // Add color range if specified
+                        if (_settings.colorMin !== null) {
+                            update['marker.cmin'] = _settings.colorMin;
+                        }
+                        if (_settings.colorMax !== null) {
+                            update['marker.cmax'] = _settings.colorMax;
+                        }
+                        
+                        // Apply color updates
+                        console.log("Applying color updates:", update);
+                        Plotly.restyle(_plotContainer, update, [0]);
+                        
+                        // Update colorbar title with separate layout update
+                        if (updateOptions.layout) {
                             const newTitle = `${_settings.color.type}.${_settings.color.key}` +
                                             (_settings.color.column ? `.${_settings.color.column}` : '');
                             
-                            // Use relayout for the title to avoid issues with 'update' method
                             Plotly.relayout(_plotContainer, {
                                 'coloraxis.colorbar.title.text': newTitle
                             });
-                            
-                            console.log("Plot updated successfully without redrawing");
-                            return;
-                        } catch (error) {
-                            console.error("Error updating plot colors directly:", error);
-                            console.log("Falling back to plot recreation");
-                            _loadDataAndCreatePlot();
-                            return;
                         }
-                    } else {
-                        console.log("Recreating plot due to color data issues");
-                        _loadDataAndCreatePlot();
                     }
-                } else {
-                    // Simple visual property updates
-                    console.log("Updating visual properties only");
+                }
+                
+                // STYLING UPDATES (size, opacity)
+                if (updateOptions.styling) {
+                    console.log("Updating visual styling");
                     
-                    // Update common marker properties
                     const update = {
                         'marker.size': _settings.pointSize,
                         'marker.opacity': _settings.pointOpacity
                     };
                     
-                    // Update color scale for numerical data
-                    if (_data.colorType === 'numerical') {
-                        update['marker.colorscale'] = _settings.colorScale;
-                        
-                        // Update color range if specified
-                        if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                            const cmin = _settings.colorMin;
-                            const cmax = _settings.colorMax;
-                            
-                            if (cmin !== null) update['marker.cmin'] = cmin;
-                            if (cmax !== null) update['marker.cmax'] = cmax;
-                            
-                            // Only recreate if we're using hideOutliers - otherwise just update the color range
-                            // This ensures smooth slider interactions
-                            if (_settings.hideOutliers) {
-                                // Only recreate if there's a significant change in range (>25% change)
-                                const needsRecreate = (
-                                    (_plot.data[0].marker.cmin && Math.abs(_plot.data[0].marker.cmin - cmin) / Math.abs(cmin || 1) > 0.25) || 
-                                    (_plot.data[0].marker.cmax && Math.abs(_plot.data[0].marker.cmax - cmax) / Math.abs(cmax || 1) > 0.25)
-                                );
-                                
-                                if (needsRecreate) {
-                                    console.log("Significant color range change with outlier hiding, recreating plot");
-                                    _loadDataAndCreatePlot();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Apply updates to all traces - efficiently update only visual properties
+                    // Apply to all traces
                     const traceIndices = Array.from({length: _plot.data.length}, (_, i) => i);
-                    console.log(`Applying updates to ${traceIndices.length} traces:`, update);
-                    Plotly.update(_plotContainer, update, {}, traceIndices);
-                    console.log("Visual properties updated successfully");
+                    Plotly.restyle(_plotContainer, update, traceIndices);
                 }
                 
-                // Update slider UI if we have numerical data
+                // OTHER LAYOUT UPDATES
+                if (updateOptions.layout) {
+                    // Update any other layout elements like titles, axes, etc.
+                    // This section can be expanded as needed
+                    console.log("Updating layout properties");
+                    // Currently handled with specific color updates above
+                }
+                
+                // Update centering UI to reflect current state if we have numerical data
                 if (_data && _data.color && Array.isArray(_data.color) && _data.colorType === 'numerical') {
-                    // Update centering UI to reflect current state
                     _updateCenteringUI();
                 }
+                
             } catch (error) {
                 console.error("Error updating plot:", error);
                 console.log("Falling back to recreating the plot");
                 _loadDataAndCreatePlot();
+            }
+        }
+
+        /**
+         * Update plot with current settings without recreating it
+         * @param {boolean} fullDataUpdate - Whether to update all data or just visual properties 
+         * @private
+         */
+        function _updatePlot(fullDataUpdate = false) {
+            console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
+            
+            if (fullDataUpdate) {
+                // For full data updates, primarily update colors
+                _updatePlotElements({
+                    colors: true,
+                    styling: true,
+                    layout: true
+                });
+            } else {
+                // For visual-only updates
+                _updatePlotElements({
+                    styling: true,
+                    colors: _settings.colorMin !== null || _settings.colorMax !== null 
+                });
             }
         }
         
