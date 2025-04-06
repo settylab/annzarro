@@ -911,26 +911,64 @@ const CellPlotPanel = (function() {
                 _updateCenteringUI();
             });
             
+            // Debounce function to prevent too many updates
+            function debounce(func, wait) {
+                let timeout;
+                return function(...args) {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => func.apply(this, args), wait);
+                };
+            }
+            
+            // Direct Plotly update for sliders without full update mechanism
+            function updateColorRange(minOrMax, value) {
+                if (!_plot || !_plot.data || !_plot.data[0] || !_plot.data[0].marker) return;
+                
+                // Just update the specific property directly using Plotly API
+                const update = {};
+                update[`marker.c${minOrMax}`] = value;
+                
+                Plotly.restyle(_plotContainer, update, [0]);
+            }
+            
+            // Debounced version for full update - will only trigger after slider stops
+            const debouncedFullUpdate = debounce(() => {
+                // Only do the full update at the end of slider interaction
+                _updatePlotColorRangeOnly();
+                
+                // Update centering state and UI
+                if (_settings.centeringActive) {
+                    _settings.centeringActive = false;
+                    _updateCenteringUI();
+                }
+            }, 300);
+            
             // Min slider - use input for real-time updates
             colorMinSlider.addEventListener('input', (e) => {
                 const minValue = parseFloat(e.target.value);
                 colorMinInput.value = minValue.toFixed(2);
                 
-                // Update settings but don't update sliders again to avoid recursion
+                // Update settings
                 _settings.colorMin = minValue;
                 
-                // Update using centralized system, color ranges only
-                _updatePlotColorRangeOnly();
+                // Direct efficient update for smooth slider experience
+                updateColorRange('min', minValue);
                 
-                // Turn off centering when manually adjusting
-                _settings.centeringActive = false;
-                _updateCenteringUI();
+                // Schedule a full update if needed - debounced
+                debouncedFullUpdate();
             });
             
             // Min slider - on change for final update
             colorMinSlider.addEventListener('change', (e) => {
-                // No need to do anything additional here, all updates done in 'input' handler
                 console.log('Min slider change completed');
+                // Immediate update on mouseup
+                _updatePlotColorRangeOnly();
+                
+                // Turn off centering when manually adjusting
+                if (_settings.centeringActive) {
+                    _settings.centeringActive = false;
+                    _updateCenteringUI();
+                }
             });
             
             // Max slider - use input for real-time updates
@@ -938,21 +976,27 @@ const CellPlotPanel = (function() {
                 const maxValue = parseFloat(e.target.value);
                 colorMaxInput.value = maxValue.toFixed(2);
                 
-                // Update settings but don't update sliders again to avoid recursion
+                // Update settings
                 _settings.colorMax = maxValue;
                 
-                // Update using centralized system, color ranges only
-                _updatePlotColorRangeOnly();
+                // Direct efficient update for smooth slider experience
+                updateColorRange('max', maxValue);
                 
-                // Turn off centering when manually adjusting
-                _settings.centeringActive = false;
-                _updateCenteringUI();
+                // Schedule a full update if needed - debounced
+                debouncedFullUpdate();
             });
             
             // Max slider - on change for final update
             colorMaxSlider.addEventListener('change', (e) => {
-                // No need to do anything additional here, all updates done in 'input' handler
                 console.log('Max slider change completed');
+                // Immediate update on mouseup
+                _updatePlotColorRangeOnly();
+                
+                // Turn off centering when manually adjusting
+                if (_settings.centeringActive) {
+                    _settings.centeringActive = false;
+                    _updateCenteringUI();
+                }
             });
             
             // Helper function to update only the color range
@@ -960,6 +1004,9 @@ const CellPlotPanel = (function() {
                 // Use the centralized update system with only the color ranges
                 _updatePlotElements({
                     colors: true,
+                    colorRange: true, // Only update the color range (min/max)
+                    colorData: false, // Don't update the actual data array
+                    colorScale: false, // Don't update the color scale
                     layout: false,
                     styling: false
                 });
@@ -1256,7 +1303,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
-                                _updatePlotElements({ xAxis: true });
+                                _updatePlotElements({ 
+                                    xAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1267,7 +1317,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
-                                _updatePlotElements({ yAxis: true });
+                                _updatePlotElements({ 
+                                    yAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1278,7 +1331,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
-                                _updatePlotElements({ zAxis: true });
+                                _updatePlotElements({ 
+                                    zAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1332,7 +1388,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
-                                _updatePlotElements({ xAxis: true });
+                                _updatePlotElements({ 
+                                    xAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1343,7 +1402,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
-                                _updatePlotElements({ yAxis: true });
+                                _updatePlotElements({ 
+                                    yAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1354,7 +1416,10 @@ const CellPlotPanel = (function() {
                         _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
-                                _updatePlotElements({ zAxis: true });
+                                _updatePlotElements({ 
+                                    zAxis: true,
+                                    layout: true 
+                                });
                             } else {
                                 _loadDataAndCreatePlot();
                             }
@@ -1427,6 +1492,9 @@ const CellPlotPanel = (function() {
                     // Use the centralized update system to handle the color update
                     _updatePlotElements({
                         colors: true,
+                        colorData: true,  // New color data loaded
+                        colorScale: true, // May need to update color scale
+                        colorRange: true, // May need to update color range
                         layout: true
                     });
                     
@@ -2346,7 +2414,10 @@ const CellPlotPanel = (function() {
          * @param {boolean} options.xAxis - Whether to update x-axis data
          * @param {boolean} options.yAxis - Whether to update y-axis data
          * @param {boolean} options.zAxis - Whether to update z-axis data
-         * @param {boolean} options.colors - Whether to update coloring data
+         * @param {boolean} options.colors - Whether to update any coloring properties
+         * @param {boolean} options.colorData - Whether to update the color data array (set to true for new color data)
+         * @param {boolean} options.colorScale - Whether to update the color scale only
+         * @param {boolean} options.colorRange - Whether to update color range (min/max) only
          * @param {boolean} options.styling - Whether to update visual styling
          * @param {boolean} options.layout - Whether to update layout properties 
          * @private
@@ -2357,6 +2428,9 @@ const CellPlotPanel = (function() {
                 yAxis: false,
                 zAxis: false,
                 colors: false,
+                colorData: false,
+                colorScale: false,
+                colorRange: false,
                 styling: false,
                 layout: false
             };
@@ -2434,39 +2508,56 @@ const CellPlotPanel = (function() {
                     
                     // For numerical data with many NaN values, recreation is safer
                     if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
-                        const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
-                        const nanPercentage = nanCount / _data.color.length;
-                        
-                        if (nanPercentage > 0.1) {
-                            console.log(`High NaN percentage (${(nanPercentage*100).toFixed(1)}%) - recreating plot`);
-                            _loadDataAndCreatePlot();
-                            return;
+                        // Only check for NaN counts when we have actually loaded new color data
+                        // This prevents unnecessary checks when just updating color range
+                        if ('color' in updateOptions && updateOptions.color === true) {
+                            const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
+                            const nanPercentage = nanCount / _data.color.length;
+                            
+                            if (nanPercentage > 0.1) {
+                                console.log(`High NaN percentage (${(nanPercentage*100).toFixed(1)}%) - recreating plot`);
+                                _loadDataAndCreatePlot();
+                                return;
+                            }
+                            
+                            // If we're hiding outliers, we need to recreate the plot for proper filtering
+                            if (_settings.hideOutliers) {
+                                console.log("Hide outliers enabled - recreating plot");
+                                _loadDataAndCreatePlot();
+                                return;
+                            }
                         }
                         
-                        // If we're hiding outliers, we need to recreate the plot for proper filtering
-                        if (_settings.hideOutliers) {
-                            console.log("Hide outliers enabled - recreating plot");
-                            _loadDataAndCreatePlot();
-                            return;
+                        // Check what specific color properties need updating
+                        // This allows for more targeted updates
+                        const update = {};
+                        
+                        // Only include the full color array if the actual data changed
+                        // This prevents unnecessary data transfer during slider interactions
+                        if (updateOptions.colorData) {
+                            update['marker.color'] = [_data.color];
                         }
                         
-                        // Create color update object
-                        const update = {
-                            'marker.color': [_data.color],
-                            'marker.colorscale': _settings.colorScale
-                        };
+                        // Include colorscale if specified or if color data changed
+                        if (updateOptions.colorScale || updateOptions.colorData) {
+                            update['marker.colorscale'] = _settings.colorScale;
+                        }
                         
                         // Add color range if specified
-                        if (_settings.colorMin !== null) {
+                        if (_settings.colorMin !== null && (updateOptions.colorRange || updateOptions.colorData)) {
                             update['marker.cmin'] = _settings.colorMin;
                         }
-                        if (_settings.colorMax !== null) {
+                        
+                        if (_settings.colorMax !== null && (updateOptions.colorRange || updateOptions.colorData)) {
                             update['marker.cmax'] = _settings.colorMax;
                         }
                         
-                        // Apply color updates
-                        console.log("Applying color updates:", update);
-                        Plotly.restyle(_plotContainer, update, [0]);
+                        // Only apply updates if there's something to update
+                        if (Object.keys(update).length > 0) {
+                            // Apply color updates
+                            console.log("Applying color updates:", update);
+                            Plotly.restyle(_plotContainer, update, [0]);
+                        }
                         
                         // Update colorbar title with separate layout update
                         if (updateOptions.layout) {
@@ -2502,9 +2593,17 @@ const CellPlotPanel = (function() {
                     // Currently handled with specific color updates above
                 }
                 
-                // Update centering UI to reflect current state if we have numerical data
-                if (_data && _data.color && Array.isArray(_data.color) && _data.colorType === 'numerical') {
-                    _updateCenteringUI();
+                // Only update the UI if we made color changes and it's numerical data
+                if (updateOptions.colors && _data && _data.color && 
+                    Array.isArray(_data.color) && _data.colorType === 'numerical') {
+                    try {
+                        // Only call if we have a valid function defined in this context
+                        if (typeof _updateCenteringUI === 'function') {
+                            _updateCenteringUI();
+                        }
+                    } catch (e) {
+                        console.warn('Could not update centering UI:', e);
+                    }
                 }
                 
             } catch (error) {
@@ -2523,9 +2622,12 @@ const CellPlotPanel = (function() {
             console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
             
             if (fullDataUpdate) {
-                // For full data updates, primarily update colors
+                // For full data updates, update colors and data
                 _updatePlotElements({
                     colors: true,
+                    colorData: true,  // Include the full color data array
+                    colorScale: true, // Update the color scale
+                    colorRange: true, // Update the color range
                     styling: true,
                     layout: true
                 });
@@ -2533,7 +2635,9 @@ const CellPlotPanel = (function() {
                 // For visual-only updates
                 _updatePlotElements({
                     styling: true,
-                    colors: _settings.colorMin !== null || _settings.colorMax !== null 
+                    colors: _settings.colorMin !== null || _settings.colorMax !== null,
+                    colorRange: _settings.colorMin !== null || _settings.colorMax !== null,
+                    colorData: false // Don't update the actual color data array
                 });
             }
         }
