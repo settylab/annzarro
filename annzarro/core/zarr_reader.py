@@ -351,13 +351,14 @@ class ZarrReader:
                 self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
             raise
     
-    def open_dataset_by_path(self, path: str) -> Tuple[zarr.Group, Dict[str, Any]]:
+    def open_dataset_by_path(self, path: str, metadata: bool=True) -> Tuple[zarr.Group, Dict[str, Any]]:
         """
         Open a dataset by path without storing any state (stateless operation).
         This is useful for direct access to datasets without maintaining state.
         
         Args:
             path: Path to the zarr directory or file
+            metadata: If metadata should be returned (Default=True).
             
         Returns:
             Tuple of (zarr root, metadata dict)
@@ -386,6 +387,9 @@ class ZarrReader:
             else:
                 # Local file access
                 root = zarr.open_group(path, mode='r')
+
+            if not metadata:
+                return root
             
             # Extract metadata
             metadata = self._extract_metadata(root)
@@ -1157,7 +1161,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
@@ -1200,7 +1204,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
@@ -1638,7 +1642,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
@@ -1696,7 +1700,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
@@ -2229,7 +2233,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return []
@@ -2262,7 +2266,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return {}
@@ -2324,7 +2328,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return None
@@ -2386,7 +2390,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return []
@@ -2445,7 +2449,7 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, _ = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return []
