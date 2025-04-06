@@ -168,7 +168,7 @@ const CellPlotPanel = (function() {
                                 </div>
                                 
                                 <div class="color-range-controls" id="color-range-container-${_id}" style="display:none;">
-                                    <label class="numerical-color-label">Color Range:</label>
+                                    <label class="numerical-color-label">Color Map:</label>
                                     <label class="categorical-color-label" style="display:none;">Color Palette:</label>
                                     <select class="form-select form-select-sm color-palette-selector" id="color-scale-${_id}">
                                         ${Config.DEFAULTS.COLOR_SCALES.map(scale => 
@@ -379,7 +379,6 @@ const CellPlotPanel = (function() {
         function getGlobalDatasetStructure() {
             return globalDatasetStructure;
         }
-
         
         async function _ensureDatasetStructure() {
             // If we haven't loaded the structure yet, update it
@@ -487,7 +486,6 @@ const CellPlotPanel = (function() {
             }
             
             // Load dataset structure directly to avoid race conditions
-            await updateGlobalDatasetStructure();
             const datasetStructure = await _ensureDatasetStructure();
             
             if (!datasetStructure) {
@@ -1214,9 +1212,6 @@ const CellPlotPanel = (function() {
                         // Set values to maintain symmetry
                         colorMinSlider.value = -absMax;
                         colorMaxSlider.value = absMax;
-                        
-                        // Add special listener for centering mode
-                        _setupCenteringSliderListeners();
                     }
                     
                     // Update the plot color range directly without redrawing
@@ -1315,48 +1310,67 @@ const CellPlotPanel = (function() {
             
             // Update centering UI based on state
             function _updateCenteringUI() {
-                const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
-                const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
-                const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-                
-                if (_settings.centeringActive) {
-                    // Update button appearance
-                    centerColormapButton.classList.add('active', 'btn-primary');
-                    centerColormapButton.classList.remove('btn-outline-secondary');
-                    centerColormapButton.setAttribute('title', 'Centering active - click to disable');
-                    
-                    // Add centering-specific slider listeners that maintain symmetry
-                    _setupCenteringSliderListeners();
-                    
-                    // Apply centering immediately 
-                    _applyCentering();
-                } else {
-                    // Update button appearance
-                    centerColormapButton.classList.remove('active', 'btn-primary');
-                    centerColormapButton.classList.add('btn-outline-secondary');
-                    centerColormapButton.setAttribute('title', 'Center color scale at 0');
-                    
-                    // Remove centering-specific event listeners
-                    if (colorMinSlider && colorMaxSlider) {
-                        colorMinSlider.removeEventListener('input', _centeringMinSliderHandler);
-                        colorMaxSlider.removeEventListener('input', _centeringMaxSliderHandler);
-                        
-                        // Restore normal slider ranges
-                        if (_data && _data.color && Array.isArray(_data.color)) {
-                            const validValues = _data.color.filter(v => !isNaN(v));
-                            if (validValues.length > 0) {
-                                const dataMin = Math.min(...validValues);
-                                const dataMax = Math.max(...validValues);
-                                
-                                // Reset to full range
-                                colorMinSlider.min = dataMin;
-                                colorMinSlider.max = dataMax;
-                                colorMaxSlider.min = dataMin; 
-                                colorMaxSlider.max = dataMax;
-                            }
-                        }
+              const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+              const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+              const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+
+              setupCenteringSliderListeners();
+            
+              if (_settings.centeringActive) {
+                // Update button appearance
+                centerColormapButton.classList.add('active', 'btn-primary');
+                centerColormapButton.classList.remove('btn-outline-secondary');
+                centerColormapButton.setAttribute('title', 'Centering active - click to disable');
+            
+                // Apply centering immediately 
+                _applyCentering();
+              } else {
+                // Update button appearance
+                centerColormapButton.classList.remove('active', 'btn-primary');
+                centerColormapButton.classList.add('btn-outline-secondary');
+                centerColormapButton.setAttribute('title', 'Center color scale at 0');
+            
+                if (colorMinSlider && colorMaxSlider) {
+                  // Restore normal slider ranges based on the full data range
+                  if (_data && _data.color && Array.isArray(_data.color)) {
+                    const validValues = _data.color.filter(v => !isNaN(v));
+                    if (validValues.length > 0) {
+                      const dataMin = Math.min(...validValues);
+                      const dataMax = Math.max(...validValues);
+            
+                      // Reset to full range
+                      colorMinSlider.min = dataMin;
+                      colorMinSlider.max = dataMax;
+                      colorMaxSlider.min = dataMin;
+                      colorMaxSlider.max = dataMax;
+            
+                      // Ensure the current slider values are within the new range
+                      let currentMin = parseFloat(colorMinSlider.value);
+                      let currentMax = parseFloat(colorMaxSlider.value);
+            
+                      if (currentMin < dataMin) {
+                        currentMin = dataMin;
+                        colorMinSlider.value = dataMin;
+                        _settings.colorMin = dataMin;
+                      } else if (currentMin > dataMax) {
+                        currentMin = dataMax;
+                        colorMinSlider.value = dataMax;
+                        _settings.colorMin = dataMax;
+                      }
+            
+                      if (currentMax < dataMin) {
+                        currentMax = dataMin;
+                        colorMaxSlider.value = dataMin;
+                        _settings.colorMax = dataMin;
+                      } else if (currentMax > dataMax) {
+                        currentMax = dataMax;
+                        colorMaxSlider.value = dataMax;
+                        _settings.colorMax = dataMax;
+                      }
                     }
+                  }
                 }
+              }
             }
             
             // Center at 0 button - toggle behavior
@@ -1368,45 +1382,6 @@ const CellPlotPanel = (function() {
                 // Toggle the centering active state
                 _settings.centeringActive = !_settings.centeringActive;
                 _updateCenteringUI();
-                
-                if (_settings.centeringActive) {
-                    // Apply centering immediately
-                    _applyCentering();
-                } else if (wasActive) {
-                    // If deactivating centering, reset sliders to reasonable defaults
-                    if (_data && _data.color && Array.isArray(_data.color)) {
-                        const validValues = _data.color.filter(v => !isNaN(v));
-                        if (validValues.length > 0) {
-                            const dataMin = Math.min(...validValues);
-                            const dataMax = Math.max(...validValues);
-                            
-                            // Reset to dynamic data range, but keep current values if they're within range
-                            _settings.colorMin = (_settings.colorMin !== null && _settings.colorMin >= dataMin) ? 
-                                                 _settings.colorMin : dataMin;
-                            _settings.colorMax = (_settings.colorMax !== null && _settings.colorMax <= dataMax) ? 
-                                                 _settings.colorMax : dataMax;
-                            
-                            // Update the plot with non-symmetrical range
-                            if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
-                                Plotly.restyle(_plotContainer, {
-                                    'marker.cmin': _settings.colorMin,
-                                    'marker.cmax': _settings.colorMax
-                                }, [0]);
-                            }
-                            
-                            // Update the UI
-                            const colorMinInput = document.getElementById(`color-min-${_id}`);
-                            const colorMaxInput = document.getElementById(`color-max-${_id}`);
-                            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
-                            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-                            
-                            if (colorMinInput) colorMinInput.value = _settings.colorMin.toFixed(2);
-                            if (colorMaxInput) colorMaxInput.value = _settings.colorMax.toFixed(2);
-                            if (colorMinSlider) colorMinSlider.value = _settings.colorMin;
-                            if (colorMaxSlider) colorMaxSlider.value = _settings.colorMax;
-                        }
-                    }
-                }
             });
             
             // Hide outliers toggle
@@ -2821,8 +2796,11 @@ const CellPlotPanel = (function() {
                 colorMaxInput.style.display = 'block';
                 colorMinSlider.style.display = 'block';
                 colorMaxSlider.style.display = 'block';
+                
+                // Show numerical controls and buttons
                 centerColormapButton.style.display = 'block';
-                hideOutliersToggle.parentElement.style.display = 'block';
+                hideOutliersToggle.style.display = 'block';
+                document.getElementById(`lock-range-${_id}`).style.display = 'block';
                 
                 // Show numerical label, hide categorical label
                 numericalLabel.style.display = 'inline';
@@ -2868,8 +2846,17 @@ const CellPlotPanel = (function() {
                 colorMaxInput.style.display = 'none';
                 colorMinSlider.style.display = 'none';
                 colorMaxSlider.style.display = 'none';
+                
+                // Hide numerical control buttons
                 centerColormapButton.style.display = 'none';
-                hideOutliersToggle.parentElement.style.display = 'none';
+                hideOutliersToggle.style.display = 'none';
+                document.getElementById(`lock-range-${_id}`).style.display = 'none';
+                
+                // Also hide the button toolbar for cleaner UI
+                const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
+                if (buttonToolbar) {
+                    buttonToolbar.style.display = 'none';
+                }
                 
                 // Show categorical label, hide numerical label
                 numericalLabel.style.display = 'none';
@@ -2917,11 +2904,6 @@ const CellPlotPanel = (function() {
             
             // Merge provided options with defaults
             const updateOptions = { ...defaultOptions, ...options };
-            
-            // Apply centering if active (before any updates)
-            if (_settings.centeringActive && updateOptions.colors) {
-                _applyCentering();
-            }
             
             // If plot doesn't exist, create it
             if (!_plot) {
@@ -3069,16 +3051,79 @@ const CellPlotPanel = (function() {
                     // Currently handled with specific color updates above
                 }
                 
-                // Only update the UI if we made color changes and it's numerical data
-                if (updateOptions.colors && _data && _data.color && 
-                    Array.isArray(_data.color) && _data.colorType === 'numerical') {
+                // Update UI controls visibility based on color type
+                if (updateOptions.colors && _data && _data.colorType) {
                     try {
-                        // Only call if we have a valid function defined in this context
-                        if (typeof _updateCenteringUI === 'function') {
-                            _updateCenteringUI();
+                        // Get UI elements
+                        const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
+                        const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
+                        const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
+                        const colorMinInput = document.getElementById(`color-min-${_id}`);
+                        const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                        const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                        const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                        const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+                        const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
+                        const lockRangeButton = document.getElementById(`lock-range-${_id}`);
+                        const numericalLabel = _container.querySelector('.numerical-color-label');
+                        const categoricalLabel = _container.querySelector('.categorical-color-label');
+                        
+                        if (_data.colorType === 'numerical') {
+                            // Show numerical color controls
+                            colorRangeContainer.style.display = 'flex';
+                            colorScaleSelect.style.display = 'block';
+                            categoryPaletteSelect.style.display = 'none';
+                            colorMinInput.style.display = 'block';
+                            colorMaxInput.style.display = 'block';
+                            colorMinSlider.style.display = 'block';
+                            colorMaxSlider.style.display = 'block';
+                            
+                            // Show numerical buttons
+                            centerColormapButton.style.display = 'block';
+                            hideOutliersToggle.style.display = 'block';
+                            lockRangeButton.style.display = 'block';
+                            
+                            // Show button toolbar
+                            const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
+                            if (buttonToolbar) {
+                                buttonToolbar.style.display = 'flex';
+                            }
+                            
+                            // Show numerical label, hide categorical label
+                            numericalLabel.style.display = 'inline';
+                            categoricalLabel.style.display = 'none';
+                            
+                            // Update centering UI if applicable
+                            if (typeof _updateCenteringUI === 'function') {
+                                _updateCenteringUI();
+                            }
+                        } else if (_data.colorType === 'categorical') {
+                            // Show categorical color controls
+                            colorRangeContainer.style.display = 'flex';
+                            colorScaleSelect.style.display = 'none';
+                            categoryPaletteSelect.style.display = 'block';
+                            colorMinInput.style.display = 'none';
+                            colorMaxInput.style.display = 'none';
+                            colorMinSlider.style.display = 'none';
+                            colorMaxSlider.style.display = 'none';
+                            
+                            // Hide numerical buttons
+                            centerColormapButton.style.display = 'none';
+                            hideOutliersToggle.style.display = 'none';
+                            lockRangeButton.style.display = 'none';
+                            
+                            // Hide button toolbar
+                            const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
+                            if (buttonToolbar) {
+                                buttonToolbar.style.display = 'none';
+                            }
+                            
+                            // Show categorical label, hide numerical label
+                            numericalLabel.style.display = 'none';
+                            categoricalLabel.style.display = 'inline';
                         }
                     } catch (e) {
-                        console.warn('Could not update centering UI:', e);
+                        console.warn('Could not update color control UI:', e);
                     }
                 }
                 
@@ -3123,7 +3168,7 @@ const CellPlotPanel = (function() {
          * @param {string} updateType - Type of update
          * @param {Object} data - Update data
          */
-        function onDataUpdate(updateType, data) {
+        async function onDataUpdate(updateType, data) {
             switch (updateType) {
                 case 'cellSubset':
                     // Update subset settings
@@ -3134,6 +3179,7 @@ const CellPlotPanel = (function() {
                     
                 case 'datasetChanged':
                     // Reset and reload
+                    await updateGlobalDatasetStructure();
                     _loadDataAndCreatePlot();
                     break;
             }

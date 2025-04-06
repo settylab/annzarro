@@ -168,6 +168,10 @@ const PanelManager = (function() {
         const closeBtn = tileElement.querySelector('.tile-close');
         closeBtn.addEventListener('click', () => closePanel(id));
         
+        // Set up toggle controls handler
+        const toggleControlsBtn = tileElement.querySelector('.tile-toggle-controls');
+        toggleControlsBtn.addEventListener('click', () => _togglePanelControls(id, toggleControlsBtn));
+        
         // Initialize the panel
         panel.init();
         
@@ -197,6 +201,40 @@ const PanelManager = (function() {
         const tile = template.content.cloneNode(true).querySelector('.tile');
         tile.dataset.tileId = id;
         return tile;
+    }
+    
+    /**
+     * Toggle panel controls visibility
+     * @param {string} id - ID of the panel
+     * @param {HTMLElement} button - The toggle button element
+     * @private
+     */
+    function _togglePanelControls(id, button) {
+        const panel = _panels.get(id);
+        if (!panel) return;
+        
+        const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const contentContainer = tileElement.querySelector('.tile-content');
+        
+        // Find the plot-controls element within the panel
+        const plotControls = contentContainer.querySelector('.plot-controls');
+        if (!plotControls) return;
+        
+        // Toggle controls visibility
+        const isVisible = plotControls.style.display !== 'none';
+        plotControls.style.display = isVisible ? 'none' : 'flex';
+        
+        // Update button icon and title
+        const icon = button.querySelector('i');
+        if (isVisible) {
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+            button.title = 'Show Controls';
+        } else {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+            button.title = 'Hide Controls';
+        }
     }
     
     /**
