@@ -1879,6 +1879,116 @@ const CellPlotPanel = (function() {
          * Load only color data and update the plot without recreating it
          * @private 
          */
+        /**
+         * Updates the visibility of color controls based on the current color type
+         * @private
+         */
+        function _updateColorControlsVisibility() {
+            const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
+            const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
+            const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
+            const colorMinInput = document.getElementById(`color-min-${_id}`);
+            const colorMaxInput = document.getElementById(`color-max-${_id}`);
+            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+            const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+            const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+            const numericalLabel = _container.querySelector('.numerical-color-label');
+            const categoricalLabel = _container.querySelector('.categorical-color-label');
+            
+            // Get slider containers that contain the labels
+            const colorMinSliderContainer = colorMinSlider ? colorMinSlider.closest('.color-min-slider-container') : null;
+            const colorMaxSliderContainer = colorMaxSlider ? colorMaxSlider.closest('.color-max-slider-container') : null;
+            
+            // Only proceed if we have the container
+            if (!colorRangeContainer) return;
+            
+            if (_data.colorType === 'numerical') {
+                // Show numerical color controls
+                colorRangeContainer.style.display = 'flex';
+                colorScaleSelect.style.display = 'block';
+                categoryPaletteSelect.style.display = 'none';
+                colorMinInput.style.display = 'block';
+                colorMaxInput.style.display = 'block';
+                colorMinSlider.style.display = 'block';
+                colorMaxSlider.style.display = 'block';
+                
+                // Show slider containers with Min/Max labels
+                if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'block';
+                if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'block';
+                
+                // Show numerical controls and buttons - use setAttribute to override any inline styles
+                if (centerColormapButton) centerColormapButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
+                if (hideOutliersButton) hideOutliersButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
+                
+                const lockRangeButton = document.getElementById(`lock-range-${_id}`);
+                if (lockRangeButton) lockRangeButton.setAttribute('style', 'display: inline-block !important');
+                
+                // Show numerical label, hide categorical label
+                numericalLabel.style.display = 'inline';
+                categoricalLabel.style.display = 'none';
+                
+                // Show the toolbar for numerical controls
+                const buttonToolbar = _container.querySelector('.btn-toolbar');
+                if (buttonToolbar) {
+                    buttonToolbar.setAttribute('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
+                    // Show all button groups inside
+                    buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
+                        group.setAttribute('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
+                    });
+                }
+                
+                // Show the entire color range inputs section
+                const colorRangeInputs = _container.querySelector('.color-range-inputs');
+                if (colorRangeInputs) colorRangeInputs.style.display = 'block';
+                
+            } else if (_data.colorType === 'categorical') {
+                // Show categorical color controls
+                colorRangeContainer.style.display = 'flex';
+                colorScaleSelect.style.display = 'none';
+                // Make sure the category palette selector is prominently displayed
+                categoryPaletteSelect.style.display = 'block';
+                categoryPaletteSelect.style.margin = '10px 0';
+                colorMinInput.style.display = 'none';
+                colorMaxInput.style.display = 'none';
+                colorMinSlider.style.display = 'none';
+                colorMaxSlider.style.display = 'none';
+                
+                // Hide slider containers with Min/Max labels
+                if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'none';
+                if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'none';
+                
+                // Handle the numerical control buttons - need to override inline styles with !important
+                if (centerColormapButton) centerColormapButton.setAttribute('style', 'display: none !important');
+                if (hideOutliersButton) hideOutliersButton.setAttribute('style', 'display: none !important');
+                
+                const lockRangeButton = document.getElementById(`lock-range-${_id}`);
+                if (lockRangeButton) lockRangeButton.setAttribute('style', 'display: none !important');
+                
+                // Also hide the button toolbar (and all its button groups) for cleaner UI
+                const buttonToolbar = _container.querySelector('.btn-toolbar');
+                if (buttonToolbar) {
+                    buttonToolbar.setAttribute('style', 'display: none !important');
+                    // Also hide any button groups inside
+                    buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
+                        group.setAttribute('style', 'display: none !important');
+                    });
+                }
+                
+                // Hide the entire color range inputs section
+                const colorRangeInputs = _container.querySelector('.color-range-inputs');
+                if (colorRangeInputs) colorRangeInputs.style.display = 'none';
+                
+                // Show categorical label, hide numerical label
+                numericalLabel.style.display = 'none';
+                categoricalLabel.style.display = 'inline';
+                
+            } else {
+                // Hide all color controls for 'none' type
+                colorRangeContainer.style.display = 'none';
+            }
+        }
+        
         async function _loadColorDataAndUpdatePlot() {
             try {
                 // Track if centering was active before updating
@@ -1897,6 +2007,7 @@ const CellPlotPanel = (function() {
                 if (colorData && colorData.values) {
                     _data.color = colorData.values;
                     _data.colorType = colorData.type;
+                    _updateColorControlsVisibility();
                     _data.colorCategories = colorData.categories;
                     console.log(`Updated _data.color to array with ${_data.color.length} elements, type: ${_data.colorType}`);
                     
@@ -2090,6 +2201,7 @@ const CellPlotPanel = (function() {
                 const colorData = await _loadAxisData('color', filteredCellIndices);
                 _data.color = colorData.values;
                 _data.colorType = colorData.type;
+                _updateColorControlsVisibility();
                 _data.colorCategories = colorData.categories;
                 
                 // Validate data before creating plot
@@ -2863,38 +2975,17 @@ const CellPlotPanel = (function() {
             // Store plot reference
             _plot = _plotContainer;
             
-            // Show appropriate color controls based on data type
-            const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
-            const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
+            // Update the visibility of color controls
+            _updateColorControlsVisibility();
+            
+            // Get references to controls that need additional setup
             const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
             const colorMinInput = document.getElementById(`color-min-${_id}`);
             const colorMaxInput = document.getElementById(`color-max-${_id}`);
             const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
             const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-            const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
-            const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
-            const numericalLabel = _container.querySelector('.numerical-color-label');
-            const categoricalLabel = _container.querySelector('.categorical-color-label');
             
             if (_data.colorType === 'numerical') {
-                // Show numerical color controls
-                colorRangeContainer.style.display = 'flex';
-                colorScaleSelect.style.display = 'block';
-                categoryPaletteSelect.style.display = 'none';
-                colorMinInput.style.display = 'block';
-                colorMaxInput.style.display = 'block';
-                colorMinSlider.style.display = 'block';
-                colorMaxSlider.style.display = 'block';
-                
-                // Show numerical controls and buttons
-                centerColormapButton.style.display = 'block';
-                hideOutliersToggle.style.display = 'block';
-                document.getElementById(`lock-range-${_id}`).style.display = 'block';
-                
-                // Show numerical label, hide categorical label
-                numericalLabel.style.display = 'inline';
-                categoricalLabel.style.display = 'none';
-                
                 // Filter out NaN values for min/max calculations
                 const validColorValues = _data.color.filter(val => !isNaN(val));
                 const dataMin = Math.min(...validColorValues);
@@ -2927,35 +3018,8 @@ const CellPlotPanel = (function() {
                     colorMaxSlider.value = _settings.colorMax !== null ? _settings.colorMax : dataMax;
                 }
             } else if (_data.colorType === 'categorical') {
-                // Show categorical color controls
-                colorRangeContainer.style.display = 'flex';
-                colorScaleSelect.style.display = 'none';
-                categoryPaletteSelect.style.display = 'block';
-                colorMinInput.style.display = 'none';
-                colorMaxInput.style.display = 'none';
-                colorMinSlider.style.display = 'none';
-                colorMaxSlider.style.display = 'none';
-                
-                // Hide numerical control buttons
-                centerColormapButton.style.display = 'none';
-                hideOutliersToggle.style.display = 'none';
-                document.getElementById(`lock-range-${_id}`).style.display = 'none';
-                
-                // Also hide the button toolbar for cleaner UI
-                const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
-                if (buttonToolbar) {
-                    buttonToolbar.style.display = 'none';
-                }
-                
-                // Show categorical label, hide numerical label
-                numericalLabel.style.display = 'none';
-                categoricalLabel.style.display = 'inline';
-                
                 // Ensure the correct palette is selected
                 categoryPaletteSelect.value = _settings.categoryPalette;
-            } else {
-                // Hide all color controls
-                colorRangeContainer.style.display = 'none';
             }
         }
         
