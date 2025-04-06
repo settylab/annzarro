@@ -15,6 +15,7 @@ const CellPlotPanel = (function() {
         const _container = container;
         let _plotContainer = null;
         let _controlsContainer = null;
+        let _fullPlotData = null;
         let _plot = null;
         
         // Initialize settings with initial default options
@@ -150,8 +151,10 @@ const CellPlotPanel = (function() {
                             </div>
                             
                             <div class="color-options mt-2">
-                                <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${_id}">3D Plot</button>
-                                <button class="btn btn-sm active btn-primary" id="show-grid-${_id}">Show Grid</button>
+                                <div class="btn-group" role="group" aria-label="Plot Option Buttons">
+                                    <button class="btn btn-sm btn-outline-secondary me-1" id="z-axis-toggle-${_id}">3D Plot</button>
+                                    <button class="btn btn-sm active btn-primary me-1" id="show-grid-${_id}">Show Grid</button>
+                                </div>
                                 
                                 <div class="point-controls">
                                     <div class="point-size-control">
@@ -199,17 +202,14 @@ const CellPlotPanel = (function() {
                                         </div>
                                     </div>
                                     
-                                    <div class="color-options-buttons">
-                                        <button class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}">Center at 0</button>
-                                        <div class="form-check form-check-inline">
-                                            <input class="form-check-input" type="checkbox" id="hide-outliers-${_id}">
-                                            <label class="form-check-label" for="hide-outliers-${_id}">Hide Outliers</label>
-                                        </div>
-                                        <div class="form-check form-check-inline">
-                                            <input class="form-check-input" type="checkbox" id="lock-color-range-${_id}">
-                                            <label class="form-check-label" for="lock-color-range-${_id}">Lock Range</label>
-                                        </div>
+                                    <div class="btn-toolbar" role="toolbar" aria-label="Color range controls">
+                                      <div class="btn-group me-2" role="group">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}">Center at 0</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${_id}">Hide Outliers</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${_id}">Lock Range</button>
+                                      </div>
                                     </div>
+
                                 </div>
                             </div>
                         </div>
@@ -1019,6 +1019,96 @@ const CellPlotPanel = (function() {
                 
                 Plotly.restyle(_plotContainer, update, [0]);
             }
+
+            const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+            
+            // Initialize button appearance based on the current setting
+            if (_settings.hideOutliers) {
+              hideOutliersButton.classList.add('active', 'btn-primary');
+              hideOutliersButton.classList.remove('btn-outline-secondary');
+            } else {
+              hideOutliersButton.classList.remove('active', 'btn-primary');
+              hideOutliersButton.classList.add('btn-outline-secondary');
+            }
+            
+            hideOutliersButton.addEventListener('click', () => {
+              // Toggle the setting
+              _settings.hideOutliers = !_settings.hideOutliers;
+              
+              if (_settings.hideOutliers) {
+                hideOutliersButton.classList.add('active', 'btn-primary');
+                hideOutliersButton.classList.remove('btn-outline-secondary');
+              } else {
+                hideOutliersButton.classList.remove('active', 'btn-primary');
+                hideOutliersButton.classList.add('btn-outline-secondary');
+              }
+              
+              // Instead of reloading full data, call a function that processes the current data
+              updateOutlierFiltering();
+            });
+
+            function updateOutlierFiltering() {
+              if (!_plot) return;
+              
+              // Only perform outlier filtering for continuous (numerical) data
+              if (_data.colorType !== 'numerical') {
+                return;
+              }
+              
+              // If filtering is off, simply use the original data.
+              if (!_settings.hideOutliers) {
+                if (_fullPlotData) {
+                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
+                }
+                return;
+              }
+                
+              // Skip processing if either colorMin or colorMax is not defined
+              if (_settings.colorMin == null || _settings.colorMax == null) {
+                if (_fullPlotData) {
+                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
+                }
+                return;
+              }
+              
+              // Get slider values
+              const minVal = parseFloat(_settings.colorMin);
+              const maxVal = parseFloat(_settings.colorMax);
+              
+              // Process each trace based on the original unfiltered data
+              const processedData = _fullPlotData.map(trace => {
+                if (trace.marker && Array.isArray(trace.marker.color)) {
+                  let newX = [];
+                  let newY = [];
+                  let newZ = [];
+                  let newColors = [];
+              
+                  for (let i = 0; i < trace.marker.color.length; i++) {
+                    const cVal = trace.marker.color[i];
+                    if (cVal >= minVal && cVal <= maxVal) {
+                      newX.push(trace.x[i]);
+                      newY.push(trace.y[i]);
+                      newColors.push(cVal);
+                      if (trace.z) {
+                        newZ.push(trace.z[i]);
+                      }
+                    }
+                  }
+              
+                  return {
+                    ...trace,
+                    x: newX,
+                    y: newY,
+                    // Only include z if it exists in the original trace.
+                    ...(trace.z ? { z: newZ } : {}),
+                    marker: { ...trace.marker, color: newColors }
+                  };
+                }
+                return trace;
+              });
+              
+              Plotly.react(_plotContainer, processedData, _plot.layout);
+            }
             
             // Min slider - use input for real-time updates
             colorMinSlider.addEventListener('input', (e) => {
@@ -1030,6 +1120,7 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('min', minValue);
+                updateOutlierFiltering();
             });
             
             // Min slider - on change for final update
@@ -1038,40 +1129,6 @@ const CellPlotPanel = (function() {
                 // Immediate update on mouseup
                 _updatePlotColorRangeOnly();
             });
-            
-            // Helper function to update point visibility based on color range
-            function _updateOutlierVisibility() {
-                if (!_plot || !_data.color || _data.colorType !== 'numerical') return;
-                
-                try {
-                    const pointVisibility = [];
-                    
-                    // Create an array of true/false for each point based on range
-                    for (let i = 0; i < _data.color.length; i++) {
-                        const val = _data.color[i];
-                        if (isNaN(val)) {
-                            // NaN values are always visible
-                            pointVisibility.push(true);
-                        } else if (_settings.hideOutliers) {
-                            // When hiding outliers, only show points within range
-                            const inRange = (_settings.colorMin === null || val >= _settings.colorMin) && 
-                                          (_settings.colorMax === null || val <= _settings.colorMax);
-                            pointVisibility.push(inRange);
-                        } else {
-                            // When not hiding outliers, show all points
-                            pointVisibility.push(true);
-                        }
-                    }
-                    
-                    // Apply visibility update
-                    Plotly.restyle(_plotContainer, {
-                        'visible': [pointVisibility]
-                    }, [0]);
-                    
-                } catch (error) {
-                    console.error('Error updating point visibility:', error);
-                }
-            }
             
             // Max slider - use input for real-time updates
             colorMaxSlider.addEventListener('input', (e) => {
@@ -1083,7 +1140,7 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('max', maxValue);
-                
+                updateOutlierFiltering();
             });
             
             // Max slider - on change for final update
@@ -1466,13 +1523,31 @@ const CellPlotPanel = (function() {
                 }
             });
             
-            // Lock color range toggle
-            const lockColorRangeToggle = document.getElementById(`lock-color-range-${_id}`);
-            // Initialize checked state from settings
-            lockColorRangeToggle.checked = _settings.lockColorRange;
-            lockColorRangeToggle.addEventListener('change', (e) => {
-                _settings.lockColorRange = e.target.checked;
-                console.log(`Color range lock: ${_settings.lockColorRange ? 'enabled' : 'disabled'}`);
+            const lockRangeButton = document.getElementById(`lock-range-${_id}`);
+
+            // Initialize appearance based on the setting
+            if (_settings.lockColorRange) {
+              lockRangeButton.classList.add('active', 'btn-primary');
+              lockRangeButton.classList.remove('btn-outline-secondary');
+            } else {
+              lockRangeButton.classList.remove('active', 'btn-primary');
+              lockRangeButton.classList.add('btn-outline-secondary');
+            }
+            
+            lockRangeButton.addEventListener('click', () => {
+              // Toggle the setting
+              _settings.lockColorRange = !_settings.lockColorRange;
+              
+              if (_settings.lockColorRange) {
+                lockRangeButton.classList.add('active', 'btn-primary');
+                lockRangeButton.classList.remove('btn-outline-secondary');
+              } else {
+                lockRangeButton.classList.remove('active', 'btn-primary');
+                lockRangeButton.classList.add('btn-outline-secondary');
+              }
+              
+              // (Optional) If you want to trigger an update that respects the locked range:
+              // _updatePlot(false); or a similar function call here.
             });
             
             // Listen for focused cell changes
@@ -2672,6 +2747,13 @@ const CellPlotPanel = (function() {
                 displaylogo: false,
                 modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
             });
+
+            if (_data.colorType === 'numerical') {
+                // Make a deep clone of the traces to preserve the original data.
+                _fullPlotData = JSON.parse(JSON.stringify(traces));
+            } else {
+                _fullPlotData = null;
+            }
             
             // Set up click handler to set focused cell
             _plotContainer.on('plotly_click', (data) => {
