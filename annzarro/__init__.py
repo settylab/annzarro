@@ -19,3 +19,22 @@ try:
     __version__ = importlib.metadata.version("annzarro")
 except (ImportError, importlib.metadata.PackageNotFoundError):
     pass  # Keep using the hardcoded version
+
+# Import and expose core modules
+from annzarro.core.zarr_reader import ZarrReader, zarr_reader
+
+# Import and expose data management
+from annzarro.data.manager import DataManager
+from annzarro.data import data_manager
+
+# Import and expose server functionality
+from annzarro.server.server import run_server
+
+# Define public API
+__all__ = [
+    "ZarrReader",
+    "zarr_reader",
+    "DataManager",
+    "data_manager",
+    "run_server"
+]

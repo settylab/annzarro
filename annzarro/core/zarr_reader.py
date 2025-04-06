@@ -946,6 +946,10 @@ class ZarrReader:
         # Get varp keys
         if metadata['has_varp'] and hasattr(root['varp'], 'keys'):
             metadata['varp'] = {'keys': list(root['varp'].keys())}
+
+        # Get uns keys
+        if metadata['has_uns'] and hasattr(root['uns'], 'keys'):
+            metadata['uns'] = {'keys': list(root['uns'].keys())}
             
         return metadata
     

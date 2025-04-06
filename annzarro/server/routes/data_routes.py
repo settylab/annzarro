@@ -96,20 +96,30 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             
         Returns:
-            JSON response with complete dataset structure
+            JSON response with complete dataset structure.
         """
         # Get dataset identification
         dataset_path = request.args.get("dataset_path")
-        
         if not dataset_path:
             return jsonify({"error": "dataset_path parameter is required"}), 400
-        
+    
+        # Helper: Extract keys from metadata for a given field.
+        def get_keys(metadata, field):
+            return list(metadata.get(field, {"keys": []}).get("keys", []))
+    
         try:
-            # Use the direct access approach for stateless operation
+            # Only wrap the risky operation of opening the dataset.
             root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
-            
-            # Format basic info
-            shape = metadata.get('shape', (0, 0))
+        except FileNotFoundError as fnfe:
+            logger.exception(f"Dataset not found: {dataset_path}")
+            return jsonify({"error": "Dataset not found"}), 404
+        except Exception as e:
+            logger.exception(f"Error opening dataset at {dataset_path}")
+            return jsonify({"error": f"Failed to open dataset: {str(e)}"}), 500
+    
+        try:
+            # Format basic dataset information.
+            shape = metadata.get("shape", (0, 0))
             dataset_structure = {
                 "path": dataset_path,
                 "name": Path(dataset_path).stem.replace("_", " ").title(),
@@ -132,45 +142,44 @@ def register_data_routes(app, api_version):
                 },
                 "layers": {
                     "available": metadata.get("has_layers", False),
-                    "keys": list(metadata.get("layers", {}).keys()),
+                    "keys": get_keys(metadata, "layers"),
                     "details": metadata.get("layers", {}),
                     "info": metadata.get("layers_info", {})
                 },
                 "obsm": {
                     "available": metadata.get("has_obsm", False),
-                    "keys": metadata.get("obsm_keys", []),
+                    "keys": get_keys(metadata, "obsm"),
                     "dataframes": metadata.get("obsm_dataframes", {}),
                     "matrices": metadata.get("obsm_matrices", {}),
                     "info": metadata.get("obsm_info", {})
                 },
                 "varm": {
                     "available": metadata.get("has_varm", False),
-                    "keys": metadata.get("varm_keys", []),
+                    "keys": get_keys(metadata, "varm"),
                     "dataframes": metadata.get("varm_dataframes", {}),
                     "matrices": metadata.get("varm_matrices", {}),
                     "info": metadata.get("varm_info", {})
                 },
                 "obsp": {
                     "available": metadata.get("has_obsp", False),
-                    "keys": metadata.get("obsp_keys", [])
+                    "keys": get_keys(metadata, "obsp")
                 },
                 "varp": {
                     "available": metadata.get("has_varp", False),
-                    "keys": metadata.get("varp_keys", [])
+                    "keys": get_keys(metadata, "varp")
                 },
                 "uns": {
                     "available": metadata.get("has_uns", False),
-                    "keys": metadata.get("uns_keys", [])
+                    "keys": get_keys(metadata, "uns")
                 },
                 "embeddings": metadata.get("embeddings", [])
             }
-            
-            # Add dataset ID from the path
-            dataset_structure["dataset_id"] = os.path.basename(os.path.normpath(dataset_path))
-            
+            # Use pathlib for consistency when adding dataset_id.
+            dataset_structure["dataset_id"] = Path(dataset_path).name
+    
             return jsonify(dataset_structure)
         except Exception as e:
-            logger.error(f"Error getting dataset structure for path {dataset_path}: {e}")
+            logger.exception(f"Error building dataset structure for path {dataset_path}")
             return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
