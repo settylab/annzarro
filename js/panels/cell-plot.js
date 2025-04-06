@@ -24,9 +24,9 @@ const CellPlotPanel = (function() {
             y: { type: 'obsm', key: 'X_umap', column: '1' },
             z: null, // Optional for 3D plots
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
-            pointSize: Config.DEFAULTS.POINT_SIZE,
-            pointOpacity: Config.DEFAULTS.POINT_OPACITY,
-            colorScale: Config.DEFAULTS.COLOR_SCALE,
+            pointSize: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_SIZE) || 5,
+            pointOpacity: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_OPACITY) || 0.7,
+            colorScale: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.COLOR_SCALE) || 'Viridis',
             categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
             colorMax: null,
@@ -36,6 +36,95 @@ const CellPlotPanel = (function() {
             showGrid: true,    // Show grid lines by default
             lockColorRange: false  // Don't lock color range by default
         };
+        
+        /**
+         * Initialize the panel
+         */
+        function init() {
+            console.log(`Initializing Cell Plot panel ${_id}`);
+            
+            _container.innerHTML = `
+                <div class="plot-panel">
+                    <div class="plot-controls">
+                        <div class="alert alert-info">Loading cell plot controls...</div>
+                    </div>
+                    <div class="plot-container" id="plot-container-${_id}">
+                        <div class="alert alert-secondary">Cell plot will appear here</div>
+                    </div>
+                </div>
+            `;
+            
+            _plotContainer = document.getElementById(`plot-container-${_id}`);
+            _loadDataAndCreatePlot();
+        }
+        
+        /**
+         * Load data and create plot
+         * @private
+         */
+        async function _loadDataAndCreatePlot() {
+            try {
+                // Show loading state
+                _plotContainer.innerHTML = '<div class="alert alert-info">Loading cell plot data...</div>';
+                
+                // Create empty placeholder plot
+                const emptyPlot = {
+                    data: [{
+                        x: [],
+                        y: [],
+                        mode: 'markers',
+                        type: 'scatter',
+                        marker: {
+                            size: _settings.pointSize,
+                            opacity: _settings.pointOpacity,
+                            color: 'rgba(70, 130, 180, 0.7)'
+                        }
+                    }],
+                    layout: {
+                        title: _title,
+                        xaxis: { title: 'X' },
+                        yaxis: { title: 'Y' },
+                        showlegend: false,
+                        hovermode: 'closest',
+                        template: 'plotly_white'
+                    }
+                };
+                
+                // Create the initial empty plot
+                Plotly.newPlot(_plotContainer, emptyPlot.data, emptyPlot.layout, {
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                });
+                
+                // Set up controls
+                _setupControls();
+                
+                console.log(`Cell plot panel ${_id} initialized`);
+            } catch (error) {
+                console.error('Error creating cell plot:', error);
+                _plotContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Error creating cell plot: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        /**
+         * Set up plot controls
+         * @private
+         */
+        function _setupControls() {
+            _controlsContainer = _container.querySelector('.plot-controls');
+            if (!_controlsContainer) return;
+            
+            _controlsContainer.innerHTML = `
+                <div class="alert alert-secondary">
+                    Cell plot controls will be added here. Currently showing an empty plot.
+                </div>
+            `;
+        }
         
         // Override with provided options, if any
         if (options.x) _settings.x = options.x;
@@ -3051,81 +3140,7 @@ const CellPlotPanel = (function() {
                     // Currently handled with specific color updates above
                 }
                 
-                // Update UI controls visibility based on color type
-                if (updateOptions.colors && _data && _data.colorType) {
-                    try {
-                        // Get UI elements
-                        const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
-                        const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
-                        const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
-                        const colorMinInput = document.getElementById(`color-min-${_id}`);
-                        const colorMaxInput = document.getElementById(`color-max-${_id}`);
-                        const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
-                        const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-                        const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
-                        const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
-                        const lockRangeButton = document.getElementById(`lock-range-${_id}`);
-                        const numericalLabel = _container.querySelector('.numerical-color-label');
-                        const categoricalLabel = _container.querySelector('.categorical-color-label');
-                        
-                        if (_data.colorType === 'numerical') {
-                            // Show numerical color controls
-                            colorRangeContainer.style.display = 'flex';
-                            colorScaleSelect.style.display = 'block';
-                            categoryPaletteSelect.style.display = 'none';
-                            colorMinInput.style.display = 'block';
-                            colorMaxInput.style.display = 'block';
-                            colorMinSlider.style.display = 'block';
-                            colorMaxSlider.style.display = 'block';
-                            
-                            // Show numerical buttons
-                            centerColormapButton.style.display = 'block';
-                            hideOutliersToggle.style.display = 'block';
-                            lockRangeButton.style.display = 'block';
-                            
-                            // Show button toolbar
-                            const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
-                            if (buttonToolbar) {
-                                buttonToolbar.style.display = 'flex';
-                            }
-                            
-                            // Show numerical label, hide categorical label
-                            numericalLabel.style.display = 'inline';
-                            categoricalLabel.style.display = 'none';
-                            
-                            // Update centering UI if applicable
-                            if (typeof _updateCenteringUI === 'function') {
-                                _updateCenteringUI();
-                            }
-                        } else if (_data.colorType === 'categorical') {
-                            // Show categorical color controls
-                            colorRangeContainer.style.display = 'flex';
-                            colorScaleSelect.style.display = 'none';
-                            categoryPaletteSelect.style.display = 'block';
-                            colorMinInput.style.display = 'none';
-                            colorMaxInput.style.display = 'none';
-                            colorMinSlider.style.display = 'none';
-                            colorMaxSlider.style.display = 'none';
-                            
-                            // Hide numerical buttons
-                            centerColormapButton.style.display = 'none';
-                            hideOutliersToggle.style.display = 'none';
-                            lockRangeButton.style.display = 'none';
-                            
-                            // Hide button toolbar
-                            const buttonToolbar = centerColormapButton.closest('.btn-toolbar');
-                            if (buttonToolbar) {
-                                buttonToolbar.style.display = 'none';
-                            }
-                            
-                            // Show categorical label, hide numerical label
-                            numericalLabel.style.display = 'none';
-                            categoricalLabel.style.display = 'inline';
-                        }
-                    } catch (e) {
-                        console.warn('Could not update color control UI:', e);
-                    }
-                }
+                // Placeholder for future UI controls implementation
                 
             } catch (error) {
                 console.error("Error updating plot:", error);

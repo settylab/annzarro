@@ -23,10 +23,20 @@ const App = (function() {
             _initUI();
             
             // Initialize panel manager
+            // Make sure PanelManager is defined first
+            if (typeof PanelManager === 'undefined') {
+                console.error('PanelManager is not defined. Check script loading order.');
+                throw new Error('PanelManager is not defined');
+            }
             PanelManager.init('tile-container');
             
             // Load available datasets
             await _loadDatasets();
+            
+            // Load available sessions
+            await _loadSessions();
+            
+            // Force show the welcome view - PanelManager will handle this with automatic welcome tile
             
             // Set default dataset if available
             const datasets = await DataManager.loadDatasets();
@@ -519,15 +529,137 @@ const App = (function() {
         alert(`${title}: ${message}`);
     }
     
+    /**
+     * Load available sessions
+     * @private
+     */
+    async function _loadSessions() {
+        try {
+            return await SessionManager.listSessions();
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            return [];
+        }
+    }
+    
+    /**
+     * Show welcome view with quick-start options
+     * @private
+     */
+    function _showWelcomeView() {
+        // Create the welcome container
+        const welcomeContainer = document.createElement('div');
+        welcomeContainer.className = 'welcome-container';
+        welcomeContainer.innerHTML = `
+            <div class="welcome-header">
+                <h2>Welcome to AnnZarro</h2>
+                <p>Get started by creating a new panel or loading a saved session</p>
+            </div>
+            
+            <div class="welcome-panels">
+                <h3>Create a new panel</h3>
+                <div class="tile-type-grid welcome-grid"></div>
+            </div>
+            
+            <div class="welcome-sessions">
+                <h3>Load a saved session</h3>
+                <div class="sessions-list"></div>
+            </div>
+        `;
+        
+        // Add to the container
+        const container = document.getElementById('tile-container');
+        container.appendChild(welcomeContainer);
+        
+        // Add panel type options
+        const panelGrid = welcomeContainer.querySelector('.welcome-grid');
+        const panelTypes = [
+            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-chart-scatter' },
+            { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
+            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
+            { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
+            { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
+        ];
+        
+        panelTypes.forEach(panel => {
+            const panelOption = document.createElement('div');
+            panelOption.className = 'tile-type-option welcome-panel-option';
+            panelOption.innerHTML = `
+                <div class="tile-type-icon">
+                    <i class="${panel.icon} fa-3x"></i>
+                </div>
+                <div class="tile-type-label">${panel.label}</div>
+            `;
+            
+            // Add click handler
+            panelOption.addEventListener('click', () => {
+                // Remove welcome container
+                welcomeContainer.remove();
+                
+                // Create the panel
+                PanelManager.createPanel(panel.type);
+            });
+            
+            panelGrid.appendChild(panelOption);
+        });
+        
+        // Load and display sessions
+        SessionManager.listSessions().then(sessions => {
+            const sessionsList = welcomeContainer.querySelector('.sessions-list');
+            
+            if (sessions && sessions.length > 0) {
+                sessions.forEach(session => {
+                    const sessionItem = document.createElement('div');
+                    sessionItem.className = 'session-item';
+                    sessionItem.innerHTML = `
+                        <div class="session-info">
+                            <div class="session-name">${session.name}</div>
+                            <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
+                            <div class="session-dataset">${session.datasetName || session.dataset}</div>
+                        </div>
+                        <button class="btn btn-sm btn-primary">Load</button>
+                    `;
+                    
+                    // Add click handler
+                    sessionItem.querySelector('button').addEventListener('click', async () => {
+                        // Remove welcome container
+                        welcomeContainer.remove();
+                        
+                        // Load the session
+                        await SessionManager.loadSession(session.name);
+                    });
+                    
+                    sessionsList.appendChild(sessionItem);
+                });
+            } else {
+                sessionsList.innerHTML = '<div class="no-sessions">No saved sessions available</div>';
+            }
+        }).catch(error => {
+            console.error('Error loading sessions:', error);
+            const sessionsList = welcomeContainer.querySelector('.sessions-list');
+            sessionsList.innerHTML = '<div class="error-message">Error loading sessions</div>';
+        });
+    }
+    
     // Public API
     return {
         init
     };
 })();
 
-// Initialize the application when DOM is ready
+// Initialize the application when DOM is ready and all scripts are loaded
 document.addEventListener('DOMContentLoaded', () => {
-    App.init();
+    // Wait a bit to ensure all scripts are initialized
+    setTimeout(() => {
+        console.log('Starting application initialization...');
+        // Check for required dependencies
+        if (typeof PanelManager === 'undefined') {
+            console.error('PanelManager is not defined. Check script loading order.');
+            document.body.innerHTML = '<div class="alert alert-danger m-5">Error: PanelManager script failed to load. Please check the console for details.</div>';
+            return;
+        }
+        App.init();
+    }, 100);
 });
 
 // Make available for both browser global and CommonJS environments

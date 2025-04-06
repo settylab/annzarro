@@ -108,7 +108,7 @@
     
     <!-- Add Tile Modal -->
     <div class="modal fade" id="add-tile-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Tile</h5>
@@ -116,8 +116,41 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="tile-type" class="form-label">Tile Type</label>
-                        <select id="tile-type" class="form-select">
+                        <h6>Select Tile Type</h6>
+                        <div class="tile-type-grid">
+                            <div class="tile-type-option" data-tile-type="cell-plot">
+                                <div class="tile-type-icon">
+                                    <i class="fas fa-chart-scatter fa-3x"></i>
+                                </div>
+                                <div class="tile-type-label">Cell Plot</div>
+                            </div>
+                            <div class="tile-type-option" data-tile-type="gene-plot">
+                                <div class="tile-type-icon">
+                                    <i class="fas fa-dna fa-3x"></i>
+                                </div>
+                                <div class="tile-type-label">Gene Plot</div>
+                            </div>
+                            <div class="tile-type-option" data-tile-type="cell-table">
+                                <div class="tile-type-icon">
+                                    <i class="fas fa-table fa-3x"></i>
+                                </div>
+                                <div class="tile-type-label">Cell Table</div>
+                            </div>
+                            <div class="tile-type-option" data-tile-type="gene-table">
+                                <div class="tile-type-icon">
+                                    <i class="fas fa-th-list fa-3x"></i>
+                                </div>
+                                <div class="tile-type-label">Gene Table</div>
+                            </div>
+                            <div class="tile-type-option" data-tile-type="gene-set">
+                                <div class="tile-type-icon">
+                                    <i class="fas fa-project-diagram fa-3x"></i>
+                                </div>
+                                <div class="tile-type-label">Gene Set Analysis</div>
+                            </div>
+                        </div>
+                        <!-- Hidden select for compatibility -->
+                        <select id="tile-type" class="form-select d-none">
                             <option value="cell-plot">Cell Plot</option>
                             <option value="gene-plot">Gene Plot</option>
                             <option value="cell-table">Cell Table</option>
@@ -125,9 +158,20 @@
                             <option value="gene-set">Gene Set Analysis</option>
                         </select>
                     </div>
+
                     <div class="mb-3">
-                        <label for="tile-source" class="form-label">Source Tile (Optional)</label>
-                        <select id="tile-source" class="form-select">
+                        <h6>Choose Source (Optional)</h6>
+                        <div class="source-tiles-grid" id="source-tiles-grid">
+                            <div class="source-tile-option active" data-source-id="">
+                                <div class="source-tile-icon">
+                                    <i class="fas fa-plus fa-2x"></i>
+                                </div>
+                                <div class="source-tile-label">Create New</div>
+                            </div>
+                            <!-- Source tiles will be added here dynamically -->
+                        </div>
+                        <!-- Hidden select for compatibility -->
+                        <select id="tile-source" class="form-select d-none">
                             <option value="">Create New</option>
                             <!-- Available tiles will be populated here -->
                         </select>

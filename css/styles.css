@@ -1,15 +1,15 @@
 /* Main Layout */
 html, body {
-    height: 100%;
     margin: 0;
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    overflow: hidden;
+    /* Remove height: 100% to allow body to grow */
 }
 
 body {
     display: flex;
     flex-direction: column;
+    min-height: 100vh; /* Minimum viewport height */
 }
 
 /* Header */
@@ -41,12 +41,11 @@ body {
 /* Main Content Area */
 .tile-container {
     flex: 1;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    grid-auto-rows: minmax(300px, 1fr);
-    gap: 0.5rem;
-    padding: 0.5rem;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    min-height: 300px; /* Ensure minimum height */
     position: relative;
 }
 
@@ -66,6 +65,21 @@ body {
     border-radius: 0.25rem;
     overflow: hidden;
     position: relative;
+    min-height: 300px;
+    height: 700px; /* Taller default height */
+    resize: vertical; /* Allow vertical resizing */
+}
+
+/* Selection tile */
+.tile-selector {
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    overflow: auto;
+    position: relative;
+    min-height: 900px; /* Minimum height but can grow */
 }
 
 .tile-header {
@@ -112,12 +126,13 @@ body {
     position: relative;
 }
 
+/* Default directions - will be overridden by inline styles */
 .split-horizontal {
-    flex-direction: row;
+    flex-direction: column;
 }
 
 .split-vertical {
-    flex-direction: column;
+    flex-direction: row;
 }
 
 .split-handle {
@@ -339,6 +354,358 @@ div.dtsb-group {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #6c757d;
+}
+
+/* Tile Type Grid */
+.tile-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.tile-type-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    border: 2px solid #dee2e6;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    background-color: #f8f9fa;
+}
+
+.tile-type-option:hover {
+    border-color: #007bff;
+    background-color: #e9f3ff;
+}
+
+.tile-type-option.active {
+    border-color: #007bff;
+    background-color: #e9f3ff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.3);
+}
+
+.tile-type-icon {
+    margin-bottom: 0.5rem;
+    color: #495057;
+}
+
+.tile-type-option:hover .tile-type-icon,
+.tile-type-option.active .tile-type-icon {
+    color: #007bff;
+}
+
+.tile-type-label {
+    font-weight: 500;
+}
+
+/* Source Tiles Grid */
+.source-tiles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.source-tile-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    border: 2px solid #dee2e6;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    height: 100px;
+    background-color: #f8f9fa;
+}
+
+.source-tile-option:hover {
+    border-color: #28a745;
+    background-color: #e7f5e9;
+}
+
+.source-tile-option.active {
+    border-color: #28a745;
+    background-color: #e7f5e9;
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.3);
+}
+
+.source-tile-icon {
+    margin-bottom: 0.5rem;
+    color: #495057;
+}
+
+.source-tile-option:hover .source-tile-icon,
+.source-tile-option.active .source-tile-icon {
+    color: #28a745;
+}
+
+.source-tile-label {
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* Tile Selection */
+.tile-selection-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 1.5rem;
+    overflow: auto;
+    position: relative;
+}
+
+.tile-selection-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    position: relative;
+}
+
+.tile-selection-header h2 {
+    color: #007bff;
+    margin-bottom: 0.5rem;
+}
+
+.tile-close-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #6c757d;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.tile-close-btn:hover {
+    color: #dc3545;
+    background-color: rgba(0,0,0,0.05);
+}
+
+.selection-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.selection-section {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.selection-section h3 {
+    margin-bottom: 1.5rem;
+    font-size: 1.25rem;
+    color: #343a40;
+    text-align: center;
+}
+
+.source-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+}
+
+.tile-selection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.tile-type-selection {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 2rem;
+}
+
+.tile-type-selection h3 {
+    margin-bottom: 1.5rem;
+    font-size: 1.25rem;
+    color: #343a40;
+    text-align: center;
+}
+
+.source-selection {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+}
+
+.source-selection h3 {
+    margin-bottom: 1.5rem;
+    font-size: 1.25rem;
+    color: #343a40;
+    text-align: center;
+}
+
+.source-selection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.5rem;
+}
+
+.selection-panel-option {
+    height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border: 2px solid #dee2e6;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 1.5rem;
+    background-color: white;
+    position: relative;
+}
+
+.selection-panel-option:hover {
+    border-color: #007bff;
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.selection-panel-option.closed-panel {
+    border-color: #6c757d;
+    background-color: #f8f9fa;
+}
+
+.selection-panel-option.closed-panel:hover {
+    border-color: #28a745;
+    background-color: #e7f5e9;
+}
+
+.panel-status {
+    position: absolute;
+    top: 8px;
+    right: 30px; /* Make room for delete button */
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.4rem;
+    background-color: #6c757d;
+    color: white;
+    border-radius: 10px;
+    letter-spacing: 0.5px;
+}
+
+.delete-panel-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border-radius: 50%;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.delete-panel-btn:hover {
+    background: rgba(220, 53, 69, 0.2);
+}
+
+.tile-type-icon {
+    margin-bottom: 1rem;
+    font-size: 1.5em;
+    color: #495057;
+}
+
+.selection-panel-option:hover .tile-type-icon,
+.selection-panel-option.selected .tile-type-icon {
+    color: #007bff;
+}
+
+.tile-type-label {
+    font-weight: 500;
+    text-align: center;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.action-buttons .btn {
+    min-width: 120px;
+}
+
+.sessions-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.session-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border: 2px solid #dee2e6;
+    border-radius: 0.5rem;
+    background-color: white;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.session-item:hover {
+    border-color: #007bff;
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.session-info {
+    flex: 1;
+}
+
+.session-name {
+    font-weight: 500;
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.session-date, .session-dataset {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.no-sessions {
+    grid-column: 1 / -1;
+    padding: 2rem;
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+    background-color: white;
+    border: 2px dashed #dee2e6;
+    border-radius: 0.5rem;
 }
 
 /* Plot Controls */
