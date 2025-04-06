@@ -150,10 +150,8 @@ const CellPlotPanel = (function() {
                             </div>
                             
                             <div class="color-options mt-2">
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" id="z-axis-toggle-${_id}">
-                                    <label class="form-check-label" for="z-axis-toggle-${_id}">3D Plot</label>
-                                </div>
+                                <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${_id}">3D Plot</button>
+                                <button class="btn btn-sm active btn-primary" id="show-grid-${_id}">Show Grid</button>
                                 
                                 <div class="point-controls">
                                     <div class="point-size-control">
@@ -212,13 +210,6 @@ const CellPlotPanel = (function() {
                                             <label class="form-check-label" for="lock-color-range-${_id}">Lock Range</label>
                                         </div>
                                     </div>
-                                    
-                                    <div class="general-plot-options mt-2">
-                                        <div class="form-check form-check-inline">
-                                            <input class="form-check-input" type="checkbox" id="show-grid-${_id}" checked>
-                                            <label class="form-check-label" for="show-grid-${_id}">Show Grid</label>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -250,64 +241,64 @@ const CellPlotPanel = (function() {
                     
                     // Set defaults from the actual dataset (using embeddings directly)
                     if (datasetStructure.obsm &&
-                    datasetStructure.obsm.dataframes &&
-                    Object.keys(datasetStructure.obsm.dataframes).length > 0) {
+                        datasetStructure.obsm.dataframes &&
+                        Object.keys(datasetStructure.obsm.dataframes).length > 0) {
                 
-                    let dataframeKeys = Object.keys(datasetStructure.obsm.dataframes);
-                    let defaultDataFrameKey;
-                
-                    // Preferred order: Exact "X_umap"
-                    if (dataframeKeys.includes("X_umap")) {
-                        defaultDataFrameKey = "X_umap";
-                    } else {
-                        // If none, look for a key that starts with "X_umap"
-                        defaultDataFrameKey = dataframeKeys.find(key => key.startsWith("X_umap"));
-                        if (!defaultDataFrameKey) {
-                            // Next, check for "X_pca"
-                            if (dataframeKeys.includes("X_pca")) {
-                                defaultDataFrameKey = "X_pca";
-                            } else {
-                                // Fallback to the first key if none of the preferred keys are found
-                                defaultDataFrameKey = dataframeKeys[0];
-                            }
-                        }
-                    }
-                
-                    const defaultDataFrame = datasetStructure.obsm.dataframes[defaultDataFrameKey];
-                
-                    if (defaultDataFrame.columns && defaultDataFrame.columns.length >= 2) {
-                        if (!_settings.x.key || _settings.x.key === '') {
-                            _settings.x.key = defaultDataFrameKey;
-                            _settings.x.column = defaultDataFrame.columns[0]; // First available column
-                            console.log(`Setting default x-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[0]}`);
-                        }
-                        
-                        if (!_settings.y.key || _settings.y.key === '') {
-                            _settings.y.key = defaultDataFrameKey;
-                            _settings.y.column = defaultDataFrame.columns[1]; // Second available column
-                            console.log(`Setting default y-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[1]}`);
-                        }
-                        
-                        if (_settings.z && defaultDataFrame.columns.length >= 3) {
-                            if (!_settings.z) {
-                                _settings.z = {
-                                    type: 'obsm',
-                                    key: defaultDataFrameKey,
-                                    column: defaultDataFrame.columns[2]
+                        let dataframeKeys = Object.keys(datasetStructure.obsm.dataframes);
+                        let defaultDataFrameKey;
+                    
+                        // Preferred order: Exact "X_umap"
+                        if (dataframeKeys.includes("X_umap")) {
+                            defaultDataFrameKey = "X_umap";
+                        } else {
+                            // If none, look for a key that starts with "X_umap"
+                            defaultDataFrameKey = dataframeKeys.find(key => key.startsWith("X_umap"));
+                            if (!defaultDataFrameKey) {
+                                // Next, check for "X_pca"
+                                if (dataframeKeys.includes("X_pca")) {
+                                    defaultDataFrameKey = "X_pca";
+                                } else {
+                                    // Fallback to the first key if none of the preferred keys are found
+                                    defaultDataFrameKey = dataframeKeys[0];
                                 }
-                                console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
-                            } else if (!_settings.z.key || _settings.z.key === '') {
-                                _settings.z.key = defaultDataFrameKey;
-                                _settings.z.column = defaultDataFrame.columns[2]; 
-                                console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
                             }
                         }
+                    
+                        const defaultDataFrame = datasetStructure.obsm.dataframes[defaultDataFrameKey];
+                    
+                        if (defaultDataFrame.columns && defaultDataFrame.columns.length >= 2) {
+                            if (!_settings.x.key || _settings.x.key === '') {
+                                _settings.x.key = defaultDataFrameKey;
+                                _settings.x.column = defaultDataFrame.columns[0]; // First available column
+                                console.log(`Setting default x-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[0]}`);
+                            }
+                            
+                            if (!_settings.y.key || _settings.y.key === '') {
+                                _settings.y.key = defaultDataFrameKey;
+                                _settings.y.column = defaultDataFrame.columns[1]; // Second available column
+                                console.log(`Setting default y-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[1]}`);
+                            }
+                            
+                            if (defaultDataFrame.columns.length >= 3) {
+                                if (!_settings.z) {
+                                    _settings.z = {
+                                        type: 'obsm',
+                                        key: defaultDataFrameKey,
+                                        column: defaultDataFrame.columns[2]
+                                    }
+                                    console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
+                                } else if (!_settings.z.key || _settings.z.key === '') {
+                                    _settings.z.key = defaultDataFrameKey;
+                                    _settings.z.column = defaultDataFrame.columns[2]; 
+                                    console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
+                                }
+                            }
+                        } else {
+                            console.warn(`No available columns in obsm dataframe "${defaultDataFrameKey}"`);
+                        }
                     } else {
-                        console.warn(`No available columns in obsm dataframe "${defaultDataFrameKey}"`);
+                        console.warn('No obsm dataframes found in dataset structure');
                     }
-                } else {
-                    console.warn('No obsm dataframes found in dataset structure');
-                }
                     
                     // Set up axis selectors sequentially to avoid race conditions
                     await _setupAxisSelector('x', _settings.x);
@@ -317,7 +308,11 @@ const CellPlotPanel = (function() {
                     console.log('Y-axis selector setup complete');
                     
                     if (_settings.z) {
-                        document.getElementById(`z-axis-toggle-${_id}`).checked = true;
+                        const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
+                        zAxisToggle.classList.add('active', 'btn-primary');
+                        zAxisToggle.classList.remove('btn-outline-secondary');
+                        zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
+                        
                         document.getElementById(`z-axis-container-${_id}`).style.display = 'block';
                         await _setupAxisSelector('z', _settings.z);
                         console.log('Z-axis selector setup complete');
@@ -459,7 +454,7 @@ const CellPlotPanel = (function() {
                         if (columnSelect.options.length > 0) {
                             columnSelect.selectedIndex = 0;
                             settings.column = columnSelect.value;
-                            console.log(`Setting default ${axis} column to '${settings.column}'`); // Todo: fix default
+                            console.log(`Setting default ${axis} column to '${settings.column}'`); // Todo: fix default, use the right column
                         } else {
                             console.warn(`No options available for ${axis} column`);
                             // For obsm, default to column "0"
@@ -839,13 +834,23 @@ const CellPlotPanel = (function() {
             
             // 3D plot toggle - this always requires plot recreation since it changes the plot type
             const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
-            zAxisToggle.addEventListener('change', (e) => {
+            zAxisToggle.addEventListener('click', (e) => {
+                // Toggle active state (Bootstrap will also toggle classes if you use data-bs-toggle)
+                const is3D = zAxisToggle.classList.contains('active');
                 const zAxisContainer = document.getElementById(`z-axis-container-${_id}`);
                 
-                // Log this major change
-                console.log(`3D plot toggle changed to: ${e.target.checked ? 'enabled' : 'disabled'}`);
-                
-                if (e.target.checked) {
+                if (is3D) {
+                    zAxisToggle.classList.remove('active', 'btn-primary');
+                    zAxisToggle.classList.add('btn-outline-secondary');
+                    zAxisToggle.setAttribute('title', 'Enable 3D plot');
+                    
+                    zAxisContainer.style.display = 'none';
+                    _settings.z = null;
+                    _loadDataAndCreatePlot();
+                } else {
+                    zAxisToggle.classList.add('active', 'btn-primary');
+                    zAxisToggle.classList.remove('btn-outline-secondary');
+                    zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
                     zAxisContainer.style.display = 'block';
                     
                     // Initialize z-axis if not already set
@@ -874,10 +879,6 @@ const CellPlotPanel = (function() {
                         _settings.z = { type: 'obsm', key: yKey, column: zColumn };
                         _setupAxisSelector('z', _settings.z);
                     }
-                    _loadDataAndCreatePlot();
-                } else {
-                    zAxisContainer.style.display = 'none';
-                    _settings.z = null;
                     _loadDataAndCreatePlot();
                 }
             });
@@ -915,9 +916,7 @@ const CellPlotPanel = (function() {
                 // Only update for numerical data, categorical uses discrete colors
                 if (_data.colorType === 'numerical' && _plot) {
                     // Use centralized update system for color updates
-                    _updatePlotElements({
-                        colors: true
-                    });
+                    _updatePlotElements({ colors: true, colorScale: true });
                     console.log(`Updated colorscale to ${newColorScale} without redrawing`);
                 } else {
                     // For categorical data, we need to recreate the plot with proper legend
@@ -1021,18 +1020,6 @@ const CellPlotPanel = (function() {
                 Plotly.restyle(_plotContainer, update, [0]);
             }
             
-            // Debounced version for full update - will only trigger after slider stops
-            const debouncedFullUpdate = debounce(() => {
-                // Only do the full update at the end of slider interaction
-                _updatePlotColorRangeOnly();
-                
-                // Update centering state and UI
-                if (_settings.centeringActive) {
-                    _settings.centeringActive = false;
-                    _updateCenteringUI();
-                }
-            }, 300);
-            
             // Min slider - use input for real-time updates
             colorMinSlider.addEventListener('input', (e) => {
                 const minValue = parseFloat(e.target.value);
@@ -1043,9 +1030,6 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('min', minValue);
-                
-                // Schedule a full update if needed - debounced
-                debouncedFullUpdate();
             });
             
             // Min slider - on change for final update
@@ -1053,17 +1037,6 @@ const CellPlotPanel = (function() {
                 console.log('Min slider change completed');
                 // Immediate update on mouseup
                 _updatePlotColorRangeOnly();
-                
-                // Turn off centering when manually adjusting
-                if (_settings.centeringActive) {
-                    _settings.centeringActive = false;
-                    _updateCenteringUI();
-                }
-                
-                // Update outliers if hiding is active
-                if (_settings.hideOutliers) {
-                    _updateOutlierVisibility();
-                }
             });
             
             // Helper function to update point visibility based on color range
@@ -1111,8 +1084,6 @@ const CellPlotPanel = (function() {
                 // Direct efficient update for smooth slider experience
                 updateColorRange('max', maxValue);
                 
-                // Schedule a full update if needed - debounced
-                debouncedFullUpdate();
             });
             
             // Max slider - on change for final update
@@ -1120,17 +1091,6 @@ const CellPlotPanel = (function() {
                 console.log('Max slider change completed');
                 // Immediate update on mouseup
                 _updatePlotColorRangeOnly();
-                
-                // Turn off centering when manually adjusting
-                if (_settings.centeringActive) {
-                    _settings.centeringActive = false;
-                    _updateCenteringUI();
-                }
-                
-                // Update outliers if hiding is active
-                if (_settings.hideOutliers) {
-                    _updateOutlierVisibility();
-                }
             });
             
             // Helper function to update only the color range
@@ -1439,9 +1399,25 @@ const CellPlotPanel = (function() {
             // Show grid toggle
             const showGridToggle = document.getElementById(`show-grid-${_id}`);
             // Initialize checked state from settings
-            showGridToggle.checked = _settings.showGrid;
-            showGridToggle.addEventListener('change', (e) => {
-                _settings.showGrid = e.target.checked;
+            if (_settings.showGrid) {
+              showGridToggle.classList.add('active', 'btn-primary');
+              showGridToggle.classList.remove('btn-outline-secondary');
+            } else {
+              showGridToggle.classList.remove('active', 'btn-primary');
+              showGridToggle.classList.add('btn-outline-secondary');
+            }
+            showGridToggle.addEventListener('click', () => {
+                  // Toggle the setting
+                  _settings.showGrid = !_settings.showGrid;
+                  
+                  // Update button appearance based on the new state
+                  if (_settings.showGrid) {
+                    showGridToggle.classList.add('active', 'btn-primary');
+                    showGridToggle.classList.remove('btn-outline-secondary');
+                  } else {
+                    showGridToggle.classList.remove('active', 'btn-primary');
+                    showGridToggle.classList.add('btn-outline-secondary');
+                  }
                 
                 // Update grid, axes, and other line visibility without redrawing the plot
                 if (_plot) {
@@ -2914,25 +2890,6 @@ const CellPlotPanel = (function() {
                     
                     // For numerical data with many NaN values, recreation is safer
                     if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
-                        // Only check for NaN counts when we have actually loaded new color data
-                        // This prevents unnecessary checks when just updating color range
-                        if (updateOptions.colorData) {
-                            const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
-                            const nanPercentage = nanCount / _data.color.length;
-                            
-                            if (nanPercentage > 0.1) {
-                                console.log(`High NaN percentage (${(nanPercentage*100).toFixed(1)}%) - recreating plot`);
-                                _loadDataAndCreatePlot();
-                                return;
-                            }
-                            
-                            // If we're hiding outliers, we need to recreate the plot for proper filtering
-                            if (_settings.hideOutliers) {
-                                console.log("Hide outliers enabled - recreating plot");
-                                _loadDataAndCreatePlot();
-                                return;
-                            }
-                        }
                         
                         // Check what specific color properties need updating
                         // This allows for more targeted updates
@@ -2962,7 +2919,7 @@ const CellPlotPanel = (function() {
                         if (Object.keys(update).length > 0) {
                             // Apply color updates
                             console.log("Applying color updates:", update);
-                            //Plotly.restyle(_plotContainer, update, [0]);
+                            Plotly.restyle(_plotContainer, update, [0]);
                         }
                         
                         // Update colorbar title with separate layout update
