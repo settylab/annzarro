@@ -179,7 +179,7 @@ const PanelManager = (function() {
      */
     function _getPanelTypeIcon(type) {
         const icons = {
-            'cell-plot': 'fas fa-chart-scatter',
+            'cell-plot': 'fas fa-microscope',
             'gene-plot': 'fas fa-dna',
             'cell-table': 'fas fa-table',
             'gene-table': 'fas fa-th-list',
@@ -242,7 +242,7 @@ const PanelManager = (function() {
         
         // Define panel types
         const panelTypes = [
-            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-chart-scatter' },
+            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
             { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
             { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
             { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
@@ -606,7 +606,7 @@ const PanelManager = (function() {
         const tileElement = _createTileElement(id);
         
         // Set initial size for the tile (needed for layout saving)
-        tileElement.style.height = config.height || '500px';
+        tileElement.style.height = config.height || '1000px'; // Increased from 500px for better visualization
         
         // Add the tile to the container
         _container.appendChild(tileElement);
@@ -782,7 +782,7 @@ const PanelManager = (function() {
         // Populate panel types
         const panelTypeGrid = tileSelector.querySelector('#panel-type-grid');
         const panelTypes = [
-            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-chart-scatter' },
+            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
             { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
             { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
             { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },

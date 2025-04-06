@@ -17,6 +17,8 @@ const CellPlotPanel = (function() {
         let _controlsContainer = null;
         let _fullPlotData = null;
         let _plot = null;
+        let _resizeObserver = null;
+        let _resizeTimeout = null;
         
         // Initialize settings with initial default options
         const _settings = {
@@ -257,24 +259,26 @@ const CellPlotPanel = (function() {
                                 </div>
                                 
                                 <div class="color-range-controls" id="color-range-container-${_id}" style="display:none;">
-                                    <label class="numerical-color-label">Color Map:</label>
-                                    <label class="categorical-color-label" style="display:none;">Color Palette:</label>
-                                    <select class="form-select form-select-sm color-palette-selector" id="color-scale-${_id}">
-                                        ${Config.DEFAULTS.COLOR_SCALES.map(scale => 
-                                            `<option value="${scale}" ${scale === _settings.colorScale ? 'selected' : ''}>${scale}</option>`
-                                        ).join('')}
-                                    </select>
-                                    <select class="form-select form-select-sm category-palette-selector" id="category-palette-${_id}" style="display:none;">
-                                        <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
-                                        <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
-                                        <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
-                                        <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
-                                        <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
-                                        <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
-                                        <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
-                                        <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
-                                        <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
-                                    </select>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <label class="numerical-color-label me-2 mb-0" style="white-space: nowrap;">Color Map:</label>
+                                        <label class="categorical-color-label me-2 mb-0" style="display:none; white-space: nowrap;">Color Palette:</label>
+                                        <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${_id}">
+                                            ${Config.DEFAULTS.COLOR_SCALES.map(scale => 
+                                                `<option value="${scale}" ${scale === _settings.colorScale ? 'selected' : ''}>${scale}</option>`
+                                            ).join('')}
+                                        </select>
+                                        <select class="form-select form-select-sm category-palette-selector flex-grow-1" id="category-palette-${_id}" style="display:none;">
+                                            <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
+                                            <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
+                                            <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
+                                            <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
+                                            <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
+                                            <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
+                                            <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
+                                            <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
+                                            <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
+                                        </select>
+                                    </div>
                                     
                                     <div class="color-range-inputs">
                                         <div class="color-range-sliders">
@@ -775,6 +779,32 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _setupEventListeners() {
+            // Set up ResizeObserver to handle plot container resizing when the panel is resized
+            if (_plotContainer && window.ResizeObserver) {
+                _resizeObserver = new ResizeObserver((entries) => {
+                    // Only proceed if we have a valid plot
+                    if (!_plotContainer || !_plot) return;
+                    
+                    for (const entry of entries) {
+                        if (entry.target === _plotContainer) {
+                            // Trigger Plotly relayout to properly resize the plot
+                            // Use a small delay to avoid excessive relayouts during continuous resize
+                            if (_resizeTimeout) clearTimeout(_resizeTimeout);
+                            _resizeTimeout = setTimeout(() => {
+                                console.log('Container resized, updating plot layout');
+                                Plotly.relayout(_plotContainer, {
+                                    'autosize': true
+                                });
+                            }, 100); // 100ms debounce
+                        }
+                    }
+                });
+                
+                // Start observing the plot container
+                _resizeObserver.observe(_plotContainer);
+                console.log(`ResizeObserver set up for plot container ${_id}`);
+            }
+            
             // Axis type selectors
             _container.querySelectorAll('.axis-type-select').forEach(select => {
                 select.addEventListener('change', (e) => {
@@ -3320,10 +3350,26 @@ const CellPlotPanel = (function() {
             };
         }
         
+        /**
+         * Destroy the panel and clean up resources
+         */
+        function destroy() {
+            // Clean up the resize observer if it exists
+            if (_resizeObserver) {
+                console.log(`Disconnecting ResizeObserver for ${_id}`);
+                _resizeObserver.disconnect();
+                _resizeObserver = null;
+            }
+            
+            // Call the standard cleanup
+            cleanup();
+        }
+        
         // Public API
         return {
             init,
             cleanup,
+            destroy,
             onDataUpdate,
             getId,
             getTitle,
