@@ -2402,6 +2402,71 @@ const CellPlotPanel = (function() {
             if (_settings.z && _data.z) {
                 trace.z = _data.z.values;
             }
+
+            // Create layout
+            const layout = {
+                autosize: true,
+                margin: { l: 40, r: 40, t: 40, b: 40 },
+                hovermode: 'closest',
+                xaxis: {
+                    title: `${_settings.x.type}.${_settings.x.key}` +
+                           (_settings.x.column ? `.${_settings.x.column}` : ''),
+                    showgrid: _settings.showGrid,
+                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    showline: _settings.showGrid,
+                    zeroline: _settings.showGrid,
+                    ticks: _settings.showGrid ? '' : 'none',
+                    showticklabels: _settings.showGrid
+                },
+                yaxis: {
+                    title: `${_settings.y.type}.${_settings.y.key}` +
+                           (_settings.y.column ? `.${_settings.y.column}` : ''),
+                    showgrid: _settings.showGrid,
+                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    showline: _settings.showGrid,
+                    zeroline: _settings.showGrid,
+                    ticks: _settings.showGrid ? '' : 'none',
+                    showticklabels: _settings.showGrid
+                }
+            };
+            
+            // Add z-axis title for 3D plots
+            if (_settings.z) {
+                layout.scene = {
+                    xaxis: { 
+                        title: layout.xaxis.title,
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
+                    },
+                    yaxis: { 
+                        title: layout.yaxis.title,
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
+                    },
+                    zaxis: {
+                        title: `${_settings.z.type}.${_settings.z.key}` +
+                               (_settings.z.column ? `.${_settings.z.column}` : ''),
+                        showgrid: _settings.showGrid,
+                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        showline: _settings.showGrid,
+                        zeroline: _settings.showGrid,
+                        ticks: _settings.showGrid ? '' : 'none',
+                        showticklabels: _settings.showGrid
+                    }
+                };
+                
+                // Remove 2D axis titles for 3D plots
+                delete layout.xaxis;
+                delete layout.yaxis;
+            }
             
             // Set colors based on color data type
             if (_data.colorType === 'categorical') {
@@ -2536,11 +2601,10 @@ const CellPlotPanel = (function() {
                                 const traces = processCategories(customColors);
                                 
                                 // Update layout to show the legend
-                                const layout = {
-                                    showlegend: true,
-                                    legend: {
-                                        title: { text: _settings.color.key }
-                                    }
+                                layout.showlegend = true;
+                                layout.legend = { 
+                                  ...layout.legend,  // preserve any existing legend settings
+                                  title: { text: _settings.color.key }
                                 };
                                 
                                 // Create the plot with multiple traces
@@ -2662,70 +2726,6 @@ const CellPlotPanel = (function() {
                 console.log('Using constant color for all points');
             }
             
-            // Create layout
-            const layout = {
-                autosize: true,
-                margin: { l: 40, r: 40, t: 40, b: 40 },
-                hovermode: 'closest',
-                xaxis: {
-                    title: `${_settings.x.type}.${_settings.x.key}` +
-                           (_settings.x.column ? `.${_settings.x.column}` : ''),
-                    showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)',
-                    showline: _settings.showGrid,
-                    zeroline: _settings.showGrid,
-                    ticks: _settings.showGrid ? '' : 'none',
-                    showticklabels: _settings.showGrid
-                },
-                yaxis: {
-                    title: `${_settings.y.type}.${_settings.y.key}` +
-                           (_settings.y.column ? `.${_settings.y.column}` : ''),
-                    showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)',
-                    showline: _settings.showGrid,
-                    zeroline: _settings.showGrid,
-                    ticks: _settings.showGrid ? '' : 'none',
-                    showticklabels: _settings.showGrid
-                }
-            };
-            
-            // Add z-axis title for 3D plots
-            if (_settings.z) {
-                layout.scene = {
-                    xaxis: { 
-                        title: layout.xaxis.title,
-                        showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    },
-                    yaxis: { 
-                        title: layout.yaxis.title,
-                        showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    },
-                    zaxis: {
-                        title: `${_settings.z.type}.${_settings.z.key}` +
-                               (_settings.z.column ? `.${_settings.z.column}` : ''),
-                        showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    }
-                };
-                
-                // Remove 2D axis titles for 3D plots
-                delete layout.xaxis;
-                delete layout.yaxis;
-            }
             
             // Apply subset coloring if needed but not hiding
             if (_settings.subsettedCells && !_settings.hideNonSubset) {
@@ -2755,6 +2755,7 @@ const CellPlotPanel = (function() {
             if (traces.length > 1) {
                 layout.showlegend = true;
                 layout.legend = { 
+                    ...layout.legend,  // preserve any existing legend settings
                     title: { text: _settings.color.key } 
                 };
             }
