@@ -366,12 +366,75 @@ div.dtsb-group {
 
 .color-range-controls {
     display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.color-palette-selector,
+.category-palette-selector {
+    width: 150px;
+    margin-bottom: 0.5rem;
+}
+
+.color-range-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.color-range-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.color-min-slider-container,
+.color-max-slider-container {
+    display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
-.color-palette-selector {
-    width: 100px;
+.color-min-slider-container label,
+.color-max-slider-container label {
+    width: 40px;
+    font-size: 0.875rem;
+    margin-bottom: 0;
+}
+
+.color-min-slider-container input[type="range"],
+.color-max-slider-container input[type="range"] {
+    flex: 1;
+}
+
+.color-min-slider-container input[type="number"],
+.color-max-slider-container input[type="number"] {
+    width: 80px;
+}
+
+.color-options-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.5rem;
+}
+
+/* Center colormap button active state */
+#center-colormap-active {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.btn.active {
+    background-color: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
 }
 
 /* Feature Selection Dropdown */

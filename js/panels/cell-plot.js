@@ -181,11 +181,28 @@ const CellPlotPanel = (function() {
                                         <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
                                         <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
                                     </select>
-                                    <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}">
-                                    <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}">
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="checkbox" id="hide-outliers-${_id}">
-                                        <label class="form-check-label" for="hide-outliers-${_id}">Hide Outliers</label>
+                                    
+                                    <div class="color-range-inputs">
+                                        <div class="color-range-sliders">
+                                            <div class="color-min-slider-container">
+                                                <label>Min:</label>
+                                                <input type="range" class="form-range" id="color-min-slider-${_id}">
+                                                <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}">
+                                            </div>
+                                            <div class="color-max-slider-container">
+                                                <label>Max:</label>
+                                                <input type="range" class="form-range" id="color-max-slider-${_id}">
+                                                <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="color-options-buttons">
+                                        <button class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}">Center at 0</button>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="checkbox" id="hide-outliers-${_id}">
+                                            <label class="form-check-label" for="hide-outliers-${_id}">Hide Outliers</label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -623,12 +640,21 @@ const CellPlotPanel = (function() {
                                     columnSelect.selectedIndex = 0;
                                     _settings[axis].column = columnSelect.value;
                                     
-                                    // Check if this is a color axis change
+                                    // Handle different axis changes appropriately
                                     if (axis === 'color' && _plot) {
+                                        // Color changes can use optimized update path
                                         console.log('Color setting changed, using optimized update');
                                         _loadColorDataAndUpdatePlot();
+                                    } else if (axis === 'z') {
+                                        // Z-axis changes mean switching between 2D and 3D
+                                        console.log('Z-axis changed (2D/3D change), recreating plot');
+                                        _loadDataAndCreatePlot();
+                                    } else if (axis === 'x' || axis === 'y') {
+                                        // Position axes changes require recreation
+                                        console.log('Position axis (x/y) changed, recreating plot');
+                                        _loadDataAndCreatePlot();
                                     } else {
-                                        // For other axes, recreate the plot
+                                        // Fallback
                                         _loadDataAndCreatePlot();
                                     }
                                 }
@@ -654,12 +680,21 @@ const CellPlotPanel = (function() {
                             columnSelect.selectedIndex = 0;
                             _settings[axis].column = columnSelect.value;
                             
-                            // Check if this is a color axis change
+                            // Handle different axis changes appropriately
                             if (axis === 'color' && _plot) {
+                                // Color key changes can use optimized update
                                 console.log('Color key changed, using optimized update');
                                 _loadColorDataAndUpdatePlot();
+                            } else if (axis === 'z') {
+                                // Z-axis changes mean switching between 2D and 3D
+                                console.log('Z-axis key changed, recreating plot');
+                                _loadDataAndCreatePlot();
+                            } else if (axis === 'x' || axis === 'y') {
+                                // Position axes changes require recreation
+                                console.log('Position axis (x/y) key changed, recreating plot');
+                                _loadDataAndCreatePlot();
                             } else {
-                                // For other axes, recreate the plot
+                                // Fallback
                                 _loadDataAndCreatePlot();
                             }
                         }
@@ -673,21 +708,33 @@ const CellPlotPanel = (function() {
                     const axis = e.target.dataset.axis;
                     _settings[axis].column = e.target.value;
                     
-                    // Check if this is a color axis change
+                    // Handle different axis changes appropriately
                     if (axis === 'color' && _plot) {
+                        // Color column changes can use optimized update
                         console.log('Color column changed, using optimized update');
                         _loadColorDataAndUpdatePlot();
+                    } else if (axis === 'z') {
+                        // Z-axis changes mean possible dimension changes in 3D
+                        console.log('Z-axis column changed, recreating plot');
+                        _loadDataAndCreatePlot();
+                    } else if (axis === 'x' || axis === 'y') {
+                        // Position axes changes require recreation
+                        console.log('Position axis (x/y) column changed, recreating plot');
+                        _loadDataAndCreatePlot();
                     } else {
-                        // For other axes, recreate the plot
+                        // Fallback
                         _loadDataAndCreatePlot();
                     }
                 });
             });
             
-            // 3D plot toggle
+            // 3D plot toggle - this always requires plot recreation since it changes the plot type
             const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
             zAxisToggle.addEventListener('change', (e) => {
                 const zAxisContainer = document.getElementById(`z-axis-container-${_id}`);
+                
+                // Log this major change
+                console.log(`3D plot toggle changed to: ${e.target.checked ? 'enabled' : 'disabled'}`);
                 
                 if (e.target.checked) {
                     zAxisContainer.style.display = 'block';
@@ -706,30 +753,64 @@ const CellPlotPanel = (function() {
                     zAxisContainer.style.display = 'none';
                     _settings.z = null;
                     
-                    // Update plot
+                    // Update plot - 2D/3D change always requires recreation
+                    console.log('Switching from 3D to 2D, recreating plot');
                     _loadDataAndCreatePlot();
                 }
             });
             
-            // Point size slider
+            // Point size slider - use direct Plotly update for efficiency
             const pointSizeSlider = document.getElementById(`point-size-${_id}`);
             pointSizeSlider.addEventListener('input', (e) => {
-                _settings.pointSize = parseFloat(e.target.value);
-                _updatePlot();
+                const newSize = parseFloat(e.target.value);
+                _settings.pointSize = newSize;
+                
+                // Update directly without recreating plot
+                if (_plot && _plot.data) {
+                    // Apply to all traces
+                    const update = {'marker.size': newSize};
+                    const indices = Array.from({length: _plot.data.length}, (_, i) => i);
+                    Plotly.restyle(_plotContainer, update, indices);
+                } else {
+                    // Fallback to standard update
+                    _updatePlot(false);
+                }
             });
             
-            // Point opacity slider
+            // Point opacity slider - use direct Plotly update for efficiency
             const pointOpacitySlider = document.getElementById(`point-opacity-${_id}`);
             pointOpacitySlider.addEventListener('input', (e) => {
-                _settings.pointOpacity = parseFloat(e.target.value);
-                _updatePlot();
+                const newOpacity = parseFloat(e.target.value);
+                _settings.pointOpacity = newOpacity;
+                
+                // Update directly without recreating plot
+                if (_plot && _plot.data) {
+                    // Apply to all traces
+                    const update = {'marker.opacity': newOpacity};
+                    const indices = Array.from({length: _plot.data.length}, (_, i) => i);
+                    Plotly.restyle(_plotContainer, update, indices);
+                } else {
+                    // Fallback to standard update
+                    _updatePlot(false);
+                }
             });
             
-            // Color scale selector
+            // Color scale selector - use direct Plotly update for efficiency
             const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
             colorScaleSelect.addEventListener('change', (e) => {
-                _settings.colorScale = e.target.value;
-                _updatePlot();
+                const newColorScale = e.target.value;
+                _settings.colorScale = newColorScale;
+                
+                // Only update for numerical data, categorical uses discrete colors
+                if (_data.colorType === 'numerical' && _plot && _plot.data) {
+                    // Direct update of colorscale only
+                    const update = {'marker.colorscale': newColorScale};
+                    Plotly.restyle(_plotContainer, update, [0]);
+                    console.log(`Updated colorscale to ${newColorScale} without redrawing`);
+                } else {
+                    // For categorical data, we need to recreate the plot with proper legend
+                    _loadDataAndCreatePlot();
+                }
             });
             
             // Category palette selector
@@ -750,17 +831,387 @@ const CellPlotPanel = (function() {
                 }
             });
             
-            // Color range inputs
+            // Color range inputs and sliders
             const colorMinInput = document.getElementById(`color-min-${_id}`);
+            const colorMaxInput = document.getElementById(`color-max-${_id}`);
+            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+            
+            // Track centering state
+            _settings.centeringActive = _settings.centeringActive || false;
+            
+            // Helper function to update color range values without affecting sliders
+            function _updateColorRange(min, max, updateSliders = true, triggerPlotUpdate = true) {
+                _settings.colorMin = min !== '' ? parseFloat(min) : null;
+                _settings.colorMax = max !== '' ? parseFloat(max) : null;
+                
+                // Update input fields
+                colorMinInput.value = _settings.colorMin !== null ? _settings.colorMin : '';
+                colorMaxInput.value = _settings.colorMax !== null ? _settings.colorMax : '';
+                
+                // Update sliders if requested and we have valid data range
+                if (updateSliders && _data && _data.color && Array.isArray(_data.color)) {
+                    // Get data range
+                    const validValues = _data.color.filter(v => !isNaN(v));
+                    const dataMin = Math.min(...validValues);
+                    const dataMax = Math.max(...validValues);
+                    
+                    // Set slider values but don't update inputs again (to avoid recursive triggers)
+                    colorMinSlider.value = _settings.colorMin !== null ? _settings.colorMin : dataMin;
+                    colorMaxSlider.value = _settings.colorMax !== null ? _settings.colorMax : dataMax;
+                }
+                
+                // Only trigger plot update if specified
+                if (triggerPlotUpdate) {
+                    _updatePlot(false); // false = only update visual properties, don't recreate plot
+                }
+            }
+            
+            // Min input
             colorMinInput.addEventListener('change', (e) => {
-                _settings.colorMin = e.target.value !== '' ? parseFloat(e.target.value) : null;
-                _updatePlot();
+                const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+                const maxValue = _settings.colorMax;
+                _updateColorRange(minValue, maxValue, true);
+                
+                // Turn off centering when manually editing
+                _settings.centeringActive = false;
+                _updateCenteringUI();
             });
             
-            const colorMaxInput = document.getElementById(`color-max-${_id}`);
+            // Max input
             colorMaxInput.addEventListener('change', (e) => {
-                _settings.colorMax = e.target.value !== '' ? parseFloat(e.target.value) : null;
-                _updatePlot();
+                const minValue = _settings.colorMin;
+                const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+                _updateColorRange(minValue, maxValue, true);
+                
+                // Turn off centering when manually editing
+                _settings.centeringActive = false;
+                _updateCenteringUI();
+            });
+            
+            // Min slider - use input for real-time updates
+            colorMinSlider.addEventListener('input', (e) => {
+                const minValue = parseFloat(e.target.value);
+                colorMinInput.value = minValue.toFixed(2);
+                
+                // Update settings but don't update sliders again to avoid recursion
+                _settings.colorMin = minValue;
+                
+                // Update just the color range directly without triggering full update
+                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                    Plotly.restyle(_plotContainer, {'marker.cmin': minValue}, [0]);
+                } else {
+                    // Fallback if for some reason we can't access the plot directly
+                    _updatePlotColorRangeOnly();
+                }
+                
+                // Turn off centering when manually adjusting
+                _settings.centeringActive = false;
+                _updateCenteringUI();
+            });
+            
+            // Min slider - on change for final update
+            colorMinSlider.addEventListener('change', (e) => {
+                // No need to do anything additional here, all updates done in 'input' handler
+                console.log('Min slider change completed');
+            });
+            
+            // Max slider - use input for real-time updates
+            colorMaxSlider.addEventListener('input', (e) => {
+                const maxValue = parseFloat(e.target.value);
+                colorMaxInput.value = maxValue.toFixed(2);
+                
+                // Update settings but don't update sliders again to avoid recursion
+                _settings.colorMax = maxValue;
+                
+                // Update just the color range directly without triggering full update
+                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                    Plotly.restyle(_plotContainer, {'marker.cmax': maxValue}, [0]);
+                } else {
+                    // Fallback if for some reason we can't access the plot directly
+                    _updatePlotColorRangeOnly();
+                }
+                
+                // Turn off centering when manually adjusting
+                _settings.centeringActive = false;
+                _updateCenteringUI();
+            });
+            
+            // Max slider - on change for final update
+            colorMaxSlider.addEventListener('change', (e) => {
+                // No need to do anything additional here, all updates done in 'input' handler
+                console.log('Max slider change completed');
+            });
+            
+            // Helper function to update only the color range
+            function _updatePlotColorRangeOnly() {
+                if (!_plot) return;
+                
+                try {
+                    // Only update the color range, nothing else
+                    const update = {};
+                    
+                    if (_settings.colorMin !== null) {
+                        update['marker.cmin'] = _settings.colorMin;
+                    }
+                    
+                    if (_settings.colorMax !== null) {
+                        update['marker.cmax'] = _settings.colorMax;
+                    }
+                    
+                    // Apply only to the first trace (for numerical data we only have one trace)
+                    if (Object.keys(update).length > 0) {
+                        Plotly.restyle(_plotContainer, update, [0]);
+                    }
+                } catch (error) {
+                    console.error('Error updating color range:', error);
+                }
+            }
+            
+            // Function to apply centering to colormap
+            function _applyCentering() {
+                if (!_data || !_data.color || !Array.isArray(_data.color)) return;
+                
+                // Only apply if centering is active
+                if (!_settings.centeringActive) return;
+                
+                // Filter out NaN values
+                const validValues = _data.color.filter(v => !isNaN(v));
+                
+                if (validValues.length > 0) {
+                    // Find the absolute maximum (positive or negative)
+                    const absMax = Math.max(
+                        Math.abs(Math.min(...validValues)), 
+                        Math.abs(Math.max(...validValues))
+                    );
+                    
+                    // Update the settings
+                    _settings.colorMin = -absMax;
+                    _settings.colorMax = absMax;
+                    
+                    // Update input fields
+                    const colorMinInput = document.getElementById(`color-min-${_id}`);
+                    const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                    
+                    if (colorMinInput) colorMinInput.value = (-absMax).toFixed(2);
+                    if (colorMaxInput) colorMaxInput.value = absMax.toFixed(2);
+                    
+                    // Update the sliders with appropriate constraints
+                    const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                    const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                    
+                    if (colorMinSlider && colorMaxSlider) {
+                        // When centering is active:
+                        // - Min slider can only have values up to 0
+                        // - Max slider can only have values from 0 up
+                        
+                        // Find the full data range
+                        const dataMin = Math.min(...validValues);
+                        const dataMax = Math.max(...validValues);
+                        
+                        // Set different ranges for min and max sliders
+                        colorMinSlider.min = Math.min(-absMax, dataMin);
+                        colorMinSlider.max = 0; // Min slider can only go up to 0
+                        
+                        colorMaxSlider.min = 0; // Max slider can only go from 0
+                        colorMaxSlider.max = Math.max(absMax, dataMax);
+                        
+                        // Set values to maintain symmetry
+                        colorMinSlider.value = -absMax;
+                        colorMaxSlider.value = absMax;
+                        
+                        // Add special listener for centering mode
+                        _setupCenteringSliderListeners();
+                    }
+                    
+                    // Update the plot color range directly without redrawing
+                    if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                        Plotly.restyle(_plotContainer, {
+                            'marker.cmin': -absMax,
+                            'marker.cmax': absMax
+                        }, [0]);
+                    } else {
+                        // Use the helper to update only color range
+                        _updatePlotColorRangeOnly();
+                    }
+                }
+            }
+            
+            // Special event listeners for when centering is active
+            function _setupCenteringSliderListeners() {
+                const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                const colorMinInput = document.getElementById(`color-min-${_id}`);
+                const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                
+                if (!colorMinSlider || !colorMaxSlider) return;
+                
+                // Remove existing centering-specific listeners if any
+                colorMinSlider.removeEventListener('input', _centeringMinSliderHandler);
+                colorMaxSlider.removeEventListener('input', _centeringMaxSliderHandler);
+                
+                // Only add these listeners if centering is active
+                if (_settings.centeringActive) {
+                    // Add the listeners back
+                    colorMinSlider.addEventListener('input', _centeringMinSliderHandler);
+                    colorMaxSlider.addEventListener('input', _centeringMaxSliderHandler);
+                }
+            }
+            
+            // Handler for min slider during centering
+            function _centeringMinSliderHandler(e) {
+                if (!_settings.centeringActive) return;
+                
+                const minValue = parseFloat(e.target.value);
+                const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                const colorMinInput = document.getElementById(`color-min-${_id}`);
+                
+                // Ensure symmetry by setting max to negative of min
+                const maxValue = -minValue;
+                
+                // Update settings
+                _settings.colorMin = minValue;
+                _settings.colorMax = maxValue;
+                
+                // Update UI
+                colorMinInput.value = minValue.toFixed(2);
+                if (colorMaxInput) colorMaxInput.value = maxValue.toFixed(2);
+                if (colorMaxSlider) colorMaxSlider.value = maxValue;
+                
+                // Update plot
+                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                    Plotly.restyle(_plotContainer, {
+                        'marker.cmin': minValue,
+                        'marker.cmax': maxValue
+                    }, [0]);
+                }
+            }
+            
+            // Handler for max slider during centering
+            function _centeringMaxSliderHandler(e) {
+                if (!_settings.centeringActive) return;
+                
+                const maxValue = parseFloat(e.target.value);
+                const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                const colorMinInput = document.getElementById(`color-min-${_id}`);
+                const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                
+                // Ensure symmetry by setting min to negative of max
+                const minValue = -maxValue;
+                
+                // Update settings
+                _settings.colorMin = minValue;
+                _settings.colorMax = maxValue;
+                
+                // Update UI
+                colorMaxInput.value = maxValue.toFixed(2);
+                if (colorMinInput) colorMinInput.value = minValue.toFixed(2);
+                if (colorMinSlider) colorMinSlider.value = minValue;
+                
+                // Update plot
+                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                    Plotly.restyle(_plotContainer, {
+                        'marker.cmin': minValue,
+                        'marker.cmax': maxValue
+                    }, [0]);
+                }
+            }
+            
+            // Update centering UI based on state
+            function _updateCenteringUI() {
+                const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+                const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                
+                if (_settings.centeringActive) {
+                    // Update button appearance
+                    centerColormapButton.classList.add('active', 'btn-primary');
+                    centerColormapButton.classList.remove('btn-outline-secondary');
+                    centerColormapButton.setAttribute('title', 'Centering active - click to disable');
+                    
+                    // Add centering-specific slider listeners that maintain symmetry
+                    _setupCenteringSliderListeners();
+                    
+                    // Apply centering immediately 
+                    _applyCentering();
+                } else {
+                    // Update button appearance
+                    centerColormapButton.classList.remove('active', 'btn-primary');
+                    centerColormapButton.classList.add('btn-outline-secondary');
+                    centerColormapButton.setAttribute('title', 'Center color scale at 0');
+                    
+                    // Remove centering-specific event listeners
+                    if (colorMinSlider && colorMaxSlider) {
+                        colorMinSlider.removeEventListener('input', _centeringMinSliderHandler);
+                        colorMaxSlider.removeEventListener('input', _centeringMaxSliderHandler);
+                        
+                        // Restore normal slider ranges
+                        if (_data && _data.color && Array.isArray(_data.color)) {
+                            const validValues = _data.color.filter(v => !isNaN(v));
+                            if (validValues.length > 0) {
+                                const dataMin = Math.min(...validValues);
+                                const dataMax = Math.max(...validValues);
+                                
+                                // Reset to full range
+                                colorMinSlider.min = dataMin;
+                                colorMinSlider.max = dataMax;
+                                colorMaxSlider.min = dataMin; 
+                                colorMaxSlider.max = dataMax;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Center at 0 button - toggle behavior
+            const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+            centerColormapButton.addEventListener('click', () => {
+                // Get current state before toggling
+                const wasActive = _settings.centeringActive;
+                
+                // Toggle the centering active state
+                _settings.centeringActive = !_settings.centeringActive;
+                _updateCenteringUI();
+                
+                if (_settings.centeringActive) {
+                    // Apply centering immediately
+                    _applyCentering();
+                } else if (wasActive) {
+                    // If deactivating centering, reset sliders to reasonable defaults
+                    if (_data && _data.color && Array.isArray(_data.color)) {
+                        const validValues = _data.color.filter(v => !isNaN(v));
+                        if (validValues.length > 0) {
+                            const dataMin = Math.min(...validValues);
+                            const dataMax = Math.max(...validValues);
+                            
+                            // Reset to dynamic data range, but keep current values if they're within range
+                            _settings.colorMin = (_settings.colorMin !== null && _settings.colorMin >= dataMin) ? 
+                                                 _settings.colorMin : dataMin;
+                            _settings.colorMax = (_settings.colorMax !== null && _settings.colorMax <= dataMax) ? 
+                                                 _settings.colorMax : dataMax;
+                            
+                            // Update the plot with non-symmetrical range
+                            if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                                Plotly.restyle(_plotContainer, {
+                                    'marker.cmin': _settings.colorMin,
+                                    'marker.cmax': _settings.colorMax
+                                }, [0]);
+                            }
+                            
+                            // Update the UI
+                            const colorMinInput = document.getElementById(`color-min-${_id}`);
+                            const colorMaxInput = document.getElementById(`color-max-${_id}`);
+                            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                            
+                            if (colorMinInput) colorMinInput.value = _settings.colorMin.toFixed(2);
+                            if (colorMaxInput) colorMaxInput.value = _settings.colorMax.toFixed(2);
+                            if (colorMinSlider) colorMinSlider.value = _settings.colorMin;
+                            if (colorMaxSlider) colorMaxSlider.value = _settings.colorMax;
+                        }
+                    }
+                }
             });
             
             // Hide outliers toggle
@@ -773,51 +1224,60 @@ const CellPlotPanel = (function() {
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', (e) => {
                 console.log(`Focused cell changed to: ${e.detail.cell}`);
-                // Check if we're using obsp data
+                
+                // Check if we're using obsp data anywhere in the plot
                 const usesObspData = _settings.x.type === 'obsp' || 
                                     _settings.y.type === 'obsp' || 
                                     (_settings.z && _settings.z.type === 'obsp') ||
                                     _settings.color.type === 'obsp';
                 
                 if (usesObspData) {
-                    // If only color uses obsp data, optimize the update
+                    // First check if it affects only color or also position axes
                     if (_settings.color.type === 'obsp' && 
                         _settings.x.type !== 'obsp' && 
                         _settings.y.type !== 'obsp' && 
                         (!_settings.z || _settings.z.type !== 'obsp')) {
                         
-                        console.log('Focused cell changed, optimizing update for color only');
+                        // Only color uses obsp data - we can use optimized update
+                        console.log('Focused cell changed, only affects color data - using optimized update');
                         _loadColorDataAndUpdatePlot();
                     } else {
                         // Position axes (x, y, z) use obsp data, need to recreate the plot
-                        console.log('Focused cell changed, recreating plot');
+                        console.log('Focused cell changed affects position axes, recreating plot');
                         _loadDataAndCreatePlot();
                     }
+                } else {
+                    console.log('Focused cell changed does not affect this plot');
                 }
             });
             
             // Listen for focused gene changes
             document.addEventListener('focusedGeneChanged', (e) => {
-                // Check if we're using layer data
+                console.log(`Focused gene changed to: ${e.detail.gene}`);
+                
+                // Check if we're using layer data anywhere in the plot
                 const usesLayerData = _settings.x.type === 'layer' || 
                                      _settings.y.type === 'layer' || 
                                      (_settings.z && _settings.z.type === 'layer') ||
                                      _settings.color.type === 'layer';
                 
                 if (usesLayerData) {
-                    // If only color uses layer data, optimize the update
+                    // First check if it affects only color or also position axes
                     if (_settings.color.type === 'layer' && 
                         _settings.x.type !== 'layer' && 
                         _settings.y.type !== 'layer' && 
                         (!_settings.z || _settings.z.type !== 'layer')) {
                         
-                        console.log('Focused gene changed, optimizing update for color only');
+                        // Only color uses layer data - we can use optimized update
+                        console.log('Focused gene changed, only affects color data - using optimized update');
                         _loadColorDataAndUpdatePlot();
                     } else {
                         // Position axes (x, y, z) use layer data, need to recreate the plot
-                        console.log('Focused gene changed, recreating plot');
+                        console.log('Focused gene changed affects position axes, recreating plot');
                         _loadDataAndCreatePlot();
                     }
+                } else {
+                    console.log('Focused gene changed does not affect this plot');
                 }
             });
         }
@@ -828,6 +1288,9 @@ const CellPlotPanel = (function() {
          */
         async function _loadColorDataAndUpdatePlot() {
             try {
+                // Track if centering was active before updating
+                const wasCenteringActive = _settings.centeringActive;
+                
                 const filteredCellIndices = _settings.subsettedCells && _settings.hideNonSubset
                     ? _settings.subsettedCells.map(cell => DataManager.getCellIndex(cell))
                     : null;
@@ -862,8 +1325,99 @@ const CellPlotPanel = (function() {
                         return;
                     }
                     
-                    // Update the existing plot without recreating it 
-                    _updatePlot(true); // true = full data update
+                    // Restore centering state
+                    _settings.centeringActive = wasCenteringActive;
+                    
+                    // If centering was active, apply it before updating
+                    if (_settings.centeringActive) {
+                        console.log('Centering was active, applying before update');
+                        // This will be done by _updatePlot
+                    }
+                    
+                    // Update min and max slider ranges based on new data before updating plot
+                    if (_data.colorType === 'numerical') {
+                        const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+                        const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+                        
+                        if (colorMinSlider && colorMaxSlider) {
+                            // Filter out NaN values for min/max calculations
+                            const validColorValues = _data.color.filter(val => !isNaN(val));
+                            const dataMin = Math.min(...validColorValues);
+                            const dataMax = Math.max(...validColorValues);
+                            
+                            // Set slider range - this doesn't trigger events
+                            colorMinSlider.min = dataMin;
+                            colorMinSlider.max = dataMax;
+                            colorMaxSlider.min = dataMin;
+                            colorMaxSlider.max = dataMax;
+                            
+                            // Set reasonable step size
+                            const range = dataMax - dataMin;
+                            const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
+                            colorMinSlider.step = step;
+                            colorMaxSlider.step = step;
+                        }
+                    }
+                    
+                    // Check if we need to handle categorical vs numerical transition
+                    const wasCategorical = _plot && _plot.data && _plot.data.length > 1;
+                    const isCategorical = _data.colorType === 'categorical';
+                    
+                    // If switching between categorical and numerical, we need to recreate the plot
+                    if (wasCategorical || isCategorical) {
+                        console.log('Switching between categorical and numerical coloring, recreating plot');
+                        _loadDataAndCreatePlot();
+                        return;
+                    }
+                    
+                    // For continuous to continuous color changes, just update the color data
+                    if (_plot && _plot.data && _plot.data[0]) {
+                        console.log('Directly updating plot with new color data without redrawing');
+                        
+                        try {
+                            // Create a direct update with just the color information
+                            const update = {
+                                'marker.color': [_data.color]
+                            };
+                            
+                            // Update colorscale properties for numerical data
+                            if (_data.colorType === 'numerical') {
+                                update['marker.colorscale'] = _settings.colorScale;
+                                
+                                // Add color range if specified
+                                if (_settings.colorMin !== null) {
+                                    update['marker.cmin'] = _settings.colorMin;
+                                }
+                                if (_settings.colorMax !== null) {
+                                    update['marker.cmax'] = _settings.colorMax;
+                                }
+                                
+                                // Update colorbar title if needed
+                                const newTitle = `${_settings.color.type}.${_settings.color.key}` +
+                                                (_settings.color.column ? `.${_settings.color.column}` : '');
+                                
+                                // Apply title update separately (it's in the layout, not the trace)
+                                Plotly.relayout(_plotContainer, {
+                                    'coloraxis.colorbar.title.text': newTitle
+                                });
+                            }
+                            
+                            // Apply the update directly to avoid redrawing
+                            Plotly.restyle(_plotContainer, update, [0]);
+                            console.log('Successfully updated plot colors without redrawing');
+                        } catch (error) {
+                            console.error('Error updating plot colors directly:', error);
+                            // Fallback to normal update method
+                            _updatePlot(true);
+                        }
+                    } else {
+                        // Fallback if plot structure isn't as expected
+                        console.log('Using standard update method');
+                        _updatePlot(true); // true = full data update
+                    }
+                    
+                    // Update UI to reflect current state
+                    _updateCenteringUI();
                 } else {
                     console.warn('No valid color data returned, falling back to full plot reload');
                     _loadDataAndCreatePlot();
@@ -1144,12 +1698,35 @@ const CellPlotPanel = (function() {
                             values = [];
                         }
                         
-                        // Check and handle NaN values
-                        if (values) {
-                            const nanCount = values.filter(val => val === null || val === undefined || isNaN(val)).length;
-                            if (nanCount > 0) {
-                                console.log(`Obsp data contains ${nanCount} NaN values out of ${values.length} total`);
+                        // Ensure values is a 1D array of numbers (or NaN)
+                        if (values && values.length > 0) {
+                            // Replace null/undefined with NaN for consistency
+                            values = values.map(v => (v === null || v === undefined) ? NaN : v);
+                            
+                            // Check if values need conversion
+                            const firstVal = values[0];
+                            if (typeof firstVal === 'object') {
+                                console.warn('Obsp values are objects, attempting to convert to numbers');
+                                values = values.map(v => {
+                                    if (v === null || v === undefined) return NaN;
+                                    if (typeof v === 'number') return v;
+                                    // Try to extract a number from an object
+                                    if (typeof v === 'object' && 'value' in v) return v.value;
+                                    return NaN;
+                                });
+                            } else if (typeof firstVal === 'string') {
+                                console.warn('Obsp values are strings, attempting to convert to numbers');
+                                values = values.map(v => {
+                                    if (v === null || v === undefined) return NaN;
+                                    const parsed = parseFloat(v);
+                                    return isNaN(parsed) ? NaN : parsed;
+                                });
                             }
+                            
+                            // Log NaN count after processing
+                            const nanCount = values.filter(val => isNaN(val)).length;
+                            console.log(`Processed obsp data to ${values.length} values with ${nanCount} NaN values`);
+                            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
                         }
                         
                         dataType = 'numerical';
@@ -1219,6 +1796,33 @@ const CellPlotPanel = (function() {
                         } else {
                             console.warn(`No valid data array received from layer endpoint`);
                             values = [];
+                        }
+                        
+                        // Ensure values is a 1D array of numbers (or NaN)
+                        if (values.length > 0) {
+                            // Check if we need to convert values
+                            const firstVal = values[0];
+                            if (typeof firstVal === 'object') {
+                                console.warn('Layer values are objects, attempting to convert to numbers');
+                                values = values.map(v => {
+                                    if (v === null || v === undefined) return NaN;
+                                    if (typeof v === 'number') return v;
+                                    // Try to extract a number from an object
+                                    if (typeof v === 'object' && 'value' in v) return v.value;
+                                    return NaN;
+                                });
+                            } else if (typeof firstVal === 'string') {
+                                console.warn('Layer values are strings, attempting to convert to numbers');
+                                values = values.map(v => {
+                                    if (v === null || v === undefined) return NaN;
+                                    const parsed = parseFloat(v);
+                                    return isNaN(parsed) ? NaN : parsed;
+                                });
+                            }
+                            
+                            // Validate the processed data
+                            console.log(`Processed layer data to ${values.length} values of type ${typeof values[0]}`);
+                            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
                         }
                         
                         dataType = 'numerical';
@@ -1638,6 +2242,9 @@ const CellPlotPanel = (function() {
             const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
             const colorMinInput = document.getElementById(`color-min-${_id}`);
             const colorMaxInput = document.getElementById(`color-max-${_id}`);
+            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+            const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
             const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
             const numericalLabel = _container.querySelector('.numerical-color-label');
             const categoricalLabel = _container.querySelector('.categorical-color-label');
@@ -1649,19 +2256,45 @@ const CellPlotPanel = (function() {
                 categoryPaletteSelect.style.display = 'none';
                 colorMinInput.style.display = 'block';
                 colorMaxInput.style.display = 'block';
+                colorMinSlider.style.display = 'block';
+                colorMaxSlider.style.display = 'block';
+                centerColormapButton.style.display = 'block';
                 hideOutliersToggle.parentElement.style.display = 'block';
                 
                 // Show numerical label, hide categorical label
                 numericalLabel.style.display = 'inline';
                 categoricalLabel.style.display = 'none';
                 
+                // Filter out NaN values for min/max calculations
+                const validColorValues = _data.color.filter(val => !isNaN(val));
+                const dataMin = Math.min(...validColorValues);
+                const dataMax = Math.max(...validColorValues);
+                
+                // Set up sliders
+                colorMinSlider.min = dataMin;
+                colorMinSlider.max = dataMax;
+                colorMaxSlider.min = dataMin;
+                colorMaxSlider.max = dataMax;
+                
+                // Set slider step to a reasonable value based on data range
+                const range = dataMax - dataMin;
+                const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
+                colorMinSlider.step = step;
+                colorMaxSlider.step = step;
+                
                 // Set min/max input defaults if not already set
                 if (colorMinInput.value === '') {
-                    colorMinInput.placeholder = Math.min(..._data.color).toFixed(2);
+                    colorMinInput.placeholder = dataMin.toFixed(2);
+                    colorMinSlider.value = dataMin;
+                } else {
+                    colorMinSlider.value = _settings.colorMin !== null ? _settings.colorMin : dataMin;
                 }
                 
                 if (colorMaxInput.value === '') {
-                    colorMaxInput.placeholder = Math.max(..._data.color).toFixed(2);
+                    colorMaxInput.placeholder = dataMax.toFixed(2);
+                    colorMaxSlider.value = dataMax;
+                } else {
+                    colorMaxSlider.value = _settings.colorMax !== null ? _settings.colorMax : dataMax;
                 }
             } else if (_data.colorType === 'categorical') {
                 // Show categorical color controls
@@ -1670,6 +2303,9 @@ const CellPlotPanel = (function() {
                 categoryPaletteSelect.style.display = 'block';
                 colorMinInput.style.display = 'none';
                 colorMaxInput.style.display = 'none';
+                colorMinSlider.style.display = 'none';
+                colorMaxSlider.style.display = 'none';
+                centerColormapButton.style.display = 'none';
                 hideOutliersToggle.parentElement.style.display = 'none';
                 
                 // Show categorical label, hide numerical label
@@ -1691,6 +2327,11 @@ const CellPlotPanel = (function() {
          */
         function _updatePlot(fullDataUpdate = false) {
             console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
+            
+            // Apply centering if active
+            if (_settings.centeringActive) {
+                _applyCentering();
+            }
             
             if (!_plot) {
                 console.warn("Plot doesn't exist yet, creating it instead of updating");
@@ -1720,62 +2361,58 @@ const CellPlotPanel = (function() {
                     if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
                         console.log(`Updating plot with ${_data.color.length} color values`);
                         
-                        // Handle NaN values
-                        const validIndices = [];
-                        const nanIndices = [];
+                        // Handle NaN values but don't recreate just for NaN values - we'll show them as grey
+                        // Count NaN values for logging only
+                        const nanCount = _data.color.filter(v => v === null || v === undefined || isNaN(v)).length;
+                        console.log(`Found ${nanCount} NaN values out of ${_data.color.length} total`);
                         
-                        for (let i = 0; i < _data.color.length; i++) {
-                            const val = _data.color[i];
-                            if (val === null || val === undefined || isNaN(val)) {
-                                nanIndices.push(i);
-                            } else {
-                                validIndices.push(i);
-                            }
-                        }
-                        
-                        console.log(`Found ${nanIndices.length} NaN values and ${validIndices.length} valid values`);
-                        
-                        // If we have NaN values, we need to recreate the plot
-                        if (nanIndices.length > 0) {
-                            console.log("Data contains NaN values, recreating plot for proper handling");
+                        // Only recreate if we're hiding outliers, otherwise just update the colors
+                        if (_settings.hideOutliers) {
+                            console.log("Hide outliers enabled, recreating plot");
                             _loadDataAndCreatePlot();
                             return;
                         }
                         
-                        // Update color scale and data
-                        const update = {
-                            'marker.color': [_data.color],
-                            'marker.colorscale': [_settings.colorScale]
-                        };
-                        
-                        // Set color range if specified
-                        if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                            const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
-                            const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+                        // For continuous-to-continuous transitions, update efficiently
+                        try {
+                            // Create the update object with just the color information 
+                            const update = {
+                                'marker.color': [_data.color],
+                                'marker.colorscale': [_settings.colorScale]
+                            };
                             
-                            update['marker.cmin'] = [cmin];
-                            update['marker.cmax'] = [cmax];
-                            
-                            // If hideOutliers is enabled, we need to recreate the plot
-                            if (_settings.hideOutliers) {
-                                console.log("Hide outliers enabled, recreating plot");
-                                _loadDataAndCreatePlot();
-                                return;
+                            // Set color range if specified
+                            if (_settings.colorMin !== null || _settings.colorMax !== null) {
+                                if (_settings.colorMin !== null) {
+                                    update['marker.cmin'] = [_settings.colorMin];
+                                }
+                                
+                                if (_settings.colorMax !== null) {
+                                    update['marker.cmax'] = [_settings.colorMax];
+                                }
                             }
+                            
+                            // Apply color updates first
+                            console.log("Applying color updates to existing plot:", update);
+                            Plotly.restyle(_plotContainer, update, [0]);
+                            
+                            // Update the colorbar title separately (it's in the layout)
+                            const newTitle = `${_settings.color.type}.${_settings.color.key}` +
+                                            (_settings.color.column ? `.${_settings.color.column}` : '');
+                            
+                            // Use relayout for the title to avoid issues with 'update' method
+                            Plotly.relayout(_plotContainer, {
+                                'coloraxis.colorbar.title.text': newTitle
+                            });
+                            
+                            console.log("Plot updated successfully without redrawing");
+                            return;
+                        } catch (error) {
+                            console.error("Error updating plot colors directly:", error);
+                            console.log("Falling back to plot recreation");
+                            _loadDataAndCreatePlot();
+                            return;
                         }
-                        
-                        // Update the colorbar title
-                        const layout = {
-                            'coloraxis.colorbar.title': {
-                                text: `${_settings.color.type}.${_settings.color.key}` +
-                                      (_settings.color.column ? `.${_settings.color.column}` : '')
-                            }
-                        };
-                        
-                        // Apply updates
-                        console.log("Applying updates to existing plot:", update);
-                        Plotly.update(_plotContainer, update, layout);
-                        console.log("Plot updated successfully");
                     } else {
                         console.log("Recreating plot due to color data issues");
                         _loadDataAndCreatePlot();
@@ -1796,28 +2433,41 @@ const CellPlotPanel = (function() {
                         
                         // Update color range if specified
                         if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                            const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
-                            const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+                            const cmin = _settings.colorMin;
+                            const cmax = _settings.colorMax;
                             
-                            update['marker.cmin'] = cmin;
-                            update['marker.cmax'] = cmax;
+                            if (cmin !== null) update['marker.cmin'] = cmin;
+                            if (cmax !== null) update['marker.cmax'] = cmax;
                             
-                            // If hideOutliers changed, we need to reload the plot
-                            if (_plot.data[0].marker.cmin !== cmin || 
-                                _plot.data[0].marker.cmax !== cmax || 
-                                (_settings.hideOutliers && (_plot.data[0].x.length === _data.x.values.length))) {
-                                console.log("Color range or outlier settings changed, recreating plot");
-                                _loadDataAndCreatePlot();
-                                return;
+                            // Only recreate if we're using hideOutliers - otherwise just update the color range
+                            // This ensures smooth slider interactions
+                            if (_settings.hideOutliers) {
+                                // Only recreate if there's a significant change in range (>25% change)
+                                const needsRecreate = (
+                                    (_plot.data[0].marker.cmin && Math.abs(_plot.data[0].marker.cmin - cmin) / Math.abs(cmin || 1) > 0.25) || 
+                                    (_plot.data[0].marker.cmax && Math.abs(_plot.data[0].marker.cmax - cmax) / Math.abs(cmax || 1) > 0.25)
+                                );
+                                
+                                if (needsRecreate) {
+                                    console.log("Significant color range change with outlier hiding, recreating plot");
+                                    _loadDataAndCreatePlot();
+                                    return;
+                                }
                             }
                         }
                     }
                     
-                    // Apply updates to all traces
+                    // Apply updates to all traces - efficiently update only visual properties
                     const traceIndices = Array.from({length: _plot.data.length}, (_, i) => i);
                     console.log(`Applying updates to ${traceIndices.length} traces:`, update);
                     Plotly.update(_plotContainer, update, {}, traceIndices);
                     console.log("Visual properties updated successfully");
+                }
+                
+                // Update slider UI if we have numerical data
+                if (_data && _data.color && Array.isArray(_data.color) && _data.colorType === 'numerical') {
+                    // Update centering UI to reflect current state
+                    _updateCenteringUI();
                 }
             } catch (error) {
                 console.error("Error updating plot:", error);
