@@ -16,6 +16,9 @@ const App = (function() {
         try {
             console.log('Initializing AnnZarro application...');
             
+            // Initialize Plotly with optimized canvas settings
+            _initPlotly();
+            
             // Initialize UI components
             _initUI();
             
@@ -36,6 +39,57 @@ const App = (function() {
         } catch (error) {
             console.error('Error initializing application:', error);
             _showError('Initialization failed', error.message);
+        }
+    }
+    
+    /**
+     * Initialize Plotly.js with optimized canvas settings
+     * @private
+     */
+    function _initPlotly() {
+        if (typeof Plotly !== 'undefined') {
+            console.log('Configuring Plotly.js for optimized canvas performance');
+            
+            // Set global Plotly configuration
+            const plotlyConfig = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: 'annzarro_plot',
+                    height: 800,
+                    width: 1200,
+                    scale: 2
+                }
+            };
+            
+            // Use MutationObserver to set willReadFrequently attribute on canvas elements
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+                        mutation.addedNodes.forEach((node) => {
+                            if (node.querySelectorAll) {
+                                const canvases = node.querySelectorAll('canvas');
+                                canvases.forEach((canvas) => {
+                                    const ctx = canvas.getContext('2d');
+                                    if (ctx) {
+                                        // Get the existing context and create a new one with willReadFrequently=true
+                                        canvas.getContext('2d', { willReadFrequently: true });
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+            
+            // Start observing the document with the configured parameters
+            observer.observe(document.body, { childList: true, subtree: true });
+            
+            // Store configuration on the window for access by other modules
+            window.plotlyDefaultConfig = plotlyConfig;
         }
     }
     
@@ -450,7 +504,7 @@ const App = (function() {
     function _showSuccess(title, message) {
         // In a real application, this would show a toast or notification
         console.log(`Success: ${title} - ${message}`);
-        alert(`${title}: ${message}`);
+        //alert(`${title}: ${message}`);
     }
     
     /**

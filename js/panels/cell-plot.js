@@ -152,8 +152,8 @@ const CellPlotPanel = (function() {
                             
                             <div class="color-options mt-2">
                                 <div class="btn-group" role="group" aria-label="Plot Option Buttons">
-                                    <button class="btn btn-sm btn-outline-secondary me-1" id="z-axis-toggle-${_id}">3D Plot</button>
-                                    <button class="btn btn-sm active btn-primary me-1" id="show-grid-${_id}">Show Grid</button>
+                                    <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${_id}">3D Plot</button>
+                                    <button class="btn btn-sm active btn-primary me-2" id="show-grid-${_id}">Show Grid</button>
                                 </div>
                                 
                                 <div class="point-controls">
@@ -202,11 +202,11 @@ const CellPlotPanel = (function() {
                                         </div>
                                     </div>
                                     
-                                    <div class="btn-toolbar" role="toolbar" aria-label="Color range controls">
-                                      <div class="btn-group me-2" role="group">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}">Center at 0</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${_id}">Hide Outliers</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${_id}">Lock Range</button>
+                                    <div class="btn-toolbar d-flex flex-row" role="toolbar" aria-label="Color range controls" style="width:100%; display:flex !important; flex-direction:row !important; gap:4px;">
+                                      <div class="btn-group d-flex flex-row flex-nowrap" role="group" style="width:auto; display:inline-flex !important; flex-wrap:nowrap !important; gap:4px;">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}" style="display:inline-block !important; margin-right:4px !important;">Center at 0</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${_id}" style="display:inline-block !important; margin-right:4px !important;">Hide Outliers</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${_id}" style="display:inline-block !important;">Lock Range</button>
                                       </div>
                                     </div>
 
@@ -1798,10 +1798,6 @@ const CellPlotPanel = (function() {
                         Promise.all(dataUpdatePromises)
                             .then(() => {
                                 console.log("All position data updates completed");
-                                // If hiding outliers is active, update visibility
-                                if (_settings.hideOutliers && _data.colorType === 'numerical') {
-                                    _updateOutlierVisibility();
-                                }
                             })
                             .catch(err => {
                                 console.error("Error during position data updates:", err);
@@ -1965,9 +1961,33 @@ const CellPlotPanel = (function() {
                         
                         // Ensure we have a column specified
                         if (settings.column === undefined || settings.column === null || settings.column === '') {
-                            // Default to column 0 if not specified
-                            console.log(`Setting default column '0' for ${axis}-axis obsm.${settings.key}`);
+                          // Get the global dataset structure for the current obsm key
+                          const ds = getGlobalDatasetStructure();
+                          if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[settings.key]) {
+                            const df = ds.obsm.dataframes[settings.key];
+                            if (df.columns && df.columns.length > 0) {
+                              if (axis === 'x') {
+                                settings.column = df.columns[0]; // First column for x-axis
+                              } else if (axis === 'y') {
+                                settings.column = df.columns.length >= 2 ? df.columns[1] : df.columns[0];
+                              } else if (axis === 'z') {
+                                if (df.columns.length >= 3) {
+                                  settings.column = df.columns[2];
+                                } else if (df.columns.length >= 2) {
+                                  settings.column = df.columns[1];
+                                } else {
+                                  settings.column = df.columns[0];
+                                }
+                              }
+                              console.log(`Setting default column '${settings.column}' for ${axis}-axis obsm.${settings.key}`);
+                            } else {
+                              settings.column = '0';
+                              console.log(`No columns found in global dataset for obsm.${settings.key}, defaulting ${axis}-axis column to '0'`);
+                            }
+                          } else {
                             settings.column = '0';
+                            console.log(`Global dataset structure does not have obsm.${settings.key}, defaulting ${axis}-axis column to '0'`);
+                          }
                         }
                     }
                 }
@@ -2525,7 +2545,7 @@ const CellPlotPanel = (function() {
                                 
                                 // Create the plot with multiple traces
                                 _plotContainer.innerHTML = ''
-                                Plotly.newPlot(_plotContainer, traces, layout, {
+                                Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
                                     responsive: true,
                                     displayModeBar: true,
                                     displaylogo: false,
@@ -2560,7 +2580,7 @@ const CellPlotPanel = (function() {
                                 legend: {
                                     title: { text: _settings.color.key }
                                 }
-                            }, {
+                            }, window.plotlyDefaultConfig || {
                                 responsive: true,
                                 displayModeBar: true,
                                 displaylogo: false,
@@ -2741,7 +2761,7 @@ const CellPlotPanel = (function() {
             
             // Create the plot
             _plotContainer.innerHTML = ''
-            Plotly.newPlot(_plotContainer, traces, layout, {
+            Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
                 responsive: true,
                 displayModeBar: true,
                 displaylogo: false,
@@ -3020,7 +3040,6 @@ const CellPlotPanel = (function() {
                                 
                                 Plotly.relayout(_plotContainer, {
                                     'coloraxis.colorbar.title': newTitle,
-                                    'coloraxis.colorbar.titleside': 'right'
                                 });
                             }
                         }

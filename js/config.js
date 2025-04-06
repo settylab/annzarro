@@ -29,6 +29,18 @@ const Config = (function() {
         SESSIONS_IMPORT: `${API_BASE}/sessions/import`
     };
     
+    // Configure Plotly.js defaults if available
+    if (typeof Plotly !== 'undefined') {
+        // Apply the willReadFrequently attribute to canvas elements
+        // This improves performance when using getImageData
+        Plotly.setPlotConfig({
+            setAttributeOnPlotly: {
+                plotGlPixelRatio: window.devicePixelRatio || 1,
+                customBuildData: { willReadFrequently: true }
+            }
+        });
+    }
+    
     // Default settings
     const DEFAULTS = {
         MAX_CELLS: 10000,

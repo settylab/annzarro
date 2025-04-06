@@ -374,6 +374,37 @@ div.dtsb-group {
     margin-top: 0.5rem;
 }
 
+/* Ensure buttons within color range controls stay on same line */
+.color-range-controls .btn-toolbar,
+.color-range-controls .btn-group {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    width: auto !important;
+    justify-content: flex-start !important;
+}
+
+.color-range-controls .btn-group .btn {
+    white-space: nowrap !important;
+    flex: 0 0 auto !important;
+    float: left !important;
+    display: inline-block !important;
+    position: relative !important;
+}
+
+/* Remove margin that might be causing wrapping */
+.color-range-controls .btn-group.me-2 {
+    margin-right: 0 !important;
+}
+
+/* Fix for specific buttons */
+[id^="center-colormap-"],
+[id^="hide-outliers-"],
+[id^="lock-range-"] {
+    display: inline-block !important;
+    width: auto !important;
+}
+
 .color-palette-selector,
 .category-palette-selector {
     width: 150px;
