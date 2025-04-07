@@ -248,6 +248,7 @@ const CellPlotPanel = (function() {
                                     <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${_id}">3D Plot</button>
                                     <button class="btn btn-sm active btn-primary me-2" id="show-grid-${_id}">Show Grid</button>
                                     <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-cell-${_id}">Highlight Focused Cell</button>
+                                    <button class="btn btn-sm btn-outline-secondary me-2" id="refresh-plot-${_id}">Refresh</button>
                                 </div>
                                 
                                 <div class="point-controls">
@@ -1836,6 +1837,17 @@ const CellPlotPanel = (function() {
                 } else {
                     _removeHighlight();
                 }
+            });
+            
+            // Refresh plot button
+            const refreshPlotButton = document.getElementById(`refresh-plot-${_id}`);
+            refreshPlotButton.addEventListener('click', () => {
+                // Show loading indicator
+                if (_plotContainer) {
+                    _plotContainer.innerHTML = '<div class="alert alert-info">Refreshing plot...</div>';
+                }
+                // Reload data and recreate the plot
+                _loadDataAndCreatePlot();
             });
             
             const lockRangeButton = document.getElementById(`lock-range-${_id}`);
@@ -3951,6 +3963,7 @@ const CellPlotPanel = (function() {
                     marker: {
                         size: _settings.pointSize * 2, // Make highlighted point larger
                         color: 'rgba(255, 0, 0, 1)', // Red color
+                        opacity: 1,
                         line: {
                             color: 'rgba(0, 0, 0, 1)',
                             width: 2
