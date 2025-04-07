@@ -3533,23 +3533,95 @@ const CellPlotPanel = (function() {
                         return;
                     }
                     
-                    // Update position data
-                    const update = {};
-                    if (updateOptions.xAxis && _data.x && _data.x.values) {
-                        update.x = [_data.x.values];
-                    }
+                    // Check if we have categorical data with multiple traces
+                    const isCategorical = _data.colorType === 'categorical';
+                    const hasMultipleTraces = _plot.data && _plot.data.length > 1;
                     
-                    if (updateOptions.yAxis && _data.y && _data.y.values) {
-                        update.y = [_data.y.values];
-                    }
-                    
-                    if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
-                        update.z = [_data.z.values];
-                    }
-                    
-                    if (Object.keys(update).length > 0) {
-                        console.log("Updating position data:", update);
-                        Plotly.restyle(_plotContainer, update, [0]);
+                    if (isCategorical && hasMultipleTraces) {
+                        // Handle position updates for categorical data with multiple traces
+                        console.log("Updating positions for categorical data with multiple traces");
+                        
+                        try {
+                            // For each trace/category, update the positions
+                            for (let i = 0; i < _plot.data.length; i++) {
+                                const trace = _plot.data[i];
+                                // Skip non-marker traces (like highlight traces)
+                                if (trace.mode !== 'markers') continue;
+
+                                // Get the indices for this category trace from customdata
+                                const indices = trace.customdata;
+                                if (!indices || !indices.length) continue;
+                                
+                                // Create update object for this trace
+                                const update = {};
+                                
+                                // Update x coordinates
+                                if (updateOptions.xAxis && _data.x && _data.x.values) {
+                                    update.x = [indices.map(idx => _data.x.values[idx])];
+                                }
+                                
+                                // Update y coordinates
+                                if (updateOptions.yAxis && _data.y && _data.y.values) {
+                                    update.y = [indices.map(idx => _data.y.values[idx])];
+                                }
+                                
+                                // Update z coordinates for 3D plots
+                                if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
+                                    update.z = [indices.map(idx => _data.z.values[idx])];
+                                }
+                                
+                                // Update text and customdata to ensure they match the new positions
+                                // This helps keep cell identification consistent when clicking points
+                                if (_data.cells && indices) {
+                                    update.text = [indices.map(idx => _data.cells[idx])];
+                                    update.customdata = [indices]; // Ensure customdata is updated for click handling
+                                }
+                                
+                                // Apply updates for this trace
+                                if (Object.keys(update).length > 0) {
+                                    console.log(`Updating trace ${i} (${trace.name}) positions:`, update);
+                                    Plotly.restyle(_plotContainer, update, [i]);
+                                }
+                            }
+                        } catch (error) {
+                            console.error("Error updating categorical trace positions:", error);
+                            // Fallback to recreating the plot if there's an error
+                            _loadDataAndCreatePlot();
+                            return;
+                        }
+                        
+                        // Update highlighted cell if needed
+                        if (_settings.highlightFocusedCell) {
+                            // Remove and re-add highlight to ensure it's updated with new positions
+                            _removeHighlight();
+                            _highlightFocusedCell();
+                        }
+                    } else {
+                        // Standard position update for single trace (numerical data)
+                        const update = {};
+                        if (updateOptions.xAxis && _data.x && _data.x.values) {
+                            update.x = [_data.x.values];
+                        }
+                        
+                        if (updateOptions.yAxis && _data.y && _data.y.values) {
+                            update.y = [_data.y.values];
+                        }
+                        
+                        if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
+                            update.z = [_data.z.values];
+                        }
+                        
+                        if (Object.keys(update).length > 0) {
+                            console.log("Updating position data:", update);
+                            Plotly.restyle(_plotContainer, update, [0]);
+                            
+                            // Update highlighted cell if needed
+                            if (_settings.highlightFocusedCell) {
+                                // Remove and re-add highlight to ensure it's updated with new positions
+                                _removeHighlight();
+                                _highlightFocusedCell();
+                            }
+                        }
                     }
                 }
                 
