@@ -1913,7 +1913,7 @@ const CellPlotPanel = (function() {
                             }
                         }).catch(() => _loadDataAndCreatePlot());
                     }
-                    else if (updates.yAxis) {
+                    if (updates.yAxis) {
                         console.log('Focused cell changed affects y-axis, loading new data');
                         _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
@@ -1927,7 +1927,7 @@ const CellPlotPanel = (function() {
                             }
                         }).catch(() => _loadDataAndCreatePlot());
                     }
-                    else if (updates.zAxis) {
+                    if (updates.zAxis) {
                         console.log('Focused cell changed affects z-axis, loading new data');
                         _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
@@ -1941,7 +1941,7 @@ const CellPlotPanel = (function() {
                             }
                         }).catch(() => _loadDataAndCreatePlot());
                     }
-                    else if (updates.colors) {
+                    if (updates.colors) {
                         // Only color uses obsp data - we can use optimized update
                         console.log('Focused cell changed, only affects color data - using optimized update');
                         _loadColorDataAndUpdatePlot();
@@ -1975,18 +1975,18 @@ const CellPlotPanel = (function() {
                 updateColumnSelectOptions('z');
                 updateColumnSelectOptions('color');
                 
-                // Create layout update for axis titles
-                const layoutUpdate = {};
+                // Store layout updates for axis titles
+                const layoutUpdates = {};
                 
                 // Update axis titles in the plot
                 if (_settings.x.type === 'layer') {
                     const newTitle = `${_settings.x.type}.${_settings.x.key}.${focusedGene}`;
                     if (_settings.z) {
                         // 3D plot
-                        layoutUpdate['scene.xaxis.title'] = newTitle;
+                        layoutUpdates['scene.xaxis.title'] = newTitle;
                     } else {
                         // 2D plot
-                        layoutUpdate['xaxis.title'] = newTitle;
+                        layoutUpdates['xaxis.title'] = newTitle;
                     }
                 }
                 
@@ -1994,23 +1994,21 @@ const CellPlotPanel = (function() {
                     const newTitle = `${_settings.y.type}.${_settings.y.key}.${focusedGene}`;
                     if (_settings.z) {
                         // 3D plot
-                        layoutUpdate['scene.yaxis.title'] = newTitle;
+                        layoutUpdates['scene.yaxis.title'] = newTitle;
                     } else {
                         // 2D plot
-                        layoutUpdate['yaxis.title'] = newTitle;
+                        layoutUpdates['yaxis.title'] = newTitle;
                     }
                 }
                 
                 if (_settings.z && _settings.z.type === 'layer') {
                     const newTitle = `${_settings.z.type}.${_settings.z.key}.${focusedGene}`;
-                    layoutUpdate['scene.zaxis.title'] = newTitle;
+                    layoutUpdates['scene.zaxis.title'] = newTitle;
                 }
                 
                 // Update colorbar title if needed
                 if (_settings.color.type === 'layer') {
                     // Create a title object with proper vertical formatting
-                    // Note: we only set the properties on the title object itself
-                    // and don't set titleside separately to avoid Plotly errors
                     const newTitle = {
                         text: `${_settings.color.type}.${_settings.color.key}.${focusedGene}`,
                         side: 'right',
@@ -2020,14 +2018,57 @@ const CellPlotPanel = (function() {
                     };
                     
                     // Only update the title object itself
-                    layoutUpdate['coloraxis.colorbar.title'] = newTitle;
-                    // Do NOT set titleside separately - it's already in the title object
+                    layoutUpdates['coloraxis.colorbar.title'] = newTitle;
                 }
                 
                 // Apply all layout updates at once if we have any
-                if (Object.keys(layoutUpdate).length > 0) {
-                    console.log("Updating axis titles for new focused gene:", layoutUpdate);
-                    Plotly.relayout(_plotContainer, layoutUpdate);
+                if (Object.keys(layoutUpdates).length > 0) {
+                    console.log("Updating axis titles for new focused gene:", layoutUpdates);
+                    
+                    try {
+                        // Check if we have a valid plot
+                        if (!_plot) {
+                            console.warn("Cannot update axis labels: plot doesn't exist");
+                            return;
+                        }
+                        
+                        // Store current layout
+                        if (!_plot.layout) _plot.layout = {};
+                        
+                        // Apply our updates to the stored layout
+                        for (const [key, value] of Object.entries(layoutUpdates)) {
+                            // Use a helper function to set nested properties
+                            const setNestedProperty = (obj, path, value) => {
+                                const parts = path.split('.');
+                                let current = obj;
+                                
+                                // Navigate to the right depth, creating objects as needed
+                                for (let i = 0; i < parts.length - 1; i++) {
+                                    if (current[parts[i]] === undefined) {
+                                        current[parts[i]] = {};
+                                    }
+                                    current = current[parts[i]];
+                                }
+                                
+                                // Set the final property
+                                current[parts[parts.length - 1]] = value;
+                            };
+                            
+                            setNestedProperty(_plot.layout, key, value);
+                        }
+                        
+                        // Use _updatePlotElements to apply the layout changes
+                        if (_plot && _plotContainer && _plotContainer.parentNode) {
+                            _updatePlotElements({
+                                layout: true
+                            });
+                        } else {
+                            console.warn("Cannot update plot - container or plot doesn't exist");
+                        }
+                    } catch (error) {
+                        console.error("Error updating axis labels:", error);
+                        // Don't attempt to recreate the plot here - just log the error
+                    }
                 }
             }
             
@@ -2054,7 +2095,7 @@ const CellPlotPanel = (function() {
                         colors: _settings.color.type === 'layer'
                     };
                     
-                    // For position data updates, we now handle them individually without redrawing
+                    // For position data updates, we now handle them using the centralized _updatePlotElements
                     const dataUpdatePromises = [];
                     
                     // If x-axis uses layer data, load new data
@@ -2063,8 +2104,8 @@ const CellPlotPanel = (function() {
                         const xPromise = _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
-                                // Update just the x-axis data without redrawing
-                                return Plotly.restyle(_plotContainer, { 'x': [xData.values] }, [0]);
+                                // Update using _updatePlotElements
+                                _updatePlotElements({ xAxis: true });
                             }
                         }).catch(err => {
                             console.error("Error loading x-axis data:", err);
@@ -2078,8 +2119,8 @@ const CellPlotPanel = (function() {
                         const yPromise = _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
-                                // Update just the y-axis data without redrawing
-                                return Plotly.restyle(_plotContainer, { 'y': [yData.values] }, [0]);
+                                // Update using _updatePlotElements
+                                _updatePlotElements({ yAxis: true });
                             }
                         }).catch(err => {
                             console.error("Error loading y-axis data:", err);
@@ -2093,8 +2134,8 @@ const CellPlotPanel = (function() {
                         const zPromise = _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
-                                // Update just the z-axis data without redrawing
-                                return Plotly.restyle(_plotContainer, { 'z': [zData.values] }, [0]);
+                                // Update using _updatePlotElements
+                                _updatePlotElements({ zAxis: true });
                             }
                         }).catch(err => {
                             console.error("Error loading z-axis data:", err);
@@ -2114,6 +2155,12 @@ const CellPlotPanel = (function() {
                         Promise.all(dataUpdatePromises)
                             .then(() => {
                                 console.log("All position data updates completed");
+                                
+                                // If we have multiple axes updated, ensure the highlighted cell is properly updated
+                                if (Object.values(updates).filter(Boolean).length > 1 && _settings.highlightFocusedCell) {
+                                    _removeHighlight();
+                                    _highlightFocusedCell();
+                                }
                             })
                             .catch(err => {
                                 console.error("Error during position data updates:", err);
@@ -3510,8 +3557,21 @@ const CellPlotPanel = (function() {
             // Merge provided options with defaults
             const updateOptions = { ...defaultOptions, ...options };
             
+            // Check for required elements and data
+            if (!_plotContainer || !_plotContainer.parentNode) {
+                console.warn("Plot container doesn't exist or is not in the DOM, cannot update");
+                return;
+            }
+            
+            // Ensure the plot container is valid
+            if (_plotContainer.innerHTML === '') {
+                console.warn("Plot container is empty, recreating plot");
+                _loadDataAndCreatePlot();
+                return;
+            }
+            
             // If plot doesn't exist, create it
-            if (!_plot) {
+            if (!_plot || !_plot.data) {
                 console.warn("Plot doesn't exist yet, creating it instead of updating");
                 _loadDataAndCreatePlot();
                 return;
@@ -3694,22 +3754,30 @@ const CellPlotPanel = (function() {
                         }
                         
                         // Update colorbar title with separate layout update
-                        if (updateOptions.layout || updateOptions.colorData) {
-                            // Only update title if we have a real color type (not 'none')
-                            if (_settings.color.type !== 'none') {
-                                // Create a title object with proper vertical formatting
-                                const newTitle = {
-                                    text: `${_settings.color.type}.${_settings.color.key}` +
-                                         (_settings.color.column ? `.${_settings.color.column}` : ''),
-                                    side: 'right',
-                                    font: {
-                                        size: 12
-                                    }
-                                };
-                                
-                                Plotly.relayout(_plotContainer, {
-                                    'coloraxis.colorbar.title': newTitle,
-                                });
+                        if ((updateOptions.layout || updateOptions.colorData) && _plotContainer && _plotContainer.parentNode) {
+                            try {
+                                // Only update title if we have a real color type (not 'none') and valid settings
+                                if (_settings && _settings.color && _settings.color.type && 
+                                    _settings.color.type !== 'none' && _settings.color.key) {
+                                    
+                                    // Create a title object with proper vertical formatting
+                                    const newTitle = {
+                                        text: `${_settings.color.type}.${_settings.color.key}` +
+                                            (_settings.color.column ? `.${_settings.color.column}` : ''),
+                                        side: 'right',
+                                        font: {
+                                            size: 12
+                                        }
+                                    };
+                                    
+                                    console.log("Updating colorbar title:", newTitle.text);
+                                    Plotly.relayout(_plotContainer, {
+                                        'coloraxis.colorbar.title': newTitle,
+                                    });
+                                }
+                            } catch (error) {
+                                console.error("Error updating colorbar title:", error);
+                                // Just log the error and continue
                             }
                         }
                     }
@@ -3739,38 +3807,56 @@ const CellPlotPanel = (function() {
                     // Update any other layout elements like titles, axes, etc.
                     // This section can be expanded as needed
                     console.log("Updating layout properties");
-                    // Currently handled with specific color updates above
                     
-                    // Update axis titles
-                    const layoutUpdate = {};
-                    
-                    // Determine if we're in 2D or 3D mode
-                    const is3D = _plot.data[0].type === 'scatter3d';
-                    
-                    // Update X axis title
-                    const xAxisTitle = `${_settings.x.type}.${_settings.x.key}${_settings.x.column ? `.${_settings.x.column}` : ''}`;
-                    if (is3D) {
-                        layoutUpdate['scene.xaxis.title'] = xAxisTitle;
-                    } else {
-                        layoutUpdate['xaxis.title'] = xAxisTitle;
+                    // Check if we have a valid plot and container for layout updates
+                    if (!_plot || !_plot.data || !_plot.data[0] || !_plotContainer) {
+                        console.warn("Unable to update layout: plot or container is not valid");
+                        return;
                     }
                     
-                    // Update Y axis title
-                    const yAxisTitle = `${_settings.y.type}.${_settings.y.key}${_settings.y.column ? `.${_settings.y.column}` : ''}`;
-                    if (is3D) {
-                        layoutUpdate['scene.yaxis.title'] = yAxisTitle;
-                    } else {
-                        layoutUpdate['yaxis.title'] = yAxisTitle;
-                    }
-                    
-                    // Update Z axis title if 3D
-                    if (is3D && _settings.z) {
-                        const zAxisTitle = `${_settings.z.type}.${_settings.z.key}${_settings.z.column ? `.${_settings.z.column}` : ''}`;
-                        layoutUpdate['scene.zaxis.title'] = zAxisTitle;
-                    }
-                    
-                    if (Object.keys(layoutUpdate).length > 0) {
-                        Plotly.relayout(_plotContainer, layoutUpdate);
+                    try {
+                        // Update axis titles
+                        const layoutUpdate = {};
+                        
+                        // Determine if we're in 2D or 3D mode
+                        const is3D = _plot.data[0].type === 'scatter3d';
+                        
+                        // Only update if settings are properly initialized
+                        if (_settings && _settings.x && _settings.x.type && _settings.x.key) {
+                            // Update X axis title
+                            const xAxisTitle = `${_settings.x.type}.${_settings.x.key}${_settings.x.column ? `.${_settings.x.column}` : ''}`;
+                            if (is3D) {
+                                layoutUpdate['scene.xaxis.title'] = xAxisTitle;
+                            } else {
+                                layoutUpdate['xaxis.title'] = xAxisTitle;
+                            }
+                        }
+                        
+                        // Only update if settings are properly initialized
+                        if (_settings && _settings.y && _settings.y.type && _settings.y.key) {
+                            // Update Y axis title
+                            const yAxisTitle = `${_settings.y.type}.${_settings.y.key}${_settings.y.column ? `.${_settings.y.column}` : ''}`;
+                            if (is3D) {
+                                layoutUpdate['scene.yaxis.title'] = yAxisTitle;
+                            } else {
+                                layoutUpdate['yaxis.title'] = yAxisTitle;
+                            }
+                        }
+                        
+                        // Update Z axis title if 3D and settings are properly initialized
+                        if (is3D && _settings && _settings.z && _settings.z.type && _settings.z.key) {
+                            const zAxisTitle = `${_settings.z.type}.${_settings.z.key}${_settings.z.column ? `.${_settings.z.column}` : ''}`;
+                            layoutUpdate['scene.zaxis.title'] = zAxisTitle;
+                        }
+                        
+                        if (Object.keys(layoutUpdate).length > 0 && _plotContainer && _plotContainer.parentNode) {
+                            console.log("Applying layout updates:", layoutUpdate);
+                            Plotly.relayout(_plotContainer, layoutUpdate);
+                        }
+                    } catch (error) {
+                        console.error("Error updating layout:", error);
+                        // Don't recreate the plot here, as this might cause an infinite loop
+                        // Just log the error and continue
                     }
                 }
                 
