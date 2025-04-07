@@ -37,7 +37,8 @@ const CellPlotPanel = (function() {
             subsettedCells: null,
             hideNonSubset: false,
             showGrid: true,    // Show grid lines by default
-            lockColorRange: false  // Don't lock color range by default
+            lockColorRange: false,  // Don't lock color range by default
+            highlightFocusedCell: true // Highlight focused cell by default
         };
         
         /**
@@ -246,6 +247,7 @@ const CellPlotPanel = (function() {
                                 <div class="btn-group" role="group" aria-label="Plot Option Buttons">
                                     <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${_id}">3D Plot</button>
                                     <button class="btn btn-sm active btn-primary me-2" id="show-grid-${_id}">Show Grid</button>
+                                    <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-cell-${_id}">Highlight Focused Cell</button>
                                 </div>
                                 
                                 <div class="point-controls">
@@ -1804,6 +1806,38 @@ const CellPlotPanel = (function() {
                 }
             });
             
+            // Highlight focused cell toggle
+            const highlightFocusedCellToggle = document.getElementById(`highlight-focused-cell-${_id}`);
+            // Initialize button state from settings
+            if (_settings.highlightFocusedCell) {
+              highlightFocusedCellToggle.classList.add('active', 'btn-primary');
+              highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
+            } else {
+              highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
+              highlightFocusedCellToggle.classList.add('btn-outline-secondary');
+            }
+            
+            highlightFocusedCellToggle.addEventListener('click', () => {
+                // Toggle the setting
+                _settings.highlightFocusedCell = !_settings.highlightFocusedCell;
+                
+                // Update button appearance based on the new state
+                if (_settings.highlightFocusedCell) {
+                  highlightFocusedCellToggle.classList.add('active', 'btn-primary');
+                  highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
+                } else {
+                  highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
+                  highlightFocusedCellToggle.classList.add('btn-outline-secondary');
+                }
+                
+                // Update the highlighting on the plot
+                if (_settings.highlightFocusedCell) {
+                    _highlightFocusedCell();
+                } else {
+                    _removeHighlight();
+                }
+            });
+            
             const lockRangeButton = document.getElementById(`lock-range-${_id}`);
 
             // Initialize appearance based on the setting
@@ -3080,19 +3114,26 @@ const CellPlotPanel = (function() {
                                     modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
                                 });
                                 
-                                // Set up click handler to set focused cell
+                                // Set up click handler to update global focused cell
                                 _plotContainer.on('plotly_click', (data) => {
                                     const pointIndex = data.points[0].pointIndex;
                                     const traceIndex = data.points[0].curveNumber;
                                     const cellName = traces[traceIndex].text[pointIndex];
                                     
                                     if (cellName) {
+                                        // Update the global focused cell in DataManager
+                                        // This will trigger updates in all panels via the event system
                                         DataManager.setFocusedCell(cellName);
                                     }
                                 });
                                 
                                 // Store plot reference
                                 _plot = _plotContainer;
+                                
+                                // Add highlighted cell if needed
+                                if (_settings.highlightFocusedCell) {
+                                    _highlightFocusedCell();
+                                }
                             }
                         })
                         .catch(error => {
@@ -3115,19 +3156,26 @@ const CellPlotPanel = (function() {
                                 modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
                             });
                             
-                            // Set up click handler
+                            // Set up click handler to update global focused cell
                             _plotContainer.on('plotly_click', (data) => {
                                 const pointIndex = data.points[0].pointIndex;
                                 const traceIndex = data.points[0].curveNumber;
                                 const cellName = traces[traceIndex].text[pointIndex];
                                 
                                 if (cellName) {
+                                    // Update the global focused cell in DataManager
+                                    // This will trigger updates in all panels via the event system
                                     DataManager.setFocusedCell(cellName);
                                 }
                             });
                             
                             // Store plot reference
                             _plot = _plotContainer;
+                            
+                            // Add highlighted cell if needed
+                            if (_settings.highlightFocusedCell) {
+                                _highlightFocusedCell();
+                            }
                         });
                         
                     // Return empty trace here - we'll replace it with the processed traces
@@ -3241,7 +3289,7 @@ const CellPlotPanel = (function() {
                 _fullPlotData = null;
             }
             
-            // Set up click handler to set focused cell
+            // Set up click handler to update global focused cell
             _plotContainer.on('plotly_click', (data) => {
                 const pointIndex = data.points[0].pointIndex;
                 const traceIndex = data.points[0].curveNumber;
@@ -3257,12 +3305,19 @@ const CellPlotPanel = (function() {
                 }
                 
                 if (cellName) {
+                    // Update the global focused cell in DataManager
+                    // This will trigger updates in all panels via the event system
                     DataManager.setFocusedCell(cellName);
                 }
             });
             
             // Store plot reference
             _plot = _plotContainer;
+            
+            // Add highlighted cell if needed
+            if (_settings.highlightFocusedCell) {
+                _highlightFocusedCell();
+            }
             
             // Update the visibility of color controls
             _updateColorControlsVisibility();
@@ -3624,6 +3679,107 @@ const CellPlotPanel = (function() {
             // Call the standard cleanup
             cleanup();
         }
+        
+        /**
+         * Highlight the focused cell in the plot
+         * @private
+         */
+        function _highlightFocusedCell() {
+            if (!_plot || !_data || !_data.cells) return;
+            
+            const focusedCell = DataManager.getFocusedCell();
+            if (!focusedCell || !_settings.highlightFocusedCell) {
+                // If highlighting is disabled or no focused cell, remove any existing highlight
+                _removeHighlight();
+                return;
+            }
+            
+            // Find the focused cell index in the data
+            const focusedCellIndex = _data.cells.indexOf(focusedCell);
+            if (focusedCellIndex === -1) {
+                console.log(`Focused cell ${focusedCell} not found in plot data`);
+                _removeHighlight();
+                return;
+            }
+            
+            // Determine if we're in 2D or 3D mode
+            const is3D = _settings.z !== null;
+            
+            // Create the highlighted point
+            let highlightTrace = {
+                x: [_data.x.values[focusedCellIndex]],
+                y: [_data.y.values[focusedCellIndex]],
+                mode: 'markers',
+                type: is3D ? 'scatter3d' : 'scattergl',
+                marker: {
+                    size: _settings.pointSize * 2, // Make highlighted point larger
+                    color: 'rgba(255, 0, 0, 1)', // Red color
+                    line: {
+                        color: 'rgba(0, 0, 0, 1)',
+                        width: 2
+                    }
+                },
+                showlegend: false,
+                hoverinfo: 'skip',
+                name: 'Focused Cell'
+            };
+            
+            // Add z coordinate for 3D plot
+            if (is3D && _data.z) {
+                highlightTrace.z = [_data.z.values[focusedCellIndex]];
+            }
+            
+            // Check if we already have a highlight trace
+            let highlightTraceIndex = -1;
+            for (let i = 0; i < _plot.data.length; i++) {
+                if (_plot.data[i].name === 'Focused Cell') {
+                    highlightTraceIndex = i;
+                    break;
+                }
+            }
+            
+            if (highlightTraceIndex >= 0) {
+                // Update existing highlight trace
+                Plotly.restyle(_plotContainer, {
+                    x: [highlightTrace.x],
+                    y: [highlightTrace.y],
+                    z: is3D ? [highlightTrace.z] : undefined,
+                    type: highlightTrace.type
+                }, highlightTraceIndex);
+            } else {
+                // Add new highlight trace
+                Plotly.addTraces(_plotContainer, highlightTrace);
+            }
+        }
+        
+        /**
+         * Remove highlight from the plot
+         * @private
+         */
+        function _removeHighlight() {
+            if (!_plot) return;
+            
+            // Find the highlight trace if it exists
+            let highlightTraceIndex = -1;
+            for (let i = 0; i < _plot.data.length; i++) {
+                if (_plot.data[i].name === 'Focused Cell') {
+                    highlightTraceIndex = i;
+                    break;
+                }
+            }
+            
+            if (highlightTraceIndex >= 0) {
+                // Remove the highlight trace
+                Plotly.deleteTraces(_plotContainer, highlightTraceIndex);
+            }
+        }
+        
+        // Listen for focused cell changed events to update highlighting
+        document.addEventListener('focusedCellChanged', (event) => {
+            if (_settings.highlightFocusedCell) {
+                _highlightFocusedCell();
+            }
+        });
         
         // Public API
         return {
