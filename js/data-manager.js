@@ -103,9 +103,28 @@ const DataManager = (function() {
             _cells = await loadCells(datasetPath);
             _genes = await loadGenes(datasetPath);
             
-            // Reset focused items
-            _focusedCell = null;
-            _focusedGene = null;
+            // Initialize focused items with first values if available
+            if (_cells && _cells.length > 0) {
+                _focusedCell = _cells[0];
+                // Trigger event for components to update
+                const cellEvent = new CustomEvent('focusedCellChanged', {
+                    detail: { cell: _focusedCell }
+                });
+                document.dispatchEvent(cellEvent);
+            } else {
+                _focusedCell = null;
+            }
+            
+            if (_genes && _genes.length > 0) {
+                _focusedGene = _genes[0];
+                // Trigger event for components to update
+                const geneEvent = new CustomEvent('focusedGeneChanged', {
+                    detail: { gene: _focusedGene }
+                });
+                document.dispatchEvent(geneEvent);
+            } else {
+                _focusedGene = null;
+            }
             
             return _datasetStructure;
         } catch (error) {
@@ -769,18 +788,42 @@ const DataManager = (function() {
     
     /**
      * Get the cell names
-     * @returns {Array<string>} - Cell names
+     * @returns {Array<string>} - Cell names in their original order
      */
     function getCells() {
-        return _cells;
+        if (!_cells) return [];
+        // Return a copy to avoid modifying the original array
+        return [..._cells]; // No sorting to maintain original order
+    }
+    
+    /**
+     * Get the cell names, sorted alphabetically
+     * @returns {Array<string>} - Cell names sorted alphabetically
+     */
+    function getSortedCells() {
+        if (!_cells) return [];
+        // Return a sorted copy
+        return [..._cells].sort();
     }
     
     /**
      * Get the gene names
-     * @returns {Array<string>} - Gene names
+     * @returns {Array<string>} - Gene names in their original order
      */
     function getGenes() {
-        return _genes;
+        if (!_genes) return [];
+        // Return a copy to avoid modifying the original array
+        return [..._genes]; // No sorting to maintain original order
+    }
+    
+    /**
+     * Get the gene names, sorted alphabetically
+     * @returns {Array<string>} - Gene names sorted alphabetically
+     */
+    function getSortedGenes() {
+        if (!_genes) return [];
+        // Return a sorted copy
+        return [..._genes].sort();
     }
     
     /**
@@ -855,7 +898,9 @@ const DataManager = (function() {
         getCurrentDataset,
         getDatasetStructure,
         getCells,
+        getSortedCells,
         getGenes,
+        getSortedGenes, 
         getFocusedCell,
         getFocusedGene,
         getTaxonomyId,

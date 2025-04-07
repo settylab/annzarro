@@ -259,13 +259,15 @@ const App = (function() {
         const focusedGeneSelect = document.getElementById('focused-gene');
         if (!focusedGeneSelect) return;
         
-        // Clear existing options
-        focusedGeneSelect.innerHTML = '<option value="">Select Gene</option>';
+        // Clear existing options - no empty option to force a selection
+        focusedGeneSelect.innerHTML = '';
         
         try {
-            const genes = DataManager.getGenes();
+            const genes = DataManager.getSortedGenes();
             
             if (genes && genes.length > 0) {
+                // Use sorted genes for the dropdown
+                
                 // Add first set of genes (limit to avoid performance issues)
                 const maxGenes = Math.min(genes.length, 1000);
                 
@@ -279,10 +281,107 @@ const App = (function() {
                 // Setup select2 for searching (if available)
                 if (window.$ && $.fn.select2) {
                     $(focusedGeneSelect).select2({
-                        placeholder: 'Select or search for a gene',
-                        allowClear: true,
-                        data: genes.map(gene => ({ id: gene, text: gene }))
+                        placeholder: 'Start typing to search for a gene...',
+                        allowClear: false, // Don't allow clearing the selection
+                        data: genes.map(gene => ({ id: gene, text: gene })),
+                        width: '100%',
+                        dropdownCssClass: 'gene-select-dropdown',
+                        dropdownAutoWidth: true,
+                        selectOnClose: false, // Don't select on close to preserve current selection
+                        openOnEnter: false,
+                        minimumResultsForSearch: 0, // Always show search box
+                        searchInputPlaceholder: 'Type to filter...',
+                        closeOnSelect: false // Keep dropdown open after selecting
                     });
+                    
+                    // Enable immediate search when dropdown is opened
+                    $(focusedGeneSelect).on('select2:open', function() {
+                        setTimeout(function() {
+                            // Explicitly focus the search input field inside the dropdown
+                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                            if (searchField) {
+                                searchField.focus();
+                                
+                                // Add keyboard event listener for dropdown control
+                                searchField.addEventListener('keydown', function(e) {
+                                    // Escape key: close dropdown
+                                    if (e.key === 'Escape') {
+                                        $(focusedGeneSelect).select2('close');
+                                        return;
+                                    }
+                                    
+                                    // CTRL+Enter: select current highlighted item and close
+                                    if (e.key === 'Enter' && e.ctrlKey) {
+                                        const highlightedOption = document.querySelector('.select2-results__option--highlighted');
+                                        if (highlightedOption) {
+                                            // Get the text of the highlighted option
+                                            const optionText = highlightedOption.textContent.trim();
+                                            
+                                            // Find corresponding option in select and select it
+                                            const selectOptions = focusedGeneSelect.options;
+                                            for (let i = 0; i < selectOptions.length; i++) {
+                                                if (selectOptions[i].textContent.trim() === optionText) {
+                                                    focusedGeneSelect.value = selectOptions[i].value;
+                                                    $(focusedGeneSelect).trigger('change');
+                                                    $(focusedGeneSelect).select2('close');
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }, 10); // Small delay to ensure dropdown is fully rendered
+                    });
+                    
+                    // Ensure Select2 change event also triggers focused gene update
+                    $(focusedGeneSelect).on('select2:select', function(e) {
+                        const geneName = e.params.data.id;
+                        if (geneName) {
+                            DataManager.setFocusedGene(geneName);
+                        }
+                    });
+                    
+                    // Prevent losing selection when dropdown is closed without selecting
+                    $(focusedGeneSelect).on('select2:closing', function(e) {
+                        // Store the current value to ensure it's preserved
+                        const currentVal = $(focusedGeneSelect).val();
+                        
+                        // After dropdown closes, make sure the value is still set
+                        setTimeout(() => {
+                            if (currentVal && $(focusedGeneSelect).val() !== currentVal) {
+                                $(focusedGeneSelect).val(currentVal).trigger('change');
+                            }
+                        }, 10);
+                    });
+                    
+                    // Increase dropdown width on open
+                    $(focusedGeneSelect).on('select2:open', function() {
+                        setTimeout(function() {
+                            $('.gene-select-dropdown').css({
+                                'width': '400px'
+                            });
+                            $('.gene-select-dropdown .select2-results__options').css({
+                                'max-height': '600px'
+                            });
+                        }, 0);
+                    });
+                }
+                
+                // Always set the first gene as selected (preselected by default)
+                if (genes.length > 0) {
+                    // Only update if different from current focused gene
+                    const currentFocused = DataManager.getFocusedGene();
+                    if (currentFocused !== genes[0]) {
+                        DataManager.setFocusedGene(genes[0]);
+                    }
+                    
+                    focusedGeneSelect.value = genes[0];
+                    
+                    // Update select2 if it's active
+                    if (window.$ && $.fn.select2) {
+                        $(focusedGeneSelect).trigger('change');
+                    }
                 }
             }
         } catch (error) {
@@ -298,13 +397,15 @@ const App = (function() {
         const focusedCellSelect = document.getElementById('focused-cell');
         if (!focusedCellSelect) return;
         
-        // Clear existing options
-        focusedCellSelect.innerHTML = '<option value="">Select Cell</option>';
+        // Clear existing options - no empty option to force a selection
+        focusedCellSelect.innerHTML = '';
         
         try {
-            const cells = DataManager.getCells();
+            const cells = DataManager.getSortedCells();
             
             if (cells && cells.length > 0) {
+                // Use sorted cells for the dropdown
+                
                 // Add first set of cells (limit to avoid performance issues)
                 const maxCells = Math.min(cells.length, 1000);
                 
@@ -318,10 +419,107 @@ const App = (function() {
                 // Setup select2 for searching (if available)
                 if (window.$ && $.fn.select2) {
                     $(focusedCellSelect).select2({
-                        placeholder: 'Select or search for a cell',
-                        allowClear: true,
-                        data: cells.map(cell => ({ id: cell, text: cell }))
+                        placeholder: 'Start typing to search for a cell...',
+                        allowClear: false, // Don't allow clearing the selection
+                        data: cells.map(cell => ({ id: cell, text: cell })),
+                        width: '100%',
+                        dropdownCssClass: 'cell-select-dropdown',
+                        dropdownAutoWidth: true,
+                        selectOnClose: false, // Don't select on close to preserve current selection
+                        openOnEnter: false,
+                        minimumResultsForSearch: 0, // Always show search box
+                        searchInputPlaceholder: 'Type to filter...',
+                        closeOnSelect: false // Keep dropdown open after selecting
                     });
+                    
+                    // Enable immediate search when dropdown is opened
+                    $(focusedCellSelect).on('select2:open', function() {
+                        setTimeout(function() {
+                            // Explicitly focus the search input field inside the dropdown
+                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                            if (searchField) {
+                                searchField.focus();
+                                
+                                // Add keyboard event listener for dropdown control
+                                searchField.addEventListener('keydown', function(e) {
+                                    // Escape key: close dropdown
+                                    if (e.key === 'Escape') {
+                                        $(focusedCellSelect).select2('close');
+                                        return;
+                                    }
+                                    
+                                    // CTRL+Enter: select current highlighted item and close
+                                    if (e.key === 'Enter' && e.ctrlKey) {
+                                        const highlightedOption = document.querySelector('.select2-results__option--highlighted');
+                                        if (highlightedOption) {
+                                            // Get the text of the highlighted option
+                                            const optionText = highlightedOption.textContent.trim();
+                                            
+                                            // Find corresponding option in select and select it
+                                            const selectOptions = focusedCellSelect.options;
+                                            for (let i = 0; i < selectOptions.length; i++) {
+                                                if (selectOptions[i].textContent.trim() === optionText) {
+                                                    focusedCellSelect.value = selectOptions[i].value;
+                                                    $(focusedCellSelect).trigger('change');
+                                                    $(focusedCellSelect).select2('close');
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }, 10); // Small delay to ensure dropdown is fully rendered
+                    });
+                    
+                    // Ensure Select2 change event also triggers focused cell update
+                    $(focusedCellSelect).on('select2:select', function(e) {
+                        const cellName = e.params.data.id;
+                        if (cellName) {
+                            DataManager.setFocusedCell(cellName);
+                        }
+                    });
+                    
+                    // Prevent losing selection when dropdown is closed without selecting
+                    $(focusedCellSelect).on('select2:closing', function(e) {
+                        // Store the current value to ensure it's preserved
+                        const currentVal = $(focusedCellSelect).val();
+                        
+                        // After dropdown closes, make sure the value is still set
+                        setTimeout(() => {
+                            if (currentVal && $(focusedCellSelect).val() !== currentVal) {
+                                $(focusedCellSelect).val(currentVal).trigger('change');
+                            }
+                        }, 10);
+                    });
+                    
+                    // Increase dropdown width on open
+                    $(focusedCellSelect).on('select2:open', function() {
+                        setTimeout(function() {
+                            $('.cell-select-dropdown').css({
+                                'width': '400px'
+                            });
+                            $('.cell-select-dropdown .select2-results__options').css({
+                                'max-height': '600px'
+                            });
+                        }, 0);
+                    });
+                }
+                
+                // Always set the first cell as selected (preselected by default)
+                if (cells.length > 0) {
+                    // Only update if different from current focused cell
+                    const currentFocused = DataManager.getFocusedCell();
+                    if (currentFocused !== cells[0]) {
+                        DataManager.setFocusedCell(cells[0]);
+                    }
+                    
+                    focusedCellSelect.value = cells[0];
+                    
+                    // Update select2 if it's active
+                    if (window.$ && $.fn.select2) {
+                        $(focusedCellSelect).trigger('change');
+                    }
                 }
             }
         } catch (error) {
