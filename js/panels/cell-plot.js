@@ -1610,7 +1610,7 @@ const CellPlotPanel = (function() {
               const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
               const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
 
-              setupCenteringSliderListeners();
+              _setupCenteringSliderListeners();
             
               if (_settings.centeringActive) {
                 // Update button appearance
@@ -3291,17 +3291,69 @@ const CellPlotPanel = (function() {
             
             // Set up click handler to update global focused cell
             _plotContainer.on('plotly_click', (data) => {
-                const pointIndex = data.points[0].pointIndex;
-                const traceIndex = data.points[0].curveNumber;
+                if (!data || !data.points || data.points.length === 0) {
+                    return;
+                }
+                
+                const point = data.points[0];
+                const pointIndex = point.pointIndex;
+                const traceIndex = point.curveNumber;
                 let cellName;
                 
-                // Handle both single trace and multiple traces
-                if (traces.length > 1 && traces[traceIndex].text) {
-                    // For categorical data with multiple traces
-                    cellName = traces[traceIndex].text[pointIndex];
+                // Check if this is a 3D plot
+                const is3D = traces[0].type === 'scatter3d';
+                
+                // For 3D plots, we need to use the text property directly or handle specially
+                if (is3D) {
+                    // For 3D plots, access text property directly from the point
+                    if (point.text) {
+                        cellName = point.text;
+                    }
+                    // If point.text is not available but we have point.customdata
+                    else if (point.customdata) {
+                        cellName = point.customdata;
+                    }
+                    // If we have a point index and it's valid, use the cells array
+                    else if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
+                        cellName = _data.cells[pointIndex];
+                    }
+                    // Try to find the cell using point coordinates
+                    else if (_data.x && _data.y && _data.x.values && _data.y.values && _data.cells) {
+                        // Find the closest cell by coordinates
+                        let minDistance = Infinity;
+                        let closestIndex = -1;
+                        
+                        for (let i = 0; i < _data.x.values.length; i++) {
+                            const dx = _data.x.values[i] - point.x;
+                            const dy = _data.y.values[i] - point.y;
+                            let dz = 0;
+                            if (is3D && _data.z && _data.z.values) {
+                                dz = _data.z.values[i] - point.z;
+                            }
+                            
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                closestIndex = i;
+                            }
+                        }
+                        
+                        if (closestIndex !== -1) {
+                            cellName = _data.cells[closestIndex];
+                        }
+                    }
                 } else {
-                    // For single trace (numerical data)
-                    cellName = _data.cells[pointIndex];
+                    // Standard processing for 2D plots
+                    // Handle both single trace and multiple traces
+                    if (traces.length > 1 && traces[traceIndex].text) {
+                        // For categorical data with multiple traces
+                        cellName = traces[traceIndex].text[pointIndex];
+                    } else {
+                        // For single trace (numerical data)
+                        if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
+                            cellName = _data.cells[pointIndex];
+                        }
+                    }
                 }
                 
                 if (cellName) {
@@ -3447,6 +3499,14 @@ const CellPlotPanel = (function() {
                 
                 // COLOR DATA UPDATES
                 if (updateOptions.colors && _data.color) {
+                    // Store current focused cell state to restore it later if needed
+                    let hasFocusedCell = false;
+                    if (_settings.highlightFocusedCell) {
+                        // Temporarily remove highlight before updating colors
+                        _removeHighlight();
+                        hasFocusedCell = true;
+                    }
+                
                     // Check if we need to handle categorical vs numerical transition
                     const isCategorical = _data.colorType === 'categorical';
                     const hasMultipleTraces = _plot.data && _plot.data.length > 1;
@@ -3525,6 +3585,11 @@ const CellPlotPanel = (function() {
                             }
                         }
                     }
+                    
+                    // Re-add highlighted point if we temporarily removed it
+                    if (hasFocusedCell) {
+                        _highlightFocusedCell();
+                    }
                 }
                 
                 // STYLING UPDATES (size, opacity)
@@ -3547,9 +3612,46 @@ const CellPlotPanel = (function() {
                     // This section can be expanded as needed
                     console.log("Updating layout properties");
                     // Currently handled with specific color updates above
+                    
+                    // Update axis titles
+                    const layoutUpdate = {};
+                    
+                    // Determine if we're in 2D or 3D mode
+                    const is3D = _plot.data[0].type === 'scatter3d';
+                    
+                    // Update X axis title
+                    const xAxisTitle = `${_settings.x.type}.${_settings.x.key}${_settings.x.column ? `.${_settings.x.column}` : ''}`;
+                    if (is3D) {
+                        layoutUpdate['scene.xaxis.title'] = xAxisTitle;
+                    } else {
+                        layoutUpdate['xaxis.title'] = xAxisTitle;
+                    }
+                    
+                    // Update Y axis title
+                    const yAxisTitle = `${_settings.y.type}.${_settings.y.key}${_settings.y.column ? `.${_settings.y.column}` : ''}`;
+                    if (is3D) {
+                        layoutUpdate['scene.yaxis.title'] = yAxisTitle;
+                    } else {
+                        layoutUpdate['yaxis.title'] = yAxisTitle;
+                    }
+                    
+                    // Update Z axis title if 3D
+                    if (is3D && _settings.z) {
+                        const zAxisTitle = `${_settings.z.type}.${_settings.z.key}${_settings.z.column ? `.${_settings.z.column}` : ''}`;
+                        layoutUpdate['scene.zaxis.title'] = zAxisTitle;
+                    }
+                    
+                    if (Object.keys(layoutUpdate).length > 0) {
+                        Plotly.relayout(_plotContainer, layoutUpdate);
+                    }
                 }
                 
-                // Placeholder for future UI controls implementation
+                // Update highlighted cell if data position has changed
+                if (_settings.highlightFocusedCell && 
+                   (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
+                    _removeHighlight();
+                    _highlightFocusedCell();
+                }
                 
             } catch (error) {
                 console.error("Error updating plot:", error);
@@ -3685,7 +3787,18 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _highlightFocusedCell() {
-            if (!_plot || !_data || !_data.cells) return;
+            // Make sure we have all required data and a valid plot
+            if (!_plot || !_data || !_data.cells || !_data.x || !_data.y || 
+                !_data.x.values || !_data.y.values || !_plotContainer) {
+                console.log("Missing required data for highlighting cell");
+                return;
+            }
+            
+            // Also ensure plot.data is present and valid
+            if (!_plot.data || !Array.isArray(_plot.data)) {
+                console.log("Plot data is not available for highlighting");
+                return;
+            }
             
             const focusedCell = DataManager.getFocusedCell();
             if (!focusedCell || !_settings.highlightFocusedCell) {
@@ -3694,83 +3807,178 @@ const CellPlotPanel = (function() {
                 return;
             }
             
-            // Find the focused cell index in the data
-            const focusedCellIndex = _data.cells.indexOf(focusedCell);
-            if (focusedCellIndex === -1) {
-                console.log(`Focused cell ${focusedCell} not found in plot data`);
-                _removeHighlight();
-                return;
-            }
-            
-            // Determine if we're in 2D or 3D mode
-            const is3D = _settings.z !== null;
-            
-            // Create the highlighted point
-            let highlightTrace = {
-                x: [_data.x.values[focusedCellIndex]],
-                y: [_data.y.values[focusedCellIndex]],
-                mode: 'markers',
-                type: is3D ? 'scatter3d' : 'scattergl',
-                marker: {
-                    size: _settings.pointSize * 2, // Make highlighted point larger
-                    color: 'rgba(255, 0, 0, 1)', // Red color
-                    line: {
-                        color: 'rgba(0, 0, 0, 1)',
-                        width: 2
-                    }
-                },
-                showlegend: false,
-                hoverinfo: 'skip',
-                name: 'Focused Cell'
-            };
-            
-            // Add z coordinate for 3D plot
-            if (is3D && _data.z) {
-                highlightTrace.z = [_data.z.values[focusedCellIndex]];
-            }
-            
-            // Check if we already have a highlight trace
-            let highlightTraceIndex = -1;
-            for (let i = 0; i < _plot.data.length; i++) {
-                if (_plot.data[i].name === 'Focused Cell') {
-                    highlightTraceIndex = i;
-                    break;
+            try {
+                // For categorical coloring with multiple traces, we need to find which trace 
+                // contains our focused cell
+                let focusedCellIndex = -1;
+                let traceIndex = 0;
+                
+                // First check if we're dealing with categorical data (multiple traces)
+                const isCategorical = _data.colorType === 'categorical';
+                
+                // Safely check for multiple traces by filtering out highlight traces
+                let dataTraces = [];
+                try {
+                    dataTraces = _plot.data.filter(trace => trace && trace.name !== 'Focused Cell');
+                } catch (err) {
+                    console.error("Error filtering traces:", err);
                 }
-            }
-            
-            if (highlightTraceIndex >= 0) {
-                // Update existing highlight trace
-                Plotly.restyle(_plotContainer, {
-                    x: [highlightTrace.x],
-                    y: [highlightTrace.y],
-                    z: is3D ? [highlightTrace.z] : undefined,
-                    type: highlightTrace.type
-                }, highlightTraceIndex);
-            } else {
-                // Add new highlight trace
-                Plotly.addTraces(_plotContainer, highlightTrace);
+                
+                const hasMultipleTraces = dataTraces.length > 1;
+                
+                if (isCategorical && hasMultipleTraces) {
+                    // Search through all data traces (excluding any existing highlight trace)
+                    for (let i = 0; i < dataTraces.length; i++) {
+                        const trace = dataTraces[i];
+                        if (trace && trace.text && Array.isArray(trace.text)) {
+                            const idx = trace.text.indexOf(focusedCell);
+                            if (idx !== -1) {
+                                focusedCellIndex = idx;
+                                traceIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // For single trace data, use the standard approach
+                    focusedCellIndex = _data.cells.indexOf(focusedCell);
+                }
+                
+                // If we couldn't find the cell, exit
+                if (focusedCellIndex === -1) {
+                    console.log(`Focused cell ${focusedCell} not found in plot data`);
+                    _removeHighlight();
+                    return;
+                }
+                
+                // Determine if we're in 2D or 3D mode
+                const is3D = _settings.z !== null;
+                
+                // Get coordinates for the focused cell (with safety checks)
+                let xValue, yValue, zValue;
+                
+                if (isCategorical && hasMultipleTraces) {
+                    // Get coordinates from the specific trace
+                    if (traceIndex < dataTraces.length) {
+                        const trace = dataTraces[traceIndex];
+                        if (trace && trace.x && trace.y && 
+                            Array.isArray(trace.x) && Array.isArray(trace.y) &&
+                            focusedCellIndex < trace.x.length && focusedCellIndex < trace.y.length) {
+                            
+                            xValue = trace.x[focusedCellIndex];
+                            yValue = trace.y[focusedCellIndex];
+                            
+                            if (is3D && trace.z && Array.isArray(trace.z) && 
+                                focusedCellIndex < trace.z.length) {
+                                zValue = trace.z[focusedCellIndex];
+                            }
+                        } else {
+                            console.error("Invalid trace data for highlighting");
+                            return;
+                        }
+                    } else {
+                        console.error("Trace index out of bounds");
+                        return;
+                    }
+                } else {
+                    // Get coordinates from the main data
+                    if (Array.isArray(_data.x.values) && Array.isArray(_data.y.values) &&
+                        focusedCellIndex < _data.x.values.length && focusedCellIndex < _data.y.values.length) {
+                        
+                        xValue = _data.x.values[focusedCellIndex];
+                        yValue = _data.y.values[focusedCellIndex];
+                        
+                        if (is3D && _data.z && _data.z.values && Array.isArray(_data.z.values) && 
+                            focusedCellIndex < _data.z.values.length) {
+                            zValue = _data.z.values[focusedCellIndex];
+                        }
+                    } else {
+                        console.error("Invalid data for highlighting");
+                        return;
+                    }
+                }
+                
+                // Create the highlighted point
+                let highlightTrace = {
+                    x: [xValue],
+                    y: [yValue],
+                    mode: 'markers',
+                    type: is3D ? 'scatter3d' : 'scattergl',
+                    marker: {
+                        size: _settings.pointSize * 2, // Make highlighted point larger
+                        color: 'rgba(255, 0, 0, 1)', // Red color
+                        line: {
+                            color: 'rgba(0, 0, 0, 1)',
+                            width: 2
+                        }
+                    },
+                    showlegend: false,
+                    hoverinfo: 'skip',
+                    name: 'Focused Cell'
+                };
+                
+                // Add z coordinate for 3D plot
+                if (is3D && zValue !== undefined) {
+                    highlightTrace.z = [zValue];
+                }
+                
+                // Check if we already have a highlight trace
+                let highlightTraceIndex = -1;
+                for (let i = 0; i < _plot.data.length; i++) {
+                    if (_plot.data[i] && _plot.data[i].name === 'Focused Cell') {
+                        highlightTraceIndex = i;
+                        break;
+                    }
+                }
+                
+                if (highlightTraceIndex >= 0) {
+                    // Update existing highlight trace
+                    Plotly.restyle(_plotContainer, {
+                        x: [highlightTrace.x],
+                        y: [highlightTrace.y],
+                        z: is3D ? [highlightTrace.z] : undefined,
+                        type: highlightTrace.type
+                    }, highlightTraceIndex);
+                } else {
+                    // Add new highlight trace
+                    Plotly.addTraces(_plotContainer, highlightTrace);
+                }
+            } catch (error) {
+                // Log any errors but don't crash
+                console.error("Error highlighting focused cell:", error);
             }
         }
+        
         
         /**
          * Remove highlight from the plot
          * @private
          */
         function _removeHighlight() {
-            if (!_plot) return;
+            if (!_plot || !_plotContainer) return;
             
-            // Find the highlight trace if it exists
-            let highlightTraceIndex = -1;
-            for (let i = 0; i < _plot.data.length; i++) {
-                if (_plot.data[i].name === 'Focused Cell') {
-                    highlightTraceIndex = i;
-                    break;
+            try {
+                // Make sure plot data exists and is an array
+                if (!_plot.data || !Array.isArray(_plot.data)) {
+                    return;
                 }
-            }
-            
-            if (highlightTraceIndex >= 0) {
-                // Remove the highlight trace
-                Plotly.deleteTraces(_plotContainer, highlightTraceIndex);
+                
+                // Find the highlight trace if it exists
+                let highlightTraceIndex = -1;
+                for (let i = 0; i < _plot.data.length; i++) {
+                    if (_plot.data[i] && _plot.data[i].name === 'Focused Cell') {
+                        highlightTraceIndex = i;
+                        break;
+                    }
+                }
+                
+                if (highlightTraceIndex >= 0) {
+                    // Remove the highlight trace
+                    Plotly.deleteTraces(_plotContainer, highlightTraceIndex);
+                }
+            } catch (error) {
+                // Log any errors but don't crash
+                console.error("Error removing highlight:", error);
             }
         }
         
