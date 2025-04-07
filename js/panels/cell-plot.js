@@ -2160,14 +2160,10 @@ const CellPlotPanel = (function() {
               
               // Re-apply any trace styles that might have been lost
               if (processedData.length > 0) {
-                const dataTraceIndices = [];
-                for (let i = 0; i < processedData.length; i++) {
-                  if (processedData[i] && processedData[i].name !== 'Focused Cell') {
-                    dataTraceIndices.push(i);
-                  }
-                }
-                
-                // Re-apply styling to ensure consistent appearance
+                const dataTraceIndices = processedData
+                  .map((trace, i) => (trace && trace.name !== 'Focused Cell' ? i : -1))
+                  .filter(i => i !== -1);
+              
                 if (dataTraceIndices.length > 0) {
                   Plotly.restyle(_plotContainer, {
                     'marker.size': _settings.pointSize,
@@ -2509,6 +2505,15 @@ const CellPlotPanel = (function() {
                     console.log('Loading Z-axis data:', _settings.z);
                     _data.z = await _loadAxisData('z', filteredCellIndices);
                 }
+
+                // Track if "Hide Outliers" was active before data change
+                const wasOutlierFilteringActive = _settings.hideOutliers;
+                
+                // Temporarily disable outlier filtering during data loading
+                if (wasOutlierFilteringActive) {
+                    _settings.hideOutliers = false;
+                    _updateOutlierFiltering();
+                }
                 
                 // Load color data
                 console.log('Loading color data:', _settings.color);
@@ -2530,6 +2535,12 @@ const CellPlotPanel = (function() {
                         ${_data.x && _data.x.values ? _data.x.values.length : 0} points, 
                         Y axis has ${_data.y && _data.y.values ? _data.y.values.length : 0} points.
                     </div>`;
+                }
+
+                // Restore "Hide Outliers" state if it was active before
+                if (wasOutlierFilteringActive) {
+                    _settings.hideOutliers = true;
+                    _updateOutlierFiltering();
                 }
                 
             } catch (error) {
@@ -3343,23 +3354,14 @@ const CellPlotPanel = (function() {
                     
                     // Filter out points outside range if hideOutliers is true
                     if (_settings.hideOutliers) {
-                        const indices = [];
-                        for (let i = 0; i < _data.color.length; i++) {
-                            if (_data.color[i] >= cmin && _data.color[i] <= cmax) {
-                                indices.push(i);
-                            }
-                        }
-                        
-                        // Filter all data arrays by indices
-                        trace.x = indices.map(i => trace.x[i]);
-                        trace.y = indices.map(i => trace.y[i]);
-                        trace.text = indices.map(i => trace.text[i]);
-                        trace.marker.color = indices.map(i => trace.marker.color[i]);
-                        
+                        trace.x = trace.x.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
+                        trace.y = trace.y.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
+                        trace.text = trace.text.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
+                        trace.marker.color = trace.marker.color.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
                         if (trace.z) {
-                            trace.z = indices.map(i => trace.z[i]);
+                          trace.z = trace.z.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
                         }
-                    }
+                      }
                 }
                 
                 // Add colorbar with vertical title
@@ -3655,46 +3657,35 @@ const CellPlotPanel = (function() {
                         
                         try {
                             // For each trace/category, update the positions
-                            for (let i = 0; i < _plot.data.length; i++) {
-                                const trace = _plot.data[i];
+                            _plot.data.forEach((trace, i) => {
                                 // Skip non-marker traces (like highlight traces)
-                                if (trace.mode !== 'markers') continue;
-
-                                // Get the indices for this category trace from customdata
+                                if (trace.mode !== 'markers') return;
+                            
                                 const indices = trace.customdata;
-                                if (!indices || !indices.length) continue;
-                                
-                                // Create update object for this trace
+                                if (!indices || !indices.length) return;
+                            
                                 const update = {};
-                                
-                                // Update x coordinates
-                                if (updateOptions.xAxis && _data.x && _data.x.values) {
-                                    update.x = [indices.map(idx => _data.x.values[idx])];
+                                const { x: xData, y: yData, z: zData, cells } = _data;
+                            
+                                if (updateOptions.xAxis && xData && xData.values) {
+                                    update.x = [indices.map(idx => xData.values[idx])];
                                 }
-                                
-                                // Update y coordinates
-                                if (updateOptions.yAxis && _data.y && _data.y.values) {
-                                    update.y = [indices.map(idx => _data.y.values[idx])];
+                                if (updateOptions.yAxis && yData && yData.values) {
+                                    update.y = [indices.map(idx => yData.values[idx])];
                                 }
-                                
-                                // Update z coordinates for 3D plots
-                                if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
-                                    update.z = [indices.map(idx => _data.z.values[idx])];
+                                if (updateOptions.zAxis && zData && zData.values && shouldBe3D) {
+                                    update.z = [indices.map(idx => zData.values[idx])];
                                 }
-                                
-                                // Update text and customdata to ensure they match the new positions
-                                // This helps keep cell identification consistent when clicking points
-                                if (_data.cells && indices) {
-                                    update.text = [indices.map(idx => _data.cells[idx])];
+                                if (cells && indices) {
+                                    update.text = [indices.map(idx => cells[idx])];
                                     update.customdata = [indices]; // Ensure customdata is updated for click handling
                                 }
-                                
-                                // Apply updates for this trace
+                            
                                 if (Object.keys(update).length > 0) {
                                     console.log(`Updating trace ${i} (${trace.name}) positions:`, update);
                                     Plotly.restyle(_plotContainer, update, [i]);
                                 }
-                            }
+                            });
                         } catch (error) {
                             console.error("Error updating categorical trace positions:", error);
                             // Fallback to recreating the plot if there's an error
@@ -3838,36 +3829,28 @@ const CellPlotPanel = (function() {
                 // STYLING UPDATES (size, opacity)
                 if (updateOptions.styling) {
                     console.log("Updating visual styling");
-                    
+                
                     const update = {
                         'marker.size': _settings.pointSize,
                         'marker.opacity': _settings.pointOpacity
                     };
-                    
-                    // Find all data traces, excluding the highlight trace
-                    const dataTraceIndices = [];
-                    for (let i = 0; i < _plot.data.length; i++) {
-                        // Skip the highlighted cell trace
-                        if (_plot.data[i] && _plot.data[i].name !== 'Focused Cell') {
-                            dataTraceIndices.push(i);
-                        }
-                    }
-                    
-                    // Apply to data traces only (excluding the highlight trace)
+                
+                    // Get indices for all traces except the one named "Focused Cell"
+                    const dataTraceIndices = _plot.data
+                        .map((trace, i) => (trace && trace.name !== 'Focused Cell' ? i : -1))
+                        .filter(i => i !== -1);
+                
                     if (dataTraceIndices.length > 0) {
                         console.log("Updating marker style for data traces:", dataTraceIndices);
                         Plotly.restyle(_plotContainer, update, dataTraceIndices);
                     }
-                    
-                    // Find and update the highlight trace separately (if it exists)
-                    for (let i = 0; i < _plot.data.length; i++) {
-                        if (_plot.data[i] && _plot.data[i].name === 'Focused Cell') {
-                            // Update only the size of the highlight trace, keeping its opacity fixed
-                            Plotly.restyle(_plotContainer, {
-                                'marker.size': _settings.pointSize * 2  // Always 2x the current point size
-                            }, [i]);
-                            break;
-                        }
+                
+                    // Find the index of the highlight trace (if it exists)
+                    const highlightIndex = _plot.data.findIndex(trace => trace && trace.name === 'Focused Cell');
+                    if (highlightIndex >= 0) {
+                        Plotly.restyle(_plotContainer, {
+                            'marker.size': _settings.pointSize * 2  // Always 2x the current point size
+                        }, [highlightIndex]);
                     }
                 }
                 
@@ -4228,13 +4211,7 @@ const CellPlotPanel = (function() {
                 }
                 
                 // Check if we already have a highlight trace
-                let highlightTraceIndex = -1;
-                for (let i = 0; i < _plot.data.length; i++) {
-                    if (_plot.data[i] && _plot.data[i].name === 'Focused Cell') {
-                        highlightTraceIndex = i;
-                        break;
-                    }
-                }
+                const highlightTraceIndex = _plot.data.findIndex(trace => trace && trace.name === 'Focused Cell');
                 
                 if (highlightTraceIndex >= 0) {
                     // Update existing highlight trace
