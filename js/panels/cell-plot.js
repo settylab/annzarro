@@ -41,79 +41,6 @@ const CellPlotPanel = (function() {
             highlightFocusedCell: true // Highlight focused cell by default
         };
         
-        /**
-         * Initialize the panel
-         */
-        function init() {
-            console.log(`Initializing Cell Plot panel ${_id}`);
-            
-            _container.innerHTML = `
-                <div class="plot-panel">
-                    <div class="plot-controls">
-                        <div class="alert alert-info">Loading cell plot controls...</div>
-                    </div>
-                    <div class="plot-container" id="plot-container-${_id}">
-                        <div class="alert alert-secondary">Cell plot will appear here</div>
-                    </div>
-                </div>
-            `;
-            
-            _plotContainer = document.getElementById(`plot-container-${_id}`);
-            _loadDataAndCreatePlot();
-        }
-        
-        /**
-         * Load data and create plot
-         * @private
-         */
-        async function _loadDataAndCreatePlot() {
-            try {
-                // Show loading state
-                _plotContainer.innerHTML = '<div class="alert alert-info">Loading cell plot data...</div>';
-                
-                // Create empty placeholder plot
-                const emptyPlot = {
-                    data: [{
-                        x: [],
-                        y: [],
-                        mode: 'markers',
-                        type: 'scatter',
-                        marker: {
-                            size: _settings.pointSize,
-                            opacity: _settings.pointOpacity,
-                            color: 'rgba(70, 130, 180, 0.7)'
-                        }
-                    }],
-                    layout: {
-                        title: _title,
-                        xaxis: { title: 'X' },
-                        yaxis: { title: 'Y' },
-                        showlegend: false,
-                        hovermode: 'closest',
-                        template: 'plotly_white'
-                    }
-                };
-                
-                // Create the initial empty plot
-                Plotly.newPlot(_plotContainer, emptyPlot.data, emptyPlot.layout, {
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                });
-                
-                // Set up controls
-                _setupControls();
-                
-                console.log(`Cell plot panel ${_id} initialized`);
-            } catch (error) {
-                console.error('Error creating cell plot:', error);
-                _plotContainer.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error creating cell plot: ${error.message}
-                    </div>
-                `;
-            }
-        }
         
         /**
          * Set up plot controls
@@ -148,9 +75,6 @@ const CellPlotPanel = (function() {
             // Create panel structure
             _createPanelStructure();
             
-            // Set up event listeners
-            _setupEventListeners();
-            
             // Initialize UI state and then load data
             console.log('Initializing UI state...');
             _initializeUIState().then(() => {
@@ -163,6 +87,9 @@ const CellPlotPanel = (function() {
                     Error initializing panel: ${error.message}
                 </div>`;
             });
+            
+            // Set up event listeners
+            _setupEventListeners();
         }
         
         /**
@@ -1322,7 +1249,14 @@ const CellPlotPanel = (function() {
             hideOutliersButton.addEventListener('click', () => {
               // Toggle the setting
               _settings.hideOutliers = !_settings.hideOutliers;
-              _updateOutlierFiltering();
+              if (_settings.hideOutliers) {
+                hideOutliersButton.classList.add('active', 'btn-primary');
+                hideOutliersButton.classList.remove('btn-outline-secondary');
+              } else {
+                hideOutliersButton.classList.remove('active', 'btn-primary');
+                hideOutliersButton.classList.add('btn-outline-secondary');
+              }
+              _updatePlotElements({ filter: true });
             });
             
             // Helper function to ensure we have full plot data before filtering
@@ -1347,7 +1281,11 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('min', minValue);
-                _updateOutlierFiltering();
+                _updatePlotElements({
+                    colors: true,
+                    colorRange: true,
+                    filter: _settings.hideOutliers
+                  });
             });
             
             // Min slider - on change for final update
@@ -1367,7 +1305,11 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('max', maxValue);
-                _updateOutlierFiltering();
+                _updatePlotElements({
+                    colors: true,
+                    colorRange: true,
+                    filter: _settings.hideOutliers
+                  });
             });
             
             // Max slider - on change for final update
@@ -2019,161 +1961,6 @@ const CellPlotPanel = (function() {
             });
         }
         
-        function _updateOutlierFiltering() {
-            if (!_plot) return;
-            
-            // For categorical data, just turn off outlier filtering
-            if (_data.colorType !== 'numerical') {
-              console.log("Outlier filtering is only applicable for numerical data, turning off");
-              _settings.hideOutliers = false;
-              _fullPlotData = null;
-              
-              // Update button state
-              const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
-              if (hideOutliersButton) {
-                hideOutliersButton.classList.remove('active', 'btn-primary');
-                hideOutliersButton.classList.add('btn-outline-secondary');
-              }
-              return;
-            }
-            
-            // Create _fullPlotData if it doesn't exist yet
-            if (!_fullPlotData && _plot && _plot.data) {
-              console.log("Creating backup of plot data for outlier filtering");
-              try {
-                _fullPlotData = JSON.parse(JSON.stringify(_plot.data));
-              } catch (error) {
-                console.error("Failed to create backup of plot data:", error);
-                return;
-              }
-            }
-            
-            // Check if we have the full plot data saved
-            if (!_fullPlotData) {
-              console.warn("Cannot filter outliers: full plot data is not available");
-              return;
-            }
-            
-            // If filtering is off, simply use the original data.
-            if (!_settings.hideOutliers) {
-              if (_fullPlotData) {
-                Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
-                _fullPlotData = null;
-                const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
-                if (hideOutliersButton) {
-                    hideOutliersButton.classList.remove('active', 'btn-primary');
-                    hideOutliersButton.classList.add('btn-outline-secondary');
-                }
-              }
-              return;
-            }
-              
-            // Hide outliers is active, reflect that in button appearence
-            const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
-            if (hideOutliersButton) {
-                hideOutliersButton.classList.add('active', 'btn-primary');
-                hideOutliersButton.classList.remove('btn-outline-secondary');
-            }
-
-            // Skip processing if either colorMin or colorMax is not defined
-            if (_settings.colorMin == null || _settings.colorMax == null) {
-              if (_fullPlotData) {
-                Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
-              }
-              return;
-            }
-            
-            try {
-              // Get slider values
-              const minVal = parseFloat(_settings.colorMin);
-              const maxVal = parseFloat(_settings.colorMax);
-              
-              // Process each trace based on the original unfiltered data
-              const processedData = _fullPlotData.map(trace => {
-                if (trace && trace.marker && Array.isArray(trace.marker.color)) {
-                  let newX = [];
-                  let newY = [];
-                  let newZ = [];
-                  let newColors = [];
-                  let newText = [];
-                  let newCustomdata = [];
-            
-                  for (let i = 0; i < trace.marker.color.length; i++) {
-                    const cVal = trace.marker.color[i];
-                    if (cVal >= minVal && cVal <= maxVal) {
-                      newX.push(trace.x[i]);
-                      newY.push(trace.y[i]);
-                      newColors.push(cVal);
-                      
-                      // Also preserve text and customdata for cell identification when clicking
-                      if (trace.text && i < trace.text.length) {
-                        newText.push(trace.text[i]);
-                      }
-                      
-                      if (trace.customdata && i < trace.customdata.length) {
-                        newCustomdata.push(trace.customdata[i]);
-                      }
-                      
-                      if (trace.z) {
-                        newZ.push(trace.z[i]);
-                      }
-                    }
-                  }
-                  
-                  // Create updated trace with preserved cell identifiers
-                  return {
-                    ...trace,
-                    x: newX,
-                    y: newY,
-                    text: newText.length > 0 ? newText : undefined,
-                    customdata: newCustomdata.length > 0 ? newCustomdata : undefined,
-                    // Only include z if it exists in the original trace
-                    ...(trace.z ? { z: newZ } : {}),
-                    marker: { ...trace.marker, color: newColors }
-                  };
-              }
-              return trace;
-            });
-            
-            // Apply the filtered data if we have a valid container
-            if (_plotContainer && _plotContainer.parentNode) {
-              // Apply the filtered data while preserving the existing layout
-              Plotly.react(_plotContainer, processedData, _plot.layout);
-              
-              // Re-highlight the focused cell if needed
-              if (_settings.highlightFocusedCell) {
-                // Remove any existing highlight and add it back to make sure it's visible
-                // with the new filtered data
-                _removeHighlight();
-                _highlightFocusedCell();
-              }
-              
-              // Re-apply any trace styles that might have been lost
-              if (processedData.length > 0) {
-                const dataTraceIndices = processedData
-                  .map((trace, i) => (trace && trace.name !== 'Focused Cell' ? i : -1))
-                  .filter(i => i !== -1);
-              
-                if (dataTraceIndices.length > 0) {
-                  Plotly.restyle(_plotContainer, {
-                    'marker.size': _settings.pointSize,
-                    'marker.opacity': _settings.pointOpacity
-                  }, dataTraceIndices);
-                }
-              }
-            }
-            } catch (error) {
-              console.error("Error filtering outliers:", error);
-              // If there's an error, try to restore the original data
-              if (_fullPlotData && _plotContainer && _plotContainer.parentNode) {
-                try {
-                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
-                } catch (fallbackError) {
-                  console.error("Error restoring original data:", fallbackError);
-                }
-              }
-            }
-        }
 
         /**
          * Load only color data and update the plot without recreating it
@@ -2475,40 +2262,52 @@ const CellPlotPanel = (function() {
                     color: null,
                     cells: cells
                 };
-                
+            
                 // Determine if we should load cell subsets
                 let filteredCellIndices = null;
                 if (_settings.subsettedCells && _settings.hideNonSubset) {
                     filteredCellIndices = _settings.subsettedCells.map(cell => DataManager.getCellIndex(cell));
                 }
-                
-                // Load X-axis data
-                console.log('Loading X-axis data:', _settings.x);
-                _data.x = await _loadAxisData('x', filteredCellIndices);
-                
-                // Load Y-axis data
-                console.log('Loading Y-axis data:', _settings.y);
-                _data.y = await _loadAxisData('y', filteredCellIndices);
-                
-                // Load Z-axis data if needed
+            
+                // Build an array of promises for axis and color data
+                const loadPromises = [
+                    (async () => {
+                        console.log('Loading X-axis data:', _settings.x);
+                        _data.x = await _loadAxisData('x', filteredCellIndices);
+                    })(),
+                    (async () => {
+                        console.log('Loading Y-axis data:', _settings.y);
+                        _data.y = await _loadAxisData('y', filteredCellIndices);
+                    })(),
+                ];
+            
                 if (_settings.z) {
-                    console.log('Loading Z-axis data:', _settings.z);
-                    _data.z = await _loadAxisData('z', filteredCellIndices);
+                    loadPromises.push(
+                        (async () => {
+                            console.log('Loading Z-axis data:', _settings.z);
+                            _data.z = await _loadAxisData('z', filteredCellIndices);
+                        })()
+                    );
                 }
-                
-                // disable outlier filtering during data loading
-                if (_settings.hideOutliers) {
-                    _settings.hideOutliers = false;
-                    _updateOutlierFiltering();
-                }
-                
-                // Load color data
-                console.log('Loading color data:', _settings.color);
-                const colorData = await _loadAxisData('color', filteredCellIndices);
-                _data.color = colorData.values;
-                _data.colorType = colorData.type;
-                _updateColorControlsVisibility();
-                _data.colorCategories = colorData.categories;
+            
+                // Include color loading concurrently
+                loadPromises.push(
+                    (async () => {
+                        console.log('Loading color data:', _settings.color);
+                        try {
+                            const colorData = await _loadAxisData('color', filteredCellIndices);
+                            _data.color = colorData.values;
+                            _data.colorType = colorData.type;
+                            _data.colorCategories = colorData.categories;
+                            _updateColorControlsVisibility();
+                        } catch (err) {
+                            console.error("Error loading color data:", err);
+                        }
+                    })()
+                );
+            
+                // Wait for all loads to complete
+                await Promise.all(loadPromises);
                 
                 // Validate data before creating plot
                 if (_data.x && _data.x.values && _data.x.values.length > 0 &&
@@ -2538,12 +2337,6 @@ const CellPlotPanel = (function() {
          * @private
          */
         async function _loadAxisData(axis, filteredIndices = null) {
-            
-            // disable outlier filtering during data loading
-            if (_settings.hideOutliers) {
-                _settings.hideOutliers = false;
-                _updateOutlierFiltering();
-            }
             
             const settings = _settings[axis];
             if (!settings) {
@@ -3560,6 +3353,7 @@ const CellPlotPanel = (function() {
          * @param {boolean} options.colorRange - Whether to update color range (min/max) only
          * @param {boolean} options.styling - Whether to update visual styling
          * @param {boolean} options.layout - Whether to update layout properties 
+         * @param {boolean} options.filter - Whether to update the filtering (hide outliers)
          * @private
          */
         function _updatePlotElements(options = {}) {
@@ -3572,7 +3366,8 @@ const CellPlotPanel = (function() {
                 colorScale: false,
                 colorRange: false,
                 styling: false,
-                layout: false
+                layout: false,
+                filter: false 
             };
             
             // Merge provided options with defaults
@@ -3599,24 +3394,62 @@ const CellPlotPanel = (function() {
             }
             
             try {
+                const is3D = _plot.data[0].type === 'scatter3d';
+                const shouldBe3D = _settings.z !== null;
+                const isNumerical = _data.colorType === 'numerical';
+                const isCategorical = _data.colorType === 'categorical';
+                const hasMultipleTraces = _plot.data && _plot.data.length > 1;
+
+                let indexMask = null;
+                if (_settings.hideOutliers && isNumerical && _data.color) {
+                    const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
+                    const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
+                    indexMask = _data.color.map((v) => v >= cmin && v <= cmax);
+                }
+
+                // FILTER-ONLY MODE: Just apply filtering
+                if (updateOptions.filter) {
+                    let filteredX, filteredY, filteredZ, filteredColor, filteredText, filteredCustom;
+
+                    if (indexMask) {
+                        filteredX = _data.x.values.filter((_, i) => indexMask[i]);
+                        filteredY = _data.y.values.filter((_, i) => indexMask[i]);
+                        filteredZ = _settings.z && _data.z ? _data.z.values.filter((_, i) => indexMask[i]) : undefined;
+                        filteredColor = _data.color.filter((_, i) => indexMask[i]);
+                        filteredText = _data.cells.filter((_, i) => indexMask[i]);
+                        filteredCustom = _data.cells.map((_, i) => i).filter((_, i) => indexMask[i]);
+                    } else {
+                        filteredX = _data.x.values;
+                        filteredY = _data.y.values;
+                        filteredZ = _settings.z && _data.z ? _data.z.values : undefined;
+                        filteredColor = _data.color;
+                        filteredText = _data.cells;
+                        filteredCustom = _data.cells.map((_, i) => i);
+                    }
+
+                    const update = {
+                        x: [filteredX],
+                        y: [filteredY],
+                        'marker.color': [filteredColor],
+                        text: [filteredText],
+                        customdata: [filteredCustom]
+                    };
+                    if (shouldBe3D && filteredZ) update.z = [filteredZ];
+
+                    console.log("Applying filtering-only update", update);
+                    Plotly.restyle(_plotContainer, update, [0]);
+                }
                 // POSITION DATA UPDATES (most significant changes)
                 // If position axes data change is needed, check if we need a full redraw
                 const positionChange = updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis;
                 
                 if (positionChange) {
                     // Check if we're switching between 2D and 3D - always need complete redraw
-                    const is3D = _plot.data[0].type === 'scatter3d';
-                    const shouldBe3D = _settings.z !== null;
-                    
                     if (is3D !== shouldBe3D) {
                         console.log("Switching between 2D and 3D plot types - recreating plot");
                         _loadDataAndCreatePlot();
                         return;
                     }
-                    
-                    // Check if we have categorical data with multiple traces
-                    const isCategorical = _data.colorType === 'categorical';
-                    const hasMultipleTraces = _plot.data && _plot.data.length > 1;
                     
                     if (isCategorical && hasMultipleTraces) {
                         // Handle position updates for categorical data with multiple traces
@@ -3630,26 +3463,18 @@ const CellPlotPanel = (function() {
                             
                                 const indices = trace.customdata;
                                 if (!indices || !indices.length) return;
-                            
+
                                 const update = {};
-                                const { x: xData, y: yData, z: zData, cells } = _data;
-                            
-                                if (updateOptions.xAxis && xData && xData.values) {
-                                    update.x = [indices.map(idx => xData.values[idx])];
+                                if (updateOptions.xAxis && _data.x?.values) update.x = [indices.map(idx => _data.x.values[idx])];
+                                if (updateOptions.yAxis && _data.y?.values) update.y = [indices.map(idx => _data.y.values[idx])];
+                                if (updateOptions.zAxis && _data.z?.values && shouldBe3D) update.z = [indices.map(idx => _data.z.values[idx])];
+                                if (_data.cells) {
+                                    update.text = [indices.map(idx => _data.cells[idx])];
+                                    update.customdata = [indices];
                                 }
-                                if (updateOptions.yAxis && yData && yData.values) {
-                                    update.y = [indices.map(idx => yData.values[idx])];
-                                }
-                                if (updateOptions.zAxis && zData && zData.values && shouldBe3D) {
-                                    update.z = [indices.map(idx => zData.values[idx])];
-                                }
-                                if (cells && indices) {
-                                    update.text = [indices.map(idx => cells[idx])];
-                                    update.customdata = [indices]; // Ensure customdata is updated for click handling
-                                }
-                            
+
                                 if (Object.keys(update).length > 0) {
-                                    console.log(`Updating trace ${i} (${trace.name}) positions:`, update);
+                                    console.log(`Updating trace ${i} positions:`, update);
                                     Plotly.restyle(_plotContainer, update, [i]);
                                 }
                             });
@@ -3669,25 +3494,20 @@ const CellPlotPanel = (function() {
                     } else {
                         // Standard position update for single trace (numerical data)
                         const update = {};
-                        if (updateOptions.xAxis && _data.x && _data.x.values) {
-                            update.x = [_data.x.values];
-                        }
-                        
-                        if (updateOptions.yAxis && _data.y && _data.y.values) {
-                            update.y = [_data.y.values];
-                        }
-                        
-                        if (updateOptions.zAxis && _data.z && _data.z.values && shouldBe3D) {
-                            update.z = [_data.z.values];
-                        }
-                        
+                        const applyMask = idx => !indexMask || indexMask[idx];
+
+                        const fx = updateOptions.xAxis ? _data.x.values.filter((_, i) => applyMask(i)) : null;
+                        const fy = updateOptions.yAxis ? _data.y.values.filter((_, i) => applyMask(i)) : null;
+                        const fz = updateOptions.zAxis && _data.z?.values && shouldBe3D ? _data.z.values.filter((_, i) => applyMask(i)) : null;
+
+                        if (fx) update.x = [fx];
+                        if (fy) update.y = [fy];
+                        if (fz) update.z = [fz];
+
                         if (Object.keys(update).length > 0) {
                             console.log("Updating position data:", update);
                             Plotly.restyle(_plotContainer, update, [0]);
-                            
-                            // Update highlighted cell if needed
                             if (_settings.highlightFocusedCell) {
-                                // Remove and re-add highlight to ensure it's updated with new positions
                                 _removeHighlight();
                                 _highlightFocusedCell();
                             }
@@ -3704,10 +3524,6 @@ const CellPlotPanel = (function() {
                         _removeHighlight();
                         hasFocusedCell = true;
                     }
-                
-                    // Check if we need to handle categorical vs numerical transition
-                    const isCategorical = _data.colorType === 'categorical';
-                    const hasMultipleTraces = _plot.data && _plot.data.length > 1;
                     
                     // Only check categorical vs. numerical transitions when we're actually 
                     // changing the color data, not just updating ranges
@@ -3729,16 +3545,17 @@ const CellPlotPanel = (function() {
                     }
                     
                     // For numerical data with many NaN values, recreation is safer
-                    if (_data.colorType === 'numerical' && _data.color && _data.color.length > 0) {
+                    if (isNumerical && _data.color && _data.color.length > 0) {
                         
                         // Check what specific color properties need updating
                         // This allows for more targeted updates
                         const update = {};
+                        const applyMask = idx => !indexMask || indexMask[idx];
                         
                         // Only include the full color array if the actual data changed
                         // This prevents unnecessary data transfer during slider interactions
                         if (updateOptions.colorData) {
-                            update['marker.color'] = [_data.color];
+                            update['marker.color'] = [_data.color.filter((_, i) => applyMask(i))];
                         }
                         
                         // Include colorscale if specified or if color data changed
@@ -3901,11 +3718,6 @@ const CellPlotPanel = (function() {
                     _highlightFocusedCell();
                 }
                 
-                // Apply outlier filtering if enabled (after all other updates)
-                if (_settings.hideOutliers) {
-                    console.log("Applying outlier filtering after data updates");
-                    _updateOutlierFiltering();
-                }
                 
             } catch (error) {
                 console.error("Error updating plot:", error);
