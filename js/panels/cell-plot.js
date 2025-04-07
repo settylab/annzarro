@@ -2807,6 +2807,7 @@ const CellPlotPanel = (function() {
                 x: _data.x.values,
                 y: _data.y.values,
                 text: _data.cells,
+                customdata: Array.from({ length: _data.cells.length }, (_, i) => i), // Add cell indices as customdata for click handling
                 hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
                 marker: {
                     size: _settings.pointSize,
@@ -3048,6 +3049,8 @@ const CellPlotPanel = (function() {
                             mode: 'markers',
                             name: category,
                             text: indices.map(idx => _data.cells[idx]),
+                            // Include cell indices in customdata for 3D plots
+                            customdata: indices, // Add cell indices as customdata for click handling
                             hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
                             x: indices.map(idx => _data.x.values[idx]),
                             y: indices.map(idx => _data.y.values[idx]),
@@ -3116,14 +3119,35 @@ const CellPlotPanel = (function() {
                                 
                                 // Set up click handler to update global focused cell
                                 _plotContainer.on('plotly_click', (data) => {
-                                    const pointIndex = data.points[0].pointIndex;
-                                    const traceIndex = data.points[0].curveNumber;
-                                    const cellName = traces[traceIndex].text[pointIndex];
-                                    
-                                    if (cellName) {
-                                        // Update the global focused cell in DataManager
-                                        // This will trigger updates in all panels via the event system
-                                        DataManager.setFocusedCell(cellName);
+                                    try {
+                                        const point = data.points[0];
+                                        const pointIndex = point.pointIndex;
+                                        const traceIndex = point.curveNumber;
+                                        let cellName;
+                                        
+                                        // First priority: Use customdata which contains the cell index
+                                        if (point.customdata !== undefined) {
+                                            const cellIndex = point.customdata;
+                                            if (_data.cells && cellIndex < _data.cells.length) {
+                                                cellName = _data.cells[cellIndex];
+                                            }
+                                            // In multi-trace categorical plot, customdata might be the index for that specific category
+                                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                                                cellName = traces[traceIndex].text[pointIndex];
+                                            }
+                                        }
+                                        // Third priority: Use trace's text array
+                                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                                            cellName = traces[traceIndex].text[pointIndex];
+                                        }
+                                        
+                                        if (cellName) {
+                                            // Update the global focused cell in DataManager
+                                            // This will trigger updates in all panels via the event system
+                                            DataManager.setFocusedCell(cellName);
+                                        }
+                                    } catch (error) {
+                                        console.error("Error handling cell plot click:", error);
                                     }
                                 });
                                 
@@ -3158,14 +3182,35 @@ const CellPlotPanel = (function() {
                             
                             // Set up click handler to update global focused cell
                             _plotContainer.on('plotly_click', (data) => {
-                                const pointIndex = data.points[0].pointIndex;
-                                const traceIndex = data.points[0].curveNumber;
-                                const cellName = traces[traceIndex].text[pointIndex];
-                                
-                                if (cellName) {
-                                    // Update the global focused cell in DataManager
-                                    // This will trigger updates in all panels via the event system
-                                    DataManager.setFocusedCell(cellName);
+                                try {
+                                    const point = data.points[0];
+                                    const pointIndex = point.pointIndex;
+                                    const traceIndex = point.curveNumber;
+                                    let cellName;
+                                    
+                                    // First priority: Use customdata which contains the cell index
+                                    if (point.customdata !== undefined) {
+                                        const cellIndex = point.customdata;
+                                        if (_data.cells && cellIndex < _data.cells.length) {
+                                            cellName = _data.cells[cellIndex];
+                                        }
+                                        // In multi-trace categorical plot, customdata might be the index for that specific category
+                                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                                            cellName = traces[traceIndex].text[pointIndex];
+                                        }
+                                    }
+                                    // Third priority: Use trace's text array
+                                    else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                                        cellName = traces[traceIndex].text[pointIndex];
+                                    }
+                                    
+                                    if (cellName) {
+                                        // Update the global focused cell in DataManager
+                                        // This will trigger updates in all panels via the event system
+                                        DataManager.setFocusedCell(cellName);
+                                    }
+                                } catch (error) {
+                                    console.error("Error handling cell plot click:", error);
                                 }
                             });
                             
@@ -3303,22 +3348,31 @@ const CellPlotPanel = (function() {
                 // Check if this is a 3D plot
                 const is3D = traces[0].type === 'scatter3d';
                 
-                // For 3D plots, we need to use the text property directly or handle specially
-                if (is3D) {
-                    // For 3D plots, access text property directly from the point
-                    if (point.text) {
-                        cellName = point.text;
+                try {
+                    // For both 2D and 3D plots, use customdata for consistent cell identification
+                    // First priority: Use customdata which contains the cell index
+                    if (point.customdata !== undefined) {
+                        const cellIndex = point.customdata;
+                        // For main trace with global indices
+                        if (_data.cells && cellIndex < _data.cells.length) {
+                            cellName = _data.cells[cellIndex];
+                        }
+                        // In multi-trace categorical plot, customdata might be the index for that specific category
+                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                            cellName = traces[traceIndex].text[pointIndex];
+                        }
                     }
-                    // If point.text is not available but we have point.customdata
-                    else if (point.customdata) {
-                        cellName = point.customdata;
+                    // Third priority: Use trace's text array in multi-trace categorical plot
+                    else if (traces.length > 1 && traces[traceIndex] && traces[traceIndex].text && 
+                             pointIndex < traces[traceIndex].text.length) {
+                        cellName = traces[traceIndex].text[pointIndex];
                     }
-                    // If we have a point index and it's valid, use the cells array
+                    // Fourth priority: Use point index with global cell array
                     else if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
                         cellName = _data.cells[pointIndex];
                     }
-                    // Try to find the cell using point coordinates
-                    else if (_data.x && _data.y && _data.x.values && _data.y.values && _data.cells) {
+                    // Final fallback: For 3D plots, try to find by coordinates
+                    else if (is3D && _data.x && _data.y && _data.x.values && _data.y.values && _data.cells) {
                         // Find the closest cell by coordinates
                         let minDistance = Infinity;
                         let closestIndex = -1;
@@ -3342,18 +3396,8 @@ const CellPlotPanel = (function() {
                             cellName = _data.cells[closestIndex];
                         }
                     }
-                } else {
-                    // Standard processing for 2D plots
-                    // Handle both single trace and multiple traces
-                    if (traces.length > 1 && traces[traceIndex].text) {
-                        // For categorical data with multiple traces
-                        cellName = traces[traceIndex].text[pointIndex];
-                    } else {
-                        // For single trace (numerical data)
-                        if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
-                            cellName = _data.cells[pointIndex];
-                        }
-                    }
+                } catch (error) {
+                    console.error("Error identifying cell in plot click:", error);
                 }
                 
                 if (cellName) {
