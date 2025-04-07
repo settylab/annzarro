@@ -2495,12 +2495,9 @@ const CellPlotPanel = (function() {
                     console.log('Loading Z-axis data:', _settings.z);
                     _data.z = await _loadAxisData('z', filteredCellIndices);
                 }
-
-                // Track if "Hide Outliers" was active before data change
-                const wasOutlierFilteringActive = _settings.hideOutliers;
                 
-                // Temporarily disable outlier filtering during data loading
-                if (wasOutlierFilteringActive) {
+                // disable outlier filtering during data loading
+                if (_settings.hideOutliers) {
                     _settings.hideOutliers = false;
                     _updateOutlierFiltering();
                 }
@@ -2526,12 +2523,6 @@ const CellPlotPanel = (function() {
                         Y axis has ${_data.y && _data.y.values ? _data.y.values.length : 0} points.
                     </div>`;
                 }
-
-                // Restore "Hide Outliers" state if it was active before
-                if (wasOutlierFilteringActive) {
-                    _settings.hideOutliers = true;
-                    _updateOutlierFiltering();
-                }
                 
             } catch (error) {
                 console.error('Error loading plot data:', error);
@@ -2547,11 +2538,9 @@ const CellPlotPanel = (function() {
          * @private
          */
         async function _loadAxisData(axis, filteredIndices = null) {
-            // Track if "Hide Outliers" was active before data change
-            const wasOutlierFilteringActive = _settings.hideOutliers;
             
-            // Temporarily disable outlier filtering during data loading
-            if (wasOutlierFilteringActive) {
+            // disable outlier filtering during data loading
+            if (_settings.hideOutliers) {
                 _settings.hideOutliers = false;
                 _updateOutlierFiltering();
             }
@@ -2850,22 +2839,10 @@ const CellPlotPanel = (function() {
                     categories
                 };
                 
-                // Restore "Hide Outliers" state if it was active before
-                if (wasOutlierFilteringActive) {
-                    // We'll reactivate the setting, but the actual filtering will happen later
-                    // after the plot is updated with the new data
-                    _settings.hideOutliers = true;
-                }
-                
                 return result;
                 
             } catch (error) {
                 console.error(`Error loading ${axis} axis data:`, error);
-                
-                // Restore "Hide Outliers" state if it was active before
-                if (wasOutlierFilteringActive) {
-                    _settings.hideOutliers = true;
-                }
                 
                 // We can't display the plot without data
                 throw new Error(`Failed to load data for ${axis} axis (${type}.${key}.${column})`);
