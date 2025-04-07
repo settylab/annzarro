@@ -10,7 +10,7 @@ const CellPlotPanel = (function() {
      */
     function CellPlotPanel(container, options = {}) {
         // Private variables
-        const _id = options.id || `cell-plot-${Date.now()}`;
+        const _id = `cell-plot-${Date.now()}`;
         let _title = options.title || 'Cell Plot';
         const _container = container;
         let _plotContainer = null;
