@@ -32,11 +32,31 @@
                             </div>
                             <div class="col">
                                 <label for="focused-gene">Focused Gene:</label>
-                                <select id="focused-gene" class="form-select"></select>
+                                <div class="d-flex">
+                                    <div class="btn-group btn-group-sm me-1">
+                                        <button id="gene-history-back" class="btn btn-outline-secondary" title="Previous gene" disabled>
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <button id="gene-history-forward" class="btn btn-outline-secondary" title="Next gene" disabled>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                    <select id="focused-gene" class="form-select flex-grow-1"></select>
+                                </div>
                             </div>
                             <div class="col">
                                 <label for="focused-cell">Focused Cell:</label>
-                                <select id="focused-cell" class="form-select"></select>
+                                <div class="d-flex">
+                                    <div class="btn-group btn-group-sm me-1">
+                                        <button id="cell-history-back" class="btn btn-outline-secondary" title="Previous cell" disabled>
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <button id="cell-history-forward" class="btn btn-outline-secondary" title="Next cell" disabled>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                    <select id="focused-cell" class="form-select flex-grow-1"></select>
+                                </div>
                             </div>
                             <div class="col">
                                 <label for="taxonomy-id">Taxonomy ID:</label>

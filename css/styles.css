@@ -308,6 +308,33 @@ div.dtsb-group {
     background-color: rgba(13, 110, 253, 0.1);
 }
 
+/* History navigation buttons */
+#gene-history-back, #gene-history-forward,
+#cell-history-back, #cell-history-forward {
+    font-size: 0.8rem;
+    width: 30px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-color: #ced4da;
+}
+
+#gene-history-back:not(:disabled):hover, 
+#gene-history-forward:not(:disabled):hover,
+#cell-history-back:not(:disabled):hover, 
+#cell-history-forward:not(:disabled):hover {
+    background-color: #e9ecef;
+}
+
+#gene-history-back:disabled, 
+#gene-history-forward:disabled,
+#cell-history-back:disabled, 
+#cell-history-forward:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* Session Management */
 .session-list-item {
     cursor: pointer;

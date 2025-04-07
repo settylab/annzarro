@@ -134,7 +134,7 @@ const App = (function() {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
         
-        // Setup gene and cell selectors
+        // Setup gene and cell selectors with history navigation
         const focusedGeneSelect = document.getElementById('focused-gene');
         if (focusedGeneSelect) {
             focusedGeneSelect.addEventListener('change', (e) => {
@@ -145,6 +145,40 @@ const App = (function() {
             });
         }
         
+        // Gene history buttons
+        const geneHistoryBack = document.getElementById('gene-history-back');
+        const geneHistoryForward = document.getElementById('gene-history-forward');
+        
+        if (geneHistoryBack) {
+            geneHistoryBack.addEventListener('click', () => {
+                DataManager.navigateGeneHistoryBack();
+            });
+        }
+        
+        if (geneHistoryForward) {
+            geneHistoryForward.addEventListener('click', () => {
+                DataManager.navigateGeneHistoryForward();
+            });
+        }
+        
+        // Listen for focused gene change events to update history UI
+        document.addEventListener('focusedGeneChanged', (e) => {
+            if (geneHistoryBack) {
+                geneHistoryBack.disabled = !e.detail.canGoBack;
+            }
+            if (geneHistoryForward) {
+                geneHistoryForward.disabled = !e.detail.canGoForward;
+            }
+            
+            // Update select field if change came from history navigation
+            if (e.detail.fromHistory && focusedGeneSelect) {
+                focusedGeneSelect.value = e.detail.gene;
+                if (window.$ && $.fn.select2) {
+                    $(focusedGeneSelect).trigger('change.select2');
+                }
+            }
+        });
+        
         const focusedCellSelect = document.getElementById('focused-cell');
         if (focusedCellSelect) {
             focusedCellSelect.addEventListener('change', (e) => {
@@ -154,6 +188,42 @@ const App = (function() {
                 }
             });
         }
+        
+        // Cell history buttons
+        const cellHistoryBack = document.getElementById('cell-history-back');
+        const cellHistoryForward = document.getElementById('cell-history-forward');
+        
+        if (cellHistoryBack) {
+            cellHistoryBack.addEventListener('click', () => {
+                DataManager.navigateCellHistoryBack();
+            });
+        }
+        
+        if (cellHistoryForward) {
+            cellHistoryForward.addEventListener('click', () => {
+                DataManager.navigateCellHistoryForward();
+            });
+        }
+        
+        // Listen for focused cell change events to update history UI
+        document.addEventListener('focusedCellChanged', (e) => {
+            if (cellHistoryBack) {
+                cellHistoryBack.disabled = !e.detail.canGoBack;
+            }
+            if (cellHistoryForward) {
+                cellHistoryForward.disabled = !e.detail.canGoForward;
+            }
+            
+            // Update select field if change came from history navigation
+            if (e.detail.fromHistory && focusedCellSelect) {
+                focusedCellSelect.value = e.detail.cell;
+                if (window.$ && $.fn.select2) {
+                    $(focusedCellSelect).trigger('change.select2');
+                }
+            }
+        });
+        
+        // No asynchronous sorting events
         
         const taxonomyIdSelect = document.getElementById('taxonomy-id');
         if (taxonomyIdSelect) {

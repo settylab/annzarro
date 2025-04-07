@@ -12,6 +12,12 @@ const DataManager = (function() {
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
     
+    // Selection history tracking
+    let _cellHistory = []; // Array of previously selected cells
+    let _cellHistoryIndex = -1; // Current position in cell history
+    let _geneHistory = []; // Array of previously selected genes
+    let _geneHistoryIndex = -1; // Current position in gene history
+    
     // Cache for API responses
     const _cache = new Map();
     
@@ -153,31 +159,6 @@ const DataManager = (function() {
             
             // The backend may have a different format than what we expect
             // Transform it to fit our expected structure if needed
-            
-            // If obsm is not in the expected format, try to adapt it
-            if (!data.obsm || !data.obsm.keys) {
-                console.warn('Dataset structure missing expected obsm.keys format, trying to adapt');
-                
-                // Check if we have embeddings property which might contain obsm keys
-                if (data.embeddings && Array.isArray(data.embeddings)) {
-                    console.log('Found embeddings array, using as obsm keys');
-                    data.obsm = {
-                        available: true,
-                        keys: data.embeddings,
-                        info: {}
-                    };
-                    
-                    // If we have shape information, add it to the info structure
-                    if (data.X && data.X.shape) {
-                        data.embeddings.forEach(key => {
-                            data.obsm.info[key] = {
-                                type: 'array',
-                                shape: [data.X.shape[0], 2] // Assuming 2D embeddings
-                            };
-                        });
-                    }
-                }
-            }
             
             return data;
         } catch (error) {
@@ -728,29 +709,175 @@ const DataManager = (function() {
     /**
      * Set the focused cell
      * @param {string} cellName - Cell name
+     * @param {boolean} fromHistory - Whether this change is from navigating history
      */
-    function setFocusedCell(cellName) {
+    function setFocusedCell(cellName, fromHistory = false) {
+        // Skip if same cell is already focused
+        if (_focusedCell === cellName) return;
+        
+        const oldCell = _focusedCell;
         _focusedCell = cellName;
+        
+        // Handle history
+        if (!fromHistory && cellName && cellName !== '') {
+            // When selecting a new cell (not from history navigation):
+            
+            // First, if we're in the middle of history (went back and now selecting a new item)
+            // truncate the forward history
+            if (_cellHistoryIndex < _cellHistory.length - 1) {
+                _cellHistory = _cellHistory.slice(0, _cellHistoryIndex + 1);
+            }
+            
+            _cellHistory.push(cellName);
+            _cellHistoryIndex = _cellHistory.length - 1;
+        }
         
         // Trigger event for components to update
         const event = new CustomEvent('focusedCellChanged', {
-            detail: { cell: cellName }
+            detail: { 
+                cell: cellName,
+                fromHistory: fromHistory,
+                canGoBack: _cellHistoryIndex > 0,
+                canGoForward: _cellHistoryIndex < _cellHistory.length - 1
+            }
         });
         document.dispatchEvent(event);
     }
     
     /**
+     * Navigate cell history backwards
+     * @returns {boolean} - Success
+     */
+    function navigateCellHistoryBack() {
+        // When a user makes a selection, we add it to history
+        // To go back, we need to see if we have any history to navigate
+        
+        if (_cellHistory.length > 1) {
+            // If we have history items, find the right one to show
+            
+            // We might be at the start of our history already
+            if (_cellHistoryIndex < 1) {
+                 return false;
+            }
+            
+            // Get the cell at the current history index
+            const previousCell = _cellHistory[_cellHistoryIndex-1];
+            
+            // Move index down for next back button press
+            _cellHistoryIndex--;
+            
+            // Apply the previous cell from history
+            setFocusedCell(previousCell, true);
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Navigate cell history forwards
+     * @returns {boolean} - Success
+     */
+    function navigateCellHistoryForward() {
+        // First increment the index
+        _cellHistoryIndex++;
+        
+        // Then check if we have a valid cell at this index
+        if (_cellHistoryIndex < _cellHistory.length) {
+            const nextCell = _cellHistory[_cellHistoryIndex];
+            setFocusedCell(nextCell, true);
+            return true;
+        } else {
+            // We've gone past the end of history
+            _cellHistoryIndex = _cellHistory.length - 1;
+            return false;
+        }
+    }
+    
+    /**
      * Set the focused gene
      * @param {string} geneName - Gene name
+     * @param {boolean} fromHistory - Whether this change is from navigating history
      */
-    function setFocusedGene(geneName) {
+    function setFocusedGene(geneName, fromHistory = false) {
+        // Skip if same gene is already focused
+        if (_focusedGene === geneName) return;
+        
+        const oldGene = _focusedGene;
         _focusedGene = geneName;
+        
+        // Handle history
+        if (!fromHistory && geneName && geneName !== '') {
+            // When selecting a new gene (not from history navigation):
+            
+            // First, if we're in the middle of history (went back and now selecting a new item)
+            // truncate the forward history
+            if (_geneHistoryIndex < _geneHistory.length - 1) {
+                _geneHistory = _geneHistory.slice(0, _geneHistoryIndex + 1);
+            }
+            _geneHistory.push(geneName);
+            _geneHistoryIndex = _geneHistory.length - 1;
+            
+        }
         
         // Trigger event for components to update
         const event = new CustomEvent('focusedGeneChanged', {
-            detail: { gene: geneName }
+            detail: { 
+                gene: geneName,
+                fromHistory: fromHistory,
+                canGoBack: _geneHistoryIndex > 0,
+                canGoForward: _geneHistoryIndex < _geneHistory.length - 1
+            }
         });
         document.dispatchEvent(event);
+    }
+    
+    /**
+     * Navigate gene history backwards
+     * @returns {boolean} - Success
+     */
+    function navigateGeneHistoryBack() {
+        // When a user makes a selection, we add it to history
+        // To go back, we need to see if we have any history to navigate
+        
+        if (_geneHistory.length > 1) {
+            // If we have history items, find the right one to show
+            
+            // We might be at the start of our history already
+            if (_geneHistoryIndex < 1) {
+                 return false;
+            }
+            
+            // Get the gene at the current history index
+            const previousGene = _geneHistory[_geneHistoryIndex-1];
+            
+            // Move index down for next back button press
+            _geneHistoryIndex--;
+            
+            // Apply the previous gene from history
+            setFocusedGene(previousGene, true);
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Navigate gene history forwards
+     * @returns {boolean} - Success
+     */
+    function navigateGeneHistoryForward() {
+        // First increment the index
+        _geneHistoryIndex++;
+        
+        // Then check if we have a valid gene at this index
+        if (_geneHistoryIndex < _geneHistory.length) {
+            const nextGene = _geneHistory[_geneHistoryIndex];
+            setFocusedGene(nextGene, true);
+            return true;
+        } else {
+            // We've gone past the end of history
+            _geneHistoryIndex = _geneHistory.length - 1;
+            return false;
+        }
     }
     
     /**
@@ -802,6 +929,7 @@ const DataManager = (function() {
      */
     function getSortedCells() {
         if (!_cells) return [];
+        
         // Return a sorted copy
         return [..._cells].sort();
     }
@@ -822,6 +950,7 @@ const DataManager = (function() {
      */
     function getSortedGenes() {
         if (!_genes) return [];
+        
         // Return a sorted copy
         return [..._genes].sort();
     }
@@ -906,7 +1035,12 @@ const DataManager = (function() {
         getTaxonomyId,
         getTaxonomySpecies,
         getCellIndex,
-        getGeneIndex
+        getGeneIndex,
+        // History navigation functions
+        navigateCellHistoryBack,
+        navigateCellHistoryForward,
+        navigateGeneHistoryBack,
+        navigateGeneHistoryForward
     };
 })();
 
