@@ -891,7 +891,10 @@ const CellPlotPanel = (function() {
                     
                     // Update key options
                     _populateKeySelect(type, keySelect).then(() => {
-                        if (keySelect.options.length > 0) {
+                        if (_settings[axis].type === "none" && axis === 'color') {
+                            console.log('Color setting changed, using optimized update');
+                            _loadColorDataAndUpdatePlot();
+                        } else if (keySelect.options.length > 0) {
                             keySelect.selectedIndex = 0;
                             _settings[axis].key = keySelect.value;
                             
@@ -1818,7 +1821,8 @@ const CellPlotPanel = (function() {
             
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', (e) => {
-                console.log(`Focused cell changed to: ${e.detail.cell}`);
+                const focusedCell = e.detail.cell;
+                console.log(`Focused cell changed to: ${focusedCell}`);
                 
                 // Check if we're using obsp data anywhere in the plot
                 const usesObspData = _settings.x.type === 'obsp' || 
@@ -1840,6 +1844,7 @@ const CellPlotPanel = (function() {
                     // Handle specific update scenarios
                     if (updates.xAxis) {
                         console.log('Focused cell changed affects x-axis, loading new data');
+                        _settings.x.column = focusedCell;
                         _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
@@ -1854,6 +1859,7 @@ const CellPlotPanel = (function() {
                     }
                     if (updates.yAxis) {
                         console.log('Focused cell changed affects y-axis, loading new data');
+                        _settings.y.column = focusedCell;
                         _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
@@ -1868,6 +1874,7 @@ const CellPlotPanel = (function() {
                     }
                     if (updates.zAxis) {
                         console.log('Focused cell changed affects z-axis, loading new data');
+                        _settings.z.column = focusedCell;
                         _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
@@ -1883,6 +1890,7 @@ const CellPlotPanel = (function() {
                     if (updates.colors) {
                         // Only color uses obsp data - we can use optimized update
                         console.log('Focused cell changed, only affects color data - using optimized update');
+                        _settings.color.column = focusedCell;
                         _loadColorDataAndUpdatePlot();
                     }
                 } else {
@@ -1894,7 +1902,7 @@ const CellPlotPanel = (function() {
              * Update axis titles and menu labels to reflect the current focused gene
              * @private
              */
-            function _updateAxisLabelsForGene(focusedGene) {
+            function _updateMenueLabelsForGene(focusedGene) {
                 if (!_plot) return;
                 
                 // Update UI controls in menus to show correct gene name
@@ -1913,102 +1921,6 @@ const CellPlotPanel = (function() {
                 updateColumnSelectOptions('y');
                 updateColumnSelectOptions('z');
                 updateColumnSelectOptions('color');
-                
-                // Store layout updates for axis titles
-                const layoutUpdates = {};
-                
-                // Update axis titles in the plot
-                if (_settings.x.type === 'layer') {
-                    const newTitle = `${_settings.x.type}.${_settings.x.key}.${focusedGene}`;
-                    if (_settings.z) {
-                        // 3D plot
-                        layoutUpdates['scene.xaxis.title'] = newTitle;
-                    } else {
-                        // 2D plot
-                        layoutUpdates['xaxis.title'] = newTitle;
-                    }
-                }
-                
-                if (_settings.y.type === 'layer') {
-                    const newTitle = `${_settings.y.type}.${_settings.y.key}.${focusedGene}`;
-                    if (_settings.z) {
-                        // 3D plot
-                        layoutUpdates['scene.yaxis.title'] = newTitle;
-                    } else {
-                        // 2D plot
-                        layoutUpdates['yaxis.title'] = newTitle;
-                    }
-                }
-                
-                if (_settings.z && _settings.z.type === 'layer') {
-                    const newTitle = `${_settings.z.type}.${_settings.z.key}.${focusedGene}`;
-                    layoutUpdates['scene.zaxis.title'] = newTitle;
-                }
-                
-                // Update colorbar title if needed
-                if (_settings.color.type === 'layer') {
-                    // Create a title object with proper vertical formatting
-                    const newTitle = {
-                        text: `${_settings.color.type}.${_settings.color.key}.${focusedGene}`,
-                        side: 'right',
-                        font: {
-                            size: 12
-                        }
-                    };
-                    
-                    // Only update the title object itself
-                    layoutUpdates['coloraxis.colorbar.title'] = newTitle;
-                }
-                
-                // Apply all layout updates at once if we have any
-                if (Object.keys(layoutUpdates).length > 0) {
-                    console.log("Updating axis titles for new focused gene:", layoutUpdates);
-                    
-                    try {
-                        // Check if we have a valid plot
-                        if (!_plot) {
-                            console.warn("Cannot update axis labels: plot doesn't exist");
-                            return;
-                        }
-                        
-                        // Store current layout
-                        if (!_plot.layout) _plot.layout = {};
-                        
-                        // Apply our updates to the stored layout
-                        for (const [key, value] of Object.entries(layoutUpdates)) {
-                            // Use a helper function to set nested properties
-                            const setNestedProperty = (obj, path, value) => {
-                                const parts = path.split('.');
-                                let current = obj;
-                                
-                                // Navigate to the right depth, creating objects as needed
-                                for (let i = 0; i < parts.length - 1; i++) {
-                                    if (current[parts[i]] === undefined) {
-                                        current[parts[i]] = {};
-                                    }
-                                    current = current[parts[i]];
-                                }
-                                
-                                // Set the final property
-                                current[parts[parts.length - 1]] = value;
-                            };
-                            
-                            setNestedProperty(_plot.layout, key, value);
-                        }
-                        
-                        // Use _updatePlotElements to apply the layout changes
-                        if (_plot && _plotContainer && _plotContainer.parentNode) {
-                            _updatePlotElements({
-                                layout: true
-                            });
-                        } else {
-                            console.warn("Cannot update plot - container or plot doesn't exist");
-                        }
-                    } catch (error) {
-                        console.error("Error updating axis labels:", error);
-                        // Don't attempt to recreate the plot here - just log the error
-                    }
-                }
             }
             
             // Listen for focused gene changes
@@ -2024,7 +1936,7 @@ const CellPlotPanel = (function() {
                 
                 if (usesLayerData) {
                     // Update all the labels that reference genes even before loading any data
-                    _updateAxisLabelsForGene(focusedGene);
+                    _updateMenueLabelsForGene(focusedGene);
                     
                     // Track which axes need data updates
                     const updates = {
@@ -2040,11 +1952,12 @@ const CellPlotPanel = (function() {
                     // If x-axis uses layer data, load new data
                     if (updates.xAxis) {
                         console.log('Focused gene changed affects x-axis, loading new data');
+                        _settings.x.column = focusedGene;
                         const xPromise = _loadAxisData('x').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
                                 // Update using _updatePlotElements
-                                _updatePlotElements({ xAxis: true });
+                                _updatePlotElements({ xAxis: true, layout: true });
                             }
                         }).catch(err => {
                             console.error("Error loading x-axis data:", err);
@@ -2055,11 +1968,12 @@ const CellPlotPanel = (function() {
                     // If y-axis uses layer data, load new data
                     if (updates.yAxis) {
                         console.log('Focused gene changed affects y-axis, loading new data');
+                        _settings.y.column = focusedGene;
                         const yPromise = _loadAxisData('y').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
                                 // Update using _updatePlotElements
-                                _updatePlotElements({ yAxis: true });
+                                _updatePlotElements({ yAxis: true, layout: true });
                             }
                         }).catch(err => {
                             console.error("Error loading y-axis data:", err);
@@ -2070,11 +1984,12 @@ const CellPlotPanel = (function() {
                     // If z-axis uses layer data, load new data
                     if (updates.zAxis) {
                         console.log('Focused gene changed affects z-axis, loading new data');
+                        _settings.z.column = focusedGene;
                         const zPromise = _loadAxisData('z').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
                                 // Update using _updatePlotElements
-                                _updatePlotElements({ zAxis: true });
+                                _updatePlotElements({ zAxis: true, layout: true });
                             }
                         }).catch(err => {
                             console.error("Error loading z-axis data:", err);
@@ -2085,6 +2000,7 @@ const CellPlotPanel = (function() {
                     // If color uses layer data, load and update new data
                     if (updates.colors) {
                         console.log('Focused gene changed affects color data, loading new data');
+                        _settings.color.column = focusedGene;
                         // Load just the color data and update
                         _loadColorDataAndUpdatePlot();
                     }
@@ -2189,6 +2105,8 @@ const CellPlotPanel = (function() {
                   let newY = [];
                   let newZ = [];
                   let newColors = [];
+                  let newText = [];
+                  let newCustomdata = [];
             
                   for (let i = 0; i < trace.marker.color.length; i++) {
                     const cVal = trace.marker.color[i];
@@ -2196,17 +2114,30 @@ const CellPlotPanel = (function() {
                       newX.push(trace.x[i]);
                       newY.push(trace.y[i]);
                       newColors.push(cVal);
+                      
+                      // Also preserve text and customdata for cell identification when clicking
+                      if (trace.text && i < trace.text.length) {
+                        newText.push(trace.text[i]);
+                      }
+                      
+                      if (trace.customdata && i < trace.customdata.length) {
+                        newCustomdata.push(trace.customdata[i]);
+                      }
+                      
                       if (trace.z) {
                         newZ.push(trace.z[i]);
                       }
                     }
                   }
-            
+                  
+                  // Create updated trace with preserved cell identifiers
                   return {
                     ...trace,
                     x: newX,
                     y: newY,
-                    // Only include z if it exists in the original trace.
+                    text: newText.length > 0 ? newText : undefined,
+                    customdata: newCustomdata.length > 0 ? newCustomdata : undefined,
+                    // Only include z if it exists in the original trace
                     ...(trace.z ? { z: newZ } : {}),
                     marker: { ...trace.marker, color: newColors }
                   };
@@ -2216,13 +2147,33 @@ const CellPlotPanel = (function() {
             
             // Apply the filtered data if we have a valid container
             if (_plotContainer && _plotContainer.parentNode) {
+              // Apply the filtered data while preserving the existing layout
               Plotly.react(_plotContainer, processedData, _plot.layout);
               
               // Re-highlight the focused cell if needed
               if (_settings.highlightFocusedCell) {
                 // Remove any existing highlight and add it back to make sure it's visible
+                // with the new filtered data
                 _removeHighlight();
                 _highlightFocusedCell();
+              }
+              
+              // Re-apply any trace styles that might have been lost
+              if (processedData.length > 0) {
+                const dataTraceIndices = [];
+                for (let i = 0; i < processedData.length; i++) {
+                  if (processedData[i] && processedData[i].name !== 'Focused Cell') {
+                    dataTraceIndices.push(i);
+                  }
+                }
+                
+                // Re-apply styling to ensure consistent appearance
+                if (dataTraceIndices.length > 0) {
+                  Plotly.restyle(_plotContainer, {
+                    'marker.size': _settings.pointSize,
+                    'marker.opacity': _settings.pointOpacity
+                  }, dataTraceIndices);
+                }
               }
             }
             } catch (error) {
@@ -3291,7 +3242,7 @@ const CellPlotPanel = (function() {
                                         if (cellName) {
                                             // Update the global focused cell in DataManager
                                             // This will trigger updates in all panels via the event system
-                                            DataManager.setFocusedCell(cellName);
+                                            DataManager.setFocusedCell(cellName, false);
                                         }
                                     } catch (error) {
                                         console.error("Error handling cell plot click:", error);
@@ -3354,7 +3305,7 @@ const CellPlotPanel = (function() {
                                     if (cellName) {
                                         // Update the global focused cell in DataManager
                                         // This will trigger updates in all panels via the event system
-                                        DataManager.setFocusedCell(cellName);
+                                        DataManager.setFocusedCell(cellName, false);
                                     }
                                 } catch (error) {
                                     console.error("Error handling cell plot click:", error);
@@ -3471,6 +3422,7 @@ const CellPlotPanel = (function() {
                 responsive: true,
                 displayModeBar: true,
                 displaylogo: false,
+                showlegend: true,
                 modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
             });
             
@@ -3492,14 +3444,23 @@ const CellPlotPanel = (function() {
                     // For both 2D and 3D plots, use customdata for consistent cell identification
                     // First priority: Use customdata which contains the cell index
                     if (point.customdata !== undefined) {
-                        const cellIndex = point.customdata;
-                        // For main trace with global indices
-                        if (_data.cells && cellIndex < _data.cells.length) {
-                            cellName = _data.cells[cellIndex];
-                        }
-                        // In multi-trace categorical plot, customdata might be the index for that specific category
-                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                            cellName = traces[traceIndex].text[pointIndex];
+                        // When Hide Outliers is active, customdata is already filtered to contain the correct indices
+                        // Otherwise it contains the original index into _data.cells
+                        
+                        if (typeof point.customdata === 'number') {
+                            // Simple numeric index case (typical for non-filtered data)
+                            const cellIndex = point.customdata;
+                            // For main trace with global indices
+                            if (_data.cells && cellIndex < _data.cells.length) {
+                                cellName = _data.cells[cellIndex];
+                            }
+                            // In multi-trace categorical plot, customdata might be the index for that specific category
+                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+                                cellName = traces[traceIndex].text[pointIndex];
+                            }
+                        } else if (point.customdata && point.text) {
+                            // Might have direct access to cell name in text when outliers are filtered
+                            cellName = point.text;
                         }
                     }
                     // Third priority: Use trace's text array in multi-trace categorical plot
@@ -3536,6 +3497,16 @@ const CellPlotPanel = (function() {
                             cellName = _data.cells[closestIndex];
                         }
                     }
+                    
+                    // Debug logging to help diagnose issues with filtered data
+                    if (_settings.hideOutliers) {
+                        console.log("Click in filtered plot:", { 
+                            cellName, 
+                            pointIndex, 
+                            traceIndex,
+                            pointData: point
+                        });
+                    }
                 } catch (error) {
                     console.error("Error identifying cell in plot click:", error);
                 }
@@ -3543,7 +3514,7 @@ const CellPlotPanel = (function() {
                 if (cellName) {
                     // Update the global focused cell in DataManager
                     // This will trigger updates in all panels via the event system
-                    DataManager.setFocusedCell(cellName);
+                    DataManager.setFocusedCell(cellName, false);
                 }
             });
             
@@ -3827,39 +3798,34 @@ const CellPlotPanel = (function() {
                             update['marker.cmax'] = _settings.colorMax;
                         }
                         
+                        // Enable colorbar and disable legend
+                        update['marker.showscale'] = true;
+                        update['showlegend'] = false;
+                        
                         // Only apply updates if there's something to update
                         if (Object.keys(update).length > 0) {
                             // Apply color updates
                             console.log("Applying color updates:", update);
                             Plotly.restyle(_plotContainer, update, [0]);
                         }
+                    } else if (_data.colorType === 'constant') {
+                        const update = {};
                         
-                        // Update colorbar title with separate layout update
-                        if ((updateOptions.layout || updateOptions.colorData) && _plotContainer && _plotContainer.parentNode) {
-                            try {
-                                // Only update title if we have a real color type (not 'none') and valid settings
-                                if (_settings && _settings.color && _settings.color.type && 
-                                    _settings.color.type !== 'none' && _settings.color.key) {
-                                    
-                                    // Create a title object with proper vertical formatting
-                                    const newTitle = {
-                                        text: `${_settings.color.type}.${_settings.color.key}` +
-                                            (_settings.color.column ? `.${_settings.color.column}` : ''),
-                                        side: 'right',
-                                        font: {
-                                            size: 12
-                                        }
-                                    };
-                                    
-                                    console.log("Updating colorbar title:", newTitle.text);
-                                    Plotly.relayout(_plotContainer, {
-                                        'coloraxis.colorbar.title': newTitle,
-                                    });
-                                }
-                            } catch (error) {
-                                console.error("Error updating colorbar title:", error);
-                                // Just log the error and continue
-                            }
+                        // Only include the full color array if the actual data changed
+                        // This prevents unnecessary data transfer during slider interactions
+                        if (updateOptions.colorData) {
+                            update['marker.color'] = 'rgba(150, 150, 150, 0.7)';
+                        }
+                        
+                        // Disable both the colorbar and the legend
+                        update['marker.showscale'] = false;
+                        update['showlegend'] = false;
+                        
+                        // Only apply updates if there's something to update
+                        if (Object.keys(update).length > 0) {
+                            // Apply color updates
+                            console.log("Applying color updates:", update);
+                            Plotly.restyle(_plotContainer, update, [0]);
                         }
                     }
                     
@@ -3878,15 +3844,35 @@ const CellPlotPanel = (function() {
                         'marker.opacity': _settings.pointOpacity
                     };
                     
-                    // Apply to all traces
-                    const traceIndices = Array.from({length: _plot.data.length}, (_, i) => i);
-                    Plotly.restyle(_plotContainer, update, traceIndices);
+                    // Find all data traces, excluding the highlight trace
+                    const dataTraceIndices = [];
+                    for (let i = 0; i < _plot.data.length; i++) {
+                        // Skip the highlighted cell trace
+                        if (_plot.data[i] && _plot.data[i].name !== 'Focused Cell') {
+                            dataTraceIndices.push(i);
+                        }
+                    }
+                    
+                    // Apply to data traces only (excluding the highlight trace)
+                    if (dataTraceIndices.length > 0) {
+                        console.log("Updating marker style for data traces:", dataTraceIndices);
+                        Plotly.restyle(_plotContainer, update, dataTraceIndices);
+                    }
+                    
+                    // Find and update the highlight trace separately (if it exists)
+                    for (let i = 0; i < _plot.data.length; i++) {
+                        if (_plot.data[i] && _plot.data[i].name === 'Focused Cell') {
+                            // Update only the size of the highlight trace, keeping its opacity fixed
+                            Plotly.restyle(_plotContainer, {
+                                'marker.size': _settings.pointSize * 2  // Always 2x the current point size
+                            }, [i]);
+                            break;
+                        }
+                    }
                 }
                 
                 // OTHER LAYOUT UPDATES
                 if (updateOptions.layout) {
-                    // Update any other layout elements like titles, axes, etc.
-                    // This section can be expanded as needed
                     console.log("Updating layout properties");
                     
                     // Check if we have a valid plot and container for layout updates
@@ -3895,49 +3881,66 @@ const CellPlotPanel = (function() {
                         return;
                     }
                     
-                    try {
-                        // Update axis titles
-                        const layoutUpdate = {};
-                        
-                        // Determine if we're in 2D or 3D mode
-                        const is3D = _plot.data[0].type === 'scatter3d';
-                        
-                        // Only update if settings are properly initialized
-                        if (_settings && _settings.x && _settings.x.type && _settings.x.key) {
-                            // Update X axis title
-                            const xAxisTitle = `${_settings.x.type}.${_settings.x.key}${_settings.x.column ? `.${_settings.x.column}` : ''}`;
-                            if (is3D) {
-                                layoutUpdate['scene.xaxis.title'] = xAxisTitle;
-                            } else {
-                                layoutUpdate['xaxis.title'] = xAxisTitle;
-                            }
+                    // Axis title updates (layout-level)
+                    const layoutUpdate = {};
+                    const is3D = _plot.data[0].type === 'scatter3d';
+                    
+                    if (_settings && _settings.x && _settings.x.type && _settings.x.key) {
+                        const xAxisTitle = `${_settings.x.type}.${_settings.x.key}${_settings.x.column ? `.${_settings.x.column}` : ''}`;
+                        if (is3D) {
+                            layoutUpdate['scene.xaxis.title'] = xAxisTitle;
+                        } else {
+                            layoutUpdate['xaxis.title'] = xAxisTitle;
                         }
-                        
-                        // Only update if settings are properly initialized
-                        if (_settings && _settings.y && _settings.y.type && _settings.y.key) {
-                            // Update Y axis title
-                            const yAxisTitle = `${_settings.y.type}.${_settings.y.key}${_settings.y.column ? `.${_settings.y.column}` : ''}`;
-                            if (is3D) {
-                                layoutUpdate['scene.yaxis.title'] = yAxisTitle;
-                            } else {
-                                layoutUpdate['yaxis.title'] = yAxisTitle;
-                            }
+                    }
+                    
+                    if (_settings && _settings.y && _settings.y.type && _settings.y.key) {
+                        const yAxisTitle = `${_settings.y.type}.${_settings.y.key}${_settings.y.column ? `.${_settings.y.column}` : ''}`;
+                        if (is3D) {
+                            layoutUpdate['scene.yaxis.title'] = yAxisTitle;
+                        } else {
+                            layoutUpdate['yaxis.title'] = yAxisTitle;
                         }
-                        
-                        // Update Z axis title if 3D and settings are properly initialized
-                        if (is3D && _settings && _settings.z && _settings.z.type && _settings.z.key) {
-                            const zAxisTitle = `${_settings.z.type}.${_settings.z.key}${_settings.z.column ? `.${_settings.z.column}` : ''}`;
-                            layoutUpdate['scene.zaxis.title'] = zAxisTitle;
+                    }
+                    
+                    if (is3D && _settings && _settings.z && _settings.z.type && _settings.z.key) {
+                        const zAxisTitle = `${_settings.z.type}.${_settings.z.key}${_settings.z.column ? `.${_settings.z.column}` : ''}`;
+                        layoutUpdate['scene.zaxis.title'] = zAxisTitle;
+                    }
+                    
+                    if (Object.keys(layoutUpdate).length > 0) {
+                        console.log("Applying layout updates:", layoutUpdate);
+                        Plotly.relayout(_plotContainer, layoutUpdate);
+                    }
+                    
+                    // Marker (trace) updates for colorbar need to be applied with Plotly.restyle
+                    if (_settings && _settings.color && _settings.color.type && _settings.color.key) {
+                        if (_data.colorType === 'numerical') {
+                            const colorbar = {
+                                title: {
+                                    text: `${_settings.color.type}.${_settings.color.key}` +
+                                          (_settings.color.column ? `.${_settings.color.column}` : ''),
+                                    side: 'right',  // Title appears on the right side of the colorbar
+                                    font: { size: 12 }
+                                },
+                                titleside: 'right'
+                            };
+                            const restyleUpdate = {
+                                'marker.colorbar': colorbar,
+                                'marker.showscale': true,
+                                'showlegend': false
+                            };
+                            console.log("Applying colorbar restyle updates:", restyleUpdate);
+                            // Here, update the first trace (or adjust trace indices as needed)
+                            Plotly.restyle(_plotContainer, restyleUpdate, [0]);
+                        } else if (_settings.color.type === 'none' || _data.colorType === 'constant') {
+                            const restyleUpdate = {
+                                'marker.showscale': false,
+                                'showlegend': false
+                            };
+                            console.log("Applying colorbar restyle updates:", restyleUpdate);
+                            Plotly.restyle(_plotContainer, restyleUpdate, [0]);
                         }
-                        
-                        if (Object.keys(layoutUpdate).length > 0 && _plotContainer && _plotContainer.parentNode) {
-                            console.log("Applying layout updates:", layoutUpdate);
-                            Plotly.relayout(_plotContainer, layoutUpdate);
-                        }
-                    } catch (error) {
-                        console.error("Error updating layout:", error);
-                        // Don't recreate the plot here, as this might cause an infinite loop
-                        // Just log the error and continue
                     }
                 }
                 
@@ -4206,17 +4209,17 @@ const CellPlotPanel = (function() {
                     mode: 'markers',
                     type: is3D ? 'scatter3d' : 'scattergl',
                     marker: {
-                        size: _settings.pointSize * 2, // Make highlighted point larger
+                        size: _settings.pointSize * 2, // Make highlighted point larger than current size setting
                         color: 'rgba(255, 0, 0, 1)', // Red color
-                        opacity: 1,
+                        opacity: 1, // Always fully opaque for visibility
                         line: {
                             color: 'rgba(0, 0, 0, 1)',
                             width: 2
                         }
                     },
-                    showlegend: false,
                     hoverinfo: 'skip',
-                    name: 'Focused Cell'
+                    name: 'Focused Cell',
+                    showlegend: false
                 };
                 
                 // Add z coordinate for 3D plot

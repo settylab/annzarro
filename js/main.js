@@ -170,8 +170,8 @@ const App = (function() {
                 geneHistoryForward.disabled = !e.detail.canGoForward;
             }
             
-            // Update select field if change came from history navigation
-            if (e.detail.fromHistory && focusedGeneSelect) {
+            // Always update select field with current gene, regardless of source
+            if (focusedGeneSelect) {
                 focusedGeneSelect.value = e.detail.gene;
                 if (window.$ && $.fn.select2) {
                     $(focusedGeneSelect).trigger('change.select2');
@@ -214,8 +214,8 @@ const App = (function() {
                 cellHistoryForward.disabled = !e.detail.canGoForward;
             }
             
-            // Update select field if change came from history navigation
-            if (e.detail.fromHistory && focusedCellSelect) {
+            // Always update select field with current cell, regardless of source
+            if (focusedCellSelect) {
                 focusedCellSelect.value = e.detail.cell;
                 if (window.$ && $.fn.select2) {
                     $(focusedCellSelect).trigger('change.select2');
