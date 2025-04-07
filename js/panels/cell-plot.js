@@ -131,21 +131,7 @@ const CellPlotPanel = (function() {
         }
         
         // Override with provided options, if any
-        if (options.x) _settings.x = options.x;
-        if (options.y) _settings.y = options.y;
-        if (options.z) _settings.z = options.z;
-        if (options.color) _settings.color = options.color;
-        if (options.pointSize) _settings.pointSize = options.pointSize;
-        if (options.pointOpacity) _settings.pointOpacity = options.pointOpacity;
-        if (options.colorScale) _settings.colorScale = options.colorScale;
-        if (options.categoryPalette) _settings.categoryPalette = options.categoryPalette;
-        if (options.colorMin !== undefined) _settings.colorMin = options.colorMin;
-        if (options.colorMax !== undefined) _settings.colorMax = options.colorMax;
-        if (options.hoverInfo) _settings.hoverInfo = options.hoverInfo;
-        if (options.subsettedCells) _settings.subsettedCells = options.subsettedCells;
-        if (options.hideNonSubset !== undefined) _settings.hideNonSubset = options.hideNonSubset;
-        if (options.showGrid !== undefined) _settings.showGrid = options.showGrid;
-        if (options.lockColorRange !== undefined) _settings.lockColorRange = options.lockColorRange;
+        Object.assign(_settings, options);
         
         // Cached data
         let _data = {
@@ -316,18 +302,22 @@ const CellPlotPanel = (function() {
                                     </div>
                                     
                                     <div class="color-range-inputs">
-                                        <div class="color-range-sliders">
-                                            <div class="color-min-slider-container">
-                                                <label>Min:</label>
-                                                <input type="range" class="form-range" id="color-min-slider-${_id}">
-                                                <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}">
-                                            </div>
-                                            <div class="color-max-slider-container">
-                                                <label>Max:</label>
-                                                <input type="range" class="form-range" id="color-max-slider-${_id}">
-                                                <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}">
-                                            </div>
+                                    <div class="color-range-sliders">
+                                        <div class="color-min-slider-container">
+                                        <label>Min:</label>
+                                        <input type="range" class="form-range" id="color-min-slider-${_id}" 
+                                                value="${_settings.colorMin !== undefined ? _settings.colorMin : 0}">
+                                        <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}"
+                                                value="${_settings.colorMin !== undefined ? _settings.colorMin : 0}">
                                         </div>
+                                        <div class="color-max-slider-container">
+                                        <label>Max:</label>
+                                        <input type="range" class="form-range" id="color-max-slider-${_id}" 
+                                                value="${_settings.colorMax !== undefined ? _settings.colorMax : 100}">
+                                        <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}"
+                                                value="${_settings.colorMax !== undefined ? _settings.colorMax : 100}">
+                                        </div>
+                                    </div>
                                     </div>
                                     
                                     <div class="btn-toolbar d-flex flex-row" role="toolbar" aria-label="Color range controls" style="width:100%; display:flex !important; flex-direction:row !important; gap:4px;">
