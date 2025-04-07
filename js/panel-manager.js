@@ -181,7 +181,7 @@ const PanelManager = (function() {
         const icons = {
             'cell-plot': 'fas fa-microscope',
             'gene-plot': 'fas fa-dna',
-            'cell-table': 'fas fa-table',
+            'cell-table': 'fas fa-solid fa-list-ul', // f a-table
             'gene-table': 'fas fa-th-list',
             'gene-set': 'fas fa-project-diagram'
         };
@@ -244,7 +244,7 @@ const PanelManager = (function() {
         const panelTypes = [
             { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
             { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
+            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
             { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
             { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
         ];
@@ -784,7 +784,7 @@ const PanelManager = (function() {
         const panelTypes = [
             { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
             { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
+            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
             { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
             { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
         ];

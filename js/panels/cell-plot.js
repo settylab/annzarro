@@ -28,10 +28,11 @@ const CellPlotPanel = (function() {
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_OPACITY) || 0.7,
-            colorScale: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.COLOR_SCALE) || 'Viridis',
+            colorScale: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.COLOR_SCALE) || 'Portland',
             categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
             colorMax: null,
+            colorReversed: false,
             hoverInfo: [{ type: 'obs', key: '_index' }],
             subsettedCells: null,
             hideNonSubset: false,
@@ -329,6 +330,7 @@ const CellPlotPanel = (function() {
                                     <div class="btn-toolbar d-flex flex-row" role="toolbar" aria-label="Color range controls" style="width:100%; display:flex !important; flex-direction:row !important; gap:4px;">
                                       <div class="btn-group d-flex flex-row flex-nowrap" role="group" style="width:auto; display:inline-flex !important; flex-wrap:nowrap !important; gap:4px;">
                                         <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}" style="display:inline-block !important; margin-right:4px !important;">Center at 0</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${_id}" style="display:inline-block !important; margin-right:4px !important;">Reverse Colormap</button>
                                         <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${_id}" style="display:inline-block !important; margin-right:4px !important;">Hide Outliers</button>
                                         <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${_id}" style="display:inline-block !important;">Lock Range</button>
                                       </div>
@@ -646,23 +648,41 @@ const CellPlotPanel = (function() {
                     break;
                     
                 case 'obsm':
-                    // Direct reference to embeddings in the dataset structure
                     if (datasetStructure.obsm &&
                         datasetStructure.obsm.dataframes &&
                         Object.keys(datasetStructure.obsm.dataframes).length > 0) {
-                        
+                
                         const obsmDataFrameKeys = Object.keys(datasetStructure.obsm.dataframes);
                         console.log(`Found ${obsmDataFrameKeys.length} obsm dataframe keys:`, obsmDataFrameKeys);
-                        
+                
                         options = obsmDataFrameKeys.map(key =>
                             `<option value="${key}">${key}</option>`
                         );
+                
+                        // Determine default key and default column for this axis
+                        const axis = select.dataset.axis;
+                        const axisIndexMap = { x: 0, y: 1, z: 2 };
+                        const desiredColumnIndex = axisIndexMap[axis];
+                
+                        // Default to the first key if none selected yet
+                        const defaultKey = obsmDataFrameKeys[0];
+                        const defaultDf = datasetStructure.obsm.dataframes[defaultKey];
+                        
+                        // Assign column if available
+                        if (defaultDf?.columns?.length > desiredColumnIndex) {
+                            _settings[axis].column = defaultDf.columns[desiredColumnIndex];
+                            console.log(`Auto-assigned ${axis} column to ${_settings[axis].column}`);
+                        } else if (defaultDf?.columns?.length > 0) {
+                            // Fallback to first available column
+                            _settings[axis].column = defaultDf.columns[0];
+                            console.log(`Fallback: assigned first column ${_settings[axis].column} to ${axis}`);
+                        }
                     }
-                    // Try other ways it might be available
+                    // Try other fallback structure
                     else if (datasetStructure.obsm && datasetStructure.obsm.keys) {
                         const keys = datasetStructure.obsm.keys;
                         console.log(`Found ${keys.length} obsm keys in standard format`);
-                        
+                
                         if (keys.length > 0) {
                             options = keys.map(key => 
                                 `<option value="${key}">${key}</option>`
@@ -759,19 +779,36 @@ const CellPlotPanel = (function() {
                     
                 case 'obsm':
                     try {
-                        // Look for the selected obsm dataframe by key
-                        const df = datasetStructure.obsm && datasetStructure.obsm.dataframes && datasetStructure.obsm.dataframes[key];
-                        if (df && df.columns && df.columns.length > 0) {
+                        const df = datasetStructure.obsm?.dataframes?.[key];
+                        if (df && df.columns?.length > 0) {
                             console.log(`Found ${df.columns.length} columns for obsm key: ${key}`);
                             options = df.columns.map(col => `<option value="${col}">${col}</option>`);
-                        } else {
-                            // Fallback if column info isn't available
-                            const numDimensions = 3;
-                            console.log(`No columns found for obsm key: ${key}, defaulting to ${numDimensions} dimensions`);
-                            for (let i = 0; i < numDimensions; i++) {
-                                options.push(`<option value="${i}">${i}</option>`);
+                            select.innerHTML = options.join('');
+                            const axis = select.dataset.axis;
+                            // If a column is already set and valid, use it; otherwise, pick a default based on axis index.
+                            if (_settings[axis].column && df.columns.includes(_settings[axis].column)) {
+                                select.value = _settings[axis].column;
+                            } else {
+                                const axisIndexMap = { x: 0, y: 1, z: 2 };
+                                const desiredIndex = axisIndexMap[axis];
+                                if (df.columns.length > desiredIndex) {
+                                    select.value = df.columns[desiredIndex];
+                                    _settings[axis].column = df.columns[desiredIndex];
+                                    console.log(`Auto-selected column ${df.columns[desiredIndex]} for axis ${axis}`);
+                                } else {
+                                    // Fallback: select the first available column.
+                                    select.value = df.columns[0];
+                                    _settings[axis].column = df.columns[0];
+                                    console.log(`Fallback: auto-selected column ${df.columns[0]} for axis ${axis}`);
+                                }
                             }
+                            return Promise.resolve();
                         }
+                        // Fallback: if no columns found, create dummy options.
+                        const fallbackDims = 3;
+                        options = Array.from({ length: fallbackDims }, (_, i) =>
+                            `<option value="${i}">${i}</option>`
+                        );
                     } catch (error) {
                         console.error('Error creating obsm columns:', error);
                     }
@@ -836,13 +873,16 @@ const CellPlotPanel = (function() {
                 console.log(`ResizeObserver set up for plot container ${_id}`);
             }
             
-            // Axis type selectors
             _container.querySelectorAll('.axis-type-select').forEach(select => {
                 select.addEventListener('change', (e) => {
                     const axis = e.target.dataset.axis;
                     const type = e.target.value;
                     const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
                     const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+                    if (!columnSelect) {
+                        console.error(`Column select element not found for axis ${axis}`);
+                        return;
+                    }
                     
                     _settings[axis].type = type;
                     
@@ -855,49 +895,37 @@ const CellPlotPanel = (function() {
                             // Update column options
                             _populateColumnSelect(type, keySelect.value, columnSelect).then(() => {
                                 if (columnSelect.options.length > 0) {
-                                    columnSelect.selectedIndex = 0;
-                                    _settings[axis].column = columnSelect.value;
+                                    // Instead of always defaulting to index 0, check for an existing setting.
+                                    const currentValue = _settings[axis].column;
+                                    const availableValues = Array.from(columnSelect.options).map(opt => opt.value);
+                                    if (currentValue && availableValues.includes(currentValue)) {
+                                        columnSelect.value = currentValue;
+                                    } else {
+                                        const axisDefault = { x: 0, y: 1, z: 2 }[axis];
+                                        if (availableValues[axisDefault] !== undefined) {
+                                            columnSelect.value = availableValues[axisDefault];
+                                            _settings[axis].column = availableValues[axisDefault];
+                                            console.log(`Auto-selected column ${availableValues[axisDefault]} for axis ${axis}`);
+                                        } else {
+                                            columnSelect.selectedIndex = 0;
+                                            _settings[axis].column = columnSelect.value;
+                                            console.log(`Fallback: auto-selected column ${columnSelect.value} for axis ${axis}`);
+                                        }
+                                    }
                                     
-                                    // Handle different axis changes appropriately
                                     if (axis === 'color' && _plot) {
-                                        // Color changes can use optimized update path
                                         console.log('Color setting changed, using optimized update');
                                         _loadColorDataAndUpdatePlot();
-                                    } else if (axis === 'z') {
-                                        // Z-axis changes mean switching between 2D and 3D
-                                        console.log('Z-axis changed (2D/3D change), recreating plot');
-                                        _loadDataAndCreatePlot();
-                                    } else if (axis === 'x') {
-                                        // Position axes changes for X can be optimized if we already have a plot
+                                    } else if (axis === 'x' || axis === 'y' || axis === 'z') {
                                         if (_plot) {
-                                            console.log('X-axis changed, loading data and updating plot');
-                                            // Load new X data and update only X axis
-                                            _loadAxisData('x').then(xData => {
-                                                if (xData && xData.values) {
-                                                    _data.x = xData;
-                                                    _updatePlotElements({
-                                                        xAxis: true,
-                                                        layout: true
-                                                    });
-                                                } else {
-                                                    _loadDataAndCreatePlot();
-                                                }
-                                            }).catch(() => _loadDataAndCreatePlot());
-                                        } else {
-                                            _loadDataAndCreatePlot();
-                                        }
-                                    } else if (axis === 'y') {
-                                        // Position axes changes for Y can be optimized if we already have a plot
-                                        if (_plot) {
-                                            console.log('Y-axis changed, loading data and updating plot');
-                                            // Load new Y data and update only Y axis
-                                            _loadAxisData('y').then(yData => {
-                                                if (yData && yData.values) {
-                                                    _data.y = yData;
-                                                    _updatePlotElements({
-                                                        yAxis: true,
-                                                        layout: true
-                                                    });
+                                            console.log(`${axis.toUpperCase()}-axis changed, loading data and updating plot`);
+                                            _loadAxisData(axis).then(axisData => {
+                                                if (axisData && axisData.values) {
+                                                    _data[axis] = axisData;
+                                                    const updateObj = {};
+                                                    updateObj[axis + 'Axis'] = true;
+                                                    updateObj.layout = true;
+                                                    _updatePlotElements(updateObj);
                                                 } else {
                                                     _loadDataAndCreatePlot();
                                                 }
@@ -906,7 +934,6 @@ const CellPlotPanel = (function() {
                                             _loadDataAndCreatePlot();
                                         }
                                     } else {
-                                        // Fallback
                                         _loadDataAndCreatePlot();
                                     }
                                 }
@@ -923,30 +950,57 @@ const CellPlotPanel = (function() {
                     const key = e.target.value;
                     const type = _container.querySelector(`.axis-type-select[data-axis="${axis}"]`).value;
                     const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+                    if (!columnSelect) {
+                        console.error(`Column select element not found for axis ${axis}`);
+                        return;
+                    }
                     
                     _settings[axis].key = key;
                     
                     // Update column options
                     _populateColumnSelect(type, key, columnSelect).then(() => {
                         if (columnSelect.options.length > 0) {
-                            columnSelect.selectedIndex = 0;
-                            _settings[axis].column = columnSelect.value;
+                            // Instead of always defaulting to index 0, check if _settings[axis].column is valid.
+                            const currentValue = _settings[axis].column;
+                            const availableValues = Array.from(columnSelect.options).map(opt => opt.value);
+                            if (currentValue && availableValues.includes(currentValue)) {
+                                columnSelect.value = currentValue;
+                            } else {
+                                // Use default based on axis: 0 for x, 1 for y, 2 for z.
+                                const axisDefault = { x: 0, y: 1, z: 2 }[axis];
+                                if (availableValues[axisDefault] !== undefined) {
+                                    columnSelect.value = availableValues[axisDefault];
+                                    _settings[axis].column = availableValues[axisDefault];
+                                    console.log(`Auto-selected column ${availableValues[axisDefault]} for axis ${axis}`);
+                                } else {
+                                    columnSelect.selectedIndex = 0;
+                                    _settings[axis].column = columnSelect.value;
+                                    console.log(`Fallback: auto-selected column ${columnSelect.value} for axis ${axis}`);
+                                }
+                            }
                             
                             // Handle different axis changes appropriately
                             if (axis === 'color' && _plot) {
-                                // Color key changes can use optimized update
                                 console.log('Color key changed, using optimized update');
                                 _loadColorDataAndUpdatePlot();
-                            } else if (axis === 'z') {
-                                // Z-axis changes mean switching between 2D and 3D
-                                console.log('Z-axis key changed, recreating plot');
-                                _loadDataAndCreatePlot();
-                            } else if (axis === 'x' || axis === 'y') {
-                                // Position axes changes require recreation
-                                console.log('Position axis (x/y) key changed, recreating plot');
-                                _loadDataAndCreatePlot();
+                            } else if (axis === 'x' || axis === 'y' || axis === 'z') {
+                                if (_plot) {
+                                    console.log(`${axis.toUpperCase()}-axis key changed, loading new axis data and updating plot`);
+                                    _loadAxisData(axis).then(axisData => {
+                                        if (axisData && axisData.values) {
+                                            _data[axis] = axisData;
+                                            const updateObj = {};
+                                            updateObj[axis + 'Axis'] = true;
+                                            updateObj.layout = true;
+                                            _updatePlotElements(updateObj);
+                                        } else {
+                                            _loadDataAndCreatePlot();
+                                        }
+                                    }).catch(() => _loadDataAndCreatePlot());
+                                } else {
+                                    _loadDataAndCreatePlot();
+                                }
                             } else {
-                                // Fallback
                                 _loadDataAndCreatePlot();
                             }
                         }
@@ -960,21 +1014,33 @@ const CellPlotPanel = (function() {
                     const axis = e.target.dataset.axis;
                     _settings[axis].column = e.target.value;
                     
-                    // Handle different axis changes appropriately
                     if (axis === 'color' && _plot) {
                         // Color column changes can use optimized update
                         console.log('Color column changed, using optimized update');
                         _loadColorDataAndUpdatePlot();
                     } else if (axis === 'z') {
-                        // Z-axis changes mean possible dimension changes in 3D
-                        console.log('Z-axis column changed, recreating plot');
-                        _loadDataAndCreatePlot();
+                        console.log('Z-axis column changed, updating plot');
+                        _loadAxisData('z').then(zData => {
+                            if (zData && zData.values) {
+                                _data.z = zData;
+                                _updatePlotElements({ zAxis: true });
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
                     } else if (axis === 'x' || axis === 'y') {
-                        // Position axes changes require recreation
-                        console.log('Position axis (x/y) column changed, recreating plot');
-                        _loadDataAndCreatePlot();
+                        console.log(`Position axis (${axis}) column changed, updating plot`);
+                        _loadAxisData(axis).then(axisData => {
+                            if (axisData && axisData.values) {
+                                _data[axis] = axisData;
+                                const updateObj = {};
+                                updateObj[axis + 'Axis'] = true;
+                                _updatePlotElements(updateObj);
+                            } else {
+                                _loadDataAndCreatePlot();
+                            }
+                        }).catch(() => _loadDataAndCreatePlot());
                     } else {
-                        // Fallback
                         _loadDataAndCreatePlot();
                     }
                 });
@@ -1611,6 +1677,18 @@ const CellPlotPanel = (function() {
                 _settings.centeringActive = !_settings.centeringActive;
                 _updateCenteringUI();
             });
+
+            const reverseColormapButton = document.getElementById(`reverse-colormap-${_id}`);
+            reverseColormapButton.addEventListener('click', () => {
+                _settings.colorReversed = !_settings.colorReversed;
+            
+                // Update button style
+                reverseColormapButton.classList.toggle('btn-primary', _settings.colorReversed);
+                reverseColormapButton.classList.toggle('btn-outline-secondary', !_settings.colorReversed);
+                reverseColormapButton.classList.toggle('active', _settings.colorReversed);
+
+                _updatePlotElements({colorScale: true, colors: true});
+            });
             
             // Hide outliers toggle
             const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
@@ -1773,17 +1851,6 @@ const CellPlotPanel = (function() {
                         layout: false
                     };
                     
-                    // If this affects multiple axes, it's more efficient to recreate
-                    const multiAxisUpdate = (updates.xAxis ? 1 : 0) + 
-                                            (updates.yAxis ? 1 : 0) + 
-                                            (updates.zAxis ? 1 : 0) > 1;
-                    
-                    if (multiAxisUpdate) {
-                        // Multiple position axes use obsp data, need to recreate the plot
-                        console.log('Focused cell changed affects multiple position axes, recreating plot');
-                        _loadDataAndCreatePlot();
-                        return;
-                    }
                     
                     // Handle specific update scenarios
                     if (updates.xAxis) {
@@ -2727,7 +2794,7 @@ const CellPlotPanel = (function() {
                     title: `${_settings.x.type}.${_settings.x.key}` +
                            (_settings.x.column ? `.${_settings.x.column}` : ''),
                     showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    //gridcolor: 'rgba(200, 200, 200, 0.2)',
                     showline: _settings.showGrid,
                     zeroline: _settings.showGrid,
                     ticks: _settings.showGrid ? '' : 'none',
@@ -2737,7 +2804,7 @@ const CellPlotPanel = (function() {
                     title: `${_settings.y.type}.${_settings.y.key}` +
                            (_settings.y.column ? `.${_settings.y.column}` : ''),
                     showgrid: _settings.showGrid,
-                    gridcolor: 'rgba(200, 200, 200, 0.2)',
+                    //gridcolor: 'rgba(200, 200, 200, 0.2)',
                     showline: _settings.showGrid,
                     zeroline: _settings.showGrid,
                     ticks: _settings.showGrid ? '' : 'none',
@@ -2751,7 +2818,7 @@ const CellPlotPanel = (function() {
                     xaxis: { 
                         title: layout.xaxis.title,
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
                         showline: _settings.showGrid,
                         zeroline: _settings.showGrid,
                         ticks: _settings.showGrid ? '' : 'none',
@@ -2760,7 +2827,7 @@ const CellPlotPanel = (function() {
                     yaxis: { 
                         title: layout.yaxis.title,
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
                         showline: _settings.showGrid,
                         zeroline: _settings.showGrid,
                         ticks: _settings.showGrid ? '' : 'none',
@@ -2770,7 +2837,7 @@ const CellPlotPanel = (function() {
                         title: `${_settings.z.type}.${_settings.z.key}` +
                                (_settings.z.column ? `.${_settings.z.column}` : ''),
                         showgrid: _settings.showGrid,
-                        gridcolor: 'rgba(200, 200, 200, 0.2)',
+                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
                         showline: _settings.showGrid,
                         zeroline: _settings.showGrid,
                         ticks: _settings.showGrid ? '' : 'none',
@@ -3073,6 +3140,7 @@ const CellPlotPanel = (function() {
                 // Numerical coloring
                 trace.marker.color = _data.color;
                 trace.marker.colorscale = _settings.colorScale;
+                trace.marker.reversescale = _settings.colorReversed;
                 
                 // Set color range if specified
                 if (_settings.colorMin !== null || _settings.colorMax !== null) {
@@ -3363,6 +3431,7 @@ const CellPlotPanel = (function() {
                         // Include colorscale if specified or if color data changed
                         if (updateOptions.colorScale || updateOptions.colorData) {
                             update['marker.colorscale'] = _settings.colorScale;
+                            update['marker.reversescale'] = _settings.colorReversed;
                         }
                         
                         // Add color range if specified
