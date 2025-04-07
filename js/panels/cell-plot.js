@@ -1329,80 +1329,19 @@ const CellPlotPanel = (function() {
             hideOutliersButton.addEventListener('click', () => {
               // Toggle the setting
               _settings.hideOutliers = !_settings.hideOutliers;
-              
-              if (_settings.hideOutliers) {
-                hideOutliersButton.classList.add('active', 'btn-primary');
-                hideOutliersButton.classList.remove('btn-outline-secondary');
-              } else {
-                hideOutliersButton.classList.remove('active', 'btn-primary');
-                hideOutliersButton.classList.add('btn-outline-secondary');
-              }
-              
-              // Instead of reloading full data, call a function that processes the current data
-              updateOutlierFiltering();
+              _updateOutlierFiltering();
             });
-
-            function updateOutlierFiltering() {
-              if (!_plot) return;
-              
-              // Only perform outlier filtering for continuous (numerical) data
-              if (_data.colorType !== 'numerical') {
-                return;
-              }
-              
-              // If filtering is off, simply use the original data.
-              if (!_settings.hideOutliers) {
-                if (_fullPlotData) {
-                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
-                }
-                return;
-              }
-                
-              // Skip processing if either colorMin or colorMax is not defined
-              if (_settings.colorMin == null || _settings.colorMax == null) {
-                if (_fullPlotData) {
-                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
-                }
-                return;
-              }
-              
-              // Get slider values
-              const minVal = parseFloat(_settings.colorMin);
-              const maxVal = parseFloat(_settings.colorMax);
-              
-              // Process each trace based on the original unfiltered data
-              const processedData = _fullPlotData.map(trace => {
-                if (trace.marker && Array.isArray(trace.marker.color)) {
-                  let newX = [];
-                  let newY = [];
-                  let newZ = [];
-                  let newColors = [];
-              
-                  for (let i = 0; i < trace.marker.color.length; i++) {
-                    const cVal = trace.marker.color[i];
-                    if (cVal >= minVal && cVal <= maxVal) {
-                      newX.push(trace.x[i]);
-                      newY.push(trace.y[i]);
-                      newColors.push(cVal);
-                      if (trace.z) {
-                        newZ.push(trace.z[i]);
-                      }
+            
+            // Helper function to ensure we have full plot data before filtering
+            function ensureFullPlotData() {
+                if (!_fullPlotData && _plot && _plot.data) {
+                    try {
+                        console.log("Creating backup of plot data for filtering");
+                        _fullPlotData = JSON.parse(JSON.stringify(_plot.data));
+                    } catch (error) {
+                        console.error("Failed to create backup of plot data:", error);
                     }
-                  }
-              
-                  return {
-                    ...trace,
-                    x: newX,
-                    y: newY,
-                    // Only include z if it exists in the original trace.
-                    ...(trace.z ? { z: newZ } : {}),
-                    marker: { ...trace.marker, color: newColors }
-                  };
                 }
-                return trace;
-              });
-              
-              Plotly.react(_plotContainer, processedData, _plot.layout);
             }
             
             // Min slider - use input for real-time updates
@@ -1415,7 +1354,7 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('min', minValue);
-                updateOutlierFiltering();
+                _updateOutlierFiltering();
             });
             
             // Min slider - on change for final update
@@ -1435,7 +1374,7 @@ const CellPlotPanel = (function() {
                 
                 // Direct efficient update for smooth slider experience
                 updateColorRange('max', maxValue);
-                updateOutlierFiltering();
+                _updateOutlierFiltering();
             });
             
             // Max slider - on change for final update
@@ -2174,6 +2113,131 @@ const CellPlotPanel = (function() {
             });
         }
         
+        function _updateOutlierFiltering() {
+            if (!_plot) return;
+            
+            // For categorical data, just turn off outlier filtering
+            if (_data.colorType !== 'numerical') {
+              console.log("Outlier filtering is only applicable for numerical data, turning off");
+              _settings.hideOutliers = false;
+              _fullPlotData = null;
+              
+              // Update button state
+              const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+              if (hideOutliersButton) {
+                hideOutliersButton.classList.remove('active', 'btn-primary');
+                hideOutliersButton.classList.add('btn-outline-secondary');
+              }
+              return;
+            }
+            
+            // Create _fullPlotData if it doesn't exist yet
+            if (!_fullPlotData && _plot && _plot.data) {
+              console.log("Creating backup of plot data for outlier filtering");
+              try {
+                _fullPlotData = JSON.parse(JSON.stringify(_plot.data));
+              } catch (error) {
+                console.error("Failed to create backup of plot data:", error);
+                return;
+              }
+            }
+            
+            // Check if we have the full plot data saved
+            if (!_fullPlotData) {
+              console.warn("Cannot filter outliers: full plot data is not available");
+              return;
+            }
+            
+            // If filtering is off, simply use the original data.
+            if (!_settings.hideOutliers) {
+              if (_fullPlotData) {
+                Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
+                _fullPlotData = null;
+                const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+                if (hideOutliersButton) {
+                    hideOutliersButton.classList.remove('active', 'btn-primary');
+                    hideOutliersButton.classList.add('btn-outline-secondary');
+                }
+              }
+              return;
+            }
+              
+            // Hide outliers is active, reflect that in button appearence
+            const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+            if (hideOutliersButton) {
+                hideOutliersButton.classList.add('active', 'btn-primary');
+                hideOutliersButton.classList.remove('btn-outline-secondary');
+            }
+
+            // Skip processing if either colorMin or colorMax is not defined
+            if (_settings.colorMin == null || _settings.colorMax == null) {
+              if (_fullPlotData) {
+                Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
+              }
+              return;
+            }
+            
+            try {
+              // Get slider values
+              const minVal = parseFloat(_settings.colorMin);
+              const maxVal = parseFloat(_settings.colorMax);
+              
+              // Process each trace based on the original unfiltered data
+              const processedData = _fullPlotData.map(trace => {
+                if (trace && trace.marker && Array.isArray(trace.marker.color)) {
+                  let newX = [];
+                  let newY = [];
+                  let newZ = [];
+                  let newColors = [];
+            
+                  for (let i = 0; i < trace.marker.color.length; i++) {
+                    const cVal = trace.marker.color[i];
+                    if (cVal >= minVal && cVal <= maxVal) {
+                      newX.push(trace.x[i]);
+                      newY.push(trace.y[i]);
+                      newColors.push(cVal);
+                      if (trace.z) {
+                        newZ.push(trace.z[i]);
+                      }
+                    }
+                  }
+            
+                  return {
+                    ...trace,
+                    x: newX,
+                    y: newY,
+                    // Only include z if it exists in the original trace.
+                    ...(trace.z ? { z: newZ } : {}),
+                    marker: { ...trace.marker, color: newColors }
+                  };
+              }
+              return trace;
+            });
+            
+            // Apply the filtered data if we have a valid container
+            if (_plotContainer && _plotContainer.parentNode) {
+              Plotly.react(_plotContainer, processedData, _plot.layout);
+              
+              // Re-highlight the focused cell if needed
+              if (_settings.highlightFocusedCell) {
+                // Remove any existing highlight and add it back to make sure it's visible
+                _removeHighlight();
+                _highlightFocusedCell();
+              }
+            }
+            } catch (error) {
+              console.error("Error filtering outliers:", error);
+              // If there's an error, try to restore the original data
+              if (_fullPlotData && _plotContainer && _plotContainer.parentNode) {
+                try {
+                  Plotly.react(_plotContainer, _fullPlotData, _plot.layout);
+                } catch (fallbackError) {
+                  console.error("Error restoring original data:", fallbackError);
+                }
+              }
+            }
+        }
+
         /**
          * Load only color data and update the plot without recreating it
          * @private 
@@ -2531,6 +2595,15 @@ const CellPlotPanel = (function() {
          * @private
          */
         async function _loadAxisData(axis, filteredIndices = null) {
+            // Track if "Hide Outliers" was active before data change
+            const wasOutlierFilteringActive = _settings.hideOutliers;
+            
+            // Temporarily disable outlier filtering during data loading
+            if (wasOutlierFilteringActive) {
+                _settings.hideOutliers = false;
+                _updateOutlierFiltering();
+            }
+            
             const settings = _settings[axis];
             if (!settings) {
                 throw new Error(`No settings found for ${axis} axis`);
@@ -2818,14 +2891,29 @@ const CellPlotPanel = (function() {
                         throw new Error(`Unknown data type: ${type}`);
                 }
                 
-                return {
+                // Prepare the result
+                const result = {
                     values,
                     type: dataType,
                     categories
                 };
                 
+                // Restore "Hide Outliers" state if it was active before
+                if (wasOutlierFilteringActive) {
+                    // We'll reactivate the setting, but the actual filtering will happen later
+                    // after the plot is updated with the new data
+                    _settings.hideOutliers = true;
+                }
+                
+                return result;
+                
             } catch (error) {
                 console.error(`Error loading ${axis} axis data:`, error);
+                
+                // Restore "Hide Outliers" state if it was active before
+                if (wasOutlierFilteringActive) {
+                    _settings.hideOutliers = true;
+                }
                 
                 // We can't display the plot without data
                 throw new Error(`Failed to load data for ${axis} axis (${type}.${key}.${column})`);
@@ -3385,13 +3473,6 @@ const CellPlotPanel = (function() {
                 displaylogo: false,
                 modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
             });
-
-            if (_data.colorType === 'numerical') {
-                // Make a deep clone of the traces to preserve the original data.
-                _fullPlotData = JSON.parse(JSON.stringify(traces));
-            } else {
-                _fullPlotData = null;
-            }
             
             // Set up click handler to update global focused cell
             _plotContainer.on('plotly_click', (data) => {
@@ -3865,6 +3946,12 @@ const CellPlotPanel = (function() {
                    (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
                     _removeHighlight();
                     _highlightFocusedCell();
+                }
+                
+                // Apply outlier filtering if enabled (after all other updates)
+                if (_settings.hideOutliers) {
+                    console.log("Applying outlier filtering after data updates");
+                    _updateOutlierFiltering();
                 }
                 
             } catch (error) {
