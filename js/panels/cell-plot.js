@@ -22,9 +22,9 @@ const CellPlotPanel = (function() {
         
         // Initialize settings with initial default options
         const _settings = {
-            x: { type: 'obsm', key: 'X_umap', column: '0' },
-            y: { type: 'obsm', key: 'X_umap', column: '1' },
-            z: null, // Optional for 3D plots
+            x: undefined,
+            y: undefined,
+            z: undefined, // undefined will try to set this, null will force 2d
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_OPACITY) || 0.7,
@@ -41,21 +41,6 @@ const CellPlotPanel = (function() {
             highlightFocusedCell: true // Highlight focused cell by default
         };
         
-        
-        /**
-         * Set up plot controls
-         * @private
-         */
-        function _setupControls() {
-            _controlsContainer = _container.querySelector('.plot-controls');
-            if (!_controlsContainer) return;
-            
-            _controlsContainer.innerHTML = `
-                <div class="alert alert-secondary">
-                    Cell plot controls will be added here. Currently showing an empty plot.
-                </div>
-            `;
-        }
         
         // Override with provided options, if any
         Object.assign(_settings, options);
@@ -313,29 +298,27 @@ const CellPlotPanel = (function() {
                         const defaultDataFrame = datasetStructure.obsm.dataframes[defaultDataFrameKey];
                     
                         if (defaultDataFrame.columns && defaultDataFrame.columns.length >= 2) {
-                            if (!_settings.x.key || _settings.x.key === '') {
+                            if (!_settings.x || !_settings.x.key || _settings.x.key === '') {
+                                _settings.x = _settings.x || {}; 
                                 _settings.x.key = defaultDataFrameKey;
                                 _settings.x.column = defaultDataFrame.columns[0]; // First available column
                                 console.log(`Setting default x-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[0]}`);
                             }
                             
-                            if (!_settings.y.key || _settings.y.key === '') {
+                            if (!_settings.y || !_settings.y.key || _settings.y.key === '') {
+                                _settings.y = _settings.y || {}; 
                                 _settings.y.key = defaultDataFrameKey;
                                 _settings.y.column = defaultDataFrame.columns[1]; // Second available column
                                 console.log(`Setting default y-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[1]}`);
                             }
                             
                             if (defaultDataFrame.columns.length >= 3) {
-                                if (!_settings.z) {
+                                if (_settings.z === undefined) {
                                     _settings.z = {
                                         type: 'obsm',
                                         key: defaultDataFrameKey,
                                         column: defaultDataFrame.columns[2]
                                     }
-                                    console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
-                                } else if (!_settings.z.key || _settings.z.key === '') {
-                                    _settings.z.key = defaultDataFrameKey;
-                                    _settings.z.column = defaultDataFrame.columns[2]; 
                                     console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
                                 }
                             }
@@ -345,6 +328,9 @@ const CellPlotPanel = (function() {
                     } else {
                         console.warn('No obsm dataframes found in dataset structure');
                     }
+
+                    _settings.x = _settings.x || {}; 
+                    _settings.y = _settings.y || {}; 
                     
                     // Set up axis selectors sequentially to avoid race conditions
                     await _setupAxisSelector('x', _settings.x);
@@ -362,6 +348,9 @@ const CellPlotPanel = (function() {
                         document.getElementById(`z-axis-container-${_id}`).style.display = 'block';
                         await _setupAxisSelector('z', _settings.z);
                         console.log('Z-axis selector setup complete');
+                    } else if (_settings.z === undefined) {
+                        // disable 3d even when reloading this panel
+                        _settings.z = null;
                     }
                     
                     // Set color selector
