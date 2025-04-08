@@ -1,4 +1,4 @@
-import { createPanelStructure } from './plot-utilities/make-panel-ui.js';
+import { createPanelStructure, initializeUIState } from './plot-utilities/make-panel-ui.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -71,147 +71,17 @@ const CellPlotPanel = (function() {
             
             // Initialize UI state and then load data
             console.log('Initializing UI state...');
-            _initializeUIState().then(() => {
-                console.log('UI state initialized, loading data...');
-                // Load data and create plot
-                _loadDataAndCreatePlot();
-            }).catch(error => {
+            initializeUIState(_id, _settings, _ensureDatasetStructure, _setupAxisSelector)
+            .then(() => _loadDataAndCreatePlot())
+            .catch(error => {
                 console.error('Error initializing UI state:', error);
-                _plotContainer.innerHTML = `<div class="alert alert-danger">
-                    Error initializing panel: ${error.message}
-                </div>`;
+                _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
             });
             
             // Set up event listeners
             _setupEventListeners();
         }
         
-                
-        /**
-         * Initialize UI controls to match settings
-         * @returns {Promise} - Resolves when initialization is complete
-         * @private
-         */
-        function _initializeUIState() {
-            console.log('Initializing UI state with settings:', _settings);
-            
-            // Return a promise that resolves when all setup is complete
-            return new Promise(async (resolve, reject) => {
-                try {
-                    // First, make sure we have the embeddings list by getting the dataset structure
-                    const datasetStructure = await _ensureDatasetStructure();
-                    if (!datasetStructure) {
-                        throw new Error('Failed to load dataset structure');
-                    }
-                    
-                    // Set defaults from the actual dataset (using embeddings directly)
-                    if (datasetStructure.obsm &&
-                        datasetStructure.obsm.dataframes &&
-                        Object.keys(datasetStructure.obsm.dataframes).length > 0) {
-                
-                        let dataframeKeys = Object.keys(datasetStructure.obsm.dataframes);
-                        let defaultDataFrameKey;
-                    
-                        // Preferred order: Exact "X_umap"
-                        if (dataframeKeys.includes("X_umap")) {
-                            defaultDataFrameKey = "X_umap";
-                        } else {
-                            // If none, look for a key that starts with "X_umap"
-                            defaultDataFrameKey = dataframeKeys.find(key => key.startsWith("X_umap"));
-                            if (!defaultDataFrameKey) {
-                                // Next, check for "X_pca"
-                                if (dataframeKeys.includes("X_pca")) {
-                                    defaultDataFrameKey = "X_pca";
-                                } else {
-                                    // Fallback to the first key if none of the preferred keys are found
-                                    defaultDataFrameKey = dataframeKeys[0];
-                                }
-                            }
-                        }
-                    
-                        const defaultDataFrame = datasetStructure.obsm.dataframes[defaultDataFrameKey];
-                    
-                        if (defaultDataFrame.columns && defaultDataFrame.columns.length >= 2) {
-                            if (!_settings.x || !_settings.x.key || _settings.x.key === '') {
-                                _settings.x = _settings.x || {}; 
-                                _settings.x.key = defaultDataFrameKey;
-                                _settings.x.column = defaultDataFrame.columns[0]; // First available column
-                                console.log(`Setting default x-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[0]}`);
-                            }
-                            
-                            if (!_settings.y || !_settings.y.key || _settings.y.key === '') {
-                                _settings.y = _settings.y || {}; 
-                                _settings.y.key = defaultDataFrameKey;
-                                _settings.y.column = defaultDataFrame.columns[1]; // Second available column
-                                console.log(`Setting default y-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[1]}`);
-                            }
-                            
-                            if (defaultDataFrame.columns.length >= 3) {
-                                if (_settings.z === undefined) {
-                                    _settings.z = {
-                                        type: 'obsm',
-                                        key: defaultDataFrameKey,
-                                        column: defaultDataFrame.columns[2]
-                                    }
-                                    console.log(`Setting default z-axis to ${defaultDataFrameKey} column ${defaultDataFrame.columns[2]}`);
-                                }
-                            }
-                        } else {
-                            console.warn(`No available columns in obsm dataframe "${defaultDataFrameKey}"`);
-                        }
-                    } else {
-                        console.warn('No obsm dataframes found in dataset structure');
-                    }
-
-                    _settings.x = _settings.x || {}; 
-                    _settings.y = _settings.y || {}; 
-                    
-                    // Set up axis selectors sequentially to avoid race conditions
-                    await _setupAxisSelector('x', _settings.x);
-                    console.log('X-axis selector setup complete');
-                    
-                    await _setupAxisSelector('y', _settings.y);
-                    console.log('Y-axis selector setup complete');
-                    
-                    if (_settings.z) {
-                        const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
-                        zAxisToggle.classList.add('active', 'btn-primary');
-                        zAxisToggle.classList.remove('btn-outline-secondary');
-                        zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
-                        
-                        document.getElementById(`z-axis-container-${_id}`).style.display = 'block';
-                        await _setupAxisSelector('z', _settings.z);
-                        console.log('Z-axis selector setup complete');
-                    } else if (_settings.z === undefined) {
-                        // disable 3d even when reloading this panel
-                        _settings.z = null;
-                    }
-                    
-                    // Set color selector
-                    await _setupAxisSelector('color', _settings.color);
-                    console.log('Color selector setup complete');
-                    
-                    // Setup point controls
-                    document.getElementById(`point-size-${_id}`).value = _settings.pointSize;
-                    document.getElementById(`point-opacity-${_id}`).value = _settings.pointOpacity;
-                    
-                    // Re-validate our settings after UI setup
-                    console.log('Final settings after UI initialization:', _settings);
-                    
-                    // Check for critical errors
-                    for (const axis of ['x', 'y']) {
-                        if (!_settings[axis] || !_settings[axis].key || _settings[axis].key === '') {
-                            throw new Error(`No key selected for ${axis}-axis after initialization`);
-                        }
-                    }
-                    
-                    resolve();
-                } catch (error) {
-                    console.error('Error in _initializeUIState:', error);
-                    reject(error);
-                }
-            });
-        }
         
         /**
          * Ensure we have the dataset structure, load if needed

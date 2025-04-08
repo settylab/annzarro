@@ -164,3 +164,100 @@ export function createPanelStructure(container, id, settings) {
     controlsContainer: container.querySelector('.plot-controls')
   };
 }
+
+/**
+ * Initializes the UI state for the cell plot panel.
+ *
+ * @param {string} id - Unique ID for this panel instance.
+ * @param {Object} settings - Plot settings (x, y, z, color, pointSize, etc.)
+ * @param {Function} ensureDatasetStructure - Async function to get dataset structure
+ * @param {Function} setupAxisSelector - Async function to initialize one axis selector
+ * @returns {Promise<void>} Resolves when UI state is initialized, or rejects with an error
+ */
+export async function initializeUIState(id, settings, ensureDatasetStructure, setupAxisSelector) {
+  console.log('Initializing UI state with settings:', settings);
+
+  const datasetStructure = await ensureDatasetStructure();
+  if (!datasetStructure) throw new Error('Failed to load dataset structure');
+
+  // Auto-set default axes from obsm
+  if (
+    datasetStructure.obsm?.dataframes &&
+    Object.keys(datasetStructure.obsm.dataframes).length > 0
+  ) {
+    const dataframeKeys = Object.keys(datasetStructure.obsm.dataframes);
+    let defaultKey =
+      dataframeKeys.includes("X_umap") ? "X_umap" :
+      dataframeKeys.find(k => k.startsWith("X_umap")) ||
+      (dataframeKeys.includes("X_pca") ? "X_pca" : dataframeKeys[0]);
+
+    const defaultFrame = datasetStructure.obsm.dataframes[defaultKey];
+    if (defaultFrame?.columns?.length >= 2) {
+      settings.x = settings.x || {};
+      settings.y = settings.y || {};
+
+      if (!settings.x.key) {
+        settings.x.key = defaultKey;
+        settings.x.column = defaultFrame.columns[0];
+        console.log(`Setting default x-axis to ${defaultKey} column ${defaultFrame.columns[0]}`);
+      }
+
+      if (!settings.y.key) {
+        settings.y.key = defaultKey;
+        settings.y.column = defaultFrame.columns[1];
+        console.log(`Setting default y-axis to ${defaultKey} column ${defaultFrame.columns[1]}`);
+      }
+
+      if (defaultFrame.columns.length >= 3 && settings.z === undefined) {
+        settings.z = {
+          type: 'obsm',
+          key: defaultKey,
+          column: defaultFrame.columns[2]
+        };
+        console.log(`Setting default z-axis to ${defaultKey} column ${defaultFrame.columns[2]}`);
+      }
+    } else {
+      console.warn(`No usable columns in obsm dataframe "${defaultKey}"`);
+    }
+  } else {
+    console.warn('No obsm dataframes available');
+  }
+
+  settings.x = settings.x || {};
+  settings.y = settings.y || {};
+
+  // Axis selectors
+  await setupAxisSelector('x', settings.x);
+  console.log('X-axis selector initialized');
+  await setupAxisSelector('y', settings.y);
+  console.log('Y-axis selector initialized');
+
+  if (settings.z) {
+    const toggle = document.getElementById(`z-axis-toggle-${id}`);
+    toggle?.classList.add('active', 'btn-primary');
+    toggle?.classList.remove('btn-outline-secondary');
+    toggle?.setAttribute('title', '3rd dimension active - click to disable');
+
+    const container = document.getElementById(`z-axis-container-${id}`);
+    if (container) container.style.display = 'block';
+    await setupAxisSelector('z', settings.z);
+    console.log('Z-axis selector initialized');
+  } else if (settings.z === undefined) {
+    settings.z = null; // ensure no legacy 3D state
+  }
+
+  await setupAxisSelector('color', settings.color);
+  console.log('Color axis selector initialized');
+
+  // Point controls
+  document.getElementById(`point-size-${id}`).value = settings.pointSize;
+  document.getElementById(`point-opacity-${id}`).value = settings.pointOpacity;
+
+  // Validation
+  console.log('Final settings after UI initialization:', settings);
+  for (const axis of ['x', 'y']) {
+    if (!settings[axis]?.key) {
+      throw new Error(`No key selected for ${axis}-axis after initialization`);
+    }
+  }
+}
