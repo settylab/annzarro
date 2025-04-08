@@ -66,6 +66,12 @@ const Config = (function() {
             '7955': 'Danio rerio'
         }
     };
+
+    // Cache constraints (for CacheManager)
+    const CACHE = {
+        MAX_ENTRIES: 1000, // total entries
+        MAX_SIZE_BYTES: 1 * 1024 * 1024 * 1024 // ~1 GB
+    };
     
     // For StringDB API
     const STRING_DB = {
@@ -79,6 +85,7 @@ const Config = (function() {
     return {
         API,
         DEFAULTS,
+        CACHE,
         STRING_DB
     };
 })();

@@ -1,4 +1,5 @@
-import { createPanelStructure, initializeUIState } from './plot-utilities/make-panel-ui.js';
+import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
+import { populateKeySelector, populateColumnSelector, setupAxisSelector } from './plot-utilities/panel-ui-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -15,8 +16,9 @@ const CellPlotPanel = (function() {
      */
     function CellPlotPanel(container, options = {}) {
         // Private variables
-        const _id = `cell-plot-${Date.now()}`;
+        const _id = options.id || `cell-plot-${Date.now()}`;
         let _title = options.title || 'Cell Plot';
+        const _plotType = 'cell'; 
         const _container = container;
         let _plotContainer = null;
         let _controlsContainer = null;
@@ -61,7 +63,7 @@ const CellPlotPanel = (function() {
         /**
          * Initialize the panel
          */
-        function init() {
+        async function init() {
             // Create panel structure
             const { plotContainer, controlsContainer } = createPanelStructure(_container, _id, _settings);
 
@@ -71,389 +73,28 @@ const CellPlotPanel = (function() {
             
             // Initialize UI state and then load data
             console.log('Initializing UI state...');
-            initializeUIState(_id, _settings, _ensureDatasetStructure, _setupAxisSelector)
-            .then(() => _loadDataAndCreatePlot())
-            .catch(error => {
+            
+                // Get the dataset structure directly from our internal function
+                const datasetStructure = await DataManager.getDatasetStructure();
+                if (!datasetStructure) {
+                    throw new Error('Failed to load dataset structure');
+                }
+                
+                // Now we have the dataset structure, we can initialize the UI
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                
+                // Load data and create plot
+                await _loadDataAndCreatePlot();
+            try {
+            } catch (error) {
                 console.error('Error initializing UI state:', error);
                 _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
-            });
+            }
             
-            // Set up event listeners
+            // Set up event listeners (needs to happen even if initialization fails)
             _setupEventListeners();
         }
         
-        
-        /**
-         * Ensure we have the dataset structure, load if needed
-         * @returns {Promise<Object>} - Dataset structure
-         * @private
-         */
-
-        // Global (within the CellPlotPanel closure) variable to hold the dataset structure.
-        let globalDatasetStructure = null;
-        
-        // Function to update (or force-refresh) the global dataset structure.
-        async function updateGlobalDatasetStructure() {
-            const datasetPath = DataManager.getCurrentDataset();
-            if (!datasetPath) {
-                console.error('No dataset path available');
-                return null;
-            }
-            try {
-                console.log(`Loading dataset structure for ${datasetPath}`);
-                const response = await fetch(`${Config.API.DATASET_STRUCTURE}?dataset_path=${encodeURIComponent(datasetPath)}`);
-                if (!response.ok) {
-                    throw new Error(`Failed to load dataset structure: ${response.statusText}`);
-                }
-                globalDatasetStructure = await response.json();
-                console.log('Updated global dataset structure:', globalDatasetStructure);
-                return globalDatasetStructure;
-            } catch (error) {
-                console.error('Error updating global dataset structure:', error);
-                return null;
-            }
-        }
-        
-        // Getter function that uses the global variable
-        function getGlobalDatasetStructure() {
-            return globalDatasetStructure;
-        }
-        
-        async function _ensureDatasetStructure() {
-            // If we haven't loaded the structure yet, update it
-            if (!globalDatasetStructure) {
-                const ds = await updateGlobalDatasetStructure();
-                if (!ds) {
-                    _plotContainer.innerHTML = '<div class="alert alert-danger">No dataset selected</div>';
-                    return null;
-                }
-                return ds;
-            }
-            return globalDatasetStructure;
-        }
-        
-        /**
-         * Set up axis selector with correct values
-         * @param {string} axis - Axis name (x, y, z, color)
-         * @param {Object} settings - Axis settings
-         * @private
-         */
-        function _setupAxisSelector(axis, settings) {
-            const typeSelect = _container.querySelector(`.axis-type-select[data-axis="${axis}"]`);
-            const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
-            const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-            
-            if (!typeSelect || !keySelect || !columnSelect) {
-                console.error(`Missing select elements for ${axis} axis`);
-                return;
-            }
-            
-            console.log(`Setting up ${axis} axis selector with settings:`, settings);
-            
-            // Set type (default to obsm if not specified)
-            if (!settings.type) {
-                settings.type = 'obsm';
-                console.log(`Defaulting ${axis} axis type to 'obsm'`);
-            }
-            typeSelect.value = settings.type;
-            
-            // Populate key select based on type, waiting for it to complete
-            return _populateKeySelect(settings.type, keySelect).then(() => {
-                console.log(`Key select populated for ${axis} axis with options:`, 
-                    Array.from(keySelect.options).map(o => o.value));
-                
-                // If we have a key and it exists in the select options, use it
-                if (settings.key && Array.from(keySelect.options).some(option => option.value === settings.key)) {
-                    keySelect.value = settings.key;
-                    console.log(`Using provided ${axis} key: ${settings.key}`);
-                } else {
-                    // Otherwise, select the first available option
-                    if (keySelect.options.length > 0) {
-                        keySelect.selectedIndex = 0;
-                        settings.key = keySelect.value;
-                        console.log(`Setting default ${axis} key to '${settings.key}'`);
-                    } else {
-                        console.warn(`No options available for ${axis} key`);
-                        // Initialize with an empty string, but we'll validate later
-                        settings.key = '';
-                    }
-                }
-                
-                // Populate column select based on key
-                return _populateColumnSelect(settings.type, settings.key, columnSelect).then(() => {
-                    console.log(`Column select populated for ${axis} axis with options:`, 
-                        Array.from(columnSelect.options).map(o => o.value));
-                    
-                    if (settings.column && Array.from(columnSelect.options).some(option => option.value === settings.column)) {
-                        columnSelect.value = settings.column;
-                        console.log(`Using provided ${axis} column: ${settings.column}`);
-                    } else {
-                        // Select the first available column
-                        if (columnSelect.options.length > 0) {
-                            columnSelect.selectedIndex = 0;
-                            settings.column = columnSelect.value;
-                            console.log(`Setting default ${axis} column to '${settings.column}'`); // Todo: fix default, use the right column
-                        } else {
-                            console.warn(`No options available for ${axis} column`);
-                            // For obsm, default to column "0"
-                            if (settings.type === 'obsm') {
-                                settings.column = '0';
-                                console.log(`Default: Setting ${axis} obsm column to "0"`);
-                            } else {
-                                settings.column = '';
-                            }
-                        }
-                    }
-                });
-            });
-        }
-        
-        /**
-         * Populate key select options based on data type
-         * @param {string} type - Data type (obs, obsm, obsp, layer)
-         * @param {HTMLSelectElement} select - Select element to populate
-         * @returns {Promise} - Resolves when done
-         * @private
-         */
-        async function _populateKeySelect(type, select) {
-            select.innerHTML = '<option value="">Loading...</option>';
-            
-            // Special case for 'none' type - used for no coloring
-            if (type === 'none') {
-                select.innerHTML = '<option value="">None (constant color)</option>';
-                return Promise.resolve();
-            }
-            
-            // Load dataset structure directly to avoid race conditions
-            const datasetStructure = await _ensureDatasetStructure();
-            
-            if (!datasetStructure) {
-                select.innerHTML = '<option value="">No dataset loaded</option>';
-                return Promise.resolve();
-            }
-            
-            let options = [];
-            
-            switch (type) {
-                case 'obs':
-                    // Get obs columns from the structure
-                    if (datasetStructure.obs && datasetStructure.obs.columns) {
-                        console.log(`Found ${datasetStructure.obs.columns.length} obs columns in standard format`);
-                        options = datasetStructure.obs.columns.map(col => 
-                            `<option value="${col}">${col}</option>`
-                        );
-                    }
-                    else if (datasetStructure.obs && Array.isArray(datasetStructure.obs)) {
-                        // Alternative format - array of columns
-                        console.log(`Found ${datasetStructure.obs.length} obs columns in array format`);
-                        options = datasetStructure.obs.map(col => 
-                            `<option value="${col}">${col}</option>`
-                        );
-                    }
-                    else if (datasetStructure.obs) {
-                        // Alternative format - direct object with keys as columns
-                        const columns = Object.keys(datasetStructure.obs);
-                        console.log(`Found ${columns.length} obs columns in object format`);
-                        options = columns.map(col => 
-                            `<option value="${col}">${col}</option>`
-                        );
-                    }
-                    break;
-                    
-                case 'obsm':
-                    if (datasetStructure.obsm &&
-                        datasetStructure.obsm.dataframes &&
-                        Object.keys(datasetStructure.obsm.dataframes).length > 0) {
-                
-                        const obsmDataFrameKeys = Object.keys(datasetStructure.obsm.dataframes);
-                        console.log(`Found ${obsmDataFrameKeys.length} obsm dataframe keys:`, obsmDataFrameKeys);
-                
-                        options = obsmDataFrameKeys.map(key =>
-                            `<option value="${key}">${key}</option>`
-                        );
-                
-                        // Determine default key and default column for this axis
-                        const axis = select.dataset.axis;
-                        const axisIndexMap = { x: 0, y: 1, z: 2 };
-                        const desiredColumnIndex = axisIndexMap[axis];
-                
-                        // Default to the first key if none selected yet
-                        const defaultKey = obsmDataFrameKeys[0];
-                        const defaultDf = datasetStructure.obsm.dataframes[defaultKey];
-                        
-                        // Assign column if available
-                        if (defaultDf?.columns?.length > desiredColumnIndex) {
-                            _settings[axis].column = defaultDf.columns[desiredColumnIndex];
-                            console.log(`Auto-assigned ${axis} column to ${_settings[axis].column}`);
-                        } else if (defaultDf?.columns?.length > 0) {
-                            // Fallback to first available column
-                            _settings[axis].column = defaultDf.columns[0];
-                            console.log(`Fallback: assigned first column ${_settings[axis].column} to ${axis}`);
-                        }
-                    }
-                    // Try other fallback structure
-                    else if (datasetStructure.obsm && datasetStructure.obsm.keys) {
-                        const keys = datasetStructure.obsm.keys;
-                        console.log(`Found ${keys.length} obsm keys in standard format`);
-                
-                        if (keys.length > 0) {
-                            options = keys.map(key => 
-                                `<option value="${key}">${key}</option>`
-                            );
-                        }
-                    }
-                    break;
-                    
-                case 'obsp':
-                    // Check if obsp exists and has keys
-                    if (datasetStructure.obsp && datasetStructure.obsp.keys) {
-                        const keys = datasetStructure.obsp.keys;
-                        console.log(`Found ${keys.length} obsp keys`);
-                        
-                        if (keys.length > 0) {
-                            options = keys.map(key => 
-                                `<option value="${key}">${key}</option>`
-                            );
-                        }
-                    }
-                    break;
-                    
-                case 'layer':
-                    // Try different ways layers might be available
-                    if (datasetStructure.layers && datasetStructure.layers.details && 
-                        datasetStructure.layers.details.keys) {
-                        // Format from the API we've observed
-                        const keys = datasetStructure.layers.details.keys;
-                        console.log(`Found ${keys.length} layer keys in details:`, keys);
-                        
-                        if (keys.length > 0) {
-                            options = keys.map(key => 
-                                `<option value="${key}">${key}</option>`
-                            );
-                        }
-                    }
-                    else if (datasetStructure.layers && datasetStructure.layers.keys) {
-                        // Standard format
-                        const keys = datasetStructure.layers.keys;
-                        console.log(`Found ${keys.length} layer keys in standard format`);
-                        
-                        if (keys.length > 0) {
-                            options = keys.map(key => 
-                                `<option value="${key}">${key}</option>`
-                            );
-                        }
-                    }
-                    break;
-            }
-            
-            if (options.length) {
-                console.log(`Setting ${options.length} options for ${type} select`);
-                select.innerHTML = options.join('');
-            } else {
-                console.warn(`No options available for ${type}`);
-                select.innerHTML = '<option value="">No options available</option>';
-            }
-            
-            return Promise.resolve();
-        }
-        
-        /**
-         * Populate column select options based on key
-         * @param {string} type - Data type (obs, obsm, obsp, layer)
-         * @param {string} key - Selected key
-         * @param {HTMLSelectElement} select - Select element to populate
-         * @returns {Promise} - Resolves when done
-         * @private
-         */
-        async function _populateColumnSelect(type, key, select) {
-            if (!key) {
-                select.innerHTML = '<option value="">Select key first</option>';
-                select.disabled = true;
-                return Promise.resolve();
-            }
-            
-            select.disabled = false;
-            select.innerHTML = '<option value="">Loading...</option>';
-            
-            const datasetStructure = DataManager.getDatasetStructure();
-            if (!datasetStructure) {
-                select.innerHTML = '<option value="">No dataset loaded</option>';
-                return Promise.resolve();
-            }
-            
-            let options = [];
-            
-            switch (type) {
-                case 'obs':
-                    // For obs, column selection is not needed
-                    select.innerHTML = '<option value="">N/A</option>';
-                    select.disabled = true;
-                    break;
-                    
-                case 'obsm':
-                    try {
-                        const df = datasetStructure.obsm?.dataframes?.[key];
-                        if (df && df.columns?.length > 0) {
-                            console.log(`Found ${df.columns.length} columns for obsm key: ${key}`);
-                            options = df.columns.map(col => `<option value="${col}">${col}</option>`);
-                            select.innerHTML = options.join('');
-                            const axis = select.dataset.axis;
-                            // If a column is already set and valid, use it; otherwise, pick a default based on axis index.
-                            if (_settings[axis].column && df.columns.includes(_settings[axis].column)) {
-                                select.value = _settings[axis].column;
-                            } else {
-                                const axisIndexMap = { x: 0, y: 1, z: 2 };
-                                const desiredIndex = axisIndexMap[axis];
-                                if (df.columns.length > desiredIndex) {
-                                    select.value = df.columns[desiredIndex];
-                                    _settings[axis].column = df.columns[desiredIndex];
-                                    console.log(`Auto-selected column ${df.columns[desiredIndex]} for axis ${axis}`);
-                                } else {
-                                    // Fallback: select the first available column.
-                                    select.value = df.columns[0];
-                                    _settings[axis].column = df.columns[0];
-                                    console.log(`Fallback: auto-selected column ${df.columns[0]} for axis ${axis}`);
-                                }
-                            }
-                            return Promise.resolve();
-                        }
-                        // Fallback: if no columns found, create dummy options.
-                        const fallbackDims = 3;
-                        options = Array.from({ length: fallbackDims }, (_, i) =>
-                            `<option value="${i}">${i}</option>`
-                        );
-                    } catch (error) {
-                        console.error('Error creating obsm columns:', error);
-                    }
-                    break;
-                    
-                case 'obsp':
-                    // For obsp, column selection requires focusing on a cell
-                    const focusedCell = DataManager.getFocusedCell();
-                    if (focusedCell) {
-                        options.push(`<option value="${focusedCell}">Connections to ${focusedCell}</option>`);
-                    } else {
-                        options.push('<option value="">Select a focused cell first</option>');
-                    }
-                    break;
-                    
-                case 'layer':
-                    // For layers, column selection requires focusing on a gene
-                    const focusedGene = DataManager.getFocusedGene();
-                    if (focusedGene) {
-                        options.push(`<option value="${focusedGene}">Expression of ${focusedGene}</option>`);
-                    } else {
-                        options.push('<option value="">Select a focused gene first</option>');
-                    }
-                    break;
-            }
-            
-            select.innerHTML = options.length 
-                ? options.join('') 
-                : '<option value="">No options available</option>';
-            
-            return Promise.resolve();
-        }
         
         /**
          * Set up event listeners
@@ -487,142 +128,135 @@ const CellPlotPanel = (function() {
             }
             
             _container.querySelectorAll('.axis-type-select').forEach(select => {
-                select.addEventListener('change', (e) => {
-                    const axis = e.target.dataset.axis;
-                    const type = e.target.value;
-                    const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
-                    const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-                    if (!columnSelect) {
-                        console.error(`Column select element not found for axis ${axis}`);
-                        return;
+                select.addEventListener('change', async (e) => {
+                  const axis = e.target.dataset.axis;
+                  const type = e.target.value;
+                  const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
+                  const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+              
+                  if (!keySelect || !columnSelect) {
+                    console.error(`Missing select elements for axis ${axis}`);
+                    return;
+                  }
+              
+                  _settings[axis].type = type;
+              
+                  const datasetStructure = await DataManager.getDatasetStructure();
+                  if (!datasetStructure) {
+                    console.error('No dataset structure available');
+                    return;
+                  }
+              
+                  // Update key options
+                  populateKeySelector(_settings[axis], keySelect, axis, _plotType, datasetStructure);
+              
+                  if (_settings[axis].type === 'none' && axis === 'color') {
+                    console.log('Color setting changed to "none", triggering optimized update');
+                    _loadColorDataAndUpdatePlot();
+                    return;
+                  }
+              
+                  // Reset key to first valid value
+                  const keyValues = Array.from(keySelect.options).map(opt => opt.value);
+                  _settings[axis].key = keyValues[0] || '';
+                  keySelect.value = _settings[axis].key;
+              
+                  // Update column options
+                  populateColumnSelector(_settings[axis], columnSelect, axis, _plotType, datasetStructure);
+              
+                  const colValues = Array.from(columnSelect.options).map(opt => opt.value);
+                  const currentValue = _settings[axis].column;
+                  if (!colValues.includes(currentValue)) {
+                    const defaultIndex = { x: 0, y: 1, z: 2 }[axis];
+                    const fallback = colValues[defaultIndex] || colValues[0] || '';
+                    columnSelect.value = fallback;
+                    _settings[axis].column = fallback;
+                    console.log(`Updated ${axis} column to default: ${fallback}`);
+                  } else {
+                    columnSelect.value = currentValue;
+                  }
+              
+                  // Trigger the appropriate plot update
+                  if (axis === 'color') {
+                    _loadColorDataAndUpdatePlot();
+                  } else if (['x', 'y', 'z'].includes(axis)) {
+                    try {
+                      const axisData = await _loadAxisData(axis);
+                      if (axisData?.values) {
+                        _data[axis] = axisData;
+                        _updatePlotElements({ [`${axis}Axis`]: true, layout: true });
+                      } else {
+                        _loadDataAndCreatePlot();
+                      }
+                    } catch (err) {
+                      console.warn(`Failed to update ${axis} axis, reloading plot.`);
+                      _loadDataAndCreatePlot();
                     }
-                    
-                    _settings[axis].type = type;
-                    
-                    // Update key options
-                    _populateKeySelect(type, keySelect).then(() => {
-                        if (_settings[axis].type === "none" && axis === 'color') {
-                            console.log('Color setting changed, using optimized update');
-                            _loadColorDataAndUpdatePlot();
-                        } else if (keySelect.options.length > 0) {
-                            keySelect.selectedIndex = 0;
-                            _settings[axis].key = keySelect.value;
-                            
-                            // Update column options
-                            _populateColumnSelect(type, keySelect.value, columnSelect).then(() => {
-                                if (columnSelect.options.length > 0) {
-                                    // Instead of always defaulting to index 0, check for an existing setting.
-                                    const currentValue = _settings[axis].column;
-                                    const availableValues = Array.from(columnSelect.options).map(opt => opt.value);
-                                    if (currentValue && availableValues.includes(currentValue)) {
-                                        columnSelect.value = currentValue;
-                                    } else {
-                                        const axisDefault = { x: 0, y: 1, z: 2 }[axis];
-                                        if (availableValues[axisDefault] !== undefined) {
-                                            columnSelect.value = availableValues[axisDefault];
-                                            _settings[axis].column = availableValues[axisDefault];
-                                            console.log(`Auto-selected column ${availableValues[axisDefault]} for axis ${axis}`);
-                                        } else {
-                                            columnSelect.selectedIndex = 0;
-                                            _settings[axis].column = columnSelect.value;
-                                            console.log(`Fallback: auto-selected column ${columnSelect.value} for axis ${axis}`);
-                                        }
-                                    }
-                                    
-                                    if (axis === 'color' && _plot) {
-                                        console.log('Color setting changed, using optimized update');
-                                        _loadColorDataAndUpdatePlot();
-                                    } else if (axis === 'x' || axis === 'y' || axis === 'z') {
-                                        if (_plot) {
-                                            console.log(`${axis.toUpperCase()}-axis changed, loading data and updating plot`);
-                                            _loadAxisData(axis).then(axisData => {
-                                                if (axisData && axisData.values) {
-                                                    _data[axis] = axisData;
-                                                    const updateObj = {};
-                                                    updateObj[axis + 'Axis'] = true;
-                                                    updateObj.layout = true;
-                                                    _updatePlotElements(updateObj);
-                                                } else {
-                                                    _loadDataAndCreatePlot();
-                                                }
-                                            }).catch(() => _loadDataAndCreatePlot());
-                                        } else {
-                                            _loadDataAndCreatePlot();
-                                        }
-                                    } else {
-                                        _loadDataAndCreatePlot();
-                                    }
-                                }
-                            });
-                        }
-                    });
+                  } else {
+                    _loadDataAndCreatePlot();
+                  }
                 });
-            });
+              });
             
             // Axis key selectors
             _container.querySelectorAll('.axis-key-select').forEach(select => {
-                select.addEventListener('change', (e) => {
-                    const axis = e.target.dataset.axis;
-                    const key = e.target.value;
-                    const type = _container.querySelector(`.axis-type-select[data-axis="${axis}"]`).value;
-                    const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-                    if (!columnSelect) {
-                        console.error(`Column select element not found for axis ${axis}`);
-                        return;
+                select.addEventListener('change', async (e) => {
+                  const axis = e.target.dataset.axis;
+                  const key = e.target.value;
+                  const type = _container.querySelector(`.axis-type-select[data-axis="${axis}"]`).value;
+                  const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+              
+                  if (!columnSelect) {
+                    console.error(`Column select element not found for axis ${axis}`);
+                    return;
+                  }
+              
+                  _settings[axis].key = key;
+              
+                  const datasetStructure = await DataManager.getDatasetStructure();
+                  if (!datasetStructure) {
+                    console.error('No dataset structure available');
+                    return;
+                  }
+              
+                  // Update columns for the new key
+                  populateColumnSelector(_settings[axis], columnSelect, axis, _plotType, datasetStructure);
+              
+                  const colValues = Array.from(columnSelect.options).map(opt => opt.value);
+                  const currentValue = _settings[axis].column;
+              
+                  if (!colValues.includes(currentValue)) {
+                    const axisDefault = { x: 0, y: 1, z: 2 }[axis];
+                    const fallback = colValues[axisDefault] || colValues[0] || '';
+                    columnSelect.value = fallback;
+                    _settings[axis].column = fallback;
+                    console.log(`Auto-selected column ${fallback} for axis ${axis}`);
+                  } else {
+                    columnSelect.value = currentValue;
+                  }
+              
+                  // Trigger appropriate updates
+                  if (axis === 'color' && _plot) {
+                    console.log('Color key changed, using optimized update');
+                    _loadColorDataAndUpdatePlot();
+                  } else if (['x', 'y', 'z'].includes(axis)) {
+                    try {
+                      const axisData = await _loadAxisData(axis);
+                      if (axisData?.values) {
+                        _data[axis] = axisData;
+                        _updatePlotElements({ [`${axis}Axis`]: true, layout: true });
+                      } else {
+                        _loadDataAndCreatePlot();
+                      }
+                    } catch (err) {
+                      console.warn(`Error updating ${axis} axis after key change`);
+                      _loadDataAndCreatePlot();
                     }
-                    
-                    _settings[axis].key = key;
-                    
-                    // Update column options
-                    _populateColumnSelect(type, key, columnSelect).then(() => {
-                        if (columnSelect.options.length > 0) {
-                            // Instead of always defaulting to index 0, check if _settings[axis].column is valid.
-                            const currentValue = _settings[axis].column;
-                            const availableValues = Array.from(columnSelect.options).map(opt => opt.value);
-                            if (currentValue && availableValues.includes(currentValue)) {
-                                columnSelect.value = currentValue;
-                            } else {
-                                // Use default based on axis: 0 for x, 1 for y, 2 for z.
-                                const axisDefault = { x: 0, y: 1, z: 2 }[axis];
-                                if (availableValues[axisDefault] !== undefined) {
-                                    columnSelect.value = availableValues[axisDefault];
-                                    _settings[axis].column = availableValues[axisDefault];
-                                    console.log(`Auto-selected column ${availableValues[axisDefault]} for axis ${axis}`);
-                                } else {
-                                    columnSelect.selectedIndex = 0;
-                                    _settings[axis].column = columnSelect.value;
-                                    console.log(`Fallback: auto-selected column ${columnSelect.value} for axis ${axis}`);
-                                }
-                            }
-                            
-                            // Handle different axis changes appropriately
-                            if (axis === 'color' && _plot) {
-                                console.log('Color key changed, using optimized update');
-                                _loadColorDataAndUpdatePlot();
-                            } else if (axis === 'x' || axis === 'y' || axis === 'z') {
-                                if (_plot) {
-                                    console.log(`${axis.toUpperCase()}-axis key changed, loading new axis data and updating plot`);
-                                    _loadAxisData(axis).then(axisData => {
-                                        if (axisData && axisData.values) {
-                                            _data[axis] = axisData;
-                                            const updateObj = {};
-                                            updateObj[axis + 'Axis'] = true;
-                                            updateObj.layout = true;
-                                            _updatePlotElements(updateObj);
-                                        } else {
-                                            _loadDataAndCreatePlot();
-                                        }
-                                    }).catch(() => _loadDataAndCreatePlot());
-                                } else {
-                                    _loadDataAndCreatePlot();
-                                }
-                            } else {
-                                _loadDataAndCreatePlot();
-                            }
-                        }
-                    });
+                  } else {
+                    _loadDataAndCreatePlot();
+                  }
                 });
-            });
+              });
             
             // Axis column selectors
             _container.querySelectorAll('.axis-column-select').forEach(select => {
@@ -664,53 +298,50 @@ const CellPlotPanel = (function() {
             
             // 3D plot toggle - this always requires plot recreation since it changes the plot type
             const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
-            zAxisToggle.addEventListener('click', (e) => {
-                // Toggle active state (Bootstrap will also toggle classes if you use data-bs-toggle)
-                const is3D = zAxisToggle.classList.contains('active');
-                const zAxisContainer = document.getElementById(`z-axis-container-${_id}`);
-                
-                if (is3D) {
-                    zAxisToggle.classList.remove('active', 'btn-primary');
-                    zAxisToggle.classList.add('btn-outline-secondary');
-                    zAxisToggle.setAttribute('title', 'Enable 3D plot');
-                    
-                    zAxisContainer.style.display = 'none';
-                    _settings.z = null;
-                    _loadDataAndCreatePlot();
-                } else {
-                    zAxisToggle.classList.add('active', 'btn-primary');
-                    zAxisToggle.classList.remove('btn-outline-secondary');
-                    zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
-                    zAxisContainer.style.display = 'block';
-                    
-                    // Initialize z-axis if not already set
-                    if (!_settings.z) {
-                        // Use the same obsm key as the y-axis
-                        const yKey = _settings.y.key;
-                        let zColumn = '2'; // fallback default
-                
-                        // Get the current dataset structure
-                        const ds = getGlobalDatasetStructure();
-                        if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[yKey]) {
-                            const df = ds.obsm.dataframes[yKey];
-                            if (df.columns && df.columns.length > 0) {
-                                // Find index of the y-axis column in the dataframe columns
-                                const yColIndex = df.columns.indexOf(_settings.y.column);
-                                if (yColIndex !== -1 && yColIndex + 1 < df.columns.length) {
-                                    // Use the next available column
-                                    zColumn = df.columns[yColIndex + 1];
-                                } else {
-                                    // If y's column is the last one, fall back to the last available column
-                                    zColumn = df.columns[df.columns.length - 1];
-                                }
-                            }
-                        }
-                
-                        _settings.z = { type: 'obsm', key: yKey, column: zColumn };
-                        _setupAxisSelector('z', _settings.z);
+            zAxisToggle.addEventListener('click', async () => {
+              const is3D = zAxisToggle.classList.contains('active');
+              const zAxisContainer = document.getElementById(`z-axis-container-${_id}`);
+            
+              if (is3D) {
+                // Disable 3D
+                zAxisToggle.classList.remove('active', 'btn-primary');
+                zAxisToggle.classList.add('btn-outline-secondary');
+                zAxisToggle.setAttribute('title', 'Enable 3D plot');
+            
+                zAxisContainer.style.display = 'none';
+                _settings.z = null;
+                _loadDataAndCreatePlot();
+              } else {
+                // Enable 3D
+                zAxisToggle.classList.add('active', 'btn-primary');
+                zAxisToggle.classList.remove('btn-outline-secondary');
+                zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
+            
+                zAxisContainer.style.display = 'block';
+            
+                if (!_settings.z) {
+                    const yKey = _settings.y?.key || '';
+                    let zColumn = '2';
+            
+                    const datasetStructure = await DataManager.getDatasetStructure();
+                    const df = datasetStructure?.obsm?.dataframes?.[yKey];
+                    const yCol = _settings.y?.column;
+            
+                    if (df?.columns?.length) {
+                    const yIdx = df.columns.indexOf(yCol);
+                    if (yIdx !== -1 && yIdx + 1 < df.columns.length) {
+                        zColumn = df.columns[yIdx + 1];
+                    } else {
+                        zColumn = df.columns.at(-1); // fallback to last column
                     }
-                    _loadDataAndCreatePlot();
+                    }
+            
+                    _settings.z = { type: 'obsm', key: yKey, column: zColumn };
+                    setupAxisSelector(_controlsContainer, 'z', _settings.z, _plotType, datasetStructure);
                 }
+            
+                _loadDataAndCreatePlot();
+              }
             });
             
             // Point size slider - use centralized update system
@@ -1917,7 +1548,7 @@ const CellPlotPanel = (function() {
                         // Ensure we have a column specified
                         if (settings.column === undefined || settings.column === null || settings.column === '') {
                           // Get the global dataset structure for the current obsm key
-                          const ds = getGlobalDatasetStructure();
+                          const ds = await DataManager.getDatasetStructure();
                           if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[settings.key]) {
                             const df = ds.obsm.dataframes[settings.key];
                             if (df.columns && df.columns.length > 0) {
@@ -3217,12 +2848,14 @@ const CellPlotPanel = (function() {
                         _removeHighlight();
                         hasFocusedCell = true;
                     }
+                    // check if still multiple without the highlighted cell trace
+                    const hasStillMultipleTraces = _plot.data && _plot.data.length > 1;
                     
                     // Only check categorical vs. numerical transitions when we're actually 
                     // changing the color data, not just updating ranges
                     if (updateOptions.colorData) {
                         // If changing between categorical and numerical, we need a complete recreation
-                        if ((isCategorical && !hasMultipleTraces) || (!isCategorical && hasMultipleTraces)) {
+                        if ((isCategorical && !hasStillMultipleTraces) || (!isCategorical && hasStillMultipleTraces)) {
                             console.log("Switching between categorical and numerical coloring - recreating plot");
                             _loadDataAndCreatePlot();
                             return;
@@ -3464,7 +3097,6 @@ const CellPlotPanel = (function() {
                     
                 case 'datasetChanged':
                     // Reset and reload
-                    await updateGlobalDatasetStructure();
                     _loadDataAndCreatePlot();
                     break;
             }

@@ -54,13 +54,7 @@ const PanelManager = (function() {
                 _createSelectionTile();
             }
         }, 500);
-        
-        // Set up the create tile button in the modal
-        const createTileBtn = document.getElementById('btn-create-tile');
-        if (createTileBtn) {
-            createTileBtn.addEventListener('click', _createTileFromModal);
-        }
-        
+
         console.log('Panel Manager initialized');
     }
     
@@ -79,98 +73,6 @@ const PanelManager = (function() {
         }
         
         console.log(`Registered panel type: ${type}`);
-    }
-    
-    /**
-     * Show the add tile modal
-     * @private
-     */
-    function _showAddTileModal() {
-        // Update the source tile dropdown with current tiles (hidden but needed for compatibility)
-        const sourceSelect = document.getElementById('tile-source');
-        sourceSelect.innerHTML = '<option value="">Create New</option>';
-        
-        // Clear existing source tiles
-        const sourceTilesGrid = document.getElementById('source-tiles-grid');
-        // Keep only the first child (Create New option)
-        while (sourceTilesGrid.children.length > 1) {
-            sourceTilesGrid.removeChild(sourceTilesGrid.lastChild);
-        }
-        
-        // Add all existing panels as visual options
-        _panels.forEach((panel, id) => {
-            // Add to hidden select
-            const option = document.createElement('option');
-            option.value = id;
-            option.textContent = panel.getTitle();
-            sourceSelect.appendChild(option);
-            
-            // Add visual tile
-            const tileOption = document.createElement('div');
-            tileOption.className = 'source-tile-option';
-            tileOption.dataset.sourceId = id;
-            
-            const typeIcon = _getPanelTypeIcon(panel.getType());
-            tileOption.innerHTML = `
-                <div class="source-tile-icon">
-                    <i class="${typeIcon} fa-2x"></i>
-                </div>
-                <div class="source-tile-label">${panel.getTitle()}</div>
-            `;
-            
-            // Add click handler
-            tileOption.addEventListener('click', () => {
-                // Update hidden select
-                sourceSelect.value = id;
-                
-                // Update visual selection
-                document.querySelectorAll('.source-tile-option').forEach(el => {
-                    el.classList.remove('active');
-                });
-                tileOption.classList.add('active');
-            });
-            
-            sourceTilesGrid.appendChild(tileOption);
-        });
-        
-        // Add click handlers for tile types
-        document.querySelectorAll('.tile-type-option').forEach(option => {
-            option.addEventListener('click', () => {
-                // Remove active class from all options
-                document.querySelectorAll('.tile-type-option').forEach(el => {
-                    el.classList.remove('active');
-                });
-                
-                // Add active class to clicked option
-                option.classList.add('active');
-                
-                // Update hidden select
-                const tileType = option.dataset.tileType;
-                document.getElementById('tile-type').value = tileType;
-            });
-        });
-        
-        // Set default selection for tile type
-        const defaultTileType = document.querySelector('.tile-type-option[data-tile-type="cell-plot"]');
-        if (defaultTileType) {
-            defaultTileType.classList.add('active');
-        }
-        
-        // Add click handler for "Create New" option
-        const createNewOption = document.querySelector('.source-tile-option[data-source-id=""]');
-        if (createNewOption) {
-            createNewOption.addEventListener('click', () => {
-                sourceSelect.value = '';
-                document.querySelectorAll('.source-tile-option').forEach(el => {
-                    el.classList.remove('active');
-                });
-                createNewOption.classList.add('active');
-            });
-        }
-        
-        // Show the modal
-        const modal = new bootstrap.Modal(document.getElementById('add-tile-modal'));
-        modal.show();
     }
     
     /**
@@ -301,6 +203,7 @@ const PanelManager = (function() {
                     // Get panel info
                     const config = panel.getConfig();
                     const panelType = panel.getType();
+                    config.id = `${panelType}-${++_counters[panelType]}`;
                     
                     // Avoid name collision
                     config.title = _generateUniqueName(panelType, panel.getTitle());
@@ -483,42 +386,6 @@ const PanelManager = (function() {
     }
     
     /**
-     * Create a new tile based on the modal selections
-     * @private
-     */
-    function _createTileFromModal() {
-        const typeSelect = document.getElementById('tile-type');
-        const sourceSelect = document.getElementById('tile-source');
-        
-        const type = typeSelect.value;
-        const sourceId = sourceSelect.value;
-        
-        // Close the modal
-        bootstrap.Modal.getInstance(document.getElementById('add-tile-modal')).hide();
-        
-        // Check if we have a pending split
-        if (_pendingSplit) {
-            // Perform the split with the selected options
-            _performSplit(_pendingSplit.id, _pendingSplit.direction, type, sourceId);
-            _pendingSplit = null;
-            return;
-        }
-        
-        // Create the tile
-        if (sourceId) {
-            // Clone from existing tile
-            const sourcePanel = _panels.get(sourceId);
-            if (sourcePanel) {
-                const config = sourcePanel.getConfig();
-                createPanel(type, config);
-            }
-        } else {
-            // Create new tile
-            createPanel(type);
-        }
-    }
-    
-    /**
      * Perform a tile split with the selected panel type
      * @param {string} id - ID of the tile to split
      * @param {string} direction - Split direction ('horizontal' or 'vertical')
@@ -652,6 +519,7 @@ const PanelManager = (function() {
         toggleControlsBtn.addEventListener('click', () => _togglePanelControls(id, toggleControlsBtn));
         
         // Initialize the panel
+        console.log(`Befor startin the init the settings are:`, panel.getConfig());
         panel.init();
         
         // Scroll the new panel into view
@@ -742,204 +610,6 @@ const PanelManager = (function() {
         // Perform the split immediately with the same panel type
         _performSplit();
         return;
-        
-        /* Comment out the old selection UI for now - we'll use direct splitting
-        // Create a tile selector element
-        const tileSelector = document.createElement('div');
-        tileSelector.className = 'tile-selector';
-        
-        // Create the selection container content
-        tileSelector.innerHTML = `
-            <div class="tile-selection-container">
-                <div class="tile-selection-header">
-                    <h2>Split ${direction === 'horizontal' ? 'Horizontally' : 'Vertically'}</h2>
-                    <p>Choose the type of panel to create in the new pane</p>
-                </div>
-                
-                <div class="tile-type-selection">
-                    <h3>Choose Panel Type</h3>
-                    <div class="tile-selection-grid" id="panel-type-grid"></div>
-                </div>
-                
-                <div class="source-selection">
-                    <h3>Clone from Existing Panel (Optional)</h3>
-                    <div class="source-selection-grid" id="source-panel-grid"></div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button class="btn btn-secondary" id="cancel-selection">Cancel</button>
-                    <button class="btn btn-primary" id="create-panel" disabled>Split</button>
-                </div>
-            </div>
-        `;
-        
-        // Add the selector to the container
-        _container.appendChild(tileSelector);
-        */
-        
-        // Track selected items
-        let selectedType = panel.getType(); // Default to same type as source
-        let selectedSource = null;
-        
-        // Populate panel types
-        const panelTypeGrid = tileSelector.querySelector('#panel-type-grid');
-        const panelTypes = [
-            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
-            { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
-            { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
-            { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
-        ];
-        
-        // Add panel type options
-        panelTypes.forEach(panelType => {
-            const panelOption = document.createElement('div');
-            panelOption.className = 'selection-panel-option panel-type-option';
-            if (panelType.type === selectedType) {
-                panelOption.classList.add('selected');
-            }
-            panelOption.dataset.type = panelType.type;
-            panelOption.innerHTML = `
-                <div class="tile-type-icon">
-                    <i class="${panelType.icon} fa-3x"></i>
-                </div>
-                <div class="tile-type-label">${panelType.label}</div>
-            `;
-            
-            // Add click handler
-            panelOption.addEventListener('click', () => {
-                // Clear other selections
-                tileSelector.querySelectorAll('.panel-type-option').forEach(el => {
-                    el.classList.remove('selected');
-                });
-                
-                // Select this option
-                panelOption.classList.add('selected');
-                selectedType = panelType.type;
-                
-                // Enable create button
-                const createBtn = tileSelector.querySelector('#create-panel');
-                createBtn.disabled = false;
-            });
-            
-            panelTypeGrid.appendChild(panelOption);
-        });
-        
-        // Populate source panels
-        const sourcePanelGrid = tileSelector.querySelector('#source-panel-grid');
-        
-        // Add "clone this panel" option first (default)
-        const cloneOption = document.createElement('div');
-        cloneOption.className = 'selection-panel-option source-panel-option selected';
-        cloneOption.dataset.id = id;
-        cloneOption.innerHTML = `
-            <div class="tile-type-icon">
-                <i class="${_getPanelTypeIcon(panel.getType())} fa-3x"></i>
-            </div>
-            <div class="tile-type-label">Clone This Panel</div>
-        `;
-        
-        cloneOption.addEventListener('click', () => {
-            // Clear other selections
-            tileSelector.querySelectorAll('.source-panel-option').forEach(el => {
-                el.classList.remove('selected');
-            });
-            
-            // Select this option
-            cloneOption.classList.add('selected');
-            selectedSource = id;
-        });
-        
-        sourcePanelGrid.appendChild(cloneOption);
-        
-        // Add "none" option
-        const noneOption = document.createElement('div');
-        noneOption.className = 'selection-panel-option source-panel-option';
-        noneOption.dataset.id = '';
-        noneOption.innerHTML = `
-            <div class="tile-type-icon">
-                <i class="fas fa-plus fa-3x"></i>
-            </div>
-            <div class="tile-type-label">Create New</div>
-        `;
-        
-        noneOption.addEventListener('click', () => {
-            // Clear other selections
-            tileSelector.querySelectorAll('.source-panel-option').forEach(el => {
-                el.classList.remove('selected');
-            });
-            
-            // Select this option
-            noneOption.classList.add('selected');
-            selectedSource = null;
-        });
-        
-        sourcePanelGrid.appendChild(noneOption);
-        
-        // Add other existing panels as options (excluding the current one)
-        _panels.forEach((existingPanel, panelId) => {
-            if (panelId !== id) {
-                const sourceOption = document.createElement('div');
-                sourceOption.className = 'selection-panel-option source-panel-option';
-                sourceOption.dataset.id = panelId;
-                
-                const typeIcon = _getPanelTypeIcon(existingPanel.getType());
-                sourceOption.innerHTML = `
-                    <div class="tile-type-icon">
-                        <i class="${typeIcon} fa-3x"></i>
-                    </div>
-                    <div class="tile-type-label">${existingPanel.getTitle()}</div>
-                `;
-                
-                sourceOption.addEventListener('click', () => {
-                    // Clear other selections
-                    tileSelector.querySelectorAll('.source-panel-option').forEach(el => {
-                        el.classList.remove('selected');
-                    });
-                    
-                    // Select this option
-                    sourceOption.classList.add('selected');
-                    selectedSource = panelId;
-                });
-                
-                sourcePanelGrid.appendChild(sourceOption);
-            }
-        });
-        
-        // Default to cloning the current panel
-        selectedSource = id;
-        
-        // Add cancel button handler
-        const cancelBtn = tileSelector.querySelector('#cancel-selection');
-        cancelBtn.addEventListener('click', () => {
-            tileSelector.remove();
-        });
-        
-        // Add create button handler
-        const createBtn = tileSelector.querySelector('#create-panel');
-        createBtn.disabled = false; // Enable by default since we have default selections
-        createBtn.addEventListener('click', () => {
-            if (selectedType) {
-                // Remove the selection tile
-                tileSelector.remove();
-                
-                // Store split info for performing the split
-                _pendingSplit = {
-                    id,
-                    direction,
-                    panelType: selectedType,
-                    sourceId: selectedSource
-                };
-                
-                // Perform the split
-                _performSplit();
-            }
-        });
-        
-        // Scroll to the selection tile
-        setTimeout(() => {
-            tileSelector.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
     }
     
     /**

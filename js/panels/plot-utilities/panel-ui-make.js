@@ -1,4 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
+import { setupAxisSelector } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 
 // Create array of discrete color scales
@@ -170,14 +171,14 @@ export function createPanelStructure(container, id, settings) {
  *
  * @param {string} id - Unique ID for this panel instance.
  * @param {Object} settings - Plot settings (x, y, z, color, pointSize, etc.)
- * @param {Function} ensureDatasetStructure - Async function to get dataset structure
- * @param {Function} setupAxisSelector - Async function to initialize one axis selector
+ * @param {Function} datasetStructure - The dataset structure object.
+ * @param {string} plotType - Type of plot ('cell' or 'gene').
+ * @param {HTMLElement} controlsContainer - The container for the plot controls.
  * @returns {Promise<void>} Resolves when UI state is initialized, or rejects with an error
  */
-export async function initializeUIState(id, settings, ensureDatasetStructure, setupAxisSelector) {
+export async function initializeUIState(id, settings, datasetStructure, plotType, controlsContainer) {
   console.log('Initializing UI state with settings:', settings);
 
-  const datasetStructure = await ensureDatasetStructure();
   if (!datasetStructure) throw new Error('Failed to load dataset structure');
 
   // Auto-set default axes from obsm
@@ -193,8 +194,8 @@ export async function initializeUIState(id, settings, ensureDatasetStructure, se
 
     const defaultFrame = datasetStructure.obsm.dataframes[defaultKey];
     if (defaultFrame?.columns?.length >= 2) {
-      settings.x = settings.x || {};
-      settings.y = settings.y || {};
+      settings.x = settings.x || { type: 'obsm' };
+      settings.y = settings.y || { type: 'obsm' };
 
       if (!settings.x.key) {
         settings.x.key = defaultKey;
@@ -227,10 +228,8 @@ export async function initializeUIState(id, settings, ensureDatasetStructure, se
   settings.y = settings.y || {};
 
   // Axis selectors
-  await setupAxisSelector('x', settings.x);
-  console.log('X-axis selector initialized');
-  await setupAxisSelector('y', settings.y);
-  console.log('Y-axis selector initialized');
+  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure);
+  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure);
 
   if (settings.z) {
     const toggle = document.getElementById(`z-axis-toggle-${id}`);
@@ -240,13 +239,12 @@ export async function initializeUIState(id, settings, ensureDatasetStructure, se
 
     const container = document.getElementById(`z-axis-container-${id}`);
     if (container) container.style.display = 'block';
-    await setupAxisSelector('z', settings.z);
-    console.log('Z-axis selector initialized');
+    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
   } else if (settings.z === undefined) {
     settings.z = null; // ensure no legacy 3D state
   }
 
-  await setupAxisSelector('color', settings.color);
+  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
   console.log('Color axis selector initialized');
 
   // Point controls

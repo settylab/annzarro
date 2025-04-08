@@ -3,11 +3,11 @@
  * Handles loading and processing data from the backend API
  */
 import { Config } from './config.js';
+import { CacheManager } from './cache-manager.js';
 
 const DataManager = (function() {
     // Private variables
     let _currentDataset = null;
-    let _datasetStructure = null;
     let _cells = null;
     let _genes = null;
     let _focusedCell = null;
@@ -20,9 +20,6 @@ const DataManager = (function() {
     let _geneHistory = []; // Array of previously selected genes
     let _geneHistoryIndex = -1; // Current position in gene history
     
-    // Cache for API responses
-    const _cache = new Map();
-    
     /**
      * Fetch data from API with caching
      * @param {string} url - API URL
@@ -30,52 +27,24 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - API response
      */
     async function _fetchWithCache(url, params = {}) {
-        // Generate cache key from URL and params
-        const queryString = new URLSearchParams(params).toString();
-        const cacheKey = `${url}?${queryString}`;
-        
-        // Check cache first
-        if (_cache.has(cacheKey)) {
-            return _cache.get(cacheKey);
-        }
-        
-        // Construct full URL with parameters
-        const fullUrl = `${url}?${queryString}`;
-        
-        try {
-            const response = await fetch(fullUrl);
-            if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            
-            // Cache the response
-            _cache.set(cacheKey, data);
-            
-            return data;
-        } catch (error) {
-            console.error('Error fetching data:', error);
-            throw error;
-        }
+        const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
+        const cached = CacheManager.get(fullUrl);
+        if (cached !== undefined) return cached;
+
+        const response = await fetch(fullUrl);
+        const data = await response.json();
+        CacheManager.set(fullUrl, data);
+        return data;
     }
-    
-    /**
-     * Clear cache for specific pattern or all items
-     * @param {string} pattern - Optional URL pattern to match
-     */
-    function _clearCache(pattern = null) {
-        if (pattern) {
-            // Delete only matching entries
-            for (const key of _cache.keys()) {
-                if (key.includes(pattern)) {
-                    _cache.delete(key);
-                }
-            }
-        } else {
-            // Clear entire cache
-            _cache.clear();
+
+    function refreshCacheForDataset(datasetPath = _currentDataset) {
+        if (!datasetPath) {
+            console.warn("No dataset set for refresh.");
+            return;
         }
+        CacheManager.clear(`dataset_path=${datasetPath}`);
+        // Optionally re-fetch structure/cells/genes
+        return setCurrentDataset(datasetPath);
     }
     
     /**
@@ -101,11 +70,8 @@ const DataManager = (function() {
         try {
             _currentDataset = datasetPath;
             
-            // Clear cached data for previous dataset
-            _clearCache();
-            
             // Load dataset structure
-            _datasetStructure = await loadDatasetStructure(datasetPath);
+            const _datasetStructure = await getDatasetStructure(datasetPath);
             
             // Load cells and genes
             _cells = await loadCells(datasetPath);
@@ -143,25 +109,23 @@ const DataManager = (function() {
     
     /**
      * Load complete dataset structure
-     * @param {string} datasetPath - Path to the dataset
+     * @param {string} [datasetPath] - Optional path to the dataset. Defaults to the current dataset.
      * @returns {Promise<Object>} - Dataset structure
      */
-    async function loadDatasetStructure(datasetPath) {
+    async function getDatasetStructure(datasetPath) {
+        const path = datasetPath || _currentDataset;
+        if (!path) {
+            throw new Error('No dataset path provided or set as current.');
+        }
+
         try {
-            console.log(`Loading dataset structure from ${Config.API.DATASET_STRUCTURE} with path ${datasetPath}`);
-            const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: datasetPath });
-            
-            // Debug: log the structure to help diagnose issues
-            console.log('Dataset structure loaded:', data);
-            
-            // Validate the structure
+            console.log(`Loading dataset structure from ${Config.API.DATASET_STRUCTURE} with path ${path}`);
+            const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: path });
+
             if (!data) {
                 throw new Error('Received empty dataset structure from API');
             }
-            
-            // The backend may have a different format than what we expect
-            // Transform it to fit our expected structure if needed
-            
+
             return data;
         } catch (error) {
             console.error('Error loading dataset structure:', error);
@@ -907,13 +871,6 @@ const DataManager = (function() {
         return _currentDataset;
     }
     
-    /**
-     * Get the current dataset structure
-     * @returns {Object} - Dataset structure
-     */
-    function getDatasetStructure() {
-        return _datasetStructure;
-    }
     
     /**
      * Get the cell names
@@ -1011,7 +968,6 @@ const DataManager = (function() {
     return {
         loadDatasets,
         setCurrentDataset,
-        loadDatasetStructure,
         loadCells,
         loadGenes,
         loadObs,
@@ -1038,6 +994,10 @@ const DataManager = (function() {
         getTaxonomySpecies,
         getCellIndex,
         getGeneIndex,
+        // Caching
+        clearCache: (pattern) => CacheManager.clear(pattern),
+        refreshCacheForDataset,
+        getCacheKeys: () => CacheManager.keys(),
         // History navigation functions
         navigateCellHistoryBack,
         navigateCellHistoryForward,

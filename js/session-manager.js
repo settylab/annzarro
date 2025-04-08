@@ -282,7 +282,7 @@ const SessionManager = (function() {
                 
                 const cellCountEl = document.getElementById('cell-count');
                 const geneCountEl = document.getElementById('gene-count');
-                const datasetStructure = DataManager.getDatasetStructure();
+                const datasetStructure = await DataManager.getDatasetStructure();
                 
                 if (datasetStructure) {
                     if (cellCountEl) cellCountEl.textContent = datasetStructure.n_obs || 0;

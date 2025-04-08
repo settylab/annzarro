@@ -10,7 +10,6 @@ const App = (function() {
     // Private variables
     let _isInitialized = false;
     let _sessionModal = null;
-    let _addTileModal = null;
     
     /**
      * Initialize the application
@@ -115,7 +114,6 @@ const App = (function() {
     function _initUI() {
         // Setup bootstrap modals
         _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
-        _addTileModal = new bootstrap.Modal(document.getElementById('add-tile-modal'));
         
         // Setup dataset selector
         const datasetSelector = document.getElementById('dataset-selector');
