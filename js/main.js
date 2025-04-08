@@ -1,6 +1,11 @@
 /**
  * Main Application Module for AnnZarro
  */
+import { PanelManager } from './panel-manager.js';
+import { Config } from './config.js';
+import { DataManager } from './data-manager.js';
+import { SessionManager } from './session-manager.js';
+
 const App = (function() {
     // Private variables
     let _isInitialized = false;
@@ -917,22 +922,10 @@ const App = (function() {
 
 // Initialize the application when DOM is ready and all scripts are loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // Wait a bit to ensure all scripts are initialized
-    setTimeout(() => {
-        console.log('Starting application initialization...');
-        // Check for required dependencies
-        if (typeof PanelManager === 'undefined') {
-            console.error('PanelManager is not defined. Check script loading order.');
-            document.body.innerHTML = '<div class="alert alert-danger m-5">Error: PanelManager script failed to load. Please check the console for details.</div>';
-            return;
-        }
-        App.init();
-    }, 100);
+    // Start initialization immediately since we're using modules
+    console.log('Starting application initialization...');
+    App.init();
 });
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = App;
-} else {
-    window.App = App;
-}
+// Export the module
+export { App };

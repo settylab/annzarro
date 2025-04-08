@@ -2,6 +2,9 @@
  * Gene Set Analysis Panel
  * Analyzes gene sets with StringDB integration
  */
+import { PanelManager } from '../panel-manager.js';
+import { Config } from '../config.js';
+
 const GeneSetPanel = (function() {
     /**
      * Gene Set Panel constructor
@@ -105,18 +108,10 @@ const GeneSetPanel = (function() {
     }
     
     // Register this panel type with the PanelManager
-    setTimeout(() => {
-        if (window.PanelManager) {
-            window.PanelManager.registerPanelType('gene-set', GeneSetPanel);
-        }
-    }, 0);
+    PanelManager.registerPanelType('gene-set', GeneSetPanel);
     
     return GeneSetPanel;
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = GeneSetPanel;
-} else {
-    window.GeneSetPanel = GeneSetPanel;
-}
+// Export as module
+export { GeneSetPanel };

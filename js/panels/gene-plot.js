@@ -2,6 +2,8 @@
  * Gene Plot Panel
  * Displays genes using data from var, varm, varp, and layers
  */
+import { PanelManager } from '../panel-manager.js';
+
 const GenePlotPanel = (function() {
     /**
      * Gene Plot Panel constructor
@@ -105,18 +107,10 @@ const GenePlotPanel = (function() {
     }
     
     // Register this panel type with the PanelManager
-    setTimeout(() => {
-        if (window.PanelManager) {
-            window.PanelManager.registerPanelType('gene-plot', GenePlotPanel);
-        }
-    }, 0);
+    PanelManager.registerPanelType('gene-plot', GenePlotPanel);
     
     return GenePlotPanel;
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = GenePlotPanel;
-} else {
-    window.GenePlotPanel = GenePlotPanel;
-}
+// Export as module
+export { GenePlotPanel };

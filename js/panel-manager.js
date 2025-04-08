@@ -2,6 +2,8 @@
  * Panel Manager module for AnnZarro
  * Manages the tile-based panel system
  */
+import { SessionManager } from './session-manager.js';
+
 const PanelManager = (function() {
     // Private variables
     const _panels = new Map(); // All panels by ID
@@ -1417,9 +1419,5 @@ const PanelManager = (function() {
     };
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = PanelManager;
-} else {
-    window.PanelManager = PanelManager;
-}
+// Export the module
+export { PanelManager };

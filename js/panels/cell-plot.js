@@ -1,3 +1,8 @@
+import { createPanelStructure } from './plot-utilities/make-panel-ui.js';
+import { PanelManager } from '../panel-manager.js';
+import { Config } from '../config.js';
+import { DataManager } from '../data-manager.js';
+
 /**
  * Cell Plot Panel
  * Displays cells using data from obs, obsm, obsp, and layers
@@ -26,9 +31,9 @@ const CellPlotPanel = (function() {
             y: undefined,
             z: undefined, // undefined will try to set this, null will force 2d
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
-            pointSize: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_SIZE) || 5,
-            pointOpacity: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.POINT_OPACITY) || 0.7,
-            colorScale: (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.COLOR_SCALE) || 'Portland',
+            pointSize: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_SIZE) || 5,
+            pointOpacity: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_OPACITY) || 0.7,
+            colorScale: (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALE) || 'Portland',
             categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
             colorMax: null,
@@ -58,7 +63,11 @@ const CellPlotPanel = (function() {
          */
         function init() {
             // Create panel structure
-            _createPanelStructure();
+            const { plotContainer, controlsContainer } = createPanelStructure(_container, _id, _settings);
+
+            // Store references for later use
+            _plotContainer = plotContainer;
+            _controlsContainer = controlsContainer;
             
             // Initialize UI state and then load data
             console.log('Initializing UI state...');
@@ -77,181 +86,6 @@ const CellPlotPanel = (function() {
             _setupEventListeners();
         }
         
-        /**
-         * Create panel DOM structure
-         * @private
-         */
-        function _createPanelStructure() {
-            _container.innerHTML = `
-                <div class="plot-panel">
-                    <div class="plot-controls">
-                        <div class="axis-selector-container">
-                            <div class="axis-selector-label">X-Axis</div>
-                            <div class="axis-selector">
-                                <select class="form-select form-select-sm axis-type-select" data-axis="x">
-                                    <option value="obs">obs</option>
-                                    <option value="obsm" selected>obsm</option>
-                                    <option value="obsp">obsp</option>
-                                    <option value="layer">layer</option>
-                                </select>
-                                <select class="form-select form-select-sm axis-key-select" data-axis="x"></select>
-                                <select class="form-select form-select-sm axis-column-select" data-axis="x"></select>
-                            </div>
-                        </div>
-                        
-                        <div class="axis-selector-container">
-                            <div class="axis-selector-label">Y-Axis</div>
-                            <div class="axis-selector">
-                                <select class="form-select form-select-sm axis-type-select" data-axis="y">
-                                    <option value="obs">obs</option>
-                                    <option value="obsm" selected>obsm</option>
-                                    <option value="obsp">obsp</option>
-                                    <option value="layer">layer</option>
-                                </select>
-                                <select class="form-select form-select-sm axis-key-select" data-axis="y"></select>
-                                <select class="form-select form-select-sm axis-column-select" data-axis="y"></select>
-                            </div>
-                        </div>
-                        
-                        <div class="axis-selector-container" id="z-axis-container-${_id}" style="display:none;">
-                            <div class="axis-selector-label">Z-Axis (3D)</div>
-                            <div class="axis-selector">
-                                <select class="form-select form-select-sm axis-type-select" data-axis="z">
-                                    <option value="obs">obs</option>
-                                    <option value="obsm" selected>obsm</option>
-                                    <option value="obsp">obsp</option>
-                                    <option value="layer">layer</option>
-                                </select>
-                                <select class="form-select form-select-sm axis-key-select" data-axis="z"></select>
-                                <select class="form-select form-select-sm axis-column-select" data-axis="z"></select>
-                            </div>
-                        </div>
-                        
-                        <div class="color-selector-container">
-                            <div class="axis-selector-label">Color</div>
-                            <div class="axis-selector">
-                                <select class="form-select form-select-sm axis-type-select" data-axis="color">
-                                    <option value="none">None (constant)</option>
-                                    <option value="obs">obs</option>
-                                    <option value="obsm">obsm</option>
-                                    <option value="obsp">obsp</option>
-                                    <option value="layer">layer</option>
-                                </select>
-                                <select class="form-select form-select-sm axis-key-select" data-axis="color"></select>
-                                <select class="form-select form-select-sm axis-column-select" data-axis="color"></select>
-                            </div>
-                            
-                            <div class="color-options mt-2">
-                                <div class="btn-group" role="group" aria-label="Plot Option Buttons">
-                                    <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${_id}">3D Plot</button>
-                                    <button class="btn btn-sm active btn-primary me-2" id="show-grid-${_id}">Show Grid</button>
-                                    <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-cell-${_id}">Highlight Focused Cell</button>
-                                    <button class="btn btn-sm btn-outline-secondary me-2" id="refresh-plot-${_id}">Refresh</button>
-                                </div>
-                                
-                                <div class="point-controls">
-                                    <div class="point-size-control">
-                                        <label>Size:</label>
-                                        <input type="range" class="form-range" min="1" max="20" value="${_settings.pointSize}" id="point-size-${_id}">
-                                    </div>
-                                    <div class="point-opacity-control">
-                                        <label>Opacity:</label>
-                                        <input type="range" class="form-range" min="0.1" max="1" step="0.1" value="${_settings.pointOpacity}" id="point-opacity-${_id}">
-                                    </div>
-                                </div>
-                                
-                                <div class="color-range-controls" id="color-range-container-${_id}" style="display:none;">
-                                    <div class="d-flex align-items-center mb-2">
-                                        <label class="numerical-color-label me-2 mb-0" style="white-space: nowrap;">Color Map:</label>
-                                        <label class="categorical-color-label me-2 mb-0" style="display:none; white-space: nowrap;">Color Palette:</label>
-                                        <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${_id}">
-                                            ${Config.DEFAULTS.COLOR_SCALES.map(scale => 
-                                                `<option value="${scale}" ${scale === _settings.colorScale ? 'selected' : ''}>${scale}</option>`
-                                            ).join('')}
-                                        </select>
-                                        <select class="form-select form-select-sm category-palette-selector flex-grow-1" id="category-palette-${_id}" style="display:none;">
-                                            <optgroup label="Dataset Colors">
-                                                <option value="uns" ${_settings.categoryPalette === 'uns' ? 'selected' : ''}>From Dataset (if available)</option>
-                                            </optgroup>
-                                            <optgroup label="Custom Discrete Palettes">
-                                                <option value="default" ${_settings.categoryPalette === 'default' ? 'selected' : ''}>Default</option>
-                                                <option value="G10" ${_settings.categoryPalette === 'G10' ? 'selected' : ''}>Category10</option>
-                                                <option value="Alphabet" ${_settings.categoryPalette === 'Alphabet' ? 'selected' : ''}>Alphabet</option>
-                                                <option value="Dark2" ${_settings.categoryPalette === 'Dark2' ? 'selected' : ''}>Dark2</option>
-                                                <option value="Pastel1" ${_settings.categoryPalette === 'Pastel1' ? 'selected' : ''}>Pastel1</option>
-                                                <option value="Set1" ${_settings.categoryPalette === 'Set1' ? 'selected' : ''}>Set1</option>
-                                                <option value="Set2" ${_settings.categoryPalette === 'Set2' ? 'selected' : ''}>Set2</option>
-                                                <option value="Paired" ${_settings.categoryPalette === 'Paired' ? 'selected' : ''}>Paired</option>
-                                            </optgroup>
-                                            <optgroup label="Plotly Discrete Palettes">
-                                                <option value="Plotly_Discrete_D3" ${_settings.categoryPalette === 'Plotly_Discrete_D3' ? 'selected' : ''}>D3 Colors</option>
-                                                <option value="Plotly_Discrete_G10" ${_settings.categoryPalette === 'Plotly_Discrete_G10' ? 'selected' : ''}>G10</option>
-                                                <option value="Plotly_Discrete_Set1" ${_settings.categoryPalette === 'Plotly_Discrete_Set1' ? 'selected' : ''}>Set1</option>
-                                                <option value="Plotly_Discrete_Set2" ${_settings.categoryPalette === 'Plotly_Discrete_Set2' ? 'selected' : ''}>Set2</option>
-                                                <option value="Plotly_Discrete_Set3" ${_settings.categoryPalette === 'Plotly_Discrete_Set3' ? 'selected' : ''}>Set3</option>
-                                                <option value="Plotly_Discrete_Pastel1" ${_settings.categoryPalette === 'Plotly_Discrete_Pastel1' ? 'selected' : ''}>Pastel1</option>
-                                                <option value="Plotly_Discrete_Pastel2" ${_settings.categoryPalette === 'Plotly_Discrete_Pastel2' ? 'selected' : ''}>Pastel2</option>
-                                                <option value="Plotly_Discrete_Accent" ${_settings.categoryPalette === 'Plotly_Discrete_Accent' ? 'selected' : ''}>Accent</option>
-                                                <option value="Plotly_Discrete_Dark2" ${_settings.categoryPalette === 'Plotly_Discrete_Dark2' ? 'selected' : ''}>Dark2</option>
-                                                <option value="Plotly_Discrete_Paired" ${_settings.categoryPalette === 'Plotly_Discrete_Paired' ? 'selected' : ''}>Paired</option>
-                                            </optgroup>
-                                            <optgroup label="Plotly Sequential Palettes">
-                                                <option value="Plotly_Viridis" ${_settings.categoryPalette === 'Plotly_Viridis' ? 'selected' : ''}>Viridis</option>
-                                                <option value="Plotly_Plasma" ${_settings.categoryPalette === 'Plotly_Plasma' ? 'selected' : ''}>Plasma</option>
-                                                <option value="Plotly_Inferno" ${_settings.categoryPalette === 'Plotly_Inferno' ? 'selected' : ''}>Inferno</option>
-                                                <option value="Plotly_Magma" ${_settings.categoryPalette === 'Plotly_Magma' ? 'selected' : ''}>Magma</option>
-                                                <option value="Plotly_Cividis" ${_settings.categoryPalette === 'Plotly_Cividis' ? 'selected' : ''}>Cividis</option>
-                                                <option value="Plotly_Turbo" ${_settings.categoryPalette === 'Plotly_Turbo' ? 'selected' : ''}>Turbo</option>
-                                                <option value="Plotly_Blues" ${_settings.categoryPalette === 'Plotly_Blues' ? 'selected' : ''}>Blues</option>
-                                                <option value="Plotly_Greens" ${_settings.categoryPalette === 'Plotly_Greens' ? 'selected' : ''}>Greens</option>
-                                                <option value="Plotly_Reds" ${_settings.categoryPalette === 'Plotly_Reds' ? 'selected' : ''}>Reds</option>
-                                                <option value="Plotly_Oranges" ${_settings.categoryPalette === 'Plotly_Oranges' ? 'selected' : ''}>Oranges</option>
-                                                <option value="Plotly_Purples" ${_settings.categoryPalette === 'Plotly_Purples' ? 'selected' : ''}>Purples</option>
-                                                <option value="Plotly_BuPu" ${_settings.categoryPalette === 'Plotly_BuPu' ? 'selected' : ''}>BuPu</option>
-                                                <option value="Plotly_YlGn" ${_settings.categoryPalette === 'Plotly_YlGn' ? 'selected' : ''}>YlGn</option>
-                                            </optgroup>
-                                        </select>
-                                    </div>
-                                    
-                                    <div class="color-range-inputs">
-                                    <div class="color-range-sliders">
-                                        <div class="color-min-slider-container">
-                                        <label>Min:</label>
-                                        <input type="range" class="form-range" id="color-min-slider-${_id}" 
-                                                value="${_settings.colorMin !== undefined ? _settings.colorMin : 0}">
-                                        <input type="number" class="form-control form-control-sm" placeholder="Min" id="color-min-${_id}"
-                                                value="${_settings.colorMin !== undefined ? _settings.colorMin : 0}">
-                                        </div>
-                                        <div class="color-max-slider-container">
-                                        <label>Max:</label>
-                                        <input type="range" class="form-range" id="color-max-slider-${_id}" 
-                                                value="${_settings.colorMax !== undefined ? _settings.colorMax : 100}">
-                                        <input type="number" class="form-control form-control-sm" placeholder="Max" id="color-max-${_id}"
-                                                value="${_settings.colorMax !== undefined ? _settings.colorMax : 100}">
-                                        </div>
-                                    </div>
-                                    </div>
-                                    
-                                    <div class="btn-toolbar d-flex flex-row" role="toolbar" aria-label="Color range controls" style="width:100%; display:flex !important; flex-direction:row !important; gap:4px;">
-                                      <div class="btn-group d-flex flex-row flex-nowrap" role="group" style="width:auto; display:inline-flex !important; flex-wrap:nowrap !important; gap:4px;">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${_id}" style="display:inline-block !important; margin-right:4px !important;">Center at 0</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${_id}" style="display:inline-block !important; margin-right:4px !important;">Reverse Colormap</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${_id}" style="display:inline-block !important; margin-right:4px !important;">Hide Outliers</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${_id}" style="display:inline-block !important;">Lock Range</button>
-                                      </div>
-                                    </div>
-
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="plot-container" id="plot-container-${_id}"></div>
-                </div>
-            `;
-            
-            _plotContainer = document.getElementById(`plot-container-${_id}`);
-            _controlsContainer = _container.querySelector('.plot-controls');
-        }
                 
         /**
          * Initialize UI controls to match settings
@@ -4054,18 +3888,10 @@ const CellPlotPanel = (function() {
     }
     
     // Register this panel type with the PanelManager
-    setTimeout(() => {
-        if (window.PanelManager) {
-            window.PanelManager.registerPanelType('cell-plot', CellPlotPanel);
-        }
-    }, 0);
+    PanelManager.registerPanelType('cell-plot', CellPlotPanel);
     
     return CellPlotPanel;
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CellPlotPanel;
-} else {
-    window.CellPlotPanel = CellPlotPanel;
-}
+// Export the module
+export { CellPlotPanel };

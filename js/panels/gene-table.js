@@ -2,6 +2,9 @@
  * Gene Table Panel
  * Displays genes in a DataTable with columns from var, varm, varp, and layers
  */
+import { PanelManager } from '../panel-manager.js';
+import { Config } from '../config.js';
+
 const GeneTablePanel = (function() {
     /**
      * Gene Table Panel constructor
@@ -105,18 +108,10 @@ const GeneTablePanel = (function() {
     }
     
     // Register this panel type with the PanelManager
-    setTimeout(() => {
-        if (window.PanelManager) {
-            window.PanelManager.registerPanelType('gene-table', GeneTablePanel);
-        }
-    }, 0);
+    PanelManager.registerPanelType('gene-table', GeneTablePanel);
     
     return GeneTablePanel;
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = GeneTablePanel;
-} else {
-    window.GeneTablePanel = GeneTablePanel;
-}
+// Export as module
+export { GeneTablePanel };

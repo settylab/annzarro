@@ -2,6 +2,9 @@
  * Cell Table Panel
  * Displays cells in a DataTable with columns from obs, obsm, obsp, and layers
  */
+import { PanelManager } from '../panel-manager.js';
+import { Config } from '../config.js';
+
 const CellTablePanel = (function() {
     /**
      * Cell Table Panel constructor
@@ -105,18 +108,10 @@ const CellTablePanel = (function() {
     }
     
     // Register this panel type with the PanelManager
-    setTimeout(() => {
-        if (window.PanelManager) {
-            window.PanelManager.registerPanelType('cell-table', CellTablePanel);
-        }
-    }, 0);
+    PanelManager.registerPanelType('cell-table', CellTablePanel);
     
     return CellTablePanel;
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CellTablePanel;
-} else {
-    window.CellTablePanel = CellTablePanel;
-}
+// Export as module
+export { CellTablePanel };

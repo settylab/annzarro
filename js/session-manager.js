@@ -2,6 +2,10 @@
  * Session Manager module for AnnZarro
  * Handles saving, loading, and managing sessions
  */
+import { Config } from './config.js';
+import { DataManager } from './data-manager.js';
+import { PanelManager } from './panel-manager.js';
+
 const SessionManager = (function() {
     // Private variables
     let _currentSession = null;
@@ -411,9 +415,5 @@ const SessionManager = (function() {
     };
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = SessionManager;
-} else {
-    window.SessionManager = SessionManager;
-}
+// Export the module
+export { SessionManager };

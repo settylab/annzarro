@@ -54,6 +54,7 @@ const Config = (function() {
             "Hot", "Blackbody", "Earth", "Electric", "Viridis", "Cividis",
             "Inferno", "Magma", "Plasma"
         ],
+        COLOR_SCALES_DISCRETE: "tab10",
         POINT_SHAPES: ['circle', 'square', 'diamond', 'cross', 'x'],
         TAXONOMY_ID: '9606', // Homo sapiens by default
         TAXONOMY_SPECIES: {
@@ -82,9 +83,5 @@ const Config = (function() {
     };
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Config;
-} else {
-    window.Config = Config;
-}
+// Export the module
+export { Config };

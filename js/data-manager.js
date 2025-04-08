@@ -2,6 +2,8 @@
  * Data Manager module for AnnZarro
  * Handles loading and processing data from the backend API
  */
+import { Config } from './config.js';
+
 const DataManager = (function() {
     // Private variables
     let _currentDataset = null;
@@ -1044,9 +1046,5 @@ const DataManager = (function() {
     };
 })();
 
-// Make available for both browser global and CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = DataManager;
-} else {
-    window.DataManager = DataManager;
-}
+// Export the module
+export { DataManager };
