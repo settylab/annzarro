@@ -204,7 +204,6 @@ export function setupAxisSelectorListeners(
           data[axis] = axisData;
           updatePlotElements(
             plotContainer,
-            plot, 
             data, 
             settings, 
             loadDataAndCreatePlot, 

@@ -289,7 +289,7 @@ const DataManager = (function() {
                 console.warn('API response does not contain the expected data format');
                 return {
                     data: [],
-                    obsm_key: obsmKey,
+                    uns_key: unsKey,
                     dataset_path: datasetPath
                 };
             }
@@ -637,6 +637,43 @@ const DataManager = (function() {
             throw error;
         }
     }
+
+    /**
+     * Load uns data (unstructured annotations)
+     * @param {Object} options - Options for loading uns data
+     * @param {string} options.datasetPath - Path to the dataset
+     * @param {string} options.unsKey - Key in uns to load
+     * @returns {Promise<Object>} - uns data
+     */
+    async function loadUns(options) {
+        const { datasetPath, unsKey } = options;
+        
+        const params = {
+            dataset_path: datasetPath || _currentDataset
+        };
+        
+        try {
+            const url = `${Config.API.UNS}/${unsKey}`;
+            const data = await _fetchWithCache(url, params);
+            if (!data || !data.data) {
+                console.warn('API response does not contain the expected data format');
+                return {
+                    data: [],
+                    obsm_key: obsmKey,
+                    dataset_path: datasetPath
+                };
+            } else if (data && data.data) {
+                return {
+                    data: data.data,
+                    uns_key: unsKey,
+                    dataset_path: datasetPath
+                }
+            }
+        } catch (error) {
+            console.error('Error loading uns data:', error);
+            throw error;
+        }
+    }
     
     /**
      * Load data by flexible path
@@ -978,6 +1015,7 @@ const DataManager = (function() {
         loadVarp,
         loadLayer,
         loadX,
+        loadUns,
         loadByPath,
         setFocusedCell,
         setFocusedGene,

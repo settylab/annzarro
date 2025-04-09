@@ -166,3 +166,115 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
 }
 
   
+/**
+ * Updates the visibility of color controls based on the current color type,
+ * using elements within the provided container.
+ *
+ * @param {HTMLElement} container - The container element that holds the color control elements.
+ * @param {string} colorType - The type of color control ('numerical', 'categorical', or 'none').
+ * @param {string|number} id - The unique identifier used for element IDs.
+ */
+export function updateColorControlsVisibility(container, colorType, id) {
+  const colorRangeContainer = container.querySelector(`#color-range-container-${id}`);
+  const colorScaleSelect = container.querySelector(`#color-scale-${id}`);
+  const categoryPaletteSelect = container.querySelector(`#category-palette-${id}`);
+  const colorMinInput = container.querySelector(`#color-min-${id}`);
+  const colorMaxInput = container.querySelector(`#color-max-${id}`);
+  const colorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+  const colorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+  const centerColormapButton = container.querySelector(`#center-colormap-${id}`);
+  const hideOutliersButton = container.querySelector(`#hide-outliers-${id}`);
+  const numericalLabel = container.querySelector(`#numerical-color-label-${id}`);
+  const categoricalLabel = container.querySelector(`#categorical-color-label-${id}`);
+
+  const colorMinSliderContainer = colorMinSlider ? colorMinSlider.closest('.color-min-slider-container') : null;
+  const colorMaxSliderContainer = colorMaxSlider ? colorMaxSlider.closest('.color-max-slider-container') : null;
+
+  if (!colorRangeContainer) return;
+
+  if (colorType === 'numerical') {
+    // Show numerical color controls.
+    colorRangeContainer.style.display = 'flex';
+    if (colorScaleSelect) colorScaleSelect.style.display = 'block';
+    if (categoryPaletteSelect) categoryPaletteSelect.style.display = 'none';
+    if (colorMinInput) colorMinInput.style.display = 'block';
+    if (colorMaxInput) colorMaxInput.style.display = 'block';
+    if (colorMinSlider) colorMinSlider.style.display = 'block';
+    if (colorMaxSlider) colorMaxSlider.style.display = 'block';
+    
+    // Show slider containers with Min/Max labels.
+    if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'block';
+    if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'block';
+    
+    // Override inline styles for control buttons.
+    if (centerColormapButton)
+      centerColormapButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
+    if (hideOutliersButton)
+      hideOutliersButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
+    
+    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
+    if (lockRangeButton)
+      lockRangeButton.setAttribute('style', 'display: inline-block !important');
+    
+    // Show toolbar for numerical controls.
+    const buttonToolbar = container.querySelector('.btn-toolbar');
+    if (buttonToolbar) {
+      buttonToolbar.setAttribute('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
+      buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
+        group.setAttribute('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
+      });
+    }
+    
+    // Show the entire color range inputs section.
+    const colorRangeInputs = container.querySelector('.color-range-inputs');
+    if (colorRangeInputs) colorRangeInputs.style.display = 'block';
+    
+  } else if (colorType === 'categorical') {
+    // Show categorical color controls.
+    colorRangeContainer.style.display = 'flex';
+    if (colorScaleSelect) colorScaleSelect.style.display = 'none';
+    if (categoryPaletteSelect) {
+      categoryPaletteSelect.style.display = 'block';
+      categoryPaletteSelect.style.margin = '10px 0';
+    }
+    if (colorMinInput) colorMinInput.style.display = 'none';
+    if (colorMaxInput) colorMaxInput.style.display = 'none';
+    if (colorMinSlider) colorMinSlider.style.display = 'none';
+    if (colorMaxSlider) colorMaxSlider.style.display = 'none';
+    
+    // Hide slider containers with Min/Max labels.
+    if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'none';
+    if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'none';
+    
+    // Hide numerical control buttons.
+    if (centerColormapButton)
+      centerColormapButton.setAttribute('style', 'display: none !important');
+    if (hideOutliersButton)
+      hideOutliersButton.setAttribute('style', 'display: none !important');
+    
+    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
+    if (lockRangeButton)
+      lockRangeButton.setAttribute('style', 'display: none !important');
+    
+    // Hide the button toolbar and its button groups.
+    const buttonToolbar = container.querySelector('.btn-toolbar');
+    if (buttonToolbar) {
+      buttonToolbar.setAttribute('style', 'display: none !important');
+      buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
+        group.setAttribute('style', 'display: none !important');
+      });
+    }
+    
+    // Hide the entire color range inputs section.
+    const colorRangeInputs = container.querySelector('.color-range-inputs');
+    if (colorRangeInputs) colorRangeInputs.style.display = 'none';
+    
+    // Show/hide labels.
+    if (numericalLabel) numericalLabel.style.display = 'none';
+    if (categoricalLabel) categoricalLabel.style.display = 'inline';
+    
+  } else {
+    // For 'none' type, hide the entire color controls.
+    colorRangeContainer.style.display = 'none';
+  }
+}

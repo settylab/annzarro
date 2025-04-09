@@ -761,7 +761,42 @@ def register_data_routes(app, api_version):
         except Exception as e:
             logger.error(f"Error getting varp/{varp_key} data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get varp data: {str(e)}"}), 500
-    
+             
+    @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
+    def get_uns(uns_key: str):
+        """
+        Get unstructured annotations.
+        
+        Path parameters:
+            uns_key: Key in uns to get.
+            
+        Query parameters:
+            dataset_path: Path to the dataset.
+            
+        Returns:
+            JSON response with unstructured annotations
+        """
+        # Get dataset identification
+        dataset_path = request.args.get("dataset_path")
+        
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        
+        try:
+            # Use direct zarr access for stateless operation
+            data = zarr_reader.get_uns(uns_key, dataset_path)
+            
+            logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+            
+            return jsonify({
+                "data": data,
+                "uns_key": uns_key,
+                "dataset_path": dataset_path
+            })
+        except Exception as e:
+            logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
+        
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
     def get_paginated_data():
         """

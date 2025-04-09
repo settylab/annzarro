@@ -1,4 +1,6 @@
 import { DataManager } from '../../data-manager.js';
+import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
+import { highlightFocusedCell } from './plot-update.js';
 
 /**
  * Loads data for a specific axis.
@@ -240,5 +242,237 @@ export async function loadAxisData(settings, filteredIndices = null) {
   } catch (error) {
     console.error(`Error loading data for settings`, settings, 'error:', error);
     throw new Error(`Failed to load data for (${type}.${key}${column ? '.' + column : ''})`);
+  }
+}
+
+
+
+/**
+ * Creates a Plotly plot.
+ *
+ * @param {HTMLElement} container - DOM element that holds the panel.
+ * @param {HTMLElement} plotContainer - DOM element that holds the plot.
+ * @param {Object} settings - Object with plot configuration (axes, colors, palettes, etc).
+ * @param {Object} data - Data object containing x, y (and optionally z), cells, color, etc.
+ * @param {string|number} id - An identifier used to connect the plot to UI controls.
+ *
+ * @returns {Promise<void>}
+ */
+export async function createPlot(container, plotContainer, settings, data, id) {
+  // Validate required data
+  if (!data.x || !data.y) {
+    plotContainer.innerHTML =
+      '<div class="alert alert-warning">Insufficient data for plotting</div>';
+    return;
+  }
+  if (!data.cells || data.cells.length === 0) {
+    console.error('Cell names missing - cannot create plot');
+    plotContainer.innerHTML =
+      '<div class="alert alert-danger">Error: Cell names missing or unavailable</div>';
+    return;
+  }
+  if (data.cells.length !== data.x.values.length) {
+    console.warn(
+      `Cell names count (${data.cells.length}) doesn't match data points count (${data.x.values.length})`
+    );
+    if (data.cells.length > data.x.values.length) {
+      data.cells = data.cells.slice(0, data.x.values.length);
+    }
+  }
+
+  // Prepare base trace (works for numerical and constant coloring)
+  const baseTrace = {
+    type: settings.z ? 'scatter3d' : 'scattergl',
+    mode: 'markers',
+    x: data.x.values,
+    y: data.y.values,
+    text: data.cells,
+    customdata: Array.from({ length: data.cells.length }, (_, i) => i),
+    hovertemplate:
+      `%{text}<br>x: %{x}<br>y: %{y}` +
+      (settings.z ? `<br>z: %{z}` : '') +
+      `<extra></extra>`,
+    marker: {
+      size: settings.pointSize,
+      opacity: settings.pointOpacity
+    }
+  };
+  if (settings.z && data.z) {
+    baseTrace.z = data.z.values;
+  }
+
+  // Build layout with our pure helper
+  const layout = createLayout(settings);
+
+  // Branch for different color types
+  if (data.colorType === 'categorical') {
+    // Remove colorscale if present
+    delete baseTrace.marker.colorscale;
+
+    // Derive the unique category values
+    const catValues = data.colorCategories || [...new Set(data.color)];
+    console.log(`Found ${catValues.length} categories:`, catValues);
+    const colorKey = `${settings.color.key}_colors`;
+    const datasetPath = DataManager.getCurrentDataset();
+
+    try {
+      const response = await DataManager.loadUns({
+        datasetPath: datasetPath,
+        unsKey: colorKey
+      });
+      let customColors = null;
+      if (response && response.data) {
+        customColors = Array.isArray(response.data)
+          ? response.data
+          : [response.data];
+        console.log(`Found custom colors in uns.${colorKey}:`, customColors);
+      } else {
+        console.warn(`Failed to load uns colors from ${colorKey}`);
+      }
+      // Process categories using the uns (custom) colors if available.
+      const categoricalTraces = processCategories(settings, data, catValues, customColors);
+      layout.showlegend = true;
+      layout.legend = { ...(layout.legend || {}), title: { text: settings.color.key } };
+
+      plotContainer.innerHTML = '';
+      Plotly.newPlot(
+        plotContainer,
+        categoricalTraces,
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      attachClickHandler(plotContainer, categoricalTraces, data);
+      if (settings.highlightFocusedCell) {
+        highlightFocusedCell(plotContainer, data, settings);
+      }
+      return;
+    } catch (error) {
+      console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
+      // Fallback: process without custom colors
+      const categoricalTraces = processCategories(settings, data, catValues);
+      plotContainer.innerHTML = '';
+      Plotly.newPlot(
+        plotContainer,
+        categoricalTraces,
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      attachClickHandler(plotContainer, categoricalTraces, data);
+      if (settings.highlightFocusedCell) {
+        highlightFocusedCell(plotContainer, data, settings);
+      }
+      return;
+    }
+  } else if (data.colorType === 'numerical') {
+    // Numerical coloring branch.
+    baseTrace.marker.color = data.color;
+    baseTrace.marker.colorscale = settings.colorScale;
+    baseTrace.marker.reversescale = settings.colorReversed;
+    if (settings.colorMin !== null || settings.colorMax !== null) {
+      const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color);
+      const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color);
+      baseTrace.marker.cmin = cmin;
+      baseTrace.marker.cmax = cmax;
+      if (settings.hideOutliers) {
+        baseTrace.x = baseTrace.x.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
+        baseTrace.y = baseTrace.y.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
+        baseTrace.text = baseTrace.text.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
+        baseTrace.marker.color = baseTrace.marker.color.filter(
+          (_, i) => data.color[i] >= cmin && data.color[i] <= cmax
+        );
+        if (baseTrace.z) {
+          baseTrace.z = baseTrace.z.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
+        }
+      }
+    }
+    baseTrace.marker.colorbar = {
+      title: {
+        text:
+          `${settings.color.type}.${settings.color.key}` +
+          (settings.color.column ? `.${settings.color.column}` : ''),
+        side: 'right',
+        font: { size: 12 }
+      },
+      titleside: 'right'
+    };
+    plotContainer.innerHTML = '';
+    Plotly.newPlot(
+      plotContainer,
+      [baseTrace],
+      layout,
+      window.plotlyDefaultConfig || {
+        responsive: true,
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+      }
+    );
+    attachClickHandler(plotContainer, [baseTrace], data);
+  } else if (data.colorType === 'constant') {
+    // Constant coloring branch.
+    baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
+    delete baseTrace.marker.colorscale;
+    console.log('Using constant color for all points');
+    plotContainer.innerHTML = '';
+    Plotly.newPlot(
+      plotContainer,
+      [baseTrace],
+      layout,
+      window.plotlyDefaultConfig || {
+        responsive: true,
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+      }
+    );
+    attachClickHandler(plotContainer, [baseTrace], data);
+  }
+
+  // Update UI controls for numerical or categorical plots.
+  if (data.colorType === 'numerical') {
+    const validColorValues = data.color.filter(val => !isNaN(val));
+    const dataMin = Math.min(...validColorValues);
+    const dataMax = Math.max(...validColorValues);
+    const colorMinInput = document.getElementById(`color-min-${id}`);
+    const colorMaxInput = document.getElementById(`color-max-${id}`);
+    const colorMinSlider = document.getElementById(`color-min-slider-${id}`);
+    const colorMaxSlider = document.getElementById(`color-max-slider-${id}`);
+
+    colorMinSlider.min = dataMin;
+    colorMinSlider.max = dataMax;
+    colorMaxSlider.min = dataMin;
+    colorMaxSlider.max = dataMax;
+    const range = dataMax - dataMin;
+    const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
+    colorMinSlider.step = step;
+    colorMaxSlider.step = step;
+
+    if (colorMinInput.value === '') {
+      colorMinInput.placeholder = dataMin.toFixed(2);
+      colorMinSlider.value = dataMin;
+    } else {
+      colorMinSlider.value = settings.colorMin !== null ? settings.colorMin : dataMin;
+    }
+    if (colorMaxInput.value === '') {
+      colorMaxInput.placeholder = dataMax.toFixed(2);
+      colorMaxSlider.value = dataMax;
+    } else {
+      colorMaxSlider.value = settings.colorMax !== null ? settings.colorMax : dataMax;
+    }
+  } else if (data.colorType === 'categorical') {
+    const categoryPaletteSelect = document.getElementById(`category-palette-${id}`);
+    if (categoryPaletteSelect) {
+      categoryPaletteSelect.value = settings.categoryPalette;
+    }
   }
 }

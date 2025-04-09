@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
-import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
-import { loadAxisData } from './plot-utilities/plot-make.js';
+import { setupAxisSelector, updateColorControlsVisibility } from './plot-utilities/panel-ui-update.js';
+import { loadAxisData, createPlot } from './plot-utilities/plot-make.js';
 import { updatePlotElements, highlightFocusedCell, removeHighlight } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
@@ -26,7 +26,6 @@ const CellPlotPanel = (function() {
         let _plotContainer = null;
         let _controlsContainer = null;
         let _fullPlotData = null;
-        let _plot = null;
         let _resizeObserver = null;
         let _resizeTimeout = null;
         
@@ -120,7 +119,7 @@ const CellPlotPanel = (function() {
             _resizeObserver = setupPlotEventListeners({
                 container: _container, // Use _controlsContainer which contains the UI controls
                 plotContainer: _plotContainer,
-                plot: _plot,
+                plot: _plotContainer,
                 settings: _settings,
                 plotType: _plotType,
                 data: _data,
@@ -207,7 +206,7 @@ const CellPlotPanel = (function() {
                 _settings.colorScale = newColorScale;
                 
                 // Only update for numerical data, categorical uses discrete colors
-                if (_data.colorType === 'numerical' && _plot) {
+                if (_data.colorType === 'numerical' && _plotContainer) {
                     // Use centralized update system for color updates
                     _updatePlotElements({ colors: true, colorScale: true });
                     console.log(`Updated colorscale to ${newColorScale} without redrawing`);
@@ -223,7 +222,7 @@ const CellPlotPanel = (function() {
                 _settings.categoryPalette = e.target.value;
                 
                 // Check if we have a plot and valid data
-                if (_plot && _data.colorType === 'categorical') {
+                if (_plotContainer && _data.colorType === 'categorical') {
                     _loadDataAndCreatePlot();
                 }
             });
@@ -297,7 +296,7 @@ const CellPlotPanel = (function() {
             
             // Direct Plotly update for sliders without full update mechanism
             function updateColorRange(minOrMax, value) {
-                if (!_plot || !_plot.data || !_plot.data[0] || !_plot.data[0].marker) return;
+                if (!_plotContainer || !_plotContainer.data || !_plotContainer.data[0] || !_plotContainer.data[0].marker) return;
                 
                 // Just update the specific property directly using Plotly API
                 const update = {};
@@ -332,10 +331,10 @@ const CellPlotPanel = (function() {
             
             // Helper function to ensure we have full plot data before filtering
             function ensureFullPlotData() {
-                if (!_fullPlotData && _plot && _plot.data) {
+                if (!_fullPlotData && _plotContainer && _plotContainer.data) {
                     try {
                         console.log("Creating backup of plot data for filtering");
-                        _fullPlotData = JSON.parse(JSON.stringify(_plot.data));
+                        _fullPlotData = JSON.parse(JSON.stringify(_plotContainer.data));
                     } catch (error) {
                         console.error("Failed to create backup of plot data:", error);
                     }
@@ -457,7 +456,7 @@ const CellPlotPanel = (function() {
                     }
                     
                     // Update the plot color range directly without redrawing
-                    if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                    if (_plotContainer && _plotContainer.data && _plotContainer.data[0] && _plotContainer.data[0].marker) {
                         Plotly.restyle(_plotContainer, {
                             'marker.cmin': -absMax,
                             'marker.cmax': absMax
@@ -512,11 +511,20 @@ const CellPlotPanel = (function() {
                 if (colorMaxSlider) colorMaxSlider.value = maxValue;
                 
                 // Update plot
-                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
-                    Plotly.restyle(_plotContainer, {
-                        'marker.cmin': minValue,
-                        'marker.cmax': maxValue
-                    }, [0]);
+                if (
+                    _plotContainer &&
+                    _plotContainer.data &&
+                    _plotContainer.data[0] &&
+                    _plotContainer.data[0].marker
+                ) {
+                    Plotly.restyle(
+                        _plotContainer,
+                        {
+                            'marker.cmin': minValue,
+                            'marker.cmax': maxValue
+                        },
+                        [0]
+                    );
                 }
             }
             
@@ -542,7 +550,7 @@ const CellPlotPanel = (function() {
                 if (colorMinSlider) colorMinSlider.value = minValue;
                 
                 // Update plot
-                if (_plot && _plot.data && _plot.data[0] && _plot.data[0].marker) {
+                if (_plotContainer && _plotContainer.data && _plotContainer.data[0] && _plotContainer.data[0].marker) {
                     Plotly.restyle(_plotContainer, {
                         'marker.cmin': minValue,
                         'marker.cmax': maxValue
@@ -644,7 +652,7 @@ const CellPlotPanel = (function() {
                 _settings.hideOutliers = e.target.checked;
                 
                 // Directly update the visibility of points without redrawing the plot
-                if (_plot && _data.color && _data.colorType === 'numerical') {
+                if (_plotContainer && _data.color && _data.colorType === 'numerical') {
                     try {
                         const pointVisibility = [];
                         
@@ -706,7 +714,7 @@ const CellPlotPanel = (function() {
                   }
                 
                 // Update grid, axes, and other line visibility without redrawing the plot
-                if (_plot) {
+                if (_plotContainer) {
                     const update = {
                         // Grid lines
                         'xaxis.showgrid': _settings.showGrid,
@@ -896,6 +904,9 @@ const CellPlotPanel = (function() {
                         _settings.color.column = focusedCell;
                         _loadColorDataAndUpdatePlot();
                     }
+                } else if (_settings.highlightFocusedCell) {
+                    // If the focused cell change does not affect the plot, but we are highlighting it
+                    _highlightFocusedCell();
                 } else {
                     console.log('Focused cell changed does not affect this plot');
                 }
@@ -906,7 +917,7 @@ const CellPlotPanel = (function() {
              * @private
              */
             function _updateMenueLabelsForGene(focusedGene) {
-                if (!_plot) return;
+                if (!_plotContainer) return;
                 
                 // Update UI controls in menus to show correct gene name
                 const updateColumnSelectOptions = (axis) => {
@@ -1033,116 +1044,6 @@ const CellPlotPanel = (function() {
         }
         
 
-        /**
-         * Load only color data and update the plot without recreating it
-         * @private 
-         */
-        /**
-         * Updates the visibility of color controls based on the current color type
-         * @private
-         */
-        function _updateColorControlsVisibility() {
-            const colorRangeContainer = document.getElementById(`color-range-container-${_id}`);
-            const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
-            const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
-            const colorMinInput = document.getElementById(`color-min-${_id}`);
-            const colorMaxInput = document.getElementById(`color-max-${_id}`);
-            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
-            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-            const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
-            const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
-            const numericalLabel = document.getElementById(`numerical-color-label-${_id}`);
-            const categoricalLabel = document.getElementById(`categorical-color-label-${_id}`);
-            
-            // Get slider containers that contain the labels
-            const colorMinSliderContainer = colorMinSlider ? colorMinSlider.closest('.color-min-slider-container') : null;
-            const colorMaxSliderContainer = colorMaxSlider ? colorMaxSlider.closest('.color-max-slider-container') : null;
-            
-            // Only proceed if we have the container
-            if (!colorRangeContainer) return;
-            
-            if (_data.colorType === 'numerical') {
-                // Show numerical color controls
-                colorRangeContainer.style.display = 'flex';
-                colorScaleSelect.style.display = 'block';
-                categoryPaletteSelect.style.display = 'none';
-                colorMinInput.style.display = 'block';
-                colorMaxInput.style.display = 'block';
-                colorMinSlider.style.display = 'block';
-                colorMaxSlider.style.display = 'block';
-                
-                // Show slider containers with Min/Max labels
-                if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'block';
-                if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'block';
-                
-                // Show numerical controls and buttons - use setAttribute to override any inline styles
-                if (centerColormapButton) centerColormapButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
-                if (hideOutliersButton) hideOutliersButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
-                
-                const lockRangeButton = document.getElementById(`lock-range-${_id}`);
-                if (lockRangeButton) lockRangeButton.setAttribute('style', 'display: inline-block !important');
-                
-                
-                // Show the toolbar for numerical controls
-                const buttonToolbar = _container.querySelector('.btn-toolbar');
-                if (buttonToolbar) {
-                    buttonToolbar.setAttribute('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
-                    // Show all button groups inside
-                    buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
-                        group.setAttribute('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
-                    });
-                }
-                
-                // Show the entire color range inputs section
-                const colorRangeInputs = _container.querySelector('.color-range-inputs');
-                if (colorRangeInputs) colorRangeInputs.style.display = 'block';
-                
-            } else if (_data.colorType === 'categorical') {
-                // Show categorical color controls
-                colorRangeContainer.style.display = 'flex';
-                colorScaleSelect.style.display = 'none';
-                // Make sure the category palette selector is prominently displayed
-                categoryPaletteSelect.style.display = 'block';
-                categoryPaletteSelect.style.margin = '10px 0';
-                colorMinInput.style.display = 'none';
-                colorMaxInput.style.display = 'none';
-                colorMinSlider.style.display = 'none';
-                colorMaxSlider.style.display = 'none';
-                
-                // Hide slider containers with Min/Max labels
-                if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'none';
-                if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'none';
-                
-                // Handle the numerical control buttons - need to override inline styles with !important
-                if (centerColormapButton) centerColormapButton.setAttribute('style', 'display: none !important');
-                if (hideOutliersButton) hideOutliersButton.setAttribute('style', 'display: none !important');
-                
-                const lockRangeButton = document.getElementById(`lock-range-${_id}`);
-                if (lockRangeButton) lockRangeButton.setAttribute('style', 'display: none !important');
-                
-                // Also hide the button toolbar (and all its button groups) for cleaner UI
-                const buttonToolbar = _container.querySelector('.btn-toolbar');
-                if (buttonToolbar) {
-                    buttonToolbar.setAttribute('style', 'display: none !important');
-                    // Also hide any button groups inside
-                    buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
-                        group.setAttribute('style', 'display: none !important');
-                    });
-                }
-                
-                // Hide the entire color range inputs section
-                const colorRangeInputs = _container.querySelector('.color-range-inputs');
-                if (colorRangeInputs) colorRangeInputs.style.display = 'none';
-                
-                // Show categorical label, hide numerical label
-                numericalLabel.style.display = 'none';
-                categoricalLabel.style.display = 'inline';
-                
-            } else {
-                // Hide all color controls for 'none' type
-                colorRangeContainer.style.display = 'none';
-            }
-        }
         
         async function _loadColorDataAndUpdatePlot() {
             try {
@@ -1154,15 +1055,13 @@ const CellPlotPanel = (function() {
                     : null;
                 
                 // Load only color data
-                console.log('Loading color data for plot update:', _settings.color);
                 const colorData = await loadAxisData(_settings.color, filteredCellIndices);
-                console.log('Color data for update:', colorData);
                 
                 // Make sure we have valid values
                 if (colorData && colorData.values) {
                     _data.color = colorData.values;
                     _data.colorType = colorData.type;
-                    _updateColorControlsVisibility();
+                    updateColorControlsVisibility(_container, _data.colorType, _id);
                     _data.colorCategories = colorData.categories;
                     console.log(`Updated _data.color to array with ${_data.color.length} elements, type: ${_data.colorType}`);
                     
@@ -1322,14 +1221,17 @@ const CellPlotPanel = (function() {
                     }
                 }
                 
-                // Reset cached data
-                _data = {
+                // Reset cached data without changing the reference:
+                // This is important because it maintains the original object reference—any part of the code
+                // that holds a reference to _data will automatically see the updated values.
+                Object.keys(_data).forEach(key => delete _data[key]);
+                Object.assign(_data, {
                     x: null,
                     y: null,
                     z: null,
                     color: null,
                     cells: cells
-                };
+                });
             
                 // Determine if we should load cell subsets
                 let filteredCellIndices = null;
@@ -1367,7 +1269,7 @@ const CellPlotPanel = (function() {
                             _data.color = colorData.values;
                             _data.colorType = colorData.type;
                             _data.colorCategories = colorData.categories;
-                            _updateColorControlsVisibility();
+                            updateColorControlsVisibility(_container, _data.colorType, _id);
                         } catch (err) {
                             console.error("Error loading color data:", err);
                         }
@@ -1381,7 +1283,11 @@ const CellPlotPanel = (function() {
                 if (_data.x && _data.x.values && _data.x.values.length > 0 &&
                     _data.y && _data.y.values && _data.y.values.length > 0) {
                     console.log(`Creating plot with ${_data.x.values.length} data points`);
-                    _createPlot();
+
+                    await createPlot(_container, _plotContainer, _settings, _data, _id);
+                    updateColorControlsVisibility(_container, _data.colorType, _id);
+                    
+
                 } else {
                     console.error('Insufficient data for plotting');
                     _plotContainer.innerHTML = `<div class="alert alert-warning">
@@ -1397,701 +1303,6 @@ const CellPlotPanel = (function() {
             }
         }
         
-        
-        
-        /**
-         * Create plot using loaded data
-         * @private
-         */
-        function _createPlot() {
-            if (!_data.x || !_data.y) {
-                _plotContainer.innerHTML = '<div class="alert alert-warning">Insufficient data for plotting</div>';
-                return;
-            }
-            
-            // Check if we have cell names and they match the data
-            if (!_data.cells || _data.cells.length === 0) {
-                console.error('Cell names missing - cannot create plot');
-                _plotContainer.innerHTML = '<div class="alert alert-danger">Error: Cell names missing or unavailable</div>';
-                return;
-            }
-            
-            // Ensure cell names match data point count
-            if (_data.cells.length !== _data.x.values.length) {
-                console.warn(`Cell names count (${_data.cells.length}) doesn't match data points count (${_data.x.values.length})`);
-                
-                // If we have more cells than data points, trim the list
-                if (_data.cells.length > _data.x.values.length) {
-                    _data.cells = _data.cells.slice(0, _data.x.values.length);
-                }
-            }
-            
-            // Prepare plot data
-            const trace = {
-                type: _settings.z ? 'scatter3d' : 'scattergl',
-                mode: 'markers',
-                x: _data.x.values,
-                y: _data.y.values,
-                text: _data.cells,
-                customdata: Array.from({ length: _data.cells.length }, (_, i) => i), // Add cell indices as customdata for click handling
-                hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
-                marker: {
-                    size: _settings.pointSize,
-                    opacity: _settings.pointOpacity
-                }
-            };
-            
-            // Add z-axis if 3D plot
-            if (_settings.z && _data.z) {
-                trace.z = _data.z.values;
-            }
-
-            // Create layout
-            const layout = {
-                autosize: true,
-                margin: { l: 40, r: 40, t: 40, b: 40 },
-                hovermode: 'closest',
-                xaxis: {
-                    title: `${_settings.x.type}.${_settings.x.key}` +
-                           (_settings.x.column ? `.${_settings.x.column}` : ''),
-                    showgrid: _settings.showGrid,
-                    //gridcolor: 'rgba(200, 200, 200, 0.2)',
-                    showline: _settings.showGrid,
-                    zeroline: _settings.showGrid,
-                    ticks: _settings.showGrid ? '' : 'none',
-                    showticklabels: _settings.showGrid
-                },
-                yaxis: {
-                    title: `${_settings.y.type}.${_settings.y.key}` +
-                           (_settings.y.column ? `.${_settings.y.column}` : ''),
-                    showgrid: _settings.showGrid,
-                    //gridcolor: 'rgba(200, 200, 200, 0.2)',
-                    showline: _settings.showGrid,
-                    zeroline: _settings.showGrid,
-                    ticks: _settings.showGrid ? '' : 'none',
-                    showticklabels: _settings.showGrid
-                }
-            };
-            
-            // Add z-axis title for 3D plots
-            if (_settings.z) {
-                layout.scene = {
-                    xaxis: { 
-                        title: layout.xaxis.title,
-                        showgrid: _settings.showGrid,
-                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    },
-                    yaxis: { 
-                        title: layout.yaxis.title,
-                        showgrid: _settings.showGrid,
-                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    },
-                    zaxis: {
-                        title: `${_settings.z.type}.${_settings.z.key}` +
-                               (_settings.z.column ? `.${_settings.z.column}` : ''),
-                        showgrid: _settings.showGrid,
-                        //gridcolor: 'rgba(200, 200, 200, 0.2)',
-                        showline: _settings.showGrid,
-                        zeroline: _settings.showGrid,
-                        ticks: _settings.showGrid ? '' : 'none',
-                        showticklabels: _settings.showGrid
-                    }
-                };
-                
-                // Remove 2D axis titles for 3D plots
-                delete layout.xaxis;
-                delete layout.yaxis;
-            }
-            
-            // Set colors based on color data type
-            if (_data.colorType === 'categorical') {
-                // Rather than using a colorscale, we'll use discrete colors with a legend
-                // Remove the colorscale property that would force a colorbar
-                delete trace.marker.colorscale;
-                
-                // Data preparation and color assignment depends on whether we have categories or unique values
-                const catValues = _data.categories || [...new Set(_data.color)];
-                console.log(`Found ${catValues.length} categories:`, catValues);
-                
-                // Set up an object to hold all distinct traces (one per category)
-                const traces = [];
-                const datasetPath = DataManager.getCurrentDataset();
-                const colorKey = `${_settings.color.key}_colors`;
-                
-                // Define color palettes to select from
-                const colorPalettes = {
-                    default: [
-                        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-                        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
-                    ],
-                    G10: [
-                        '#3366CC', '#DC3912', '#FF9900', '#109618', '#990099',
-                        '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'
-                    ],
-                    Alphabet: [
-                        '#AA0DFE', '#3283FE', '#85660D', '#782AB6', '#565656',
-                        '#1C8356', '#16FF32', '#F7E1A0', '#E2E2E2', '#1CBE4F',
-                        '#C4451C', '#DEA0FD', '#FE00FA', '#325A9B', '#FEAF16',
-                        '#F8A19F', '#90AD1C', '#F6222E', '#1CFFCE', '#2ED9FF',
-                        '#B10DA1', '#C075A6', '#FC1CBF', '#B00068', '#FBE426', 
-                        '#FA0087'
-                    ],
-                    Dark2: [
-                        '#1B9E77', '#D95F02', '#7570B3', '#E7298A',
-                        '#66A61E', '#E6AB02', '#A6761D', '#666666'
-                    ],
-                    Pastel1: [
-                        '#FBB4AE', '#B3CDE3', '#CCEBC5', '#DECBE4',
-                        '#FED9A6', '#FFFFCC', '#E5D8BD', '#FDDAEC'
-                    ],
-                    Set1: [
-                        '#E41A1C', '#377EB8', '#4DAF4A', '#984EA3',
-                        '#FF7F00', '#FFFF33', '#A65628', '#F781BF', '#999999'
-                    ],
-                    Set2: [
-                        '#66C2A5', '#FC8D62', '#8DA0CB', '#E78AC3',
-                        '#A6D854', '#FFD92F', '#E5C494', '#B3B3B3'
-                    ],
-                    Paired: [
-                        '#A6CEE3', '#1F78B4', '#B2DF8A', '#33A02C',
-                        '#FB9A99', '#E31A1C', '#FDBF6F', '#FF7F00',
-                        '#CAB2D6', '#6A3D9A', '#FFFF99', '#B15928'
-                    ]
-                };
-                
-                // Check for colors in uns
-                let unsColors = null;
-                
-                const processCategories = (customColors = null) => {
-                    // Store the custom colors from uns if they exist
-                    if (customColors) {
-                        unsColors = customColors;
-                    }
-                    
-                    // Choose the color palette based on settings
-                    let selectedPalette = colorPalettes.default;
-                    let paletteSource = 'default';
-                    
-                    try {
-                        if (_settings.categoryPalette === 'uns' && unsColors && unsColors.length > 0) {
-                            selectedPalette = unsColors;
-                            paletteSource = 'uns';
-                            console.log('Using custom colors from uns:', selectedPalette);
-                        } else if (_settings.categoryPalette !== 'uns' && _settings.categoryPalette !== 'default') {
-                            // Check if this is a Plotly.js discrete palette
-                            if (_settings.categoryPalette.startsWith('Plotly_Discrete_')) {
-                                // Use Plotly's discrete color palettes
-                                selectedPalette = _settings.categoryPalette.substring(16); // Remove 'Plotly_Discrete_' prefix
-                                paletteSource = 'plotly-discrete';
-                                console.log(`Using Plotly.js discrete colorscale: ${selectedPalette}`);
-                            }
-                            // Check if this is a Plotly.js sequential colorscale
-                            else if (_settings.categoryPalette.startsWith('Plotly_')) {
-                                // Just save the name - we'll use Plotly's built-in sequential colorscales
-                                selectedPalette = _settings.categoryPalette.substring(7); // Remove 'Plotly_' prefix
-                                paletteSource = 'plotly-sequential';
-                                console.log(`Using Plotly.js sequential colorscale: ${selectedPalette}`);
-                            } else if (colorPalettes[_settings.categoryPalette]) {
-                                // Use our custom color palettes
-                                selectedPalette = colorPalettes[_settings.categoryPalette];
-                                paletteSource = 'custom';
-                                console.log(`Using custom color palette ${_settings.categoryPalette}:`, selectedPalette);
-                            } else {
-                                console.warn(`Palette ${_settings.categoryPalette} not found, using default`);
-                                selectedPalette = colorPalettes.default;
-                                paletteSource = 'default';
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error selecting color palette:', error);
-                        selectedPalette = colorPalettes.default;
-                        paletteSource = 'default';
-                    }
-                    
-                    // Create one trace per category for the legend
-                    catValues.forEach((category, i) => {
-                        // Find all points belonging to this category
-                        const indices = [];
-                        _data.color.forEach((val, idx) => {
-                            if (val === category) indices.push(idx);
-                        });
-                        
-                        if (indices.length === 0) return; // Skip if no points in this category
-                        
-                        // Get the color for this category
-                        let categoryColor;
-                        
-                        if (paletteSource === 'uns' && unsColors) {
-                            // If using uns colors, we need to match by category index in original category order
-                            // from the dataset structure, not by the iteration order in catValues
-                            // Try to find category in _data.colorCategories first
-                            if (_data.colorCategories && Array.isArray(_data.colorCategories)) {
-                                const catIndex = _data.colorCategories.indexOf(category);
-                                if (catIndex !== -1 && catIndex < unsColors.length) {
-                                    categoryColor = unsColors[catIndex];
-                                } else {
-                                    // Fallback to position in catValues if category not found
-                                    categoryColor = unsColors[i % unsColors.length];
-                                }
-                            } else {
-                                // Fallback to position in catValues if colorCategories not available
-                                categoryColor = unsColors[i % unsColors.length];
-                            }
-                        } else if (paletteSource === 'plotly-discrete') {
-                            // For Plotly discrete palettes, get color directly from the discrete color map
-                            const discreteColors = {
-                                'D3': ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
-                                'G10': ['#3366CC', '#DC3912', '#FF9900', '#109618', '#990099', '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'],
-                                'Set1': ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
-                                'Set2': ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
-                                'Set3': ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
-                                'Pastel1': ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec'],
-                                'Pastel2': ['#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae', '#f1e2cc', '#cccccc'],
-                                'Accent': ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f', '#bf5b17', '#666666'],
-                                'Dark2': ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
-                                'Paired': ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
-                            };
-                            const colors = discreteColors[selectedPalette] || discreteColors['D3'];
-                            categoryColor = colors[i % colors.length];
-                        } else if (paletteSource === 'plotly-sequential') {
-                            // For Plotly sequential palettes, we'll set the sequential color scale in the trace options
-                            categoryColor = undefined; // Will be set by Plotly
-                        } else {
-                            // For other custom palettes, use the index in catValues
-                            categoryColor = selectedPalette[i % selectedPalette.length];
-                        }
-                        
-                        // Create a trace for this category
-                        const catTrace = {
-                            type: _settings.z ? 'scatter3d' : 'scattergl',
-                            mode: 'markers',
-                            name: category,
-                            text: indices.map(idx => _data.cells[idx]),
-                            // Include cell indices in customdata for 3D plots
-                            customdata: indices, // Add cell indices as customdata for click handling
-                            hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
-                            x: indices.map(idx => _data.x.values[idx]),
-                            y: indices.map(idx => _data.y.values[idx]),
-                            marker: paletteSource === 'plotly-sequential'
-                                ? {
-                                    size: _settings.pointSize,
-                                    opacity: _settings.pointOpacity,
-                                    // Use Plotly's built-in sequential colorscale
-                                    colorscale: selectedPalette,
-                                    // For sequential colorscales, each trace needs a custom color value
-                                    color: i, // Use index as the color value
-                                    showscale: false // Don't show color scale, we have the legend
-                                } 
-                                : {
-                                    size: _settings.pointSize,
-                                    opacity: _settings.pointOpacity,
-                                    color: categoryColor
-                                },
-                            showlegend: true
-                        };
-                        
-                        // Add z coordinates for 3D plots
-                        if (_settings.z && _data.z) {
-                            catTrace.z = indices.map(idx => _data.z.values[idx]);
-                        }
-                        
-                        traces.push(catTrace);
-                    });
-                    
-                    // Return an empty array if we're going to create multiple traces
-                    return traces;
-                };
-                
-                // Check for custom colors in uns if we're using them
-                if (_settings.categoryPalette === 'uns') {
-                    fetch(`${Config.API.UNS}/${encodeURIComponent(colorKey)}?dataset_path=${encodeURIComponent(datasetPath)}`)
-                        .then(response => {
-                            if (response.ok) {
-                                return response.json();
-                            }
-                            return null;
-                        })
-                        .then(data => {
-                            if (data && data.data) {
-                                console.log(`Found custom colors in uns.${colorKey}:`, data.data);
-                                const customColors = Array.isArray(data.data) ? data.data : [data.data];
-                                
-                                // Process with custom colors 
-                                const traces = processCategories(customColors);
-                                
-                                // Update layout to show the legend
-                                layout.showlegend = true;
-                                layout.legend = { 
-                                  ...layout.legend,  // preserve any existing legend settings
-                                  title: { text: _settings.color.key }
-                                };
-                                
-                                // Create the plot with multiple traces
-                                _plotContainer.innerHTML = ''
-                                Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
-                                    responsive: true,
-                                    displayModeBar: true,
-                                    displaylogo: false,
-                                    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-                                });
-                                
-                                // Set up click handler to update global focused cell
-                                _plotContainer.on('plotly_click', (data) => {
-                                    try {
-                                        const point = data.points[0];
-                                        const pointIndex = point.pointIndex;
-                                        const traceIndex = point.curveNumber;
-                                        let cellName;
-                                        
-                                        // First priority: Use customdata which contains the cell index
-                                        if (point.customdata !== undefined) {
-                                            const cellIndex = point.customdata;
-                                            if (_data.cells && cellIndex < _data.cells.length) {
-                                                cellName = _data.cells[cellIndex];
-                                            }
-                                            // In multi-trace categorical plot, customdata might be the index for that specific category
-                                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                                cellName = traces[traceIndex].text[pointIndex];
-                                            }
-                                        }
-                                        // Third priority: Use trace's text array
-                                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                            cellName = traces[traceIndex].text[pointIndex];
-                                        }
-                                        
-                                        if (cellName) {
-                                            // Update the global focused cell in DataManager
-                                            // This will trigger updates in all panels via the event system
-                                            DataManager.setFocusedCell(cellName, false);
-                                        }
-                                    } catch (error) {
-                                        console.error("Error handling cell plot click:", error);
-                                    }
-                                });
-                                
-                                // Store plot reference
-                                _plot = _plotContainer;
-                                
-                                // Add highlighted cell if needed
-                                if (_settings.highlightFocusedCell) {
-                                    _highlightFocusedCell();
-                                }
-                            }
-                        })
-                        .catch(error => {
-                            console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
-                            
-                            // Process without custom colors as fallback
-                            const traces = processCategories();
-                            
-                            // Create the plot with multiple traces
-                            _plotContainer.innerHTML = ''
-                            Plotly.newPlot(_plotContainer, traces, {
-                                showlegend: true,
-                                legend: {
-                                    title: { text: _settings.color.key }
-                                }
-                            }, window.plotlyDefaultConfig || {
-                                responsive: true,
-                                displayModeBar: true,
-                                displaylogo: false,
-                                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-                            });
-                            
-                            // Set up click handler to update global focused cell
-                            _plotContainer.on('plotly_click', (data) => {
-                                try {
-                                    const point = data.points[0];
-                                    const pointIndex = point.pointIndex;
-                                    const traceIndex = point.curveNumber;
-                                    let cellName;
-                                    
-                                    // First priority: Use customdata which contains the cell index
-                                    if (point.customdata !== undefined) {
-                                        const cellIndex = point.customdata;
-                                        if (_data.cells && cellIndex < _data.cells.length) {
-                                            cellName = _data.cells[cellIndex];
-                                        }
-                                        // In multi-trace categorical plot, customdata might be the index for that specific category
-                                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                            cellName = traces[traceIndex].text[pointIndex];
-                                        }
-                                    }
-                                    // Third priority: Use trace's text array
-                                    else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                        cellName = traces[traceIndex].text[pointIndex];
-                                    }
-                                    
-                                    if (cellName) {
-                                        // Update the global focused cell in DataManager
-                                        // This will trigger updates in all panels via the event system
-                                        DataManager.setFocusedCell(cellName, false);
-                                    }
-                                } catch (error) {
-                                    console.error("Error handling cell plot click:", error);
-                                }
-                            });
-                            
-                            // Store plot reference
-                            _plot = _plotContainer;
-                            
-                            // Add highlighted cell if needed
-                            if (_settings.highlightFocusedCell) {
-                                _highlightFocusedCell();
-                            }
-                        });
-                        
-                    // Return empty trace here - we'll replace it with the processed traces
-                    return [];
-                } else {
-                    // Not using uns colors or waiting for them, process immediately
-                    return processCategories();
-                }
-            } else if (_data.colorType === 'numerical') {
-                // Numerical coloring
-                trace.marker.color = _data.color;
-                trace.marker.colorscale = _settings.colorScale;
-                trace.marker.reversescale = _settings.colorReversed;
-                
-                // Set color range if specified
-                if (_settings.colorMin !== null || _settings.colorMax !== null) {
-                    const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
-                    const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
-                    
-                    trace.marker.cmin = cmin;
-                    trace.marker.cmax = cmax;
-                    
-                    // Filter out points outside range if hideOutliers is true
-                    if (_settings.hideOutliers) {
-                        trace.x = trace.x.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-                        trace.y = trace.y.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-                        trace.text = trace.text.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-                        trace.marker.color = trace.marker.color.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-                        if (trace.z) {
-                          trace.z = trace.z.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-                        }
-                      }
-                }
-                
-                // Add colorbar with vertical title
-                trace.marker.colorbar = {
-                    title: {
-                        text: `${_settings.color.type}.${_settings.color.key}` +
-                              (_settings.color.column ? `.${_settings.color.column}` : ''),
-                        side: 'right',  // Place title on right side
-                        font: {
-                            size: 12
-                        }
-                    },
-                    titleside: 'right'  // Right side vertical text
-                };
-            } else if (_data.colorType === 'constant') {
-                // Use a constant color (default to light grey)
-                trace.marker.color = 'rgba(150, 150, 150, 0.7)';
-                delete trace.marker.colorscale;
-                
-                console.log('Using constant color for all points');
-            }
-            
-            
-            // Apply subset coloring if needed but not hiding
-            if (_settings.subsettedCells && !_settings.hideNonSubset) {
-                // Create a new array with all cells
-                const allCells = DataManager.getCells();
-                const allX = [];
-                const allY = [];
-                const allZ = _settings.z ? [] : null;
-                const allText = [];
-                
-                // Create subset index lookup for efficient checking
-                const subsetLookup = new Set(_settings.subsettedCells);
-                const colors = [];
-                
-                // Load full data for all cells
-                // ... (would need to load all axis data here)
-                
-                // Create two traces - one for subset and one for rest
-                // ... (would implement this in a real application)
-            }
-            
-            // The traces array will either contain a single trace (for numerical data)
-            // or multiple traces (for categorical data with legend)
-            const traces = Array.isArray(trace) ? trace : [trace];
-            
-            // For categorical data with multiple traces, ensure legend is enabled
-            if (traces.length > 1) {
-                layout.showlegend = true;
-                layout.legend = { 
-                    ...layout.legend,  // preserve any existing legend settings
-                    title: { text: _settings.color.key } 
-                };
-            }
-            
-            // Create the plot
-            _plotContainer.innerHTML = ''
-            Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
-                responsive: true,
-                displayModeBar: true,
-                displaylogo: false,
-                showlegend: true,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-            });
-            
-            // Set up click handler to update global focused cell
-            _plotContainer.on('plotly_click', (data) => {
-                if (!data || !data.points || data.points.length === 0) {
-                    return;
-                }
-                
-                const point = data.points[0];
-                const pointIndex = point.pointIndex;
-                const traceIndex = point.curveNumber;
-                let cellName;
-                
-                // Check if this is a 3D plot
-                const is3D = traces[0].type === 'scatter3d';
-                
-                try {
-                    // For both 2D and 3D plots, use customdata for consistent cell identification
-                    // First priority: Use customdata which contains the cell index
-                    if (point.customdata !== undefined) {
-                        // When Hide Outliers is active, customdata is already filtered to contain the correct indices
-                        // Otherwise it contains the original index into _data.cells
-                        
-                        if (typeof point.customdata === 'number') {
-                            // Simple numeric index case (typical for non-filtered data)
-                            const cellIndex = point.customdata;
-                            // For main trace with global indices
-                            if (_data.cells && cellIndex < _data.cells.length) {
-                                cellName = _data.cells[cellIndex];
-                            }
-                            // In multi-trace categorical plot, customdata might be the index for that specific category
-                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                cellName = traces[traceIndex].text[pointIndex];
-                            }
-                        } else if (point.customdata && point.text) {
-                            // Might have direct access to cell name in text when outliers are filtered
-                            cellName = point.text;
-                        }
-                    }
-                    // Third priority: Use trace's text array in multi-trace categorical plot
-                    else if (traces.length > 1 && traces[traceIndex] && traces[traceIndex].text && 
-                             pointIndex < traces[traceIndex].text.length) {
-                        cellName = traces[traceIndex].text[pointIndex];
-                    }
-                    // Fourth priority: Use point index with global cell array
-                    else if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
-                        cellName = _data.cells[pointIndex];
-                    }
-                    // Final fallback: For 3D plots, try to find by coordinates
-                    else if (is3D && _data.x && _data.y && _data.x.values && _data.y.values && _data.cells) {
-                        // Find the closest cell by coordinates
-                        let minDistance = Infinity;
-                        let closestIndex = -1;
-                        
-                        for (let i = 0; i < _data.x.values.length; i++) {
-                            const dx = _data.x.values[i] - point.x;
-                            const dy = _data.y.values[i] - point.y;
-                            let dz = 0;
-                            if (is3D && _data.z && _data.z.values) {
-                                dz = _data.z.values[i] - point.z;
-                            }
-                            
-                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                closestIndex = i;
-                            }
-                        }
-                        
-                        if (closestIndex !== -1) {
-                            cellName = _data.cells[closestIndex];
-                        }
-                    }
-                    
-                    // Debug logging to help diagnose issues with filtered data
-                    if (_settings.hideOutliers) {
-                        console.log("Click in filtered plot:", { 
-                            cellName, 
-                            pointIndex, 
-                            traceIndex,
-                            pointData: point
-                        });
-                    }
-                } catch (error) {
-                    console.error("Error identifying cell in plot click:", error);
-                }
-                
-                if (cellName) {
-                    // Update the global focused cell in DataManager
-                    // This will trigger updates in all panels via the event system
-                    DataManager.setFocusedCell(cellName, false);
-                }
-            });
-            
-            // Store plot reference
-            _plot = _plotContainer;
-            
-            // Add highlighted cell if needed
-            if (_settings.highlightFocusedCell) {
-                _highlightFocusedCell();
-            }
-            
-            // Update the visibility of color controls
-            _updateColorControlsVisibility();
-            
-            // Get references to controls that need additional setup
-            const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
-            const colorMinInput = document.getElementById(`color-min-${_id}`);
-            const colorMaxInput = document.getElementById(`color-max-${_id}`);
-            const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
-            const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
-            
-            if (_data.colorType === 'numerical') {
-                // Filter out NaN values for min/max calculations
-                const validColorValues = _data.color.filter(val => !isNaN(val));
-                const dataMin = Math.min(...validColorValues);
-                const dataMax = Math.max(...validColorValues);
-                
-                // Set up sliders
-                colorMinSlider.min = dataMin;
-                colorMinSlider.max = dataMax;
-                colorMaxSlider.min = dataMin;
-                colorMaxSlider.max = dataMax;
-                
-                // Set slider step to a reasonable value based on data range
-                const range = dataMax - dataMin;
-                const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
-                colorMinSlider.step = step;
-                colorMaxSlider.step = step;
-                
-                // Set min/max input defaults if not already set
-                if (colorMinInput.value === '') {
-                    colorMinInput.placeholder = dataMin.toFixed(2);
-                    colorMinSlider.value = dataMin;
-                } else {
-                    colorMinSlider.value = _settings.colorMin !== null ? _settings.colorMin : dataMin;
-                }
-                
-                if (colorMaxInput.value === '') {
-                    colorMaxInput.placeholder = dataMax.toFixed(2);
-                    colorMaxSlider.value = dataMax;
-                } else {
-                    colorMaxSlider.value = _settings.colorMax !== null ? _settings.colorMax : dataMax;
-                }
-            } else if (_data.colorType === 'categorical') {
-                // Ensure the correct palette is selected
-                categoryPaletteSelect.value = _settings.categoryPalette;
-            }
-        }
         
         /**
          * Update plot with current settings without recreating it
@@ -2114,7 +1325,7 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _updatePlotElements(options = {}) {
-            updatePlotElements(_plotContainer, _plot, _data, _settings, _loadDataAndCreatePlot, options);
+            updatePlotElements(_plotContainer, _data, _settings, _loadDataAndCreatePlot, options);
         }
 
         /**
@@ -2147,32 +1358,11 @@ const CellPlotPanel = (function() {
         }
         
         /**
-         * Handle data updates from other components
-         * @param {string} updateType - Type of update
-         * @param {Object} data - Update data
-         */
-        async function onDataUpdate(updateType, data) {
-            switch (updateType) {
-                case 'cellSubset':
-                    // Update subset settings
-                    _settings.subsettedCells = data.cells;
-                    _settings.hideNonSubset = data.hideOthers || false;
-                    _loadDataAndCreatePlot();
-                    break;
-                    
-                case 'datasetChanged':
-                    // Reset and reload
-                    _loadDataAndCreatePlot();
-                    break;
-            }
-        }
-        
-        /**
          * Clean up resources
          */
         function cleanup() {
             // Remove event listeners
-            if (_plot) {
+            if (_plotContainer) {
                 Plotly.purge(_plotContainer);
             }
             
@@ -2243,7 +1433,7 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _highlightFocusedCell() {
-            highlightFocusedCell(_plotContainer, _plot, _data, _settings);
+            highlightFocusedCell(_plotContainer, _data, _settings);
         }
         
         
@@ -2252,7 +1442,7 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _removeHighlight() {
-            removeHighlight(_plotContainer, _plot);
+            removeHighlight(_plotContainer);
         }
         
         // Listen for focused cell changed events to update highlighting
@@ -2267,7 +1457,6 @@ const CellPlotPanel = (function() {
             init,
             cleanup,
             destroy,
-            onDataUpdate,
             getId,
             getTitle,
             setTitle,

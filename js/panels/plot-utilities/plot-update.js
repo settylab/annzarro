@@ -5,7 +5,6 @@ import { DataManager } from '../../data-manager.js';
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
- * @param {object} plot - The Plotly plot instance.
  * @param {object} data - The data object containing x, y, z, color, cells, etc.
  * @param {object} settings - The settings for the plot (e.g., x, y, z, color, point sizes).
  * @param {object} options - Update options.
@@ -21,7 +20,7 @@ import { DataManager } from '../../data-manager.js';
  * @param {Function} loadDataAndCreatePlot - Fallback function to recreate the plot.
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
  */
-export function updatePlotElements(plotContainer, plot, data, settings, loadDataAndCreatePlot, options = {}) {
+export function updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -43,27 +42,20 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
         console.warn("Plot container doesn't exist or is not in the DOM, cannot update");
         return;
     }
-    
-    // If container is empty, recreate the plot via callback.
-    if (plotContainer.innerHTML === '') {
-        console.warn("Plot container is empty, recreating plot");
-        loadDataAndCreatePlot();
-        return;
-    }
-    
-    // If the plot itself doesn't exist, recreate it.
-    if (!plot || !plot.data) {
-        console.warn("Plot doesn't exist yet, creating it instead of updating");
+
+    // Check if there is a Plotly plot in the plotContainer.
+    if (!plotContainer.data || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) {
+        console.warn("No Plotly plot found in the container, recreating plot");
         loadDataAndCreatePlot();
         return;
     }
     
     try {
-        const is3D = plot.data[0].type === 'scatter3d';
+        const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
         const isNumerical = data.colorType === 'numerical';
         const isCategorical = data.colorType === 'categorical';
-        const hasMultipleTraces = plot.data && plot.data.length > 1;
+        const hasMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
 
         // Create an index mask for filtering out outliers if needed.
         let indexMask = null;
@@ -121,7 +113,7 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
 
                 try {
                     // Update each trace independently for categorical data.
-                    plot.data.forEach((trace, i) => {
+                    plotContainer.data.forEach((trace, i) => {
                         if (trace.mode !== 'markers') return;
                         const indices = trace.customdata;
                         if (!indices || !indices.length) return;
@@ -136,7 +128,6 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
                         }
 
                         if (Object.keys(update).length > 0) {
-                            console.log(`Updating trace ${i} positions:`, update);
                             Plotly.restyle(plotContainer, update, [i]);
                         }
                     });
@@ -148,8 +139,8 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
                 
                 // Update the focused cell highlight if needed.
                 if (settings.highlightFocusedCell) {
-                    removeHighlight(plotContainer, plot);
-                    highlightFocusedCell(plotContainer, plot, data, settings);
+                    removeHighlight(plotContainer);
+                    highlightFocusedCell(plotContainer,data, settings);
                 }
             } else {
                 // Standard update for a single trace (numerical data).
@@ -168,8 +159,8 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
                     console.log("Updating position data:", update);
                     Plotly.restyle(plotContainer, update, [0]);
                     if (settings.highlightFocusedCell) {
-                        removeHighlight(plotContainer, plot);
-                        highlightFocusedCell(plotContainer, plot, data, settings);
+                        removeHighlight(plotContainer);
+                        highlightFocusedCell(plotContainer, data, settings);
                     }
                 }
             }
@@ -179,11 +170,11 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
         if (updateOptions.colors && data.color) {
             let hasFocusedCell = false;
             if (settings.highlightFocusedCell) {
-                removeHighlight(plotContainer, plot);
+                removeHighlight(plotContainer);
                 hasFocusedCell = true;
             }
             
-            const hasStillMultipleTraces = plot.data && plot.data.length > 1;
+            const hasStillMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
             
             if (updateOptions.colorData) {
                 if ((isCategorical && !hasStillMultipleTraces) || (!isCategorical && hasStillMultipleTraces)) {
@@ -241,7 +232,7 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
             
             // Re-add highlight for the focused cell if needed.
             if (hasFocusedCell) {
-                highlightFocusedCell(plotContainer, plot, data, settings);
+                highlightFocusedCell(plotContainer, data, settings);
             }
         }
         
@@ -252,7 +243,7 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
                 'marker.opacity': settings.pointOpacity
             };
             
-            const dataTraceIndices = plot.data
+            const dataTraceIndices = plotContainer.data
                 .map((trace, i) => (trace && trace.name !== 'Focused Cell' ? i : -1))
                 .filter(i => i !== -1);
             
@@ -260,7 +251,7 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
                 Plotly.restyle(plotContainer, update, dataTraceIndices);
             }
             
-            const highlightIndex = plot.data.findIndex(trace => trace && trace.name === 'Focused Cell');
+            const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === 'Focused Cell');
             if (highlightIndex >= 0) {
                 Plotly.restyle(plotContainer, {
                     'marker.size': settings.pointSize * 2  // Always 2x the normal point size.
@@ -272,13 +263,12 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
         if (updateOptions.layout) {
             console.log("Updating layout properties");
             
-            if (!plot || !plot.data || !plot.data[0] || !plotContainer) {
+            if (!plotContainer || !plotContainer.data || !plotContainer.data[0]) {
                 console.warn("Unable to update layout: plot or container is not valid");
                 return;
             }
             
             const layoutUpdate = {};
-            const is3D = plot.data[0].type === 'scatter3d';
             
             if (settings && settings.x && settings.x.type && settings.x.key) {
                 const xAxisTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
@@ -338,8 +328,8 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
         
         // If position data changed, update the highlighted cell.
         if (settings.highlightFocusedCell && (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
-            removeHighlight(plotContainer, plot);
-            highlightFocusedCell(plotContainer, plot, data, settings);
+            removeHighlight(plotContainer);
+            highlightFocusedCell(plotContainer, data, settings);
         }
         
     } catch (error) {
@@ -353,7 +343,6 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
  * Highlight the focused cell in the plot.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
- * @param {Object} plot - The Plotly plot instance.
  * @param {Object} data - Data object containing x, y, (optional z), cells, color, and colorType.
  *                         Expected structure:
  *                           data = {
@@ -372,14 +361,14 @@ export function updatePlotElements(plotContainer, plot, data, settings, loadData
  *                                z: any  // typically non-null if 3D
  *                              }
  */
-export function highlightFocusedCell(plotContainer, plot, data, settings) {
+export function highlightFocusedCell(plotContainer, data, settings) {
     // Ensure required data and plot elements exist
-    if (!plot || !data || !data.cells || !data.x || !data.y ||
-        !data.x.values || !data.y.values || !plotContainer) {
+    if (!plotContainer || !data || !data.cells || !data.x || !data.y ||
+        !data.x.values || !data.y.values) {
         console.log("Missing required data for highlighting cell");
         return;
     }
-    if (!plot.data || !Array.isArray(plot.data)) {
+    if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
         console.log("Plot data is not available for highlighting");
         return;
     }
@@ -387,7 +376,7 @@ export function highlightFocusedCell(plotContainer, plot, data, settings) {
     const focusedCell = DataManager.getFocusedCell();
     if (!focusedCell || !settings.highlightFocusedCell) {
         // If highlighting is disabled or no focused cell exists, remove any highlight
-        removeHighlight(plotContainer, plot);
+        removeHighlight(plotContainer);
         return;
     }
 
@@ -396,7 +385,7 @@ export function highlightFocusedCell(plotContainer, plot, data, settings) {
         const isCategorical = data.colorType === 'categorical';
         let dataTraces = [];
         try {
-            dataTraces = plot.data.filter(trace => trace && trace.name !== 'Focused Cell');
+            dataTraces = plotContainer.data.filter(trace => trace && trace.name !== 'Focused Cell');
         } catch (err) {
             console.error("Error filtering traces:", err);
         }
@@ -424,7 +413,7 @@ export function highlightFocusedCell(plotContainer, plot, data, settings) {
 
         if (focusedCellIndex === -1) {
             console.log(`Focused cell ${focusedCell} not found in plot data`);
-            removeHighlight(plotContainer, plot);
+            removeHighlight(plotContainer);
             return;
         }
 
@@ -495,7 +484,7 @@ export function highlightFocusedCell(plotContainer, plot, data, settings) {
         }
 
         // Check if a highlight trace already exists.
-        const highlightTraceIndex = plot.data.findIndex(trace => trace && trace.name === 'Focused Cell');
+        const highlightTraceIndex = plotContainer.data.findIndex(trace => trace && trace.name === 'Focused Cell');
         if (highlightTraceIndex >= 0) {
             // Update existing trace.
             Plotly.restyle(plotContainer, {
@@ -517,19 +506,18 @@ export function highlightFocusedCell(plotContainer, plot, data, settings) {
  * Remove the highlight trace from the plot.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
- * @param {Object} plot - The Plotly plot instance.
  */
-export function removeHighlight(plotContainer, plot) {
-    if (!plot || !plotContainer) return;
+export function removeHighlight(plotContainer) {
+    if (!plotContainer) return;
 
     try {
-        if (!plot.data || !Array.isArray(plot.data)) {
+        if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
             return;
         }
         // Find the highlight trace (by its unique name).
         let highlightTraceIndex = -1;
-        for (let i = 0; i < plot.data.length; i++) {
-            if (plot.data[i] && plot.data[i].name === 'Focused Cell') {
+        for (let i = 0; i < plotContainer.data.length; i++) {
+            if (plotContainer.data[i] && plotContainer.data[i].name === 'Focused Cell') {
                 highlightTraceIndex = i;
                 break;
             }
