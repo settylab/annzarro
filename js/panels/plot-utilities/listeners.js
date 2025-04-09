@@ -1,4 +1,5 @@
 import { populateKeySelector, populateColumnSelector } from './panel-ui-update.js';
+import { loadAxisData } from './make-plot.js';
 import { DataManager } from '../../data-manager.js';
 
 export function setupPlotEventListeners({
@@ -7,7 +8,6 @@ export function setupPlotEventListeners({
     settings,
     plotType,
     data,
-    loadAxisData,
     loadColorDataAndUpdatePlot,
     loadDataAndCreatePlot,
     updatePlotElements
@@ -21,7 +21,6 @@ export function setupPlotEventListeners({
         settings,
         plotType,
         data,
-        loadAxisData,
         loadColorDataAndUpdatePlot,
         loadDataAndCreatePlot,
         updatePlotElements);
@@ -72,7 +71,6 @@ export function setupResizeObserver(plotContainer) {
  * @param {HTMLElement} container - Root element containing the axis selectors
  * @param {Object} settings - Axis settings object
  * @param {string} plotType - Either 'cell' or 'gene'
- * @param {Function} loadAxisData - Function to load axis data
  * @param {Function} loadColorDataAndUpdatePlot - Optimized color update
  * @param {Function} loadDataAndCreatePlot - Full plot rebuild
  * @param {Function} updatePlotElements - Partial plot updates
@@ -84,7 +82,6 @@ export function setupAxisSelectorListeners(
   settings,
   plotType,
   data,
-  loadAxisData,
   loadColorDataAndUpdatePlot,
   loadDataAndCreatePlot,
   updatePlotElements
@@ -199,7 +196,7 @@ export function setupAxisSelectorListeners(
     }
 
     if (['x', 'y', 'z'].includes(axis)) {
-      loadAxisData(axis).then(axisData => {
+      loadAxisData(settings[axis]).then(axisData => {
         if (axisData?.values) {
           data[axis] = axisData;
           updatePlotElements({ [`${axis}Axis`]: true, layout: true });

@@ -121,8 +121,8 @@ export function createPanelStructure(container, id, settings) {
 
             <div class="color-range-controls" id="color-range-container-${id}" style="display:none;">
               <div class="d-flex align-items-center mb-2">
-                <label class="numerical-color-label me-2 mb-0">Color Map:</label>
-                <label class="categorical-color-label me-2 mb-0" style="display:none;">Color Palette:</label>
+                <label id="numerical-color-label-${id}" class="numerical-color-label me-2 mb-0">Color Map:</label>
+                <label id="categorical-color-label-${id}" class="categorical-color-label me-2 mb-0" style="display:none;">Color Palette:</label>
                 <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${id}">
                   ${COLOR_SCALES.map(scale => `
                     <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>

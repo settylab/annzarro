@@ -1,5 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
+import { loadAxisData } from './plot-utilities/make-plot.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -126,7 +127,6 @@ const CellPlotPanel = (function() {
                 settings: _settings,
                 plotType: _plotType,
                 data: _data,
-                loadAxisData: _loadAxisData,
                 loadColorDataAndUpdatePlot: _loadColorDataAndUpdatePlot,
                 loadDataAndCreatePlot: _loadDataAndCreatePlot,
                 updatePlotElements: _updatePlotElements,
@@ -852,7 +852,7 @@ const CellPlotPanel = (function() {
                     if (updates.xAxis) {
                         console.log('Focused cell changed affects x-axis, loading new data');
                         _settings.x.column = focusedCell;
-                        _loadAxisData('x').then(xData => {
+                        loadAxisData(_settings.x).then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
                                 _updatePlotElements({ 
@@ -867,7 +867,7 @@ const CellPlotPanel = (function() {
                     if (updates.yAxis) {
                         console.log('Focused cell changed affects y-axis, loading new data');
                         _settings.y.column = focusedCell;
-                        _loadAxisData('y').then(yData => {
+                        loadAxisData(_settings.y).then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
                                 _updatePlotElements({ 
@@ -882,7 +882,7 @@ const CellPlotPanel = (function() {
                     if (updates.zAxis) {
                         console.log('Focused cell changed affects z-axis, loading new data');
                         _settings.z.column = focusedCell;
-                        _loadAxisData('z').then(zData => {
+                        loadAxisData(_settings.z).then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
                                 _updatePlotElements({ 
@@ -960,7 +960,7 @@ const CellPlotPanel = (function() {
                     if (updates.xAxis) {
                         console.log('Focused gene changed affects x-axis, loading new data');
                         _settings.x.column = focusedGene;
-                        const xPromise = _loadAxisData('x').then(xData => {
+                        const xPromise = loadAxisData(_settings.x).then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
                                 // Update using _updatePlotElements
@@ -976,7 +976,7 @@ const CellPlotPanel = (function() {
                     if (updates.yAxis) {
                         console.log('Focused gene changed affects y-axis, loading new data');
                         _settings.y.column = focusedGene;
-                        const yPromise = _loadAxisData('y').then(yData => {
+                        const yPromise = loadAxisData(_settings.y).then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
                                 // Update using _updatePlotElements
@@ -992,7 +992,7 @@ const CellPlotPanel = (function() {
                     if (updates.zAxis) {
                         console.log('Focused gene changed affects z-axis, loading new data');
                         _settings.z.column = focusedGene;
-                        const zPromise = _loadAxisData('z').then(zData => {
+                        const zPromise = loadAxisData(_settings.z).then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
                                 // Update using _updatePlotElements
@@ -1055,8 +1055,8 @@ const CellPlotPanel = (function() {
             const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
             const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
             const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
-            const numericalLabel = _container.querySelector('.numerical-color-label');
-            const categoricalLabel = _container.querySelector('.categorical-color-label');
+            const numericalLabel = document.getElementById(`numerical-color-label-${_id}`);
+            const categoricalLabel = document.getElementById(`categorical-color-label-${_id}`);
             
             // Get slider containers that contain the labels
             const colorMinSliderContainer = colorMinSlider ? colorMinSlider.closest('.color-min-slider-container') : null;
@@ -1086,9 +1086,6 @@ const CellPlotPanel = (function() {
                 const lockRangeButton = document.getElementById(`lock-range-${_id}`);
                 if (lockRangeButton) lockRangeButton.setAttribute('style', 'display: inline-block !important');
                 
-                // Show numerical label, hide categorical label
-                numericalLabel.style.display = 'inline';
-                categoricalLabel.style.display = 'none';
                 
                 // Show the toolbar for numerical controls
                 const buttonToolbar = _container.querySelector('.btn-toolbar');
@@ -1162,7 +1159,7 @@ const CellPlotPanel = (function() {
                 
                 // Load only color data
                 console.log('Loading color data for plot update:', _settings.color);
-                const colorData = await _loadAxisData('color', filteredCellIndices);
+                const colorData = await loadAxisData(_settings.color, filteredCellIndices);
                 console.log('Color data for update:', colorData);
                 
                 // Make sure we have valid values
@@ -1348,11 +1345,11 @@ const CellPlotPanel = (function() {
                 const loadPromises = [
                     (async () => {
                         console.log('Loading X-axis data:', _settings.x);
-                        _data.x = await _loadAxisData('x', filteredCellIndices);
+                        _data.x = await loadAxisData(_settings.x, filteredCellIndices);
                     })(),
                     (async () => {
                         console.log('Loading Y-axis data:', _settings.y);
-                        _data.y = await _loadAxisData('y', filteredCellIndices);
+                        _data.y = await loadAxisData(_settings.y, filteredCellIndices);
                     })(),
                 ];
             
@@ -1360,7 +1357,7 @@ const CellPlotPanel = (function() {
                     loadPromises.push(
                         (async () => {
                             console.log('Loading Z-axis data:', _settings.z);
-                            _data.z = await _loadAxisData('z', filteredCellIndices);
+                            _data.z = await loadAxisData(_settings.z, filteredCellIndices);
                         })()
                     );
                 }
@@ -1370,7 +1367,7 @@ const CellPlotPanel = (function() {
                     (async () => {
                         console.log('Loading color data:', _settings.color);
                         try {
-                            const colorData = await _loadAxisData('color', filteredCellIndices);
+                            const colorData = await loadAxisData(_settings.color, filteredCellIndices);
                             _data.color = colorData.values;
                             _data.colorType = colorData.type;
                             _data.colorCategories = colorData.categories;
@@ -1404,318 +1401,7 @@ const CellPlotPanel = (function() {
             }
         }
         
-        /**
-         * Load data for a specific axis
-         * @param {string} axis - Axis name (x, y, z, color)
-         * @param {Array<number>} filteredIndices - Optional indices to filter data
-         * @returns {Promise<Object>} - Axis data
-         * @private
-         */
-        async function _loadAxisData(axis, filteredIndices = null) {
-            
-            const settings = _settings[axis];
-            if (!settings) {
-                throw new Error(`No settings found for ${axis} axis`);
-            }
-            
-            const { type, key, column } = settings;
-            const datasetPath = DataManager.getCurrentDataset();
-            
-            // Determine rows parameter based on filtered indices
-            const rows = filteredIndices ? filteredIndices.join(',') : null;
-            
-            let data;
-            let values;
-            let dataType;
-            let categories = null;
-            
-            try {
-                // Special case for 'none' type (constant color)
-                if (type === 'none') {
-                    // Return constant values for all cells
-                    const cells = DataManager.getCells();
-                    const cellCount = cells ? cells.length : 100;
-                    
-                    // Return an array of ones (for constant coloring)
-                    values = Array(cellCount).fill(1);
-                    dataType = 'constant';
-                    
-                    return {
-                        values,
-                        type: dataType,
-                        categories
-                    };
-                }
-                
-                switch (type) {
-                    case 'obs':
-                        // Load cell annotations
-                        data = await DataManager.loadObs({
-                            datasetPath,
-                            columns: [key],
-                            rows: rows ? rows.split(',') : null
-                        });
-                        
-                        console.log(`Received obs data for ${key}:`, data);
-                        
-                        if (!data.data || !data.data[key]) {
-                            console.warn(`No data found for obs.${key}`);
-                            throw new Error(`No data found for column '${key}' in obs table`);
-                        }
-                        
-                        values = data.data[key];
-                        
-                        // Log data statistics to help debug
-                        if (Array.isArray(values)) {
-                            console.log(`Loaded ${values.length} data points for ${axis} axis (obs.${key})`);
-                            
-                            // Check if sample values look reasonable
-                            if (values.length > 0) {
-                                console.log(`Sample values: ${values.slice(0, 5)}`);
-                            }
-                        }
-                        
-                        // Check if categorical
-                        if (data.categories && data.categories[key]) {
-                            dataType = 'categorical';
-                            categories = data.categories[key];
-                        } else {
-                            dataType = Array.isArray(values) && typeof values[0] === 'number' ? 'numerical' : 'string';
-                        }
-                        break;
-                        
-                    case 'obsm':
-                        // Load cell embeddings or arrays
-                        data = await DataManager.loadObsm({
-                            datasetPath,
-                            obsmKey: key,
-                            columnName: column,
-                            rows: rows ? rows.split(',') : null
-                        });
-                        
-                        console.log(`Received obsm data for ${key} column ${column}:`, data);
-                        
-                        if (!data.data || data.data.length === 0) {
-                            console.warn(`No data points received for obsm.${key}.${column}`);
-                            throw new Error(`No data points found for ${key}.${column}`);
-                        }
-                        
-                        values = data.data;
-                        dataType = 'numerical';
-                        
-                        // Log data statistics to help debug
-                        if (Array.isArray(values)) {
-                            console.log(`Loaded ${values.length} data points for ${axis} axis (obsm.${key}.${column})`);
-                            
-                            // Check if sample values look reasonable
-                            if (values.length > 0) {
-                                console.log(`Sample values: ${values.slice(0, 5)}`);
-                            }
-                        }
-                        break;
-                        
-                    case 'obsp':
-                        // Load cell-cell relationships
-                        const focusedCell = DataManager.getFocusedCell();
-                        if (!focusedCell) {
-                            throw new Error('No focused cell selected');
-                        }
-                        
-                        const focusedCellIndex = DataManager.getCellIndex(focusedCell);
-                        if (focusedCellIndex === -1) {
-                            throw new Error('Focused cell not found in dataset');
-                        }
-                        
-                        // Log the request details for debugging
-                        console.log(`Loading obsp data for ${key} with focused cell ${focusedCell} (index ${focusedCellIndex})`);
-                        
-                        data = await DataManager.loadObsp({
-                            datasetPath,
-                            obspKey: key,
-                            rows: [focusedCellIndex]
-                        });
-                        
-                        // Debug the returned data structure
-                        console.log(`Received obsp data:`, data.data ? 
-                            `Array of ${data.data.length} elements` : 'No data array');
-                        
-                        // Extract and handle values with robust error checking
-                        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-                            // Check if the first row is an array as expected
-                            const firstRow = data.data[0];
-                            
-                            if (Array.isArray(firstRow)) {
-                                console.log(`Obsp data is an array with ${firstRow.length} connections`);
-                                console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
-                                values = firstRow;
-                            } else {
-                                console.warn(`Expected array for obsp row, got:`, typeof firstRow);
-                                // Try to handle the case where it's not an array
-                                if (firstRow !== undefined && firstRow !== null) {
-                                    // Convert to array if possible
-                                    values = [firstRow];
-                                    console.log(`Converted non-array obsp data to array`);
-                                } else {
-                                    // Create empty array for safety
-                                    values = [];
-                                    console.warn(`No usable obsp data found`);
-                                }
-                            }
-                        } else {
-                            console.warn(`Invalid or empty obsp data received`);
-                            values = [];
-                        }
-                        
-                        // Ensure values is a 1D array of numbers (or NaN)
-                        if (values && values.length > 0) {
-                            // Replace null/undefined with NaN for consistency
-                            values = values.map(v => (v === null || v === undefined) ? NaN : v);
-                            
-                            // Check if values need conversion
-                            const firstVal = values[0];
-                            if (typeof firstVal === 'object') {
-                                console.warn('Obsp values are objects, attempting to convert to numbers');
-                                values = values.map(v => {
-                                    if (v === null || v === undefined) return NaN;
-                                    if (typeof v === 'number') return v;
-                                    // Try to extract a number from an object
-                                    if (typeof v === 'object' && 'value' in v) return v.value;
-                                    return NaN;
-                                });
-                            } else if (typeof firstVal === 'string') {
-                                console.warn('Obsp values are strings, attempting to convert to numbers');
-                                values = values.map(v => {
-                                    if (v === null || v === undefined) return NaN;
-                                    const parsed = parseFloat(v);
-                                    return isNaN(parsed) ? NaN : parsed;
-                                });
-                            }
-                            
-                            // Log NaN count after processing
-                            const nanCount = values.filter(val => isNaN(val)).length;
-                            console.log(`Processed obsp data to ${values.length} values with ${nanCount} NaN values`);
-                            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
-                        }
-                        
-                        dataType = 'numerical';
-                        break;
-                        
-                    case 'layer':
-                        // Load expression layer
-                        const focusedGene = DataManager.getFocusedGene();
-                        if (!focusedGene) {
-                            throw new Error('No focused gene selected');
-                        }
-                        
-                        const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
-                        if (focusedGeneIndex === -1) {
-                            throw new Error('Focused gene not found in dataset');
-                        }
-                        
-                        // Log the request details for debugging
-                        console.log(`Loading layer data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
-                        
-                        data = await DataManager.loadLayer({
-                            datasetPath,
-                            layerName: key,
-                            rows: rows ? rows.split(',') : null,
-                            cols: [focusedGeneIndex]
-                        });
-                        
-                        // Debug the returned data structure
-                        console.log(`Received layer data:`, data.data ? 
-                            `Array of ${data.data.length} elements` : 'No data array');
-                        
-                        // Extract and handle values with NaN checks
-                        if (data.data && typeof data.data === 'object') {
-                            if (Array.isArray(data.data)) {
-                                if (data.data.length > 0) {
-                                    if (Array.isArray(data.data[0])) {
-                                        // 2D array format (rows with columns)
-                                        console.log(`Layer data is 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
-                                        // Log first few values for debugging
-                                        console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
-                                        
-                                        try {
-                                            values = data.data.map(row => {
-                                                // Directly access first element, with fallback for safety
-                                                const val = row[0];
-                                                return val === undefined ? NaN : val;
-                                            });
-                                            console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
-                                        } catch (e) {
-                                            console.error(`Error extracting values from 2D array:`, e);
-                                            values = Array(data.data.length).fill(NaN); // Fallback
-                                        }
-                                    } else {
-                                        // Already 1D array
-                                        console.log(`Layer data is 1D array with ${data.data.length} elements`);
-                                        console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
-                                        values = data.data;
-                                    }
-                                } else {
-                                    console.warn(`Empty layer data array received`);
-                                    values = [];
-                                }
-                            } else {
-                                console.warn(`Unexpected data format received:`, typeof data.data);
-                                values = [];
-                            }
-                        } else {
-                            console.warn(`No valid data array received from layer endpoint`);
-                            values = [];
-                        }
-                        
-                        // Ensure values is a 1D array of numbers (or NaN)
-                        if (values.length > 0) {
-                            // Check if we need to convert values
-                            const firstVal = values[0];
-                            if (typeof firstVal === 'object') {
-                                console.warn('Layer values are objects, attempting to convert to numbers');
-                                values = values.map(v => {
-                                    if (v === null || v === undefined) return NaN;
-                                    if (typeof v === 'number') return v;
-                                    // Try to extract a number from an object
-                                    if (typeof v === 'object' && 'value' in v) return v.value;
-                                    return NaN;
-                                });
-                            } else if (typeof firstVal === 'string') {
-                                console.warn('Layer values are strings, attempting to convert to numbers');
-                                values = values.map(v => {
-                                    if (v === null || v === undefined) return NaN;
-                                    const parsed = parseFloat(v);
-                                    return isNaN(parsed) ? NaN : parsed;
-                                });
-                            }
-                            
-                            // Validate the processed data
-                            console.log(`Processed layer data to ${values.length} values of type ${typeof values[0]}`);
-                            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
-                        }
-                        
-                        dataType = 'numerical';
-                        break;
-                        
-                    default:
-                        throw new Error(`Unknown data type: ${type}`);
-                }
-                
-                // Prepare the result
-                const result = {
-                    values,
-                    type: dataType,
-                    categories
-                };
-                
-                return result;
-                
-            } catch (error) {
-                console.error(`Error loading ${axis} axis data:`, error);
-                
-                // We can't display the plot without data
-                throw new Error(`Failed to load data for ${axis} axis (${type}.${key}.${column})`);
-            }
-        }
+        
         
         /**
          * Create plot using loaded data
