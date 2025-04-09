@@ -7,11 +7,20 @@ const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES)
 
 /**
  * Injects available colormaps into a <select> element with <optgroup> support.
+ * The first element is set to "uns" with the text "As stored in adata.uns".
  * @param {HTMLSelectElement} selectElement - The <select> element to populate.
  * @param {Object} colormapGroups - Output of listAvailableColormaps()
  * @param {string} [selected] - Optional selected value.
  */
 export function populateColormapSelectorGrouped(selectElement, colormapGroups, selected = '') {
+  // Insert the first menu option for "uns" colors
+  const unsOption = document.createElement('option');
+  unsOption.value = 'uns';
+  unsOption.textContent = 'As stored in adata.uns';
+  if (selected === 'uns') unsOption.selected = true;
+  selectElement.appendChild(unsOption);
+
+  // Process the remaining colormaps grouped by category
   for (const [groupLabel, colormaps] of Object.entries(colormapGroups)) {
     const optgroup = document.createElement('optgroup');
     optgroup.label = groupLabel;

@@ -4,15 +4,19 @@ import { DataManager } from '../../data-manager.js';
  * Populates only the key selector for a given axis.
  * @param {Object} settings - Axis settings object (will be updated)
  * @param {HTMLSelectElement} keySelect - The key select dropdown
- * @param {string} axis - Axis name ('x', 'y', 'z', or 'color')
- * @param {string} plotType - Either 'cell' or 'gene'
  * @param {Object} datasetStructure - Structure of the loaded dataset
  */
-export function populateKeySelector(settings, keySelect, axis, plotType, datasetStructure) {
+export function populateKeySelector(settings, keySelect, datasetStructure) {
     const type = settings.type || 'obsm';
     let keyOptions = [];
+    keySelect.disabled = false;
   
     switch (type) {
+      case 'none': {
+        keyOptions = ['<option value="">N/A</option>'];
+        keySelect.disabled = true;
+        break;
+      }
       case 'obs': {
         const columns = datasetStructure.obs?.columns || Object.keys(datasetStructure.obs || {});
         keyOptions = columns.map(col => `<option value="${col}">${col}</option>`);
@@ -155,7 +159,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     settings.type = settings.type || 'obsm';
     typeSelect.value = settings.type;
   
-    populateKeySelector(settings, keySelect, axis, plotType, datasetStructure);
+    populateKeySelector(settings, keySelect, datasetStructure);
     populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure);
   
     console.log(`Axis '${axis}' setup complete with key='${settings.key}' and column='${settings.column}'`);

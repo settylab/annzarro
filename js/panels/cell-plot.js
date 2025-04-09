@@ -1,8 +1,9 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
-import { populateKeySelector, populateColumnSelector, setupAxisSelector } from './plot-utilities/panel-ui-update.js';
+import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
+import { setupPlotEventListeners } from './plot-utilities/listeners.js';
 
 /**
  * Cell Plot Panel
@@ -64,16 +65,21 @@ const CellPlotPanel = (function() {
          * Initialize the panel
          */
         async function init() {
-            // Create panel structure
-            const { plotContainer, controlsContainer } = createPanelStructure(_container, _id, _settings);
-
-            // Store references for later use
-            _plotContainer = plotContainer;
-            _controlsContainer = controlsContainer;
-            
-            // Initialize UI state and then load data
-            console.log('Initializing UI state...');
-            
+            try {
+                // Create panel structure
+                const { plotContainer, controlsContainer } = createPanelStructure(_container, _id, _settings);
+    
+                // Store references for later use
+                _plotContainer = plotContainer;
+                _controlsContainer = controlsContainer;
+                
+                console.log('Panel structure created: ', 
+                    'plotContainer=', _plotContainer ? 'defined' : 'undefined',
+                    'controlsContainer=', _controlsContainer ? 'defined' : 'undefined');
+                
+                // Initialize UI state and then load data
+                console.log('Initializing UI state...');
+                
                 // Get the dataset structure directly from our internal function
                 const datasetStructure = await DataManager.getDatasetStructure();
                 if (!datasetStructure) {
@@ -83,16 +89,20 @@ const CellPlotPanel = (function() {
                 // Now we have the dataset structure, we can initialize the UI
                 await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
                 
-                // Load data and create plot
+                // Load data and create plot first
                 await _loadDataAndCreatePlot();
-            try {
+                
+                // Only set up event listeners after the plot is created
+                console.log('Plot created, setting up event listeners');
+                _setupEventListeners();
             } catch (error) {
-                console.error('Error initializing UI state:', error);
-                _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
+                console.error('Error initializing panel:', error);
+                if (_plotContainer) {
+                    _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
+                } else {
+                    console.error('Cannot show error - plotContainer is undefined');
+                }
             }
-            
-            // Set up event listeners (needs to happen even if initialization fails)
-            _setupEventListeners();
         }
         
         
@@ -101,200 +111,26 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _setupEventListeners() {
-            // Set up ResizeObserver to handle plot container resizing when the panel is resized
-            if (_plotContainer && window.ResizeObserver) {
-                _resizeObserver = new ResizeObserver((entries) => {
-                    // Only proceed if we have a valid plot
-                    if (!_plotContainer || !_plot) return;
-                    
-                    for (const entry of entries) {
-                        if (entry.target === _plotContainer) {
-                            // Trigger Plotly relayout to properly resize the plot
-                            // Use a small delay to avoid excessive relayouts during continuous resize
-                            if (_resizeTimeout) clearTimeout(_resizeTimeout);
-                            _resizeTimeout = setTimeout(() => {
-                                console.log('Container resized, updating plot layout');
-                                Plotly.relayout(_plotContainer, {
-                                    'autosize': true
-                                });
-                            }, 100); // 100ms debounce
-                        }
-                    }
-                });
-                
-                // Start observing the plot container
-                _resizeObserver.observe(_plotContainer);
-                console.log(`ResizeObserver set up for plot container ${_id}`);
-            }
-            
-            _container.querySelectorAll('.axis-type-select').forEach(select => {
-                select.addEventListener('change', async (e) => {
-                  const axis = e.target.dataset.axis;
-                  const type = e.target.value;
-                  const keySelect = _container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
-                  const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-              
-                  if (!keySelect || !columnSelect) {
-                    console.error(`Missing select elements for axis ${axis}`);
-                    return;
-                  }
-              
-                  _settings[axis].type = type;
-              
-                  const datasetStructure = await DataManager.getDatasetStructure();
-                  if (!datasetStructure) {
-                    console.error('No dataset structure available');
-                    return;
-                  }
-              
-                  // Update key options
-                  populateKeySelector(_settings[axis], keySelect, axis, _plotType, datasetStructure);
-              
-                  if (_settings[axis].type === 'none' && axis === 'color') {
-                    console.log('Color setting changed to "none", triggering optimized update');
-                    _loadColorDataAndUpdatePlot();
-                    return;
-                  }
-              
-                  // Reset key to first valid value
-                  const keyValues = Array.from(keySelect.options).map(opt => opt.value);
-                  _settings[axis].key = keyValues[0] || '';
-                  keySelect.value = _settings[axis].key;
-              
-                  // Update column options
-                  populateColumnSelector(_settings[axis], columnSelect, axis, _plotType, datasetStructure);
-              
-                  const colValues = Array.from(columnSelect.options).map(opt => opt.value);
-                  const currentValue = _settings[axis].column;
-                  if (!colValues.includes(currentValue)) {
-                    const defaultIndex = { x: 0, y: 1, z: 2 }[axis];
-                    const fallback = colValues[defaultIndex] || colValues[0] || '';
-                    columnSelect.value = fallback;
-                    _settings[axis].column = fallback;
-                    console.log(`Updated ${axis} column to default: ${fallback}`);
-                  } else {
-                    columnSelect.value = currentValue;
-                  }
-              
-                  // Trigger the appropriate plot update
-                  if (axis === 'color') {
-                    _loadColorDataAndUpdatePlot();
-                  } else if (['x', 'y', 'z'].includes(axis)) {
-                    try {
-                      const axisData = await _loadAxisData(axis);
-                      if (axisData?.values) {
-                        _data[axis] = axisData;
-                        _updatePlotElements({ [`${axis}Axis`]: true, layout: true });
-                      } else {
-                        _loadDataAndCreatePlot();
-                      }
-                    } catch (err) {
-                      console.warn(`Failed to update ${axis} axis, reloading plot.`);
-                      _loadDataAndCreatePlot();
-                    }
-                  } else {
-                    _loadDataAndCreatePlot();
-                  }
-                });
-              });
-            
-            // Axis key selectors
-            _container.querySelectorAll('.axis-key-select').forEach(select => {
-                select.addEventListener('change', async (e) => {
-                  const axis = e.target.dataset.axis;
-                  const key = e.target.value;
-                  const type = _container.querySelector(`.axis-type-select[data-axis="${axis}"]`).value;
-                  const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-              
-                  if (!columnSelect) {
-                    console.error(`Column select element not found for axis ${axis}`);
-                    return;
-                  }
-              
-                  _settings[axis].key = key;
-              
-                  const datasetStructure = await DataManager.getDatasetStructure();
-                  if (!datasetStructure) {
-                    console.error('No dataset structure available');
-                    return;
-                  }
-              
-                  // Update columns for the new key
-                  populateColumnSelector(_settings[axis], columnSelect, axis, _plotType, datasetStructure);
-              
-                  const colValues = Array.from(columnSelect.options).map(opt => opt.value);
-                  const currentValue = _settings[axis].column;
-              
-                  if (!colValues.includes(currentValue)) {
-                    const axisDefault = { x: 0, y: 1, z: 2 }[axis];
-                    const fallback = colValues[axisDefault] || colValues[0] || '';
-                    columnSelect.value = fallback;
-                    _settings[axis].column = fallback;
-                    console.log(`Auto-selected column ${fallback} for axis ${axis}`);
-                  } else {
-                    columnSelect.value = currentValue;
-                  }
-              
-                  // Trigger appropriate updates
-                  if (axis === 'color' && _plot) {
-                    console.log('Color key changed, using optimized update');
-                    _loadColorDataAndUpdatePlot();
-                  } else if (['x', 'y', 'z'].includes(axis)) {
-                    try {
-                      const axisData = await _loadAxisData(axis);
-                      if (axisData?.values) {
-                        _data[axis] = axisData;
-                        _updatePlotElements({ [`${axis}Axis`]: true, layout: true });
-                      } else {
-                        _loadDataAndCreatePlot();
-                      }
-                    } catch (err) {
-                      console.warn(`Error updating ${axis} axis after key change`);
-                      _loadDataAndCreatePlot();
-                    }
-                  } else {
-                    _loadDataAndCreatePlot();
-                  }
-                });
-              });
-            
-            // Axis column selectors
-            _container.querySelectorAll('.axis-column-select').forEach(select => {
-                select.addEventListener('change', (e) => {
-                    const axis = e.target.dataset.axis;
-                    _settings[axis].column = e.target.value;
-                    
-                    if (axis === 'color' && _plot) {
-                        // Color column changes can use optimized update
-                        console.log('Color column changed, using optimized update');
-                        _loadColorDataAndUpdatePlot();
-                    } else if (axis === 'z') {
-                        console.log('Z-axis column changed, updating plot');
-                        _loadAxisData('z').then(zData => {
-                            if (zData && zData.values) {
-                                _data.z = zData;
-                                _updatePlotElements({ zAxis: true });
-                            } else {
-                                _loadDataAndCreatePlot();
-                            }
-                        }).catch(() => _loadDataAndCreatePlot());
-                    } else if (axis === 'x' || axis === 'y') {
-                        console.log(`Position axis (${axis}) column changed, updating plot`);
-                        _loadAxisData(axis).then(axisData => {
-                            if (axisData && axisData.values) {
-                                _data[axis] = axisData;
-                                const updateObj = {};
-                                updateObj[axis + 'Axis'] = true;
-                                _updatePlotElements(updateObj);
-                            } else {
-                                _loadDataAndCreatePlot();
-                            }
-                        }).catch(() => _loadDataAndCreatePlot());
-                    } else {
-                        _loadDataAndCreatePlot();
-                    }
-                });
+            // Add debug to verify container state
+            console.log('_setupEventListeners called with:', {
+                container: _container ? 'defined' : 'undefined',
+                controlsContainer: _controlsContainer ? 'defined' : 'undefined',
+                plotContainer: _plotContainer ? 'defined' : 'undefined',
             });
+            
+            // Use _controlsContainer instead of _container for event listeners
+            // Since we're setting up UI controls like axis selectors
+            setupPlotEventListeners({
+                container: _container, // Use _controlsContainer which contains the UI controls
+                plotContainer: _plotContainer,
+                settings: _settings,
+                plotType: _plotType,
+                data: _data,
+                loadAxisData: _loadAxisData,
+                loadColorDataAndUpdatePlot: _loadColorDataAndUpdatePlot,
+                loadDataAndCreatePlot: _loadDataAndCreatePlot,
+                updatePlotElements: _updatePlotElements,
+            })
             
             // 3D plot toggle - this always requires plot recreation since it changes the plot type
             const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
@@ -380,7 +216,6 @@ const CellPlotPanel = (function() {
                     _updatePlotElements({ colors: true, colorScale: true });
                     console.log(`Updated colorscale to ${newColorScale} without redrawing`);
                 } else {
-                    // For categorical data, we need to recreate the plot with proper legend
                     _loadDataAndCreatePlot();
                 }
             });
@@ -393,90 +228,6 @@ const CellPlotPanel = (function() {
                 
                 // Check if we have a plot and valid data
                 if (_plot && _data.colorType === 'categorical') {
-                    try {
-                        // For categorical data, we can directly update colors without reloading data
-                        // We just need to get the right palette and update trace colors
-                        const isOldUns = oldPalette === 'uns';
-                        const isNewUns = _settings.categoryPalette === 'uns';
-                        
-                        // When switching to/from UNS, we need a full redraw
-                        // because UNS colors need to be fetched from server
-                        if (isOldUns || isNewUns) {
-                            console.log('Switching to/from UNS palette requires full redraw');
-                            _loadDataAndCreatePlot();
-                            return;
-                        }
-                        
-                        console.log('Updating categorical colors without full redraw');
-                        
-                        // Get categories from existing data
-                        const catValues = _data.categories || [...new Set(_data.color)];
-                        
-                        // Get the selected palette
-                        let paletteSource = 'default'; 
-                        let selectedPalette = colorPalettes.default;
-                        
-                        if (_settings.categoryPalette.startsWith('Plotly_Discrete_')) {
-                            // Use Plotly's discrete color palettes
-                            selectedPalette = _settings.categoryPalette.substring(16); // Remove 'Plotly_Discrete_' prefix
-                            paletteSource = 'plotly-discrete';
-                            console.log(`Using Plotly.js discrete colorscale: ${selectedPalette}`);
-                        } else if (_settings.categoryPalette.startsWith('Plotly_')) {
-                            // Use Plotly's sequential color scales - good for continuous values
-                            selectedPalette = _settings.categoryPalette.substring(7); // Remove 'Plotly_' prefix
-                            paletteSource = 'plotly-sequential';
-                            console.log(`Using Plotly.js sequential colorscale: ${selectedPalette}`);
-                        } else if (colorPalettes[_settings.categoryPalette]) {
-                            selectedPalette = colorPalettes[_settings.categoryPalette];
-                            paletteSource = 'custom';
-                        }
-                        
-                        // Update each trace's color based on its category
-                        const update = { 'marker.color': [] };
-                        
-                        // Build marker updates for each trace
-                        _plot.data.forEach((trace, i) => {
-                            if (paletteSource === 'plotly-discrete') {
-                                // For Plotly discrete palettes, get the color directly from the palette
-                                // We need to map D3 colors to hex values
-                                const discreteColors = {
-                                    'D3': ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
-                                    'G10': ['#3366CC', '#DC3912', '#FF9900', '#109618', '#990099', '#0099C6', '#DD4477', '#66AA00', '#B82E2E', '#316395'],
-                                    'Set1': ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
-                                    'Set2': ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
-                                    'Set3': ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
-                                    'Pastel1': ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec'],
-                                    'Pastel2': ['#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae', '#f1e2cc', '#cccccc'],
-                                    'Accent': ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f', '#bf5b17', '#666666'],
-                                    'Dark2': ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
-                                    'Paired': ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
-                                };
-                                const colors = discreteColors[selectedPalette] || discreteColors['D3'];
-                                update['marker.color'][i] = colors[i % colors.length];
-                                // Remove colorscale if it was previously set
-                                update['marker.colorscale'] = null;
-                            } else if (paletteSource === 'plotly-sequential') {
-                                // For Plotly sequential palettes, set colorscale and use index
-                                update['marker.colorscale'] = selectedPalette;
-                                update['marker.color'][i] = i;
-                            } else {
-                                // For custom palettes, directly set color
-                                update['marker.color'][i] = selectedPalette[i % selectedPalette.length];
-                            }
-                        });
-                        
-                        // Apply the updates
-                        Plotly.restyle(_plotContainer, update);
-                    } catch (error) {
-                        console.error('Error updating categorical colors:', error);
-                        // Fall back to full recreate if updating fails
-                        _loadDataAndCreatePlot();
-                    }
-                } else if (_plot) {
-                    // For other cases, try to update just the colors
-                    _loadColorDataAndUpdatePlot(); 
-                } else {
-                    // If no plot exists yet, create it
                     _loadDataAndCreatePlot();
                 }
             });
@@ -2906,7 +2657,6 @@ const CellPlotPanel = (function() {
                         // Only apply updates if there's something to update
                         if (Object.keys(update).length > 0) {
                             // Apply color updates
-                            console.log("Applying color updates:", update);
                             Plotly.restyle(_plotContainer, update, [0]);
                         }
                     } else if (_data.colorType === 'constant') {
@@ -2925,7 +2675,6 @@ const CellPlotPanel = (function() {
                         // Only apply updates if there's something to update
                         if (Object.keys(update).length > 0) {
                             // Apply color updates
-                            console.log("Applying color updates:", update);
                             Plotly.restyle(_plotContainer, update, [0]);
                         }
                     }
@@ -2938,7 +2687,6 @@ const CellPlotPanel = (function() {
                 
                 // STYLING UPDATES (size, opacity)
                 if (updateOptions.styling) {
-                    console.log("Updating visual styling");
                 
                     const update = {
                         'marker.size': _settings.pointSize,
@@ -2951,7 +2699,6 @@ const CellPlotPanel = (function() {
                         .filter(i => i !== -1);
                 
                     if (dataTraceIndices.length > 0) {
-                        console.log("Updating marker style for data traces:", dataTraceIndices);
                         Plotly.restyle(_plotContainer, update, dataTraceIndices);
                     }
                 
