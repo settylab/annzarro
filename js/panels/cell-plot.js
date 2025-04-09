@@ -219,7 +219,7 @@ const CellPlotPanel = (function() {
             const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
             categoryPaletteSelect.addEventListener('change', (e) => {
                 const oldPalette = _settings.categoryPalette;
-                _settings.categoryPalette = e.target.value;
+                _settings.categoryPalette = e.currentTarget.value; 
                 
                 // Check if we have a plot and valid data
                 if (_plotContainer && _data.colorType === 'categorical') {
@@ -1202,12 +1202,16 @@ const CellPlotPanel = (function() {
                               } else if (axis === 'z') {
                                 if (df.columns.length >= 3) {
                                   settings.column = df.columns[2];
-                                } else if (df.columns.length >= 2) {
-                                  settings.column = df.columns[1];
                                 } else {
                                   settings.column = df.columns[0];
                                 }
-                              }
+                              } else if (axis === 'color') {
+                                if (df.columns.length >= 4) {
+                                    settings.column = df.columns[3];
+                                  } else {
+                                    settings.column = df.columns[0];
+                                  }
+                                }
                               console.log(`Setting default column '${settings.column}' for ${axis}-axis obsm.${settings.key}`);
                             } else {
                               settings.column = '0';

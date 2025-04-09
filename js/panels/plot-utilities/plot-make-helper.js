@@ -113,7 +113,11 @@ export function attachClickHandler(plotContainer, traces, data) {
     let selectedPalette;
     
     // Check if custom colors are provided in settings.
-    if (customColors && customColors.length > 0) {
+    if (
+      settings?.categoryPalette === "uns" &&
+      customColors &&
+      customColors.length > 0
+    ) {
       selectedPalette = customColors;
     } else {
         try {
