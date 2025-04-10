@@ -173,7 +173,7 @@ export function createPanelStructure(container, id, settings) {
  * @param {string} id - Unique ID for this panel instance.
  * @param {Object} settings - Plot settings (x, y, z, color, pointSize, etc.)
  * @param {Function} datasetStructure - The dataset structure object.
- * @param {string} plotType - Type of plot ('cell' or 'gene').
+ * @param {string} plotType - Type of plot ('cells' or 'genes').
  * @param {HTMLElement} controlsContainer - The container for the plot controls.
  * @returns {Promise<void>} Resolves when UI state is initialized, or rejects with an error
  */
@@ -183,7 +183,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   if (!datasetStructure) throw new Error('Failed to load dataset structure');
   
   // Configure the axis type selectors based on plot type
-  const isGenePlot = plotType === 'gene';
+  const isGenePlot = plotType === 'genes';
   const container = controlsContainer.closest('.plot-panel');
   
   // Set up the correct axis options based on plot type

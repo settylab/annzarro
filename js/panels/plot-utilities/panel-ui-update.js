@@ -65,7 +65,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
    * @param {Object} settings - Axis settings object (will be updated)
    * @param {HTMLSelectElement} columnSelect - The column select dropdown
    * @param {string} axis - Axis name ('x', 'y', 'z', or 'color')
-   * @param {string} plotType - Either 'cell' or 'gene'
+   * @param {string} plotType - Either 'cells' or 'genes'
    * @param {Object} datasetStructure - Structure of the loaded dataset
    */
   export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
@@ -112,11 +112,11 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         break;
       }
       case 'layer': {
-        if (plotType === 'cell') {
+        if (plotType === 'cells') {
           const focused = DataManager.getFocusedGene();
           columnOptions = focused ? [`<option value="${focused}">Expression of ${focused}</option>`]
                                   : ['<option value="">Select a focused gene first</option>'];
-        } else if (plotType === 'gene') {
+        } else if (plotType === 'genes') {
           const focused = DataManager.getFocusedCell();
           columnOptions = focused ? [`<option value="${focused}">Expression in ${focused}</option>`]
                                   : ['<option value="">Select a focused cell first</option>'];
@@ -140,7 +140,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
  * @param {HTMLElement} container - The root DOM element containing the selector elements.
  * @param {string} axis - Axis name (x, y, z, color)
  * @param {Object} settings - Axis settings (will be updated)
- * @param {string} plotType - Either 'cell' or 'gene'
+ * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
  * @returns {Promise<void>}
  */
@@ -160,7 +160,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     if (!settings.type) {
       // Default to 'none' for color, otherwise use varm/obsm
       settings.type = axis === 'color' ? 'none' : 
-                      (plotType === 'gene' ? 'varm' : 'obsm');
+                      (plotType === 'genes' ? 'varm' : 'obsm');
     }
     
     // Initialize other required fields

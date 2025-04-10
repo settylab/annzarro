@@ -20,7 +20,7 @@ const GenePlotPanel = (function() {
         // Private variables
         const _id = options.id || `gene-plot-${Date.now()}`;
         let _title = options.title || 'Gene Plot';
-        const _plotType = 'gene'; 
+        const _plotType = 'genes'; 
         const _container = container;
         let _plotContainer = null;
         let _controlsContainer = null;
@@ -56,7 +56,8 @@ const GenePlotPanel = (function() {
             x: null,
             y: null,
             z: null,
-            color: null
+            color: null,
+            entities: _plotType
         };
         
         /**
@@ -151,7 +152,7 @@ const GenePlotPanel = (function() {
                     if (updates.xAxis) {
                         console.log('Focused gene changed affects x-axis, loading new data');
                         _settings.x.column = focusedGene;
-                        loadAxisData(_settings.x, null, 'gene').then(xData => {
+                        loadAxisData(_settings.x, null, 'genes').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
                                 _updatePlotElements({ 
@@ -166,7 +167,7 @@ const GenePlotPanel = (function() {
                     if (updates.yAxis) {
                         console.log('Focused gene changed affects y-axis, loading new data');
                         _settings.y.column = focusedGene;
-                        loadAxisData(_settings.y, null, 'gene').then(yData => {
+                        loadAxisData(_settings.y, null, 'genes').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
                                 _updatePlotElements({ 
@@ -181,7 +182,7 @@ const GenePlotPanel = (function() {
                     if (updates.zAxis) {
                         console.log('Focused gene changed affects z-axis, loading new data');
                         _settings.z.column = focusedGene;
-                        loadAxisData(_settings.z, null, 'gene').then(zData => {
+                        loadAxisData(_settings.z, null, 'genes').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
                                 _updatePlotElements({ 
@@ -269,7 +270,7 @@ const GenePlotPanel = (function() {
                     if (updates.xAxis) {
                         console.log('Focused cell changed affects x-axis, loading new data');
                         _settings.x.column = focusedCell;
-                        const xPromise = loadAxisData(_settings.x, null, 'gene').then(xData => {
+                        const xPromise = loadAxisData(_settings.x, null, 'genes').then(xData => {
                             if (xData && xData.values) {
                                 _data.x = xData;
                                 // Update using _updatePlotElements
@@ -285,7 +286,7 @@ const GenePlotPanel = (function() {
                     if (updates.yAxis) {
                         console.log('Focused cell changed affects y-axis, loading new data');
                         _settings.y.column = focusedCell;
-                        const yPromise = loadAxisData(_settings.y, null, 'gene').then(yData => {
+                        const yPromise = loadAxisData(_settings.y, null, 'genes').then(yData => {
                             if (yData && yData.values) {
                                 _data.y = yData;
                                 // Update using _updatePlotElements
@@ -301,7 +302,7 @@ const GenePlotPanel = (function() {
                     if (updates.zAxis) {
                         console.log('Focused cell changed affects z-axis, loading new data');
                         _settings.z.column = focusedCell;
-                        const zPromise = loadAxisData(_settings.z, null, 'gene').then(zData => {
+                        const zPromise = loadAxisData(_settings.z, null, 'genes').then(zData => {
                             if (zData && zData.values) {
                                 _data.z = zData;
                                 // Update using _updatePlotElements

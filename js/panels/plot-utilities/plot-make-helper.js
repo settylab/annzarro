@@ -95,7 +95,7 @@ export function attachClickHandler(plotContainer, traces, data) {
       }
       
       if (!entityName) {
-        console.warn(`No ${isGenePlot ? 'gene' : 'cell'} name found for clicked point`);
+        console.warn(`No ${isGenePlot ? 'genes' : 'cells'} name found for clicked point`);
         return;
       }
       

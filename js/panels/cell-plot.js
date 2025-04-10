@@ -20,7 +20,7 @@ const CellPlotPanel = (function() {
         // Private variables
         const _id = options.id || `cell-plot-${Date.now()}`;
         let _title = options.title || 'Cell Plot';
-        const _plotType = 'cell'; 
+        const _plotType = 'cells'; 
         const _container = container;
         let _plotContainer = null;
         let _controlsContainer = null;

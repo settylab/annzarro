@@ -97,11 +97,7 @@ export function setupResizeObserver(plotContainer) {
  * @param {string|number} id - Unique identifier to build element selectors.
  * @param {Function} loadDataAndCreatePlot - Function to recreate the entire plot.
  * @param {Function} updatePlotElements - Function to update plot properties.
- * @param {Object} controlsContainer - An object containing additional control helper functions:
- *                   - setupAxisSelector(container, axis, axisSettings, plotType, datasetStructure)
- *                   - highlightFocusedCell(plotContainer, data, settings)
- *                   - removeHighlight(plotContainer)
- *                   - (Optionally) plotType property, etc.
+ * @param {Object} controlsContainer - An object containing.
  */
 export function setupPlotControlListeners(
     container,
@@ -141,7 +137,7 @@ export function setupPlotControlListeners(
           const yKey = settings.y?.key || '';
           let zColumn = '2';
           const datasetStructure = await DataManager.getDatasetStructure();
-          const df = plotType === 'gene' 
+          const df = plotType === 'genes' 
             ? datasetStructure?.varm?.dataframes?.[yKey] 
             : datasetStructure?.obsm?.dataframes?.[yKey];
           const yCol = settings.y?.column;
@@ -153,7 +149,7 @@ export function setupPlotControlListeners(
               zColumn = df.columns.at(-1); // fallback to last column
             }
           }
-          settings.z = { type: plotType === 'gene' ? 'varm' : 'obsm', key: yKey, column: zColumn };
+          settings.z = { type: plotType === 'genes' ? 'varm' : 'obsm', key: yKey, column: zColumn };
           // Call the axis selector setup helper from the controls object.
           if (typeof controlsContainer.setupAxisSelector === 'function') {
             controlsContainer.setupAxisSelector(container, 'z', settings.z, controlsContainer.plotType, datasetStructure);
@@ -250,7 +246,7 @@ export function setupPlotControlListeners(
       if (settings.highlightFocusedCell) {
         highlightFocusedCellToggle.classList.add('active', 'btn-primary');
         highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
-        highlightFocusedEntity(plotContainer, data, settings, 'cell');
+        highlightFocusedEntity(plotContainer, data, settings, 'cells');
       } else {
         highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
         highlightFocusedCellToggle.classList.add('btn-outline-secondary');
@@ -274,7 +270,7 @@ export function setupPlotControlListeners(
       if (settings.highlightFocusedGene) {
         highlightFocusedGeneToggle.classList.add('active', 'btn-primary');
         highlightFocusedGeneToggle.classList.remove('btn-outline-secondary');
-        highlightFocusedEntity(plotContainer, data, settings, 'gene');
+        highlightFocusedEntity(plotContainer, data, settings, 'genes');
       } else {
         highlightFocusedGeneToggle.classList.remove('active', 'btn-primary');
         highlightFocusedGeneToggle.classList.add('btn-outline-secondary');
@@ -558,7 +554,7 @@ export function setupColorControls(
  * Setup listeners for all axis selector dropdowns (type, key, column)
  * @param {HTMLElement} container - Root element containing the axis selectors
  * @param {Object} settings - Axis settings object
- * @param {string} plotType - Either 'cell' or 'gene'
+ * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} data - Data cache for axis values
  * @param {string} id - Unique identifier for the plot
  * @param {Function} loadDataAndCreatePlot - Full plot rebuild

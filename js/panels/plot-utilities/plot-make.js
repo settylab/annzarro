@@ -8,7 +8,7 @@ import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-u
  * 
  * @param {Object} settings - Axis settings object.
  * @param {Array<number>} [filteredIndices=null] - Optional array of indices to filter the data.
- * @param {string} [plotType=null] - Optional plot type ('cell' or 'gene') to determine context.
+ * @param {string} [plotType=null] - Optional plot type ('cells' or 'genes') to determine context.
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
@@ -33,8 +33,8 @@ export async function loadAxisData(settings, filteredIndices = null, plotType = 
   try {
     // Special case for 'none' type (constant color).
     if (type === 'none') {
-      // Determine if we're working with gene or cell data based on the plotType parameter
-      const isGenePlot = plotType === 'gene';
+      // Determine if we're working with gene or cell data based on function parameters
+      const isGenePlot = plotType === 'genes';
       
       if (isGenePlot) {
         const genes = DataManager.getGenes();
@@ -370,7 +370,7 @@ export async function loadAxisData(settings, filteredIndices = null, plotType = 
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id) {
   try {
     // Determine if this is a gene or cell plot based on settings
-    const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
+    const isGenePlot = data.entities == 'genes'
     
     if (isGenePlot) {
       // Validate that genes exist for gene plots
@@ -458,7 +458,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         y: null,
         z: null,
         color: null,
-        genes: genes
+        genes: genes,
+        entities: "genes"
       });
     } else {
       const cells = DataManager.getCells();
@@ -467,12 +468,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         y: null,
         z: null,
         color: null,
-        cells: cells
+        cells: cells,
+        entities: "cells"
       });
     }
 
     // Determine the plot type for loading the appropriate data
-    const plotType = isGenePlot ? 'gene' : 'cell';
+    const plotType = isGenePlot ? 'genes' : 'cells';
     
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
@@ -522,35 +524,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       await createPlot(container, plotContainer, settings, data, id);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
-      // Build a more helpful message based on what's missing
-      let message = '';
-      
-      if (!data.x || !data.x.values) {
-        if (!settings.x || !settings.x.type || !settings.x.key) {
-          message += 'Please select X-axis data source from the dropdown menu.';
-        } else {
-          message += `No data available for X-axis (${settings.x.type}.${settings.x.key}${settings.x.column ? '.' + settings.x.column : ''}).`;
-        }
-      } else if (data.x.values.length === 0) {
-        message += `X-axis source contains no data points (${settings.x.type}.${settings.x.key}${settings.x.column ? '.' + settings.x.column : ''}).`;
-      }
-      
-      message += '<br>';
-      
-      if (!data.y || !data.y.values) {
-        if (!settings.y || !settings.y.type || !settings.y.key) {
-          message += 'Please select Y-axis data source from the dropdown menu.';
-        } else {
-          message += `No data available for Y-axis (${settings.y.type}.${settings.y.key}${settings.y.column ? '.' + settings.y.column : ''}).`;
-        }
-      } else if (data.y.values.length === 0) {
-        message += `Y-axis source contains no data points (${settings.y.type}.${settings.y.key}${settings.y.column ? '.' + settings.y.column : ''}).`;
-      }
-      
-      console.warn('Insufficient data for plotting: ' + message);
-      plotContainer.innerHTML = `<div class="alert alert-info text-center">
-        <strong>No Data to Plot</strong><br>
-        <small>${message}</small>
+      console.error('Insufficient data for plotting');
+      plotContainer.innerHTML = `<div class="alert alert-warning">
+        Insufficient data for plotting. X axis has 
+        ${data.x && data.x.values ? data.x.values.length : 0} points, 
+        Y axis has ${data.y && data.y.values ? data.y.values.length : 0} points.
       </div>`;
     }
   } catch (error) {
@@ -667,7 +645,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       );
       attachClickHandler(plotContainer, categoricalTraces, data);
       if (settings[highlightKey]) {
-        highlightFocusedEntity(plotContainer, data, settings, isGenePlot ? 'gene' : 'cell');
+        highlightFocusedEntity(plotContainer, data, settings);
       }
       return;
     } catch (error) {
@@ -688,7 +666,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       );
       attachClickHandler(plotContainer, categoricalTraces, data);
       if (settings[highlightKey]) {
-        highlightFocusedEntity(plotContainer, data, settings, isGenePlot ? 'gene' : 'cell');
+        highlightFocusedEntity(plotContainer, data, settings);
       }
       return;
     }
@@ -727,8 +705,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       }
     );
     attachClickHandler(plotContainer, [baseTrace], data);
-    // Pass a valid callback function instead of null
-    updatePlotElements(plotContainer, data, settings, () => createPlot(container, plotContainer, settings, data, id), { filter: true, colorRange: true })
+    updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';

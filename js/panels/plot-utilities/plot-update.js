@@ -3,16 +3,6 @@ import { loadAxisData } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 
 
-/**
- * Helper function to get the appropriate entity key and data array
- * @param {object} data - The data object containing either cells or genes
- * @returns {object} - {entityKey, entities}
- */
-function getEntityData(data) {
-  const entityKey = data.genes !== undefined ? 'genes' : 'cells';
-  const entities = data[entityKey] || [];
-  return { entityKey, entities };
-}
 
 /**
  * Centralized function to efficiently update plot elements.
@@ -69,6 +59,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         const isNumerical = data.colorType === 'numerical';
         const isCategorical = data.colorType === 'categorical';
         const hasMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
+        const entityType = data.entities
 
         // Create an index mask for filtering out outliers if needed.
         let indexMask = null;
@@ -83,34 +74,37 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
             let filteredX, filteredY, filteredZ, filteredColor, filteredText, filteredCustom;
             
             // Get entity data using our helper function
-            const { entities } = getEntityData(data);
-            
-            if (indexMask) {
-                filteredX = data.x.values.filter((_, i) => indexMask[i]);
-                filteredY = data.y.values.filter((_, i) => indexMask[i]);
-                filteredZ = settings.z && data.z ? data.z.values.filter((_, i) => indexMask[i]) : undefined;
-                filteredColor = data.color.filter((_, i) => indexMask[i]);
-                filteredText = entities.filter((_, i) => indexMask[i]);
-                filteredCustom = Array.from({length: entities.length}, (_, i) => i).filter((_, i) => indexMask[i]);
+            const entities = data[entityType];
+            if (!entities) {
+                console.warn("Entities data is not present, skipping filtering updates.");
             } else {
-                filteredX = data.x.values;
-                filteredY = data.y.values;
-                filteredZ = settings.z && data.z ? data.z.values : undefined;
-                filteredColor = data.color;
-                filteredText = entities;
-                filteredCustom = Array.from({length: entities.length}, (_, i) => i);
-            }
-            
-            const update = {
-                x: [filteredX],
-                y: [filteredY],
-                'marker.color': [filteredColor],
-                text: [filteredText],
-                customdata: [filteredCustom]
-            };
-            if (shouldBe3D && filteredZ) update.z = [filteredZ];
+                if (indexMask) {
+                    filteredX = data.x.values.filter((_, i) => indexMask[i]);
+                    filteredY = data.y.values.filter((_, i) => indexMask[i]);
+                    filteredZ = settings.z && data.z ? data.z.values.filter((_, i) => indexMask[i]) : undefined;
+                    filteredColor = data.color.filter((_, i) => indexMask[i]);
+                    filteredText = entities.filter((_, i) => indexMask[i]);
+                    filteredCustom = Array.from({length: entities.length}, (_, i) => i).filter((_, i) => indexMask[i]);
+                } else {
+                    filteredX = data.x.values;
+                    filteredY = data.y.values;
+                    filteredZ = settings.z && data.z ? data.z.values : undefined;
+                    filteredColor = data.color;
+                    filteredText = entities;
+                    filteredCustom = Array.from({length: entities.length}, (_, i) => i);
+                }
+                
+                const update = {
+                    x: [filteredX],
+                    y: [filteredY],
+                    'marker.color': [filteredColor],
+                    text: [filteredText],
+                    customdata: [filteredCustom]
+                };
+                if (shouldBe3D && filteredZ) update.z = [filteredZ];
 
-            Plotly.restyle(plotContainer, update, [0]);
+                Plotly.restyle(plotContainer, update, [0]);
+            }
         }
 
         // Update POSITION data if required.
@@ -128,7 +122,11 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
 
                 try {
                     // Determine entity type
-                    const { entityKey, entities } = getEntityData(data);
+                    const entities = data[entityType];
+                    if (!entities) {
+                        console.warn("Entities data is not present, skipping filtering updates.");
+                        throw new Error("Entities data is not present");
+                    }
                     
                     // Update each trace independently for categorical data.
                     plotContainer.data.forEach((trace, i) => {
@@ -156,14 +154,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                 }
                 
                 // Update the highlighted entity if needed
-                const isGenePlot = data.genes !== undefined;
-                if (isGenePlot && settings.highlightFocusedGene) {
-                    removeHighlight(plotContainer);
-                    highlightFocusedEntity(plotContainer, data, settings, 'gene');
-                } else if (!isGenePlot && settings.highlightFocusedCell) {
-                    removeHighlight(plotContainer);
-                    highlightFocusedEntity(plotContainer, data, settings, 'cell');
-                }
+                highlightFocusedEntity(plotContainer, data, settings, entityType);
             } else {
                 // Standard update for a single trace (numerical data).
                 const update = {};
@@ -182,13 +173,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                     Plotly.restyle(plotContainer, update, [0]);
                     // Highlight the appropriate entity based on plot type
                     const isGenePlot = data.genes !== undefined;
-                    if (isGenePlot && settings.highlightFocusedGene) {
-                        removeHighlight(plotContainer);
-                        highlightFocusedEntity(plotContainer, data, settings, 'gene');
-                    } else if (!isGenePlot && settings.highlightFocusedCell) {
-                        removeHighlight(plotContainer);
-                        highlightFocusedEntity(plotContainer, data, settings, 'cell');
-                    }
+                    highlightFocusedEntity(plotContainer, data, settings, entityType);
                 }
             }
         }
@@ -259,12 +244,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
             
             // Re-add highlight for the focused entity if needed.
             if (hasFocusedCell) {
-                const isGenePlot = data.genes !== undefined;
-                if (isGenePlot) {
-                    highlightFocusedEntity(plotContainer, data, settings, 'gene');
-                } else {
-                    highlightFocusedEntity(plotContainer, data, settings, 'cell');
-                }
+                highlightFocusedEntity(plotContainer, data, settings, entityType);
             }
         }
         
@@ -276,14 +256,14 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
             };
             
             const dataTraceIndices = plotContainer.data
-                .map((trace, i) => (trace && trace.name !== 'Focused Cell' ? i : -1))
+                .map((trace, i) => (trace && trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}` ? i : -1))
                 .filter(i => i !== -1);
             
             if (dataTraceIndices.length > 0) {
                 Plotly.restyle(plotContainer, update, dataTraceIndices);
             }
             
-            const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === 'Focused Cell');
+            const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
             if (highlightIndex >= 0) {
                 Plotly.restyle(plotContainer, {
                     'marker.size': settings.pointSize * 2  // Always 2x the normal point size.
@@ -359,9 +339,8 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         }
         
         // If position data changed, update the highlighted cell.
-        if (settings.highlightFocusedCell && (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
-            removeHighlight(plotContainer);
-            highlightFocusedCell(plotContainer, data, settings);
+        if ((settings.highlightFocusedCell || settings.highlightFocusedGene) && (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
+            highlightFocusedEntity(plotContainer, data, settings, entityType)
         }
         
     } catch (error) {
@@ -446,14 +425,13 @@ export async function loadColorDataAndUpdatePlot(
  *   Also expected to include a "colorType" property.
  * @param {Object} settings - Plot settings object. Expected to include:
  *   - pointSize,
- *   - highlightFocusedCell (for cells) or highlightFocusedGene (for genes),
  *   - z (non-null if 3D)
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
-export function highlightFocusedEntity(plotContainer, data, settings, entityType) {
+export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
   // Determine which property to use: cells or genes.
-  const entityKey = entityType === 'cell' ? 'cells' : 'genes';
-  if (!plotContainer || !data || !data[entityKey] || !data.x || !data.y ||
+  entityType = entityType || data.entities
+  if (!plotContainer || !data || !data[entityType] || !data.x || !data.y ||
       !data.x.values || !data.y.values) {
     console.warn(`Missing required data for highlighting ${entityType}`);
     return;
@@ -464,10 +442,10 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   }
 
   // Get the focused entity based on type.
-  const focusedEntity = entityType === 'cell'
+  const focusedEntity = entityType === 'cells'
     ? DataManager.getFocusedCell()
     : DataManager.getFocusedGene();
-  const highlightEnabled = entityType === 'cell'
+  const highlightEnabled = entityType === 'cells'
     ? settings.highlightFocusedCell
     : settings.highlightFocusedGene;
   if (!focusedEntity || !highlightEnabled) {
@@ -477,12 +455,12 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
 
   let focusedIndex = -1;
   let traceIndex = 0;
-  const entityArray = data[entityKey];
+  const entityArray = data[entityType];
 
   // Check if the data is categorical with multiple traces.
   const isCategorical = data.colorType === 'categorical';
   const dataTraces = plotContainer.data.filter(trace => trace && 
-    trace.name !== `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+    trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
   const hasMultipleTraces = dataTraces.length > 1;
 
   if (isCategorical && hasMultipleTraces) {
@@ -557,7 +535,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       showscale: false  // Do not create a new colorbar.
     },
     hoverinfo: 'skip',
-    name: `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`,
+    name: `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`,
     showlegend: false  // Prevent the trace from appearing in the legend.
   };
   if (is3D && zValue !== undefined) {
@@ -566,7 +544,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
 
   // Update existing highlight trace if one exists; otherwise add a new one.
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
-    trace.name === `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+    trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
   if (existingIdx >= 0) {
     Plotly.restyle(plotContainer, {
       x: [highlightTrace.x],
