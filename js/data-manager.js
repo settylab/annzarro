@@ -289,7 +289,7 @@ const DataManager = (function() {
                 console.warn('API response does not contain the expected data format');
                 return {
                     data: [],
-                    uns_key: unsKey,
+                    obsm_key: obsmKey,
                     dataset_path: datasetPath
                 };
             }
@@ -659,7 +659,7 @@ const DataManager = (function() {
                 console.warn('API response does not contain the expected data format');
                 return {
                     data: [],
-                    obsm_key: obsmKey,
+                    uns_key: unsKey,
                     dataset_path: datasetPath
                 };
             } else if (data && data.data) {

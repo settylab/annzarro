@@ -1,16 +1,15 @@
-import { populateKeySelector, populateColumnSelector } from './panel-ui-update.js';
+import { populateKeySelector, populateColumnSelector, updateColorSliderUI } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
-import { updatePlotElements } from './plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 
 export function setupPlotEventListeners({
     container,
     plotContainer,
-    plot,
     settings,
     plotType,
     data,
-    loadColorDataAndUpdatePlot,
+    id,
     loadDataAndCreatePlot
   }) {
 
@@ -20,15 +19,21 @@ export function setupPlotEventListeners({
     setupAxisSelectorListeners(
         container,
         plotContainer,
-        plot,
         settings,
         plotType,
         data,
-        loadColorDataAndUpdatePlot,
+        id,
         loadDataAndCreatePlot);
 
     // setup3DToggle(container, settings, plotType, updateFn);
-    // setupColorControls(container, settings, updateFn);
+    setupColorControls(
+        container,
+        settings,
+        data,
+        plotContainer,
+        id,
+        loadDataAndCreatePlot,
+    );
     // setupPointStyleControls(container, settings, updateFn);
     // setupEventListenersForFocusChanges(settings, updateFn);
     return observer;
@@ -67,26 +72,264 @@ export function setupResizeObserver(plotContainer) {
   
     observer.observe(plotContainer);
     return observer;
-  }
+}
+
+
+/**
+ * Set up color controls (e.g., color scale, opacity, color range inputs, centering, and outlier filtering)
+ * for a plot. Uses elements inside the provided container.
+ *
+ * @param {HTMLElement} container - The root element containing the color controls.
+ * @param {Object} settings - The plot settings object.
+ * @param {Object} data - The data cache object (e.g. { x, y, z, color, cells, colorType, … }).
+ * @param {HTMLElement} plotContainer - The element that holds the Plotly plot.
+ * @param {string|number} id - Unique identifier used to form element selectors.
+ * @param {Function} loadDataAndCreatePlot - Function to reload the entire plot.
+ * @param {Function} updatePlot - Function to update the plot visuals (without recreating it).
+ */
+export function setupColorControls(
+    container,
+    settings,
+    data,
+    plotContainer,
+    id,
+    loadDataAndCreatePlot,
+) {
+
+
+    // helper closure to avoid passing all parameters
+    function _updatePlotElements(options = {}) {
+        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options);
+    }
+
+
+     function _updatePlot(fullDataUpdate = false) {
+        console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
+        
+        if (fullDataUpdate) {
+            updateColorSliderUI(container, data, settings, id, plotContainer);
+            // For full data updates, update colors and data
+            _updatePlotElements({
+                colors: true,
+                colorData: true,  // Include the full color data array
+                colorScale: true, // Update the color scale
+                colorRange: true, // Update the color range
+                styling: true,
+                layout: true
+            });
+        } else {
+            updateColorSliderUI(container, data, settings, id, plotContainer);
+            // For visual-only updates
+            _updatePlotElements({
+                styling: true,
+                colors: settings.colorMin !== null || settings.colorMax !== null,
+                colorRange: settings.colorMin !== null || settings.colorMax !== null,
+                colorData: false // Don't update the actual color data array
+            });
+        }
+    }
+
+    // --- Color scale selector ---
+    const colorScaleSelect = container.querySelector(`#color-scale-${id}`);
+    colorScaleSelect.addEventListener('change', (e) => {
+        const newColorScale = e.target.value;
+        settings.colorScale = newColorScale;
+        // For numerical data, update visual properties; categorical uses discrete colors so reload plot.
+        if (data.colorType === 'numerical' && plotContainer) {
+            _updatePlotElements({ colors: true, colorScale: true });
+            console.log(`Updated colorscale to ${newColorScale} without redrawing`);
+        } else {
+            loadDataAndCreatePlot();
+        }
+    });
+
+    // --- Category palette selector ---
+    const categoryPaletteSelect = container.querySelector(`#category-palette-${id}`);
+    categoryPaletteSelect.addEventListener('change', (e) => {
+        settings.categoryPalette = e.currentTarget.value;
+        if (plotContainer && data.colorType === 'categorical') {
+            loadDataAndCreatePlot();
+        }
+    });
+
+    // --- Color range inputs and sliders ---
+    const colorMinInput = container.querySelector(`#color-min-${id}`);
+    const colorMaxInput = container.querySelector(`#color-max-${id}`);
+    const colorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+    const colorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+
+    // Ensure centeringActive is defined.
+    settings.centeringActive = settings.centeringActive || false;
+
+    // Helper to update color range values without affecting slider UI
+    function _updateColorRange(min, max, updateSliders = true, triggerPlotUpdate = true) {
+        settings.colorMin = min !== '' ? parseFloat(min) : null;
+        settings.colorMax = max !== '' ? parseFloat(max) : null;
+        colorMinInput.value = settings.colorMin !== null ? settings.colorMin : '';
+        colorMaxInput.value = settings.colorMax !== null ? settings.colorMax : '';
+
+        if (updateSliders && data && data.color && Array.isArray(data.color)) {
+            const validValues = data.color.filter((v) => !isNaN(v));
+            const dataMin = Math.min(...validValues);
+            const dataMax = Math.max(...validValues);
+            colorMinSlider.value = settings.colorMin !== null ? settings.colorMin : dataMin;
+            colorMaxSlider.value = settings.colorMax !== null ? settings.colorMax : dataMax;
+        }
+
+        if (triggerPlotUpdate) {
+            _updatePlot(false); // false indicates "visual update only"
+        }
+    }
+
+    colorMinInput.addEventListener('change', (e) => {
+        const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+        _updateColorRange(minValue, settings.colorMax, true);
+    });
+
+    colorMaxInput.addEventListener('change', (e) => {
+        const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+        _updateColorRange(settings.colorMin, maxValue, true);
+    });
+
+    // --- Direct slider update helper ---
+    function updateColorRangeDirect(minOrMax, value) {
+        if (!plotContainer || !plotContainer.data || !plotContainer.data[0] || !plotContainer.data[0].marker)
+            return;
+        const update = {};
+        update[`marker.c${minOrMax}`] = value;
+        Plotly.restyle(plotContainer, update, [0]);
+    }
+
+    // --- Hide outliers button ---
+    const hideOutliersButton = container.querySelector(`#hide-outliers-${id}`);
+    if (settings.hideOutliers) {
+        hideOutliersButton.classList.add('active', 'btn-primary');
+        hideOutliersButton.classList.remove('btn-outline-secondary');
+    } else {
+        hideOutliersButton.classList.remove('active', 'btn-primary');
+        hideOutliersButton.classList.add('btn-outline-secondary');
+    }
+    hideOutliersButton.addEventListener('click', () => {
+        settings.hideOutliers = !settings.hideOutliers;
+        if (settings.hideOutliers) {
+            hideOutliersButton.classList.add('active', 'btn-primary');
+            hideOutliersButton.classList.remove('btn-outline-secondary');
+        } else {
+            hideOutliersButton.classList.remove('active', 'btn-primary');
+            hideOutliersButton.classList.add('btn-outline-secondary');
+        }
+        _updatePlotElements({ filter: true });
+    });
+
+    // --- Min slider ---
+    colorMinSlider.addEventListener('input', (e) => {
+        const minValue = parseFloat(e.currentTarget.value);
+        colorMinInput.value = minValue.toFixed(2);
+        settings.colorMin = minValue;
+        updateColorRangeDirect('min', minValue);
+        _updatePlotElements({
+            colors: true,
+            colorRange: true,
+            filter: settings.hideOutliers
+        });
+    });
+
+    // --- Max slider ---
+    colorMaxSlider.addEventListener('input', (e) => {
+        const maxValue = parseFloat(e.currentTarget.value);
+        colorMaxInput.value = maxValue.toFixed(2);
+        settings.colorMax = maxValue;
+        updateColorRangeDirect('max', maxValue);
+        _updatePlotElements({
+            colors: true,
+            colorRange: true,
+            filter: settings.hideOutliers
+        });
+    });
+
+    // --- Centering and reverse colormap controls ---
+    const centerColormapButton = container.querySelector(`#center-colormap-${id}`);
+    centerColormapButton.addEventListener('click', () => {
+        settings.centeringActive = !settings.centeringActive;
+        setupCenteringSliderListeners();
+        updateColorSliderUI(container, data, settings, id, plotContainer)
+        _updatePlot(false)
+    });
+
+    const reverseColormapButton = container.querySelector(`#reverse-colormap-${id}`);
+    reverseColormapButton.addEventListener('click', () => {
+        settings.colorReversed = !settings.colorReversed;
+        reverseColormapButton.classList.toggle('btn-primary', settings.colorReversed);
+        reverseColormapButton.classList.toggle('btn-outline-secondary', !settings.colorReversed);
+        reverseColormapButton.classList.toggle('active', settings.colorReversed);
+        _updatePlotElements({ colorScale: true, colors: true });
+    });
+
+    // --- Centering slider listeners and helpers ---
+    function setupCenteringSliderListeners() {
+        const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+        const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+        if (!csColorMinSlider || !csColorMaxSlider) return;
+        csColorMinSlider.removeEventListener('input', centeringMinSliderHandler);
+        csColorMaxSlider.removeEventListener('input', centeringMaxSliderHandler);
+        if (settings.centeringActive) {
+            csColorMinSlider.addEventListener('input', centeringMinSliderHandler);
+            csColorMaxSlider.addEventListener('input', centeringMaxSliderHandler);
+        }
+    }
+
+    function centeringMinSliderHandler(e) {
+        if (!settings.centeringActive) return;
+        const minValue = parseFloat(e.target.value);
+        const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+        const csColorMaxInput = container.querySelector(`#color-max-${id}`);
+        const csColorMinInput = container.querySelector(`#color-min-${id}`);
+        const maxValue = -minValue;
+        settings.colorMin = minValue;
+        settings.colorMax = maxValue;
+        csColorMinInput.value = minValue.toFixed(2);
+        if (csColorMaxInput) csColorMaxInput.value = maxValue.toFixed(2);
+        if (csColorMaxSlider) csColorMaxSlider.value = maxValue;
+        if (plotContainer && plotContainer.data && plotContainer.data[0] && plotContainer.data[0].marker) {
+            Plotly.restyle(plotContainer, { 'marker.cmin': minValue, 'marker.cmax': maxValue }, [0]);
+        }
+    }
+
+    function centeringMaxSliderHandler(e) {
+        if (!settings.centeringActive) return;
+        const maxValue = parseFloat(e.target.value);
+        const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+        const csColorMinInput = container.querySelector(`#color-min-${id}`);
+        const csColorMaxInput = container.querySelector(`#color-max-${id}`);
+        const minValue = -maxValue;
+        settings.colorMin = minValue;
+        settings.colorMax = maxValue;
+        csColorMaxInput.value = maxValue.toFixed(2);
+        if (csColorMinInput) csColorMinInput.value = minValue.toFixed(2);
+        if (csColorMinSlider) csColorMinSlider.value = minValue;
+        if (plotContainer && plotContainer.data && plotContainer.data[0] && plotContainer.data[0].marker) {
+            Plotly.restyle(plotContainer, { 'marker.cmin': minValue, 'marker.cmax': maxValue }, [0]);
+        }
+    }
+}
+
 
 /**
  * Setup listeners for all axis selector dropdowns (type, key, column)
  * @param {HTMLElement} container - Root element containing the axis selectors
  * @param {Object} settings - Axis settings object
  * @param {string} plotType - Either 'cell' or 'gene'
- * @param {Function} loadColorDataAndUpdatePlot - Optimized color update
- * @param {Function} loadDataAndCreatePlot - Full plot rebuild
- * @param {Object} plot - Optional plot object (used to check if plot exists)
  * @param {Object} data - Data cache for axis values
+ * @param {string} id - Unique identifier for the plot
+ * @param {Function} loadDataAndCreatePlot - Full plot rebuild
  */
-export function setupAxisSelectorListeners(
+function setupAxisSelectorListeners(
     container,
     plotContainer,
-    plot,
     settings,
     plotType,
     data,
-    loadColorDataAndUpdatePlot,
+    id,
     loadDataAndCreatePlot
 ) {
   // Add defensive check - container must be defined
@@ -118,8 +361,17 @@ export function setupAxisSelectorListeners(
       if (!datasetStructure) return console.error('No dataset structure');
 
       populateKeySelector(settings[axis], keySelect, datasetStructure);
-
-      if (type === 'none' && axis === 'color') return loadColorDataAndUpdatePlot();
+    if (type === 'none' && axis === 'color') {
+      await loadColorDataAndUpdatePlot(
+        container,
+        plotContainer,
+        settings,
+        data,
+        id,
+        loadDataAndCreatePlot
+    );
+      return;
+    }
 
       console.log(`Axis ${axis} type changed to ${type}`);
       console.log(keySelect.options);
@@ -195,10 +447,15 @@ export function setupAxisSelectorListeners(
 
   function handleAxisUpdate(axis) {
     if (axis === 'color') {
-      return loadColorDataAndUpdatePlot();
-    }
-
-    if (['x', 'y', 'z'].includes(axis)) {
+        loadColorDataAndUpdatePlot(
+            container,
+            plotContainer,
+            settings,
+            data,
+            id,
+            loadDataAndCreatePlot
+          )
+    } else if (['x', 'y', 'z'].includes(axis)) {
       loadAxisData(settings[axis]).then(axisData => {
         if (axisData?.values) {
           data[axis] = axisData;

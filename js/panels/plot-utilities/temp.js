@@ -1,616 +1,469 @@
-function _createPlot() {
-if (!_data.x || !_data.y) {
-    _plotContainer.innerHTML = '<div class="alert alert-warning">Insufficient data for plotting</div>';
-    return;
-}
-
-// Check if we have cell names and they match the data
-if (!_data.cells || _data.cells.length === 0) {
-    console.error('Cell names missing - cannot create plot');
-    _plotContainer.innerHTML = '<div class="alert alert-danger">Error: Cell names missing or unavailable</div>';
-    return;
-}
-
-// Ensure cell names match data point count
-if (_data.cells.length !== _data.x.values.length) {
-    console.warn(`Cell names count (${_data.cells.length}) doesn't match data points count (${_data.x.values.length})`);
+// Color scale selector - use centralized update system
+const colorScaleSelect = document.getElementById(`color-scale-${_id}`);
+colorScaleSelect.addEventListener('change', (e) => {
+    const newColorScale = e.target.value;
+    _settings.colorScale = newColorScale;
     
-    // If we have more cells than data points, trim the list
-    if (_data.cells.length > _data.x.values.length) {
-        _data.cells = _data.cells.slice(0, _data.x.values.length);
-    }
-}
-
-// Prepare plot data
-const trace = {
-    type: _settings.z ? 'scatter3d' : 'scattergl',
-    mode: 'markers',
-    x: _data.x.values,
-    y: _data.y.values,
-    text: _data.cells,
-    customdata: Array.from({ length: _data.cells.length }, (_, i) => i), // Add cell indices as customdata for click handling
-    hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
-    marker: {
-        size: _settings.pointSize,
-        opacity: _settings.pointOpacity
-    }
-};
-
-// Add z-axis if 3D plot
-if (_settings.z && _data.z) {
-    trace.z = _data.z.values;
-}
-
-// Create layout
-const layout = {
-    autosize: true,
-    margin: { l: 40, r: 40, t: 40, b: 40 },
-    hovermode: 'closest',
-    xaxis: {
-        title: `${_settings.x.type}.${_settings.x.key}` +
-                (_settings.x.column ? `.${_settings.x.column}` : ''),
-        showgrid: _settings.showGrid,
-        //gridcolor: 'rgba(200, 200, 200, 0.2)',
-        showline: _settings.showGrid,
-        zeroline: _settings.showGrid,
-        ticks: _settings.showGrid ? '' : 'none',
-        showticklabels: _settings.showGrid
-    },
-    yaxis: {
-        title: `${_settings.y.type}.${_settings.y.key}` +
-                (_settings.y.column ? `.${_settings.y.column}` : ''),
-        showgrid: _settings.showGrid,
-        //gridcolor: 'rgba(200, 200, 200, 0.2)',
-        showline: _settings.showGrid,
-        zeroline: _settings.showGrid,
-        ticks: _settings.showGrid ? '' : 'none',
-        showticklabels: _settings.showGrid
-    }
-};
-
-// Add z-axis title for 3D plots
-if (_settings.z) {
-    layout.scene = {
-        xaxis: { 
-            title: layout.xaxis.title,
-            showgrid: _settings.showGrid,
-            //gridcolor: 'rgba(200, 200, 200, 0.2)',
-            showline: _settings.showGrid,
-            zeroline: _settings.showGrid,
-            ticks: _settings.showGrid ? '' : 'none',
-            showticklabels: _settings.showGrid
-        },
-        yaxis: { 
-            title: layout.yaxis.title,
-            showgrid: _settings.showGrid,
-            //gridcolor: 'rgba(200, 200, 200, 0.2)',
-            showline: _settings.showGrid,
-            zeroline: _settings.showGrid,
-            ticks: _settings.showGrid ? '' : 'none',
-            showticklabels: _settings.showGrid
-        },
-        zaxis: {
-            title: `${_settings.z.type}.${_settings.z.key}` +
-                    (_settings.z.column ? `.${_settings.z.column}` : ''),
-            showgrid: _settings.showGrid,
-            //gridcolor: 'rgba(200, 200, 200, 0.2)',
-            showline: _settings.showGrid,
-            zeroline: _settings.showGrid,
-            ticks: _settings.showGrid ? '' : 'none',
-            showticklabels: _settings.showGrid
-        }
-    };
-    
-    // Remove 2D axis titles for 3D plots
-    delete layout.xaxis;
-    delete layout.yaxis;
-}
-
-// Set colors based on color data type
-if (_data.colorType === 'categorical') {
-    // Rather than using a colorscale, we'll use discrete colors with a legend
-    // Remove the colorscale property that would force a colorbar
-    delete trace.marker.colorscale;
-    
-    // Data preparation and color assignment depends on whether we have categories or unique values
-    const catValues = _data.categories || [...new Set(_data.color)];
-    console.log(`Found ${catValues.length} categories:`, catValues);
-    
-    // Set up an object to hold all distinct traces (one per category)
-    const traces = [];
-    const colorKey = `${_settings.color.key}_colors`;
-    
-    // Check for colors in uns
-    let unsColors = null;
-
-    /* paletteSource === 'uns' -> we can try getting it with 
-    DataManager.loadUns({
-            datasetPath: _settings.datasetPath,
-            key: colorKey,
-        })
-
-    otherwise, we can get the colors from
-    generateDiscreteColors(catValues.length, paletteSource)
-
-    Both should give us a list of colors, one for each category by
-    which we split the trace. It is imortant to setup the on-click
-    listener.
-    */
-    
-    const processCategories = (customColors = null) => {
-        // Store the custom colors from uns if they exist
-        if (customColors) {
-            unsColors = customColors;
-        }
-        
-        // Choose the color palette based on settings
-        let selectedPalette = colorPalettes.default;
-        let paletteSource = 'default';
-        
-        try {
-            if (_settings.categoryPalette === 'uns' && unsColors && unsColors.length > 0) {
-                selectedPalette = unsColors;
-                paletteSource = 'uns';
-                console.log('Using custom colors from uns:', selectedPalette);
-            } else if (_settings.categoryPalette !== 'uns' && _settings.categoryPalette !== 'default') {
-                // Check if this is a Plotly.js discrete palette
-                if (_settings.categoryPalette.startsWith('Plotly_Discrete_')) {
-                    // Use Plotly's discrete color palettes
-                    selectedPalette = _settings.categoryPalette.substring(16); // Remove 'Plotly_Discrete_' prefix
-                    paletteSource = 'plotly-discrete';
-                    console.log(`Using Plotly.js discrete colorscale: ${selectedPalette}`);
-                }
-                // Check if this is a Plotly.js sequential colorscale
-                else if (_settings.categoryPalette.startsWith('Plotly_')) {
-                    // Just save the name - we'll use Plotly's built-in sequential colorscales
-                    selectedPalette = _settings.categoryPalette.substring(7); // Remove 'Plotly_' prefix
-                    paletteSource = 'plotly-sequential';
-                    console.log(`Using Plotly.js sequential colorscale: ${selectedPalette}`);
-                } else if (colorPalettes[_settings.categoryPalette]) {
-                    // Use our custom color palettes
-                    selectedPalette = colorPalettes[_settings.categoryPalette];
-                    paletteSource = 'custom';
-                    console.log(`Using custom color palette ${_settings.categoryPalette}:`, selectedPalette);
-                } else {
-                    console.warn(`Palette ${_settings.categoryPalette} not found, using default`);
-                    selectedPalette = colorPalettes.default;
-                    paletteSource = 'default';
-                }
-            }
-        } catch (error) {
-            console.error('Error selecting color palette:', error);
-            selectedPalette = colorPalettes.default;
-            paletteSource = 'default';
-        }
-        
-        // Create one trace per category for the legend
-        catValues.forEach((category, i) => {
-            // Find all points belonging to this category
-            const indices = [];
-            _data.color.forEach((val, idx) => {
-                if (val === category) indices.push(idx);
-            });
-            
-            if (indices.length === 0) return; // Skip if no points in this category
-            
-            // Get the color for this category
-            let categoryColor;
-            
-            if (paletteSource === 'uns' && unsColors) {
-                // If using uns colors, we need to match by category index in original category order
-                // from the dataset structure, not by the iteration order in catValues
-                // Try to find category in _data.colorCategories first
-                if (_data.colorCategories && Array.isArray(_data.colorCategories)) {
-                    const catIndex = _data.colorCategories.indexOf(category);
-                    if (catIndex !== -1 && catIndex < unsColors.length) {
-                        categoryColor = unsColors[catIndex];
-                    } else {
-                        // Fallback to position in catValues if category not found
-                        categoryColor = unsColors[i % unsColors.length];
-                    }
-                } else {
-                    // Fallback to position in catValues if colorCategories not available
-                    categoryColor = unsColors[i % unsColors.length];
-                }
-            } else {
-                // For other custom palettes, use the index in catValues
-                categoryColor = selectedPalette[i % selectedPalette.length];
-            }
-            
-            // Create a trace for this category
-            const catTrace = {
-                type: _settings.z ? 'scatter3d' : 'scattergl',
-                mode: 'markers',
-                name: category,
-                text: indices.map(idx => _data.cells[idx]),
-                // Include cell indices in customdata for 3D plots
-                customdata: indices, // Add cell indices as customdata for click handling
-                hovertemplate: '%{text}<br>x: %{x}<br>y: %{y}' + (_settings.z ? '<br>z: %{z}' : '') + '<extra></extra>',
-                x: indices.map(idx => _data.x.values[idx]),
-                y: indices.map(idx => _data.y.values[idx]),
-                marker: paletteSource === 'plotly-sequential'
-                    ? {
-                        size: _settings.pointSize,
-                        opacity: _settings.pointOpacity,
-                        // Use Plotly's built-in sequential colorscale
-                        colorscale: selectedPalette,
-                        // For sequential colorscales, each trace needs a custom color value
-                        color: i, // Use index as the color value
-                        showscale: false // Don't show color scale, we have the legend
-                    } 
-                    : {
-                        size: _settings.pointSize,
-                        opacity: _settings.pointOpacity,
-                        color: categoryColor
-                    },
-                showlegend: true
-            };
-            
-            // Add z coordinates for 3D plots
-            if (_settings.z && _data.z) {
-                catTrace.z = indices.map(idx => _data.z.values[idx]);
-            }
-            
-            traces.push(catTrace);
-        });
-        
-        // Return an empty array if we're going to create multiple traces
-        return traces;
-    };
-    
-    // Check for custom colors in uns if we're using them
-    if (_settings.categoryPalette === 'uns') {
-        DataManager.loadUns({
-            datasetPath: _settings.datasetPath,
-            key: colorKey,
-        }).then(response => {
-                if (response.ok) {
-                    return response.json();
-                }
-                return null;
-            })
-            .then(data => {
-                if (!data || !data.data) {
-                    console.warn(`No custom colors found in uns.${colorKey}`);
-                    return;
-                }
-                console.log(`Found custom colors in uns.${colorKey}:`, data.data);
-                const customColors = Array.isArray(data.data) ? data.data : [data.data];
-                
-                // Process with custom colors 
-                const traces = processCategories(customColors);
-                
-                // Update layout to show the legend
-                layout.showlegend = true;
-                layout.legend = { 
-                    ...layout.legend,  // preserve any existing legend settings
-                    title: { text: _settings.color.key }
-                };
-                
-                // Create the plot with multiple traces
-                _plotContainer.innerHTML = ''
-                Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false,
-                    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-                });
-                
-                // Set up click handler to update global focused cell
-                _plotContainer.on('plotly_click', (data) => {
-                    try {
-                        const point = data.points[0];
-                        const pointIndex = point.pointIndex;
-                        const traceIndex = point.curveNumber;
-                        let cellName;
-                        
-                        // First priority: Use customdata which contains the cell index
-                        if (point.customdata !== undefined) {
-                            const cellIndex = point.customdata;
-                            if (_data.cells && cellIndex < _data.cells.length) {
-                                cellName = _data.cells[cellIndex];
-                            }
-                            // In multi-trace categorical plot, customdata might be the index for that specific category
-                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                cellName = traces[traceIndex].text[pointIndex];
-                            }
-                        }
-                        // Third priority: Use trace's text array
-                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                            cellName = traces[traceIndex].text[pointIndex];
-                        }
-                        
-                        if (cellName) {
-                            // Update the global focused cell in DataManager
-                            // This will trigger updates in all panels via the event system
-                            DataManager.setFocusedCell(cellName, false);
-                        }
-                    } catch (error) {
-                        console.error("Error handling cell plot click:", error);
-                    }
-                });
-                
-                // Store plot reference
-                _plot = _plotContainer;
-                
-                // Add highlighted cell if needed
-                if (_settings.highlightFocusedCell) {
-                    _highlightFocusedCell();
-                }
-            })
-            .catch(error => {
-                console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
-                
-                // Process without custom colors as fallback
-                const traces = processCategories();
-                
-                // Create the plot with multiple traces
-                _plotContainer.innerHTML = ''
-                Plotly.newPlot(_plotContainer, traces, {
-                    showlegend: true,
-                    legend: {
-                        title: { text: _settings.color.key }
-                    }
-                }, window.plotlyDefaultConfig || {
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false,
-                    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-                });
-                
-                // Set up click handler to update global focused cell
-                _plotContainer.on('plotly_click', (data) => {
-                    try {
-                        const point = data.points[0];
-                        const pointIndex = point.pointIndex;
-                        const traceIndex = point.curveNumber;
-                        let cellName;
-                        
-                        // First priority: Use customdata which contains the cell index
-                        if (point.customdata !== undefined) {
-                            const cellIndex = point.customdata;
-                            if (_data.cells && cellIndex < _data.cells.length) {
-                                cellName = _data.cells[cellIndex];
-                            }
-                            // In multi-trace categorical plot, customdata might be the index for that specific category
-                            else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                                cellName = traces[traceIndex].text[pointIndex];
-                            }
-                        }
-                        // Third priority: Use trace's text array
-                        else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                            cellName = traces[traceIndex].text[pointIndex];
-                        }
-                        
-                        if (cellName) {
-                            // Update the global focused cell in DataManager
-                            // This will trigger updates in all panels via the event system
-                            DataManager.setFocusedCell(cellName, false);
-                        }
-                    } catch (error) {
-                        console.error("Error handling cell plot click:", error);
-                    }
-                });
-                
-                // Store plot reference
-                _plot = _plotContainer;
-                
-                // Add highlighted cell if needed
-                if (_settings.highlightFocusedCell) {
-                    _highlightFocusedCell();
-                }
-            });
-            
-        // Return empty trace here - we'll replace it with the processed traces
-        return [];
+    // Only update for numerical data, categorical uses discrete colors
+    if (_data.colorType === 'numerical' && _plotContainer) {
+        // Use centralized update system for color updates
+        _updatePlotElements({ colors: true, colorScale: true });
+        console.log(`Updated colorscale to ${newColorScale} without redrawing`);
     } else {
-        // Not using uns colors or waiting for them, process immediately
-        return processCategories();
-    }
-} else if (_data.colorType === 'numerical') {
-    // Numerical coloring
-    trace.marker.color = _data.color;
-    trace.marker.colorscale = _settings.colorScale;
-    trace.marker.reversescale = _settings.colorReversed;
-    
-    // Set color range if specified
-    if (_settings.colorMin !== null || _settings.colorMax !== null) {
-        const cmin = _settings.colorMin !== null ? _settings.colorMin : Math.min(..._data.color);
-        const cmax = _settings.colorMax !== null ? _settings.colorMax : Math.max(..._data.color);
-        
-        trace.marker.cmin = cmin;
-        trace.marker.cmax = cmax;
-        
-        // Filter out points outside range if hideOutliers is true
-        if (_settings.hideOutliers) {
-            trace.x = trace.x.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-            trace.y = trace.y.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-            trace.text = trace.text.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-            trace.marker.color = trace.marker.color.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-            if (trace.z) {
-              trace.z = trace.z.filter((_, i) => _data.color[i] >= cmin && _data.color[i] <= cmax);
-            }
-          }
-    }
-    
-    // Add colorbar with vertical title
-    trace.marker.colorbar = {
-        title: {
-            text: `${_settings.color.type}.${_settings.color.key}` +
-                  (_settings.color.column ? `.${_settings.color.column}` : ''),
-            side: 'right',  // Place title on right side
-            font: {
-                size: 12
-            }
-        },
-        titleside: 'right'  // Right side vertical text
-    };
-} else if (_data.colorType === 'constant') {
-    // Use a constant color (default to light grey)
-    trace.marker.color = 'rgba(150, 150, 150, 0.7)';
-    delete trace.marker.colorscale;
-    
-    console.log('Using constant color for all points');
-}
-
-
-// Apply subset coloring if needed but not hiding
-if (_settings.subsettedCells && !_settings.hideNonSubset) {
-    // Create a new array with all cells
-    const allCells = DataManager.getCells();
-    const allX = [];
-    const allY = [];
-    const allZ = _settings.z ? [] : null;
-    const allText = [];
-    
-    // Create subset index lookup for efficient checking
-    const subsetLookup = new Set(_settings.subsettedCells);
-    const colors = [];
-    
-    // Load full data for all cells
-    // ... (would need to load all axis data here)
-    
-    // Create two traces - one for subset and one for rest
-    // ... (would implement this in a real application)
-}
-
-// The traces array will either contain a single trace (for numerical data)
-// or multiple traces (for categorical data with legend)
-const traces = Array.isArray(trace) ? trace : [trace];
-
-// For categorical data with multiple traces, ensure legend is enabled
-if (traces.length > 1) {
-    layout.showlegend = true;
-    layout.legend = { 
-        ...layout.legend,  // preserve any existing legend settings
-        title: { text: _settings.color.key } 
-    };
-}
-
-// Create the plot
-_plotContainer.innerHTML = ''
-Plotly.newPlot(_plotContainer, traces, layout, window.plotlyDefaultConfig || {
-    responsive: true,
-    displayModeBar: true,
-    displaylogo: false,
-    showlegend: true,
-    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-});
-
-// Set up click handler to update global focused cell
-_plotContainer.on('plotly_click', (data) => {
-    if (!data || !data.points || data.points.length === 0) {
-        return;
-    }
-    
-    const point = data.points[0];
-    const pointIndex = point.pointIndex;
-    const traceIndex = point.curveNumber;
-    let cellName;
-    
-    // Check if this is a 3D plot
-    const is3D = traces[0].type === 'scatter3d';
-    
-    try {
-        // For both 2D and 3D plots, use customdata for consistent cell identification
-        // First priority: Use customdata which contains the cell index
-        if (point.customdata !== undefined) {
-            // When Hide Outliers is active, customdata is already filtered to contain the correct indices
-            // Otherwise it contains the original index into _data.cells
-            
-            if (typeof point.customdata === 'number') {
-                // Simple numeric index case (typical for non-filtered data)
-                const cellIndex = point.customdata;
-                // For main trace with global indices
-                if (_data.cells && cellIndex < _data.cells.length) {
-                    cellName = _data.cells[cellIndex];
-                }
-                // In multi-trace categorical plot, customdata might be the index for that specific category
-                else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-                    cellName = traces[traceIndex].text[pointIndex];
-                }
-            } else if (point.customdata && point.text) {
-                // Might have direct access to cell name in text when outliers are filtered
-                cellName = point.text;
-            }
-        }
-        // Use point index with global cell array
-        else if (pointIndex !== undefined && _data.cells && pointIndex < _data.cells.length) {
-            cellName = _data.cells[pointIndex];
-        }
-        
-        // Debug logging to help diagnose issues with filtered data
-        if (_settings.hideOutliers) {
-            console.log("Click in filtered plot:", { 
-                cellName, 
-                pointIndex, 
-                traceIndex,
-                pointData: point
-            });
-        }
-    } catch (error) {
-        console.error("Error identifying cell in plot click:", error);
-    }
-    
-    if (cellName) {
-        // Update the global focused cell in DataManager
-        // This will trigger updates in all panels via the event system
-        DataManager.setFocusedCell(cellName, false);
+        _loadDataAndCreatePlot();
     }
 });
 
-// Store plot reference
-_plot = _plotContainer;
-
-// Add highlighted cell if needed
-if (_settings.highlightFocusedCell) {
-    _highlightFocusedCell();
-}
-
-// Update the visibility of color controls
-_updateColorControlsVisibility();
-
-// Get references to controls that need additional setup
+// Category palette selector
 const categoryPaletteSelect = document.getElementById(`category-palette-${_id}`);
+categoryPaletteSelect.addEventListener('change', (e) => {
+    const oldPalette = _settings.categoryPalette;
+    _settings.categoryPalette = e.currentTarget.value; 
+    
+    // Check if we have a plot and valid data
+    if (_plotContainer && _data.colorType === 'categorical') {
+        _loadDataAndCreatePlot();
+    }
+});
+
+// Color range inputs and sliders
 const colorMinInput = document.getElementById(`color-min-${_id}`);
 const colorMaxInput = document.getElementById(`color-max-${_id}`);
 const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
 const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
 
-if (_data.colorType === 'numerical') {
-    // Filter out NaN values for min/max calculations
-    const validColorValues = _data.color.filter(val => !isNaN(val));
-    const dataMin = Math.min(...validColorValues);
-    const dataMax = Math.max(...validColorValues);
+// Track centering state
+_settings.centeringActive = _settings.centeringActive || false;
+
+// Helper function to update color range values without affecting sliders
+function _updateColorRange(min, max, updateSliders = true, triggerPlotUpdate = true) {
+    _settings.colorMin = min !== '' ? parseFloat(min) : null;
+    _settings.colorMax = max !== '' ? parseFloat(max) : null;
     
-    // Set up sliders
-    colorMinSlider.min = dataMin;
-    colorMinSlider.max = dataMax;
-    colorMaxSlider.min = dataMin;
-    colorMaxSlider.max = dataMax;
+    // Update input fields
+    colorMinInput.value = _settings.colorMin !== null ? _settings.colorMin : '';
+    colorMaxInput.value = _settings.colorMax !== null ? _settings.colorMax : '';
     
-    // Set slider step to a reasonable value based on data range
-    const range = dataMax - dataMin;
-    const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
-    colorMinSlider.step = step;
-    colorMaxSlider.step = step;
-    
-    // Set min/max input defaults if not already set
-    if (colorMinInput.value === '') {
-        colorMinInput.placeholder = dataMin.toFixed(2);
-        colorMinSlider.value = dataMin;
-    } else {
+    // Update sliders if requested and we have valid data range
+    if (updateSliders && _data && _data.color && Array.isArray(_data.color)) {
+        // Get data range
+        const validValues = _data.color.filter(v => !isNaN(v));
+        const dataMin = Math.min(...validValues);
+        const dataMax = Math.max(...validValues);
+        
+        // Set slider values but don't update inputs again (to avoid recursive triggers)
         colorMinSlider.value = _settings.colorMin !== null ? _settings.colorMin : dataMin;
-    }
-    
-    if (colorMaxInput.value === '') {
-        colorMaxInput.placeholder = dataMax.toFixed(2);
-        colorMaxSlider.value = dataMax;
-    } else {
         colorMaxSlider.value = _settings.colorMax !== null ? _settings.colorMax : dataMax;
     }
-} else if (_data.colorType === 'categorical') {
-    // Ensure the correct palette is selected
-    categoryPaletteSelect.value = _settings.categoryPalette;
+    
+    // Only trigger plot update if specified
+    if (triggerPlotUpdate) {
+        _updatePlot(false); // false = only update visual properties, don't recreate plot
+    }
 }
+
+// Min input
+colorMinInput.addEventListener('change', (e) => {
+    const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+    const maxValue = _settings.colorMax;
+    _updateColorRange(minValue, maxValue, true);
+    
+    // Turn off centering when manually editing
+    _settings.centeringActive = false;
+    _updateCenteringUI();
+});
+
+// Max input
+colorMaxInput.addEventListener('change', (e) => {
+    const minValue = _settings.colorMin;
+    const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
+    _updateColorRange(minValue, maxValue, true);
+    
+    // Turn off centering when manually editing
+    _settings.centeringActive = false;
+    _updateCenteringUI();
+});
+
+
+// Direct Plotly update for sliders without full update mechanism
+function updateColorRange(minOrMax, value) {
+    if (!_plotContainer || !_plotContainer.data || !_plotContainer.data[0] || !_plotContainer.data[0].marker) return;
+    
+    // Just update the specific property directly using Plotly API
+    const update = {};
+    update[`marker.c${minOrMax}`] = value;
+    
+    Plotly.restyle(_plotContainer, update, [0]);
 }
+
+const hideOutliersButton = document.getElementById(`hide-outliers-${_id}`);
+
+// Initialize button appearance based on the current setting
+if (_settings.hideOutliers) {
+  hideOutliersButton.classList.add('active', 'btn-primary');
+  hideOutliersButton.classList.remove('btn-outline-secondary');
+} else {
+  hideOutliersButton.classList.remove('active', 'btn-primary');
+  hideOutliersButton.classList.add('btn-outline-secondary');
+}
+
+hideOutliersButton.addEventListener('click', () => {
+  // Toggle the setting
+  _settings.hideOutliers = !_settings.hideOutliers;
+  if (_settings.hideOutliers) {
+    hideOutliersButton.classList.add('active', 'btn-primary');
+    hideOutliersButton.classList.remove('btn-outline-secondary');
+  } else {
+    hideOutliersButton.classList.remove('active', 'btn-primary');
+    hideOutliersButton.classList.add('btn-outline-secondary');
+  }
+  _updatePlotElements({ filter: true });
+});
+
+
+// Min slider - use input for real-time updates
+colorMinSlider.addEventListener('input', (e) => {
+    const minValue = parseFloat(e.target.value);
+    colorMinInput.value = minValue.toFixed(2);
+    
+    // Update settings
+    _settings.colorMin = minValue;
+    
+    // Direct efficient update for smooth slider experience
+    updateColorRange('min', minValue);
+    _updatePlotElements({
+        colors: true,
+        colorRange: true,
+        filter: _settings.hideOutliers
+      });
+});
+
+// Min slider - on change for final update
+colorMinSlider.addEventListener('change', (e) => {
+    console.log('Min slider change completed');
+    // Immediate update on mouseup
+    _updatePlotColorRangeOnly();
+});
+
+// Max slider - use input for real-time updates
+colorMaxSlider.addEventListener('input', (e) => {
+    const maxValue = parseFloat(e.target.value);
+    colorMaxInput.value = maxValue.toFixed(2);
+    
+    // Update settings
+    _settings.colorMax = maxValue;
+    
+    // Direct efficient update for smooth slider experience
+    updateColorRange('max', maxValue);
+    _updatePlotElements({
+        colors: true,
+        colorRange: true,
+        filter: _settings.hideOutliers
+      });
+});
+
+// Max slider - on change for final update
+colorMaxSlider.addEventListener('change', (e) => {
+    console.log('Max slider change completed');
+    // Immediate update on mouseup
+    _updatePlotColorRangeOnly();
+});
+
+// Helper function to update only the color range
+function _updatePlotColorRangeOnly() {
+    // Use the centralized update system with only the color ranges
+    _updatePlotElements({
+        colors: true,
+        colorRange: true, // Only update the color range (min/max)
+        colorData: false, // Don't update the actual data array
+        colorScale: false, // Don't update the color scale
+        layout: false,
+        styling: false
+    });
+}
+
+// Function to apply centering to colormap
+function _applyCentering() {
+    if (!_data || !_data.color || !Array.isArray(_data.color)) return;
+    
+    // Only apply if centering is active
+    if (!_settings.centeringActive) return;
+    
+    // Filter out NaN values
+    const validValues = _data.color.filter(v => !isNaN(v));
+    
+    if (validValues.length > 0) {
+        // Find the absolute maximum (positive or negative)
+        const absMax = Math.max(
+            Math.abs(Math.min(...validValues)), 
+            Math.abs(Math.max(...validValues))
+        );
+        
+        // Update the settings
+        _settings.colorMin = -absMax;
+        _settings.colorMax = absMax;
+        
+        // Update input fields
+        const colorMinInput = document.getElementById(`color-min-${_id}`);
+        const colorMaxInput = document.getElementById(`color-max-${_id}`);
+        
+        if (colorMinInput) colorMinInput.value = (-absMax).toFixed(2);
+        if (colorMaxInput) colorMaxInput.value = absMax.toFixed(2);
+        
+        // Update the sliders with appropriate constraints
+        const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+        const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+        
+        if (colorMinSlider && colorMaxSlider) {
+            // When centering is active:
+            // - Min slider can only have values up to 0
+            // - Max slider can only have values from 0 up
+            
+            // Find the full data range
+            const dataMin = Math.min(...validValues);
+            const dataMax = Math.max(...validValues);
+            
+            // Set different ranges for min and max sliders
+            colorMinSlider.min = Math.min(-absMax, dataMin);
+            colorMinSlider.max = 0; // Min slider can only go up to 0
+            
+            colorMaxSlider.min = 0; // Max slider can only go from 0
+            colorMaxSlider.max = Math.max(absMax, dataMax);
+            
+            // Set values to maintain symmetry
+            colorMinSlider.value = -absMax;
+            colorMaxSlider.value = absMax;
+        }
+        
+        // Update the plot color range directly without redrawing
+        if (_plotContainer && _plotContainer.data && _plotContainer.data[0] && _plotContainer.data[0].marker) {
+            Plotly.restyle(_plotContainer, {
+                'marker.cmin': -absMax,
+                'marker.cmax': absMax
+            }, [0]);
+        } else {
+            // Use the helper to update only color range
+            _updatePlotColorRangeOnly();
+        }
+    }
+}
+
+// Special event listeners for when centering is active
+function _setupCenteringSliderListeners() {
+    const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+    const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+    
+    if (!colorMinSlider || !colorMaxSlider) return;
+    
+    // Remove existing centering-specific listeners if any
+    colorMinSlider.removeEventListener('input', _centeringMinSliderHandler);
+    colorMaxSlider.removeEventListener('input', _centeringMaxSliderHandler);
+    
+    // Only add these listeners if centering is active
+    if (_settings.centeringActive) {
+        // Add the listeners back
+        colorMinSlider.addEventListener('input', _centeringMinSliderHandler);
+        colorMaxSlider.addEventListener('input', _centeringMaxSliderHandler);
+    }
+}
+
+// Handler for min slider during centering
+function _centeringMinSliderHandler(e) {
+    if (!_settings.centeringActive) return;
+    
+    const minValue = parseFloat(e.target.value);
+    const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+    const colorMaxInput = document.getElementById(`color-max-${_id}`);
+    const colorMinInput = document.getElementById(`color-min-${_id}`);
+    
+    // Ensure symmetry by setting max to negative of min
+    const maxValue = -minValue;
+    
+    // Update settings
+    _settings.colorMin = minValue;
+    _settings.colorMax = maxValue;
+    
+    // Update UI
+    colorMinInput.value = minValue.toFixed(2);
+    if (colorMaxInput) colorMaxInput.value = maxValue.toFixed(2);
+    if (colorMaxSlider) colorMaxSlider.value = maxValue;
+    
+    // Update plot
+    if (
+        _plotContainer &&
+        _plotContainer.data &&
+        _plotContainer.data[0] &&
+        _plotContainer.data[0].marker
+    ) {
+        Plotly.restyle(
+            _plotContainer,
+            {
+                'marker.cmin': minValue,
+                'marker.cmax': maxValue
+            },
+            [0]
+        );
+    }
+}
+
+// Handler for max slider during centering
+function _centeringMaxSliderHandler(e) {
+    if (!_settings.centeringActive) return;
+    
+    const maxValue = parseFloat(e.target.value);
+    const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+    const colorMinInput = document.getElementById(`color-min-${_id}`);
+    const colorMaxInput = document.getElementById(`color-max-${_id}`);
+    
+    // Ensure symmetry by setting min to negative of max
+    const minValue = -maxValue;
+    
+    // Update settings
+    _settings.colorMin = minValue;
+    _settings.colorMax = maxValue;
+    
+    // Update UI
+    colorMaxInput.value = maxValue.toFixed(2);
+    if (colorMinInput) colorMinInput.value = minValue.toFixed(2);
+    if (colorMinSlider) colorMinSlider.value = minValue;
+    
+    // Update plot
+    if (_plotContainer && _plotContainer.data && _plotContainer.data[0] && _plotContainer.data[0].marker) {
+        Plotly.restyle(_plotContainer, {
+            'marker.cmin': minValue,
+            'marker.cmax': maxValue
+        }, [0]);
+    }
+}
+
+// Update centering UI based on state
+function _updateCenteringUI() {
+  const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+  const colorMinSlider = document.getElementById(`color-min-slider-${_id}`);
+  const colorMaxSlider = document.getElementById(`color-max-slider-${_id}`);
+
+  _setupCenteringSliderListeners();
+
+  if (_settings.centeringActive) {
+    // Update button appearance
+    centerColormapButton.classList.add('active', 'btn-primary');
+    centerColormapButton.classList.remove('btn-outline-secondary');
+    centerColormapButton.setAttribute('title', 'Centering active - click to disable');
+
+    // Apply centering immediately 
+    _applyCentering();
+  } else {
+    // Update button appearance
+    centerColormapButton.classList.remove('active', 'btn-primary');
+    centerColormapButton.classList.add('btn-outline-secondary');
+    centerColormapButton.setAttribute('title', 'Center color scale at 0');
+
+    if (colorMinSlider && colorMaxSlider) {
+      // Restore normal slider ranges based on the full data range
+      if (_data && _data.color && Array.isArray(_data.color)) {
+        const validValues = _data.color.filter(v => !isNaN(v));
+        if (validValues.length > 0) {
+          const dataMin = Math.min(...validValues);
+          const dataMax = Math.max(...validValues);
+
+          // Reset to full range
+          colorMinSlider.min = dataMin;
+          colorMinSlider.max = dataMax;
+          colorMaxSlider.min = dataMin;
+          colorMaxSlider.max = dataMax;
+
+          // Ensure the current slider values are within the new range
+          let currentMin = parseFloat(colorMinSlider.value);
+          let currentMax = parseFloat(colorMaxSlider.value);
+
+          if (currentMin < dataMin) {
+            currentMin = dataMin;
+            colorMinSlider.value = dataMin;
+            _settings.colorMin = dataMin;
+          } else if (currentMin > dataMax) {
+            currentMin = dataMax;
+            colorMinSlider.value = dataMax;
+            _settings.colorMin = dataMax;
+          }
+
+          if (currentMax < dataMin) {
+            currentMax = dataMin;
+            colorMaxSlider.value = dataMin;
+            _settings.colorMax = dataMin;
+          } else if (currentMax > dataMax) {
+            currentMax = dataMax;
+            colorMaxSlider.value = dataMax;
+            _settings.colorMax = dataMax;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Center at 0 button - toggle behavior
+const centerColormapButton = document.getElementById(`center-colormap-${_id}`);
+centerColormapButton.addEventListener('click', () => {
+    // Get current state before toggling
+    const wasActive = _settings.centeringActive;
+    
+    // Toggle the centering active state
+    _settings.centeringActive = !_settings.centeringActive;
+    _updateCenteringUI();
+});
+
+const reverseColormapButton = document.getElementById(`reverse-colormap-${_id}`);
+reverseColormapButton.addEventListener('click', () => {
+    _settings.colorReversed = !_settings.colorReversed;
+
+    // Update button style
+    reverseColormapButton.classList.toggle('btn-primary', _settings.colorReversed);
+    reverseColormapButton.classList.toggle('btn-outline-secondary', !_settings.colorReversed);
+    reverseColormapButton.classList.toggle('active', _settings.colorReversed);
+
+    _updatePlotElements({colorScale: true, colors: true});
+});
+
+// Hide outliers toggle
+const hideOutliersToggle = document.getElementById(`hide-outliers-${_id}`);
+hideOutliersToggle.addEventListener('change', (e) => {
+    _settings.hideOutliers = e.target.checked;
+    
+    // Directly update the visibility of points without redrawing the plot
+    if (_plotContainer && _data.color && _data.colorType === 'numerical') {
+        try {
+            const pointVisibility = [];
+            
+            // Create an array of true/false for each point based on range
+            for (let i = 0; i < _data.color.length; i++) {
+                const val = _data.color[i];
+                if (isNaN(val)) {
+                    // NaN values are always visible
+                    pointVisibility.push(true);
+                } else if (_settings.hideOutliers) {
+                    // When hiding outliers, only show points within range
+                    const inRange = (_settings.colorMin === null || val >= _settings.colorMin) && 
+                                  (_settings.colorMax === null || val <= _settings.colorMax);
+                    pointVisibility.push(inRange);
+                } else {
+                    // When not hiding outliers, show all points
+                    pointVisibility.push(true);
+                }
+            }
+            
+            // Direct Plotly update for efficiency
+            Plotly.restyle(_plotContainer, {
+                'visible': [pointVisibility]
+            }, [0]);
+            
+            console.log(`Updated point visibility based on outlier setting: hide=${_settings.hideOutliers}`);
+        } catch (error) {
+            console.error('Error updating point visibility:', error);
+            // Fall back to standard update
+            _updatePlot();
+        }
+    } else {
+        // Fall back to standard update for non-numerical data
+        _updatePlot();
+    }
+});

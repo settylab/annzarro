@@ -1,17 +1,18 @@
 import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
-import { highlightFocusedCell } from './plot-update.js';
+import { highlightFocusedCell, updatePlotElements } from './plot-update.js';
+import { updateColorSliderUI } from './panel-ui-update.js';
 
 /**
- * Loads data for a specific axis.
+ * Loads data for a specific axis from an anndata-derived source.
+ * 
  * @param {Object} settings - Axis settings object.
- * @param {Array<number>} [filteredIndices=null] - Optional indices to filter data.
- * @returns {Promise<Object>} - A promise resolving to an object containing:
- *   - values: The data values,
- *   - type: Data type (e.g. 'numerical', 'categorical', 'constant'),
- *   - categories: (optional) Category definitions.
+ * @returns {Promise<Object>} - Resolves to an object with:
+ *    - values: The data values,
+ *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
+ *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, filteredIndices = null) {
+export async function loadAxisData(settings) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -19,8 +20,8 @@ export async function loadAxisData(settings, filteredIndices = null) {
   const { type, key, column } = settings;
   const datasetPath = DataManager.getCurrentDataset();
 
-  // Determine rows parameter based on filtered indices.
-  const rows = filteredIndices ? filteredIndices.join(',') : null;
+  // Since filtering is no longer used, set rowsArr to null.
+  const rowsArr = null;
 
   let data;
   let values;
@@ -39,11 +40,11 @@ export async function loadAxisData(settings, filteredIndices = null) {
 
     // Process based on settings.type.
     switch (type) {
-      case 'obs':
+      case 'obs': {
         data = await DataManager.loadObs({
           datasetPath,
           columns: [key],
-          rows: rows ? rows.split(',') : null
+          rows: rowsArr
         });
         console.log(`Received obs data for ${key}:`, data);
 
@@ -53,27 +54,30 @@ export async function loadAxisData(settings, filteredIndices = null) {
         }
 
         values = data.data[key];
-        if (Array.isArray(values)) {
-          console.log(`Loaded ${values.length} data points (obs.${key})`);
-          if (values.length > 0) {
-            console.log(`Sample values: ${values.slice(0, 5)}`);
-          }
+        console.log(`Loaded ${values.length} data points (obs.${key})`);
+        if (values.length > 0) {
+          console.log(`Sample values: ${values.slice(0, 5)}`);
         }
 
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
         } else {
-          dataType = Array.isArray(values) && typeof values[0] === 'number' ? 'numerical' : 'string';
+          // Infer data type: if >80% of values can be converted to a number, treat as numerical.
+          const numericCount = values.filter(v => {
+            if (v === null || v === undefined) return false;
+            return !isNaN(parseFloat(v));
+          }).length;
+          dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
         }
         break;
-
-      case 'obsm':
+      }
+      case 'obsm': {
         data = await DataManager.loadObsm({
           datasetPath,
           obsmKey: key,
           columnName: column,
-          rows: rows ? rows.split(',') : null
+          rows: rowsArr
         });
         console.log(`Received obsm data for ${key} column ${column}:`, data);
 
@@ -84,15 +88,13 @@ export async function loadAxisData(settings, filteredIndices = null) {
 
         values = data.data;
         dataType = 'numerical';
-        if (Array.isArray(values)) {
-          console.log(`Loaded ${values.length} data points (obsm.${key}.${column})`);
-          if (values.length > 0) {
-            console.log(`Sample values: ${values.slice(0, 5)}`);
-          }
+        console.log(`Loaded ${values.length} data points (obsm.${key}.${column})`);
+        if (values.length > 0) {
+          console.log(`Sample values: ${values.slice(0, 5)}`);
         }
         break;
-
-      case 'obsp':
+      }
+      case 'obsp': {
         const focusedCell = DataManager.getFocusedCell();
         if (!focusedCell) {
           throw new Error('No focused cell selected');
@@ -116,14 +118,8 @@ export async function loadAxisData(settings, filteredIndices = null) {
             console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
             values = firstRow;
           } else {
-            console.warn(`Expected array for obsp row, got:`, typeof firstRow);
-            if (firstRow !== undefined && firstRow !== null) {
-              values = [firstRow];
-              console.log(`Converted non-array obsp data to array`);
-            } else {
-              values = [];
-              console.warn(`No usable obsp data found`);
-            }
+            console.warn(`Expected array for obsp row, got: ${typeof firstRow}`);
+            values = (firstRow !== undefined && firstRow !== null) ? [firstRow] : [];
           }
         } else {
           console.warn(`Invalid or empty obsp data received`);
@@ -131,6 +127,7 @@ export async function loadAxisData(settings, filteredIndices = null) {
         }
 
         if (values && values.length > 0) {
+          // Replace null/undefined with NaN.
           values = values.map(v => (v === null || v === undefined) ? NaN : v);
           const firstVal = values[0];
           if (typeof firstVal === 'object') {
@@ -138,25 +135,21 @@ export async function loadAxisData(settings, filteredIndices = null) {
             values = values.map(v => {
               if (v === null || v === undefined) return NaN;
               if (typeof v === 'number') return v;
-              if (typeof v === 'object' && 'value' in v) return v.value;
-              return NaN;
+              return (v && 'value' in v) ? v.value : NaN;
             });
+            dataType = 'numerical';
           } else if (typeof firstVal === 'string') {
-            console.warn('Obsp values are strings, attempting to convert to numbers');
-            values = values.map(v => {
-              if (v === null || v === undefined) return NaN;
-              const parsed = parseFloat(v);
-              return isNaN(parsed) ? NaN : parsed;
-            });
+            console.warn('Obsp values are strings, treating as categorical');
+            dataType = 'categorical';
+          } else {
+            dataType = 'numerical';
           }
-          const nanCount = values.filter(val => isNaN(val)).length;
-          console.log(`Processed obsp data to ${values.length} values with ${nanCount} NaN values`);
-          console.log(`Sample values after processing: ${values.slice(0, 5)}`);
+        } else {
+          dataType = 'numerical';
         }
-        dataType = 'numerical';
         break;
-
-      case 'layer':
+      }
+      case 'layer': {
         const focusedGene = DataManager.getFocusedGene();
         if (!focusedGene) {
           throw new Error('No focused gene selected');
@@ -169,7 +162,7 @@ export async function loadAxisData(settings, filteredIndices = null) {
         data = await DataManager.loadLayer({
           datasetPath,
           layerName: key,
-          rows: rows ? rows.split(',') : null,
+          rows: rowsArr,
           cols: [focusedGeneIndex]
         });
         console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
@@ -178,20 +171,17 @@ export async function loadAxisData(settings, filteredIndices = null) {
           if (Array.isArray(data.data)) {
             if (data.data.length > 0) {
               if (Array.isArray(data.data[0])) {
-                console.log(`Layer data is 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
+                console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
                 console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
                 try {
-                  values = data.data.map(row => {
-                    const val = row[0];
-                    return val === undefined ? NaN : val;
-                  });
+                  values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
                   console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
                 } catch (e) {
                   console.error(`Error extracting values from 2D array:`, e);
                   values = Array(data.data.length).fill(NaN);
                 }
               } else {
-                console.log(`Layer data is 1D array with ${data.data.length} elements`);
+                console.log(`Layer data is a 1D array with ${data.data.length} elements`);
                 console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
                 values = data.data;
               }
@@ -200,7 +190,7 @@ export async function loadAxisData(settings, filteredIndices = null) {
               values = [];
             }
           } else {
-            console.warn(`Unexpected data format received:`, typeof data.data);
+            console.warn(`Unexpected data format received: ${typeof data.data}`);
             values = [];
           }
         } else {
@@ -215,8 +205,7 @@ export async function loadAxisData(settings, filteredIndices = null) {
             values = values.map(v => {
               if (v === null || v === undefined) return NaN;
               if (typeof v === 'number') return v;
-              if (typeof v === 'object' && 'value' in v) return v.value;
-              return NaN;
+              return (v && 'value' in v) ? v.value : NaN;
             });
           } else if (typeof firstVal === 'string') {
             console.warn('Layer values are strings, attempting to convert to numbers');
@@ -231,7 +220,7 @@ export async function loadAxisData(settings, filteredIndices = null) {
         }
         dataType = 'numerical';
         break;
-
+      }
       default:
         throw new Error(`Unknown data type: ${type}`);
     }
@@ -244,8 +233,6 @@ export async function loadAxisData(settings, filteredIndices = null) {
     throw new Error(`Failed to load data for (${type}.${key}${column ? '.' + column : ''})`);
   }
 }
-
-
 
 /**
  * Creates a Plotly plot.
@@ -327,7 +314,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
           : [response.data];
         console.log(`Found custom colors in uns.${colorKey}:`, customColors);
       } else {
-        console.warn(`Failed to load uns colors from ${colorKey}`);
+        console.log(`No uns colors from ${colorKey}`);
       }
       // Process categories using the uns (custom) colors if available.
       const categoricalTraces = processCategories(settings, data, catValues, customColors);
@@ -378,22 +365,12 @@ export async function createPlot(container, plotContainer, settings, data, id) {
     baseTrace.marker.color = data.color;
     baseTrace.marker.colorscale = settings.colorScale;
     baseTrace.marker.reversescale = settings.colorReversed;
+    updateColorSliderUI(container, data, settings, id, plotContainer);
     if (settings.colorMin !== null || settings.colorMax !== null) {
       const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color);
       const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color);
       baseTrace.marker.cmin = cmin;
       baseTrace.marker.cmax = cmax;
-      if (settings.hideOutliers) {
-        baseTrace.x = baseTrace.x.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
-        baseTrace.y = baseTrace.y.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
-        baseTrace.text = baseTrace.text.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
-        baseTrace.marker.color = baseTrace.marker.color.filter(
-          (_, i) => data.color[i] >= cmin && data.color[i] <= cmax
-        );
-        if (baseTrace.z) {
-          baseTrace.z = baseTrace.z.filter((_, i) => data.color[i] >= cmin && data.color[i] <= cmax);
-        }
-      }
     }
     baseTrace.marker.colorbar = {
       title: {
@@ -418,6 +395,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       }
     );
     attachClickHandler(plotContainer, [baseTrace], data);
+    updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
@@ -436,43 +414,5 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       }
     );
     attachClickHandler(plotContainer, [baseTrace], data);
-  }
-
-  // Update UI controls for numerical or categorical plots.
-  if (data.colorType === 'numerical') {
-    const validColorValues = data.color.filter(val => !isNaN(val));
-    const dataMin = Math.min(...validColorValues);
-    const dataMax = Math.max(...validColorValues);
-    const colorMinInput = document.getElementById(`color-min-${id}`);
-    const colorMaxInput = document.getElementById(`color-max-${id}`);
-    const colorMinSlider = document.getElementById(`color-min-slider-${id}`);
-    const colorMaxSlider = document.getElementById(`color-max-slider-${id}`);
-
-    colorMinSlider.min = dataMin;
-    colorMinSlider.max = dataMax;
-    colorMaxSlider.min = dataMin;
-    colorMaxSlider.max = dataMax;
-    const range = dataMax - dataMin;
-    const step = range > 100 ? 1 : range > 10 ? 0.1 : range > 1 ? 0.01 : 0.001;
-    colorMinSlider.step = step;
-    colorMaxSlider.step = step;
-
-    if (colorMinInput.value === '') {
-      colorMinInput.placeholder = dataMin.toFixed(2);
-      colorMinSlider.value = dataMin;
-    } else {
-      colorMinSlider.value = settings.colorMin !== null ? settings.colorMin : dataMin;
-    }
-    if (colorMaxInput.value === '') {
-      colorMaxInput.placeholder = dataMax.toFixed(2);
-      colorMaxSlider.value = dataMax;
-    } else {
-      colorMaxSlider.value = settings.colorMax !== null ? settings.colorMax : dataMax;
-    }
-  } else if (data.colorType === 'categorical') {
-    const categoryPaletteSelect = document.getElementById(`category-palette-${id}`);
-    if (categoryPaletteSelect) {
-      categoryPaletteSelect.value = settings.categoryPalette;
-    }
   }
 }

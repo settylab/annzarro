@@ -1,4 +1,5 @@
 import { DataManager } from '../../data-manager.js';
+import { updatePlotElements } from './plot-update.js';
 
 /**
  * Populates only the key selector for a given axis.
@@ -276,5 +277,178 @@ export function updateColorControlsVisibility(container, colorType, id) {
   } else {
     // For 'none' type, hide the entire color controls.
     colorRangeContainer.style.display = 'none';
+  }
+}
+
+/**
+ * Updates the color slider UI controls based on current settings.
+ *
+ * For numerical data:
+ *   - Computes the valid data range from data.color.
+ *   - Sets the slider (min and max) accordingly.
+ *   - If settings.lockColorRange is false, resets slider and input values to the computed dataMin/dataMax.
+ *     Otherwise, expands the slider range to include both the new data range and the locked values,
+ *     keeping the locked values intact.
+ *
+ * For categorical data:
+ *   - Updates the category palette selector.
+ *
+ * @param {HTMLElement} container - The container element that holds the color controls.
+ * @param {Object} data - The data object (must include data.color as an array and data.colorType).
+ * @param {Object} settings - The plot settings object. Should include centeringActive, lockColorRange, colorMin, colorMax, and categoryPalette.
+ * @param {string|number} id - Unique identifier used to construct element selectors.
+ * @param {HTMLElement} plotContainer - The Plotly plot container element.
+ */
+export function updateColorSliderUI(container, data, settings, id, plotContainer) {
+  const csCenterColormapButton = container.querySelector(`#center-colormap-${id}`);
+  const csColorMinInput = container.querySelector(`#color-min-${id}`);
+  const csColorMaxInput = container.querySelector(`#color-max-${id}`);
+  const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+  const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+
+  // If centering is active, update the UI accordingly and apply centering.
+  if (settings.centeringActive) {
+    csCenterColormapButton.classList.add('active', 'btn-primary');
+    csCenterColormapButton.classList.remove('btn-outline-secondary');
+    csCenterColormapButton.setAttribute('title', 'Centering active - click to disable');
+    // Delegate the centering update to the applyCentering function.
+    applyCentering(container, data, settings, id, plotContainer);
+  } else {
+    // Reset the center button appearance.
+    csCenterColormapButton.classList.remove('active', 'btn-primary');
+    csCenterColormapButton.classList.add('btn-outline-secondary');
+    csCenterColormapButton.setAttribute('title', 'Center color scale at 0');
+
+    if (csColorMinSlider && csColorMaxSlider && data && data.color && Array.isArray(data.color)) {
+      const validValues = data.color.filter(v => !isNaN(v));
+      if (validValues.length > 0) {
+        const dataMin = Math.min(...validValues);
+        const dataMax = Math.max(...validValues);
+
+        // Now, if the color range is not locked, update the actual slider/input values.
+        if (!settings.lockColorRange) {
+          // Set slider ranges based solely on the data.
+          csColorMinSlider.min = dataMin;
+          csColorMinSlider.max = dataMax;
+          csColorMaxSlider.min = dataMin;
+          csColorMaxSlider.max = dataMax;
+          const range = dataMax - dataMin;
+          const step = range / 500
+          csColorMinSlider.step = step;
+          csColorMaxSlider.step = step;
+          csColorMinSlider.value = dataMin;
+          csColorMaxSlider.value = dataMax;
+          if (csColorMinInput) csColorMinInput.value = dataMin.toFixed(2);
+          if (csColorMaxInput) csColorMaxInput.value = dataMax.toFixed(2);
+          settings.colorMin = dataMin;
+          settings.colorMax = dataMax;
+        } else {
+          console.log("Color range is locked, keeping previous min/max values");
+          // Expand slider range (min, max) to include both the new data range and the locked values.
+          const minSliderRange = Math.min(settings.colorMin, dataMin);
+          const maxSliderRange = Math.max(settings.colorMax, dataMax);
+          csColorMinSlider.min = minSliderRange;
+          csColorMaxSlider.min = minSliderRange;
+          csColorMinSlider.max = maxSliderRange;
+          csColorMaxSlider.max = maxSliderRange;
+          const range = dataMax - dataMin;
+          const step = range / 500
+          csColorMinSlider.step = step;
+          csColorMaxSlider.step = step;
+          // Do not change the locked values; just keep them.
+          csColorMinSlider.value = settings.colorMin !== null ? settings.colorMin : dataMin;
+          csColorMaxSlider.value = settings.colorMax !== null ? settings.colorMax : dataMax; 
+        }
+
+        // (Optional) You might also update the placeholders if desired:
+        if (csColorMinInput && csColorMinInput.value === '') {
+          csColorMinInput.placeholder = settings.colorMin !== null ? settings.colorMin : dataMin.toFixed(2);
+        }
+        if (csColorMaxInput && csColorMaxInput.value === '') {
+          csColorMaxInput.placeholder = settings.colorMax !== null ? settings.colorMax : dataMax.toFixed(2);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Applies centering to the color scale.
+ *
+ * If centering is active, finds the absolute maximum among the valid color values,
+ * updates the settings so that colorMin is -absMax and colorMax is absMax,
+ * updates input fields and slider ranges accordingly,
+ * and triggers a direct Plotly restyle (or calls updatePlotColorRangeOnly as fallback).
+ *
+ * @param {HTMLElement} container - The container element holding the color controls.
+ * @param {Object} data - The data object (must have data.color as an array).
+ * @param {Object} settings - The settings object (must include settings.centeringActive).
+ * @param {string|number} id - Unique identifier used for element selectors.
+ * @param {HTMLElement} plotContainer - The Plotly plot container element.
+ * @param {Function} loadDataAndCreatePlot - Function to redraw the plot elements.
+ */
+export function applyCentering(container, data, settings, id, plotContainer) {
+  if (!data || !data.color || !Array.isArray(data.color)) return;
+  if (!settings.centeringActive) return;
+
+  // Filter valid numeric values.
+  const validValues = data.color.filter(v => !isNaN(v));
+  if (validValues.length === 0) return;
+
+  // Compute the absolute maximum value from both ends.
+  const absMaxComputed = Math.max(
+    Math.abs(Math.min(...validValues)),
+    Math.abs(Math.max(...validValues))
+  );
+
+  // If not locked, update settings with the computed symmetric range.
+  if (!settings.lockColorRange) {
+    settings.colorMin = -absMaxComputed;
+    settings.colorMax = absMaxComputed;
+  }
+  // Otherwise, keep the locked values and do not modify settings.colorMin/colorMax.
+
+  // Use the effective values for the UI update.
+  const effectiveColorMin = settings.lockColorRange ? settings.colorMin : -absMaxComputed;
+  const effectiveColorMax = settings.lockColorRange ? settings.colorMax : absMaxComputed;
+
+  // Update input fields.
+  const csColorMinInput = container.querySelector(`#color-min-${id}`);
+  const csColorMaxInput = container.querySelector(`#color-max-${id}`);
+  if (csColorMinInput) csColorMinInput.value = effectiveColorMin.toFixed(2);
+  if (csColorMaxInput) csColorMaxInput.value = effectiveColorMax.toFixed(2);
+
+  // Update slider controls.
+  const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
+  const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+  if (csColorMinSlider && csColorMaxSlider) {
+    const dataMin = Math.min(...validValues);
+    const dataMax = Math.max(...validValues);
+
+    if (!settings.lockColorRange) {
+      // Set sliders for a perfectly centered range.
+      csColorMinSlider.min = Math.min(-absMaxComputed, dataMin);
+      csColorMinSlider.max = 0;
+      csColorMaxSlider.min = 0;
+      csColorMaxSlider.max = Math.max(absMaxComputed, dataMax);
+      csColorMinSlider.value = effectiveColorMin;
+      csColorMaxSlider.value = effectiveColorMax;
+    } else {
+      // Locked: expand the slider range to include both locked values and the new data range.
+      const newSliderMin = Math.min(settings.colorMin, -absMaxComputed, dataMin);
+      const newSliderMax = Math.max(settings.colorMax, absMaxComputed, dataMax);
+      csColorMinSlider.min = newSliderMin;
+      csColorMaxSlider.min = newSliderMin;
+      csColorMinSlider.max = newSliderMax;
+      csColorMaxSlider.max = newSliderMax;
+      // Preserve the locked slider values.
+      csColorMinSlider.value = settings.colorMin;
+      csColorMaxSlider.value = settings.colorMax;
+    }
+
+    // Compute a step value (here using absMaxComputed/500 as an example).
+    const step = absMaxComputed / 500;
+    csColorMinSlider.step = step;
+    csColorMaxSlider.step = step;
   }
 }

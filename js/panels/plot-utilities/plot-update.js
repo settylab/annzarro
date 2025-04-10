@@ -1,4 +1,6 @@
 import { DataManager } from '../../data-manager.js';
+import { loadAxisData } from '../plot-utilities/plot-make.js';
+import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 
 
 /**
@@ -95,7 +97,6 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
             if (shouldBe3D && filteredZ) update.z = [filteredZ];
 
             Plotly.restyle(plotContainer, update, [0]);
-            return; // Exit early after filter update.
         }
 
         // Update POSITION data if required.
@@ -338,6 +339,71 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         loadDataAndCreatePlot();
     }
 }
+
+
+/**
+ * Loads only color data and updates the plot without recreating the entire plot.
+ *
+ * @param {HTMLElement} container - Container element that holds UI controls.
+ * @param {HTMLElement} plotContainer - DOM element that holds the plot.
+ * @param {Object} settings - Settings object containing plot configuration (axes, colors, etc.).
+ * @param {Object} data - Data cache object (e.g. { x, y, z, color, cells, … }).
+ * @param {string|number} id - Unique identifier used to target UI controls.
+ * @param {Function} loadDataAndCreatePlot - A fallback function to recreate the entire plot.
+ *
+ * @returns {Promise<void>}
+ */
+export async function loadColorDataAndUpdatePlot(
+    container,
+    plotContainer,
+    settings,
+    data,
+    id,
+    loadDataAndCreatePlot
+) {
+    try {
+
+        // Determine filtered cell indices (if using a subset and hiding non-subset cells).
+        const filteredCellIndices =
+            settings.subsettedCells && settings.hideNonSubset
+                ? settings.subsettedCells.map(cell => DataManager.getCellIndex(cell))
+                : null;
+
+        // Load only color data using the imported loadAxisData.
+        const colorData = await loadAxisData(settings.color, filteredCellIndices);
+
+        if (colorData && colorData.values) {
+            // Update the data cache with new color information.
+            data.color = colorData.values;
+            data.colorType = colorData.type;
+            data.colorCategories = colorData.categories;
+
+            // Update UI controls within the container.
+            updateColorControlsVisibility(container, data.colorType, id);
+            updateColorSliderUI(container, data, settings, id, plotContainer);
+
+            // Use the centralized update system to update plot elements.
+            const options = {
+                colors: true,
+                colorData: true, // New color data loaded.
+                colorScale: true, // May need to update color scale.
+                colorRange: true, // May need to update color range.
+                filter: true, // Update filtering if needed.
+                layout: true
+            }
+            updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options);
+
+        } else {
+            console.warn('No valid color data returned, falling back to full plot reload');
+            loadDataAndCreatePlot();
+        }
+    } catch (error) {
+        console.error('Error updating color data:', error);
+        // Fall back to recreating the plot.
+        loadDataAndCreatePlot();
+    }
+}
+
 
 /**
  * Highlight the focused cell in the plot.
