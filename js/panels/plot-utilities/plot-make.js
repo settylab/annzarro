@@ -7,14 +7,13 @@ import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-u
  * Loads data for a specific axis from an anndata-derived source.
  * 
  * @param {Object} settings - Axis settings object.
- * @param {Array<number>} [filteredIndices=null] - Optional array of indices to filter the data.
  * @param {string} [plotType=null] - Optional plot type ('cells' or 'genes') to determine context.
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, filteredIndices = null, plotType = null) {
+export async function loadAxisData(settings, plotType = null) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -270,75 +269,117 @@ export async function loadAxisData(settings, filteredIndices = null, plotType = 
         break;
       }
       case 'layer': {
-        const focusedGene = DataManager.getFocusedGene();
-        if (!focusedGene) {
-          throw new Error('No focused gene selected');
-        }
-        const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
-        if (focusedGeneIndex === -1) {
-          throw new Error('Focused gene not found in dataset');
-        }
-        console.log(`Loading layer data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
-        data = await DataManager.loadLayer({
-          datasetPath,
-          layerName: key,
-          rows: rowsArr,
-          cols: [focusedGeneIndex]
-        });
-        console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
+        if (plotType === 'genes') {
+          // In gene plots, the focused cell defines a row; fetch a column array (colArr) from gene indices.
+          const focusedCell = DataManager.getFocusedCell();
+          if (!focusedCell) {
+            throw new Error('No focused cell selected');
+          }
+          const focusedCellIndex = DataManager.getCellIndex(focusedCell);
+          if (focusedCellIndex === -1) {
+            throw new Error('Focused cell not found in dataset');
+          }
+          console.log(`Loading layer data for ${key} with focused cell ${focusedCell} (index ${focusedCellIndex}) for gene plot`);
 
-        if (data.data && typeof data.data === 'object') {
-          if (Array.isArray(data.data)) {
-            if (data.data.length > 0) {
-              if (Array.isArray(data.data[0])) {
-                console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
-                console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
-                try {
-                  values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
-                  console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
-                } catch (e) {
-                  console.error(`Error extracting values from 2D array:`, e);
-                  values = Array(data.data.length).fill(NaN);
+          // Obtain gene indices to define the columns.
+          const genes = DataManager.getGenes();
+          const colArr = null;
+
+          // Always use the cell index rather than the cell name with potential special characters
+          data = await DataManager.loadLayer({
+            datasetPath,
+            layerName: key,
+            rows: [focusedCellIndex],
+            cols: colArr
+          });
+          console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
+
+          if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+            if (Array.isArray(data.data[0])) {
+              console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
+              // Assume the first (and only) row corresponds to gene values.
+              values = data.data[0];
+            } else {
+              console.log(`Layer data is a 1D array with ${data.data.length} elements`);
+              values = data.data;
+            }
+          } else {
+            console.warn(`Empty or invalid layer data received for gene plot`);
+            values = [];
+          }
+          dataType = 'numerical';
+        } else {
+          // In non-gene plots, the focused gene defines a column.
+          const focusedGene = DataManager.getFocusedGene();
+          if (!focusedGene) {
+            throw new Error('No focused gene selected');
+          }
+          const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
+          if (focusedGeneIndex === -1) {
+            throw new Error('Focused gene not found in dataset');
+          }
+          console.log(`Loading layer data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
+          data = await DataManager.loadLayer({
+            datasetPath,
+            layerName: key,
+            rows: rowsArr,
+            cols: [focusedGeneIndex]
+          });
+          console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
+
+          if (data.data && typeof data.data === 'object') {
+            if (Array.isArray(data.data)) {
+              if (data.data.length > 0) {
+                if (Array.isArray(data.data[0])) {
+                  console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
+                  console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
+                  try {
+                    // Extract the first element from each row.
+                    values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
+                    console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
+                  } catch (e) {
+                    console.error(`Error extracting values from 2D array:`, e);
+                    values = Array(data.data.length).fill(NaN);
+                  }
+                } else {
+                  console.log(`Layer data is a 1D array with ${data.data.length} elements`);
+                  console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
+                  values = data.data;
                 }
               } else {
-                console.log(`Layer data is a 1D array with ${data.data.length} elements`);
-                console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
-                values = data.data;
+                console.warn(`Empty layer data array received`);
+                values = [];
               }
             } else {
-              console.warn(`Empty layer data array received`);
+              console.warn(`Unexpected data format received: ${typeof data.data}`);
               values = [];
             }
           } else {
-            console.warn(`Unexpected data format received: ${typeof data.data}`);
+            console.warn(`No valid data array received from layer endpoint`);
             values = [];
           }
-        } else {
-          console.warn(`No valid data array received from layer endpoint`);
-          values = [];
-        }
-
-        if (values.length > 0) {
-          const firstVal = values[0];
-          if (typeof firstVal === 'object') {
-            console.warn('Layer values are objects, attempting to convert to numbers');
-            values = values.map(v => {
-              if (v === null || v === undefined) return NaN;
-              if (typeof v === 'number') return v;
-              return (v && 'value' in v) ? v.value : NaN;
-            });
-          } else if (typeof firstVal === 'string') {
-            console.warn('Layer values are strings, attempting to convert to numbers');
-            values = values.map(v => {
-              if (v === null || v === undefined) return NaN;
-              const parsed = parseFloat(v);
-              return isNaN(parsed) ? NaN : parsed;
-            });
+          if (values.length > 0) {
+            const firstVal = values[0];
+            if (typeof firstVal === 'object') {
+              console.warn('Layer values are objects, attempting to convert to numbers');
+              values = values.map(v => {
+                if (v === null || v === undefined) return NaN;
+                if (typeof v === 'number') return v;
+                return (v && 'value' in v) ? v.value : NaN;
+              });
+            } else if (typeof firstVal === 'string') {
+              console.warn('Layer values are strings, attempting to convert to numbers');
+              values = values.map(v => {
+                if (v === null || v === undefined) return NaN;
+                const parsed = parseFloat(v);
+                return isNaN(parsed) ? NaN : parsed;
+              });
+            }
+            console.log(`Processed layer data to ${values.length} values of type ${typeof values[0]}`);
+            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
           }
-          console.log(`Processed layer data to ${values.length} values of type ${typeof values[0]}`);
-          console.log(`Sample values after processing: ${values.slice(0, 5)}`);
+          dataType = 'numerical';
         }
-        dataType = 'numerical';
         break;
       }
       default:
@@ -480,11 +521,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     const loadPromises = [
       (async () => {
         console.log('Loading X-axis data:', settings.x);
-        data.x = await loadAxisData(settings.x, null, plotType);
+        data.x = await loadAxisData(settings.x, plotType);
       })(),
       (async () => {
         console.log('Loading Y-axis data:', settings.y);
-        data.y = await loadAxisData(settings.y, null, plotType);
+        data.y = await loadAxisData(settings.y, plotType);
       })()
     ];
 
@@ -492,7 +533,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       loadPromises.push(
         (async () => {
           console.log('Loading Z-axis data:', settings.z);
-          data.z = await loadAxisData(settings.z, null, plotType);
+          data.z = await loadAxisData(settings.z, plotType);
         })()
       );
     }
@@ -502,7 +543,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       (async () => {
         console.log('Loading color data:', settings.color);
         try {
-          const colorData = await loadAxisData(settings.color, null, plotType);
+          const colorData = await loadAxisData(settings.color, plotType);
           data.color = colorData.values;
           data.colorType = colorData.type;
           data.colorCategories = colorData.categories;
@@ -675,7 +716,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
     baseTrace.marker.color = data.color;
     baseTrace.marker.colorscale = settings.colorScale;
     baseTrace.marker.reversescale = settings.colorReversed;
-    updateColorSliderUI(container, data, settings, id, plotContainer);
+    updateColorSliderUI(container, data, settings, id);
     if (settings.colorMin !== null || settings.colorMax !== null) {
       const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color);
       const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color);

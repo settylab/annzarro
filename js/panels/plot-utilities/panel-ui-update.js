@@ -80,9 +80,26 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         columnSelect.disabled = true;
         break;
       }
-      case 'obsm':
-      case 'varm': {
+      case 'obsm': {
         const df = datasetStructure.obsm?.dataframes?.[settings.key];
+        const columns = df?.columns || [];
+        if (columns.length > 0) {
+          columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
+          const axisIndexMap = { x: 0, y: 1, z: 2 };
+          const idx = axisIndexMap[axis] || 0;
+          if (!columns.includes(settings.column)) {
+            settings.column = columns[idx] || columns[0];
+          }
+        } else {
+          columnOptions = Array.from({ length: 3 }, (_, i) => `<option value="${i}">${i}</option>`);
+          if (!['0', '1', '2'].includes(settings.column)) {
+            settings.column = axis === 'x' ? '0' : axis === 'y' ? '1' : '2';
+          }
+        }
+        break;
+      }
+      case 'varm': {
+        const df = datasetStructure.varm?.dataframes?.[settings.key];
         const columns = df?.columns || [];
         if (columns.length > 0) {
           columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
@@ -307,9 +324,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
  * @param {Object} data - The data object (must include data.color as an array and data.colorType).
  * @param {Object} settings - The plot settings object. Should include centeringActive, lockColorRange, colorMin, colorMax, and categoryPalette.
  * @param {string|number} id - Unique identifier used to construct element selectors.
- * @param {HTMLElement} plotContainer - The Plotly plot container element.
  */
-export function updateColorSliderUI(container, data, settings, id, plotContainer) {
+export function updateColorSliderUI(container, data, settings, id) {
   const csCenterColormapButton = container.querySelector(`#center-colormap-${id}`);
   const csColorMinInput = container.querySelector(`#color-min-${id}`);
   const csColorMaxInput = container.querySelector(`#color-max-${id}`);

@@ -172,7 +172,6 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                     console.log("Updating position data:", update);
                     Plotly.restyle(plotContainer, update, [0]);
                     // Highlight the appropriate entity based on plot type
-                    const isGenePlot = data.genes !== undefined;
                     highlightFocusedEntity(plotContainer, data, settings, entityType);
                 }
             }
@@ -373,14 +372,8 @@ export async function loadColorDataAndUpdatePlot(
 ) {
     try {
 
-        // Determine filtered cell indices (if using a subset and hiding non-subset cells).
-        const filteredCellIndices =
-            settings.subsettedCells && settings.hideNonSubset
-                ? settings.subsettedCells.map(cell => DataManager.getCellIndex(cell))
-                : null;
-
         // Load only color data using the imported loadAxisData.
-        const colorData = await loadAxisData(settings.color, filteredCellIndices);
+        const colorData = await loadAxisData(settings.color, data.entities);
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -390,7 +383,7 @@ export async function loadColorDataAndUpdatePlot(
 
             // Update UI controls within the container.
             updateColorControlsVisibility(container, data.colorType, id);
-            updateColorSliderUI(container, data, settings, id, plotContainer);
+            updateColorSliderUI(container, data, settings, id);
 
             // Use the centralized update system to update plot elements.
             const options = {

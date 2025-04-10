@@ -343,7 +343,7 @@ export function setupColorControls(
         console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
         
         if (fullDataUpdate) {
-            updateColorSliderUI(container, data, settings, id, plotContainer);
+            updateColorSliderUI(container, data, settings, id);
             // For full data updates, update colors and data
             _updatePlotElements({
                 colors: true,
@@ -354,7 +354,7 @@ export function setupColorControls(
                 layout: true
             });
         } else {
-            updateColorSliderUI(container, data, settings, id, plotContainer);
+            updateColorSliderUI(container, data, settings, id);
             // For visual-only updates
             _updatePlotElements({
                 styling: true,
@@ -488,7 +488,7 @@ export function setupColorControls(
     centerColormapButton.addEventListener('click', () => {
         settings.centeringActive = !settings.centeringActive;
         setupCenteringSliderListeners();
-        updateColorSliderUI(container, data, settings, id, plotContainer)
+        updateColorSliderUI(container, data, settings, id)
         _updatePlot(false)
     });
 
