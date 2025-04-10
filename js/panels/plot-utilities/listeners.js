@@ -44,8 +44,7 @@ export function setupPlotEventListeners({
         id,
         loadDataAndCreatePlot,
     );
-    // setupPointStyleControls(container, settings, updateFn);
-    // setupEventListenersForFocusChanges(settings, updateFn);
+
     return observer;
 }
 

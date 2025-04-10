@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
 import { highlightFocusedCell, updatePlotElements } from './plot-update.js';
-import { updateColorSliderUI } from './panel-ui-update.js';
+import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 
 /**
  * Loads data for a specific axis from an anndata-derived source.
@@ -233,6 +233,155 @@ export async function loadAxisData(settings) {
     throw new Error(`Failed to load data for (${type}.${key}${column ? '.' + column : ''})`);
   }
 }
+
+
+
+/**
+ * Loads data for all axes and then creates the plot.
+ *
+ * @param {HTMLElement} container - The container element for the panel/controls.
+ * @param {HTMLElement} plotContainer - The Plotly plot container element.
+ * @param {Object} settings - The settings object for the plot (e.g., axes settings for x, y, z, color).
+ * @param {Object} data - A mutable data cache object (e.g., { x, y, z, color, cells, ... }).
+ * @param {string|number} id - A unique identifier used to build element selectors.
+ *
+ * @returns {Promise<void>}
+ */
+export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id) {
+  try {
+    // Validate that cells exist.
+    const cells = DataManager.getCells();
+    if (!cells || !cells.length) {
+      plotContainer.innerHTML = '<div class="alert alert-warning">No cells available</div>';
+      return;
+    }
+
+    // Show a loading indicator.
+    plotContainer.innerHTML =
+      '<div class="spinner"></div> Loading plot data...';
+
+    // Validate each axis (x, y, z, color) in settings.
+    for (const axis of ['x', 'y', 'z', 'color']) {
+      // Skip z-axis if not used.
+      if (axis === 'z' && !settings.z) continue;
+      const axisSettings = settings[axis];
+      console.log(`Validating ${axis} axis settings:`, axisSettings);
+      if (!axisSettings) {
+        throw new Error(`No settings found for ${axis} axis`);
+      }
+      if (!axisSettings.type) {
+        plotContainer.innerHTML = `<div class="alert alert-warning">
+          Missing type for ${axis}-axis
+        </div>`;
+        return;
+      }
+      // For 'obsm' type, ensure key and column are provided.
+      if (axisSettings.type === 'obsm') {
+        if (!axisSettings.key || axisSettings.key === '') {
+          plotContainer.innerHTML = `<div class="alert alert-warning">
+            Please select an obsm key for the ${axis}-axis
+          </div>`;
+          return;
+        }
+        if (axisSettings.column === undefined || axisSettings.column === null || axisSettings.column === '') {
+          // Query the global dataset structure.
+          const ds = await DataManager.getDatasetStructure();
+          if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[axisSettings.key]) {
+            const df = ds.obsm.dataframes[axisSettings.key];
+            if (df.columns && df.columns.length > 0) {
+              if (axis === 'x') {
+                axisSettings.column = df.columns[0];
+              } else if (axis === 'y') {
+                axisSettings.column = df.columns.length >= 2 ? df.columns[1] : df.columns[0];
+              } else if (axis === 'z') {
+                axisSettings.column = df.columns.length >= 3 ? df.columns[2] : df.columns[0];
+              } else if (axis === 'color') {
+                axisSettings.column = df.columns.length >= 4 ? df.columns[3] : df.columns[0];
+              }
+              console.log(`Setting default column '${axisSettings.column}' for ${axis}-axis obsm.${axisSettings.key}`);
+            } else {
+              axisSettings.column = '0';
+              console.log(`No columns found for obsm.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
+            }
+          } else {
+            axisSettings.column = '0';
+            console.log(`Dataset structure missing obsm.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
+          }
+        }
+      }
+    }
+
+    // Reset cached data without changing its reference.
+    Object.keys(data).forEach(key => delete data[key]);
+    Object.assign(data, {
+      x: null,
+      y: null,
+      z: null,
+      color: null,
+      cells: cells
+    });
+
+    // Build an array of promises to load axis and color data concurrently.
+    const loadPromises = [
+      (async () => {
+        console.log('Loading X-axis data:', settings.x);
+        data.x = await loadAxisData(settings.x);
+      })(),
+      (async () => {
+        console.log('Loading Y-axis data:', settings.y);
+        data.y = await loadAxisData(settings.y);
+      })()
+    ];
+
+    if (settings.z) {
+      loadPromises.push(
+        (async () => {
+          console.log('Loading Z-axis data:', settings.z);
+          data.z = await loadAxisData(settings.z);
+        })()
+      );
+    }
+
+    // Load color data concurrently.
+    loadPromises.push(
+      (async () => {
+        console.log('Loading color data:', settings.color);
+        try {
+          const colorData = await loadAxisData(settings.color);
+          data.color = colorData.values;
+          data.colorType = colorData.type;
+          data.colorCategories = colorData.categories;
+          // Update any color control UI in the container.
+          updateColorControlsVisibility(container, data.colorType, id);
+        } catch (err) {
+          console.error("Error loading color data:", err);
+        }
+      })()
+    );
+
+    // Wait until all data is loaded.
+    await Promise.all(loadPromises);
+
+    // Validate that x and y axes have data.
+    if (data.x && data.x.values && data.x.values.length > 0 &&
+        data.y && data.y.values && data.y.values.length > 0) {
+      console.log(`Creating plot with ${data.x.values.length} data points`);
+      await createPlot(container, plotContainer, settings, data, id);
+      updateColorControlsVisibility(container, data.colorType, id);
+    } else {
+      console.error('Insufficient data for plotting');
+      plotContainer.innerHTML = `<div class="alert alert-warning">
+        Insufficient data for plotting. X axis has 
+        ${data.x && data.x.values ? data.x.values.length : 0} points, 
+        Y axis has ${data.y && data.y.values ? data.y.values.length : 0} points.
+      </div>`;
+    }
+  } catch (error) {
+    console.error('Error loading plot data:', error);
+    plotContainer.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+  }
+}
+
 
 /**
  * Creates a Plotly plot.

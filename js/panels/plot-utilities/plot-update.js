@@ -410,17 +410,17 @@ export async function loadColorDataAndUpdatePlot(
  *
  * @param {HTMLElement} plotContainer - The container element holding the plot.
  * @param {Object} data - The data object. Expected to have:
- *                          - For cells: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), cells: [...] }
- *                          - For genes: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), genes: [...] }
- *                          Also expected to include a "colorType" property.
+ *   - For cells: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), cells: [...] }
+ *   - For genes: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), genes: [...] }
+ *   Also expected to include a "colorType" property.
  * @param {Object} settings - Plot settings object. Expected to include:
- *                              - pointSize,
- *                              - highlightFocusedCell (for cells) or highlightFocusedGene (for genes),
- *                              - z (non-null for 3D mode).
+ *   - pointSize,
+ *   - highlightFocusedCell (for cells) or highlightFocusedGene (for genes),
+ *   - z (non-null if 3D)
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType) {
-  // Validate required properties.
+  // Determine which property to use: cells or genes.
   const entityKey = entityType === 'cell' ? 'cells' : 'genes';
   if (!plotContainer || !data || !data[entityKey] || !data.x || !data.y ||
       !data.x.values || !data.y.values) {
@@ -432,7 +432,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     return;
   }
 
-  // Get focused entity.
+  // Get the focused entity based on type.
   const focusedEntity = entityType === 'cell'
     ? DataManager.getFocusedCell()
     : DataManager.getFocusedGene();
@@ -440,24 +440,21 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     ? settings.highlightFocusedCell
     : settings.highlightFocusedGene;
   if (!focusedEntity || !highlightEnabled) {
-    // If highlighting is disabled or no focused entity exists, remove any highlight.
     removeHighlight(plotContainer);
     return;
   }
 
   let focusedIndex = -1;
   let traceIndex = 0;
-
-  // Use the appropriate property from data.
   const entityArray = data[entityKey];
 
-  // Check if we have categorical data with multiple traces.
+  // Check if the data is categorical with multiple traces.
   const isCategorical = data.colorType === 'categorical';
-  const dataTraces = plotContainer.data.filter(trace => trace && trace.name !== `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+  const dataTraces = plotContainer.data.filter(trace => trace && 
+    trace.name !== `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
   const hasMultipleTraces = dataTraces.length > 1;
 
   if (isCategorical && hasMultipleTraces) {
-    // Look through each trace's text array.
     for (let i = 0; i < dataTraces.length; i++) {
       const trace = dataTraces[i];
       if (trace && Array.isArray(trace.text)) {
@@ -470,7 +467,6 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       }
     }
   } else {
-    // Single trace: find index in the main entity array.
     focusedIndex = entityArray.indexOf(focusedEntity);
   }
 
@@ -480,10 +476,10 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     return;
   }
 
-  // Determine 3D mode.
+  // Determine if we are in 3D mode.
   const is3D = settings.z !== null;
 
-  // Retrieve coordinates.
+  // Retrieve the coordinates for the focused entity.
   let xValue, yValue, zValue;
   if (isCategorical && hasMultipleTraces) {
     const trace = dataTraces[traceIndex];
@@ -503,7 +499,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
         focusedIndex < data.x.values.length && focusedIndex < data.y.values.length) {
       xValue = data.x.values[focusedIndex];
       yValue = data.y.values[focusedIndex];
-      if (is3D && data.z && data.z.values && focusedIndex < data.z.values.length) {
+      if (is3D && data.z && data.z.values && Array.isArray(data.z.values) &&
+          focusedIndex < data.z.values.length) {
         zValue = data.z.values[focusedIndex];
       }
     } else {
@@ -519,24 +516,26 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
     marker: {
-      size: settings.pointSize * 2,
-      color: 'rgba(255, 0, 0, 1)', // Red for emphasis.
+      size: settings.pointSize * 2, // Emphasize by doubling the size.
+      color: 'rgba(255, 0, 0, 1)',   // Red highlight.
       opacity: 1,
       line: {
         color: 'rgba(0, 0, 0, 1)',
         width: 2
-      }
+      },
+      showscale: false  // Do not create a new colorbar.
     },
     hoverinfo: 'skip',
     name: `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`,
-    showlegend: false
+    showlegend: false  // Prevent the trace from appearing in the legend.
   };
   if (is3D && zValue !== undefined) {
     highlightTrace.z = [zValue];
   }
 
-  // Look for an existing highlight trace.
-  const existingIdx = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+  // Update existing highlight trace if one exists; otherwise add a new one.
+  const existingIdx = plotContainer.data.findIndex(trace => trace && 
+    trace.name === `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
   if (existingIdx >= 0) {
     Plotly.restyle(plotContainer, {
       x: [highlightTrace.x],
@@ -548,6 +547,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     Plotly.addTraces(plotContainer, highlightTrace);
   }
 }
+
 
 /**
  * Highlights the focused cell in the Plotly plot.

@@ -718,7 +718,6 @@ const DataManager = (function() {
         // Skip if same cell is already focused
         if (_focusedCell === cellName) return;
         
-        const oldCell = _focusedCell;
         _focusedCell = cellName;
         
         // Handle history

@@ -1,5 +1,4 @@
 import { DataManager } from '../../data-manager.js';
-import { updatePlotElements } from './plot-update.js';
 
 /**
  * Populates only the key selector for a given axis.
@@ -312,7 +311,7 @@ export function updateColorSliderUI(container, data, settings, id, plotContainer
     csCenterColormapButton.classList.remove('btn-outline-secondary');
     csCenterColormapButton.setAttribute('title', 'Centering active - click to disable');
     // Delegate the centering update to the applyCentering function.
-    applyCentering(container, data, settings, id, plotContainer);
+    applyCentering(container, data, settings, id);
   } else {
     // Reset the center button appearance.
     csCenterColormapButton.classList.remove('active', 'btn-primary');
@@ -384,10 +383,9 @@ export function updateColorSliderUI(container, data, settings, id, plotContainer
  * @param {Object} data - The data object (must have data.color as an array).
  * @param {Object} settings - The settings object (must include settings.centeringActive).
  * @param {string|number} id - Unique identifier used for element selectors.
- * @param {HTMLElement} plotContainer - The Plotly plot container element.
  * @param {Function} loadDataAndCreatePlot - Function to redraw the plot elements.
  */
-export function applyCentering(container, data, settings, id, plotContainer) {
+export function applyCentering(container, data, settings, id) {
   if (!data || !data.color || !Array.isArray(data.color)) return;
   if (!settings.centeringActive) return;
 
