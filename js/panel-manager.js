@@ -399,61 +399,322 @@ const PanelManager = (function() {
         const panel = _panels.get(id);
         if (!tile || !panel) return;
         
-        // Create split container
-        const splitContainer = document.createElement('div');
-        splitContainer.className = `split-container split-${direction}`;
+        // Create a parent container for the two tiles
+        const parentContainer = document.createElement('div');
+        parentContainer.className = `split-container split-${direction}`;
+        
+        // Calculate initial percentages for split (50/50)
+        if (direction === 'vertical') {
+            parentContainer.style.flexDirection = 'row';
+        } else {
+            parentContainer.style.flexDirection = 'column';
+        }
         
         // Create the panes and handle
         const firstPane = document.createElement('div');
         firstPane.className = 'split-pane';
+        firstPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
         
         const handle = document.createElement('div');
         handle.className = `split-handle ${direction === 'horizontal' ? 'horizontal' : 'vertical'}`;
         
         const secondPane = document.createElement('div');
         secondPane.className = 'split-pane';
+        secondPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
         
-        // Move original content to first pane
-        const originalContent = tile.querySelector('.tile-content');
-        firstPane.appendChild(originalContent);
+        // Create new tile for the second pane - this is a selection tile
+        const selectorId = _createSelectionTileInPane(secondPane);
         
-        // Assemble the split container
-        splitContainer.appendChild(firstPane);
-        splitContainer.appendChild(handle);
-        splitContainer.appendChild(secondPane);
+        // Move original tile to first pane
+        tile.parentNode.insertBefore(parentContainer, tile);
+        firstPane.appendChild(tile);
         
-        // Replace the original content with the split container
-        tile.appendChild(splitContainer);
+        // Assemble the parent container
+        parentContainer.appendChild(firstPane);
+        parentContainer.appendChild(handle);
+        parentContainer.appendChild(secondPane);
         
-        // Create new panel in second pane
-        const config = sourceId ? 
-            (_panels.get(sourceId)?.getConfig() || {}) : 
-            { title: `${_formatPanelType(newPanelType)} ${_counters[newPanelType] + 1}` };
+        // Set up the resize handle with percentage-based sizing
+        _setupResizableHandle(handle, firstPane, secondPane, direction);
+    }
+    
+    /**
+     * Creates a selection tile inside the given pane
+     * @param {HTMLElement} pane - The pane to create the selection tile in
+     * @returns {string} - ID of the created selection tile
+     * @private
+     */
+    function _createSelectionTileInPane(pane) {
+        // Create a tile selector element
+        const tileSelector = document.createElement('div');
+        tileSelector.className = 'tile-selector';
+        
+        // Create the new streamlined selection container
+        const selectionId = Date.now(); // Use timestamp to ensure unique IDs
+        tileSelector.innerHTML = `
+            <div class="tile-selection-container">
+                <div class="tile-selection-header">
+                    <h2>Add New Panel</h2>
+                    <p>Choose a panel type</p>
+                    <button class="tile-close-btn" id="close-selection-${selectionId}" title="Close">×</button>
+                </div>
+                
+                <div class="selection-sections">
+                    <!-- Panel Types Section -->
+                    <div class="selection-section">
+                        <h3>Create New Panel</h3>
+                        <div class="tile-selection-grid" id="panel-type-grid-${selectionId}"></div>
+                    </div>
+                    
+                    <!-- Clone from Source Section -->
+                    <div class="selection-section">
+                        <h3>Clone Existing Panel</h3>
+                        <div class="source-selection-grid" id="source-panel-grid-${selectionId}"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add the selector to the pane
+        pane.appendChild(tileSelector);
+        
+        // Define panel types
+        const panelTypes = [
+            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
+            { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
+            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
+            { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
+            { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
+        ];
+        
+        // Helper function to populate source panels grid
+        function populateSourcePanelGrid(grid) {
+            // Safety check for grid element
+            if (!grid) {
+                console.error('Source panel grid element not found');
+                return;
+            }
             
-        // Create content container for the new panel
-        const newContentContainer = document.createElement('div');
-        newContentContainer.className = 'tile-content';
-        secondPane.appendChild(newContentContainer);
+            // Clear the grid first
+            grid.innerHTML = '';
+            
+            // Get all panels (active and stored closed panels)
+            const allPanels = new Map([..._panels.entries()]);
+            let hasPanels = false;
+            
+            // Add all panels to the grid
+            allPanels.forEach((panel, id) => {
+                hasPanels = true;
+                const sourceOption = document.createElement('div');
+                sourceOption.className = 'selection-panel-option source-panel-option';
+                sourceOption.dataset.id = id;
+                
+                // Indicate if panel is closed
+                if (!_activePanels.has(panel)) {
+                    sourceOption.classList.add('closed-panel');
+                }
+                
+                const typeIcon = _getPanelTypeIcon(panel.getType());
+                sourceOption.innerHTML = `
+                    <div class="tile-type-icon">
+                        <i class="${typeIcon} fa-3x"></i>
+                    </div>
+                    <div class="tile-type-label">${panel.getTitle()}</div>
+                    ${!_activePanels.has(panel) ? `
+                        <div class="panel-status">Closed</div>
+                        <button class="delete-panel-btn" data-id="${id}" title="Delete">×</button>
+                    ` : ''}
+                `;
+                
+                // Direct click creates a clone
+                sourceOption.addEventListener('click', (e) => {
+                    // Don't trigger if the delete button was clicked
+                    if (e.target.classList.contains('delete-panel-btn') || 
+                        e.target.closest('.delete-panel-btn')) {
+                        return;
+                    }
+                    
+                    // Get panel info
+                    const config = panel.getConfig();
+                    const panelType = panel.getType();
+                    config.id = `${panelType}-${++_counters[panelType]}`;
+                    
+                    // Avoid name collision
+                    config.title = _generateUniqueName(panelType, panel.getTitle());
+                    
+                    // Find the parent pane
+                    const parentPane = tileSelector.closest('.split-pane');
+                    
+                    // Clear the tile selector
+                    tileSelector.remove();
+                    
+                    // Create a new tile in the parent pane
+                    const tileElement = _createTileElement(config.id);
+                    parentPane.appendChild(tileElement);
+                    
+                    // Get the content container
+                    const contentContainer = tileElement.querySelector('.tile-content');
+                    
+                    // Create panel instance
+                    const Constructor = _panelTypes.get(panelType);
+                    const newPanel = new Constructor(contentContainer, config);
+                    
+                    // Register the panel
+                    _panels.set(config.id, newPanel);
+                    _panelsByType.get(panelType).add(newPanel);
+                    _activePanels.add(newPanel);
+                    
+                    // Update the title in the DOM
+                    const titleInput = tileElement.querySelector('.tile-title');
+                    titleInput.value = newPanel.getTitle();
+                    titleInput.addEventListener('change', () => {
+                        newPanel.setTitle(titleInput.value);
+                    });
+                    
+                    // Set up split handlers
+                    const splitHBtn = tileElement.querySelector('.tile-split-h');
+                    splitHBtn.addEventListener('click', () => _splitTile(config.id, 'horizontal'));
+                    
+                    const splitVBtn = tileElement.querySelector('.tile-split-v');
+                    splitVBtn.addEventListener('click', () => _splitTile(config.id, 'vertical'));
+                    
+                    // Set up close handler
+                    const closeBtn = tileElement.querySelector('.tile-close');
+                    closeBtn.addEventListener('click', () => closePanel(config.id));
+                    
+                    // Set up toggle controls handler
+                    const toggleControlsBtn = tileElement.querySelector('.tile-toggle-controls');
+                    toggleControlsBtn.addEventListener('click', () => _togglePanelControls(config.id, toggleControlsBtn));
+                    
+                    // Initialize the panel
+                    newPanel.init();
+                });
+                
+                grid.appendChild(sourceOption);
+            });
+            
+            // Add delete button handlers after all panels are added
+            grid.querySelectorAll('.delete-panel-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent panel click
+                    const panelId = button.dataset.id;
+                    
+                    if (panelId) {
+                        // First, remove from panels collection
+                        const panel = _panels.get(panelId);
+                        if (panel) {
+                            const type = panel.getType();
+                            if (_panelsByType.has(type)) {
+                                _panelsByType.get(type).delete(panel);
+                            }
+                            _panels.delete(panelId);
+                        }
+                        
+                        // Then, refresh the source panel grid
+                        populateSourcePanelGrid(grid);
+                    }
+                });
+            });
+            
+            // Show message if no panels available
+            if (!hasPanels) {
+                grid.innerHTML = '<div class="no-sessions">No panels available to clone</div>';
+            }
+        }
         
-        // Create the new panel
-        const Constructor = _panelTypes.get(newPanelType);
-        const newId = `${newPanelType}-${++_counters[newPanelType]}`;
+        // Get the panel type grid with the unique ID
+        const panelTypeGrid = tileSelector.querySelector(`#panel-type-grid-${selectionId}`);
+        if (!panelTypeGrid) {
+            console.error(`Panel type grid with ID panel-type-grid-${selectionId} not found`);
+            return;
+        }
         
-        const newPanel = new Constructor(newContentContainer, {
-            id: newId,
-            ...config
+        // Add panel type options - these create panels on click
+        panelTypes.forEach(panel => {
+            const panelOption = document.createElement('div');
+            panelOption.className = 'selection-panel-option panel-type-option';
+            panelOption.dataset.type = panel.type;
+            panelOption.innerHTML = `
+                <div class="tile-type-icon">
+                    <i class="${panel.icon} fa-3x"></i>
+                </div>
+                <div class="tile-type-label">${panel.label}</div>
+            `;
+            
+            // Direct click creates a panel
+            panelOption.addEventListener('click', () => {
+                // Find the parent pane
+                const parentPane = tileSelector.closest('.split-pane');
+                
+                // Remove the selection tile
+                tileSelector.remove();
+                
+                // Create a new tile in the parent pane
+                const newId = `${panel.type}-${++_counters[panel.type]}`;
+                const tileElement = _createTileElement(newId);
+                parentPane.appendChild(tileElement);
+                
+                // Get the content container
+                const contentContainer = tileElement.querySelector('.tile-content');
+                
+                // Create panel instance
+                const Constructor = _panelTypes.get(panel.type);
+                const newPanel = new Constructor(contentContainer, {
+                    id: newId,
+                    title: `${_formatPanelType(panel.type)} ${_counters[panel.type]}`
+                });
+                
+                // Register the panel
+                _panels.set(newId, newPanel);
+                _panelsByType.get(panel.type).add(newPanel);
+                _activePanels.add(newPanel);
+                
+                // Update the title in the DOM
+                const titleInput = tileElement.querySelector('.tile-title');
+                titleInput.value = newPanel.getTitle();
+                titleInput.addEventListener('change', () => {
+                    newPanel.setTitle(titleInput.value);
+                });
+                
+                // Set up split handlers
+                const splitHBtn = tileElement.querySelector('.tile-split-h');
+                splitHBtn.addEventListener('click', () => _splitTile(newId, 'horizontal'));
+                
+                const splitVBtn = tileElement.querySelector('.tile-split-v');
+                splitVBtn.addEventListener('click', () => _splitTile(newId, 'vertical'));
+                
+                // Set up close handler
+                const closeBtn = tileElement.querySelector('.tile-close');
+                closeBtn.addEventListener('click', () => closePanel(newId));
+                
+                // Set up toggle controls handler
+                const toggleControlsBtn = tileElement.querySelector('.tile-toggle-controls');
+                toggleControlsBtn.addEventListener('click', () => _togglePanelControls(newId, toggleControlsBtn));
+                
+                // Initialize the panel
+                newPanel.init();
+            });
+            
+            panelTypeGrid.appendChild(panelOption);
         });
         
-        // Register the panel
-        _panels.set(newId, newPanel);
-        _panelsByType.get(newPanelType).add(newPanel);
-        _activePanels.add(newPanel);
+        // Populate source panels grid
+        const sourcePanelGrid = tileSelector.querySelector(`#source-panel-grid-${selectionId}`);
+        if (sourcePanelGrid) {
+            populateSourcePanelGrid(sourcePanelGrid);
+        }
         
-        // Initialize the panel
-        newPanel.init();
+        // Add close button handler
+        const closeBtn = tileSelector.querySelector(`#close-selection-${selectionId}`);
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                tileSelector.remove();
+            });
+        } else {
+            console.error(`Close button with ID close-selection-${selectionId} not found`);
+        }
         
-        // Set up the resize handle
-        _setupResizableHandle(handle, firstPane, secondPane, direction);
+        return selectionId;
     }
     
     /**
@@ -576,6 +837,17 @@ const PanelManager = (function() {
         const isVisible = plotControls.style.display !== 'none';
         plotControls.style.display = isVisible ? 'none' : 'flex';
         
+        // Store state in the panel's config for session saving
+        const config = panel.getConfig() || {};
+        config.controlsVisible = !isVisible;
+        panel.updateConfig && panel.updateConfig(config);
+        
+        // Store state in the DOM for immediate reference
+        const parentPane = tileElement.closest('.split-pane');
+        if (parentPane) {
+            parentPane.dataset.controlsVisible = !isVisible;
+        }
+        
         // Update button icon and title
         const icon = button.querySelector('i');
         if (isVisible) {
@@ -599,112 +871,56 @@ const PanelManager = (function() {
         const panel = _panels.get(id);
         if (!panel) return;
         
-        // Set up the pending split with default values (clone the current panel)
-        _pendingSplit = {
-            id,
-            direction,
-            panelType: panel.getType(),
-            sourceId: id // Default to cloning the current panel
-        };
-        
-        // Perform the split immediately with the same panel type
-        _performSplit();
-        return;
-    }
-    
-    /**
-     * Perform the actual tile split based on stored split info
-     * @private
-     */
-    function _performSplit() {
-        if (!_pendingSplit) return;
-        
-        const { id, direction, panelType, sourceId } = _pendingSplit;
-        
-        // Get the original tile and panel
+        // Get the original tile
         const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
-        const panel = _panels.get(id);
-        if (!tile || !panel) return;
+        if (!tile) return;
         
-        // Create split container
-        const splitContainer = document.createElement('div');
-        splitContainer.className = `split-container split-${direction}`;
+        // Create a parent container for the two tiles
+        const parentContainer = document.createElement('div');
         
-        // For vertical splits, use side-by-side layout
-        if (direction === 'vertical') {
-            splitContainer.style.flexDirection = 'row';
+        // Fix direction naming - horizontal split creates vertical arrangement (one above the other)
+        // and vertical split creates horizontal arrangement (side by side)
+        if (direction === 'horizontal') {
+            // One above the other
+            parentContainer.className = 'split-container split-horizontal';
+            parentContainer.style.flexDirection = 'column';
         } else {
-            splitContainer.style.flexDirection = 'column';
+            // Side by side
+            parentContainer.className = 'split-container split-vertical';
+            parentContainer.style.flexDirection = 'row';
         }
         
         // Create the panes and handle
         const firstPane = document.createElement('div');
         firstPane.className = 'split-pane';
+        firstPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
         
         const handle = document.createElement('div');
         handle.className = `split-handle ${direction === 'horizontal' ? 'horizontal' : 'vertical'}`;
         
         const secondPane = document.createElement('div');
         secondPane.className = 'split-pane';
+        secondPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
         
-        // Move original content to first pane
-        const originalContent = tile.querySelector('.tile-content');
-        firstPane.appendChild(originalContent);
+        // Create new tile for the second pane - this is a selection tile
+        const selectorId = _createSelectionTileInPane(secondPane);
         
-        // Assemble the split container
-        splitContainer.appendChild(firstPane);
-        splitContainer.appendChild(handle);
-        splitContainer.appendChild(secondPane);
+        // Move original tile to first pane
+        tile.parentNode.insertBefore(parentContainer, tile);
+        firstPane.appendChild(tile);
         
-        // Replace the original content with the split container
-        tile.appendChild(splitContainer);
+        // Assemble the parent container
+        parentContainer.appendChild(firstPane);
+        parentContainer.appendChild(handle);
+        parentContainer.appendChild(secondPane);
         
-        // Create content container for the new panel
-        const newContentContainer = document.createElement('div');
-        newContentContainer.className = 'tile-content';
-        secondPane.appendChild(newContentContainer);
-        
-        // Get config for the new panel
-        let config = {};
-        
-        if (sourceId) {
-            // Clone from source panel
-            const sourcePanel = _panels.get(sourceId);
-            if (sourcePanel) {
-                config = sourcePanel.getConfig();
-                // Avoid name collision
-                if (sourceId !== id) {
-                    config.title = _generateUniqueName(panelType, sourcePanel.getTitle());
-                } else {
-                    // When cloning from the same panel
-                    config.title = `${panel.getTitle()} Copy`;
-                }
-            }
-        }
-        
-        // Create the new panel
-        const Constructor = _panelTypes.get(panelType);
-        const newId = `${panelType}-${++_counters[panelType]}`;
-        
-        const newPanel = new Constructor(newContentContainer, {
-            id: newId,
-            ...config
-        });
-        
-        // Store panel reference
-        _panels.set(newId, newPanel);
-        _panelsByType.get(panelType).add(newPanel);
-        _activePanels.add(newPanel);
-        
-        // Initialize the panel
-        newPanel.init();
-        
-        // Set up resize handling
+        // Set up the resize handle with percentage-based sizing
         _setupResizableHandle(handle, firstPane, secondPane, direction);
         
-        // Clear pending split
-        _pendingSplit = null;
+        // Add data attributes to track the original arrangement
+        parentContainer.dataset.splitDirection = direction;
     }
+    
     
     /**
      * Set up resizable handle for split panes
@@ -716,18 +932,24 @@ const PanelManager = (function() {
      */
     function _setupResizableHandle(handle, firstPane, secondPane, direction) {
         let startPosition = 0;
-        let startFirstSize = 0;
-        let startSecondSize = 0;
+        let startTotalSize = 0;
+        let startFirstPercentage = 0;
         
         const onMouseDown = (e) => {
             e.preventDefault();
             
-            // Store the starting position and sizes
+            // Store the starting position
             startPosition = direction === 'horizontal' ? e.clientX : e.clientY;
-            startFirstSize = direction === 'horizontal' ? 
+            
+            // Get the parent container's total size
+            const parentContainer = firstPane.parentElement;
+            startTotalSize = direction === 'horizontal' ? 
+                parentContainer.offsetWidth : parentContainer.offsetHeight;
+            
+            // Calculate the first pane's percentage
+            const firstPaneSize = direction === 'horizontal' ? 
                 firstPane.offsetWidth : firstPane.offsetHeight;
-            startSecondSize = direction === 'horizontal' ? 
-                secondPane.offsetWidth : secondPane.offsetHeight;
+            startFirstPercentage = (firstPaneSize / startTotalSize) * 100;
             
             // Add event listeners for dragging
             document.addEventListener('mousemove', onMouseMove);
@@ -744,18 +966,31 @@ const PanelManager = (function() {
             const currentPosition = direction === 'horizontal' ? e.clientX : e.clientY;
             const delta = currentPosition - startPosition;
             
-            // Calculate new sizes
-            const newFirstSize = startFirstSize + delta;
-            const newSecondSize = startSecondSize - delta;
+            // Calculate the delta as a percentage of total size
+            const deltaPercentage = (delta / startTotalSize) * 100;
             
-            // Apply new sizes if they're valid (min size of 100px)
-            if (newFirstSize > 100 && newSecondSize > 100) {
-                if (direction === 'horizontal') {
-                    firstPane.style.width = `${newFirstSize}px`;
-                    secondPane.style.width = `${newSecondSize}px`;
-                } else {
-                    firstPane.style.height = `${newFirstSize}px`;
-                    secondPane.style.height = `${newSecondSize}px`;
+            // Calculate new percentages
+            const newFirstPercentage = startFirstPercentage + deltaPercentage;
+            const newSecondPercentage = 100 - newFirstPercentage;
+            
+            // Apply new percentages if they're valid (min 10%)
+            if (newFirstPercentage > 10 && newSecondPercentage > 10) {
+                // Use flex-basis for percentages - this is more responsive
+                firstPane.style.flex = `0 0 ${newFirstPercentage}%`;
+                secondPane.style.flex = `0 0 ${newSecondPercentage}%`;
+                
+                // Store the control panel state when resizing
+                const firstPaneControls = firstPane.querySelector('.plot-controls');
+                const secondPaneControls = secondPane.querySelector('.plot-controls');
+                
+                if (firstPaneControls) {
+                    const isVisible = firstPaneControls.style.display !== 'none';
+                    firstPane.dataset.controlsVisible = isVisible;
+                }
+                
+                if (secondPaneControls) {
+                    const isVisible = secondPaneControls.style.display !== 'none';
+                    secondPane.dataset.controlsVisible = isVisible;
                 }
             }
         };
@@ -836,14 +1071,6 @@ const PanelManager = (function() {
     }
     
     /**
-     * Get all active panels
-     * @returns {Array} - Array of active panel instances
-     */
-    function getActivePanels() {
-        return Array.from(_activePanels);
-    }
-    
-    /**
      * Notify panels of a data update
      * @param {string} updateType - Type of update
      * @param {Object} data - Update data
@@ -911,6 +1138,17 @@ const PanelManager = (function() {
                 const panel = _panels.get(id);
                 if (panel) {
                     const config = panel.getConfig() || {};
+                    
+                    // Check for control panel visibility
+                    const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
+                    if (tileElement) {
+                        const contentContainer = tileElement.querySelector('.tile-content');
+                        const plotControls = contentContainer?.querySelector('.plot-controls');
+                        if (plotControls) {
+                            config.controlsVisible = plotControls.style.display !== 'none';
+                        }
+                    }
+                    
                     layout.panels[id] = {
                         ...config,
                         height: height,
@@ -918,34 +1156,53 @@ const PanelManager = (function() {
                     };
                 }
                 
-                // Check for split containers in this tile
-                const splitContainers = tile.querySelectorAll('.split-container');
-                splitContainers.forEach((container, index) => {
-                    const splitId = `${id}-split-${index}`;
+                // Find all split containers in the document
+                const allSplitContainers = document.querySelectorAll('.split-container');
+                allSplitContainers.forEach((container, index) => {
+                    const splitId = `split-${index}`;
                     const direction = container.classList.contains('split-horizontal') ? 'horizontal' : 'vertical';
                     const panes = container.querySelectorAll('.split-pane');
                     
                     if (panes.length === 2) {
-                        // Get computed styles for panes
-                        const pane1Style = window.getComputedStyle(panes[0]);
-                        const pane2Style = window.getComputedStyle(panes[1]);
+                        // Extract percentage-based sizes from flex property
+                        const pane1Flex = panes[0].style.flex || '';
+                        const pane2Flex = panes[1].style.flex || '';
                         
-                        // Prioritize inline styles over computed styles
+                        // Parse percentages from flex values if available
+                        const pane1Percentage = parseFlexPercentage(pane1Flex) || 50;
+                        const pane2Percentage = parseFlexPercentage(pane2Flex) || 50;
+                        
+                        // Store control panel visibility for each pane
+                        const pane1ControlsVisible = panes[0].dataset.controlsVisible === 'true';
+                        const pane2ControlsVisible = panes[1].dataset.controlsVisible === 'true';
+                        
                         layout.splits[splitId] = {
                             direction,
                             pane1: {
-                                height: panes[0].style.height || pane1Style.height,
-                                width: panes[0].style.width || pane1Style.width
+                                percentage: pane1Percentage,
+                                controlsVisible: pane1ControlsVisible
                             },
                             pane2: {
-                                height: panes[1].style.height || pane2Style.height,
-                                width: panes[1].style.width || pane2Style.width
+                                percentage: pane2Percentage,
+                                controlsVisible: pane2ControlsVisible
                             }
                         };
                     }
                 });
             }
         });
+        
+        // Helper function to parse percentage from flex value
+        function parseFlexPercentage(flexValue) {
+            if (!flexValue) return null;
+            
+            // Try to extract percentage from formats like "0 0 50%" or "50%"
+            const percentMatch = flexValue.match(/(\d+)%/);
+            if (percentMatch && percentMatch[1]) {
+                return parseInt(percentMatch[1], 10);
+            }
+            return null;
+        }
         
         console.log('Layout saved:', layout);
         return layout;
@@ -973,40 +1230,82 @@ const PanelManager = (function() {
                     if (dimensions.width) {
                         tile.style.width = dimensions.width;
                     }
+                    
+                    // If we have panel config with controls visibility, restore it
+                    if (layout.panels && layout.panels[id] && layout.panels[id].hasOwnProperty('controlsVisible')) {
+                        const contentContainer = tile.querySelector('.tile-content');
+                        const plotControls = contentContainer?.querySelector('.plot-controls');
+                        
+                        if (plotControls) {
+                            plotControls.style.display = layout.panels[id].controlsVisible ? 'flex' : 'none';
+                            
+                            // Update toggle button icon
+                            const toggleBtn = tile.querySelector('.tile-toggle-controls');
+                            if (toggleBtn) {
+                                const icon = toggleBtn.querySelector('i');
+                                if (icon) {
+                                    if (layout.panels[id].controlsVisible) {
+                                        icon.classList.remove('fa-chevron-down');
+                                        icon.classList.add('fa-chevron-up');
+                                        toggleBtn.title = 'Hide Controls';
+                                    } else {
+                                        icon.classList.remove('fa-chevron-up');
+                                        icon.classList.add('fa-chevron-down');
+                                        toggleBtn.title = 'Show Controls';
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     console.log(`Tile with ID ${id} not found`);
                 }
             });
             
-            // Restore split container dimensions
+            // Restore split container dimensions with percentage-based flex values
             if (layout.splits) {
+                // Get all split containers in the document
+                const allSplitContainers = document.querySelectorAll('.split-container');
+                
                 Object.entries(layout.splits).forEach(([splitId, splitConfig]) => {
-                    const [tileId] = splitId.split('-split-');
-                    const tile = document.querySelector(`.tile[data-tile-id="${tileId}"]`);
+                    // Extract the index from split-{index} format
+                    const index = parseInt(splitId.split('-')[1], 10);
                     
-                    if (tile) {
-                        const index = parseInt(splitId.split('-split-')[1]);
-                        const splitContainers = tile.querySelectorAll('.split-container');
+                    if (index < allSplitContainers.length) {
+                        const container = allSplitContainers[index];
+                        const panes = container.querySelectorAll('.split-pane');
                         
-                        if (index < splitContainers.length) {
-                            const container = splitContainers[index];
-                            const panes = container.querySelectorAll('.split-pane');
+                        if (panes.length === 2) {
+                            const { pane1, pane2 } = splitConfig;
                             
-                            if (panes.length === 2) {
-                                // Apply dimensions to panes
-                                const { pane1, pane2 } = splitConfig;
-                                
-                                if (pane1.height) panes[0].style.height = pane1.height;
-                                if (pane1.width) panes[0].style.width = pane1.width;
-                                
-                                if (pane2.height) panes[1].style.height = pane2.height;
-                                if (pane2.width) panes[1].style.width = pane2.width;
+                            // Apply percentage-based flex values
+                            if (pane1.percentage) {
+                                panes[0].style.flex = `0 0 ${pane1.percentage}%`;
                             }
-                        } else {
-                            console.log(`Split container at index ${index} not found for tile ${tileId}`);
+                            
+                            if (pane2.percentage) {
+                                panes[1].style.flex = `0 0 ${pane2.percentage}%`;
+                            }
+                            
+                            // Restore control panel visibility
+                            if (pane1.hasOwnProperty('controlsVisible')) {
+                                panes[0].dataset.controlsVisible = pane1.controlsVisible;
+                                const controls = panes[0].querySelector('.plot-controls');
+                                if (controls) {
+                                    controls.style.display = pane1.controlsVisible ? 'flex' : 'none';
+                                }
+                            }
+                            
+                            if (pane2.hasOwnProperty('controlsVisible')) {
+                                panes[1].dataset.controlsVisible = pane2.controlsVisible;
+                                const controls = panes[1].querySelector('.plot-controls');
+                                if (controls) {
+                                    controls.style.display = pane2.controlsVisible ? 'flex' : 'none';
+                                }
+                            }
                         }
                     } else {
-                        console.log(`Tile with ID ${tileId} not found for split ${splitId}`);
+                        console.log(`Split container at index ${index} not found`);
                     }
                 });
             }
