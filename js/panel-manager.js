@@ -1,8 +1,23 @@
 /**
  * Panel Manager module for AnnZarro
  * Manages the tile-based panel system
+ * 
+ * This module has been refactored to:
+ * 1. Use responsive layouts with flex for better resizing
+ * 2. Improve session saving/restoration with proper hierarchy tracking
+ * 3. Fix split functionality to correctly handle horizontal/vertical arrangements
+ * 4. Reduce code duplication and improve structure
  */
 import { SessionManager } from './session-manager.js';
+import { LayoutManager } from './layout-manager.js';
+
+// Constants for panel dimensions and behavior
+const CONSTANTS = {
+    DEFAULT_TILE_HEIGHT: '1000px',
+    MIN_PANE_PERCENTAGE: 10,
+    DEFAULT_SPLIT_RATIO: 50,
+    MIN_VISIBLE_DIMENSION: 100
+};
 
 const PanelManager = (function() {
     // Private variables
@@ -22,9 +37,6 @@ const PanelManager = (function() {
     
     // References to DOM elements
     let _container = null;
-    
-    // For tile splitting process
-    let _pendingSplit = null;
     
     /**
      * Initialize the panel manager
@@ -730,13 +742,13 @@ const PanelManager = (function() {
         }
         
         // Generate a unique ID for the panel
-        const id = `${type}-${++_counters[type]}`;
+        const id = config.id || `${type}-${++_counters[type]}`;
         
         // Create tile element
         const tileElement = _createTileElement(id);
         
         // Set initial size for the tile (needed for layout saving)
-        tileElement.style.height = config.height || '1000px'; // Increased from 500px for better visualization
+        tileElement.style.height = config.height || CONSTANTS.DEFAULT_TILE_HEIGHT;
         
         // Add the tile to the container
         _container.appendChild(tileElement);
@@ -757,31 +769,36 @@ const PanelManager = (function() {
         _panelsByType.get(type).add(panel);
         _activePanels.add(panel);
         
-        // Update the title in the DOM
-        const titleInput = tileElement.querySelector('.tile-title');
-        titleInput.value = panel.getTitle();
-        titleInput.addEventListener('change', () => {
-            panel.setTitle(titleInput.value);
-        });
-        
-        // Set up split handlers
-        const splitHBtn = tileElement.querySelector('.tile-split-h');
-        splitHBtn.addEventListener('click', () => _splitTile(id, 'horizontal'));
-        
-        const splitVBtn = tileElement.querySelector('.tile-split-v');
-        splitVBtn.addEventListener('click', () => _splitTile(id, 'vertical'));
-        
-        // Set up close handler
-        const closeBtn = tileElement.querySelector('.tile-close');
-        closeBtn.addEventListener('click', () => closePanel(id));
-        
-        // Set up toggle controls handler
-        const toggleControlsBtn = tileElement.querySelector('.tile-toggle-controls');
-        toggleControlsBtn.addEventListener('click', () => _togglePanelControls(id, toggleControlsBtn));
+        // Set up all event handlers
+        _setupTileEventHandlers(tileElement, id);
         
         // Initialize the panel
-        console.log(`Befor startin the init the settings are:`, panel.getConfig());
         panel.init();
+        
+        // Apply control panel visibility if specified
+        if (config.hasOwnProperty('controlsVisible')) {
+            const plotControls = contentContainer.querySelector('.plot-controls');
+            if (plotControls) {
+                plotControls.style.display = config.controlsVisible ? 'flex' : 'none';
+                
+                // Update toggle button
+                const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
+                if (toggleBtn) {
+                    const icon = toggleBtn.querySelector('i');
+                    if (icon) {
+                        if (config.controlsVisible) {
+                            icon.classList.remove('fa-chevron-down');
+                            icon.classList.add('fa-chevron-up');
+                            toggleBtn.title = 'Hide Controls';
+                        } else {
+                            icon.classList.remove('fa-chevron-up');
+                            icon.classList.add('fa-chevron-down');
+                            toggleBtn.title = 'Show Controls';
+                        }
+                    }
+                }
+            }
+        }
         
         // Scroll the new panel into view
         setTimeout(() => {
@@ -867,6 +884,12 @@ const PanelManager = (function() {
      * @param {string} direction - Split direction ('horizontal' or 'vertical')
      * @private
      */
+    /**
+     * Split a tile into two panes
+     * @param {string} id - ID of the tile to split
+     * @param {string} direction - Split direction ('horizontal' or 'vertical')
+     * @private
+     */
     function _splitTile(id, direction) {
         const panel = _panels.get(id);
         if (!panel) return;
@@ -878,29 +901,40 @@ const PanelManager = (function() {
         // Create a parent container for the two tiles
         const parentContainer = document.createElement('div');
         
-        // Fix direction naming - horizontal split creates vertical arrangement (one above the other)
-        // and vertical split creates horizontal arrangement (side by side)
-        if (direction === 'horizontal') {
-            // One above the other
-            parentContainer.className = 'split-container split-horizontal';
-            parentContainer.style.flexDirection = 'column';
-        } else {
-            // Side by side
+        // IMPORTANT: For horizontal split button, we want side-by-side arrangement
+        // For vertical split button, we want one-above-other arrangement
+        // This matches user expectation for the button labels
+        if (direction === 'vertical') {
+            // One above the other (stacked vertically)
             parentContainer.className = 'split-container split-vertical';
+            parentContainer.style.flexDirection = 'column';
+            parentContainer.dataset.splitType = 'stacked'; // One above other
+        } else {
+            // Side by side (arranged horizontally)
+            parentContainer.className = 'split-container split-horizontal';
             parentContainer.style.flexDirection = 'row';
+            parentContainer.dataset.splitType = 'sideBySide'; // Side by side
         }
         
         // Create the panes and handle
         const firstPane = document.createElement('div');
         firstPane.className = 'split-pane';
-        firstPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
+        firstPane.style.flex = '1'; // Using just flex: 1 for equal parts
+        firstPane.dataset.flexPercentage = CONSTANTS.DEFAULT_SPLIT_RATIO;
         
         const handle = document.createElement('div');
-        handle.className = `split-handle ${direction === 'horizontal' ? 'horizontal' : 'vertical'}`;
+        handle.className = `split-handle ${direction === 'vertical' ? 'horizontal' : 'vertical'}`;
         
         const secondPane = document.createElement('div');
         secondPane.className = 'split-pane';
-        secondPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
+        secondPane.style.flex = '1'; // Using just flex: 1 for equal parts
+        secondPane.dataset.flexPercentage = CONSTANTS.DEFAULT_SPLIT_RATIO;
+        
+        // Add minimum widths for horizontal splits
+        if (direction === 'horizontal') {
+            firstPane.style.minWidth = '100px';
+            secondPane.style.minWidth = '100px';
+        }
         
         // Create new tile for the second pane - this is a selection tile
         const selectorId = _createSelectionTileInPane(secondPane);
@@ -914,99 +948,15 @@ const PanelManager = (function() {
         parentContainer.appendChild(handle);
         parentContainer.appendChild(secondPane);
         
-        // Set up the resize handle with percentage-based sizing
-        _setupResizableHandle(handle, firstPane, secondPane, direction);
+        // Set up the resize handle using the LayoutManager
+        LayoutManager.setupResizableHandle(handle, firstPane, secondPane, direction);
         
         // Add data attributes to track the original arrangement
         parentContainer.dataset.splitDirection = direction;
     }
     
     
-    /**
-     * Set up resizable handle for split panes
-     * @param {HTMLElement} handle - The resize handle element
-     * @param {HTMLElement} firstPane - First pane element
-     * @param {HTMLElement} secondPane - Second pane element
-     * @param {string} direction - Split direction ('horizontal' or 'vertical')
-     * @private
-     */
-    function _setupResizableHandle(handle, firstPane, secondPane, direction) {
-        let startPosition = 0;
-        let startTotalSize = 0;
-        let startFirstPercentage = 0;
-        
-        const onMouseDown = (e) => {
-            e.preventDefault();
-            
-            // Store the starting position
-            startPosition = direction === 'horizontal' ? e.clientX : e.clientY;
-            
-            // Get the parent container's total size
-            const parentContainer = firstPane.parentElement;
-            startTotalSize = direction === 'horizontal' ? 
-                parentContainer.offsetWidth : parentContainer.offsetHeight;
-            
-            // Calculate the first pane's percentage
-            const firstPaneSize = direction === 'horizontal' ? 
-                firstPane.offsetWidth : firstPane.offsetHeight;
-            startFirstPercentage = (firstPaneSize / startTotalSize) * 100;
-            
-            // Add event listeners for dragging
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-            
-            // Add dragging class
-            handle.classList.add('dragging');
-        };
-        
-        const onMouseMove = (e) => {
-            e.preventDefault();
-            
-            // Calculate the new position
-            const currentPosition = direction === 'horizontal' ? e.clientX : e.clientY;
-            const delta = currentPosition - startPosition;
-            
-            // Calculate the delta as a percentage of total size
-            const deltaPercentage = (delta / startTotalSize) * 100;
-            
-            // Calculate new percentages
-            const newFirstPercentage = startFirstPercentage + deltaPercentage;
-            const newSecondPercentage = 100 - newFirstPercentage;
-            
-            // Apply new percentages if they're valid (min 10%)
-            if (newFirstPercentage > 10 && newSecondPercentage > 10) {
-                // Use flex-basis for percentages - this is more responsive
-                firstPane.style.flex = `0 0 ${newFirstPercentage}%`;
-                secondPane.style.flex = `0 0 ${newSecondPercentage}%`;
-                
-                // Store the control panel state when resizing
-                const firstPaneControls = firstPane.querySelector('.plot-controls');
-                const secondPaneControls = secondPane.querySelector('.plot-controls');
-                
-                if (firstPaneControls) {
-                    const isVisible = firstPaneControls.style.display !== 'none';
-                    firstPane.dataset.controlsVisible = isVisible;
-                }
-                
-                if (secondPaneControls) {
-                    const isVisible = secondPaneControls.style.display !== 'none';
-                    secondPane.dataset.controlsVisible = isVisible;
-                }
-            }
-        };
-        
-        const onMouseUp = () => {
-            // Remove event listeners
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            
-            // Remove dragging class
-            handle.classList.remove('dragging');
-        };
-        
-        // Set up the handle for dragging
-        handle.addEventListener('mousedown', onMouseDown);
-    }
+    // _setupResizableHandle has been removed and moved to LayoutManager.setupResizableHandle
     
     /**
      * Close a panel
@@ -1107,109 +1057,49 @@ const PanelManager = (function() {
     }
     
     /**
-     * Save the current layout dimensions
+     * Save the current layout dimensions and structure
      * @returns {Object} - Layout configuration
      */
     function saveLayout() {
-        const layout = {
-            tiles: {},
-            splits: {},
-            panels: {} // Store panel-specific config that should persist
-        };
+        // Use the LayoutManager to build a hierarchical representation of the layout
+        const mainContainer = document.getElementById('main-container') || _container;
+        const layoutHierarchy = [];
         
-        // Save tile heights and widths
-        document.querySelectorAll('.tile').forEach(tile => {
-            const id = tile.dataset.tileId;
-            if (id) {
-                // Get computed style if inline style is not available
-                const computedStyle = window.getComputedStyle(tile);
-                
-                // Get the actual height/width, prioritizing inline styles
-                const height = tile.style.height || computedStyle.height;
-                const width = tile.style.width || computedStyle.width;
-                
-                // Store dimensions
-                layout.tiles[id] = {
-                    height: height,
-                    width: width
-                };
-                
-                // Also store in panel config
-                const panel = _panels.get(id);
-                if (panel) {
-                    const config = panel.getConfig() || {};
-                    
-                    // Check for control panel visibility
-                    const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
-                    if (tileElement) {
-                        const contentContainer = tileElement.querySelector('.tile-content');
-                        const plotControls = contentContainer?.querySelector('.plot-controls');
-                        if (plotControls) {
-                            config.controlsVisible = plotControls.style.display !== 'none';
-                        }
-                    }
-                    
-                    layout.panels[id] = {
-                        ...config,
-                        height: height,
-                        width: width
-                    };
-                }
-                
-                // Find all split containers in the document
-                const allSplitContainers = document.querySelectorAll('.split-container');
-                allSplitContainers.forEach((container, index) => {
-                    const splitId = `split-${index}`;
-                    const direction = container.classList.contains('split-horizontal') ? 'horizontal' : 'vertical';
-                    const panes = container.querySelectorAll('.split-pane');
-                    
-                    if (panes.length === 2) {
-                        // Extract percentage-based sizes from flex property
-                        const pane1Flex = panes[0].style.flex || '';
-                        const pane2Flex = panes[1].style.flex || '';
-                        
-                        // Parse percentages from flex values if available
-                        const pane1Percentage = parseFlexPercentage(pane1Flex) || 50;
-                        const pane2Percentage = parseFlexPercentage(pane2Flex) || 50;
-                        
-                        // Store control panel visibility for each pane
-                        const pane1ControlsVisible = panes[0].dataset.controlsVisible === 'true';
-                        const pane2ControlsVisible = panes[1].dataset.controlsVisible === 'true';
-                        
-                        layout.splits[splitId] = {
-                            direction,
-                            pane1: {
-                                percentage: pane1Percentage,
-                                controlsVisible: pane1ControlsVisible
-                            },
-                            pane2: {
-                                percentage: pane2Percentage,
-                                controlsVisible: pane2ControlsVisible
-                            }
-                        };
-                    }
-                });
+        // Process each root element in the container
+        Array.from(mainContainer.children).forEach(element => {
+            const node = LayoutManager.buildLayoutHierarchy(element);
+            if (node) {
+                layoutHierarchy.push(node);
             }
         });
         
-        // Helper function to parse percentage from flex value
-        function parseFlexPercentage(flexValue) {
-            if (!flexValue) return null;
+        // Add panel-specific config to the layout
+        const panelConfigs = {};
+        _panels.forEach((panel, id) => {
+            panelConfigs[id] = panel.getConfig() || {};
             
-            // Try to extract percentage from formats like "0 0 50%" or "50%"
-            const percentMatch = flexValue.match(/(\d+)%/);
-            if (percentMatch && percentMatch[1]) {
-                return parseInt(percentMatch[1], 10);
+            // Check for control panel visibility
+            const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
+            if (tileElement) {
+                const contentContainer = tileElement.querySelector('.tile-content');
+                const plotControls = contentContainer?.querySelector('.plot-controls');
+                if (plotControls) {
+                    panelConfigs[id].controlsVisible = plotControls.style.display !== 'none';
+                }
             }
-            return null;
-        }
+        });
+        
+        const layout = {
+            hierarchy: layoutHierarchy,
+            panels: panelConfigs
+        };
         
         console.log('Layout saved:', layout);
         return layout;
     }
     
     /**
-     * Restore layout dimensions
+     * Restore layout dimensions and structure
      * @param {Object} layout - Layout configuration
      */
     function restoreLayout(layout) {
@@ -1217,116 +1107,176 @@ const PanelManager = (function() {
         
         console.log('Restoring layout:', layout);
         
-        // Handle both old format (flat object) and new format (tiles/splits)
-        if (layout.tiles) {
-            // New format
-            // Restore tile dimensions
-            Object.entries(layout.tiles).forEach(([id, dimensions]) => {
-                const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
-                if (tile) {
-                    if (dimensions.height) {
-                        tile.style.height = dimensions.height;
-                    }
-                    if (dimensions.width) {
-                        tile.style.width = dimensions.width;
-                    }
-                    
-                    // If we have panel config with controls visibility, restore it
-                    if (layout.panels && layout.panels[id] && layout.panels[id].hasOwnProperty('controlsVisible')) {
-                        const contentContainer = tile.querySelector('.tile-content');
-                        const plotControls = contentContainer?.querySelector('.plot-controls');
+        // Clear the container
+        if (_container) {
+            _container.innerHTML = '';
+        }
+        
+        // Handle new hierarchical format
+        if (layout.hierarchy) {
+            layout.hierarchy.forEach(node => {
+                LayoutManager.rebuildLayoutFromHierarchy(
+                    node, 
+                    _container,
+                    // Callback to create a tile element
+                    (id) => {
+                        return _createTileElement(id);
+                    },
+                    // Callback to create a panel instance
+                    (id, tileElement) => {
+                        // Extract the panel type from the id
+                        const typeParts = id.split('-');
+                        const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
+                        const panelConfig = layout.panels[id] || {};
                         
-                        if (plotControls) {
-                            plotControls.style.display = layout.panels[id].controlsVisible ? 'flex' : 'none';
+                        // Check if panel type is registered
+                        if (!_panelTypes.has(type)) {
+                            console.error(`Unknown panel type: ${type} for panel id: ${id}`);
+                            return;
+                        }
+                        
+                        // Get existing panel or create a new one
+                        let panel = _panels.get(id);
+                        
+                        if (panel) {
+                            // Re-initialize existing panel with the new tile element
+                            const contentContainer = tileElement.querySelector('.tile-content');
                             
-                            // Update toggle button icon
-                            const toggleBtn = tile.querySelector('.tile-toggle-controls');
-                            if (toggleBtn) {
-                                const icon = toggleBtn.querySelector('i');
-                                if (icon) {
-                                    if (layout.panels[id].controlsVisible) {
-                                        icon.classList.remove('fa-chevron-down');
-                                        icon.classList.add('fa-chevron-up');
-                                        toggleBtn.title = 'Hide Controls';
-                                    } else {
-                                        icon.classList.remove('fa-chevron-up');
-                                        icon.classList.add('fa-chevron-down');
-                                        toggleBtn.title = 'Show Controls';
-                                    }
-                                }
+                            // Update title
+                            const titleInput = tileElement.querySelector('.tile-title');
+                            if (titleInput && panel.getTitle()) {
+                                titleInput.value = panel.getTitle();
+                            }
+                            
+                            // Set up event handlers
+                            _setupTileEventHandlers(tileElement, id);
+                            
+                            // Re-initialize the panel with the new container
+                            if (panel.reinitialize && typeof panel.reinitialize === 'function') {
+                                panel.reinitialize(contentContainer, panelConfig);
+                            } else {
+                                // Fall back to init if reinitialize is not available
+                                panel.init();
+                            }
+                            
+                            // Re-add to active panels
+                            _activePanels.add(panel);
+                        } else {
+                            // Create a new panel instance
+                            const contentContainer = tileElement.querySelector('.tile-content');
+                            const Constructor = _panelTypes.get(type);
+                            
+                            // Create new panel
+                            panel = new Constructor(contentContainer, {
+                                id,
+                                ...panelConfig,
+                                title: panelConfig.title || `${_formatPanelType(type)} ${_counters[type]}`
+                            });
+                            
+                            // Update counter
+                            const numericId = parseInt(typeParts[typeParts.length - 1], 10);
+                            if (!isNaN(numericId) && numericId > _counters[type]) {
+                                _counters[type] = numericId;
+                            }
+                            
+                            // Store reference to the panel
+                            _panels.set(id, panel);
+                            _panelsByType.get(type).add(panel);
+                            _activePanels.add(panel);
+                            
+                            // Set up event handlers
+                            _setupTileEventHandlers(tileElement, id);
+                            
+                            // Initialize the panel
+                            panel.init();
+                            
+                            // Update title in the DOM
+                            const titleInput = tileElement.querySelector('.tile-title');
+                            if (titleInput) {
+                                titleInput.value = panel.getTitle();
                             }
                         }
                     }
-                } else {
-                    console.log(`Tile with ID ${id} not found`);
-                }
+                );
             });
             
-            // Restore split container dimensions with percentage-based flex values
-            if (layout.splits) {
-                // Get all split containers in the document
-                const allSplitContainers = document.querySelectorAll('.split-container');
+            // Set up all the handle resizing
+            document.querySelectorAll('.split-handle').forEach(handle => {
+                const container = handle.parentElement;
+                const panes = container.querySelectorAll('.split-pane');
                 
-                Object.entries(layout.splits).forEach(([splitId, splitConfig]) => {
-                    // Extract the index from split-{index} format
-                    const index = parseInt(splitId.split('-')[1], 10);
-                    
-                    if (index < allSplitContainers.length) {
-                        const container = allSplitContainers[index];
-                        const panes = container.querySelectorAll('.split-pane');
+                if (panes.length === 2) {
+                    const direction = container.dataset.splitDirection;
+                    LayoutManager.setupResizableHandle(handle, panes[0], panes[1], direction);
+                }
+            });
+        } 
+        // Handle legacy formats
+        else if (layout.tiles || layout.structure) {
+            console.warn('Restoring from legacy layout format. Consider saving a new session.');
+            
+            // Create panels based on saved configuration
+            if (layout.panels) {
+                Object.entries(layout.panels).forEach(([id, config]) => {
+                    if (!_panels.has(id)) {
+                        // Extract panel type from ID
+                        const typeParts = id.split('-');
+                        const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
                         
-                        if (panes.length === 2) {
-                            const { pane1, pane2 } = splitConfig;
-                            
-                            // Apply percentage-based flex values
-                            if (pane1.percentage) {
-                                panes[0].style.flex = `0 0 ${pane1.percentage}%`;
-                            }
-                            
-                            if (pane2.percentage) {
-                                panes[1].style.flex = `0 0 ${pane2.percentage}%`;
-                            }
-                            
-                            // Restore control panel visibility
-                            if (pane1.hasOwnProperty('controlsVisible')) {
-                                panes[0].dataset.controlsVisible = pane1.controlsVisible;
-                                const controls = panes[0].querySelector('.plot-controls');
-                                if (controls) {
-                                    controls.style.display = pane1.controlsVisible ? 'flex' : 'none';
-                                }
-                            }
-                            
-                            if (pane2.hasOwnProperty('controlsVisible')) {
-                                panes[1].dataset.controlsVisible = pane2.controlsVisible;
-                                const controls = panes[1].querySelector('.plot-controls');
-                                if (controls) {
-                                    controls.style.display = pane2.controlsVisible ? 'flex' : 'none';
-                                }
-                            }
+                        // Create the panel if its type is registered
+                        if (_panelTypes.has(type)) {
+                            createPanel(type, config);
                         }
-                    } else {
-                        console.log(`Split container at index ${index} not found`);
                     }
                 });
             }
         } else {
-            // Old format for backward compatibility
-            Object.entries(layout).forEach(([id, dimensions]) => {
-                const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
-                if (tile) {
-                    if (dimensions.height) {
-                        tile.style.height = dimensions.height;
-                    }
-                    if (dimensions.width) {
-                        tile.style.width = dimensions.width;
-                    }
-                } else {
-                    console.log(`Tile with ID ${id} not found (old format)`);
+            console.warn('Unknown layout format.');
+        }
+        
+        console.log('Layout restoration completed');
+    }
+    
+    /**
+     * Set up event handlers for a tile
+     * @param {HTMLElement} tileElement - The tile element
+     * @param {string} id - The panel ID
+     * @private
+     */
+    function _setupTileEventHandlers(tileElement, id) {
+        // Update the title in the DOM
+        const titleInput = tileElement.querySelector('.tile-title');
+        if (titleInput) {
+            titleInput.addEventListener('change', () => {
+                const panel = _panels.get(id);
+                if (panel) {
+                    panel.setTitle(titleInput.value);
                 }
             });
         }
         
-        console.log('Layout restoration completed');
+        // Set up split handlers
+        const splitHBtn = tileElement.querySelector('.tile-split-h');
+        if (splitHBtn) {
+            splitHBtn.addEventListener('click', () => _splitTile(id, 'horizontal'));
+        }
+        
+        const splitVBtn = tileElement.querySelector('.tile-split-v');
+        if (splitVBtn) {
+            splitVBtn.addEventListener('click', () => _splitTile(id, 'vertical'));
+        }
+        
+        // Set up close handler
+        const closeBtn = tileElement.querySelector('.tile-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => closePanel(id));
+        }
+        
+        // Set up toggle controls handler
+        const toggleControlsBtn = tileElement.querySelector('.tile-toggle-controls');
+        if (toggleControlsBtn) {
+            toggleControlsBtn.addEventListener('click', () => _togglePanelControls(id, toggleControlsBtn));
+        }
     }
 
     /**
