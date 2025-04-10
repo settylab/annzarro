@@ -1,11 +1,12 @@
 import { populateKeySelector, populateColumnSelector, updateColorSliderUI } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot } from './plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedCell, highlightFocusedGene, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 
 export function setupPlotEventListeners({
     container,
     plotContainer,
+    controlsContainer,
     settings,
     plotType,
     data,
@@ -25,7 +26,16 @@ export function setupPlotEventListeners({
         id,
         loadDataAndCreatePlot);
 
-    // setup3DToggle(container, settings, plotType, updateFn);
+    setupPlotControlListeners(
+        container,
+        settings,
+        plotContainer,
+        data,
+        id,
+        loadDataAndCreatePlot,
+        updatePlotElements,
+        controlsContainer
+    )
     setupColorControls(
         container,
         settings,
@@ -74,6 +84,233 @@ export function setupResizeObserver(plotContainer) {
     return observer;
 }
 
+
+/**
+ * Sets up plot control listeners (e.g., 3D toggle, point size/opacity sliders, grid toggle,
+ * highlight focused cell toggle, refresh plot, lock range) inside the provided container.
+ *
+ * @param {HTMLElement} container - The container element for the control UI.
+ * @param {Object} settings - Plot settings (e.g., settings.z, pointSize, pointOpacity,
+ *                            showGrid, highlightFocusedCell, lockColorRange, etc.).
+ * @param {HTMLElement} plotContainer - The Plotly plot container element.
+ * @param {Object} data - Data cache object (e.g., { x, y, z, color, cells, colorType, … }).
+ * @param {string|number} id - Unique identifier to build element selectors.
+ * @param {Function} loadDataAndCreatePlot - Function to recreate the entire plot.
+ * @param {Function} updatePlotElements - Function to update plot properties.
+ * @param {Object} controlsContainer - An object containing additional control helper functions:
+ *                   - setupAxisSelector(container, axis, axisSettings, plotType, datasetStructure)
+ *                   - highlightFocusedCell(plotContainer, data, settings)
+ *                   - removeHighlight(plotContainer)
+ *                   - (Optionally) plotType property, etc.
+ */
+export function setupPlotControlListeners(
+    container,
+    settings,
+    plotContainer,
+    data,
+    id,
+    loadDataAndCreatePlot,
+    updatePlotElements,
+    controlsContainer
+  ) {
+    // --- 3D Plot Toggle ---
+    const zAxisToggle = container.querySelector(`#z-axis-toggle-${id}`);
+    const zAxisContainer = container.querySelector(`#z-axis-container-${id}`);
+    zAxisToggle.addEventListener('click', async () => {
+      const is3D = zAxisToggle.classList.contains('active');
+      if (is3D) {
+        // Disable 3D: reset classes, hide 3D controls, update settings
+        zAxisToggle.classList.remove('active', 'btn-primary');
+        zAxisToggle.classList.add('btn-outline-secondary');
+        zAxisToggle.setAttribute('title', 'Enable 3D plot');
+        if (zAxisContainer) {
+          zAxisContainer.style.display = 'none';
+        }
+        settings.z = null;
+        loadDataAndCreatePlot();
+      } else {
+        // Enable 3D: change button appearance, show controls
+        zAxisToggle.classList.add('active', 'btn-primary');
+        zAxisToggle.classList.remove('btn-outline-secondary');
+        zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
+        if (zAxisContainer) {
+          zAxisContainer.style.display = 'block';
+        }
+        if (!settings.z) {
+          const yKey = settings.y?.key || '';
+          let zColumn = '2';
+          const datasetStructure = await DataManager.getDatasetStructure();
+          const df = datasetStructure?.obsm?.dataframes?.[yKey];
+          const yCol = settings.y?.column;
+          if (df?.columns?.length) {
+            const yIdx = df.columns.indexOf(yCol);
+            if (yIdx !== -1 && yIdx + 1 < df.columns.length) {
+              zColumn = df.columns[yIdx + 1];
+            } else {
+              zColumn = df.columns.at(-1); // fallback to last column
+            }
+          }
+          settings.z = { type: 'obsm', key: yKey, column: zColumn };
+          // Call the axis selector setup helper from the controls object.
+          if (typeof controlsContainer.setupAxisSelector === 'function') {
+            controlsContainer.setupAxisSelector(container, 'z', settings.z, controlsContainer.plotType, datasetStructure);
+          }
+        }
+        loadDataAndCreatePlot();
+      }
+    });
+  
+    // --- Point Size Slider ---
+    const pointSizeSlider = container.querySelector(`#point-size-${id}`);
+    pointSizeSlider.addEventListener('input', (e) => {
+      const newSize = parseFloat(e.target.value);
+      settings.pointSize = newSize;
+      updatePlotElements({ styling: true });
+    });
+  
+    // --- Point Opacity Slider ---
+    const pointOpacitySlider = container.querySelector(`#point-opacity-${id}`);
+    pointOpacitySlider.addEventListener('input', (e) => {
+      const newOpacity = parseFloat(e.target.value);
+      settings.pointOpacity = newOpacity;
+      updatePlotElements({ styling: true });
+    });
+  
+    // --- Show Grid Toggle ---
+    const showGridToggle = container.querySelector(`#show-grid-${id}`);
+    if (settings.showGrid) {
+      showGridToggle.classList.add('active', 'btn-primary');
+      showGridToggle.classList.remove('btn-outline-secondary');
+    } else {
+      showGridToggle.classList.remove('active', 'btn-primary');
+      showGridToggle.classList.add('btn-outline-secondary');
+    }
+    showGridToggle.addEventListener('click', () => {
+      settings.showGrid = !settings.showGrid;
+      if (settings.showGrid) {
+        showGridToggle.classList.add('active', 'btn-primary');
+        showGridToggle.classList.remove('btn-outline-secondary');
+      } else {
+        showGridToggle.classList.remove('active', 'btn-primary');
+        showGridToggle.classList.add('btn-outline-secondary');
+      }
+      if (plotContainer) {
+        const update = {
+          // 2D axes
+          'xaxis.showgrid': settings.showGrid,
+          'yaxis.showgrid': settings.showGrid,
+          'xaxis.showline': settings.showGrid,
+          'yaxis.showline': settings.showGrid,
+          'xaxis.zeroline': settings.showGrid,
+          'yaxis.zeroline': settings.showGrid,
+          'xaxis.ticks': settings.showGrid ? '' : 'none',
+          'yaxis.ticks': settings.showGrid ? '' : 'none',
+          'xaxis.showticklabels': settings.showGrid,
+          'yaxis.showticklabels': settings.showGrid,
+        };
+        // For 3D plots.
+        if (settings.z) {
+          Object.assign(update, {
+            'scene.xaxis.showgrid': settings.showGrid,
+            'scene.yaxis.showgrid': settings.showGrid,
+            'scene.zaxis.showgrid': settings.showGrid,
+            'scene.xaxis.showline': settings.showGrid,
+            'scene.yaxis.showline': settings.showGrid,
+            'scene.zaxis.showline': settings.showGrid,
+            'scene.xaxis.zeroline': settings.showGrid,
+            'scene.yaxis.zeroline': settings.showGrid,
+            'scene.zaxis.zeroline': settings.showGrid,
+            'scene.xaxis.ticks': settings.showGrid ? '' : 'none',
+            'scene.yaxis.ticks': settings.showGrid ? '' : 'none',
+            'scene.zaxis.ticks': settings.showGrid ? '' : 'none',
+            'scene.xaxis.showticklabels': settings.showGrid,
+            'scene.yaxis.showticklabels': settings.showGrid,
+            'scene.zaxis.showticklabels': settings.showGrid,
+          });
+        }
+        Plotly.relayout(plotContainer, update);
+      }
+    });
+  
+    // --- Highlight Focused Cell Toggle (conditional) ---
+  const highlightFocusedCellToggle = container.querySelector(`#highlight-focused-cell-${id}`);
+  if (highlightFocusedCellToggle) {
+    if (settings.highlightFocusedCell) {
+      highlightFocusedCellToggle.classList.add('active', 'btn-primary');
+      highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
+    } else {
+      highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
+      highlightFocusedCellToggle.classList.add('btn-outline-secondary');
+    }
+    highlightFocusedCellToggle.addEventListener('click', () => {
+      settings.highlightFocusedCell = !settings.highlightFocusedCell;
+      if (settings.highlightFocusedCell) {
+        highlightFocusedCellToggle.classList.add('active', 'btn-primary');
+        highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
+        highlightFocusedCell(plotContainer, data, settings);
+      } else {
+        highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
+        highlightFocusedCellToggle.classList.add('btn-outline-secondary');
+        removeHighlight(plotContainer);
+      }
+    });
+  }
+
+  // --- Highlight Focused Gene Toggle (conditional) ---
+  const highlightFocusedGeneToggle = container.querySelector(`#highlight-focused-gene-${id}`);
+  if (highlightFocusedGeneToggle) {
+    if (settings.highlightFocusedGene) {
+      highlightFocusedGeneToggle.classList.add('active', 'btn-primary');
+      highlightFocusedGeneToggle.classList.remove('btn-outline-secondary');
+    } else {
+      highlightFocusedGeneToggle.classList.remove('active', 'btn-primary');
+      highlightFocusedGeneToggle.classList.add('btn-outline-secondary');
+    }
+    highlightFocusedGeneToggle.addEventListener('click', () => {
+      settings.highlightFocusedGene = !settings.highlightFocusedGene;
+      if (settings.highlightFocusedGene) {
+        highlightFocusedGeneToggle.classList.add('active', 'btn-primary');
+        highlightFocusedGeneToggle.classList.remove('btn-outline-secondary');
+        highlightFocusedGene(plotContainer, data, settings);
+      } else {
+        highlightFocusedGeneToggle.classList.remove('active', 'btn-primary');
+        highlightFocusedGeneToggle.classList.add('btn-outline-secondary');
+        removeHighlight(plotContainer);
+      }
+    });
+  }
+  
+    // --- Refresh Plot Button ---
+    const refreshPlotButton = container.querySelector(`#refresh-plot-${id}`);
+    refreshPlotButton.addEventListener('click', () => {
+      if (plotContainer) {
+        plotContainer.innerHTML = '<div class="alert alert-info">Refreshing plot...</div>';
+      }
+      loadDataAndCreatePlot();
+    });
+  
+    // --- Lock Range Button ---
+    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
+    if (settings.lockColorRange) {
+      lockRangeButton.classList.add('active', 'btn-primary');
+      lockRangeButton.classList.remove('btn-outline-secondary');
+    } else {
+      lockRangeButton.classList.remove('active', 'btn-primary');
+      lockRangeButton.classList.add('btn-outline-secondary');
+    }
+    lockRangeButton.addEventListener('click', () => {
+      settings.lockColorRange = !settings.lockColorRange;
+      if (settings.lockColorRange) {
+        lockRangeButton.classList.add('active', 'btn-primary');
+        lockRangeButton.classList.remove('btn-outline-secondary');
+      } else {
+        lockRangeButton.classList.remove('active', 'btn-primary');
+        lockRangeButton.classList.add('btn-outline-secondary');
+      }
+      // Optionally trigger a plot update if needed:
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { colorRange: true });
+    });
+  }
 
 /**
  * Set up color controls (e.g., color scale, opacity, color range inputs, centering, and outlier filtering)

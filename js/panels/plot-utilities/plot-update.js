@@ -406,193 +406,199 @@ export async function loadColorDataAndUpdatePlot(
 
 
 /**
- * Highlight the focused cell in the plot.
+ * Highlights the focused entity (cell or gene) in the Plotly plot.
  *
- * @param {HTMLElement} plotContainer - The DOM element containing the plot.
- * @param {Object} data - Data object containing x, y, (optional z), cells, color, and colorType.
- *                         Expected structure:
- *                           data = {
- *                             x: { values: [...] },
- *                             y: { values: [...] },
- *                             z: { values: [...] }, // optional
- *                             cells: [...],
- *                             color: [...],         // optional
- *                             colorType: 'categorical' || 'numerical' || 'constant'
- *                           }
- * @param {Object} settings - Settings for the plot (e.g., pointSize, highlightFocusedCell flag, z).
- *                            Expected keys include:
- *                              settings = {
- *                                pointSize: number,
- *                                highlightFocusedCell: boolean,
- *                                z: any  // typically non-null if 3D
- *                              }
+ * @param {HTMLElement} plotContainer - The container element holding the plot.
+ * @param {Object} data - The data object. Expected to have:
+ *                          - For cells: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), cells: [...] }
+ *                          - For genes: { x: { values: [...] }, y: { values: [...] }, (optional z: { values: [...] }), genes: [...] }
+ *                          Also expected to include a "colorType" property.
+ * @param {Object} settings - Plot settings object. Expected to include:
+ *                              - pointSize,
+ *                              - highlightFocusedCell (for cells) or highlightFocusedGene (for genes),
+ *                              - z (non-null for 3D mode).
+ * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
-export function highlightFocusedCell(plotContainer, data, settings) {
-    // Ensure required data and plot elements exist
-    if (!plotContainer || !data || !data.cells || !data.x || !data.y ||
-        !data.x.values || !data.y.values) {
-        console.log("Missing required data for highlighting cell");
-        return;
+export function highlightFocusedEntity(plotContainer, data, settings, entityType) {
+  // Validate required properties.
+  const entityKey = entityType === 'cell' ? 'cells' : 'genes';
+  if (!plotContainer || !data || !data[entityKey] || !data.x || !data.y ||
+      !data.x.values || !data.y.values) {
+    console.warn(`Missing required data for highlighting ${entityType}`);
+    return;
+  }
+  if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
+    console.warn("Plot data is not available for highlighting");
+    return;
+  }
+
+  // Get focused entity.
+  const focusedEntity = entityType === 'cell'
+    ? DataManager.getFocusedCell()
+    : DataManager.getFocusedGene();
+  const highlightEnabled = entityType === 'cell'
+    ? settings.highlightFocusedCell
+    : settings.highlightFocusedGene;
+  if (!focusedEntity || !highlightEnabled) {
+    // If highlighting is disabled or no focused entity exists, remove any highlight.
+    removeHighlight(plotContainer);
+    return;
+  }
+
+  let focusedIndex = -1;
+  let traceIndex = 0;
+
+  // Use the appropriate property from data.
+  const entityArray = data[entityKey];
+
+  // Check if we have categorical data with multiple traces.
+  const isCategorical = data.colorType === 'categorical';
+  const dataTraces = plotContainer.data.filter(trace => trace && trace.name !== `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+  const hasMultipleTraces = dataTraces.length > 1;
+
+  if (isCategorical && hasMultipleTraces) {
+    // Look through each trace's text array.
+    for (let i = 0; i < dataTraces.length; i++) {
+      const trace = dataTraces[i];
+      if (trace && Array.isArray(trace.text)) {
+        const idx = trace.text.indexOf(focusedEntity);
+        if (idx !== -1) {
+          focusedIndex = idx;
+          traceIndex = i;
+          break;
+        }
+      }
     }
-    if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
-        console.log("Plot data is not available for highlighting");
-        return;
+  } else {
+    // Single trace: find index in the main entity array.
+    focusedIndex = entityArray.indexOf(focusedEntity);
+  }
+
+  if (focusedIndex === -1) {
+    console.warn(`Focused ${entityType} ${focusedEntity} not found in plot data`);
+    removeHighlight(plotContainer);
+    return;
+  }
+
+  // Determine 3D mode.
+  const is3D = settings.z !== null;
+
+  // Retrieve coordinates.
+  let xValue, yValue, zValue;
+  if (isCategorical && hasMultipleTraces) {
+    const trace = dataTraces[traceIndex];
+    if (trace && Array.isArray(trace.x) && Array.isArray(trace.y) &&
+        focusedIndex < trace.x.length && focusedIndex < trace.y.length) {
+      xValue = trace.x[focusedIndex];
+      yValue = trace.y[focusedIndex];
+      if (is3D && trace.z && Array.isArray(trace.z) && focusedIndex < trace.z.length) {
+        zValue = trace.z[focusedIndex];
+      }
+    } else {
+      console.error("Invalid trace data for highlighting");
+      return;
     }
-
-    const focusedCell = DataManager.getFocusedCell();
-    if (!focusedCell || !settings.highlightFocusedCell) {
-        // If highlighting is disabled or no focused cell exists, remove any highlight
-        removeHighlight(plotContainer);
-        return;
+  } else {
+    if (focusedIndex < entityArray.length &&
+        focusedIndex < data.x.values.length && focusedIndex < data.y.values.length) {
+      xValue = data.x.values[focusedIndex];
+      yValue = data.y.values[focusedIndex];
+      if (is3D && data.z && data.z.values && focusedIndex < data.z.values.length) {
+        zValue = data.z.values[focusedIndex];
+      }
+    } else {
+      console.error("Invalid data for highlighting");
+      return;
     }
+  }
 
-    try {
-        // Determine whether we're handling categorical data with multiple traces.
-        const isCategorical = data.colorType === 'categorical';
-        let dataTraces = [];
-        try {
-            dataTraces = plotContainer.data.filter(trace => trace && trace.name !== 'Focused Cell');
-        } catch (err) {
-            console.error("Error filtering traces:", err);
-        }
-        const hasMultipleTraces = dataTraces.length > 1;
-        let focusedCellIndex = -1;
-        let traceIndex = 0;
+  // Build the highlight trace.
+  const highlightTrace = {
+    x: [xValue],
+    y: [yValue],
+    mode: 'markers',
+    type: is3D ? 'scatter3d' : 'scattergl',
+    marker: {
+      size: settings.pointSize * 2,
+      color: 'rgba(255, 0, 0, 1)', // Red for emphasis.
+      opacity: 1,
+      line: {
+        color: 'rgba(0, 0, 0, 1)',
+        width: 2
+      }
+    },
+    hoverinfo: 'skip',
+    name: `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`,
+    showlegend: false
+  };
+  if (is3D && zValue !== undefined) {
+    highlightTrace.z = [zValue];
+  }
 
-        if (isCategorical && hasMultipleTraces) {
-            // Search each trace's text array for the focused cell.
-            for (let i = 0; i < dataTraces.length; i++) {
-                const trace = dataTraces[i];
-                if (trace && Array.isArray(trace.text)) {
-                    const idx = trace.text.indexOf(focusedCell);
-                    if (idx !== -1) {
-                        focusedCellIndex = idx;
-                        traceIndex = i;
-                        break;
-                    }
-                }
-            }
-        } else {
-            // For a single trace, just locate the cell in the main data.
-            focusedCellIndex = data.cells.indexOf(focusedCell);
-        }
-
-        if (focusedCellIndex === -1) {
-            console.log(`Focused cell ${focusedCell} not found in plot data`);
-            removeHighlight(plotContainer);
-            return;
-        }
-
-        // Determine if we're in 3D mode.
-        const is3D = settings.z !== null;
-
-        // Retrieve coordinates for the focused cell.
-        let xValue, yValue, zValue;
-        if (isCategorical && hasMultipleTraces) {
-            if (traceIndex < dataTraces.length) {
-                const trace = dataTraces[traceIndex];
-                if (trace && Array.isArray(trace.x) && Array.isArray(trace.y) &&
-                    focusedCellIndex < trace.x.length && focusedCellIndex < trace.y.length) {
-                    
-                    xValue = trace.x[focusedCellIndex];
-                    yValue = trace.y[focusedCellIndex];
-                    if (is3D && trace.z && Array.isArray(trace.z) &&
-                        focusedCellIndex < trace.z.length) {
-                        zValue = trace.z[focusedCellIndex];
-                    }
-                } else {
-                    console.error("Invalid trace data for highlighting");
-                    return;
-                }
-            } else {
-                console.error("Trace index out of bounds");
-                return;
-            }
-        } else {
-            if (Array.isArray(data.x.values) && Array.isArray(data.y.values) &&
-                focusedCellIndex < data.x.values.length && focusedCellIndex < data.y.values.length) {
-                
-                xValue = data.x.values[focusedCellIndex];
-                yValue = data.y.values[focusedCellIndex];
-                if (is3D && data.z && data.z.values && Array.isArray(data.z.values) &&
-                    focusedCellIndex < data.z.values.length) {
-                    zValue = data.z.values[focusedCellIndex];
-                }
-            } else {
-                console.error("Invalid data for highlighting");
-                return;
-            }
-        }
-
-        // Create the highlight trace.
-        const highlightTrace = {
-            x: [xValue],
-            y: [yValue],
-            mode: 'markers',
-            type: is3D ? 'scatter3d' : 'scattergl',
-            marker: {
-                size: settings.pointSize * 2, // Increased size for emphasis
-                color: 'rgba(255, 0, 0, 1)',   // Red color for highlighting
-                opacity: 1,
-                line: {
-                    color: 'rgba(0, 0, 0, 1)',
-                    width: 2
-                }
-            },
-            hoverinfo: 'skip',
-            name: 'Focused Cell',
-            showlegend: false
-        };
-
-        // Include z coordinate for 3D plots.
-        if (is3D && zValue !== undefined) {
-            highlightTrace.z = [zValue];
-        }
-
-        // Check if a highlight trace already exists.
-        const highlightTraceIndex = plotContainer.data.findIndex(trace => trace && trace.name === 'Focused Cell');
-        if (highlightTraceIndex >= 0) {
-            // Update existing trace.
-            Plotly.restyle(plotContainer, {
-                x: [highlightTrace.x],
-                y: [highlightTrace.y],
-                z: is3D ? [highlightTrace.z] : undefined,
-                type: highlightTrace.type
-            }, highlightTraceIndex);
-        } else {
-            // Add a new highlight trace.
-            Plotly.addTraces(plotContainer, highlightTrace);
-        }
-    } catch (error) {
-        console.error("Error highlighting focused cell:", error);
-    }
+  // Look for an existing highlight trace.
+  const existingIdx = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cell' ? 'Cell' : 'Gene'}`);
+  if (existingIdx >= 0) {
+    Plotly.restyle(plotContainer, {
+      x: [highlightTrace.x],
+      y: [highlightTrace.y],
+      z: is3D ? [highlightTrace.z] : undefined,
+      type: highlightTrace.type
+    }, existingIdx);
+  } else {
+    Plotly.addTraces(plotContainer, highlightTrace);
+  }
 }
 
 /**
- * Remove the highlight trace from the plot.
+ * Highlights the focused cell in the Plotly plot.
  *
- * @param {HTMLElement} plotContainer - The DOM element containing the plot.
+ * @param {HTMLElement} plotContainer - The container element for the Plotly plot.
+ * @param {Object} data - The data object (expected to have data.cells, x, y, etc.).
+ * @param {Object} settings - The plot settings.
+ */
+export function highlightFocusedCell(plotContainer, data, settings) {
+  highlightFocusedEntity(plotContainer, data, settings, 'cell');
+}
+
+/**
+ * Highlights the focused gene in the Plotly plot.
+ *
+ * @param {HTMLElement} plotContainer - The container element for the Plotly plot.
+ * @param {Object} data - The data object (expected to have data.genes, x, y, etc.).
+ * @param {Object} settings - The plot settings.
+ */
+export function highlightFocusedGene(plotContainer, data, settings) {
+  highlightFocusedEntity(plotContainer, data, settings, 'gene');
+}
+
+/**
+ * Removes any highlight trace for cells or genes from the Plotly plot.
+ *
+ * This function will look for any trace in plotContainer.data whose name (case-insensitive)
+ * is either "Focused Cell" or "Focused Gene" and remove it.
+ *
+ * @param {HTMLElement} plotContainer - The DOM element containing the Plotly plot.
  */
 export function removeHighlight(plotContainer) {
     if (!plotContainer) return;
-
     try {
-        if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
-            return;
+      if (!plotContainer.data || !Array.isArray(plotContainer.data)) return;
+  
+      const indicesToRemove = [];
+      // Loop in reverse order to avoid index shifting while deleting traces.
+      for (let i = plotContainer.data.length - 1; i >= 0; i--) {
+        const trace = plotContainer.data[i];
+        if (trace && typeof trace.name === 'string') {
+          const traceName = trace.name.trim().toLowerCase();
+          if (traceName === 'focused cell' || traceName === 'focused gene') {
+            indicesToRemove.push(i);
+          }
         }
-        // Find the highlight trace (by its unique name).
-        let highlightTraceIndex = -1;
-        for (let i = 0; i < plotContainer.data.length; i++) {
-            if (plotContainer.data[i] && plotContainer.data[i].name === 'Focused Cell') {
-                highlightTraceIndex = i;
-                break;
-            }
-        }
-        if (highlightTraceIndex >= 0) {
-            // Remove the trace from the plot.
-            Plotly.deleteTraces(plotContainer, highlightTraceIndex);
-        }
+      }
+      if (indicesToRemove.length > 0) {
+        Plotly.deleteTraces(plotContainer, indicesToRemove);
+      }
     } catch (error) {
-        console.error("Error removing highlight:", error);
+      console.error("Error removing highlight traces:", error);
     }
-}
+  }

@@ -117,6 +117,7 @@ const CellPlotPanel = (function() {
             _resizeObserver = setupPlotEventListeners({
                 container: _container, // Use _controlsContainer which contains the UI controls
                 plotContainer: _plotContainer,
+                controlsContainer: _controlsContainer,
                 settings: _settings,
                 plotType: _plotType,
                 data: _data,
@@ -124,219 +125,6 @@ const CellPlotPanel = (function() {
                 loadDataAndCreatePlot: _loadDataAndCreatePlot
             })
             
-            // 3D plot toggle - this always requires plot recreation since it changes the plot type
-            const zAxisToggle = document.getElementById(`z-axis-toggle-${_id}`);
-            zAxisToggle.addEventListener('click', async () => {
-              const is3D = zAxisToggle.classList.contains('active');
-              const zAxisContainer = document.getElementById(`z-axis-container-${_id}`);
-            
-              if (is3D) {
-                // Disable 3D
-                zAxisToggle.classList.remove('active', 'btn-primary');
-                zAxisToggle.classList.add('btn-outline-secondary');
-                zAxisToggle.setAttribute('title', 'Enable 3D plot');
-            
-                zAxisContainer.style.display = 'none';
-                _settings.z = null;
-                _loadDataAndCreatePlot();
-              } else {
-                // Enable 3D
-                zAxisToggle.classList.add('active', 'btn-primary');
-                zAxisToggle.classList.remove('btn-outline-secondary');
-                zAxisToggle.setAttribute('title', '3rd dimension active - click to disable');
-            
-                zAxisContainer.style.display = 'block';
-            
-                if (!_settings.z) {
-                    const yKey = _settings.y?.key || '';
-                    let zColumn = '2';
-            
-                    const datasetStructure = await DataManager.getDatasetStructure();
-                    const df = datasetStructure?.obsm?.dataframes?.[yKey];
-                    const yCol = _settings.y?.column;
-            
-                    if (df?.columns?.length) {
-                    const yIdx = df.columns.indexOf(yCol);
-                    if (yIdx !== -1 && yIdx + 1 < df.columns.length) {
-                        zColumn = df.columns[yIdx + 1];
-                    } else {
-                        zColumn = df.columns.at(-1); // fallback to last column
-                    }
-                    }
-            
-                    _settings.z = { type: 'obsm', key: yKey, column: zColumn };
-                    setupAxisSelector(_controlsContainer, 'z', _settings.z, _plotType, datasetStructure);
-                }
-            
-                _loadDataAndCreatePlot();
-              }
-            });
-            
-            // Point size slider - use centralized update system
-            const pointSizeSlider = document.getElementById(`point-size-${_id}`);
-            pointSizeSlider.addEventListener('input', (e) => {
-                const newSize = parseFloat(e.target.value);
-                _settings.pointSize = newSize;
-                
-                // Update styling only
-                _updatePlotElements({
-                    styling: true
-                });
-            });
-            
-            // Point opacity slider - use centralized update system
-            const pointOpacitySlider = document.getElementById(`point-opacity-${_id}`);
-            pointOpacitySlider.addEventListener('input', (e) => {
-                const newOpacity = parseFloat(e.target.value);
-                _settings.pointOpacity = newOpacity;
-                
-                // Update styling only
-                _updatePlotElements({
-                    styling: true
-                });
-            });
-            
-            
-            
-            // Show grid toggle
-            const showGridToggle = document.getElementById(`show-grid-${_id}`);
-            // Initialize checked state from settings
-            if (_settings.showGrid) {
-              showGridToggle.classList.add('active', 'btn-primary');
-              showGridToggle.classList.remove('btn-outline-secondary');
-            } else {
-              showGridToggle.classList.remove('active', 'btn-primary');
-              showGridToggle.classList.add('btn-outline-secondary');
-            }
-            showGridToggle.addEventListener('click', () => {
-                  // Toggle the setting
-                  _settings.showGrid = !_settings.showGrid;
-                  
-                  // Update button appearance based on the new state
-                  if (_settings.showGrid) {
-                    showGridToggle.classList.add('active', 'btn-primary');
-                    showGridToggle.classList.remove('btn-outline-secondary');
-                  } else {
-                    showGridToggle.classList.remove('active', 'btn-primary');
-                    showGridToggle.classList.add('btn-outline-secondary');
-                  }
-                
-                // Update grid, axes, and other line visibility without redrawing the plot
-                if (_plotContainer) {
-                    const update = {
-                        // Grid lines
-                        'xaxis.showgrid': _settings.showGrid,
-                        'yaxis.showgrid': _settings.showGrid,
-                        // Axis lines
-                        'xaxis.showline': _settings.showGrid,
-                        'yaxis.showline': _settings.showGrid,
-                        // Zero lines
-                        'xaxis.zeroline': _settings.showGrid,
-                        'yaxis.zeroline': _settings.showGrid,
-                        // Tick marks
-                        'xaxis.ticks': _settings.showGrid ? '' : 'none',
-                        'yaxis.ticks': _settings.showGrid ? '' : 'none',
-                        // Tick labels
-                        'xaxis.showticklabels': _settings.showGrid,
-                        'yaxis.showticklabels': _settings.showGrid
-                    };
-                    
-                    // For 3D plots, add the z-axis settings
-                    if (_settings.z) {
-                        update['scene.xaxis.showgrid'] = _settings.showGrid;
-                        update['scene.yaxis.showgrid'] = _settings.showGrid;
-                        update['scene.zaxis.showgrid'] = _settings.showGrid;
-                        
-                        update['scene.xaxis.showline'] = _settings.showGrid;
-                        update['scene.yaxis.showline'] = _settings.showGrid;
-                        update['scene.zaxis.showline'] = _settings.showGrid;
-                        
-                        update['scene.xaxis.zeroline'] = _settings.showGrid;
-                        update['scene.yaxis.zeroline'] = _settings.showGrid;
-                        update['scene.zaxis.zeroline'] = _settings.showGrid;
-                        
-                        update['scene.xaxis.ticks'] = _settings.showGrid ? '' : 'none';
-                        update['scene.yaxis.ticks'] = _settings.showGrid ? '' : 'none';
-                        update['scene.zaxis.ticks'] = _settings.showGrid ? '' : 'none';
-                        
-                        update['scene.xaxis.showticklabels'] = _settings.showGrid;
-                        update['scene.yaxis.showticklabels'] = _settings.showGrid;
-                        update['scene.zaxis.showticklabels'] = _settings.showGrid;
-                    }
-                    
-                    Plotly.relayout(_plotContainer, update);
-                }
-            });
-            
-            // Highlight focused cell toggle
-            const highlightFocusedCellToggle = document.getElementById(`highlight-focused-cell-${_id}`);
-            // Initialize button state from settings
-            if (_settings.highlightFocusedCell) {
-              highlightFocusedCellToggle.classList.add('active', 'btn-primary');
-              highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
-            } else {
-              highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
-              highlightFocusedCellToggle.classList.add('btn-outline-secondary');
-            }
-            
-            highlightFocusedCellToggle.addEventListener('click', () => {
-                // Toggle the setting
-                _settings.highlightFocusedCell = !_settings.highlightFocusedCell;
-                
-                // Update button appearance based on the new state
-                if (_settings.highlightFocusedCell) {
-                  highlightFocusedCellToggle.classList.add('active', 'btn-primary');
-                  highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
-                } else {
-                  highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
-                  highlightFocusedCellToggle.classList.add('btn-outline-secondary');
-                }
-                
-                // Update the highlighting on the plot
-                if (_settings.highlightFocusedCell) {
-                    _highlightFocusedCell();
-                } else {
-                    _removeHighlight();
-                }
-            });
-            
-            // Refresh plot button
-            const refreshPlotButton = document.getElementById(`refresh-plot-${_id}`);
-            refreshPlotButton.addEventListener('click', () => {
-                // Show loading indicator
-                if (_plotContainer) {
-                    _plotContainer.innerHTML = '<div class="alert alert-info">Refreshing plot...</div>';
-                }
-                // Reload data and recreate the plot
-                _loadDataAndCreatePlot();
-            });
-            
-            const lockRangeButton = document.getElementById(`lock-range-${_id}`);
-
-            // Initialize appearance based on the setting
-            if (_settings.lockColorRange) {
-              lockRangeButton.classList.add('active', 'btn-primary');
-              lockRangeButton.classList.remove('btn-outline-secondary');
-            } else {
-              lockRangeButton.classList.remove('active', 'btn-primary');
-              lockRangeButton.classList.add('btn-outline-secondary');
-            }
-            
-            lockRangeButton.addEventListener('click', () => {
-              // Toggle the setting
-              _settings.lockColorRange = !_settings.lockColorRange;
-              
-              if (_settings.lockColorRange) {
-                lockRangeButton.classList.add('active', 'btn-primary');
-                lockRangeButton.classList.remove('btn-outline-secondary');
-              } else {
-                lockRangeButton.classList.remove('active', 'btn-primary');
-                lockRangeButton.classList.add('btn-outline-secondary');
-              }
-              
-              // (Optional) If you want to trigger an update that respects the locked range:
-              // _updatePlot(false); or a similar function call here.
-            });
             
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', (e) => {
@@ -549,7 +337,7 @@ const CellPlotPanel = (function() {
                                 
                                 // If we have multiple axes updated, ensure the highlighted cell is properly updated
                                 if (Object.values(updates).filter(Boolean).length > 1 && _settings.highlightFocusedCell) {
-                                    _removeHighlight();
+                                    removeHighlight(_plotContainer);
                                     _highlightFocusedCell();
                                 }
                             })
@@ -829,14 +617,6 @@ const CellPlotPanel = (function() {
             highlightFocusedCell(_plotContainer, _data, _settings);
         }
         
-        
-        /**
-         * Remove highlight from the plot
-         * @private
-         */
-        function _removeHighlight() {
-            removeHighlight(_plotContainer);
-        }
         
         // Listen for focused cell changed events to update highlighting
         document.addEventListener('focusedCellChanged', (event) => {
