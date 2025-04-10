@@ -4,10 +4,21 @@ import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-u
 
 
 /**
+ * Helper function to get the appropriate entity key and data array
+ * @param {object} data - The data object containing either cells or genes
+ * @returns {object} - {entityKey, entities}
+ */
+function getEntityData(data) {
+  const entityKey = data.genes !== undefined ? 'genes' : 'cells';
+  const entities = data[entityKey] || [];
+  return { entityKey, entities };
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
- * @param {object} data - The data object containing x, y, z, color, cells, etc.
+ * @param {object} data - The data object containing x, y, z, color, cells or genes, etc.
  * @param {object} settings - The settings for the plot (e.g., x, y, z, color, point sizes).
  * @param {object} options - Update options.
  * @param {boolean} options.xAxis - Whether to update x-axis data.
@@ -71,20 +82,23 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         if (updateOptions.filter) {
             let filteredX, filteredY, filteredZ, filteredColor, filteredText, filteredCustom;
             
+            // Get entity data using our helper function
+            const { entities } = getEntityData(data);
+            
             if (indexMask) {
                 filteredX = data.x.values.filter((_, i) => indexMask[i]);
                 filteredY = data.y.values.filter((_, i) => indexMask[i]);
                 filteredZ = settings.z && data.z ? data.z.values.filter((_, i) => indexMask[i]) : undefined;
                 filteredColor = data.color.filter((_, i) => indexMask[i]);
-                filteredText = data.cells.filter((_, i) => indexMask[i]);
-                filteredCustom = data.cells.map((_, i) => i).filter((_, i) => indexMask[i]);
+                filteredText = entities.filter((_, i) => indexMask[i]);
+                filteredCustom = Array.from({length: entities.length}, (_, i) => i).filter((_, i) => indexMask[i]);
             } else {
                 filteredX = data.x.values;
                 filteredY = data.y.values;
                 filteredZ = settings.z && data.z ? data.z.values : undefined;
                 filteredColor = data.color;
-                filteredText = data.cells;
-                filteredCustom = data.cells.map((_, i) => i);
+                filteredText = entities;
+                filteredCustom = Array.from({length: entities.length}, (_, i) => i);
             }
             
             const update = {
@@ -113,6 +127,9 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                 console.log("Updating positions for categorical data with multiple traces");
 
                 try {
+                    // Determine entity type
+                    const { entityKey, entities } = getEntityData(data);
+                    
                     // Update each trace independently for categorical data.
                     plotContainer.data.forEach((trace, i) => {
                         if (trace.mode !== 'markers') return;
@@ -123,8 +140,8 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                         if (updateOptions.xAxis && data.x?.values) update.x = [indices.map(idx => data.x.values[idx])];
                         if (updateOptions.yAxis && data.y?.values) update.y = [indices.map(idx => data.y.values[idx])];
                         if (updateOptions.zAxis && data.z?.values && shouldBe3D) update.z = [indices.map(idx => data.z.values[idx])];
-                        if (data.cells) {
-                            update.text = [indices.map(idx => data.cells[idx])];
+                        if (entities && entities.length) {
+                            update.text = [indices.map(idx => entities[idx])];
                             update.customdata = [indices];
                         }
 
@@ -138,10 +155,14 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                     return;
                 }
                 
-                // Update the focused cell highlight if needed.
-                if (settings.highlightFocusedCell) {
+                // Update the highlighted entity if needed
+                const isGenePlot = data.genes !== undefined;
+                if (isGenePlot && settings.highlightFocusedGene) {
                     removeHighlight(plotContainer);
-                    highlightFocusedCell(plotContainer,data, settings);
+                    highlightFocusedEntity(plotContainer, data, settings, 'gene');
+                } else if (!isGenePlot && settings.highlightFocusedCell) {
+                    removeHighlight(plotContainer);
+                    highlightFocusedEntity(plotContainer, data, settings, 'cell');
                 }
             } else {
                 // Standard update for a single trace (numerical data).
@@ -159,9 +180,14 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                 if (Object.keys(update).length > 0) {
                     console.log("Updating position data:", update);
                     Plotly.restyle(plotContainer, update, [0]);
-                    if (settings.highlightFocusedCell) {
+                    // Highlight the appropriate entity based on plot type
+                    const isGenePlot = data.genes !== undefined;
+                    if (isGenePlot && settings.highlightFocusedGene) {
                         removeHighlight(plotContainer);
-                        highlightFocusedCell(plotContainer, data, settings);
+                        highlightFocusedEntity(plotContainer, data, settings, 'gene');
+                    } else if (!isGenePlot && settings.highlightFocusedCell) {
+                        removeHighlight(plotContainer);
+                        highlightFocusedEntity(plotContainer, data, settings, 'cell');
                     }
                 }
             }
@@ -231,9 +257,14 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                 }
             }
             
-            // Re-add highlight for the focused cell if needed.
+            // Re-add highlight for the focused entity if needed.
             if (hasFocusedCell) {
-                highlightFocusedCell(plotContainer, data, settings);
+                const isGenePlot = data.genes !== undefined;
+                if (isGenePlot) {
+                    highlightFocusedEntity(plotContainer, data, settings, 'gene');
+                } else {
+                    highlightFocusedEntity(plotContainer, data, settings, 'cell');
+                }
             }
         }
         
@@ -548,28 +579,6 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   }
 }
 
-
-/**
- * Highlights the focused cell in the Plotly plot.
- *
- * @param {HTMLElement} plotContainer - The container element for the Plotly plot.
- * @param {Object} data - The data object (expected to have data.cells, x, y, etc.).
- * @param {Object} settings - The plot settings.
- */
-export function highlightFocusedCell(plotContainer, data, settings) {
-  highlightFocusedEntity(plotContainer, data, settings, 'cell');
-}
-
-/**
- * Highlights the focused gene in the Plotly plot.
- *
- * @param {HTMLElement} plotContainer - The container element for the Plotly plot.
- * @param {Object} data - The data object (expected to have data.genes, x, y, etc.).
- * @param {Object} settings - The plot settings.
- */
-export function highlightFocusedGene(plotContainer, data, settings) {
-  highlightFocusedEntity(plotContainer, data, settings, 'gene');
-}
 
 /**
  * Removes any highlight trace for cells or genes from the Plotly plot.

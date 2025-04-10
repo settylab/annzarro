@@ -1,18 +1,20 @@
 import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
-import { highlightFocusedCell, updatePlotElements } from './plot-update.js';
+import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 
 /**
  * Loads data for a specific axis from an anndata-derived source.
  * 
  * @param {Object} settings - Axis settings object.
+ * @param {Array<number>} [filteredIndices=null] - Optional array of indices to filter the data.
+ * @param {string} [plotType=null] - Optional plot type ('cell' or 'gene') to determine context.
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings) {
+export async function loadAxisData(settings, filteredIndices = null, plotType = null) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -31,9 +33,18 @@ export async function loadAxisData(settings) {
   try {
     // Special case for 'none' type (constant color).
     if (type === 'none') {
-      const cells = DataManager.getCells();
-      const cellCount = cells ? cells.length : 100;
-      values = Array(cellCount).fill(1);
+      // Determine if we're working with gene or cell data based on the plotType parameter
+      const isGenePlot = plotType === 'gene';
+      
+      if (isGenePlot) {
+        const genes = DataManager.getGenes();
+        const geneCount = genes ? genes.length : 100;
+        values = Array(geneCount).fill(1);
+      } else {
+        const cells = DataManager.getCells();
+        const cellCount = cells ? cells.length : 100;
+        values = Array(cellCount).fill(1);
+      }
       dataType = 'constant';
       return { values, type: dataType, categories };
     }
@@ -72,6 +83,38 @@ export async function loadAxisData(settings) {
         }
         break;
       }
+      case 'var': {
+        data = await DataManager.loadVar({
+          datasetPath,
+          columns: [key],
+          rows: rowsArr
+        });
+        console.log(`Received var data for ${key}:`, data);
+
+        if (!data.data || !data.data[key]) {
+          console.warn(`No data found for var.${key}`);
+          throw new Error(`No data found for column '${key}' in var table`);
+        }
+
+        values = data.data[key];
+        console.log(`Loaded ${values.length} data points (var.${key})`);
+        if (values.length > 0) {
+          console.log(`Sample values: ${values.slice(0, 5)}`);
+        }
+
+        if (data.categories && data.categories[key]) {
+          dataType = 'categorical';
+          categories = data.categories[key];
+        } else {
+          // Infer data type: if >80% of values can be converted to a number, treat as numerical.
+          const numericCount = values.filter(v => {
+            if (v === null || v === undefined) return false;
+            return !isNaN(parseFloat(v));
+          }).length;
+          dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
+        }
+        break;
+      }
       case 'obsm': {
         data = await DataManager.loadObsm({
           datasetPath,
@@ -89,6 +132,28 @@ export async function loadAxisData(settings) {
         values = data.data;
         dataType = 'numerical';
         console.log(`Loaded ${values.length} data points (obsm.${key}.${column})`);
+        if (values.length > 0) {
+          console.log(`Sample values: ${values.slice(0, 5)}`);
+        }
+        break;
+      }
+      case 'varm': {
+        data = await DataManager.loadVarm({
+          datasetPath,
+          varmKey: key,
+          columnName: column,
+          rows: rowsArr
+        });
+        console.log(`Received varm data for ${key} column ${column}:`, data);
+
+        if (!data.data || data.data.length === 0) {
+          console.warn(`No data points received for varm.${key}.${column}`);
+          throw new Error(`No data points found for ${key}.${column}`);
+        }
+
+        values = data.data;
+        dataType = 'numerical';
+        console.log(`Loaded ${values.length} data points (varm.${key}.${column})`);
         if (values.length > 0) {
           console.log(`Sample values: ${values.slice(0, 5)}`);
         }
@@ -140,6 +205,61 @@ export async function loadAxisData(settings) {
             dataType = 'numerical';
           } else if (typeof firstVal === 'string') {
             console.warn('Obsp values are strings, treating as categorical');
+            dataType = 'categorical';
+          } else {
+            dataType = 'numerical';
+          }
+        } else {
+          dataType = 'numerical';
+        }
+        break;
+      }
+      case 'varp': {
+        const focusedGene = DataManager.getFocusedGene();
+        if (!focusedGene) {
+          throw new Error('No focused gene selected');
+        }
+        const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
+        if (focusedGeneIndex === -1) {
+          throw new Error('Focused gene not found in dataset');
+        }
+        console.log(`Loading varp data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
+        data = await DataManager.loadVarp({
+          datasetPath,
+          varpKey: key,
+          rows: [focusedGeneIndex]
+        });
+        console.log(`Received varp data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
+
+        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+          const firstRow = data.data[0];
+          if (Array.isArray(firstRow)) {
+            console.log(`Varp data is an array with ${firstRow.length} connections`);
+            console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
+            values = firstRow;
+          } else {
+            console.warn(`Expected array for varp row, got: ${typeof firstRow}`);
+            values = (firstRow !== undefined && firstRow !== null) ? [firstRow] : [];
+          }
+        } else {
+          console.warn(`Invalid or empty varp data received`);
+          values = [];
+        }
+
+        if (values && values.length > 0) {
+          // Replace null/undefined with NaN.
+          values = values.map(v => (v === null || v === undefined) ? NaN : v);
+          const firstVal = values[0];
+          if (typeof firstVal === 'object') {
+            console.warn('Varp values are objects, attempting to convert to numbers');
+            values = values.map(v => {
+              if (v === null || v === undefined) return NaN;
+              if (typeof v === 'number') return v;
+              return (v && 'value' in v) ? v.value : NaN;
+            });
+            dataType = 'numerical';
+          } else if (typeof firstVal === 'string') {
+            console.warn('Varp values are strings, treating as categorical');
             dataType = 'categorical';
           } else {
             dataType = 'numerical';
@@ -249,11 +369,23 @@ export async function loadAxisData(settings) {
  */
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id) {
   try {
-    // Validate that cells exist.
-    const cells = DataManager.getCells();
-    if (!cells || !cells.length) {
-      plotContainer.innerHTML = '<div class="alert alert-warning">No cells available</div>';
-      return;
+    // Determine if this is a gene or cell plot based on settings
+    const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
+    
+    if (isGenePlot) {
+      // Validate that genes exist for gene plots
+      const genes = DataManager.getGenes();
+      if (!genes || !genes.length) {
+        plotContainer.innerHTML = '<div class="alert alert-warning">No genes available</div>';
+        return;
+      }
+    } else {
+      // Validate that cells exist for cell plots
+      const cells = DataManager.getCells();
+      if (!cells || !cells.length) {
+        plotContainer.innerHTML = '<div class="alert alert-warning">No cells available</div>';
+        return;
+      }
     }
 
     // Show a loading indicator.
@@ -275,19 +407,23 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         </div>`;
         return;
       }
-      // For 'obsm' type, ensure key and column are provided.
-      if (axisSettings.type === 'obsm') {
+      
+      // For 'obsm'/'varm' type, ensure key and column are provided.
+      if (axisSettings.type === 'obsm' || axisSettings.type === 'varm') {
         if (!axisSettings.key || axisSettings.key === '') {
           plotContainer.innerHTML = `<div class="alert alert-warning">
-            Please select an obsm key for the ${axis}-axis
+            Please select an ${axisSettings.type} key for the ${axis}-axis
           </div>`;
           return;
         }
         if (axisSettings.column === undefined || axisSettings.column === null || axisSettings.column === '') {
           // Query the global dataset structure.
           const ds = await DataManager.getDatasetStructure();
-          if (ds && ds.obsm && ds.obsm.dataframes && ds.obsm.dataframes[axisSettings.key]) {
-            const df = ds.obsm.dataframes[axisSettings.key];
+          
+          // Handle both obsm and varm
+          const dfCollection = axisSettings.type === 'obsm' ? ds?.obsm?.dataframes : ds?.varm?.dataframes;
+          if (ds && dfCollection && dfCollection[axisSettings.key]) {
+            const df = dfCollection[axisSettings.key];
             if (df.columns && df.columns.length > 0) {
               if (axis === 'x') {
                 axisSettings.column = df.columns[0];
@@ -298,14 +434,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               } else if (axis === 'color') {
                 axisSettings.column = df.columns.length >= 4 ? df.columns[3] : df.columns[0];
               }
-              console.log(`Setting default column '${axisSettings.column}' for ${axis}-axis obsm.${axisSettings.key}`);
+              console.log(`Setting default column '${axisSettings.column}' for ${axis}-axis ${axisSettings.type}.${axisSettings.key}`);
             } else {
               axisSettings.column = '0';
-              console.log(`No columns found for obsm.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
+              console.log(`No columns found for ${axisSettings.type}.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
             }
           } else {
             axisSettings.column = '0';
-            console.log(`Dataset structure missing obsm.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
+            console.log(`Dataset structure missing ${axisSettings.type}.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
           }
         }
       }
@@ -313,23 +449,40 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
 
     // Reset cached data without changing its reference.
     Object.keys(data).forEach(key => delete data[key]);
-    Object.assign(data, {
-      x: null,
-      y: null,
-      z: null,
-      color: null,
-      cells: cells
-    });
+    
+    // Set up the appropriate entity list (cells or genes)
+    if (isGenePlot) {
+      const genes = DataManager.getGenes();
+      Object.assign(data, {
+        x: null,
+        y: null,
+        z: null,
+        color: null,
+        genes: genes
+      });
+    } else {
+      const cells = DataManager.getCells();
+      Object.assign(data, {
+        x: null,
+        y: null,
+        z: null,
+        color: null,
+        cells: cells
+      });
+    }
 
+    // Determine the plot type for loading the appropriate data
+    const plotType = isGenePlot ? 'gene' : 'cell';
+    
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
         console.log('Loading X-axis data:', settings.x);
-        data.x = await loadAxisData(settings.x);
+        data.x = await loadAxisData(settings.x, null, plotType);
       })(),
       (async () => {
         console.log('Loading Y-axis data:', settings.y);
-        data.y = await loadAxisData(settings.y);
+        data.y = await loadAxisData(settings.y, null, plotType);
       })()
     ];
 
@@ -337,7 +490,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       loadPromises.push(
         (async () => {
           console.log('Loading Z-axis data:', settings.z);
-          data.z = await loadAxisData(settings.z);
+          data.z = await loadAxisData(settings.z, null, plotType);
         })()
       );
     }
@@ -347,7 +500,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       (async () => {
         console.log('Loading color data:', settings.color);
         try {
-          const colorData = await loadAxisData(settings.color);
+          const colorData = await loadAxisData(settings.color, null, plotType);
           data.color = colorData.values;
           data.colorType = colorData.type;
           data.colorCategories = colorData.categories;
@@ -369,11 +522,35 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       await createPlot(container, plotContainer, settings, data, id);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
-      console.error('Insufficient data for plotting');
-      plotContainer.innerHTML = `<div class="alert alert-warning">
-        Insufficient data for plotting. X axis has 
-        ${data.x && data.x.values ? data.x.values.length : 0} points, 
-        Y axis has ${data.y && data.y.values ? data.y.values.length : 0} points.
+      // Build a more helpful message based on what's missing
+      let message = '';
+      
+      if (!data.x || !data.x.values) {
+        if (!settings.x || !settings.x.type || !settings.x.key) {
+          message += 'Please select X-axis data source from the dropdown menu.';
+        } else {
+          message += `No data available for X-axis (${settings.x.type}.${settings.x.key}${settings.x.column ? '.' + settings.x.column : ''}).`;
+        }
+      } else if (data.x.values.length === 0) {
+        message += `X-axis source contains no data points (${settings.x.type}.${settings.x.key}${settings.x.column ? '.' + settings.x.column : ''}).`;
+      }
+      
+      message += '<br>';
+      
+      if (!data.y || !data.y.values) {
+        if (!settings.y || !settings.y.type || !settings.y.key) {
+          message += 'Please select Y-axis data source from the dropdown menu.';
+        } else {
+          message += `No data available for Y-axis (${settings.y.type}.${settings.y.key}${settings.y.column ? '.' + settings.y.column : ''}).`;
+        }
+      } else if (data.y.values.length === 0) {
+        message += `Y-axis source contains no data points (${settings.y.type}.${settings.y.key}${settings.y.column ? '.' + settings.y.column : ''}).`;
+      }
+      
+      console.warn('Insufficient data for plotting: ' + message);
+      plotContainer.innerHTML = `<div class="alert alert-info text-center">
+        <strong>No Data to Plot</strong><br>
+        <small>${message}</small>
       </div>`;
     }
   } catch (error) {
@@ -389,30 +566,36 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  * @param {HTMLElement} container - DOM element that holds the panel.
  * @param {HTMLElement} plotContainer - DOM element that holds the plot.
  * @param {Object} settings - Object with plot configuration (axes, colors, palettes, etc).
- * @param {Object} data - Data object containing x, y (and optionally z), cells, color, etc.
+ * @param {Object} data - Data object containing x, y (and optionally z), cells/genes, color, etc.
  * @param {string|number} id - An identifier used to connect the plot to UI controls.
  *
  * @returns {Promise<void>}
  */
 export async function createPlot(container, plotContainer, settings, data, id) {
+  // Determine if this is a gene plot or cell plot
+  const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
+  const entityKey = isGenePlot ? 'genes' : 'cells';
+  const entities = data[entityKey];
+  const highlightKey = isGenePlot ? 'highlightFocusedGene' : 'highlightFocusedCell';
+
   // Validate required data
   if (!data.x || !data.y) {
     plotContainer.innerHTML =
       '<div class="alert alert-warning">Insufficient data for plotting</div>';
     return;
   }
-  if (!data.cells || data.cells.length === 0) {
-    console.error('Cell names missing - cannot create plot');
+  if (!entities || entities.length === 0) {
+    console.error(`${isGenePlot ? 'Gene' : 'Cell'} names missing - cannot create plot`);
     plotContainer.innerHTML =
-      '<div class="alert alert-danger">Error: Cell names missing or unavailable</div>';
+      `<div class="alert alert-danger">Error: ${isGenePlot ? 'Gene' : 'Cell'} names missing or unavailable</div>`;
     return;
   }
-  if (data.cells.length !== data.x.values.length) {
+  if (entities.length !== data.x.values.length) {
     console.warn(
-      `Cell names count (${data.cells.length}) doesn't match data points count (${data.x.values.length})`
+      `${isGenePlot ? 'Gene' : 'Cell'} names count (${entities.length}) doesn't match data points count (${data.x.values.length})`
     );
-    if (data.cells.length > data.x.values.length) {
-      data.cells = data.cells.slice(0, data.x.values.length);
+    if (entities.length > data.x.values.length) {
+      data[entityKey] = entities.slice(0, data.x.values.length);
     }
   }
 
@@ -422,8 +605,8 @@ export async function createPlot(container, plotContainer, settings, data, id) {
     mode: 'markers',
     x: data.x.values,
     y: data.y.values,
-    text: data.cells,
-    customdata: Array.from({ length: data.cells.length }, (_, i) => i),
+    text: entities,
+    customdata: Array.from({ length: entities.length }, (_, i) => i),
     hovertemplate:
       `%{text}<br>x: %{x}<br>y: %{y}` +
       (settings.z ? `<br>z: %{z}` : '') +
@@ -483,8 +666,8 @@ export async function createPlot(container, plotContainer, settings, data, id) {
         }
       );
       attachClickHandler(plotContainer, categoricalTraces, data);
-      if (settings.highlightFocusedCell) {
-        highlightFocusedCell(plotContainer, data, settings);
+      if (settings[highlightKey]) {
+        highlightFocusedEntity(plotContainer, data, settings, isGenePlot ? 'gene' : 'cell');
       }
       return;
     } catch (error) {
@@ -504,8 +687,8 @@ export async function createPlot(container, plotContainer, settings, data, id) {
         }
       );
       attachClickHandler(plotContainer, categoricalTraces, data);
-      if (settings.highlightFocusedCell) {
-        highlightFocusedCell(plotContainer, data, settings);
+      if (settings[highlightKey]) {
+        highlightFocusedEntity(plotContainer, data, settings, isGenePlot ? 'gene' : 'cell');
       }
       return;
     }
@@ -544,7 +727,8 @@ export async function createPlot(container, plotContainer, settings, data, id) {
       }
     );
     attachClickHandler(plotContainer, [baseTrace], data);
-    updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
+    // Pass a valid callback function instead of null
+    updatePlotElements(plotContainer, data, settings, () => createPlot(container, plotContainer, settings, data, id), { filter: true, colorRange: true })
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';

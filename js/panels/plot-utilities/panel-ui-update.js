@@ -156,7 +156,18 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
   
     console.log(`Setting up ${axis} axis selector with settings:`, settings);
   
-    settings.type = settings.type || 'obsm';
+    // Initialize if completely empty
+    if (!settings.type) {
+      // Default to 'none' for color, otherwise use varm/obsm
+      settings.type = axis === 'color' ? 'none' : 
+                      (plotType === 'gene' ? 'varm' : 'obsm');
+    }
+    
+    // Initialize other required fields
+    settings.key = settings.key || '';
+    settings.column = settings.column || '';
+    
+    // Set the UI value
     typeSelect.value = settings.type;
   
     populateKeySelector(settings, keySelect, datasetStructure);

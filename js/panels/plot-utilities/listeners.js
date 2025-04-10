@@ -1,6 +1,6 @@
 import { populateKeySelector, populateColumnSelector, updateColorSliderUI } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedCell, highlightFocusedGene, removeHighlight } from './plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 
 export function setupPlotEventListeners({
@@ -30,6 +30,7 @@ export function setupPlotEventListeners({
         container,
         settings,
         plotContainer,
+        plotType,
         data,
         id,
         loadDataAndCreatePlot,
@@ -106,6 +107,7 @@ export function setupPlotControlListeners(
     container,
     settings,
     plotContainer,
+    plotType,
     data,
     id,
     loadDataAndCreatePlot,
@@ -139,7 +141,9 @@ export function setupPlotControlListeners(
           const yKey = settings.y?.key || '';
           let zColumn = '2';
           const datasetStructure = await DataManager.getDatasetStructure();
-          const df = datasetStructure?.obsm?.dataframes?.[yKey];
+          const df = plotType === 'gene' 
+            ? datasetStructure?.varm?.dataframes?.[yKey] 
+            : datasetStructure?.obsm?.dataframes?.[yKey];
           const yCol = settings.y?.column;
           if (df?.columns?.length) {
             const yIdx = df.columns.indexOf(yCol);
@@ -149,7 +153,7 @@ export function setupPlotControlListeners(
               zColumn = df.columns.at(-1); // fallback to last column
             }
           }
-          settings.z = { type: 'obsm', key: yKey, column: zColumn };
+          settings.z = { type: plotType === 'gene' ? 'varm' : 'obsm', key: yKey, column: zColumn };
           // Call the axis selector setup helper from the controls object.
           if (typeof controlsContainer.setupAxisSelector === 'function') {
             controlsContainer.setupAxisSelector(container, 'z', settings.z, controlsContainer.plotType, datasetStructure);
@@ -164,7 +168,7 @@ export function setupPlotControlListeners(
     pointSizeSlider.addEventListener('input', (e) => {
       const newSize = parseFloat(e.target.value);
       settings.pointSize = newSize;
-      updatePlotElements({ styling: true });
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true });
     });
   
     // --- Point Opacity Slider ---
@@ -172,7 +176,7 @@ export function setupPlotControlListeners(
     pointOpacitySlider.addEventListener('input', (e) => {
       const newOpacity = parseFloat(e.target.value);
       settings.pointOpacity = newOpacity;
-      updatePlotElements({ styling: true });
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true });
     });
   
     // --- Show Grid Toggle ---
@@ -246,7 +250,7 @@ export function setupPlotControlListeners(
       if (settings.highlightFocusedCell) {
         highlightFocusedCellToggle.classList.add('active', 'btn-primary');
         highlightFocusedCellToggle.classList.remove('btn-outline-secondary');
-        highlightFocusedCell(plotContainer, data, settings);
+        highlightFocusedEntity(plotContainer, data, settings, 'cell');
       } else {
         highlightFocusedCellToggle.classList.remove('active', 'btn-primary');
         highlightFocusedCellToggle.classList.add('btn-outline-secondary');
@@ -270,7 +274,7 @@ export function setupPlotControlListeners(
       if (settings.highlightFocusedGene) {
         highlightFocusedGeneToggle.classList.add('active', 'btn-primary');
         highlightFocusedGeneToggle.classList.remove('btn-outline-secondary');
-        highlightFocusedGene(plotContainer, data, settings);
+        highlightFocusedEntity(plotContainer, data, settings, 'gene');
       } else {
         highlightFocusedGeneToggle.classList.remove('active', 'btn-primary');
         highlightFocusedGeneToggle.classList.add('btn-outline-secondary');
@@ -641,7 +645,6 @@ function setupAxisSelectorListeners(
     select.addEventListener('change', async (e) => {
       const axis =  e.currentTarget.dataset.axis;
       const key =  e.currentTarget.value;
-      const type = container.querySelector(`.axis-type-select[data-axis="${axis}"]`).value;
       const columnSelect = container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
 
       if (!columnSelect) return console.error(`Missing column select for ${axis}`);

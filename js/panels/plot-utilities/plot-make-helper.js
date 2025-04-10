@@ -70,7 +70,7 @@ export function createLayout(settings) {
   * Attaches a click handler to the plot container.
   * @param {HTMLElement} plotContainer - The container for the plot.
   * @param {Array<Object>} traces - The traces used in the plot.
-  * @param {Object} data - The data object containing cell names.
+  * @param {Object} data - The data object containing cell or gene names.
 */
 export function attachClickHandler(plotContainer, traces, data) {
     plotContainer.on('plotly_click', (e) => {
@@ -79,22 +79,33 @@ export function attachClickHandler(plotContainer, traces, data) {
       const point = e.points[0];
       const pointIndex = point.pointIndex;
       const traceIndex = point.curveNumber;
-      let cellName;
+      
+      // Determine if this is a gene plot or cell plot
+      const isGenePlot = data.genes !== undefined;
+      const entityKey = isGenePlot ? 'genes' : 'cells';
+      let entityName;
   
       if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
-        cellName = traces[traceIndex].text[pointIndex];
+        entityName = traces[traceIndex].text[pointIndex];
       } else if (point.customdata !== undefined) {
-        const cellIndex = point.customdata;
-        if (data.cells && cellIndex < data.cells.length) {
-          cellName = data.cells[cellIndex];
+        const entityIndex = point.customdata;
+        if (data[entityKey] && entityIndex < data[entityKey].length) {
+          entityName = data[entityKey][entityIndex];
         }
       }
-      if (!cellName) {
-        console.warn('No cell name found for clicked point');
+      
+      if (!entityName) {
+        console.warn(`No ${isGenePlot ? 'gene' : 'cell'} name found for clicked point`);
         return;
       }
-      console.log(`Clicked on cell: ${cellName}`);
-      DataManager.setFocusedCell(cellName, true);
+      
+      if (isGenePlot) {
+        console.log(`Clicked on gene: ${entityName}`);
+        DataManager.setFocusedGene(entityName, true);
+      } else {
+        console.log(`Clicked on cell: ${entityName}`);
+        DataManager.setFocusedCell(entityName, true);
+      }
     });
   }
   
@@ -133,6 +144,10 @@ export function attachClickHandler(plotContainer, traces, data) {
     }
   
     const traces = [];
+    
+    // Determine if this is a gene plot or cell plot
+    const isGenePlot = data.genes !== undefined;
+    const entityKey = isGenePlot ? 'genes' : 'cells';
   
     // For each category, split the data into a separate Plotly trace.
     catValues.forEach((category, i) => {
@@ -151,7 +166,7 @@ export function attachClickHandler(plotContainer, traces, data) {
         type: settings.z ? 'scatter3d' : 'scattergl',
         mode: 'markers',
         name: category,
-        text: indices.map(idx => data.cells[idx]),
+        text: indices.map(idx => data[entityKey][idx]),
         customdata: indices, // for click handling
         hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
         x: indices.map(idx => data.x.values[idx]),
