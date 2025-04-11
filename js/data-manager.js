@@ -70,6 +70,10 @@ const DataManager = (function() {
         try {
             _currentDataset = datasetPath;
             
+            // Store current focused items to check if they exist in new dataset
+            const previousFocusedCell = _focusedCell;
+            const previousFocusedGene = _focusedGene;
+            
             // Load dataset structure
             const _datasetStructure = await getDatasetStructure(datasetPath);
             
@@ -77,9 +81,16 @@ const DataManager = (function() {
             _cells = await loadCells(datasetPath);
             _genes = await loadGenes(datasetPath);
             
-            // Initialize focused items with first values if available
+            // Check if previously focused cell exists in new dataset
             if (_cells && _cells.length > 0) {
-                _focusedCell = _cells[0];
+                if (previousFocusedCell && _cells.includes(previousFocusedCell)) {
+                    // Keep the same focused cell
+                    _focusedCell = previousFocusedCell;
+                } else {
+                    // Use first cell from new dataset
+                    _focusedCell = _cells[0];
+                }
+                
                 // Trigger event for components to update
                 const cellEvent = new CustomEvent('focusedCellChanged', {
                     detail: { cell: _focusedCell }
@@ -89,8 +100,16 @@ const DataManager = (function() {
                 _focusedCell = null;
             }
             
+            // Check if previously focused gene exists in new dataset
             if (_genes && _genes.length > 0) {
-                _focusedGene = _genes[0];
+                if (previousFocusedGene && _genes.includes(previousFocusedGene)) {
+                    // Keep the same focused gene
+                    _focusedGene = previousFocusedGene;
+                } else {
+                    // Use first gene from new dataset
+                    _focusedGene = _genes[0];
+                }
+                
                 // Trigger event for components to update
                 const geneEvent = new CustomEvent('focusedGeneChanged', {
                     detail: { gene: _focusedGene }

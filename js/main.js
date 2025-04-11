@@ -294,9 +294,6 @@ const App = (function() {
         try {
             console.log(`Loading dataset: ${datasetPath}`);
             
-            // Reset UI
-            PanelManager.resetPanels();
-            
             // Show loading indicators
             document.getElementById('cell-count').textContent = 'Loading...';
             document.getElementById('gene-count').textContent = 'Loading...';

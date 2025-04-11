@@ -459,6 +459,19 @@ const GenePlotPanel = (function() {
             cleanup();
         }
         
+        /**
+         * Handle data updates, especially dataset changes
+         * @param {string} updateType - Type of update
+         * @param {Object} data - Update data
+         */
+        function onDataUpdate(updateType, data) {
+            if (updateType === 'datasetChanged') {
+                console.log(`GenePlot ${_id}: Dataset changed, reinitializing plot`);
+                // For dataset changes, fully reinitialize the plot
+                refreshPlot();
+            }
+        }
+
         // Public API
         return {
             init,
@@ -469,7 +482,8 @@ const GenePlotPanel = (function() {
             getTitle,
             setTitle,
             getType,
-            getConfig
+            getConfig,
+            onDataUpdate
         };
     }
     
