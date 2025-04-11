@@ -2,11 +2,69 @@
  * Layout Manager module for AnnZarro
  * Handles layout hierarchy, state management, and restoration
  * 
- * This module manages the hierarchical structure of panels and split containers,
- * providing a clean way to save and restore complex layout structures.
+ * This module implements a tiling window manager approach where:
+ * 1. Panels always use their maximum available space
+ * 2. Resizing happens by moving separation lines (handles)
+ * 3. Closing a panel removes its divider with no trace
+ * 4. The bottom always has a selection tile for adding new panels
  */
 
 const LayoutManager = (function() {
+    // Constants
+    const MIN_PANE_SIZE_PERCENT = 10;
+    const DEFAULT_SPLIT_RATIO = 50;
+    
+    // Private variables
+    let _addTileCallback = null;
+    
+    /**
+     * Initialize the layout manager
+     * @param {Function} addTileCallback - Callback to create a selection tile
+     */
+    function init(addTileCallback) {
+        _addTileCallback = addTileCallback;
+        
+        // Setup the necessary event listeners
+        window.addEventListener('resize', _onWindowResize);
+        
+        console.log('Layout Manager initialized');
+    }
+    
+    /**
+     * Handle window resize events
+     * @private
+     */
+    function _onWindowResize() {
+        // Force all split containers to recalculate dimensions
+        document.querySelectorAll('.split-container').forEach(container => {
+            _refreshSplitContainer(container);
+        });
+    }
+    
+    /**
+     * Refresh a split container's dimensions after size changes
+     * @param {HTMLElement} container - The split container to refresh
+     * @private
+     */
+    function _refreshSplitContainer(container) {
+        const panes = container.querySelectorAll('.split-pane');
+        if (panes.length !== 2) return;
+        
+        const direction = container.dataset.splitDirection;
+        const isHorizontal = direction === 'horizontal';
+        
+        // Get percentages from data attributes
+        const pane1 = panes[0];
+        const pane2 = panes[1];
+        
+        const pane1Percent = parseFloat(pane1.dataset.flexPercentage || '50');
+        const pane2Percent = parseFloat(pane2.dataset.flexPercentage || '50');
+        
+        // Apply correct flex and dimensions
+        pane1.style.flex = `${pane1Percent}`;
+        pane2.style.flex = `${pane2Percent}`;
+    }
+    
     /**
      * Recursively builds a hierarchy tree of the layout
      * @param {HTMLElement} element - The current element to process (container or tile)
@@ -19,31 +77,26 @@ const LayoutManager = (function() {
             return {
                 type: 'tile',
                 id: id,
-                // Capture dimensions
-                dimensions: {
-                    height: element.style.height || window.getComputedStyle(element).height,
-                    width: element.style.width || window.getComputedStyle(element).width
-                },
-                // Capture state of controls
                 controlsVisible: element.querySelector('.plot-controls')?.style.display !== 'none'
+            };
+        }
+        
+        // Base case: element is a tile selector
+        if (element.classList.contains('tile-selector')) {
+            return {
+                type: 'selector'
             };
         }
         
         // Handle split container
         if (element.classList.contains('split-container')) {
-            const direction = element.dataset.splitDirection || 
-                             (element.classList.contains('split-horizontal') ? 'horizontal' : 'vertical');
-            
-            const splitType = element.dataset.splitType || 
-                             (direction === 'horizontal' ? 'sideBySide' : 'stacked');
-                             
+            const direction = element.dataset.splitDirection || 'horizontal';
             const panes = element.querySelectorAll('.split-pane');
             
             // Default hierarchy object for split container
             const splitContainer = {
                 type: 'split',
                 direction: direction,
-                splitType: splitType,
                 children: []
             };
             
@@ -53,8 +106,8 @@ const LayoutManager = (function() {
                 const pane2 = panes[1];
                 
                 // Get flex percentages
-                const pane1Percentage = parseInt(pane1.dataset.flexPercentage || '50', 10);
-                const pane2Percentage = parseInt(pane2.dataset.flexPercentage || '50', 10);
+                const pane1Percentage = parseFloat(pane1.dataset.flexPercentage || '50');
+                const pane2Percentage = parseFloat(pane2.dataset.flexPercentage || '50');
                 
                 // Add pane info to the container
                 splitContainer.panes = [
@@ -87,7 +140,7 @@ const LayoutManager = (function() {
             return splitContainer;
         }
         
-        // If not a tile or split container, return null
+        // If not a recognized element, return null
         return null;
     }
     
@@ -106,12 +159,6 @@ const LayoutManager = (function() {
             // Create tile element
             const tileElement = createTileElement(node.id);
             
-            // Set dimensions if available
-            if (node.dimensions) {
-                if (node.dimensions.height) tileElement.style.height = node.dimensions.height;
-                if (node.dimensions.width) tileElement.style.width = node.dimensions.width;
-            }
-            
             // Add the tile to the parent
             parentElement.appendChild(tileElement);
             
@@ -129,19 +176,27 @@ const LayoutManager = (function() {
             }
             
             return tileElement;
+        } else if (node.type === 'selector') {
+            // Create a selection tile (empty tile for adding new panels)
+            if (_addTileCallback) {
+                const selectorElement = _addTileCallback(parentElement);
+                // Mark it as a selection tile that should not be closable
+                if (selectorElement && selectorElement.classList.contains('tile-selector')) {
+                    selectorElement.dataset.isBottomSelector = 'true';
+                }
+            }
+            return parentElement.lastChild;
         } else if (node.type === 'split') {
             // Create a split container
             const splitContainer = document.createElement('div');
             
-            // Set the right direction and flexDirection
-            if (node.splitType === 'stacked' || node.direction === 'vertical') {
+            // Set the right direction
+            if (node.direction === 'vertical') {
                 splitContainer.className = 'split-container split-vertical';
                 splitContainer.style.flexDirection = 'column';
-                splitContainer.dataset.splitType = 'stacked';
             } else {
                 splitContainer.className = 'split-container split-horizontal';
                 splitContainer.style.flexDirection = 'row';
-                splitContainer.dataset.splitType = 'sideBySide';
             }
             
             splitContainer.dataset.splitDirection = node.direction;
@@ -162,21 +217,11 @@ const LayoutManager = (function() {
                 const pane2Percentage = node.panes[1].percentage || 50;
                 
                 // Set flex to control the relative sizes
-                // The key is to set flex-grow only without flex-basis or flex-shrink
                 firstPane.style.flex = `${pane1Percentage}`;
                 firstPane.dataset.flexPercentage = pane1Percentage;
                 
                 secondPane.style.flex = `${pane2Percentage}`;
                 secondPane.dataset.flexPercentage = pane2Percentage;
-                
-                // Explicitly set min-width for horizontal splits to ensure they don't shrink too much
-                if (node.splitType === 'sideBySide' || node.direction === 'horizontal') {
-                    // For side-by-side layout, set explicit percentage widths too
-                    firstPane.style.width = `${pane1Percentage}%`;
-                    secondPane.style.width = `${pane2Percentage}%`;
-                    firstPane.style.minWidth = '100px';
-                    secondPane.style.minWidth = '100px';
-                }
                 
                 // Set control visibility state
                 if (Object.prototype.hasOwnProperty.call(node.panes[0], 'controlsVisible')) {
@@ -192,14 +237,6 @@ const LayoutManager = (function() {
                 firstPane.dataset.flexPercentage = '50';
                 secondPane.style.flex = '1';
                 secondPane.dataset.flexPercentage = '50';
-                
-                // Explicitly set min-width for horizontal splits
-                if (node.splitType === 'sideBySide' || node.direction === 'horizontal') {
-                    firstPane.style.width = '50%';
-                    secondPane.style.width = '50%';
-                    firstPane.style.minWidth = '100px';
-                    secondPane.style.minWidth = '100px';
-                }
             }
             
             // Assemble the split container
@@ -278,23 +315,10 @@ const LayoutManager = (function() {
             const newSecondPercentage = 100 - newFirstPercentage;
             
             // Apply new percentages if they're valid (min 10%)
-            if (newFirstPercentage > 10 && newSecondPercentage > 10) {
-                const ratio = newFirstPercentage / newSecondPercentage;
-                
-                // For horizontal splits (side-by-side), apply width percentages directly
-                if (direction === 'horizontal') {
-                    // Set direct percentage width to ensure horizontal splits work correctly
-                    firstPane.style.width = `${newFirstPercentage}%`;
-                    secondPane.style.width = `${newSecondPercentage}%`;
-                    
-                    // Keep flex for compatibility but use ratio
-                    firstPane.style.flex = `${ratio}`;
-                    secondPane.style.flex = '1';
-                } else {
-                    // For vertical splits, just use flex proportions
-                    firstPane.style.flex = `${newFirstPercentage}`;
-                    secondPane.style.flex = `${newSecondPercentage}`;
-                }
+            if (newFirstPercentage > MIN_PANE_SIZE_PERCENT && newSecondPercentage > MIN_PANE_SIZE_PERCENT) {
+                // Update flex values for both panes
+                firstPane.style.flex = `${newFirstPercentage}`;
+                secondPane.style.flex = `${newSecondPercentage}`;
                 
                 // Store the percentages as data attributes for restoration
                 firstPane.dataset.flexPercentage = newFirstPercentage;
@@ -329,11 +353,159 @@ const LayoutManager = (function() {
         handle.addEventListener('mousedown', onMouseDown);
     }
     
+    /**
+     * Creates a new split in the container
+     * @param {HTMLElement} container - The container to split
+     * @param {HTMLElement} element - The element being split
+     * @param {string} direction - Split direction ('horizontal' or 'vertical')
+     * @returns {Object} - Object containing the created panes
+     */
+    function createSplit(container, element, direction) {
+        // Create the split container
+        const splitContainer = document.createElement('div');
+        
+        if (direction === 'vertical') {
+            splitContainer.className = 'split-container split-vertical';
+            splitContainer.style.flexDirection = 'column';
+        } else {
+            splitContainer.className = 'split-container split-horizontal';
+            splitContainer.style.flexDirection = 'row';
+        }
+        
+        splitContainer.dataset.splitDirection = direction;
+        
+        // Create the two panes and the handle
+        const firstPane = document.createElement('div');
+        firstPane.className = 'split-pane';
+        firstPane.style.flex = DEFAULT_SPLIT_RATIO;
+        firstPane.dataset.flexPercentage = DEFAULT_SPLIT_RATIO;
+        
+        const handle = document.createElement('div');
+        handle.className = `split-handle ${direction === 'vertical' ? 'horizontal' : 'vertical'}`;
+        
+        const secondPane = document.createElement('div');
+        secondPane.className = 'split-pane';
+        secondPane.style.flex = DEFAULT_SPLIT_RATIO;
+        secondPane.dataset.flexPercentage = DEFAULT_SPLIT_RATIO;
+        
+        // Replace the element with the split container
+        container.insertBefore(splitContainer, element);
+        container.removeChild(element);
+        
+        // Add the element to the first pane and a selection tile to the second pane
+        firstPane.appendChild(element);
+        
+        // Create a selection tile in the second pane if callback is provided
+        if (_addTileCallback) {
+            const selectorElement = _addTileCallback(secondPane);
+            // Mark it as a selection tile that should not be closable
+            if (selectorElement && selectorElement.classList.contains('tile-selector')) {
+                selectorElement.dataset.isBottomSelector = 'true';
+            }
+        }
+        
+        // Assemble the split container
+        splitContainer.appendChild(firstPane);
+        splitContainer.appendChild(handle);
+        splitContainer.appendChild(secondPane);
+        
+        // Set up the resize handle
+        setupResizableHandle(handle, firstPane, secondPane, direction);
+        
+        return {
+            container: splitContainer,
+            firstPane,
+            secondPane,
+            handle
+        };
+    }
+
+    /**
+     * Closes a panel and removes its container if necessary
+     * @param {HTMLElement} tileElement - The tile element to close
+     */
+    function closePanel(tileElement) {
+        // Don't close selection tiles or tiles marked as bottom selectors
+        if (tileElement.classList.contains('tile-selector') ||
+            tileElement.dataset.isBottomSelector === 'true') {
+            console.log('Attempting to close a selection tile, ignoring');
+            return;
+        }
+        
+        // Find parent elements
+        const parentPane = tileElement.parentElement;
+        if (!parentPane || !parentPane.classList.contains('split-pane')) {
+            // If there's no parent pane, simply remove the tile
+            tileElement.remove();
+            return;
+        }
+        
+        // Find the split container
+        const splitContainer = parentPane.parentElement;
+        if (!splitContainer || !splitContainer.classList.contains('split-container')) {
+            // Shouldn't happen, but just remove if no container found
+            tileElement.remove();
+            return;
+        }
+        
+        // Find the other pane
+        const allPanes = splitContainer.querySelectorAll('.split-pane');
+        let otherPane = null;
+        
+        for (const pane of allPanes) {
+            if (pane !== parentPane) {
+                otherPane = pane;
+                break;
+            }
+        }
+        
+        if (!otherPane) {
+            // No other pane found, just remove the tile
+            tileElement.remove();
+            return;
+        }
+        
+        // Get the parent of the split container
+        const containerParent = splitContainer.parentElement;
+        if (!containerParent) {
+            // Just remove the tile if no parent found
+            tileElement.remove();
+            return;
+        }
+        
+        // Check if the other pane contains a selection tile
+        const hasSelectionTile = otherPane.querySelector('.tile-selector');
+        
+        // Move the contents of the other pane to replace the split container
+        const otherPaneContents = Array.from(otherPane.children);
+        
+        // Check if we need to create a selection tile at the bottom
+        const needsSelectionTile = 
+            !otherPaneContents.some(el => el.classList.contains('tile-selector')) && 
+            containerParent.classList.contains('tile-container');
+        
+        // Insert all contents from the other pane before the split container
+        otherPaneContents.forEach(child => {
+            containerParent.insertBefore(child, splitContainer);
+        });
+        
+        // Remove the split container (and by extension, the closed tile)
+        splitContainer.remove();
+        
+        // If this was the last panel, add a selection tile
+        if (needsSelectionTile && _addTileCallback) {
+            _addTileCallback(containerParent);
+        }
+    }
+    
     // Public API
     return {
+        init,
         buildLayoutHierarchy,
         rebuildLayoutFromHierarchy,
-        setupResizableHandle
+        setupResizableHandle,
+        createSplit,
+        closePanel
     };
 })();
 

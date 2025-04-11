@@ -100,16 +100,7 @@
         <!-- Tiles will be dynamically added here -->
     </main>
     
-    <!-- Controls Footer -->
-    <footer class="app-footer">
-        <div class="container-fluid">
-            <div class="row">
-                <div class="col">
-                    <button id="btn-add-tile" class="btn btn-success"><i class="fas fa-plus"></i> Add Tile</button>
-                </div>
-            </div>
-        </div>
-    </footer>
+    <!-- We're removing the footer as we'll add tile creation in the layout manager -->
     
     <!-- Templates -->
     <template id="tile-template">
@@ -120,7 +111,7 @@
                     <button class="btn btn-sm btn-light tile-toggle-controls" title="Toggle Controls"><i class="fas fa-chevron-up"></i></button>
                     <button class="btn btn-sm btn-light tile-split-h" title="Split Horizontally"><i class="fas fa-columns"></i></button>
                     <button class="btn btn-sm btn-light tile-split-v" title="Split Vertically"><i class="fas fa-columns fa-rotate-90"></i></button>
-                    <button class="btn btn-sm btn-light tile-close" title="Close"><i class="fas fa-times"></i></button>
+                    <button class="btn btn-sm btn-light tile-close tile-closable" title="Close"><i class="fas fa-times"></i></button>
                 </div>
             </div>
             <div class="tile-content"></div>
