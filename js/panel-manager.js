@@ -37,7 +37,7 @@ const PanelManager = (function() {
     
     // References to DOM elements
     let _container = null;
-    let updateSourcePanelSelection = null;
+    let _updateSourcePanelSelection = null;
     
     /**
      * Initialize the panel manager
@@ -60,7 +60,7 @@ const PanelManager = (function() {
         setTimeout(() => {
             if (_panels.size === 0) {
                 console.log('No panels exist, showing welcome tile...');
-                updateSourcePanelSelection = _createBaseSelectionTile();
+                _updateSourcePanelSelection = _createBaseSelectionTile();
             }
         }, 500);
 
@@ -226,9 +226,23 @@ const PanelManager = (function() {
                     const config = panel.getConfig();
                     const panelType = panel.getType();
                     config.id = `${panelType}-${++_counters[panelType]}`;
-                    
-                    // Avoid name collision
-                    config.title = _generateUniqueName(panelType, panel.getTitle());
+                    config.title = panel.getTitle();
+                    const panelId = panel.getId();
+
+                    if (panelId) {
+                        // First, remove from panels collection
+                        const panel = _panels.get(panelId);
+                        if (panel) {
+                            const type = panel.getType();
+                            if (_panelsByType.has(type)) {
+                                _panelsByType.get(type).delete(panel);
+                            }
+                            _panels.delete(panelId);
+                        }
+                        
+                        // Then, refresh the source panel grid
+                        populateSourcePanelGrid(grid);
+                    }
                     
                     const parentContainer = tileSelector.parentElement;
                     if (!parentContainer) {
@@ -534,9 +548,23 @@ const PanelManager = (function() {
                     const config = panel.getConfig();
                     const panelType = panel.getType();
                     config.id = `${panelType}-${++_counters[panelType]}`;
-                    
-                    // Avoid name collision
-                    config.title = _generateUniqueName(panelType, panel.getTitle());
+                    config.title = panel.getTitle();
+                    const panelId = panel.getId();
+
+                    if (panelId) {
+                        // First, remove from panels collection
+                        const panel = _panels.get(panelId);
+                        if (panel) {
+                            const type = panel.getType();
+                            if (_panelsByType.has(type)) {
+                                _panelsByType.get(type).delete(panel);
+                            }
+                            _panels.delete(panelId);
+                        }
+                        
+                        // Then, refresh the source panel grid
+                        populateSourcePanelGrid(grid);
+                    }
                     
                     // Find the parent pane
                     const parentPane = tileSelector.closest('.split-pane');
@@ -702,6 +730,11 @@ const PanelManager = (function() {
         _panelsByType.get(type).add(panel);
         _activePanels.add(panel);
         
+        const titleInput = tileElement.querySelector('.tile-title');
+        if (titleInput && panel.getTitle) {
+            titleInput.value = panel.getTitle();
+        }
+
         // Set up all event handlers
         _setupTileEventHandlers(tileElement, id);
         
@@ -738,10 +771,15 @@ const PanelManager = (function() {
             tileElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
         
-        if (typeof updateSourcePanelSelection === 'function') {
-            updateSourcePanelSelection();
-        }
+        updateSourcePanelSelection();
         return panel;
+    }
+
+   
+    function updateSourcePanelSelection() {
+        if (typeof updateSourcePanelSelection === 'function') {
+            _updateSourcePanelSelection();
+        }
     }
     
     /**
@@ -766,14 +804,6 @@ const PanelManager = (function() {
         const template = document.getElementById('tile-template');
         const tile = template.content.cloneNode(true).querySelector('.tile');
         tile.dataset.tileId = id;
-        
-        // Add a debug click handler to help identify issues with resize handle
-        tile.addEventListener('click', (e) => {
-            if (e.altKey && e.ctrlKey) {
-                console.log(`Clicked on tile with ID: ${id}`);
-                console.log(`Panel group exists: ${!!document.querySelector(`.panel-group[data-panel-id="${id}"]`)}`);
-            }
-        });
         
         return tile;
     }
@@ -874,13 +904,7 @@ const PanelManager = (function() {
         panel.cleanup();
 
         // Remove from source panels of bottom selection
-        if (typeof updateSourcePanelSelection === 'function') {
-            updateSourcePanelSelection();
-        }
-        
-        // Leave panel in the panels map and panelsByType for potential cloning
-        // Instead, we just mark it as inactive by removing it from _activePanels
-        console.log(`Panel ${id} closed but stored for potential cloning`);
+        updateSourcePanelSelection();
     }
     
     /**
@@ -1193,6 +1217,7 @@ const PanelManager = (function() {
                 const panel = _panels.get(id);
                 if (panel) {
                     panel.setTitle(titleInput.value);
+                    updateSourcePanelSelection();
                 }
             });
         }
