@@ -119,7 +119,7 @@ const LayoutManager = (function() {
             createPanelInstance(node.id, tileElement);
             
             // Set control visibility if specified
-            if (node.hasOwnProperty('controlsVisible')) {
+            if ('controlsVisible' in node) {
                 const contentContainer = tileElement.querySelector('.tile-content');
                 const plotControls = contentContainer?.querySelector('.plot-controls');
                 
@@ -179,11 +179,11 @@ const LayoutManager = (function() {
                 }
                 
                 // Set control visibility state
-                if (node.panes[0].hasOwnProperty('controlsVisible')) {
+                if (Object.prototype.hasOwnProperty.call(node.panes[0], 'controlsVisible')) {
                     firstPane.dataset.controlsVisible = node.panes[0].controlsVisible;
                 }
                 
-                if (node.panes[1].hasOwnProperty('controlsVisible')) {
+                if (Object.prototype.hasOwnProperty.call(node.panes[1], 'controlsVisible')) {
                     secondPane.dataset.controlsVisible = node.panes[1].controlsVisible;
                 }
             } else {
