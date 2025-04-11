@@ -80,7 +80,7 @@ const PanelManager = (function() {
         _panelsByType.set(type, new Set());
         
         // Initialize counter if not already set
-        if (!_counters.hasOwnProperty(type)) {
+        if (!Object.prototype.hasOwnProperty.call(_counters, type)) {
             _counters[type] = 0;
         }
         
@@ -395,59 +395,6 @@ const PanelManager = (function() {
         }
         
         return newName;
-    }
-    
-    /**
-     * Perform a tile split with the selected panel type
-     * @param {string} id - ID of the tile to split
-     * @param {string} direction - Split direction ('horizontal' or 'vertical')
-     * @param {string} newPanelType - Type of panel to create in the second pane
-     * @param {string} sourceId - Optional source panel ID to clone from
-     * @private
-     */
-    function _performSplit(id, direction, newPanelType, sourceId) {
-        // Get the original tile and panel
-        const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
-        const panel = _panels.get(id);
-        if (!tile || !panel) return;
-        
-        // Create a parent container for the two tiles
-        const parentContainer = document.createElement('div');
-        parentContainer.className = `split-container split-${direction}`;
-        
-        // Calculate initial percentages for split (50/50)
-        if (direction === 'vertical') {
-            parentContainer.style.flexDirection = 'row';
-        } else {
-            parentContainer.style.flexDirection = 'column';
-        }
-        
-        // Create the panes and handle
-        const firstPane = document.createElement('div');
-        firstPane.className = 'split-pane';
-        firstPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
-        
-        const handle = document.createElement('div');
-        handle.className = `split-handle ${direction === 'horizontal' ? 'horizontal' : 'vertical'}`;
-        
-        const secondPane = document.createElement('div');
-        secondPane.className = 'split-pane';
-        secondPane.style.flex = '50%'; // Use percentage flex instead of fixed pixels
-        
-        // Create new tile for the second pane - this is a selection tile
-        const selectorId = _createSelectionTileInPane(secondPane);
-        
-        // Move original tile to first pane
-        tile.parentNode.insertBefore(parentContainer, tile);
-        firstPane.appendChild(tile);
-        
-        // Assemble the parent container
-        parentContainer.appendChild(firstPane);
-        parentContainer.appendChild(handle);
-        parentContainer.appendChild(secondPane);
-        
-        // Set up the resize handle with percentage-based sizing
-        _setupResizableHandle(handle, firstPane, secondPane, direction);
     }
     
     /**
@@ -776,7 +723,7 @@ const PanelManager = (function() {
         panel.init();
         
         // Apply control panel visibility if specified
-        if (config.hasOwnProperty('controlsVisible')) {
+        if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
             const plotControls = contentContainer.querySelector('.plot-controls');
             if (plotControls) {
                 plotControls.style.display = config.controlsVisible ? 'flex' : 'none';
@@ -1058,7 +1005,8 @@ const PanelManager = (function() {
     
     /**
      * Save the current layout dimensions and structure
-     * @returns {Object} - Layout configuration
+     * This function only saves the layout structure and visual state, not panel data configurations
+     * @returns {Object} - Layout configuration with hierarchy only
      */
     function saveLayout() {
         // Use the LayoutManager to build a hierarchical representation of the layout
@@ -1073,25 +1021,22 @@ const PanelManager = (function() {
             }
         });
         
-        // Add panel-specific config to the layout
-        const panelConfigs = {};
+        // Control panel visibility is part of the layout visual state (not panel config)
+        const controlState = {};
         _panels.forEach((panel, id) => {
-            panelConfigs[id] = panel.getConfig() || {};
-            
-            // Check for control panel visibility
             const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
             if (tileElement) {
                 const contentContainer = tileElement.querySelector('.tile-content');
                 const plotControls = contentContainer?.querySelector('.plot-controls');
                 if (plotControls) {
-                    panelConfigs[id].controlsVisible = plotControls.style.display !== 'none';
+                    controlState[id] = plotControls.style.display !== 'none';
                 }
             }
         });
         
         const layout = {
             hierarchy: layoutHierarchy,
-            panels: panelConfigs
+            controlState: controlState
         };
         
         console.log('Layout saved:', layout);
@@ -1101,104 +1046,54 @@ const PanelManager = (function() {
     /**
      * Restore layout dimensions and structure
      * @param {Object} layout - Layout configuration
+     * @returns {Promise<void>} - Promise that resolves when all panels are initialized
      */
-    function restoreLayout(layout) {
+    async function restoreLayout(layout) {
         if (!layout) return;
         
         console.log('Restoring layout:', layout);
+        
+        // Track currently active panels before restore
+        const previouslyActivePanels = new Set(_activePanels);
+        
+        // Clear the active panels set - we'll repopulate it
+        _activePanels.clear();
+        
+        // Collect panel IDs from the layout
+        const panelIdsInLayout = new Set();
         
         // Clear the container
         if (_container) {
             _container.innerHTML = '';
         }
         
+        // Function to extract panel IDs from hierarchy nodes
+        function collectPanelIds(node) {
+            if (!node) return;
+            
+            if (node.type === 'tile' && node.id) {
+                panelIdsInLayout.add(node.id);
+            } else if (node.type === 'split' && node.children) {
+                node.children.forEach(child => collectPanelIds(child));
+            }
+        }
+        
         // Handle new hierarchical format
         if (layout.hierarchy) {
-            layout.hierarchy.forEach(node => {
+            // Collect all panel IDs in the layout
+            layout.hierarchy.forEach(node => collectPanelIds(node));
+            
+            // First pass: Build the DOM layout structure without initializing panels
+            const rebuiltNodes = layout.hierarchy.map(node => 
                 LayoutManager.rebuildLayoutFromHierarchy(
                     node, 
                     _container,
                     // Callback to create a tile element
-                    (id) => {
-                        return _createTileElement(id);
-                    },
-                    // Callback to create a panel instance
-                    (id, tileElement) => {
-                        // Extract the panel type from the id
-                        const typeParts = id.split('-');
-                        const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
-                        const panelConfig = layout.panels[id] || {};
-                        
-                        // Check if panel type is registered
-                        if (!_panelTypes.has(type)) {
-                            console.error(`Unknown panel type: ${type} for panel id: ${id}`);
-                            return;
-                        }
-                        
-                        // Get existing panel or create a new one
-                        let panel = _panels.get(id);
-                        
-                        if (panel) {
-                            // Re-initialize existing panel with the new tile element
-                            const contentContainer = tileElement.querySelector('.tile-content');
-                            
-                            // Update title
-                            const titleInput = tileElement.querySelector('.tile-title');
-                            if (titleInput && panel.getTitle()) {
-                                titleInput.value = panel.getTitle();
-                            }
-                            
-                            // Set up event handlers
-                            _setupTileEventHandlers(tileElement, id);
-                            
-                            // Re-initialize the panel with the new container
-                            if (panel.reinitialize && typeof panel.reinitialize === 'function') {
-                                panel.reinitialize(contentContainer, panelConfig);
-                            } else {
-                                // Fall back to init if reinitialize is not available
-                                panel.init();
-                            }
-                            
-                            // Re-add to active panels
-                            _activePanels.add(panel);
-                        } else {
-                            // Create a new panel instance
-                            const contentContainer = tileElement.querySelector('.tile-content');
-                            const Constructor = _panelTypes.get(type);
-                            
-                            // Create new panel
-                            panel = new Constructor(contentContainer, {
-                                id,
-                                ...panelConfig,
-                                title: panelConfig.title || `${_formatPanelType(type)} ${_counters[type]}`
-                            });
-                            
-                            // Update counter
-                            const numericId = parseInt(typeParts[typeParts.length - 1], 10);
-                            if (!isNaN(numericId) && numericId > _counters[type]) {
-                                _counters[type] = numericId;
-                            }
-                            
-                            // Store reference to the panel
-                            _panels.set(id, panel);
-                            _panelsByType.get(type).add(panel);
-                            _activePanels.add(panel);
-                            
-                            // Set up event handlers
-                            _setupTileEventHandlers(tileElement, id);
-                            
-                            // Initialize the panel
-                            panel.init();
-                            
-                            // Update title in the DOM
-                            const titleInput = tileElement.querySelector('.tile-title');
-                            if (titleInput) {
-                                titleInput.value = panel.getTitle();
-                            }
-                        }
-                    }
-                );
-            });
+                    (id) => _createTileElement(id),
+                    // Empty callback - we'll initialize panels in second pass
+                    () => {}
+                )
+            );
             
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
@@ -1210,27 +1105,140 @@ const PanelManager = (function() {
                     LayoutManager.setupResizableHandle(handle, panes[0], panes[1], direction);
                 }
             });
+            
+            // Second pass: Initialize all panels in the layout
+            const initializationPromises = [];
+            
+            for (const id of panelIdsInLayout) {
+                const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
+                if (!tileElement) continue;
+                
+                const contentContainer = tileElement.querySelector('.tile-content');
+                if (!contentContainer) continue;
+                
+                // Extract panel type from ID
+                const typeParts = id.split('-');
+                const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
+                
+                // Set up event handlers first
+                _setupTileEventHandlers(tileElement, id);
+                
+                // Check if panel type is registered
+                if (!_panelTypes.has(type)) {
+                    console.error(`Unknown panel type: ${type} for panel id: ${id}`);
+                    continue;
+                }
+                
+                // Get existing panel or create a new one
+                let panel = _panels.get(id);
+                let promise;
+                
+                // Get the panel config from the layout
+                const panelConfig = layout.panelConfigs && layout.panelConfigs[id] ? layout.panelConfigs[id] : { id };
+                
+                if (panel) {
+                    // Update title
+                    const titleInput = tileElement.querySelector('.tile-title');
+                    if (titleInput && panel.getTitle) {
+                        titleInput.value = panel.getTitle();
+                    }
+                    
+                    // Apply control panel visibility state if available
+                    if (layout.controlState && layout.controlState[id] !== undefined) {
+                        const isVisible = layout.controlState[id];
+                        const plotControls = contentContainer.querySelector('.plot-controls');
+                        if (plotControls) {
+                            plotControls.style.display = isVisible ? 'flex' : 'none';
+                            
+                            // Update toggle button
+                            const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
+                            if (toggleBtn) {
+                                const icon = toggleBtn.querySelector('i');
+                                if (icon) {
+                                    if (isVisible) {
+                                        icon.classList.remove('fa-chevron-down');
+                                        icon.classList.add('fa-chevron-up');
+                                        toggleBtn.title = 'Hide Controls';
+                                    } else {
+                                        icon.classList.remove('fa-chevron-up');
+                                        icon.classList.add('fa-chevron-down');
+                                        toggleBtn.title = 'Show Controls';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Initialize asynchronously
+                    promise = new Promise(resolve => {
+                        // Use a microtask to ensure DOM is ready
+                        Promise.resolve().then(() => {
+                            try {
+                                // Pass the complete panel configuration to avoid reinitializing with default settings
+                                return panel.init();
+                            } catch (error) {
+                                console.error(`Error initializing restored panel ${id}:`, error);
+                            }
+                        }).then(resolve);
+                    });
+                    
+                    // Add to active panels
+                    _activePanels.add(panel);
+                } else {
+                    // Create a new panel instance
+                    const Constructor = _panelTypes.get(type);
+                    
+                    // Create new panel with saved config
+                    panel = new Constructor(contentContainer, panelConfig);
+                    
+                    // Update counter
+                    const numericId = parseInt(typeParts[typeParts.length - 1], 10);
+                    if (!isNaN(numericId) && numericId > _counters[type]) {
+                        _counters[type] = numericId;
+                    }
+                    
+                    // Store reference to the panel
+                    _panels.set(id, panel);
+                    _panelsByType.get(type).add(panel);
+                    _activePanels.add(panel);
+                    
+                    // Update title in the DOM
+                    const titleInput = tileElement.querySelector('.tile-title');
+                    if (titleInput && panel.getTitle) {
+                        titleInput.value = panel.getTitle();
+                    }
+                    
+                    // Initialize asynchronously
+                    promise = new Promise(resolve => {
+                        Promise.resolve().then(() => {
+                            try {
+                                return panel.init();
+                            } catch (error) {
+                                console.error(`Error initializing new panel ${id}:`, error);
+                            }
+                        }).then(resolve);
+                    });
+                }
+                
+                initializationPromises.push(promise);
+            }
+            
+            // Wait for all initializations to complete
+            await Promise.all(initializationPromises);
+            
+            // Make panels that weren't in the layout inactive
+            previouslyActivePanels.forEach(panel => {
+                if (!panelIdsInLayout.has(panel.getId())) {
+                    _activePanels.delete(panel);
+                    // Don't delete from _panels so they're still available for cloning
+                }
+            });
         } 
         // Handle legacy formats
         else if (layout.tiles || layout.structure) {
             console.warn('Restoring from legacy layout format. Consider saving a new session.');
-            
-            // Create panels based on saved configuration
-            if (layout.panels) {
-                Object.entries(layout.panels).forEach(([id, config]) => {
-                    if (!_panels.has(id)) {
-                        // Extract panel type from ID
-                        const typeParts = id.split('-');
-                        const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
-                        
-                        // Create the panel if its type is registered
-                        if (_panelTypes.has(type)) {
-                            createPanel(type, config);
-                        }
-                    }
-                });
-            }
-        } else {
+        } 
+        else {
             console.warn('Unknown layout format.');
         }
         

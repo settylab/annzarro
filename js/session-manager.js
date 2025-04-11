@@ -272,6 +272,7 @@ const SessionManager = (function() {
         // Load the dataset
         if (sessionData.dataset) {
             try {
+                console.log('Loading dataset:', sessionData.dataset);
                 await DataManager.setCurrentDataset(sessionData.dataset);
                 
                 // Update UI to show dataset details
@@ -315,70 +316,44 @@ const SessionManager = (function() {
                     }
                 }
                 
-                // Recreate panels with layout information if available
+                // Prepare panel configuration registry for efficient panel initialization
+                const panelConfigs = {};
+                
                 if (sessionData.panels && Array.isArray(sessionData.panels)) {
-                    // First, clear all panels
-                    PanelManager.resetPanels();
-                    
-                    // Only recreate active panels from the session
-                    const activePanels = sessionData.panels.filter(panel => panel.active !== false);
-                    
-                    activePanels.forEach(panelData => {
-                        const { type, config, id } = panelData;
-                        
-                        // Check if we have layout info for this panel
-                        let panelConfig = { ...config };
-                        
-                        if (sessionData.layout && sessionData.layout.panels && sessionData.layout.panels[id]) {
-                            // Merge the layout dimensions into the panel config
-                            panelConfig = {
-                                ...panelConfig,
-                                ...sessionData.layout.panels[id]
+                    // Index both active and closed panels by their ID
+                    sessionData.panels.forEach(panelData => {
+                        const { id, config = {}, type, active = true } = panelData;
+                        if (id) {
+                            panelConfigs[id] = {
+                                ...config,
+                                type,
+                                active,
+                                id
                             };
-                        } else if (sessionData.layout && sessionData.layout.tiles && sessionData.layout.tiles[id]) {
-                            // Use the tile dimensions if panel dimensions aren't available
-                            const tileDimensions = sessionData.layout.tiles[id];
-                            panelConfig.height = tileDimensions.height;
-                            panelConfig.width = tileDimensions.width;
                         }
-                        
-                        // Create the panel with the enhanced config
-                        PanelManager.createPanel(type, panelConfig);
                     });
                     
-                    // Store closed panels for potential cloning (but don't display them)
+                    // Register closed panels for potential cloning (but don't display them)
                     const closedPanels = sessionData.panels.filter(panel => panel.active === false);
                     closedPanels.forEach(panelData => {
                         const { type, config, id } = panelData;
                         
                         // Add to panel registry but don't display
-                        // This is handled internally by the PanelManager to store closed panels
                         if (PanelManager.registerClosedPanel) {
                             PanelManager.registerClosedPanel(type, config, id);
                         }
                     });
                 }
                 
-                // Restore layout dimensions with multiple attempts
-                if (sessionData.layout) {
-                    // First attempt
-                    setTimeout(() => {
-                        console.log('First attempt to restore layout');
-                        PanelManager.restoreLayout(sessionData.layout);
-                        
-                        // Second attempt after panels have fully rendered
-                        setTimeout(() => {
-                            console.log('Second attempt to restore layout');
-                            PanelManager.restoreLayout(sessionData.layout);
-                            
-                            // Third attempt as a final check
-                            setTimeout(() => {
-                                console.log('Third attempt to restore layout');
-                                PanelManager.restoreLayout(sessionData.layout);
-                            }, 1000);
-                        }, 500);
-                    }, 200);
-                }
+                // Create a layout object that includes panel configurations
+                const layoutWithPanelConfigs = {
+                    ...sessionData.layout,
+                    panelConfigs // Add panel configurations for use during restoration
+                };
+                
+                // Restore layout and initialize panels in one step
+                console.log('Restoring layout with panel configurations');
+                await PanelManager.restoreLayout(layoutWithPanelConfigs);
             } catch (error) {
                 console.error('Error loading dataset from session:', error);
                 throw new Error(`Failed to load dataset: ${error.message}`);
