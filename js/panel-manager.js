@@ -60,7 +60,7 @@ const PanelManager = (function() {
         setTimeout(() => {
             if (_panels.size === 0) {
                 console.log('No panels exist, showing welcome tile...');
-                updateSourcePanelSelection = _createSelectionTile();
+                updateSourcePanelSelection = _createBaseSelectionTile();
             }
         }, 500);
 
@@ -94,7 +94,7 @@ const PanelManager = (function() {
         const icons = {
             'cell-plot': 'fas fa-microscope',
             'gene-plot': 'fas fa-dna',
-            'cell-table': 'fas fa-solid fa-list-ul', // f a-table
+            'cell-table': 'fas fa-solid fa-list-ul', // fa-table
             'gene-table': 'fas fa-th-list',
             'gene-set': 'fas fa-project-diagram'
         };
@@ -107,10 +107,15 @@ const PanelManager = (function() {
      * @returns {Function} - Function to update the source panel grid
      * @private
      */
-    function _createSelectionTile() {
+    function _createBaseSelectionTile() {
+        // Assign a unique ID for the selection tile
+        const selectionTileId = 'base-selection-' + Date.now();
+        
         // Create a tile selector element
         const tileSelector = document.createElement('div');
         tileSelector.className = 'tile-selector';
+        tileSelector.dataset.tileId = selectionTileId;
+        tileSelector.dataset.isSelectionTile = 'true';
         // Mark this selector so we know not to add a close button
         tileSelector.dataset.isBottomSelector = 'true';
         
@@ -225,11 +230,26 @@ const PanelManager = (function() {
                     // Avoid name collision
                     config.title = _generateUniqueName(panelType, panel.getTitle());
                     
-                    // Create panel based on source
-                    createPanel(panelType, config);
-                    
-                    // Remove the selection tile
-                    tileSelector.remove();
+                    const parentContainer = tileSelector.parentElement;
+                    if (!parentContainer) {
+                        // Create panel with selection tile and resize handle
+                        LayoutManager.createPanelWithSelectionTile(
+                            _container, 
+                            tileSelector, 
+                            createPanel, 
+                            panelType,
+                            config
+                        );
+                    } else {
+                        // Create panel in the specific container but still with resize handle
+                        LayoutManager.createPanelWithSelectionTile(
+                            parentContainer, 
+                            tileSelector, 
+                            createPanel, 
+                            panelType,
+                            config
+                        );
+                    }
                 });
                 
                 grid.appendChild(sourceOption);
@@ -296,14 +316,24 @@ const PanelManager = (function() {
                 // Find the parent container (if any)
                 const parentContainer = tileSelector.parentElement;
                 
-                // First create the panel
                 let newPanel;
+                // Always use the createPanelWithSelectionTile to ensure resize handle is added
                 if (!parentContainer) {
-                    // Just create in the main container
-                    newPanel = createPanel(panel.type);
+                    // Create panel with selection tile and resize handle in the main container
+                    newPanel = LayoutManager.createPanelWithSelectionTile(
+                        _container, 
+                        tileSelector, 
+                        createPanel, 
+                        panel.type
+                    );
                 } else {
-                    // Create in the specific container
-                    newPanel = createPanel(panel.type, {}, parentContainer);
+                    // Create in the specific container but still with resize handle
+                    newPanel = LayoutManager.createPanelWithSelectionTile(
+                        parentContainer, 
+                        tileSelector, 
+                        createPanel, 
+                        panel.type
+                    );
                 }
                 
                 hideHeader();
@@ -311,6 +341,8 @@ const PanelManager = (function() {
                 if (sessionsList) {
                     sessionsList.style.display = 'none';
                 }
+                
+                console.log(`Created new panel of type ${panel.type} with ID ${newPanel.getId()}`);
             });
             
             panelTypeGrid.appendChild(panelOption);
@@ -405,9 +437,13 @@ const PanelManager = (function() {
      * @private
      */
     function _createSelectionTileInPane(pane) {
+        // Assign a unique ID for the selection tile
+        const selectionTileId = 'selection-' + Date.now();
         // Create a tile selector element
         const tileSelector = document.createElement('div');
         tileSelector.className = 'tile-selector';
+        tileSelector.dataset.tileId = selectionTileId;
+        tileSelector.dataset.isSelectionTile = 'true';
         
         // Create the new streamlined selection container
         const selectionId = Date.now(); // Use timestamp to ensure unique IDs
@@ -593,8 +629,16 @@ const PanelManager = (function() {
         const closeBtn = tileSelector.querySelector(`#close-selection-${selectionId}`);
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
+                // Store reference to pane before removing the tile
+                const parentPane = pane;
+                
+                // First remove the selection tile
                 tileSelector.remove();
-                LayoutManager.closePanel(pane);
+                
+                // Then close the pane if needed
+                if (parentPane) {
+                    LayoutManager.closePanel(parentPane);
+                }
             });
         } else {
             console.error(`Close button with ID close-selection-${selectionId} not found`);
@@ -722,6 +766,15 @@ const PanelManager = (function() {
         const template = document.getElementById('tile-template');
         const tile = template.content.cloneNode(true).querySelector('.tile');
         tile.dataset.tileId = id;
+        
+        // Add a debug click handler to help identify issues with resize handle
+        tile.addEventListener('click', (e) => {
+            if (e.altKey && e.ctrlKey) {
+                console.log(`Clicked on tile with ID: ${id}`);
+                console.log(`Panel group exists: ${!!document.querySelector(`.panel-group[data-panel-id="${id}"]`)}`);
+            }
+        });
+        
         return tile;
     }
     
