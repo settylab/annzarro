@@ -230,6 +230,50 @@ const App = (function() {
         
         const taxonomyIdSelect = document.getElementById('taxonomy-id');
         if (taxonomyIdSelect) {
+            // Populate options from Config.DEFAULTS.TAXONOMY_SPECIES
+            taxonomyIdSelect.innerHTML = '';
+            Object.entries(Config.DEFAULTS.TAXONOMY_SPECIES).forEach(([id, species]) => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = `${id} (${species})`;
+                // Set selected if it matches the default taxonomy ID
+                if (id === Config.DEFAULTS.TAXONOMY_ID) {
+                    option.selected = true;
+                }
+                taxonomyIdSelect.appendChild(option);
+            });
+            
+            // Add the ability to enter custom value using Select2
+            if (window.$ && $.fn.select2) {
+                $(taxonomyIdSelect).select2({
+                    tags: true, // Allow custom values
+                    placeholder: 'Select or enter a taxonomy ID',
+                    width: '100%',
+                    createTag: function(params) {
+                        // Only create new options for numeric values that look like taxonomy IDs
+                        const term = params.term.trim();
+                        if (!term || !/^\d+$/.test(term)) {
+                            return null;
+                        }
+                        
+                        return {
+                            id: term,
+                            text: `${term} (Custom)`,
+                            newTag: true
+                        };
+                    }
+                });
+                
+                // Make sure select2 change events also trigger our taxonomy ID update
+                $(taxonomyIdSelect).on('select2:select', function(e) {
+                    const taxonomyId = e.params.data.id;
+                    if (taxonomyId) {
+                        DataManager.setTaxonomyId(taxonomyId);
+                    }
+                });
+            }
+            
+            // Handle regular change event for non-select2 fallback
             taxonomyIdSelect.addEventListener('change', (e) => {
                 const taxonomyId = e.target.value;
                 if (taxonomyId) {

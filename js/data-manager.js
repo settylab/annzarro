@@ -912,7 +912,8 @@ const DataManager = (function() {
         const event = new CustomEvent('taxonomyIdChanged', {
             detail: { 
                 taxonomyId: taxId,
-                species: Config.DEFAULTS.TAXONOMY_SPECIES[taxId] || 'Unknown'
+                species: Config.DEFAULTS.TAXONOMY_SPECIES[taxId] || 'Custom',
+                isCustom: !Config.DEFAULTS.TAXONOMY_SPECIES[taxId]
             }
         });
         document.dispatchEvent(event);
@@ -998,7 +999,7 @@ const DataManager = (function() {
      * @returns {string} - Species name
      */
     function getTaxonomySpecies() {
-        return Config.DEFAULTS.TAXONOMY_SPECIES[_taxonomyId] || 'Unknown';
+        return Config.DEFAULTS.TAXONOMY_SPECIES[_taxonomyId] || 'Custom';
     }
     
     /**
