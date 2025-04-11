@@ -74,7 +74,14 @@ export function setupResizeObserver(plotContainer) {
         if (entry.target === plotContainer) {
           clearTimeout(resizeTimeout);
           resizeTimeout = setTimeout(() => {
-            Plotly.relayout(plotContainer, { autosize: true });
+            try {
+              // Check if a Plotly plot exists by verifying the presence of plot data
+              if (plotContainer.data && plotContainer.data.length > 0) {
+                Plotly.relayout(plotContainer, { autosize: true });
+              }
+            } catch (error) {
+              console.error('Error during Plotly.relayout:', error);
+            }
           }, 10); // debounce
         }
       }
