@@ -144,7 +144,7 @@ body {
 }
 
 .split-handle {
-    background-color: #dee2e6;
+    background-color: rgba(222, 226, 230, 0.3);
     position: relative;
     z-index: 10;
     transition: background-color 0.2s;
@@ -154,34 +154,43 @@ body {
     justify-content: center;
 }
 
-.split-handle:hover {
-    background-color: #adb5bd;
+.split-handle:hover, .split-handle.dragging {
+    background-color: rgba(173, 181, 189, 0.5);
 }
 
 .split-handle.vertical {
-    width: 6px;
+    width: 4px;
     cursor: col-resize;
 }
 
 .split-handle.horizontal {
-    height: 6px;
+    height: 4px;
     cursor: row-resize;
+    width: 100%;
+    margin-top: 0;
 }
 
 .split-handle::after {
     content: "";
     position: absolute;
-    background-color: #adb5bd;
+    background-color: rgba(173, 181, 189, 0.3);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 
 .split-handle.vertical::after {
-    width: 2px;
-    height: 30px;
+    width: 1px;
+    height: 16px;
 }
 
 .split-handle.horizontal::after {
-    height: 2px;
-    width: 30px;
+    height: 1px;
+    width: 16px;
+}
+
+.split-handle:hover::after, .split-handle.dragging::after {
+    background-color: rgba(173, 181, 189, 0.7);
 }
 
 /* Plot Panel Styles */

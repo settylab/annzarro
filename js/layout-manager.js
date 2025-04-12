@@ -385,19 +385,8 @@ const LayoutManager = (function() {
         const handle = document.createElement('div');
         handle.className = `split-handle ${direction === 'vertical' ? 'horizontal' : 'vertical'}`;
         
-        // Make the handle more visible
-        handle.style.cssText = direction === 'vertical' 
-            ? 'height: 8px; background-color: #adb5bd; cursor: row-resize; position: relative;'
-            : 'width: 8px; background-color: #adb5bd; cursor: col-resize; position: relative;';
-            
-        // Add grip indicator for better visibility
-        const gripIndicator = document.createElement('div');
-        if (direction === 'vertical') {
-            gripIndicator.style.cssText = 'width: 30px; height: 2px; background-color: #495057; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);';
-        } else {
-            gripIndicator.style.cssText = 'width: 2px; height: 30px; background-color: #495057; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);';
-        }
-        handle.appendChild(gripIndicator);
+        // Use CSS classes for styling instead of inline styles
+        handle.className = `split-handle ${direction === 'vertical' ? 'horizontal' : 'vertical'}`;
         
         const secondPane = document.createElement('div');
         secondPane.className = 'split-pane';
@@ -677,26 +666,9 @@ const LayoutManager = (function() {
             padding: 0;
         `;
         
-        // Create the horizontal resize handle
+        // Create the horizontal resize handle using CSS classes
         const resizeHandle = document.createElement('div');
         resizeHandle.className = 'split-handle horizontal';
-        resizeHandle.style.cssText = `
-            height: 8px;
-            background-color: #adb5bd;
-            cursor: row-resize;
-            width: 100%;
-            margin-top: 0;
-        `;
-        
-        // Add grip line for better visibility
-        const gripLine = document.createElement('div');
-        gripLine.style.cssText = `
-            width: 30px;
-            height: 2px;
-            background-color: #495057; 
-            margin: 3px auto;
-        `;
-        resizeHandle.appendChild(gripLine);
         
         // Add to wrapper and insert before selection tile
         wrapper.appendChild(panelElement);
@@ -725,7 +697,7 @@ const LayoutManager = (function() {
             document.addEventListener('mouseup', handleMouseUp);
             
             // Visual feedback
-            resizeHandle.style.backgroundColor = '#6c757d';
+            resizeHandle.classList.add('dragging');
             document.body.style.cursor = 'row-resize';
         });
         
@@ -745,7 +717,7 @@ const LayoutManager = (function() {
             document.removeEventListener('mouseup', handleMouseUp);
             
             // Reset visual state
-            resizeHandle.style.backgroundColor = '#adb5bd';
+            resizeHandle.classList.remove('dragging');
             document.body.style.cursor = '';
         }
         
