@@ -56,7 +56,6 @@ export async function loadAxisData(settings, plotType = null) {
           columns: [key],
           rows: rowsArr
         });
-        console.log(`Received obs data for ${key}:`, data);
 
         if (!data.data || !data.data[key]) {
           console.warn(`No data found for obs.${key}`);
@@ -64,21 +63,25 @@ export async function loadAxisData(settings, plotType = null) {
         }
 
         values = data.data[key];
-        console.log(`Loaded ${values.length} data points (obs.${key})`);
-        if (values.length > 0) {
-          console.log(`Sample values: ${values.slice(0, 5)}`);
-        }
 
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
         } else {
-          // Infer data type: if >80% of values can be converted to a number, treat as numerical.
-          const numericCount = values.filter(v => {
-            if (v === null || v === undefined) return false;
-            return !isNaN(parseFloat(v));
-          }).length;
-          dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
+          // Check if at least 80% of values are booleans.
+          const booleanCount = values.filter(v => v === true || v === false).length;
+          if (booleanCount / values.length >= 0.8) {
+            // Convert booleans to their string equivalents.
+            values = values.map(v => (v === null || v === undefined) ? v : String(v));
+            dataType = 'categorical';
+          } else {
+            // Otherwise, infer data type: if >80% of values can be converted to a number, treat as numerical.
+            const numericCount = values.filter(v => {
+              if (v === null || v === undefined) return false;
+              return !isNaN(parseFloat(v));
+            }).length;
+            dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
+          }
         }
         break;
       }
@@ -88,7 +91,6 @@ export async function loadAxisData(settings, plotType = null) {
           columns: [key],
           rows: rowsArr
         });
-        console.log(`Received var data for ${key}:`, data);
 
         if (!data.data || !data.data[key]) {
           console.warn(`No data found for var.${key}`);
@@ -96,10 +98,6 @@ export async function loadAxisData(settings, plotType = null) {
         }
 
         values = data.data[key];
-        console.log(`Loaded ${values.length} data points (var.${key})`);
-        if (values.length > 0) {
-          console.log(`Sample values: ${values.slice(0, 5)}`);
-        }
 
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
@@ -121,7 +119,6 @@ export async function loadAxisData(settings, plotType = null) {
           columnName: column,
           rows: rowsArr
         });
-        console.log(`Received obsm data for ${key} column ${column}:`, data);
 
         if (!data.data || data.data.length === 0) {
           console.warn(`No data points received for obsm.${key}.${column}`);
@@ -130,10 +127,6 @@ export async function loadAxisData(settings, plotType = null) {
 
         values = data.data;
         dataType = 'numerical';
-        console.log(`Loaded ${values.length} data points (obsm.${key}.${column})`);
-        if (values.length > 0) {
-          console.log(`Sample values: ${values.slice(0, 5)}`);
-        }
         break;
       }
       case 'varm': {
@@ -143,7 +136,6 @@ export async function loadAxisData(settings, plotType = null) {
           columnName: column,
           rows: rowsArr
         });
-        console.log(`Received varm data for ${key} column ${column}:`, data);
 
         if (!data.data || data.data.length === 0) {
           console.warn(`No data points received for varm.${key}.${column}`);
@@ -152,34 +144,22 @@ export async function loadAxisData(settings, plotType = null) {
 
         values = data.data;
         dataType = 'numerical';
-        console.log(`Loaded ${values.length} data points (varm.${key}.${column})`);
-        if (values.length > 0) {
-          console.log(`Sample values: ${values.slice(0, 5)}`);
-        }
         break;
       }
       case 'obsp': {
-        const focusedCell = DataManager.getFocusedCell();
-        if (!focusedCell) {
-          throw new Error('No focused cell selected');
-        }
-        const focusedCellIndex = DataManager.getCellIndex(focusedCell);
-        if (focusedCellIndex === -1) {
+        const cellIndex = DataManager.getCellIndex(column);
+        if (cellIndex === -1) {
           throw new Error('Focused cell not found in dataset');
         }
-        console.log(`Loading obsp data for ${key} with focused cell ${focusedCell} (index ${focusedCellIndex})`);
         data = await DataManager.loadObsp({
           datasetPath,
           obspKey: key,
-          rows: [focusedCellIndex]
+          rows: [cellIndex]
         });
-        console.log(`Received obsp data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
 
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
           if (Array.isArray(firstRow)) {
-            console.log(`Obsp data is an array with ${firstRow.length} connections`);
-            console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
             values = firstRow;
           } else {
             console.warn(`Expected array for obsp row, got: ${typeof firstRow}`);
@@ -214,27 +194,19 @@ export async function loadAxisData(settings, plotType = null) {
         break;
       }
       case 'varp': {
-        const focusedGene = DataManager.getFocusedGene();
-        if (!focusedGene) {
-          throw new Error('No focused gene selected');
-        }
-        const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
-        if (focusedGeneIndex === -1) {
+        const geneIndex = DataManager.getGeneIndex(column);
+        if (geneIndex === -1) {
           throw new Error('Focused gene not found in dataset');
         }
-        console.log(`Loading varp data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
+
         data = await DataManager.loadVarp({
           datasetPath,
           varpKey: key,
-          rows: [focusedGeneIndex]
+          rows: [geneIndex]
         });
-        console.log(`Received varp data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
-
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
           if (Array.isArray(firstRow)) {
-            console.log(`Varp data is an array with ${firstRow.length} connections`);
-            console.log(`Sample values: ${JSON.stringify(firstRow.slice(0, 5))}`);
             values = firstRow;
           } else {
             console.warn(`Expected array for varp row, got: ${typeof firstRow}`);
@@ -271,16 +243,10 @@ export async function loadAxisData(settings, plotType = null) {
       case 'layer': {
         if (plotType === 'genes') {
           // In gene plots, the focused cell defines a row; fetch a column array (colArr) from gene indices.
-          const focusedCell = DataManager.getFocusedCell();
-          if (!focusedCell) {
-            throw new Error('No focused cell selected');
-          }
-          const focusedCellIndex = DataManager.getCellIndex(focusedCell);
-          if (focusedCellIndex === -1) {
+          const cellIndex = DataManager.getCellIndex(column);
+          if (cellIndex === -1) {
             throw new Error('Focused cell not found in dataset');
           }
-          console.log(`Loading layer data for ${key} with focused cell ${focusedCell} (index ${focusedCellIndex}) for gene plot`);
-
           // Obtain gene indices to define the columns.
           const genes = DataManager.getGenes();
           const colArr = null;
@@ -289,18 +255,14 @@ export async function loadAxisData(settings, plotType = null) {
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
-            rows: [focusedCellIndex],
+            rows: [cellIndex],
             cols: colArr
           });
-          console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
-
           if (data.data && Array.isArray(data.data) && data.data.length > 0) {
             if (Array.isArray(data.data[0])) {
-              console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
               // Assume the first (and only) row corresponds to gene values.
               values = data.data[0];
             } else {
-              console.log(`Layer data is a 1D array with ${data.data.length} elements`);
               values = data.data;
             }
           } else {
@@ -310,40 +272,28 @@ export async function loadAxisData(settings, plotType = null) {
           dataType = 'numerical';
         } else {
           // In non-gene plots, the focused gene defines a column.
-          const focusedGene = DataManager.getFocusedGene();
-          if (!focusedGene) {
-            throw new Error('No focused gene selected');
-          }
-          const focusedGeneIndex = DataManager.getGeneIndex(focusedGene);
-          if (focusedGeneIndex === -1) {
+          const geneIndex = DataManager.getGeneIndex(column);
+          if (geneIndex === -1) {
             throw new Error('Focused gene not found in dataset');
           }
-          console.log(`Loading layer data for ${key} with focused gene ${focusedGene} (index ${focusedGeneIndex})`);
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
             rows: rowsArr,
-            cols: [focusedGeneIndex]
+            cols: [geneIndex]
           });
-          console.log(`Received layer data:`, data.data ? `Array of ${data.data.length} elements` : 'No data array');
-
           if (data.data && typeof data.data === 'object') {
             if (Array.isArray(data.data)) {
               if (data.data.length > 0) {
                 if (Array.isArray(data.data[0])) {
-                  console.log(`Layer data is a 2D array with ${data.data.length} rows and ${data.data[0].length} columns`);
-                  console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
                   try {
                     // Extract the first element from each row.
                     values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
-                    console.log(`Extracted ${values.length} values, first few: ${JSON.stringify(values.slice(0, 5))}`);
                   } catch (e) {
                     console.error(`Error extracting values from 2D array:`, e);
                     values = Array(data.data.length).fill(NaN);
                   }
                 } else {
-                  console.log(`Layer data is a 1D array with ${data.data.length} elements`);
-                  console.log(`Sample values: ${JSON.stringify(data.data.slice(0, 5))}`);
                   values = data.data;
                 }
               } else {
@@ -375,8 +325,6 @@ export async function loadAxisData(settings, plotType = null) {
                 return isNaN(parsed) ? NaN : parsed;
               });
             }
-            console.log(`Processed layer data to ${values.length} values of type ${typeof values[0]}`);
-            console.log(`Sample values after processing: ${values.slice(0, 5)}`);
           }
           dataType = 'numerical';
         }
@@ -438,7 +386,6 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       // Skip z-axis if not used.
       if (axis === 'z' && !settings.z) continue;
       const axisSettings = settings[axis];
-      console.log(`Validating ${axis} axis settings:`, axisSettings);
       if (!axisSettings) {
         throw new Error(`No settings found for ${axis} axis`);
       }
@@ -649,7 +596,6 @@ export async function createPlot(container, plotContainer, settings, data, id) {
 
     // Derive the unique category values
     const catValues = data.colorCategories || [...new Set(data.color)];
-    console.log(`Found ${catValues.length} categories:`, catValues);
     const colorKey = `${settings.color.key}_colors`;
     const datasetPath = DataManager.getCurrentDataset();
 

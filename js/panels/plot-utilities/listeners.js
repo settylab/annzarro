@@ -1,4 +1,4 @@
-import { populateKeySelector, populateColumnSelector, updateColorSliderUI } from './panel-ui-update.js';
+import { populateKeySelector, populateColumnSelector, updateColorSliderUI, setupAxisSelector } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -11,7 +11,9 @@ export function setupPlotEventListeners({
     plotType,
     data,
     id,
-    loadDataAndCreatePlot
+    loadDataAndCreatePlot,
+    onFocusedCellChanged,
+    onFocusedGeneChanged
   }) {
 
     const observer = setupResizeObserver(plotContainer);
@@ -24,7 +26,9 @@ export function setupPlotEventListeners({
         plotType,
         data,
         id,
-        loadDataAndCreatePlot);
+        loadDataAndCreatePlot,
+        onFocusedCellChanged,
+        onFocusedGeneChanged);
 
     setupPlotControlListeners(
         container,
@@ -36,7 +40,8 @@ export function setupPlotEventListeners({
         loadDataAndCreatePlot,
         updatePlotElements,
         controlsContainer
-    )
+    );
+    
     setupColorControls(
         container,
         settings,
@@ -565,6 +570,8 @@ export function setupColorControls(
  * @param {Object} data - Data cache for axis values
  * @param {string} id - Unique identifier for the plot
  * @param {Function} loadDataAndCreatePlot - Full plot rebuild
+ * @param {Function} onFocusedCellChanged - Callback when cell focus is changed
+ * @param {Function} onFocusedGeneChanged - Callback when gene focus is changed
  */
 function setupAxisSelectorListeners(
     container,
@@ -573,7 +580,9 @@ function setupAxisSelectorListeners(
     plotType,
     data,
     id,
-    loadDataAndCreatePlot
+    loadDataAndCreatePlot,
+    onFocusedCellChanged,
+    onFocusedGeneChanged
 ) {
   // Add defensive check - container must be defined
   if (!container) {
@@ -604,6 +613,10 @@ function setupAxisSelectorListeners(
       if (!datasetStructure) return console.error('No dataset structure');
 
       populateKeySelector(settings[axis], keySelect, datasetStructure);
+      
+      // Re-setup the axis selector to update the special buttons
+      setupAxisSelector(container, axis, settings[axis], plotType, datasetStructure);
+      
     if (type === 'none' && axis === 'color') {
       await loadColorDataAndUpdatePlot(
         container,
@@ -616,8 +629,6 @@ function setupAxisSelectorListeners(
       return;
     }
 
-      console.log(`Axis ${axis} type changed to ${type}`);
-      console.log(keySelect.options);
       const keys = [...keySelect.options].map(o => o.value);
       settings[axis].key = keys[0] || '';
       keySelect.value = settings[axis].key;
@@ -658,6 +669,9 @@ function setupAxisSelectorListeners(
       if (!datasetStructure) return console.error('No dataset structure');
 
       populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
+      
+      // Re-setup the axis selector to ensure special buttons are correct
+      setupAxisSelector(container, axis, settings[axis], plotType, datasetStructure);
 
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
@@ -686,6 +700,9 @@ function setupAxisSelectorListeners(
       handleAxisUpdate(axis);
     });
   });
+  
+  // Set up lock and refocus button handlers using event delegation
+  setupSpecialButtonListeners(container, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
 
   function handleAxisUpdate(axis) {
     if (axis === 'color') {
@@ -720,3 +737,86 @@ function setupAxisSelectorListeners(
     }
   }
 }
+
+/**
+ * Sets up event listeners for the special buttons (lock and refocus)
+ * @param {HTMLElement} container - The container element
+ * @param {Object} settings - The settings object for the plot
+ * @param {string} plotType - The plot type ('cells' or 'genes')
+ * @param {Function} onFocusedCellChanged - Callback when focused cell changes
+ * @param {Function} onFocusedGeneChanged - Callback when focused gene changes
+ */
+function setupSpecialButtonListeners(container, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged) {
+  
+  // Define the button handler function
+  function buttonClickHandler(e) {
+    const target = e.target.closest('button[id^="lock-"], button[id^="refocus-"]');
+    if (!target) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Extract axis and button type
+    const [buttonType, axis] = target.id.split('-');
+    const dataType = target.dataset.type;
+
+    let currentFocus;
+    let executeFocusChange;
+    let setFocus;
+
+    if ((dataType === 'layer' && plotType === 'cells') || dataType === 'varp') {
+      currentFocus = DataManager.getFocusedGene();
+      executeFocusChange = onFocusedGeneChanged
+      setFocus = DataManager.setFocusedGene;
+    } else if ((dataType === 'layer' && plotType === 'genes') || dataType === 'obsp') {
+      currentFocus = DataManager.getFocusedCell();
+      executeFocusChange = onFocusedCellChanged
+      setFocus = DataManager.setFocusedCell;
+    }
+    
+    console.log(`Button ${buttonType} clicked for axis ${axis}, type: ${dataType}`);
+    
+    if (buttonType === 'lock') {
+      // Handle lock button click
+      settings[axis].locked = !settings[axis].locked;
+      
+      if (settings[axis].locked) {
+        // Locking - update button style to locked state
+        target.innerHTML = '<i class="fas fa-lock"></i>';
+        target.classList.remove('btn-outline-secondary');
+        target.classList.add('btn-primary', 'active');
+        target.setAttribute('aria-pressed', 'true');
+        target.title = 'Unlock (follow focused element)';
+        
+        // Check if refocus button should be visible
+        const refocusButton = container.querySelector(`#refocus-${axis}`);
+        const shouldShow = currentFocus && currentFocus !== settings[axis].column;
+        refocusButton.style.display = shouldShow ? 'inline-flex' : 'none';
+      } else {
+        // Unlocking - update button style to unlocked state
+        target.innerHTML = '<i class="fas fa-lock-open"></i>';
+        target.classList.add('btn-outline-secondary');
+        target.classList.remove('btn-primary', 'active');
+        target.setAttribute('aria-pressed', 'false');
+        target.title = 'Lock (keep current selection)';
+        
+        // Hide refocus button
+        const refocusButton = container.querySelector(`#refocus-${axis}`);
+        if (refocusButton) {
+          refocusButton.style.display = 'none';
+        }
+        executeFocusChange(currentFocus);
+      }
+    } else if (buttonType === 'refocus') {
+      const columnValue = settings[axis].column;
+      setFocus(columnValue);
+
+      // Hide the refocus button after clicking
+      target.style.display = 'none';
+    }
+  }
+
+  // Add event listeners
+  container.addEventListener('click', buttonClickHandler);
+}
+

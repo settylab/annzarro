@@ -122,204 +122,156 @@ const GenePlotPanel = (function() {
                 plotType: _plotType,
                 data: _data,
                 id: _id,
-                loadDataAndCreatePlot: refreshPlot
+                loadDataAndCreatePlot: refreshPlot,
+                onFocusedCellChanged: handleFocusedCellChanged,
+                onFocusedGeneChanged: handleFocusedGeneChanged
             })
             
             
             // Listen for focused gene changes
-            document.addEventListener('focusedGeneChanged', (e) => {
+            document.addEventListener('focusedGeneChanged', async (e) => {
                 const focusedGene = e.detail.gene;
-                console.log(`Focused gene changed to: ${focusedGene}`);
-                
-                // Check if we're using varp data anywhere in the plot
-                const usesVarpData = _settings.x.type === 'varp' || 
-                                    _settings.y.type === 'varp' || 
-                                    (_settings.z && _settings.z.type === 'varp') ||
-                                    _settings.color.type === 'varp';
-                
-                if (usesVarpData) {
-                    // Track which axes need updates
-                    const updates = {
-                        xAxis: _settings.x.type === 'varp',
-                        yAxis: _settings.y.type === 'varp',
-                        zAxis: _settings.z && _settings.z.type === 'varp',
-                        colors: _settings.color.type === 'varp',
-                        layout: false
-                    };
-                    
-                    
-                    // Handle specific update scenarios
-                    if (updates.xAxis) {
-                        console.log('Focused gene changed affects x-axis, loading new data');
-                        _settings.x.column = focusedGene;
-                        loadAxisData(_settings.x, 'genes').then(xData => {
-                            if (xData && xData.values) {
-                                _data.x = xData;
-                                _updatePlotElements({ 
-                                    xAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                refreshPlot();
-                            }
-                        }).catch(() => refreshPlot());
-                    }
-                    if (updates.yAxis) {
-                        console.log('Focused gene changed affects y-axis, loading new data');
-                        _settings.y.column = focusedGene;
-                        loadAxisData(_settings.y, 'genes').then(yData => {
-                            if (yData && yData.values) {
-                                _data.y = yData;
-                                _updatePlotElements({ 
-                                    yAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                refreshPlot();
-                            }
-                        }).catch(() => refreshPlot());
-                    }
-                    if (updates.zAxis) {
-                        console.log('Focused gene changed affects z-axis, loading new data');
-                        _settings.z.column = focusedGene;
-                        loadAxisData(_settings.z, 'genes').then(zData => {
-                            if (zData && zData.values) {
-                                _data.z = zData;
-                                _updatePlotElements({ 
-                                    zAxis: true,
-                                    layout: true 
-                                });
-                            } else {
-                                refreshPlot();
-                            }
-                        }).catch(() => refreshPlot());
-                    }
-                    if (updates.colors) {
-                        // Only color uses varp data - we can use optimized update
-                        console.log('Focused gene changed, only affects color data - using optimized update');
-                        _settings.color.column = focusedGene;
-                        loadColorDataAndUpdatePlot(
-                            _container,
-                            _plotContainer,
-                            _settings,
-                            _data,
-                            _id,
-                            refreshPlot
-                        );
-                    }
-                } else if (_settings.highlightFocusedGene) {
-                    // If the focused gene change does not affect the plot, but we are highlighting it
-                    highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
-                } else {
-                    console.log('Focused gene changed does not affect this plot');
-                }
-            });
+                handleFocusedGeneChanged(focusedGene);
             
-            /**
-             * Update axis titles and menu labels to reflect the current focused cell
-             * @private
-             */
-            function _updateMenueLabelsForCell(focusedCell) {
-                if (!_plotContainer) return;
-                
-                // Update UI controls in menus to show correct cell name
-                const updateColumnSelectOptions = (axis) => {
-                    if (_settings[axis] && _settings[axis].type === 'layer') {
-                        const columnSelect = _container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
-                        if (columnSelect && columnSelect.options.length > 0) {
-                            // Update the option text to show the new cell name
-                            columnSelect.options[0].text = `Expression in ${focusedCell}`;
-                        }
-                    }
-                };
-                
-                // Update all axis column selects
-                updateColumnSelectOptions('x');
-                updateColumnSelectOptions('y');
-                updateColumnSelectOptions('z');
-                updateColumnSelectOptions('color');
-            }
+            });
             
             // Listen for focused cell changes
-            document.addEventListener('focusedCellChanged', (e) => {
-                console.log(`Focused cell changed to: ${e.detail.cell}`);
+            document.addEventListener('focusedCellChanged', async (e) => {
                 const focusedCell = e.detail.cell;
+                handleFocusedCellChanged(focusedCell);
+            });
+        }
+
+        /**
+         * Handle focused gene changes
+         * @param {string} focusedGene - The gene that is currently focused
+         *  @private
+         */
+        async function handleFocusedGeneChanged(focusedGene) {
+        
+            // Determine if any setting uses varp data
+            const usesVarpData = _settings.x.type === 'varp' ||
+                                   _settings.y.type === 'varp' ||
+                                   (_settings.z && _settings.z.type === 'varp') ||
+                                   _settings.color.type === 'varp';
+        
+            if (usesVarpData) {
+                // Array to hold promises for axis updates
+                const updatePromises = [];
+        
+                // Process non-color axes (x, y, z) that use varp data
+                ['x', 'y', 'z'].forEach(axis => {
+                    if (_settings[axis] && _settings[axis].type === 'varp') {
+                        updatePromises.push(updateAxis(axis, focusedGene, "genes"));
+                    }
+                });
+        
+                // Process the color update if it uses varp data
+                if (_settings.color.type === 'varp') {
+                    updatePromises.push(updateAxis('color', focusedGene, "genes"));
+                }
+        
+                try {
+                    await Promise.all(updatePromises);
+                } catch (err) {
+                    console.error("Error during varp data updates:", err);
+                    refreshPlot();
+                }
+            } else if (_settings.highlightFocusedGene) {
+                // Highlight the focused gene if there's no varp update required
+                highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
+            }
+        }
+
+        /**
+         * Update axis titles and menu labels to reflect the current focused entity
+         * @param {string} focusedEntity - The entity to focus on
+         * @param {string} endityType - Type of entity (genes, cells)
+         * @param {string} axis - Axis to update (x, y, z)
+         * @private
+         */
+        function _updateMenueLabelsForFocus(focusedEntity, endityType, axis) {
+            const columnSelect = _controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+            if (!columnSelect) {
+                console.warn(`Column select for axis ${axis} not found`);
+                return;
+            }
+            // Update the label of the first option in the select element
+            if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'cells') {
+                columnSelect.options[0].text = `Expression of ${focusedEntity}`;
+            } else if (_settings[axis] && _settings[axis].type === 'varp' && endityType === 'genes') {
+                columnSelect.options[0].text = `Connection to ${focusedEntity}`;
+            }
+        }
+
+        async function handleFocusedCellChanged(focusedCell) {
+            
+            // Check if we're using layer data anywhere in the plot
+            const usesLayerData = _settings.x.type === 'layer' || 
+                                  _settings.y.type === 'layer' || 
+                                  (_settings.z && _settings.z.type === 'layer') ||
+                                  _settings.color.type === 'layer';
+            
+            if (!usesLayerData) {
+                return;
+            }
+            
+            // Array to hold promises for axis updates (x, y, z)
+            const axisUpdatePromises = [];
+            
+            // Process each non-color axis if it uses layer data
+            ['x', 'y', 'z'].forEach(axis => {
+                if (_settings[axis] && _settings[axis].type === 'layer') {
+                    // updateAxis returns a promise even for synchronous operations,
+                    // so we add it to our array for later synchronization.
+                    axisUpdatePromises.push(updateAxis(axis, focusedCell, "cells"));
+                }
+            });
+            
+            // Process the color update if using layer data
+            let colorUpdatePromise = Promise.resolve();
+            if (_settings.color.type === 'layer') {
+                colorUpdatePromise = updateAxis('color', focusedCell, "cells");
+            }
+            
+            // Wait for all asynchronous updates to complete
+            try {
+                await Promise.all([...axisUpdatePromises, colorUpdatePromise]);
                 
-                // Check if we're using layer data anywhere in the plot
-                const usesLayerData = _settings.x.type === 'layer' || 
-                                     _settings.y.type === 'layer' || 
-                                     (_settings.z && _settings.z.type === 'layer') ||
-                                     _settings.color.type === 'layer';
-                
-                if (usesLayerData) {
-                    // Update all the labels that reference cells even before loading any data
-                    _updateMenueLabelsForCell(focusedCell);
-                    
-                    // Track which axes need data updates
-                    const updates = {
-                        xAxis: _settings.x.type === 'layer',
-                        yAxis: _settings.y.type === 'layer',
-                        zAxis: _settings.z && _settings.z.type === 'layer',
-                        colors: _settings.color.type === 'layer'
-                    };
-                    
-                    // For position data updates, we now handle them using the centralized _updatePlotElements
-                    const dataUpdatePromises = [];
-                    
-                    // If x-axis uses layer data, load new data
-                    if (updates.xAxis) {
-                        console.log('Focused cell changed affects x-axis, loading new data');
-                        _settings.x.column = focusedCell;
-                        const xPromise = loadAxisData(_settings.x, 'genes').then(xData => {
-                            if (xData && xData.values) {
-                                _data.x = xData;
-                                // Update using _updatePlotElements
-                                _updatePlotElements({ xAxis: true, layout: true });
-                            }
-                        }).catch(err => {
-                            console.error("Error loading x-axis data:", err);
-                        });
-                        dataUpdatePromises.push(xPromise);
+                // If multiple axis updates occurred and highlighting is enabled,
+                // ensure the focused entity is properly highlighted.
+                if (axisUpdatePromises.length > 1 && _settings.highlightFocusedCell) {
+                    highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
+                }
+            } catch (err) {
+                console.error("Error during data updates:", err);
+                refreshPlot();
+            }
+        }
+        
+        /**
+         * Update the axis based on the focused entity and its type
+         * @param {string} axis - Axis to update (x, y, z, color)
+         * @param {string} focusedEntity - The entity to focus on
+         * @param {string} entityType - Type of entity (genes, cells)
+         */
+        async function updateAxis(axis, focusedEntity, entityType) {
+            // Determine the proper highlight flag based on the entity type.
+            const refocusButton = container.querySelector(`#refocus-${axis}`);
+        
+            // Special handling for the 'color' axis.
+            if (axis === 'color') {
+                if (_settings.color.locked) {
+                    if (_settings.color.column !== focusedEntity) {
+                        if (refocusButton) refocusButton.style.display = 'inline-block';
+                    } else {
+                        if (refocusButton) refocusButton.style.display = 'none';
                     }
-                    
-                    // If y-axis uses layer data, load new data
-                    if (updates.yAxis) {
-                        console.log('Focused cell changed affects y-axis, loading new data');
-                        _settings.y.column = focusedCell;
-                        const yPromise = loadAxisData(_settings.y, 'genes').then(yData => {
-                            if (yData && yData.values) {
-                                _data.y = yData;
-                                // Update using _updatePlotElements
-                                _updatePlotElements({ yAxis: true, layout: true });
-                            }
-                        }).catch(err => {
-                            console.error("Error loading y-axis data:", err);
-                        });
-                        dataUpdatePromises.push(yPromise);
-                    }
-                    
-                    // If z-axis uses layer data, load new data
-                    if (updates.zAxis) {
-                        console.log('Focused cell changed affects z-axis, loading new data');
-                        _settings.z.column = focusedCell;
-                        const zPromise = loadAxisData(_settings.z, 'genes').then(zData => {
-                            if (zData && zData.values) {
-                                _data.z = zData;
-                                // Update using _updatePlotElements
-                                _updatePlotElements({ zAxis: true, layout: true });
-                            }
-                        }).catch(err => {
-                            console.error("Error loading z-axis data:", err);
-                        });
-                        dataUpdatePromises.push(zPromise);
-                    }
-                    
-                    // If color uses layer data, load and update new data
-                    if (updates.colors) {
-                        console.log('Focused cell changed affects color data, loading new data');
-                        _settings.color.column = focusedCell;
-                        // Load just the color data and update
-                        loadColorDataAndUpdatePlot(
+                } else if (_settings.color.column !== focusedEntity) {
+                    _settings.color.column = focusedEntity;
+                    _updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+                    try {
+                        await loadColorDataAndUpdatePlot(
                             _container,
                             _plotContainer,
                             _settings,
@@ -327,32 +279,39 @@ const GenePlotPanel = (function() {
                             _id,
                             refreshPlot
                         );
+                    } catch (err) {
+                        refreshPlot();
                     }
-                    
-                    // After all position data updates complete (if any), handle edge cases
-                    if (dataUpdatePromises.length > 0) {
-                        Promise.all(dataUpdatePromises)
-                            .then(() => {
-                                console.log("All position data updates completed");
-                                
-                                // If we have multiple axes updated, ensure the highlighted gene is properly updated
-                                if (Object.values(updates).filter(Boolean).length > 1 && _settings.highlightFocusedGene) {
-                                    removeHighlight(_plotContainer);
-                                    highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
-                                }
-                            })
-                            .catch(err => {
-                                console.error("Error during position data updates:", err);
-                                // Only redraw as a last resort if we hit errors
-                                refreshPlot();
-                            });
-                    }
-                } else {
-                    console.log('Focused cell changed does not affect this plot');
                 }
-            });
+                return;
+            } else {
+                // For non-color axes (x, y, z)
+                if (_settings[axis].locked) {
+                    if (_settings[axis].column !== focusedEntity) {
+                        if (refocusButton) refocusButton.style.display = 'inline-block';
+                    } else {
+                        if (refocusButton) refocusButton.style.display = 'none';
+                    }
+                } else if (_settings[axis].column !== focusedEntity) {
+                    _settings[axis].column = focusedEntity;
+                    _updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+                    try {
+                        const axisData = await loadAxisData(_settings[axis], _plotType);
+                        if (axisData && axisData.values) {
+                            _data[axis] = axisData;
+                            _updatePlotElements({
+                                [`${axis}Axis`]: true,
+                                layout: true
+                            });
+                        } else {
+                            refreshPlot();
+                        }
+                    } catch (err) {
+                        refreshPlot();
+                    }
+                }
+            }
         }
-        
 
         
         /**

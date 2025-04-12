@@ -936,6 +936,33 @@ div.dtsb-group {
 .axis-selector {
     display: flex;
     gap: 0.25rem;
+    align-items: center;
+}
+
+/* Special buttons for layer, obsp, varp types */
+[class^="axis-special-buttons"] {
+    display: flex;
+    align-items: center;
+    margin-left: 4px;
+}
+
+[class^="axis-special-buttons"] .btn {
+    padding: 0.25rem 0.375rem;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+}
+
+[class^="axis-special-buttons"] .btn:first-child {
+    margin-right: 2px;
+}
+
+/* Ensure refocus button is hidden by default */
+[id^="refocus-"] {
+    display: none;
 }
 
 .color-selector-container {

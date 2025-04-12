@@ -69,7 +69,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
    * @param {Object} datasetStructure - Structure of the loaded dataset
    */
   export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
-    const type = settings.type || 'obsm';
+    const type = settings.type || (plotType=='cells' ? 'obsm' : 'varm');
     let columnOptions = [];
     columnSelect.disabled = false;
   
@@ -117,24 +117,43 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         break;
       }
       case 'obsp': {
-        const focused = DataManager.getFocusedCell();
+        let focused;
+        if (settings.column && settings.type === 'obsp') {
+          focused = settings.column;
+        } else {
+          focused = DataManager.getFocusedCell();
+        }
         columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
                                 : ['<option value="">Select a focused cell first</option>'];
         break;
       }
       case 'varp': {
-        const focused = DataManager.getFocusedGene();
+        let focused;
+        if (settings.column && settings.type === 'varp') {
+          focused = settings.column;
+        } else {
+          focused = DataManager.getFocusedGene();
+        }
         columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
                                 : ['<option value="">Select a focused gene first</option>'];
         break;
       }
       case 'layer': {
-        if (plotType === 'cells') {
-          const focused = DataManager.getFocusedGene();
+        let focused;
+        if (settings.column && plotType === 'cells') {
+          if (settings.type === 'layer') {
+            focused = settings.column;
+          } else {
+            focused = DataManager.getFocusedGene();
+          }
           columnOptions = focused ? [`<option value="${focused}">Expression of ${focused}</option>`]
                                   : ['<option value="">Select a focused gene first</option>'];
         } else if (plotType === 'genes') {
-          const focused = DataManager.getFocusedCell();
+          if (settings.column && settings.type === 'layer') {
+            focused = settings.column;
+          } else {
+            focused = DataManager.getFocusedCell();
+          }
           columnOptions = focused ? [`<option value="${focused}">Expression in ${focused}</option>`]
                                   : ['<option value="">Select a focused cell first</option>'];
         }
@@ -171,8 +190,6 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       return;
     }
   
-    console.log(`Setting up ${axis} axis selector with settings:`, settings);
-  
     // Initialize if completely empty
     if (!settings.type) {
       // Default to 'none' for color, otherwise use varm/obsm
@@ -189,6 +206,94 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
   
     populateKeySelector(settings, keySelect, datasetStructure);
     populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure);
+    
+    // Add or update the refocus and lock buttons for layer, obsp, and varp types
+    const axisSelector = columnSelect.closest('.axis-selector');
+    if (axisSelector) {
+      // Check if the type requires the special buttons
+      const needsSpecialButtons = ['layer', 'obsp', 'varp'].includes(settings.type);
+      
+      // Get existing buttons container if it exists
+      let buttonsContainer = axisSelector.querySelector(`.axis-special-buttons-${axis}`);
+      
+      // If container exists but buttons not needed, remove it
+      if (buttonsContainer && !needsSpecialButtons) {
+        buttonsContainer.remove();
+        return;
+      }
+      
+      // If buttons are needed but container doesn't exist, create it
+      if (needsSpecialButtons && !buttonsContainer) {
+        buttonsContainer = document.createElement('div');
+        buttonsContainer.className = `axis-special-buttons-${axis}`;
+        
+        // Create refocus button
+        const refocusButton = document.createElement('button');
+        refocusButton.id = `refocus-${axis}`;
+        refocusButton.className = 'btn btn-sm btn-outline-secondary';
+        refocusButton.title = 'Refocus to current selection';
+        refocusButton.innerHTML = '<i class="fas fa-crosshairs"></i>';
+        refocusButton.dataset.axis = axis;
+        refocusButton.dataset.type = settings.type;
+        buttonsContainer.appendChild(refocusButton);
+        
+        // Create lock button
+        const lockButton = document.createElement('button');
+        lockButton.id = `lock-${axis}`;
+        lockButton.dataset.axis = axis;
+        lockButton.dataset.type = settings.type;
+        buttonsContainer.appendChild(lockButton);
+        
+        // Add container to DOM
+        axisSelector.appendChild(buttonsContainer);
+      } 
+      
+      // If buttons are needed and container exists, update button properties
+      if (needsSpecialButtons && buttonsContainer) {
+        // Initialize the locked state if not already set
+        if (settings.locked === undefined) {
+          settings.locked = false;
+        }
+        
+        // Get references to buttons
+        const refocusButton = buttonsContainer.querySelector(`#refocus-${axis}`);
+        const lockButton = buttonsContainer.querySelector(`#lock-${axis}`);
+        
+        // Update data type attribute for both buttons
+        if (refocusButton) {
+          refocusButton.dataset.type = settings.type;
+        }
+        
+        if (lockButton) {
+          lockButton.dataset.type = settings.type;
+          
+          // Apply the right classes based on locked state
+          if (settings.locked) {
+            lockButton.className = 'btn btn-sm btn-primary active';
+            lockButton.setAttribute('aria-pressed', 'true');
+            lockButton.title = 'Unlock (follow focused element)';
+            lockButton.innerHTML = '<i class="fas fa-lock"></i>';
+          } else {
+            lockButton.className = 'btn btn-sm btn-outline-secondary';
+            lockButton.setAttribute('aria-pressed', 'false');
+            lockButton.title = 'Lock (keep current selection)';
+            lockButton.innerHTML = '<i class="fas fa-lock-open"></i>';
+          }
+        }
+        
+        // Show refocus button if locked and there's a different focus available
+        if (refocusButton) {
+          const shouldShowRefocus = settings.locked && (
+            (settings.type === 'layer' && plotType === 'cells' && DataManager.getFocusedGene() && DataManager.getFocusedGene() !== settings.column) ||
+            (settings.type === 'layer' && plotType === 'genes' && DataManager.getFocusedCell() && DataManager.getFocusedCell() !== settings.column) ||
+            (settings.type === 'obsp' && DataManager.getFocusedCell() && DataManager.getFocusedCell() !== settings.column) ||
+            (settings.type === 'varp' && DataManager.getFocusedGene() && DataManager.getFocusedGene() !== settings.column)
+          );
+          
+          refocusButton.style.display = shouldShowRefocus ? 'inline-flex' : 'none';
+        }
+      }
+    }
   
     console.log(`Axis '${axis}' setup complete with key='${settings.key}' and column='${settings.column}'`);
 }
