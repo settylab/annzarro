@@ -18,7 +18,6 @@ const App = (function() {
         if (_isInitialized) return;
         
         try {
-            console.log('Initializing AnnZarro application...');
             
             // Initialize Plotly with optimized canvas settings
             _initPlotly();
@@ -49,7 +48,6 @@ const App = (function() {
             }
             
             _isInitialized = true;
-            console.log('AnnZarro application initialized successfully');
         } catch (error) {
             console.error('Error initializing application:', error);
             _showError('Initialization failed', error.message);
@@ -62,7 +60,6 @@ const App = (function() {
      */
     function _initPlotly() {
         if (typeof Plotly !== 'undefined') {
-            console.log('Configuring Plotly.js for optimized canvas performance');
             
             // Set global Plotly configuration
             const plotlyConfig = {
@@ -78,29 +75,7 @@ const App = (function() {
                     scale: 2
                 }
             };
-            
-            // Use MutationObserver to set willReadFrequently attribute on canvas elements
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.querySelectorAll) {
-                                const canvases = node.querySelectorAll('canvas');
-                                canvases.forEach((canvas) => {
-                                    const ctx = canvas.getContext('2d');
-                                    if (ctx) {
-                                        // Get the existing context and create a new one with willReadFrequently=true
-                                        canvas.getContext('2d', { willReadFrequently: true });
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            });
-            
-            // Start observing the document with the configured parameters
-            observer.observe(document.body, { childList: true, subtree: true });
+            Plotly.setPlotConfig(plotlyConfig);
             
             // Store configuration on the window for access by other modules
             window.plotlyDefaultConfig = plotlyConfig;
@@ -121,6 +96,26 @@ const App = (function() {
             datasetSelector.addEventListener('change', async (e) => {
                 const datasetPath = e.target.value;
                 if (datasetPath) {
+                    await _loadDataset(datasetPath);
+                }
+            });
+        }
+        
+        // Setup dataset refresh button
+        const refreshDatasetBtn = document.getElementById('refresh-dataset');
+        if (refreshDatasetBtn) {
+            refreshDatasetBtn.addEventListener('click', async () => {
+                // Clear cache for datasets listing
+                DataManager.clearCache(Config.API.DATASETS);
+                
+                // Reload available datasets
+                await _loadDatasets();
+                
+                // Then refresh current dataset if one is selected
+                const datasetPath = datasetSelector.value;
+                if (datasetPath) {
+                    // Clear the DataManager cache for this dataset
+                    DataManager.refreshCacheForDataset(datasetPath);
                     await _loadDataset(datasetPath);
                 }
             });
@@ -287,8 +282,6 @@ const App = (function() {
         if (confirmSessionBtn) {
             confirmSessionBtn.addEventListener('click', _handleSessionModalConfirm);
         }
-        
-        console.log('UI components initialized');
     }
     
     /**
@@ -302,6 +295,8 @@ const App = (function() {
             // Populate dataset selector
             const datasetSelector = document.getElementById('dataset-selector');
             if (datasetSelector) {
+                // Save current value before clearing
+                const currentValue = datasetSelector.value;
                 datasetSelector.innerHTML = '';
                 
                 if (datasets && datasets.length > 0) {
@@ -317,9 +312,63 @@ const App = (function() {
                     option.textContent = 'No datasets available';
                     datasetSelector.appendChild(option);
                 }
+                
+                // Set up Select2 for custom dataset paths if available
+                if (window.$ && $.fn.select2) {
+                    // Destroy previous Select2 instance if it exists
+                    if ($(datasetSelector).hasClass('select2-hidden-accessible')) {
+                        $(datasetSelector).select2('destroy');
+                    }
+                    
+                    $(datasetSelector).select2({
+                        tags: true, // Allow custom values
+                        placeholder: 'Select or enter a dataset path',
+                        width: '100%',
+                        createTag: function(params) {
+                            // Allow custom path entries
+                            const term = params.term.trim();
+                            if (!term) {
+                                return null;
+                            }
+                            
+                            return {
+                                id: term,
+                                text: `${term} (Custom)`,
+                                newTag: true
+                            };
+                        }
+                    });
+                    
+                    // Make sure select2 change events also trigger dataset loading
+                    $(datasetSelector).on('select2:select', function(e) {
+                        const datasetPath = e.params.data.id;
+                        if (datasetPath) {
+                            _loadDataset(datasetPath);
+                        }
+                    });
+                    
+                    // Try to restore previous value if possible
+                    if (currentValue) {
+                        // Look for matching option
+                        let found = false;
+                        for (let i = 0; i < datasetSelector.options.length; i++) {
+                            if (datasetSelector.options[i].value === currentValue) {
+                                datasetSelector.value = currentValue;
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        // If not found but we have a value, create a custom option
+                        if (!found && currentValue) {
+                            const newOption = new Option(currentValue + ' (Custom)', currentValue, true, true);
+                            $(datasetSelector).append(newOption);
+                        }
+                        
+                        $(datasetSelector).trigger('change');
+                    }
+                }
             }
-            
-            console.log(`${datasets.length} datasets loaded`);
             
             return datasets;
         } catch (error) {
@@ -357,8 +406,7 @@ const App = (function() {
             
             // Notify panels of dataset change
             PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
-            
-            console.log('Dataset loaded successfully');
+
         } catch (error) {
             console.error('Error loading dataset:', error);
             _showError('Failed to load dataset', error.message);
@@ -854,104 +902,6 @@ const App = (function() {
         }
     }
     
-    /**
-     * Show welcome view with quick-start options
-     * @private
-     */
-    function _showWelcomeView() {
-        // Create the welcome container
-        const welcomeContainer = document.createElement('div');
-        welcomeContainer.className = 'welcome-container';
-        welcomeContainer.innerHTML = `
-            <div class="welcome-header">
-                <h2>Welcome to AnnZarro</h2>
-                <p>Get started by creating a new panel or loading a saved session</p>
-            </div>
-            
-            <div class="welcome-panels">
-                <h3>Create a new panel</h3>
-                <div class="tile-type-grid welcome-grid"></div>
-            </div>
-            
-            <div class="welcome-sessions">
-                <h3>Load a saved session</h3>
-                <div class="sessions-list"></div>
-            </div>
-        `;
-        
-        // Add to the container
-        const container = document.getElementById('tile-container');
-        container.appendChild(welcomeContainer);
-        
-        // Add panel type options
-        const panelGrid = welcomeContainer.querySelector('.welcome-grid');
-        const panelTypes = [
-            { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-chart-scatter' },
-            { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-            { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-table' },
-            { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
-            { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
-        ];
-        
-        panelTypes.forEach(panel => {
-            const panelOption = document.createElement('div');
-            panelOption.className = 'tile-type-option welcome-panel-option';
-            panelOption.innerHTML = `
-                <div class="tile-type-icon">
-                    <i class="${panel.icon} fa-3x"></i>
-                </div>
-                <div class="tile-type-label">${panel.label}</div>
-            `;
-            
-            // Add click handler
-            panelOption.addEventListener('click', () => {
-                // Remove welcome container
-                welcomeContainer.remove();
-                
-                // Create the panel
-                PanelManager.createPanel(panel.type);
-            });
-            
-            panelGrid.appendChild(panelOption);
-        });
-        
-        // Load and display sessions
-        SessionManager.listSessions().then(sessions => {
-            const sessionsList = welcomeContainer.querySelector('.sessions-list');
-            
-            if (sessions && sessions.length > 0) {
-                sessions.forEach(session => {
-                    const sessionItem = document.createElement('div');
-                    sessionItem.className = 'session-item';
-                    sessionItem.innerHTML = `
-                        <div class="session-info">
-                            <div class="session-name">${session.name}</div>
-                            <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
-                            <div class="session-dataset">${session.datasetName || session.dataset}</div>
-                        </div>
-                        <button class="btn btn-sm btn-primary">Load</button>
-                    `;
-                    
-                    // Add click handler
-                    sessionItem.querySelector('button').addEventListener('click', async () => {
-                        // Remove welcome container
-                        welcomeContainer.remove();
-                        
-                        // Load the session
-                        await SessionManager.loadSession(session.name);
-                    });
-                    
-                    sessionsList.appendChild(sessionItem);
-                });
-            } else {
-                sessionsList.innerHTML = '<div class="no-sessions">No saved sessions available</div>';
-            }
-        }).catch(error => {
-            console.error('Error loading sessions:', error);
-            const sessionsList = welcomeContainer.querySelector('.sessions-list');
-            sessionsList.innerHTML = '<div class="error-message">Error loading sessions</div>';
-        });
-    }
     
     // Public API
     return {
@@ -962,7 +912,6 @@ const App = (function() {
 // Initialize the application when DOM is ready and all scripts are loaded
 document.addEventListener('DOMContentLoaded', () => {
     // Start initialization immediately since we're using modules
-    console.log('Starting application initialization...');
     App.init();
 });
 

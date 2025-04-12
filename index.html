@@ -28,7 +28,12 @@
                         <div class="row align-items-center">
                             <div class="col">
                                 <label for="dataset-selector">Dataset:</label>
-                                <select id="dataset-selector" class="form-select"></select>
+                                <div class="d-flex">
+                                    <select id="dataset-selector" class="form-select" data-allow-custom="true"></select>
+                                    <button id="refresh-dataset" class="btn btn-outline-secondary ms-1" title="Refresh dataset">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="col">
                                 <label for="focused-gene">Focused Gene:</label>

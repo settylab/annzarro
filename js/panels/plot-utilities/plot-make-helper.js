@@ -188,4 +188,4 @@ export function attachClickHandler(plotContainer, traces, data) {
     });
   
     return traces;
-  };
+  }
