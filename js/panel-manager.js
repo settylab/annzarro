@@ -60,7 +60,7 @@ const PanelManager = (function() {
         setTimeout(() => {
             if (_panels.size === 0) {
                 console.log('No panels exist, showing welcome tile...');
-                _updateSourcePanelSelection = _createBaseSelectionTile();
+                _updateSourcePanelSelection = createBaseSelectionTile();
             }
         }, 500);
 
@@ -104,10 +104,11 @@ const PanelManager = (function() {
     
     /**
      * Create a selection tile at the bottom of the main container
+     * @param {boolean} [showSessions=true] - Show sessions section
      * @returns {Function} - Function to update the source panel grid
      * @private
      */
-    function _createBaseSelectionTile() {
+    function createBaseSelectionTile(showSessions = true) {
         // Assign a unique ID for the selection tile
         const selectionTileId = 'base-selection-' + Date.now();
         
@@ -118,9 +119,6 @@ const PanelManager = (function() {
         tileSelector.dataset.isSelectionTile = 'true';
         // Mark this selector so we know not to add a close button
         tileSelector.dataset.isBottomSelector = 'true';
-        
-        // Check if this is the first tile
-        const isFirstTile = _panels.size === 0;
         
         // Create the new streamlined selection container with explicit IDs to avoid selection issues
         const selectionId = Date.now(); // Use timestamp to ensure unique IDs
@@ -146,7 +144,7 @@ const PanelManager = (function() {
                     </div>
                     
                     <!-- Sessions Section - Only shown on first tile/welcome screen -->
-                    ${isFirstTile ? `
+                    ${showSessions ? `
                     <div class="selection-section" id="selection-section-${selectionId}">
                         <h3>Load Saved Session</h3>
                         <div class="sessions-list" id="sessions-list-${selectionId}"></div>
@@ -229,7 +227,7 @@ const PanelManager = (function() {
                     config.title = panel.getTitle();
                     const panelId = panel.getId();
 
-                    if (panelId) {
+                    if (panelId && !_activePanels.has(panel)) {
                         // First, remove from panels collection
                         const panel = _panels.get(panelId);
                         if (panel) {
@@ -239,10 +237,10 @@ const PanelManager = (function() {
                             }
                             _panels.delete(panelId);
                         }
-                        
-                        // Then, refresh the source panel grid
-                        populateSourcePanelGrid(grid);
+                    } else {
+                        config.title = _generateUniqueName(config.title);
                     }
+                    populateSourcePanelGrid(grid);
                     
                     const parentContainer = tileSelector.parentElement;
                     if (!parentContainer) {
@@ -416,12 +414,11 @@ const PanelManager = (function() {
     
     /**
      * Generate a unique name to avoid collisions
-     * @param {string} type - Panel type
      * @param {string} baseName - Original name
      * @returns {string} - Unique name
      * @private
      */
-    function _generateUniqueName(type, baseName) {
+    function _generateUniqueName(baseName) {
         const existingNames = new Set();
         _panels.forEach(panel => {
             existingNames.add(panel.getTitle());
@@ -432,13 +429,20 @@ const PanelManager = (function() {
             return baseName;
         }
         
-        // Otherwise, add a counter
+        // Check if the base name ends with " (number)"
+        const match = baseName.match(/^(.*)\s(\d+)$/);
         let counter = 1;
-        let newName = `${baseName} (${counter})`;
+        let cleanBaseName = baseName;
+
+        if (match) {
+            cleanBaseName = match[1]; // Extract the base name without the number
+            counter = parseInt(match[2], 10); // Use the extracted number as the starting counter
+        }
+        let newName = `${cleanBaseName} ${counter}`;
         
         while (existingNames.has(newName)) {
             counter++;
-            newName = `${baseName} (${counter})`;
+            newName = `${cleanBaseName} ${counter}`;
         }
         
         return newName;
@@ -551,7 +555,7 @@ const PanelManager = (function() {
                     config.title = panel.getTitle();
                     const panelId = panel.getId();
 
-                    if (panelId) {
+                    if (panelId && !_activePanels.has(panel)) {
                         // First, remove from panels collection
                         const panel = _panels.get(panelId);
                         if (panel) {
@@ -561,10 +565,10 @@ const PanelManager = (function() {
                             }
                             _panels.delete(panelId);
                         }
-                        
-                        // Then, refresh the source panel grid
-                        populateSourcePanelGrid(grid);
+                    } else {
+                        config.title = _generateUniqueName(config.title);
                     }
+                    populateSourcePanelGrid(grid);
                     
                     // Find the parent pane
                     const parentPane = tileSelector.closest('.split-pane');
@@ -1309,6 +1313,7 @@ const PanelManager = (function() {
         saveLayout,
         restoreLayout,
         registerClosedPanel,
+        createBaseSelectionTile,
         updateSourcePanelSelection
     };
 })();

@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadAxisData, loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-utilities/plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';

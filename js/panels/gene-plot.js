@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadAxisData, loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-utilities/plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -425,7 +425,6 @@ const GenePlotPanel = (function() {
          */
         function onDataUpdate(updateType, data) {
             if (updateType === 'datasetChanged') {
-                console.log(`GenePlot ${_id}: Dataset changed, reinitializing plot`);
                 // For dataset changes, fully reinitialize the plot
                 refreshPlot();
             }
