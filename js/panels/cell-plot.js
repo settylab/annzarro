@@ -400,6 +400,8 @@ const CellPlotPanel = (function() {
          */
         function setTitle(title) {
             _title = title;
+            // Update title in settings to ensure it's included in getConfig()
+            _settings.title = title;
         }
         
         /**
@@ -455,6 +457,26 @@ const CellPlotPanel = (function() {
             }
         }
 
+        /**
+         * Update panel configuration
+         * @param {Object} config - New configuration
+         */
+        function updateConfig(config) {
+            if (!config) return;
+            
+            // Update title if provided
+            if (config.title) {
+                _title = config.title;
+            }
+            
+            // Update other settings if needed
+            Object.keys(config).forEach(key => {
+                if (key !== 'title' && _settings[key] !== undefined) {
+                    _settings[key] = config[key];
+                }
+            });
+        }
+        
         // Public API
         return {
             init,
@@ -466,6 +488,7 @@ const CellPlotPanel = (function() {
             setTitle,
             getType,
             getConfig,
+            updateConfig,
             onDataUpdate
         };
     }

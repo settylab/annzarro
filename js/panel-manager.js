@@ -702,7 +702,12 @@ const PanelManager = (function() {
             titleInput.addEventListener('change', () => {
                 const panel = _panels.get(id);
                 if (panel) {
-                    panel.setTitle(titleInput.value);
+                    const newTitle = titleInput.value;
+                    // Update the panel's title using the setTitle method
+                    // This will update the internal title state of the panel
+                    panel.setTitle(newTitle);
+                    
+                    // Update any selection tiles to show the new title
                     updateSourcePanelSelection();
                 }
             });

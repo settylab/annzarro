@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector } from './panel-ui-update.js';
+import { setupAxisSelector, updateColorSliderUI } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 
@@ -418,9 +418,60 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
   setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
 
-  // Point controls
-  document.getElementById(`point-size-${id}`).value = settings.pointSize;
-  document.getElementById(`point-opacity-${id}`).value = settings.pointOpacity;
+  // Point controls - ensure sliders reflect the panel's settings
+  const pointSizeSlider = document.getElementById(`point-size-${id}`);
+  if (pointSizeSlider) pointSizeSlider.value = settings.pointSize;
+  
+  const pointOpacitySlider = document.getElementById(`point-opacity-${id}`);
+  if (pointOpacitySlider) pointOpacitySlider.value = settings.pointOpacity;
+  
+  // Color controls
+  const colorScaleSelect = document.getElementById(`color-scale-${id}`);
+  if (colorScaleSelect && settings.colorScale) colorScaleSelect.value = settings.colorScale;
+  
+  const categoryPaletteSelect = document.getElementById(`category-palette-${id}`);
+  if (categoryPaletteSelect && settings.categoryPalette) categoryPaletteSelect.value = settings.categoryPalette;
+  
+  // Lock range button
+  const lockRangeButton = document.getElementById(`lock-range-${id}`);
+  if (lockRangeButton) {
+    if (settings.lockColorRange) {
+      lockRangeButton.classList.add('active', 'btn-primary');
+      lockRangeButton.classList.remove('btn-outline-secondary');
+    } else {
+      lockRangeButton.classList.remove('active', 'btn-primary');
+      lockRangeButton.classList.add('btn-outline-secondary');
+    }
+  }
+  
+  // Center colormap button
+  const centerColormapButton = document.getElementById(`center-colormap-${id}`);
+  if (centerColormapButton) {
+    if (settings.centeringActive) {
+      centerColormapButton.classList.add('active', 'btn-primary');
+      centerColormapButton.classList.remove('btn-outline-secondary');
+      centerColormapButton.setAttribute('title', 'Centering active - click to disable');
+    } else {
+      centerColormapButton.classList.remove('active', 'btn-primary');
+      centerColormapButton.classList.add('btn-outline-secondary');
+      centerColormapButton.setAttribute('title', 'Center color scale at 0');
+    }
+  }
+  
+  // Hide outliers button
+  const hideOutliersButton = document.getElementById(`hide-outliers-${id}`);
+  if (hideOutliersButton) {
+    if (settings.hideOutliers) {
+      hideOutliersButton.classList.add('active', 'btn-primary');
+      hideOutliersButton.classList.remove('btn-outline-secondary');
+    } else {
+      hideOutliersButton.classList.remove('active', 'btn-primary');
+      hideOutliersButton.classList.add('btn-outline-secondary');
+    }
+  }
+  
+  // We can't update color sliders here because the data isn't loaded yet
+  // Color sliders will be updated after data is loaded during plot creation
 
   // Validation
   for (const axis of ['x', 'y']) {

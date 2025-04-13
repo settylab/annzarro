@@ -74,6 +74,7 @@ const CellTablePanel = (function() {
          */
         function setTitle(title) {
             _title = title;
+            // No _settings object in this panel type, but we ensure title is updated in getConfig
         }
         
         /**

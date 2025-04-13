@@ -408,6 +408,8 @@ const GenePlotPanel = (function() {
          */
         function setTitle(title) {
             _title = title;
+            // Update title in settings to ensure it's included in getConfig()
+            _settings.title = title;
         }
         
         /**

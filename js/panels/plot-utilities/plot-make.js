@@ -541,13 +541,21 @@ export async function createPlot(container, plotContainer, settings, data, id) {
     baseTrace.marker.color = data.color;
     baseTrace.marker.colorscale = settings.colorScale;
     baseTrace.marker.reversescale = settings.colorReversed;
+    
+    // Update color sliders with the loaded data while preserving saved settings
     updateColorSliderUI(container, data, settings, id);
-    if (settings.colorMin !== null || settings.colorMax !== null) {
-      const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color);
-      const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color);
-      baseTrace.marker.cmin = cmin;
-      baseTrace.marker.cmax = cmax;
-    }
+    
+    // Always set color range for the plot
+    const validValues = data.color.filter(v => !isNaN(v));
+    const dataMin = Math.min(...validValues);
+    const dataMax = Math.max(...validValues);
+    
+    // Use saved values if they exist, otherwise use data min/max
+    const cmin = settings.colorMin !== null ? settings.colorMin : dataMin;
+    const cmax = settings.colorMax !== null ? settings.colorMax : dataMax;
+    
+    baseTrace.marker.cmin = cmin;
+    baseTrace.marker.cmax = cmax;
     baseTrace.marker.colorbar = {
       title: {
         text:

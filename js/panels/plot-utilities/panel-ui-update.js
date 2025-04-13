@@ -458,7 +458,7 @@ export function updateColorSliderUI(container, data, settings, id) {
 
         // Now, if the color range is not locked, update the actual slider/input values.
         if (!settings.lockColorRange) {
-          // Set slider ranges based solely on the data.
+          // Set slider ranges based on the data
           csColorMinSlider.min = dataMin;
           csColorMinSlider.max = dataMax;
           csColorMaxSlider.min = dataMin;
@@ -467,12 +467,20 @@ export function updateColorSliderUI(container, data, settings, id) {
           const step = range / 500
           csColorMinSlider.step = step;
           csColorMaxSlider.step = step;
-          csColorMinSlider.value = dataMin;
-          csColorMaxSlider.value = dataMax;
-          if (csColorMinInput) csColorMinInput.value = dataMin.toFixed(2);
-          if (csColorMaxInput) csColorMaxInput.value = dataMax.toFixed(2);
-          settings.colorMin = dataMin;
-          settings.colorMax = dataMax;
+          
+          // Use saved values from settings if they exist, otherwise use data min/max
+          const useColorMin = settings.colorMin !== null ? settings.colorMin : dataMin;
+          const useColorMax = settings.colorMax !== null ? settings.colorMax : dataMax;
+          
+          // Update UI elements
+          csColorMinSlider.value = useColorMin;
+          csColorMaxSlider.value = useColorMax;
+          if (csColorMinInput) csColorMinInput.value = useColorMin.toFixed(2);
+          if (csColorMaxInput) csColorMaxInput.value = useColorMax.toFixed(2);
+          
+          // Only update settings if they aren't already set
+          if (settings.colorMin === null) settings.colorMin = dataMin;
+          if (settings.colorMax === null) settings.colorMax = dataMax;
         } else {
           console.log("Color range is locked, keeping previous min/max values");
           // Expand slider range (min, max) to include both the new data range and the locked values.
