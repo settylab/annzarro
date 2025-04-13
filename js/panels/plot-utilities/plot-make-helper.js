@@ -100,11 +100,9 @@ export function attachClickHandler(plotContainer, traces, data) {
       }
       
       if (isGenePlot) {
-        console.log(`Clicked on gene: ${entityName}`);
-        DataManager.setFocusedGene(entityName, true);
+        DataManager.setFocusedGene(entityName, false);
       } else {
-        console.log(`Clicked on cell: ${entityName}`);
-        DataManager.setFocusedCell(entityName, true);
+        DataManager.setFocusedCell(entityName, false);
       }
     });
   }
