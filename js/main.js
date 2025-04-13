@@ -865,7 +865,7 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
-                _showSuccess('Panel Set loaded', `Panel Set "${sessionName}" loaded successfully. The panels have been added to your Clone Existing Panel section.`);
+                //_showSuccess('Panel Set loaded', `Panel Set "${sessionName}" loaded successfully. The panels have been added to your Clone Existing Panel section.`);
             } else {
                 _showError('Failed to load panel set', result.message);
             }

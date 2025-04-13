@@ -376,7 +376,9 @@ export class SelectionTile {
       const sessionManager = this.sessionManager || window.sessionManager;
       
       item.addEventListener('click', async () => {
-        this.remove();
+        if (this.variant != "welcome") {
+            this.remove();
+        }
         if (sessionManager) {
           await sessionManager.loadSession(session.name);
         } else {

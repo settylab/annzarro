@@ -156,9 +156,9 @@ const SessionManager = (function() {
             }
             
             const sessionData = await response.json();
-            await _applySessionData(sessionData);
-            
-            _currentSession = sessionData;
+            //await _applySessionData(sessionData);
+            //_currentSession = sessionData;
+            _applySessionPanels(sessionData);
             
             return { status: 'success', message: `Session ${name} loaded successfully` };
         } catch (error) {
@@ -352,6 +352,78 @@ const SessionManager = (function() {
                 window.dispatchEvent(new Event('resize'));
                 console.log('Panel set loaded - panels added to available panels');
             }, 200);
+        } catch (error) {
+            console.error('Error applying panel set data:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Apply loaded panel set data to the application state
+     * @param {Object} sessionData - Panel set data
+     * @returns {Promise<void>}
+     * @private
+     */
+    async function _applySessionPanels(sessionData) {
+        try {
+            console.log('Applying panel set data...', sessionData);
+            
+            
+            // Get panel configurations and register them as closed panels
+            const panelConfigs = sessionData.panelConfigs || {};
+
+            // Get all existing panels to compare for uniqueness. 
+            // Note: if panels have getID/getTitle, use these methods; otherwise, use direct id/title properties.
+            const existingPanels = PanelManager.getAllPanels();
+            const existingTitles = new Set(existingPanels.map(panel => panel.getTitle()));
+            const existingIds = new Set(existingPanels.map(panel => panel.getID ? panel.getID() : panel.id));
+
+            // Process each closed panel configuration
+            Object.values(panelConfigs)
+            .filter(panel => !panel.isSelectionTile)
+            .forEach(panel => {
+                if (PanelManager.registerClosedPanel) {
+                // Ensure the title is unique
+                if (panel.title && existingTitles.has(panel.title)) {
+                    let counter = 1;
+                    let newTitle;
+                    do {
+                    newTitle = `${panel.title} (${counter})`;
+                    counter++;
+                    } while (existingTitles.has(newTitle));
+                    panel.title = newTitle;
+                    if (panel.config) {
+                    panel.config.title = newTitle;
+                    }
+                }
+                existingTitles.add(panel.title);
+
+                // Ensure the id is unique
+                if (panel.id && existingIds.has(panel.id)) {
+                    let counter = 1;
+                    let newId;
+                    do {
+                    newId = `${panel.id}-${counter}`;
+                    counter++;
+                    } while (existingIds.has(newId));
+                    panel.id = newId;
+                    if (panel.config) {
+                    panel.config.id = newId;
+                    }
+                }
+                existingIds.add(panel.id);
+
+                // Register the panel as closed with the unique id
+                PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
+                }
+            });
+            
+            // Ensure the source panel selection is updated to show the newly added panels
+            if (PanelManager.updateSourcePanelSelection) {
+                PanelManager.updateSourcePanelSelection();
+            }
+            
+
         } catch (error) {
             console.error('Error applying panel set data:', error);
             throw error;
