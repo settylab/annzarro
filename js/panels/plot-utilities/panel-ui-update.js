@@ -140,8 +140,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
       case 'layer': {
         let focused;
-        if (settings.column && plotType === 'cells') {
-          if (settings.type === 'layer') {
+        if (plotType === 'cells') {
+          if (settings.column && settings.type === 'layer') {
             focused = settings.column;
           } else {
             focused = DataManager.getFocusedGene();

@@ -13,7 +13,7 @@ const LayoutManager = (function() {
     // Constants
     const MIN_PANE_SIZE_PERCENT = 10;
     const DEFAULT_SPLIT_RATIO = 50;
-    const DEFAULT_PANEL_HEIGHT = 500; // Default panel height in pixels
+    const DEFAULT_PANEL_HEIGHT = 1000; // Default panel height in pixels
     const MIN_PANEL_HEIGHT = 100; // Minimum panel height in pixels
     
     // Private variables

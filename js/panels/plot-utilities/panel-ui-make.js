@@ -295,7 +295,6 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         key: defaultKey,
         column: defaultFrame.columns[0]
       };
-      console.log(`Setting default x-axis to ${collection}.${defaultKey} column ${defaultFrame.columns[0]}`);
     }
 
     if (!settings.y || !settings.y.type) {
@@ -304,7 +303,6 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         key: defaultKey,
         column: defaultFrame.columns[1]
       };
-      console.log(`Setting default y-axis to ${collection}.${defaultKey} column ${defaultFrame.columns[1]}`);
     }
 
     // Only suggest z-axis if there's a third column available and z is undefined
@@ -314,7 +312,6 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         key: defaultKey,
         column: defaultFrame.columns[2]
       };
-      console.log(`Setting default z-axis to ${collection}.${defaultKey} column ${defaultFrame.columns[2]}`);
     }
     
     return true;
@@ -334,7 +331,6 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
           key: 'highly_variable',
           column: ''
         };
-        console.log('Setting default color to var.highly_variable');
         return;
       }
     }
@@ -386,14 +382,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   }
 
   setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
-  console.log('Color axis selector initialized');
 
   // Point controls
   document.getElementById(`point-size-${id}`).value = settings.pointSize;
   document.getElementById(`point-opacity-${id}`).value = settings.pointOpacity;
 
   // Validation
-  console.log('Final settings after UI initialization:', settings);
   for (const axis of ['x', 'y']) {
     if (!settings[axis]?.key) {
       throw new Error(`No key selected for ${axis}-axis after initialization`);

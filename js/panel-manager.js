@@ -11,14 +11,6 @@
 import { SessionManager } from './session-manager.js';
 import { LayoutManager } from './layout-manager.js';
 
-// Constants for panel dimensions and behavior
-const CONSTANTS = {
-    DEFAULT_TILE_HEIGHT: '1000px',
-    MIN_PANE_PERCENTAGE: 10,
-    DEFAULT_SPLIT_RATIO: 50,
-    MIN_VISIBLE_DIMENSION: 100
-};
-
 const PanelManager = (function() {
     // Private variables
     const _panels = new Map(); // All panels by ID
@@ -221,7 +213,7 @@ const PanelManager = (function() {
                     }
                     
                     // Get panel info
-                    const config = panel.getConfig();
+                    const config = JSON.parse(JSON.stringify(panel.getConfig()));
                     const panelType = panel.getType();
                     config.id = `${panelType}-${++_counters[panelType]}`;
                     config.title = panel.getTitle();
@@ -354,7 +346,6 @@ const PanelManager = (function() {
                     sessionsList.style.display = 'none';
                 }
                 
-                console.log(`Created new panel of type ${panel.type} with ID ${newPanel.getId()}`);
             });
             
             panelTypeGrid.appendChild(panelOption);
@@ -549,7 +540,7 @@ const PanelManager = (function() {
                     }
                     
                     // Get panel info
-                    const config = panel.getConfig();
+                    const config = JSON.parse(JSON.stringify(panel.getConfig()));
                     const panelType = panel.getType();
                     config.id = `${panelType}-${++_counters[panelType]}`;
                     config.title = panel.getTitle();

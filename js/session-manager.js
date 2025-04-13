@@ -445,10 +445,7 @@ const SessionManager = (function() {
                                 console.log('Layout restored through PanelManager');
                                 
                                 // Ensure the source panel selection is updated
-                                if (typeof updateSourcePanelSelection === 'function') {
-                                    console.log('Updating source panel selection with callback');
-                                    updateSourcePanelSelection();
-                                } else if (PanelManager.updateSourcePanelSelection) {
+                                if (PanelManager.updateSourcePanelSelection) {
                                     console.log('Updating source panel selection with public method');
                                     PanelManager.updateSourcePanelSelection();
                                 }
@@ -603,10 +600,7 @@ const SessionManager = (function() {
                         
                         // 10. Ensure the source panel selection is updated
                         console.log('Final update of source panel selection');
-                        if (typeof updateSourcePanelSelection === 'function') {
-                            console.log('Updating source panel selection with callback');
-                            updateSourcePanelSelection();
-                        } else if (PanelManager.updateSourcePanelSelection) {
+                        if (PanelManager.updateSourcePanelSelection) {
                             console.log('Updating source panel selection with public method');
                             PanelManager.updateSourcePanelSelection();
                         }

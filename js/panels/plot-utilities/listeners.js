@@ -4,7 +4,6 @@ import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity,
 import { DataManager } from '../../data-manager.js';
 
 export function setupPlotEventListeners({
-    container,
     plotContainer,
     controlsContainer,
     settings,
@@ -20,7 +19,7 @@ export function setupPlotEventListeners({
     
     // Set up other listeners immediately
     setupAxisSelectorListeners(
-        container,
+        controlsContainer,
         plotContainer,
         settings,
         plotType,
@@ -31,19 +30,18 @@ export function setupPlotEventListeners({
         onFocusedGeneChanged);
 
     setupPlotControlListeners(
-        container,
+        controlsContainer,
         settings,
         plotContainer,
         plotType,
         data,
         id,
         loadDataAndCreatePlot,
-        updatePlotElements,
-        controlsContainer
+        updatePlotElements
     );
     
     setupColorControls(
-        container,
+        controlsContainer,
         settings,
         data,
         plotContainer,
@@ -101,7 +99,7 @@ export function setupResizeObserver(plotContainer) {
  * Sets up plot control listeners (e.g., 3D toggle, point size/opacity sliders, grid toggle,
  * highlight focused cell toggle, refresh plot, lock range) inside the provided container.
  *
- * @param {HTMLElement} container - The container element for the control UI.
+ * @param {HTMLElement} controlsContainer - The container element for the control UI.
  * @param {Object} settings - Plot settings (e.g., settings.z, pointSize, pointOpacity,
  *                            showGrid, highlightFocusedCell, lockColorRange, etc.).
  * @param {HTMLElement} plotContainer - The Plotly plot container element.
@@ -109,22 +107,20 @@ export function setupResizeObserver(plotContainer) {
  * @param {string|number} id - Unique identifier to build element selectors.
  * @param {Function} loadDataAndCreatePlot - Function to recreate the entire plot.
  * @param {Function} updatePlotElements - Function to update plot properties.
- * @param {Object} controlsContainer - An object containing.
  */
 export function setupPlotControlListeners(
-    container,
+    controlsContainer,
     settings,
     plotContainer,
     plotType,
     data,
     id,
     loadDataAndCreatePlot,
-    updatePlotElements,
-    controlsContainer
+    updatePlotElements
   ) {
     // --- 3D Plot Toggle ---
-    const zAxisToggle = container.querySelector(`#z-axis-toggle-${id}`);
-    const zAxisContainer = container.querySelector(`#z-axis-container-${id}`);
+    const zAxisToggle = controlsContainer.querySelector(`#z-axis-toggle-${id}`);
+    const zAxisContainer = controlsContainer.querySelector(`#z-axis-container-${id}`);
     zAxisToggle.addEventListener('click', async () => {
       const is3D = zAxisToggle.classList.contains('active');
       if (is3D) {
@@ -163,16 +159,14 @@ export function setupPlotControlListeners(
           }
           settings.z = { type: plotType === 'genes' ? 'varm' : 'obsm', key: yKey, column: zColumn };
           // Call the axis selector setup helper from the controls object.
-          if (typeof controlsContainer.setupAxisSelector === 'function') {
-            controlsContainer.setupAxisSelector(container, 'z', settings.z, controlsContainer.plotType, datasetStructure);
-          }
+          setupAxisSelector(controlsContainer, 'z', settings.z, controlsContainer.plotType, datasetStructure);
         }
         loadDataAndCreatePlot();
       }
     });
   
     // --- Point Size Slider ---
-    const pointSizeSlider = container.querySelector(`#point-size-${id}`);
+    const pointSizeSlider = controlsContainer.querySelector(`#point-size-${id}`);
     pointSizeSlider.addEventListener('input', (e) => {
       const newSize = parseFloat(e.target.value);
       settings.pointSize = newSize;
@@ -180,7 +174,7 @@ export function setupPlotControlListeners(
     });
   
     // --- Point Opacity Slider ---
-    const pointOpacitySlider = container.querySelector(`#point-opacity-${id}`);
+    const pointOpacitySlider = controlsContainer.querySelector(`#point-opacity-${id}`);
     pointOpacitySlider.addEventListener('input', (e) => {
       const newOpacity = parseFloat(e.target.value);
       settings.pointOpacity = newOpacity;
@@ -188,7 +182,7 @@ export function setupPlotControlListeners(
     });
   
     // --- Show Grid Toggle ---
-    const showGridToggle = container.querySelector(`#show-grid-${id}`);
+    const showGridToggle = controlsContainer.querySelector(`#show-grid-${id}`);
     if (settings.showGrid) {
       showGridToggle.classList.add('active', 'btn-primary');
       showGridToggle.classList.remove('btn-outline-secondary');
@@ -244,7 +238,7 @@ export function setupPlotControlListeners(
     });
   
     // --- Highlight Focused Cell Toggle (conditional) ---
-  const highlightFocusedCellToggle = container.querySelector(`#highlight-focused-cell-${id}`);
+  const highlightFocusedCellToggle = controlsContainer.querySelector(`#highlight-focused-cell-${id}`);
   if (highlightFocusedCellToggle) {
     if (settings.highlightFocusedCell) {
       highlightFocusedCellToggle.classList.add('active', 'btn-primary');
@@ -268,7 +262,7 @@ export function setupPlotControlListeners(
   }
 
   // --- Highlight Focused Gene Toggle (conditional) ---
-  const highlightFocusedGeneToggle = container.querySelector(`#highlight-focused-gene-${id}`);
+  const highlightFocusedGeneToggle = controlsContainer.querySelector(`#highlight-focused-gene-${id}`);
   if (highlightFocusedGeneToggle) {
     if (settings.highlightFocusedGene) {
       highlightFocusedGeneToggle.classList.add('active', 'btn-primary');
@@ -292,7 +286,7 @@ export function setupPlotControlListeners(
   }
   
     // --- Refresh Plot Button ---
-    const refreshPlotButton = container.querySelector(`#refresh-plot-${id}`);
+    const refreshPlotButton = controlsContainer.querySelector(`#refresh-plot-${id}`);
     refreshPlotButton.addEventListener('click', () => {
       if (plotContainer) {
         plotContainer.innerHTML = '<div class="alert alert-info">Refreshing plot...</div>';
@@ -301,7 +295,7 @@ export function setupPlotControlListeners(
     });
   
     // --- Lock Range Button ---
-    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
+    const lockRangeButton = controlsContainer.querySelector(`#lock-range-${id}`);
     if (settings.lockColorRange) {
       lockRangeButton.classList.add('active', 'btn-primary');
       lockRangeButton.classList.remove('btn-outline-secondary');
@@ -327,7 +321,7 @@ export function setupPlotControlListeners(
  * Set up color controls (e.g., color scale, opacity, color range inputs, centering, and outlier filtering)
  * for a plot. Uses elements inside the provided container.
  *
- * @param {HTMLElement} container - The root element containing the color controls.
+ * @param {HTMLElement} controlsContainer - The root element containing the color controls.
  * @param {Object} settings - The plot settings object.
  * @param {Object} data - The data cache object (e.g. { x, y, z, color, cells, colorType, … }).
  * @param {HTMLElement} plotContainer - The element that holds the Plotly plot.
@@ -336,7 +330,7 @@ export function setupPlotControlListeners(
  * @param {Function} updatePlot - Function to update the plot visuals (without recreating it).
  */
 export function setupColorControls(
-    container,
+    controlsContainer,
     settings,
     data,
     plotContainer,
@@ -355,7 +349,7 @@ export function setupColorControls(
         console.log(`Updating plot (fullDataUpdate=${fullDataUpdate})`);
         
         if (fullDataUpdate) {
-            updateColorSliderUI(container, data, settings, id);
+            updateColorSliderUI(controlsContainer, data, settings, id);
             // For full data updates, update colors and data
             _updatePlotElements({
                 colors: true,
@@ -366,7 +360,7 @@ export function setupColorControls(
                 layout: true
             });
         } else {
-            updateColorSliderUI(container, data, settings, id);
+            updateColorSliderUI(controlsContainer, data, settings, id);
             // For visual-only updates
             _updatePlotElements({
                 styling: true,
@@ -378,7 +372,7 @@ export function setupColorControls(
     }
 
     // --- Color scale selector ---
-    const colorScaleSelect = container.querySelector(`#color-scale-${id}`);
+    const colorScaleSelect = controlsContainer.querySelector(`#color-scale-${id}`);
     colorScaleSelect.addEventListener('change', (e) => {
         const newColorScale = e.target.value;
         settings.colorScale = newColorScale;
@@ -392,7 +386,7 @@ export function setupColorControls(
     });
 
     // --- Category palette selector ---
-    const categoryPaletteSelect = container.querySelector(`#category-palette-${id}`);
+    const categoryPaletteSelect = controlsContainer.querySelector(`#category-palette-${id}`);
     categoryPaletteSelect.addEventListener('change', (e) => {
         settings.categoryPalette = e.currentTarget.value;
         if (plotContainer && data.colorType === 'categorical') {
@@ -401,10 +395,10 @@ export function setupColorControls(
     });
 
     // --- Color range inputs and sliders ---
-    const colorMinInput = container.querySelector(`#color-min-${id}`);
-    const colorMaxInput = container.querySelector(`#color-max-${id}`);
-    const colorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-    const colorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+    const colorMinInput = controlsContainer.querySelector(`#color-min-${id}`);
+    const colorMaxInput = controlsContainer.querySelector(`#color-max-${id}`);
+    const colorMinSlider = controlsContainer.querySelector(`#color-min-slider-${id}`);
+    const colorMaxSlider = controlsContainer.querySelector(`#color-max-slider-${id}`);
 
     // Ensure centeringActive is defined.
     settings.centeringActive = settings.centeringActive || false;
@@ -449,7 +443,7 @@ export function setupColorControls(
     }
 
     // --- Hide outliers button ---
-    const hideOutliersButton = container.querySelector(`#hide-outliers-${id}`);
+    const hideOutliersButton = controlsContainer.querySelector(`#hide-outliers-${id}`);
     if (settings.hideOutliers) {
         hideOutliersButton.classList.add('active', 'btn-primary');
         hideOutliersButton.classList.remove('btn-outline-secondary');
@@ -496,15 +490,15 @@ export function setupColorControls(
     });
 
     // --- Centering and reverse colormap controls ---
-    const centerColormapButton = container.querySelector(`#center-colormap-${id}`);
+    const centerColormapButton = controlsContainer.querySelector(`#center-colormap-${id}`);
     centerColormapButton.addEventListener('click', () => {
         settings.centeringActive = !settings.centeringActive;
         setupCenteringSliderListeners();
-        updateColorSliderUI(container, data, settings, id)
+        updateColorSliderUI(controlsContainer, data, settings, id)
         _updatePlot(false)
     });
 
-    const reverseColormapButton = container.querySelector(`#reverse-colormap-${id}`);
+    const reverseColormapButton = controlsContainer.querySelector(`#reverse-colormap-${id}`);
     reverseColormapButton.addEventListener('click', () => {
         settings.colorReversed = !settings.colorReversed;
         reverseColormapButton.classList.toggle('btn-primary', settings.colorReversed);
@@ -515,8 +509,8 @@ export function setupColorControls(
 
     // --- Centering slider listeners and helpers ---
     function setupCenteringSliderListeners() {
-        const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-        const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+        const csColorMinSlider = controlsContainer.querySelector(`#color-min-slider-${id}`);
+        const csColorMaxSlider = controlsContainer.querySelector(`#color-max-slider-${id}`);
         if (!csColorMinSlider || !csColorMaxSlider) return;
         csColorMinSlider.removeEventListener('input', centeringMinSliderHandler);
         csColorMaxSlider.removeEventListener('input', centeringMaxSliderHandler);
@@ -529,9 +523,9 @@ export function setupColorControls(
     function centeringMinSliderHandler(e) {
         if (!settings.centeringActive) return;
         const minValue = parseFloat(e.target.value);
-        const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
-        const csColorMaxInput = container.querySelector(`#color-max-${id}`);
-        const csColorMinInput = container.querySelector(`#color-min-${id}`);
+        const csColorMaxSlider = controlsContainer.querySelector(`#color-max-slider-${id}`);
+        const csColorMaxInput = controlsContainer.querySelector(`#color-max-${id}`);
+        const csColorMinInput = controlsContainer.querySelector(`#color-min-${id}`);
         const maxValue = -minValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
@@ -546,9 +540,9 @@ export function setupColorControls(
     function centeringMaxSliderHandler(e) {
         if (!settings.centeringActive) return;
         const maxValue = parseFloat(e.target.value);
-        const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-        const csColorMinInput = container.querySelector(`#color-min-${id}`);
-        const csColorMaxInput = container.querySelector(`#color-max-${id}`);
+        const csColorMinSlider = controlsContainer.querySelector(`#color-min-slider-${id}`);
+        const csColorMinInput = controlsContainer.querySelector(`#color-min-${id}`);
+        const csColorMaxInput = controlsContainer.querySelector(`#color-max-${id}`);
         const minValue = -maxValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
@@ -564,7 +558,7 @@ export function setupColorControls(
 
 /**
  * Setup listeners for all axis selector dropdowns (type, key, column)
- * @param {HTMLElement} container - Root element containing the axis selectors
+ * @param {HTMLElement} controlsContainer - Root element containing the axis selectors
  * @param {Object} settings - Axis settings object
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} data - Data cache for axis values
@@ -574,7 +568,7 @@ export function setupColorControls(
  * @param {Function} onFocusedGeneChanged - Callback when gene focus is changed
  */
 function setupAxisSelectorListeners(
-    container,
+    controlsContainer,
     plotContainer,
     settings,
     plotType,
@@ -585,13 +579,13 @@ function setupAxisSelectorListeners(
     onFocusedGeneChanged
 ) {
   // Add defensive check - container must be defined
-  if (!container) {
+  if (!controlsContainer) {
     console.error('setupAxisSelectorListeners: container is undefined');
     return;
   }
   
   // Get all axis selectors
-  const selectors = container.querySelectorAll('.axis-type-select');
+  const selectors = controlsContainer.querySelectorAll('.axis-type-select');
   
   // Make sure we found some selectors
   if (!selectors || selectors.length === 0) {
@@ -602,10 +596,12 @@ function setupAxisSelectorListeners(
     select.addEventListener('change', async (e) => {
       const axis =  e.currentTarget.dataset.axis;
       const type =  e.currentTarget.value;
-      const keySelect = container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
-      const columnSelect = container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+      const keySelect = controlsContainer.querySelector(`.axis-key-select[data-axis="${axis}"]`);
+      const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
 
       if (!keySelect || !columnSelect) return console.error(`Missing axis elements for ${axis}`);
+
+      if (settings[axis].type === type) return;
 
       settings[axis].type = type;
 
@@ -615,11 +611,11 @@ function setupAxisSelectorListeners(
       populateKeySelector(settings[axis], keySelect, datasetStructure);
       
       // Re-setup the axis selector to update the special buttons
-      setupAxisSelector(container, axis, settings[axis], plotType, datasetStructure);
+      setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
       
     if (type === 'none' && axis === 'color') {
       await loadColorDataAndUpdatePlot(
-        container,
+        controlsContainer,
         plotContainer,
         settings,
         data,
@@ -632,8 +628,10 @@ function setupAxisSelectorListeners(
       const keys = [...keySelect.options].map(o => o.value);
       settings[axis].key = keys[0] || '';
       keySelect.value = settings[axis].key;
+      settings[axis].column = undefined;
 
       populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
+
 
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
@@ -650,7 +648,7 @@ function setupAxisSelectorListeners(
   });
 
   // Handle key selectors with defensive check
-  const keySelectors = container.querySelectorAll('.axis-key-select');
+  const keySelectors = controlsContainer.querySelectorAll('.axis-key-select');
   if (!keySelectors || keySelectors.length === 0) {
     console.warn('setupAxisSelectorListeners: No axis key selectors found in container');
   }
@@ -659,11 +657,12 @@ function setupAxisSelectorListeners(
     select.addEventListener('change', async (e) => {
       const axis =  e.currentTarget.dataset.axis;
       const key =  e.currentTarget.value;
-      const columnSelect = container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+      const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
 
       if (!columnSelect) return console.error(`Missing column select for ${axis}`);
 
       settings[axis].key = key;
+      settings[axis].column = undefined;
 
       const datasetStructure = await DataManager.getDatasetStructure();
       if (!datasetStructure) return console.error('No dataset structure');
@@ -671,7 +670,7 @@ function setupAxisSelectorListeners(
       populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
       
       // Re-setup the axis selector to ensure special buttons are correct
-      setupAxisSelector(container, axis, settings[axis], plotType, datasetStructure);
+      setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
 
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
@@ -688,7 +687,7 @@ function setupAxisSelectorListeners(
   });
 
   // Handle column selectors with defensive check
-  const columnSelectors = container.querySelectorAll('.axis-column-select');
+  const columnSelectors = controlsContainer.querySelectorAll('.axis-column-select');
   if (!columnSelectors || columnSelectors.length === 0) {
     console.warn('setupAxisSelectorListeners: No axis column selectors found in container');
   }
@@ -702,12 +701,12 @@ function setupAxisSelectorListeners(
   });
   
   // Set up lock and refocus button handlers using event delegation
-  setupSpecialButtonListeners(container, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
+  setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
 
   function handleAxisUpdate(axis) {
     if (axis === 'color') {
         loadColorDataAndUpdatePlot(
-            container,
+            controlsContainer,
             plotContainer,
             settings,
             data,
@@ -740,13 +739,13 @@ function setupAxisSelectorListeners(
 
 /**
  * Sets up event listeners for the special buttons (lock and refocus)
- * @param {HTMLElement} container - The container element
+ * @param {HTMLElement} controlsContainer - The container element
  * @param {Object} settings - The settings object for the plot
  * @param {string} plotType - The plot type ('cells' or 'genes')
  * @param {Function} onFocusedCellChanged - Callback when focused cell changes
  * @param {Function} onFocusedGeneChanged - Callback when focused gene changes
  */
-function setupSpecialButtonListeners(container, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged) {
+function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged) {
   
   // Define the button handler function
   function buttonClickHandler(e) {
@@ -789,7 +788,7 @@ function setupSpecialButtonListeners(container, settings, plotType, onFocusedCel
         target.title = 'Unlock (follow focused element)';
         
         // Check if refocus button should be visible
-        const refocusButton = container.querySelector(`#refocus-${axis}`);
+        const refocusButton = controlsContainer.querySelector(`#refocus-${axis}`);
         const shouldShow = currentFocus && currentFocus !== settings[axis].column;
         refocusButton.style.display = shouldShow ? 'inline-flex' : 'none';
       } else {
@@ -801,7 +800,7 @@ function setupSpecialButtonListeners(container, settings, plotType, onFocusedCel
         target.title = 'Lock (keep current selection)';
         
         // Hide refocus button
-        const refocusButton = container.querySelector(`#refocus-${axis}`);
+        const refocusButton = controlsContainer.querySelector(`#refocus-${axis}`);
         if (refocusButton) {
           refocusButton.style.display = 'none';
         }
@@ -817,6 +816,6 @@ function setupSpecialButtonListeners(container, settings, plotType, onFocusedCel
   }
 
   // Add event listeners
-  container.addEventListener('click', buttonClickHandler);
+  controlsContainer.addEventListener('click', buttonClickHandler);
 }
 

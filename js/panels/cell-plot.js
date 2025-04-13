@@ -111,10 +111,7 @@ const CellPlotPanel = (function() {
          */
         function _setupEventListeners() {
             
-            // Use _controlsContainer instead of _container for event listeners
-            // Since we're setting up UI controls like axis selectors
             _resizeObserver = setupPlotEventListeners({
-                container: _container, // Use _controlsContainer which contains the UI controls
                 plotContainer: _plotContainer,
                 controlsContainer: _controlsContainer,
                 settings: _settings,
@@ -191,7 +188,6 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _updateMenueLabelsForFocus(focusedEntity, endityType, axis) {
-            console.log(`Updating menu labels for focused entity: ${focusedEntity}, type: ${endityType}, axis: ${axis}`);
             const columnSelect = _controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
             if (!columnSelect) {
                 console.warn(`Column select for axis ${axis} not found`);

@@ -257,7 +257,7 @@ const GenePlotPanel = (function() {
          */
         async function updateAxis(axis, focusedEntity, entityType) {
             // Determine the proper highlight flag based on the entity type.
-            const refocusButton = container.querySelector(`#refocus-${axis}`);
+            const refocusButton = _controlsContainer.querySelector(`#refocus-${axis}`);
         
             // Special handling for the 'color' axis.
             if (axis === 'color') {
