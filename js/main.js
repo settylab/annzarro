@@ -29,11 +29,6 @@ const App = (function() {
             window.sessionManager = SessionManager;
             
             // Initialize panel manager
-            // Make sure PanelManager is defined first
-            if (typeof PanelManager === 'undefined') {
-                console.error('PanelManager is not defined. Check script loading order.');
-                throw new Error('PanelManager is not defined');
-            }
             PanelManager.init('tile-container');
             
             // Load available datasets
@@ -42,12 +37,10 @@ const App = (function() {
             // Load available sessions
             await _loadSessions();
             
-            // Check for autosave session before loading default dataset
+            // Check for autosave session and load it automatically if enabled
             const autosave = SessionManager.getAutosaveSession();
-            if (autosave) {
-                console.log('Found autosaved panel configuration');
-                // You can automatically load the autosave here if desired
-                // or just make it available in the sessions list
+            if (autosave && Config.AUTOSAVE.AUTO_RESTORE) {
+                await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
             }
             
             // Set default dataset if available
@@ -59,7 +52,6 @@ const App = (function() {
             // Start autosave functionality if enabled in config
             if (Config.AUTOSAVE.ENABLED) {
                 SessionManager.startAutosave();
-                console.log('Autosave functionality enabled');
             }
             
             // Add event listener to save state before the page unloads
@@ -428,7 +420,6 @@ const App = (function() {
             // Only notify panels if not in silent mode
             if (!silent) {
                 // Notify panels of dataset change - this can cause UI resets
-                console.log('Notifying panels of dataset change');
                 PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
             }
         } catch (error) {
@@ -1030,10 +1021,11 @@ const App = (function() {
                 
                 sessions.forEach(session => {
                     const card = document.createElement('div');
+                    // We no longer include autosave in the session list, but keep logic for backward compatibility
                     const isAutosave = session.isAutosave === true;
                     
-                    // Apply special class for autosave session
-                    card.className = isAutosave ? 'session-card autosave' : 'session-card';
+                    // Apply standard class (since no autosave entries are included anymore)
+                    card.className = 'session-card';
                     card.dataset.sessionName = session.name;
                     card.dataset.isAutosave = isAutosave;
                     

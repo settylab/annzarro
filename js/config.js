@@ -87,7 +87,9 @@ const Config = (function() {
         ENABLED: true, // Whether autosave is enabled by default
         INTERVAL: 10000, // 10 seconds autosave interval (in milliseconds)
         STORAGE_KEY: 'annzarro_autosave', // Local Storage key for autosaved session
-        SESSION_NAME: 'Autosave' // Default name for autosaved sessions
+        SESSION_NAME: 'Autosave', // Default name for autosaved sessions
+        SHOW_IN_LIST: false, // Whether to show autosave in session lists
+        AUTO_RESTORE: true // Automatically restore autosave on startup
     };
     
     // For StringDB API

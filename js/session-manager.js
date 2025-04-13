@@ -22,7 +22,7 @@ const SessionManager = (function() {
      * @param {boolean} includeAutosave - Whether to include the autosave session
      * @returns {Promise<Array>} - List of panel sets
      */
-    async function listSessions(includeAutosave = true) {
+    async function listSessions(includeAutosave = Config.AUTOSAVE.SHOW_IN_LIST) {
         try {
             const response = await fetch(Config.API.SESSIONS_LIST);
             if (!response.ok) {

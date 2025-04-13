@@ -58,26 +58,20 @@ const PanelManager = (function() {
             });
         });
         
-        // Show welcome tile automatically if no panels exist
-        setTimeout(() => {
-            if (_panels.size === 0) {
-                _updateSourcePanelSelection = new SelectionTile({
-                    container: _container,
-                    variant: "welcome",
-                    showSessions: true,
-                    panels: _panels,
-                    activePanels: _activePanels,
-                    layoutManager: LayoutManager,
-                    createPanel: createPanel,
-                    panelsByType: _panelsByType,
-                    counters: _counters,
-                    generateUniqueName: _generateUniqueName,
-                    sessionManager: window.sessionManager
-                });
-            }
-        }, 500);
-
-        console.log('Panel Manager initialized');
+        // Show welcome tile automatically
+        _updateSourcePanelSelection = new SelectionTile({
+            container: _container,
+            variant: "welcome",
+            showSessions: true,
+            panels: _panels,
+            activePanels: _activePanels,
+            layoutManager: LayoutManager,
+            createPanel: createPanel,
+            panelsByType: _panelsByType,
+            counters: _counters,
+            generateUniqueName: _generateUniqueName,
+            sessionManager: window.sessionManager
+        });
     }
     
     /**
