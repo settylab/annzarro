@@ -363,6 +363,10 @@ const LayoutManager = (function() {
      * @returns {Object} - Object containing the created panes
      */
     function createSplit(container, element, direction) {
+        // Check if this split is happening within a panel wrapper
+        const isInsidePanelWrapper = container.classList.contains('panel-wrapper') || 
+                                     container.closest('.panel-wrapper') !== null;
+        
         // Create the split container
         const splitContainer = document.createElement('div');
         
@@ -410,12 +414,78 @@ const LayoutManager = (function() {
         // Set up the resize handle
         setupResizableHandle(handle, firstPane, secondPane, direction);
         
+        // If splitting a panel inside a wrapper, set data attributes to track the relationship
+        if (isInsidePanelWrapper) {
+            // Find the wrapper
+            const panelWrapper = container.classList.contains('panel-wrapper') ? 
+                                container : container.closest('.panel-wrapper');
+            
+            if (panelWrapper && panelWrapper.dataset.panelWrapper === 'true') {
+                // Mark this split container as belonging to a panel wrapper
+                splitContainer.dataset.inPanelWrapper = 'true';
+                splitContainer.dataset.wrapperParentId = panelWrapper.dataset.wrapperId;
+            }
+        }
+        
         return {
             container: splitContainer,
             firstPane,
             secondPane,
             handle
         };
+    }
+    
+    /**
+     * Setup height resize functionality for a panel handle
+     * @param {HTMLElement} handle - The resize handle element
+     * @param {HTMLElement} panelElement - The panel element to resize
+     */
+    function setupPanelHeightHandle(handle, panelElement) {
+        let startY = 0;
+        let startHeight = 0;
+        
+        const onMouseDown = (e) => {
+            e.preventDefault();
+            
+            // Store the starting position and height
+            startY = e.clientY;
+            startHeight = panelElement.offsetHeight;
+            
+            // Add event listeners for dragging
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            
+            // Add dragging class
+            handle.classList.add('dragging');
+        };
+        
+        const onMouseMove = (e) => {
+            e.preventDefault();
+            
+            // Calculate the new position
+            const currentY = e.clientY;
+            const delta = currentY - startY;
+            
+            // Calculate new height
+            const newHeight = startHeight + delta;
+            
+            // Apply new height if it's valid (minimum height)
+            if (newHeight >= MIN_PANEL_HEIGHT) {
+                panelElement.style.height = `${newHeight}px`;
+            }
+        };
+        
+        const onMouseUp = () => {
+            // Remove event listeners
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            
+            // Remove dragging class
+            handle.classList.remove('dragging');
+        };
+        
+        // Set up the handle for dragging
+        handle.addEventListener('mousedown', onMouseDown);
     }
     
     /**
@@ -449,11 +519,67 @@ const LayoutManager = (function() {
             return;
         }
         
+        // Find if this tile is inside a panel wrapper
+        const panelWrapper = tileElement.closest('.panel-wrapper');
+        
         // Find the parent pane of this tile
         const parentPane = tileElement.closest('.split-pane');
+        
+        // Check if panel is in a wrapper 
+        if (panelWrapper && panelWrapper.dataset.panelWrapper === 'true') {
+            const panelId = tileElement.dataset.tileId;
+            const wrapperId = panelWrapper.dataset.wrapperId;
+            
+            // Only check for removing if this is a direct split from the original wrapper
+            // (Later splits will have different panel IDs than the wrapper ID)
+            if (panelId === wrapperId) {
+                // Don't remove wrapper yet, check if it contains any children or split containers
+                const remainingTiles = panelWrapper.querySelectorAll('.tile:not(.tile-selector)');
+                const remainingSplits = panelWrapper.querySelectorAll('.split-container');
+                
+                // Consider the current tile to be closed already
+                const effectiveTileCount = remainingTiles.length - 1;
+                
+                const hasRemainingPanels = effectiveTileCount > 0 || remainingSplits.length > 0;
+                
+                if (!hasRemainingPanels) {
+                    // Last panel in the wrapper, remove wrapper and handle
+                    const nextSibling = panelWrapper.nextElementSibling;
+                    if (nextSibling && nextSibling.classList.contains('split-handle') && 
+                        nextSibling.dataset.panelHandle === 'true') {
+                        nextSibling.remove();
+                    }
+                    
+                    // Remove the wrapper itself
+                    panelWrapper.remove();
+                    
+                    // Check if there are any remaining panel wrappers
+                    const container = document.querySelector('.tile-container');
+                    const remainingWrappers = container.querySelectorAll('.panel-wrapper');
+                    
+                    // If no panel wrappers left, remove all height handles
+                    if (remainingWrappers.length === 0) {
+                        const heightHandles = container.querySelectorAll('.split-handle[data-panel-handle="true"]');
+                        heightHandles.forEach(handle => handle.remove());
+                    }
+                    return;
+                }
+            }
+        }
+        
         if (!parentPane) {
             // Not in a split, just remove it
             tileElement.remove();
+            
+            // Check if there are any remaining panels
+            const container = document.querySelector('.tile-container');
+            const remainingPanels = container.querySelectorAll('.tile:not(.tile-selector)');
+            
+            // If no panels left, remove all height handles
+            if (remainingPanels.length === 0) {
+                const heightHandles = container.querySelectorAll('.split-handle[data-panel-handle="true"]');
+                heightHandles.forEach(handle => handle.remove());
+            }
             return;
         }
         
@@ -498,6 +624,39 @@ const LayoutManager = (function() {
         if (needsSelectionTile && _addTileCallback) {
             _addTileCallback(containerParent);
         }
+        
+        // Check if this was the last split in a panel wrapper
+        if (containerParent.classList.contains('panel-wrapper') && 
+            containerParent.dataset.panelWrapper === 'true') {
+            
+            // Check if there are any remaining panels or splits in the wrapper
+            const remainingTiles = containerParent.querySelectorAll('.tile:not(.tile-selector)');
+            const remainingSplits = containerParent.querySelectorAll('.split-container');
+            
+            // If no panels left in the wrapper, remove the wrapper and its handle
+            if (remainingTiles.length === 0 && remainingSplits.length === 0) {
+                const nextSibling = containerParent.nextElementSibling;
+                if (nextSibling && nextSibling.classList.contains('split-handle') && 
+                    nextSibling.dataset.panelHandle === 'true') {
+                    nextSibling.remove();
+                }
+                
+                // Remove the wrapper itself
+                containerParent.remove();
+            }
+        }
+        
+        // Check if there are any remaining panels in the main container
+        const mainContainer = document.querySelector('.tile-container');
+        if (mainContainer) {
+            const remainingWrappers = mainContainer.querySelectorAll('.panel-wrapper');
+            
+            // If no panel wrappers left, remove all height handles
+            if (remainingWrappers.length === 0) {
+                const heightHandles = mainContainer.querySelectorAll('.split-handle[data-panel-handle="true"]');
+                heightHandles.forEach(handle => handle.remove());
+            }
+        }
     }
     
     /**
@@ -510,19 +669,46 @@ const LayoutManager = (function() {
      * @returns {Object} - The created panel instance
      */
     function createPanelWithSelectionTile(container, selectionTile, createPanelCallback, panelType, panelConfig = {}) {
-        // Create a panel element
+        // Create a wrapper div that won't be replaced
+        const panelWrapper = document.createElement('div');
+        panelWrapper.className = 'panel-wrapper';
+        panelWrapper.style.height = `${DEFAULT_PANEL_HEIGHT}px`;
+        panelWrapper.style.width = '100%';
+        panelWrapper.style.overflow = 'hidden';
+        panelWrapper.style.position = 'relative';
+        panelWrapper.dataset.panelWrapper = 'true';
+        
+        // Create a panel element inside the wrapper
         const panelElement = document.createElement('div');
         panelElement.className = 'tile';
+        panelElement.style.width = '100%';
+        panelElement.style.height = '100%';
         
-        // Insert the panel before the selection tile
-        container.insertBefore(panelElement, selectionTile);
+        // Add panel to wrapper
+        panelWrapper.appendChild(panelElement);
+        
+        // Create a horizontal resize handle
+        const handle = document.createElement('div');
+        handle.className = 'split-handle horizontal';
+        handle.dataset.panelHandle = 'true';
+        
+        // Insert the wrapper and handle before the selection tile
+        container.insertBefore(panelWrapper, selectionTile);
+        container.insertBefore(handle, selectionTile);
         
         // Create the panel in the panel element
         const panel = createPanelCallback(panelType, panelConfig, panelElement);
         const panelId = panel.getId();
         
-        // Add ID to panel element for tracking
+        // Add ID to panel element and wrapper for tracking
         panelElement.dataset.tileId = panelId;
+        panelWrapper.dataset.wrapperId = panelId;
+        
+        // Setup resize functionality for the handle
+        setupPanelHeightHandle(handle, panelWrapper);
+        
+        // Store reference to the handle in the wrapper
+        panelWrapper.dataset.resizeHandle = true;
         
         // We don't remove the welcome tile - it stays at the bottom
         
