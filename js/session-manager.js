@@ -1,12 +1,11 @@
 /**
- * Session Manager module for AnnZarro
- * Handles saving, loading, and managing sessions
+ * Panel Set Manager module for AnnZarro
+ * Handles saving, loading, and managing panel sets
  * 
- * Completely revamped to:
- * 1. Save only the essential structure, not the panel contents
- * 2. Restore the UI properly by initializing the base selection tile first 
- * 3. Restore the layout structure, then populate panels asynchronously
- * 4. Ensure proper DOM structure with correct IDs and event listeners
+ * Functionality:
+ * 1. Saves panel configurations but not layout information
+ * 2. When loading, adds panels to available panels as closed panels
+ * 3. Maintains unique panel names to avoid conflicts
  */
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
@@ -15,11 +14,11 @@ import { LayoutManager } from './layout-manager.js';
 
 const SessionManager = (function() {
     // Private variables
-    let _currentSession = null;
+    let _currentSession = null; // Stores the current panel set
     
     /**
-     * Load list of available sessions
-     * @returns {Promise<Array>} - List of sessions
+     * Load list of available panel sets
+     * @returns {Promise<Array>} - List of panel sets
      */
     async function listSessions() {
         try {
@@ -37,18 +36,18 @@ const SessionManager = (function() {
     }
     
     /**
-     * Save current session
-     * @param {string} name - Session name
+     * Save current panel set
+     * @param {string} name - Panel set name
      * @returns {Promise<Object>} - Save result
      */
     async function saveSession(name) {
         if (!name) {
-            console.error('Session name is required');
-            return { status: 'error', message: 'Session name is required' };
+            console.error('Panel set name is required');
+            return { status: 'error', message: 'Panel set name is required' };
         }
         
         try {
-            // Create the session data structure
+            // Create the panel set data structure
             const sessionData = {};
             sessionData.name = name;
             sessionData.timestamp = new Date().toISOString();
@@ -65,126 +64,57 @@ const SessionManager = (function() {
                 taxonomyId: DataManager.getTaxonomyId()
             };
             
-            // 3. Get layout hierarchy - this will include all tiles with their IDs
-            // but not the actual panels
-            const container = PanelManager.getContainer();
-            console.log('Saving layout from container:', container ? 'found' : 'not found');
+            // 3. We don't need to access the container directly for panel configs
+            console.log('Getting panels for panel set');
             
-            // First try to use PanelManager's built-in layout saving if available
-            let layoutHierarchy = [];
-            
-            if (PanelManager.saveLayout && typeof PanelManager.saveLayout === 'function') {
-                console.log('Using PanelManager.saveLayout for consistent saving/loading');
-                const savedLayout = PanelManager.saveLayout();
-                
-                if (savedLayout && savedLayout.hierarchy) {
-                    console.log('Retrieved layout hierarchy from PanelManager');
-                    layoutHierarchy = savedLayout.hierarchy;
-                } else {
-                    console.log('PanelManager.saveLayout did not return hierarchy, using manual method');
-                }
-            }
-            
-            // If we didn't get a hierarchy from PanelManager, build it manually
-            if (layoutHierarchy.length === 0 && container) {
-                console.log('Building layout hierarchy manually');
-                
-                Array.from(container.children).forEach(element => {
-                    // Skip the bottom selector
-                    if (element.classList.contains('tile-selector') && element.dataset.isBottomSelector === 'true') {
-                        console.log('Skipping bottom selector in layout hierarchy');
-                        return;
-                    }
-                    
-                    try {
-                        const node = LayoutManager.buildLayoutHierarchy(element);
-                        if (node) {
-                            console.log('Added node to hierarchy:', node.type);
-                            layoutHierarchy.push(node);
-                        }
-                    } catch (err) {
-                        console.error('Error building hierarchy for element:', err);
-                    }
-                });
-            }
-            
-            console.log('Built layout hierarchy with', layoutHierarchy.length, 'nodes');
-            
-            // 4. Save panel configurations separately for recreation
+            // 4. Save panel configurations only (not layout)
             console.log('Saving panel configurations');
             const panelConfigs = {};
             
             // Get all panels including closed ones
             const allPanels = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
-            const activePanelIds = new Set(PanelManager.getActivePanels().map(p => p.getId()));
             
-            console.log(`Found ${allPanels.length} panels (${activePanelIds.size} active)`);
+            console.log(`Found ${allPanels.length} panels to save`);
             
-            // First collect all actual panels
+            // Collect all panels (we'll save their configurations but not their layout positions)
             allPanels.forEach(panel => {
                 const id = panel.getId();
                 if (!id) {
-                    console.warn('Panel missing ID, skipping in session save');
+                    console.warn('Panel missing ID, skipping in panel set save');
                     return;
                 }
                 
                 const type = panel.getType();
                 if (!type) {
-                    console.warn(`Panel ${id} missing type, skipping in session save`);
+                    console.warn(`Panel ${id} missing type, skipping in panel set save`);
                     return;
                 }
-                
-                const isActive = activePanelIds.has(id);
                 
                 try {
                     // Get panel configuration and associated data
                     const config = panel.getConfig() || {};
                     const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
                     
-                    // For each panel, store only its configuration, not its DOM elements
+                    // For each panel, store only its configuration
                     panelConfigs[id] = {
                         id: id,
                         type: type,
                         title: title,
                         config: config,
-                        active: isActive,
                         isSelectionTile: false
                     };
                     
-                    console.log(`Saved config for panel: ${id} (${type}, active: ${isActive})`);
+                    console.log(`Saved config for panel: ${id} (${type})`);
                 } catch (err) {
                     console.error(`Error saving panel config for ${id}:`, err);
                 }
             });
             
-            // 5. Find all selection tiles in the layout (except base welcome selector)
-            const selectionTiles = Array.from(container.querySelectorAll('.tile-selector')).filter(
-                tile => !tile.dataset.isBottomSelector && tile.dataset.tileId
-            );
-            
-            console.log(`Found ${selectionTiles.length} selection tiles to save`);
-            
-            selectionTiles.forEach(tile => {
-                const id = tile.dataset.tileId;
-                if (id) {
-                    panelConfigs[id] = {
-                        id: id,
-                        type: 'selection-tile',
-                        isSelectionTile: true,
-                        active: true
-                    };
-                    console.log(`Saved selection tile: ${id}`);
-                }
-            });
-            
-            // Combine layout and configs in the session data
-            sessionData.layout = {
-                hierarchy: layoutHierarchy
-            };
+            // Store only the panel configurations in the session data
             sessionData.panelConfigs = panelConfigs;
             
             // Save to server
-            console.log('Saving session:', sessionData);
+            console.log('Saving panel set:', sessionData);
             const response = await fetch(Config.API.SESSIONS_SAVE, {
                 method: 'POST',
                 headers: {
@@ -202,20 +132,20 @@ const SessionManager = (function() {
             
             return result;
         } catch (error) {
-            console.error('Error saving session:', error);
+            console.error('Error saving panel set:', error);
             return { status: 'error', message: error.message };
         }
     }
     
     /**
-     * Load a session by name
-     * @param {string} name - Session name
+     * Load a panel set by name
+     * @param {string} name - Panel set name
      * @returns {Promise<Object>} - Load result
      */
     async function loadSession(name) {
         if (!name) {
-            console.error('Session name is required');
-            return { status: 'error', message: 'Session name is required' };
+            console.error('Panel set name is required');
+            return { status: 'error', message: 'Panel set name is required' };
         }
         
         try {
@@ -238,14 +168,14 @@ const SessionManager = (function() {
     }
     
     /**
-     * Delete a session by name
-     * @param {string} name - Session name
+     * Delete a panel set by name
+     * @param {string} name - Panel set name
      * @returns {Promise<Object>} - Delete result
      */
     async function deleteSession(name) {
         if (!name) {
-            console.error('Session name is required');
-            return { status: 'error', message: 'Session name is required' };
+            console.error('Panel set name is required');
+            return { status: 'error', message: 'Panel set name is required' };
         }
         
         try {
@@ -271,12 +201,12 @@ const SessionManager = (function() {
     }
     
     /**
-     * Export session as file download
-     * @param {string} name - Session name
+     * Export panel set as file download
+     * @param {string} name - Panel set name
      */
     function exportSession(name) {
         if (!name) {
-            console.error('Session name is required');
+            console.error('Panel set name is required');
             return;
         }
         
@@ -289,14 +219,14 @@ const SessionManager = (function() {
     }
     
     /**
-     * Import session from file
-     * @param {File} file - Session file
+     * Import panel set from file
+     * @param {File} file - Panel set file
      * @returns {Promise<Object>} - Import result
      */
     async function importSession(file) {
         if (!file) {
-            console.error('Session file is required');
-            return { status: 'error', message: 'Session file is required' };
+            console.error('Panel set file is required');
+            return { status: 'error', message: 'Panel set file is required' };
         }
         
         try {
@@ -321,39 +251,44 @@ const SessionManager = (function() {
     }
     
     /**
-     * Apply loaded session data to restore the application state
-     * @param {Object} sessionData - Session data
+     * Apply loaded panel set data to the application state
+     * @param {Object} sessionData - Panel set data
      * @returns {Promise<void>}
      * @private
      */
     async function _applySessionData(sessionData) {
         try {
-            console.log('Applying session data...', sessionData);
+            console.log('Applying panel set data...', sessionData);
             
-            // 1. Reset the current state - this clears the UI
-            PanelManager.resetPanels();
-            
-            // 2. Load the dataset first
-            if (sessionData.dataset) {
-                console.log('Loading dataset:', sessionData.dataset);
-                await DataManager.setCurrentDataset(sessionData.dataset);
+            // 1. Load the dataset first, if not already loaded or if different
+            const currentDataset = DataManager.getCurrentDataset();
+            if (sessionData.dataset && (!currentDataset || currentDataset !== sessionData.dataset)) {
+                console.log('Loading dataset without destroying UI:', sessionData.dataset);
                 
-                // 3. Update UI dataset info
-                const datasetNameEl = document.getElementById('dataset-path');
-                if (datasetNameEl) {
-                    datasetNameEl.textContent = sessionData.datasetName || sessionData.dataset;
-                }
+                // We'll manually update dataset info without calling methods that might reset the UI
+                // Get dataset structure first
+                const datasetStructure = await DataManager.getDatasetStructure(sessionData.dataset);
                 
-                const cellCountEl = document.getElementById('cell-count');
-                const geneCountEl = document.getElementById('gene-count');
-                const datasetStructure = await DataManager.getDatasetStructure();
-                
+                // Only if dataset structure is successfully loaded, we'll update the current dataset
                 if (datasetStructure) {
+                    // Use DataManager to update the dataset reference but avoid triggering panel notifications
+                    // Pass true for silent mode to prevent UI resets
+                    await DataManager.setCurrentDataset(sessionData.dataset, true);
+                    
+                    // 2. Update UI dataset info manually
+                    const datasetNameEl = document.getElementById('dataset-path');
+                    if (datasetNameEl) {
+                        datasetNameEl.textContent = sessionData.datasetName || sessionData.dataset;
+                    }
+                    
+                    const cellCountEl = document.getElementById('cell-count');
+                    const geneCountEl = document.getElementById('gene-count');
+                    
                     if (cellCountEl) cellCountEl.textContent = datasetStructure.n_obs || 0;
                     if (geneCountEl) geneCountEl.textContent = datasetStructure.n_vars || 0;
                 }
                 
-                // 4. Restore constants
+                // 3. Restore constants
                 if (sessionData.constants) {
                     const { focusedCell, focusedGene, taxonomyId } = sessionData.constants;
                     
@@ -370,380 +305,71 @@ const SessionManager = (function() {
                     if (focusedGeneSelect && focusedGene) focusedGeneSelect.value = focusedGene;
                     if (taxonomyIdSelect && taxonomyId) taxonomyIdSelect.value = taxonomyId;
                 }
-                
-                // 5. First initialize the UI with base selection tile
-                const container = PanelManager.getContainer();
-                if (!container) {
-                    throw new Error('Container not found');
-                }
-                
-                // Ensure the container is empty
-                container.innerHTML = '';
-                
-                // Create the base selection tile with sessions section hidden (false)
-                console.log('Creating base selection tile for session restoration');
-                
-                let baseSelector;
-                if (PanelManager.createBaseSelectionTile) {
-                    const result = PanelManager.createBaseSelectionTile(false);
-                    baseSelector = result.selector;
-                    
-                    if (baseSelector) {
-                        console.log('Base selector created successfully');
-                    } else {
-                        console.warn('Failed to create base selector');
-                    }
-                } else {
-                    console.warn('createBaseSelectionTile method not available, falling back');
-                    // Fallback to original method
-                    PanelManager.updateSourcePanelSelection();
-                    
-                    // Try to find the selector that was created
-                    baseSelector = container.querySelector('.tile-selector[data-is-bottom-selector="true"]');
-                    
-                    // If found, try to transform it
-                    if (baseSelector && PanelManager.transformBaseSelectionTile) {
-                        PanelManager.transformBaseSelectionTile(baseSelector);
-                    }
-                }
-                
-                // 6. Register closed panels before building the layout
-                const panelConfigs = sessionData.panelConfigs || {};
-                
-                // Register any closed panels from the configuration
-                Object.values(panelConfigs)
-                    .filter(panel => !panel.active && !panel.isSelectionTile)
-                    .forEach(panel => {
-                        if (PanelManager.registerClosedPanel) {
-                            console.log(`Registering closed panel: ${panel.id}`);
-                            PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
-                        }
-                    });
-                
-                // 7. Build the layout structure
-                if (sessionData.layout && sessionData.layout.hierarchy) {
-                    try {
-                        console.log('Restoring layout structure...');
-                        console.log('Layout hierarchy:', JSON.stringify(sessionData.layout.hierarchy));
-                        console.log('Panel configs:', Object.keys(panelConfigs).length, 'panels');
-
-                        // We'll try a more direct approach first - use the PanelManager's built-in layout restoration
-                        // if available, which might have special handling we're missing
-                        if (PanelManager.restoreLayout && typeof PanelManager.restoreLayout === 'function') {
-                            console.log('Using PanelManager.restoreLayout for more reliable restoration');
-                            
-                            try {
-                                // Add panel configs to layout for proper restoration
-                                const layoutWithPanelConfigs = {
-                                    hierarchy: sessionData.layout.hierarchy,
-                                    panelConfigs
-                                };
-                                
-                                // Use the PanelManager's built-in layout restoration
-                                await PanelManager.restoreLayout(layoutWithPanelConfigs);
-                                
-                                console.log('Layout restored through PanelManager');
-                                
-                                // Ensure the source panel selection is updated
-                                if (PanelManager.updateSourcePanelSelection) {
-                                    console.log('Updating source panel selection with public method');
-                                    PanelManager.updateSourcePanelSelection();
-                                }
-                                
-                                return; // Skip the rest of the restoration if this worked
-                            } catch (error) {
-                                console.error('Error using PanelManager.restoreLayout:', error);
-                                console.log('Falling back to manual restoration process');
-                            }
-                        }
-                        
-                        // If we reach here, either PanelManager.restoreLayout doesn't exist or it failed
-                        // So we'll use our custom implementation
-                        
-                        // First pass: Only build the DOM structure without the panels
-                        // This creates the correct divs, resize handles, etc.
-                        const layoutHierarchy = sessionData.layout.hierarchy;
-                        
-                        // Build the layout structure first with empty dummy elements
-                        for (const node of layoutHierarchy) {
-                            console.log('Processing layout node:', node.type);
-                            
-                            try {
-                                const domElement = LayoutManager.rebuildLayoutFromHierarchy(
-                                    node,
-                                    container,
-                                    // Dummy tile creator that just creates an empty div with the proper ID
-                                    (id) => {
-                                        console.log('Creating tile element for ID:', id);
-                                        
-                                        const tileConfig = panelConfigs[id];
-                                        if (tileConfig && tileConfig.isSelectionTile) {
-                                            // Create a selection tile placeholder
-                                            const selectionTile = document.createElement('div');
-                                            selectionTile.className = 'tile-selector';
-                                            selectionTile.dataset.tileId = id;
-                                            selectionTile.dataset.isSelectionTile = 'true';
-                                            return selectionTile;
-                                        } else {
-                                            // Create a tile placeholder
-                                            const tile = document.createElement('div');
-                                            tile.className = 'tile';
-                                            tile.dataset.tileId = id;
-                                            return tile;
-                                        }
-                                    },
-                                    // Empty callback - we'll create panels in second pass
-                                    () => {}
-                                );
-                                
-                                if (domElement) {
-                                    console.log('Created DOM element for node');
-                                } else {
-                                    console.warn('Failed to create DOM element for node');
-                                }
-                            } catch (err) {
-                                console.error('Error rebuilding layout node:', err);
-                            }
-                        }
-                        
-                        // 8. Set up all resize handles
-                        document.querySelectorAll('.split-handle').forEach(handle => {
-                            const handleContainer = handle.parentElement;
-                            if (handleContainer && handleContainer.classList.contains('split-container')) {
-                                const panes = handleContainer.querySelectorAll('.split-pane');
-                                
-                                if (panes.length === 2) {
-                                    const direction = handleContainer.dataset.splitDirection;
-                                    console.log(`Setting up resize handle with direction: ${direction}`);
-                                    LayoutManager.setupResizableHandle(handle, panes[0], panes[1], direction);
-                                }
-                            }
-                        });
-                        
-                        console.log('Now creating actual panels...');
-                        
-                        // 9. Second pass: Replace dummy elements with actual panels
-                        // First, find all the selection tiles that need to be created
-                        const selectionTilePlaceholders = Array.from(container.querySelectorAll('.tile-selector:not([data-is-bottom-selector="true"])'));
-                        console.log(`Found ${selectionTilePlaceholders.length} selection tile placeholders`);
-                        
-                        for (const placeholder of selectionTilePlaceholders) {
-                            const tileId = placeholder.dataset.tileId;
-                            console.log(`Processing selection tile: ${tileId}`);
-                            
-                            // We need to create a real selection tile
-                            // This requires access to PanelManager's createSelectionTileInPane method
-                            if (tileId) {
-                                const parentPane = placeholder.parentElement;
-                                if (parentPane) {
-                                    // First try to use _createSelectionTileInPane if available
-                                    if (typeof PanelManager._createSelectionTileInPane === 'function') {
-                                        console.log('Creating selection tile with private method');
-                                        placeholder.remove();
-                                        const newTile = PanelManager._createSelectionTileInPane(parentPane);
-                                        if (newTile) {
-                                            newTile.dataset.tileId = tileId;
-                                        }
-                                    } else {
-                                        // If _createSelectionTileInPane is not available, we'll have to keep the placeholder
-                                        console.warn('Cannot replace selection tile placeholder - private method not accessible');
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Then create the actual panels
-                        const tilePlaceholders = Array.from(container.querySelectorAll('.tile'));
-                        console.log(`Found ${tilePlaceholders.length} tile placeholders`);
-                        
-                        for (const placeholder of tilePlaceholders) {
-                            const tileId = placeholder.dataset.tileId;
-                            const tileConfig = panelConfigs[tileId];
-                            
-                            if (tileId && tileConfig && !tileConfig.isSelectionTile) {
-                                console.log(`Creating panel for tile: ${tileId} of type: ${tileConfig.type}`);
-                                
-                                // Get the panel type and config
-                                const { type, config } = tileConfig;
-                                
-                                try {
-                                    const parentPane = placeholder.parentElement;
-                                    if (parentPane && PanelManager.createPanel) {
-                                        // We need to preserve the placeholder position
-                                        const nextSibling = placeholder.nextSibling;
-                                        placeholder.remove();
-                                        
-                                        // Create the actual panel with the saved configuration
-                                        console.log(`Creating panel of type ${type} with ID ${tileId}`);
-                                        const panel = PanelManager.createPanel(
-                                            type, 
-                                            { 
-                                                ...config, 
-                                                id: tileId,
-                                                // Ensure we have a valid title
-                                                title: tileConfig.title || `${type.charAt(0).toUpperCase() + type.slice(1)}`
-                                            }, 
-                                            parentPane
-                                        );
-                                        
-                                        if (panel) {
-                                            console.log(`Successfully created panel: ${tileId}`);
-                                        } else {
-                                            console.warn(`Failed to create panel: ${tileId}`);
-                                        }
-                                    }
-                                } catch (error) {
-                                    console.error(`Error creating panel ${tileId}:`, error);
-                                }
-                            }
-                        }
-                        
-                        // 10. Ensure the source panel selection is updated
-                        console.log('Final update of source panel selection');
-                        if (PanelManager.updateSourcePanelSelection) {
-                            console.log('Updating source panel selection with public method');
-                            PanelManager.updateSourcePanelSelection();
-                        }
-                        
-                    } catch (error) {
-                        console.error('Error restoring layout, falling back to simple panel creation:', error);
-                        _createFallbackLayout(container, panelConfigs);
-                    }
-                } else {
-                    console.warn('No layout hierarchy found, using fallback method');
-                    _createFallbackLayout(container, panelConfigs);
-                }
-                
-                // 11. Trigger a window resize to ensure all plots are properly sized
-                setTimeout(() => {
-                    window.dispatchEvent(new Event('resize'));
-                    console.log('Session restore complete');
-                }, 500);
             }
+            
+            // 4. Get panel configurations and register them as closed panels
+            const panelConfigs = sessionData.panelConfigs || {};
+            
+            // Register all panels from the configuration as closed panels with unique names
+            const existingPanels = PanelManager.getAllPanels();
+            const existingTitles = new Set(existingPanels.map(panel => panel.getTitle()));
+            
+            Object.values(panelConfigs)
+                .filter(panel => !panel.isSelectionTile)
+                .forEach(panel => {
+                    if (PanelManager.registerClosedPanel) {
+                        // Make sure the title is unique
+                        if (panel.title && existingTitles.has(panel.title)) {
+                            // Find a unique name by adding a suffix
+                            let counter = 1;
+                            let newTitle;
+                            do {
+                                newTitle = `${panel.title} (${counter})`;
+                                counter++;
+                            } while (existingTitles.has(newTitle));
+                            
+                            panel.title = newTitle;
+                            if (panel.config) {
+                                panel.config.title = newTitle;
+                            }
+                        }
+                        
+                        existingTitles.add(panel.title);
+                        
+                        console.log(`Registering panel from panel set: ${panel.id} - ${panel.title}`);
+                        PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
+                    }
+                });
+            
+            // 5. Ensure the source panel selection is updated to show the newly added panels
+            if (PanelManager.updateSourcePanelSelection) {
+                console.log('Updating source panel selection to show new panels');
+                PanelManager.updateSourcePanelSelection();
+            }
+            
+            // 6. Trigger a window resize to ensure all plots are properly sized if needed
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+                console.log('Panel set loaded - panels added to available panels');
+            }, 200);
         } catch (error) {
-            console.error('Error applying session data:', error);
+            console.error('Error applying panel set data:', error);
             throw error;
         }
     }
     
-    /**
-     * Create a fallback layout when the hierarchical layout restoration fails
-     * @param {HTMLElement} container - The container element
-     * @param {Object} panelConfigs - The panel configurations
-     * @private
-     */
-    function _createFallbackLayout(container, panelConfigs) {
-        console.log('Creating fallback layout as last resort');
-        
-        // Simple fallback: just create all active panels sequentially
-        const activePanels = Object.values(panelConfigs).filter(
-            panel => panel.active && !panel.isSelectionTile
-        );
-        
-        console.log(`Found ${activePanels.length} active panels to create`);
-        
-        // First make sure the container is ready
-        if (!container) {
-            console.error('Container not found for fallback layout');
-            return;
-        }
-        
-        // Create each panel directly in the container
-        for (const panel of activePanels) {
-            try {
-                console.log(`Creating panel via fallback: ${panel.id} of type ${panel.type}`);
-                
-                // Try to get a template tile first if needed
-                const template = document.getElementById('tile-template');
-                if (template) {
-                    console.log('Found tile template, using it to create proper tile structure');
-                    
-                    // Clone the template for this panel
-                    const tile = template.content.cloneNode(true).querySelector('.tile');
-                    tile.dataset.tileId = panel.id;
-                    
-                    // Add the tile to the container
-                    container.appendChild(tile);
-                    
-                    // Get the content container from the tile
-                    const contentContainer = tile.querySelector('.tile-content');
-                    if (contentContainer) {
-                        // Use the PanelManager to create the panel in the content container
-                        try {
-                            const constructor = PanelManager._panelTypes ? 
-                                PanelManager._panelTypes.get(panel.type) : null;
-                                
-                            if (constructor) {
-                                console.log(`Using constructor directly for ${panel.type}`);
-                                const panelInstance = new constructor(contentContainer, {
-                                    id: panel.id,
-                                    title: panel.title,
-                                    ...panel.config
-                                });
-                                
-                                // Initialize the panel
-                                if (panelInstance && panelInstance.init) {
-                                    panelInstance.init();
-                                }
-                            } else {
-                                console.log('No constructor found, using PanelManager.createPanel');
-                                // Otherwise fall back to using PanelManager.createPanel
-                                PanelManager.createPanel(panel.type, {
-                                    ...panel.config,
-                                    id: panel.id,
-                                    title: panel.title
-                                }, container);
-                            }
-                        } catch (err) {
-                            console.error(`Error creating panel in content container for ${panel.id}:`, err);
-                            
-                            // Last resort - try PanelManager.createPanel
-                            PanelManager.createPanel(panel.type, {
-                                ...panel.config,
-                                id: panel.id,
-                                title: panel.title
-                            }, container);
-                        }
-                    } else {
-                        console.warn('No content container found in tile template, using direct method');
-                        PanelManager.createPanel(panel.type, {
-                            ...panel.config,
-                            id: panel.id,
-                            title: panel.title
-                        }, container);
-                    }
-                } else {
-                    console.log('No tile template found, using PanelManager.createPanel directly');
-                    // Just use the normal createPanel method
-                    PanelManager.createPanel(panel.type, {
-                        ...panel.config,
-                        id: panel.id,
-                        title: panel.title
-                    }, container);
-                }
-            } catch (error) {
-                console.error(`Failed to create panel ${panel.id}:`, error);
-            }
-        }
-        
-        // Ensure source panel selection is updated
-        console.log('Updating source panel selection in fallback layout');
-        if (PanelManager.updateSourcePanelSelection) {
-            PanelManager.updateSourcePanelSelection();
-        }
-    }
     
     /**
-     * Get the current session
-     * @returns {Object|null} - Current session data or null if no session is loaded
+     * Get the current panel set
+     * @returns {Object|null} - Current panel set data or null if no panel set is loaded
      */
     function getCurrentSession() {
         return _currentSession;
     }
     
     /**
-     * Check if a session is currently loaded
-     * @returns {boolean} - True if a session is loaded
+     * Check if a panel set is currently loaded
+     * @returns {boolean} - True if a panel set is loaded
      */
     function hasSession() {
         return _currentSession !== null;

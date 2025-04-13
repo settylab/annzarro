@@ -381,11 +381,12 @@ const App = (function() {
     /**
      * Load a specific dataset
      * @param {string} datasetPath - Path to the dataset
+     * @param {boolean} [silent=false] - If true, don't notify panels (prevents UI reset)
      * @private
      */
-    async function _loadDataset(datasetPath) {
+    async function _loadDataset(datasetPath, silent = false) {
         try {
-            console.log(`Loading dataset: ${datasetPath}`);
+            console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
             // Show loading indicators
             document.getElementById('cell-count').textContent = 'Loading...';
@@ -393,7 +394,7 @@ const App = (function() {
             document.getElementById('dataset-path').textContent = datasetPath;
             
             // Load dataset
-            const datasetStructure = await DataManager.setCurrentDataset(datasetPath);
+            const datasetStructure = await DataManager.setCurrentDataset(datasetPath, silent);
             
             // Update dataset info
             document.getElementById('cell-count').textContent = datasetStructure.n_obs || 0;
@@ -404,9 +405,12 @@ const App = (function() {
             await _populateGeneSelector();
             await _populateCellSelector();
             
-            // Notify panels of dataset change
-            PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
-
+            // Only notify panels if not in silent mode
+            if (!silent) {
+                // Notify panels of dataset change - this can cause UI resets
+                console.log('Notifying panels of dataset change');
+                PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
+            }
         } catch (error) {
             console.error('Error loading dataset:', error);
             _showError('Failed to load dataset', error.message);
@@ -695,7 +699,7 @@ const App = (function() {
      */
     function _showSaveSessionModal() {
         // Set up modal for save mode
-        document.getElementById('session-modal-title').textContent = 'Save Session';
+        document.getElementById('session-modal-title').textContent = 'Save Panel Set';
         document.getElementById('save-session-container').style.display = 'block';
         document.getElementById('session-list-container').style.display = 'none';
         document.getElementById('btn-confirm-session').textContent = 'Save';
@@ -716,7 +720,7 @@ const App = (function() {
      */
     async function _showLoadSessionModal() {
         // Set up modal for load mode
-        document.getElementById('session-modal-title').textContent = 'Load Session';
+        document.getElementById('session-modal-title').textContent = 'Load Panel Set';
         document.getElementById('save-session-container').style.display = 'none';
         document.getElementById('session-list-container').style.display = 'block';
         document.getElementById('btn-confirm-session').textContent = 'Load';
@@ -740,7 +744,7 @@ const App = (function() {
      */
     async function _loadSessionList() {
         const sessionList = document.getElementById('session-list');
-        sessionList.innerHTML = '<tr><td colspan="4">Loading sessions...</td></tr>';
+        sessionList.innerHTML = '<tr><td colspan="4">Loading panel sets...</td></tr>';
         
         try {
             const sessions = await SessionManager.listSessions();
@@ -788,15 +792,15 @@ const App = (function() {
                         const row = e.target.closest('tr');
                         const sessionName = row.dataset.sessionName;
                         
-                        if (confirm(`Delete session "${sessionName}"?`)) {
+                        if (confirm(`Delete panel set "${sessionName}"?`)) {
                             const result = await SessionManager.deleteSession(sessionName);
                             if (result.status === 'success') {
                                 row.remove();
                                 if (sessionList.children.length === 0) {
-                                    sessionList.innerHTML = '<tr><td colspan="4">No saved sessions</td></tr>';
+                                    sessionList.innerHTML = '<tr><td colspan="4">No saved panel sets</td></tr>';
                                 }
                             } else {
-                                _showError('Failed to delete session', result.message);
+                                _showError('Failed to delete panel set', result.message);
                             }
                         }
                     });
@@ -811,11 +815,11 @@ const App = (function() {
                     });
                 });
             } else {
-                sessionList.innerHTML = '<tr><td colspan="4">No saved sessions</td></tr>';
+                sessionList.innerHTML = '<tr><td colspan="4">No saved panel sets</td></tr>';
             }
         } catch (error) {
-            console.error('Error loading sessions:', error);
-            sessionList.innerHTML = `<tr><td colspan="4">Error loading sessions: ${error.message}</td></tr>`;
+            console.error('Error loading panel sets:', error);
+            sessionList.innerHTML = `<tr><td colspan="4">Error loading panel sets: ${error.message}</td></tr>`;
         }
     }
     
@@ -831,7 +835,7 @@ const App = (function() {
             const sessionName = document.getElementById('session-name').value.trim();
             
             if (!sessionName) {
-                alert('Please enter a session name');
+                alert('Please enter a panel set name');
                 return;
             }
             
@@ -839,16 +843,16 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
-                _showSuccess('Session saved', `Session "${sessionName}" saved successfully`);
+                _showSuccess('Panel Set saved', `Panel Set "${sessionName}" saved successfully`);
             } else {
-                _showError('Failed to save session', result.message);
+                _showError('Failed to save panel set', result.message);
             }
         } else if (modalType === 'load') {
             // Handle load session
             const selectedRow = document.querySelector('#session-list tr.selected');
             
             if (!selectedRow) {
-                alert('Please select a session to load');
+                alert('Please select a panel set to load');
                 return;
             }
             
@@ -858,9 +862,9 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
-                _showSuccess('Session loaded', `Session "${sessionName}" loaded successfully`);
+                _showSuccess('Panel Set loaded', `Panel Set "${sessionName}" loaded successfully. The panels have been added to your Clone Existing Panel section.`);
             } else {
-                _showError('Failed to load session', result.message);
+                _showError('Failed to load panel set', result.message);
             }
         }
     }
@@ -874,7 +878,7 @@ const App = (function() {
     function _showSuccess(title, message) {
         // In a real application, this would show a toast or notification
         console.log(`Success: ${title} - ${message}`);
-        //alert(`${title}: ${message}`);
+        alert(`${title}: ${message}`);
     }
     
     /**
@@ -897,7 +901,7 @@ const App = (function() {
         try {
             return await SessionManager.listSessions();
         } catch (error) {
-            console.error('Error loading sessions:', error);
+            console.error('Error loading panel sets:', error);
             return [];
         }
     }

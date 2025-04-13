@@ -422,14 +422,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               } else if (axis === 'color') {
                 axisSettings.column = df.columns.length >= 4 ? df.columns[3] : df.columns[0];
               }
-              console.log(`Setting default column '${axisSettings.column}' for ${axis}-axis ${axisSettings.type}.${axisSettings.key}`);
             } else {
               axisSettings.column = '0';
-              console.log(`No columns found for ${axisSettings.type}.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
             }
           } else {
             axisSettings.column = '0';
-            console.log(`Dataset structure missing ${axisSettings.type}.${axisSettings.key}, defaulting ${axis}-axis column to '0'`);
           }
         }
       }
@@ -467,11 +464,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
-        console.log('Loading X-axis data:', settings.x);
         data.x = await loadAxisData(settings.x, plotType);
       })(),
       (async () => {
-        console.log('Loading Y-axis data:', settings.y);
         data.y = await loadAxisData(settings.y, plotType);
       })()
     ];
@@ -479,7 +474,6 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (settings.z) {
       loadPromises.push(
         (async () => {
-          console.log('Loading Z-axis data:', settings.z);
           data.z = await loadAxisData(settings.z, plotType);
         })()
       );
@@ -488,7 +482,6 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Load color data concurrently.
     loadPromises.push(
       (async () => {
-        console.log('Loading color data:', settings.color);
         try {
           const colorData = await loadAxisData(settings.color, plotType);
           data.color = colorData.values;
@@ -609,9 +602,6 @@ export async function createPlot(container, plotContainer, settings, data, id) {
         customColors = Array.isArray(response.data)
           ? response.data
           : [response.data];
-        console.log(`Found custom colors in uns.${colorKey}:`, customColors);
-      } else {
-        console.log(`No uns colors from ${colorKey}`);
       }
       // Process categories using the uns (custom) colors if available.
       const categoricalTraces = processCategories(settings, data, catValues, customColors);

@@ -64,9 +64,10 @@ const DataManager = (function() {
     /**
      * Set the current dataset and load basic information
      * @param {string} datasetPath - Path to the dataset
+     * @param {boolean} [silent=false] - If true, don't trigger events or UI updates
      * @returns {Promise<Object>} - Dataset info
      */
-    async function setCurrentDataset(datasetPath) {
+    async function setCurrentDataset(datasetPath, silent = false) {
         try {
             _currentDataset = datasetPath;
             
@@ -91,11 +92,14 @@ const DataManager = (function() {
                     _focusedCell = _cells[0];
                 }
                 
-                // Trigger event for components to update
-                const cellEvent = new CustomEvent('focusedCellChanged', {
-                    detail: { cell: _focusedCell }
-                });
-                document.dispatchEvent(cellEvent);
+                // Only trigger events if not in silent mode
+                if (!silent) {
+                    // Trigger event for components to update
+                    const cellEvent = new CustomEvent('focusedCellChanged', {
+                        detail: { cell: _focusedCell }
+                    });
+                    document.dispatchEvent(cellEvent);
+                }
             } else {
                 _focusedCell = null;
             }
@@ -110,11 +114,14 @@ const DataManager = (function() {
                     _focusedGene = _genes[0];
                 }
                 
-                // Trigger event for components to update
-                const geneEvent = new CustomEvent('focusedGeneChanged', {
-                    detail: { gene: _focusedGene }
-                });
-                document.dispatchEvent(geneEvent);
+                // Only trigger events if not in silent mode
+                if (!silent) {
+                    // Trigger event for components to update
+                    const geneEvent = new CustomEvent('focusedGeneChanged', {
+                        detail: { gene: _focusedGene }
+                    });
+                    document.dispatchEvent(geneEvent);
+                }
             } else {
                 _focusedGene = null;
             }
