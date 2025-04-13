@@ -102,6 +102,9 @@ const App = (function() {
         // Setup bootstrap modals
         _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
         
+        // Setup keyboard shortcuts
+        _initKeyboardShortcuts();
+        
         // Setup dataset selector
         const datasetSelector = document.getElementById('dataset-selector');
         if (datasetSelector) {
@@ -1338,6 +1341,188 @@ const App = (function() {
     }
     
     /**
+     * Show a modal with keyboard shortcuts help
+     * @private
+     */
+    function _showKeyboardShortcutsHelp() {
+        // Create the modal if it doesn't exist, or show it if it does
+        let modal = document.getElementById('keyboard-shortcuts-modal');
+        
+        // Format shortcut configuration to display format
+        function formatShortcut(shortcutConfig) {
+            const parts = [];
+            
+            if (shortcutConfig.modifiers.ctrl) parts.push('Ctrl');
+            if (shortcutConfig.modifiers.alt) parts.push('Alt');
+            if (shortcutConfig.modifiers.shift) parts.push('Shift');
+            if (shortcutConfig.modifiers.meta) parts.push('⌘');
+            
+            // Add the key at the end (capitalized for special keys)
+            parts.push(shortcutConfig.key.length === 1 ? 
+                shortcutConfig.key.toUpperCase() : 
+                shortcutConfig.key);
+            
+            return parts.join('+');
+        }
+        
+        // Generate table rows for all keyboard shortcuts
+        function generateShortcutTableRows() {
+            const shortcuts = Config.KEYBOARD_SHORTCUTS;
+            const rows = [];
+            
+            // Mapping of shortcut names to descriptions
+            const descriptions = {
+                'SAVE_SESSION': 'Save panel set',
+                'LOAD_SESSION': 'Open/load panel set',
+                'REFRESH_DATASETS': 'Refresh datasets',
+                'NEW_PANEL': 'New panel (focus panel selector)',
+                'CLOSE_PANEL': 'Close current panel',
+                'SPLIT_HORIZONTAL': 'Split current panel horizontally',
+                'SPLIT_VERTICAL': 'Split current panel vertically',
+                'TOGGLE_CONTROLS': 'Toggle current panel controls',
+                'SHOW_HELP': 'Show this help',
+                'CLOSE_MODAL': 'Close modal dialogs'
+            };
+            
+            // Determine if we should format macOS style
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            
+            // Skip BROWSER_COMPATIBLE which is a setting, not a shortcut
+            Object.entries(shortcuts).forEach(([name, config]) => {
+                if (name === 'BROWSER_COMPATIBLE') return;
+                
+                const description = descriptions[name] || name.replace(/_/g, ' ').toLowerCase();
+                let formattedShortcut = formatShortcut(config);
+                
+                // In desktop mode, we can add Ctrl keys for single-key shortcuts
+                if (!shortcuts.BROWSER_COMPATIBLE && Object.keys(config.modifiers).length === 0) {
+                    // Add Ctrl+ version for desktop mode only if this is a single key shortcut
+                    const desktopShortcuts = ['NEW_PANEL', 'CLOSE_PANEL', 'SPLIT_HORIZONTAL', 'SPLIT_VERTICAL', 'TOGGLE_CONTROLS'];
+                    if (desktopShortcuts.includes(name)) {
+                        // Create a desktop version with Ctrl
+                        let desktopConfig = JSON.parse(JSON.stringify(config));
+                        desktopConfig.modifiers.ctrl = true;
+                        
+                        // Add the desktop shortcut as an alternative
+                        rows.push(`
+                            <tr>
+                                <td><kbd>${formatShortcut(config)}</kbd> or <kbd>${formatShortcut(desktopConfig)}</kbd></td>
+                                <td>${description}</td>
+                            </tr>
+                        `);
+                        
+                        // Skip adding the regular entry later
+                        return;
+                    }
+                }
+                
+                // Format according to platform when displaying Ctrl or ⌘
+                if (isMac && formattedShortcut.includes('Ctrl')) {
+                    formattedShortcut = formattedShortcut.replace('Ctrl', '⌘');
+                }
+                
+                rows.push(`
+                    <tr>
+                        <td><kbd>${formattedShortcut}</kbd></td>
+                        <td>${description}</td>
+                    </tr>
+                `);
+            });
+            
+            return rows.join('');
+        }
+        
+        if (!modal) {
+            // Create the modal element
+            modal = document.createElement('div');
+            modal.id = 'keyboard-shortcuts-modal';
+            modal.className = 'modal fade';
+            modal.tabIndex = -1;
+            modal.setAttribute('aria-labelledby', 'keyboard-shortcuts-modal-title');
+            modal.setAttribute('aria-hidden', 'true');
+            
+            // Modal HTML content
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="keyboard-shortcuts-modal-title">Keyboard Shortcuts</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>AnnZarro supports the following keyboard shortcuts to improve your workflow:</p>
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Shortcut</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${generateShortcutTableRows()}
+                                </tbody>
+                            </table>
+                            <div class="platform-note">
+                                <p>On Mac, use <kbd>⌘</kbd> (Command) instead of <kbd>Ctrl</kbd> for the key combinations shown with Ctrl.</p>
+                                <p>Single-key shortcuts (n, w, h, v, c) only work when no text input field is in focus.</p>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add CSS for the keyboard shortcuts modal
+            const style = document.createElement('style');
+            style.textContent = `
+                .cmd-key {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    font-weight: normal;
+                }
+                
+                #keyboard-shortcuts-modal .table {
+                    margin-top: 1rem;
+                }
+                
+                #keyboard-shortcuts-modal kbd {
+                    background-color: #f7f7f7;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+                    color: #333;
+                    display: inline-block;
+                    font-size: 0.85em;
+                    font-weight: 700;
+                    line-height: 1;
+                    padding: 0.2em 0.4em;
+                    white-space: nowrap;
+                }
+                
+                #keyboard-shortcuts-modal .platform-note {
+                    background-color: #f8f9fa;
+                    border-left: 4px solid #6c757d;
+                    padding: 0.75rem;
+                    margin-top: 1rem;
+                    font-size: 0.9em;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Add to document
+            document.body.appendChild(modal);
+            
+            // Initialize Bootstrap modal
+            new bootstrap.Modal(modal);
+        }
+        
+        // Show the modal
+        const modalInstance = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+        modalInstance.show();
+    }
+    
+    /**
      * Load available sessions
      * @private
      */
@@ -1350,6 +1535,213 @@ const App = (function() {
         }
     }
     
+    
+    /**
+     * Initialize keyboard shortcut handlers
+     * @private
+     */
+    function _initKeyboardShortcuts() {
+        // Helper function to trigger an action on the most centered panel
+        function _triggerActionOnFocusedPanel(buttonClass) {
+            // Find panels that are currently visible in the viewport
+            const tiles = Array.from(document.querySelectorAll('.tile:not(.tile-selector)'));
+            if (tiles.length === 0) return;
+            
+            // Get the tile that's most centered in the viewport
+            const viewportHeight = window.innerHeight;
+            const viewportCenter = viewportHeight / 2;
+            
+            let closestTile = null;
+            let closestDistance = Infinity;
+            
+            tiles.forEach(tile => {
+                const rect = tile.getBoundingClientRect();
+                const tileCenter = rect.top + rect.height / 2;
+                const distance = Math.abs(tileCenter - viewportCenter);
+                
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestTile = tile;
+                }
+            });
+            
+            if (closestTile) {
+                // Find and click the specific button
+                const button = closestTile.querySelector(`.${buttonClass}`);
+                if (button) {
+                    button.click();
+                }
+            }
+        }
+
+        // Helper function to check if a keyboard event matches a shortcut configuration
+        function matchesShortcut(event, shortcutConfig) {
+            // Check key match first (case-insensitive)
+            if (event.key.toLowerCase() !== shortcutConfig.key.toLowerCase()) {
+                return false;
+            }
+            
+            // Get all modifiers from the event
+            const hasModifiers = event.ctrlKey || event.altKey || event.shiftKey || event.metaKey;
+            
+            // Special case: if no modifiers in config, ensure no modifiers in event
+            // This handles single-key shortcuts like 'n', 'w', etc.
+            if (Object.keys(shortcutConfig.modifiers).length === 0) {
+                return !hasModifiers;
+            }
+            
+            // MacOS uses Command key (metaKey) for most shortcuts
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            
+            // Check for Ctrl/Command key (treat them interchangeably on Mac)
+            if (shortcutConfig.modifiers.ctrl) {
+                // On Mac, treat either Ctrl or Command as matching Ctrl
+                if (isMac) {
+                    if (!event.ctrlKey && !event.metaKey) return false;
+                } else {
+                    if (!event.ctrlKey) return false;
+                }
+            } else if (!shortcutConfig.modifiers.meta) {
+                // If Ctrl is not required (and Meta is not explicitly required),
+                // ensure Ctrl/Cmd are not pressed (for single key or Alt+key shortcuts)
+                if (isMac) {
+                    if (event.ctrlKey || event.metaKey) return false;
+                } else {
+                    if (event.ctrlKey) return false;
+                }
+            }
+            
+            // Check other modifiers
+            if (shortcutConfig.modifiers.alt && !event.altKey) return false;
+            if (!shortcutConfig.modifiers.alt && event.altKey) return false;
+            
+            if (shortcutConfig.modifiers.shift && !event.shiftKey) return false;
+            if (!shortcutConfig.modifiers.shift && event.shiftKey) return false;
+            
+            // Special case for Meta key (Command on Mac)
+            if (shortcutConfig.modifiers.meta && !event.metaKey) return false;
+            if (!shortcutConfig.modifiers.meta && !shortcutConfig.modifiers.ctrl && event.metaKey) return false;
+            
+            return true;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            // Skip if user is typing in an input field
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+                return;
+            }
+            
+            const shortcuts = Config.KEYBOARD_SHORTCUTS;
+            
+            // Save Session
+            if (matchesShortcut(e, shortcuts.SAVE_SESSION)) {
+                e.preventDefault();
+                _showSaveSessionModal();
+                return;
+            }
+            
+            // Load Session
+            if (matchesShortcut(e, shortcuts.LOAD_SESSION)) {
+                e.preventDefault();
+                _showLoadSessionModal();
+                return;
+            }
+            
+            // Refresh Datasets
+            if (matchesShortcut(e, shortcuts.REFRESH_DATASETS)) {
+                e.preventDefault();
+                const refreshDatasetBtn = document.getElementById('refresh-dataset');
+                if (refreshDatasetBtn) {
+                    refreshDatasetBtn.click();
+                }
+                return;
+            }
+            
+            // Show Help
+            if (matchesShortcut(e, shortcuts.SHOW_HELP)) {
+                e.preventDefault();
+                _showKeyboardShortcutsHelp();
+                return;
+            }
+            
+            // New Panel
+            if (matchesShortcut(e, shortcuts.NEW_PANEL)) {
+                e.preventDefault();
+                // Create a new selection tile or focus the existing one
+                const selectionTiles = document.querySelectorAll('.tile-selector');
+                if (selectionTiles.length > 0) {
+                    // Focus the first selection tile
+                    selectionTiles[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    // Create a new selection tile
+                    PanelManager.updateSourcePanelSelection();
+                }
+                return;
+            }
+            
+            // Close Panel
+            if (matchesShortcut(e, shortcuts.CLOSE_PANEL)) {
+                e.preventDefault();
+                _triggerActionOnFocusedPanel('tile-close');
+                return;
+            }
+            
+            // Split Horizontal
+            if (matchesShortcut(e, shortcuts.SPLIT_HORIZONTAL)) {
+                e.preventDefault();
+                _triggerActionOnFocusedPanel('tile-split-h');
+                return;
+            }
+            
+            // Split Vertical
+            if (matchesShortcut(e, shortcuts.SPLIT_VERTICAL)) {
+                e.preventDefault();
+                _triggerActionOnFocusedPanel('tile-split-v');
+                return;
+            }
+            
+            // Toggle Controls
+            if (matchesShortcut(e, shortcuts.TOGGLE_CONTROLS)) {
+                e.preventDefault();
+                _triggerActionOnFocusedPanel('tile-toggle-controls');
+                return;
+            }
+            
+            // Close Modal (Escape)
+            if (matchesShortcut(e, shortcuts.CLOSE_MODAL)) {
+                // Only handle if there's no modal-specific handler
+                if (!document.querySelector('.modal.show .modal-close-btn:focus')) {
+                    const openModal = document.querySelector('.modal.show');
+                    if (openModal) {
+                        // Use Bootstrap's hide method on the modal
+                        const modalInstance = bootstrap.Modal.getInstance(openModal);
+                        if (modalInstance) {
+                            modalInstance.hide();
+                        }
+                    }
+                }
+            }
+        });
+        
+        // If in desktop mode, register additional Ctrl+key combinations for common actions
+        if (!Config.KEYBOARD_SHORTCUTS.BROWSER_COMPATIBLE) {
+            // Add Ctrl+key combinations for desktop/application mode
+            const desktopKeys = ['n', 'w', 'h', 'v', 'c'];
+            const desktopActions = ['NEW_PANEL', 'CLOSE_PANEL', 'SPLIT_HORIZONTAL', 'SPLIT_VERTICAL', 'TOGGLE_CONTROLS'];
+            
+            desktopKeys.forEach((key, index) => {
+                if (index < desktopActions.length) {
+                    // Create desktop versions with Ctrl key
+                    Config.KEYBOARD_SHORTCUTS[`${desktopActions[index]}_DESKTOP`] = { 
+                        key: key, 
+                        modifiers: { ctrl: true } 
+                    };
+                }
+            });
+        }
+        
+        console.log('Keyboard shortcuts initialized');
+    }
     
     // Public API
     return {

@@ -154,7 +154,6 @@ const DataManager = (function() {
         }
 
         try {
-            console.log(`Loading dataset structure from ${Config.API.DATASET_STRUCTURE} with path ${path}`);
             const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: path });
 
             if (!data) {

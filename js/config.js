@@ -101,13 +101,37 @@ const Config = (function() {
         ENRICHMENT_URL: 'https://string-db.org/api/json/enrichment'
     };
     
+    // Keyboard shortcuts configuration
+    const KEYBOARD_SHORTCUTS = {
+        // Whether to use browser-compatible shortcuts (true) or more intuitive but potentially 
+        // conflicting shortcuts (false). Set to false when running in Electron or other non-browser env.
+        BROWSER_COMPATIBLE: true,
+        
+        // Default shortcuts that work in both browser and desktop modes
+        SAVE_SESSION: { key: 's', modifiers: { ctrl: true } },
+        LOAD_SESSION: { key: 'o', modifiers: { ctrl: true } },
+        REFRESH_DATASETS: { key: 'r', modifiers: { ctrl: true } },
+        
+        // Single-key shortcuts for when no text field is active
+        NEW_PANEL: { key: 'n', modifiers: {} },
+        CLOSE_PANEL: { key: 'w', modifiers: {} },
+        SPLIT_HORIZONTAL: { key: 'h', modifiers: {} },
+        SPLIT_VERTICAL: { key: 'v', modifiers: {} },
+        TOGGLE_CONTROLS: { key: 'c', modifiers: {} },
+        
+        // Special keys that don't generally conflict
+        SHOW_HELP: { key: 'F1', modifiers: {} },
+        CLOSE_MODAL: { key: 'Escape', modifiers: {} }
+    };
+    
     return {
         API,
         DEFAULTS,
         CACHE,
         AUTOSAVE,
         STRING_DB,
-        PANEL_TYPES
+        PANEL_TYPES,
+        KEYBOARD_SHORTCUTS
     };
 })();
 
