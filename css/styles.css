@@ -407,6 +407,283 @@ div.dtsb-group {
     background-color: rgba(13, 110, 253, 0.1);
 }
 
+/* Session management modal improvements */
+#session-modal .modal-dialog {
+    max-width: 700px;
+}
+
+#session-list-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#load-modal-upload {
+    display: flex;
+    align-items: center;
+}
+
+#load-modal-upload input[type="file"] {
+    max-width: 300px;
+}
+
+/* Session suggestions styling */
+#existing-sessions {
+    max-height: 150px;
+    overflow-y: auto;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    padding: 8px;
+}
+
+.session-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.session-suggestion {
+    cursor: pointer;
+    padding: 4px 12px;
+    background-color: #e9ecef;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+
+.session-suggestion:hover {
+    background-color: #dee2e6;
+    border-color: #ced4da;
+}
+
+.session-suggestion.highlighted {
+    background-color: #e9f3ff;
+    border-color: #007bff;
+}
+
+/* Improved session list grid */
+.session-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    padding: 8px;
+}
+
+.session-card {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    background-color: #fff;
+    padding: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    transition: all 0.2s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.session-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-color: #adb5bd;
+}
+
+.session-card.selected {
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
+}
+
+.session-card-header {
+    margin-bottom: 12px;
+    position: relative;
+    padding-right: 30px;
+}
+
+.session-card-title {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-card-subtitle {
+    color: #6c757d;
+    font-size: 0.85rem;
+    margin-top: 4px;
+}
+
+.session-card-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    gap: 4px;
+}
+
+.session-card-body {
+    color: #495057;
+    font-size: 0.9rem;
+}
+
+.session-card-date {
+    color: #6c757d;
+    font-size: 0.8rem;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+}
+
+.session-card-date i {
+    margin-right: 5px;
+}
+
+.session-card-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.session-action-button {
+    font-size: 0.9rem;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.no-sessions-message {
+    grid-column: 1 / -1;
+    padding: 32px;
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+    background-color: #f8f9fa;
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+}
+
+/* Session search */
+.session-search-container {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 0 8px;
+}
+
+.session-search-container .input-group {
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.session-search-container .input-group-text {
+    background-color: #f8f9fa;
+    border-right: none;
+}
+
+.session-search-container .form-control {
+    border-left: none;
+    border-right: none;
+}
+
+.session-search-container .form-control:focus {
+    box-shadow: none;
+    border-color: #ced4da;
+}
+
+.session-search-container .btn-outline-secondary {
+    border-left: none;
+}
+
+.session-search-container .btn-outline-secondary:hover {
+    background-color: #f8f9fa;
+    color: #6c757d;
+}
+
+/* File upload UI */
+.upload-container {
+    padding: 20px;
+    border-top: 1px solid #dee2e6;
+}
+
+.file-drop-area {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    height: 120px;
+    padding: 25px;
+    background-color: #f8f9fa;
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.file-drop-area.highlight {
+    background-color: #e9f3ff;
+    border-color: #007bff;
+}
+
+.file-message {
+    margin-bottom: 15px;
+    color: #6c757d;
+    font-size: 1rem;
+}
+
+.browse-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.browse-btn:hover {
+    background-color: #0069d9;
+}
+
+.file-input {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.file-name {
+    margin-top: 15px;
+    font-weight: 500;
+    color: #495057;
+}
+
+.file-name.has-file {
+    padding: 8px 12px;
+    background-color: #e9f3ff;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+}
+
+.file-name.has-file::before {
+    content: '\\f15b';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 400;
+    margin-right: 8px;
+    color: #007bff;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 768px) {
     .tile-container {

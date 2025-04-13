@@ -429,10 +429,10 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     console.warn(`Missing required data for highlighting ${entityType}`);
     return;
   }
-  if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
-    console.warn("Plot data is not available for highlighting");
-    return;
-  }
+//   if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
+//     console.warn("Plot data is not available for highlighting");
+//     return;
+//   }
 
   // Get the focused entity based on type.
   const focusedEntity = entityType === 'cells'

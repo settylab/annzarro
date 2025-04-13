@@ -1892,9 +1892,18 @@ def register_data_routes(app, api_version):
             if "name" not in session_data:
                 return jsonify({"error": "Invalid session file: missing name property"}), 400
             
+            # Get custom name from form if provided
+            custom_name = request.form.get('name')
+            
             # Sanitize the session name
-            original_name = session_data["name"]
-            session_data["name"] = _sanitize_session_name(session_data["name"])
+            if custom_name:
+                # Use custom provided name (from frontend)
+                original_name = session_data["name"]
+                session_data["name"] = _sanitize_session_name(custom_name)
+            else:
+                # Use the name from the file's JSON content
+                original_name = session_data["name"]
+                session_data["name"] = _sanitize_session_name(session_data["name"])
             
             # Construct safe file path
             file_path = os.path.join(sessions_dir, f"{session_data['name']}.json")

@@ -155,8 +155,6 @@ export function attachViewportTracking(plotContainer, settings) {
           up: camera.up,
           center: camera.center
         };
-        
-        console.log('3D viewport updated:', settings.viewport3D);
       }
     });
   } 
@@ -185,8 +183,6 @@ export function attachViewportTracking(plotContainer, settings) {
         } else if (eventData['yaxis.range[0]'] !== undefined && eventData['yaxis.range[1]'] !== undefined) {
           settings.viewport2D.yrange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
         }
-        
-        console.log('2D viewport updated:', settings.viewport2D);
       }
     });
   }

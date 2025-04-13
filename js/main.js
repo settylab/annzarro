@@ -700,21 +700,81 @@ const App = (function() {
      * Show save session modal
      * @private
      */
-    function _showSaveSessionModal() {
+    async function _showSaveSessionModal() {
         // Set up modal for save mode
         document.getElementById('session-modal-title').textContent = 'Save Panel Set';
         document.getElementById('save-session-container').style.display = 'block';
         document.getElementById('session-list-container').style.display = 'none';
+        document.getElementById('file-upload-section').style.display = 'none';
+        document.getElementById('toggle-upload-btn').style.display = 'none';
         document.getElementById('btn-confirm-session').textContent = 'Save';
-        
-        // Clear previous input
-        document.getElementById('session-name').value = '';
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'save';
         
-        // Show modal
+        // Get existing sessions for suggestions
+        const sessions = await SessionManager.listSessions();
+        const sessionNames = sessions.map(s => s.name);
+        
+        // Get DOM elements
+        const sessionNameInput = document.getElementById('session-name');
+        const sessionSuggestions = document.getElementById('session-suggestions');
+        
+        // Clear previous input value and suggestions
+        sessionNameInput.value = '';
+        sessionSuggestions.innerHTML = '';
+        
+        // Function to update the suggestions based on input
+        function updateSuggestions(query = '') {
+            sessionSuggestions.innerHTML = '';
+            const lowerQuery = query.toLowerCase();
+            
+            // Filter session names based on input
+            const filteredNames = sessionNames.filter(name => 
+                lowerQuery === '' || name.toLowerCase().includes(lowerQuery)
+            );
+            
+            // Display filtered suggestions
+            filteredNames.forEach(name => {
+                const suggestionElement = document.createElement('span');
+                suggestionElement.className = 'session-suggestion';
+                suggestionElement.textContent = name;
+                suggestionElement.addEventListener('click', () => {
+                    sessionNameInput.value = name;
+                    // Highlight this suggestion
+                    document.querySelectorAll('.session-suggestion').forEach(el => {
+                        el.classList.remove('highlighted');
+                    });
+                    suggestionElement.classList.add('highlighted');
+                });
+                sessionSuggestions.appendChild(suggestionElement);
+            });
+            
+            // Hide existing sessions section if no suggestions
+            document.getElementById('existing-sessions').style.display = 
+                filteredNames.length > 0 ? 'block' : 'none';
+        }
+        
+        // Initialize suggestions
+        updateSuggestions();
+        
+        // Remove any existing input event listeners
+        sessionNameInput.removeEventListener('input', updateSuggestionsHandler);
+        
+        // Add new input event listener for filtering
+        function updateSuggestionsHandler(e) {
+            updateSuggestions(e.target.value);
+        }
+        
+        sessionNameInput.addEventListener('input', updateSuggestionsHandler);
+        
+        // Show modal and focus input field when it's fully visible
         _sessionModal.show();
+        
+        // Focus input field after modal is shown
+        $('#session-modal').on('shown.bs.modal', function() {
+            sessionNameInput.focus();
+        });
     }
     
     /**
@@ -726,64 +786,273 @@ const App = (function() {
         document.getElementById('session-modal-title').textContent = 'Load Panel Set';
         document.getElementById('save-session-container').style.display = 'none';
         document.getElementById('session-list-container').style.display = 'block';
+        document.getElementById('file-upload-section').style.display = 'none';
+        document.getElementById('toggle-upload-btn').style.display = 'block';
         document.getElementById('btn-confirm-session').textContent = 'Load';
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'load';
+        document.getElementById('session-modal').dataset.uploadMode = 'false';
         
         // Clear previous selection
-        document.querySelector('#session-list tr.selected')?.classList.remove('selected');
+        document.querySelector('.session-card.selected')?.classList.remove('selected');
+        
+        // Setup session search
+        const searchInput = document.getElementById('session-search');
+        const searchClearBtn = document.getElementById('session-search-clear');
+        
+        // Clear previous search
+        searchInput.value = '';
+        searchClearBtn.style.display = 'none';
+        
+        // Remove existing event listeners to prevent duplicates
+        searchInput.removeEventListener('input', handleSessionSearch);
+        searchClearBtn.removeEventListener('click', clearSessionSearch);
+        
+        // Search functionality
+        function handleSessionSearch() {
+            const searchTerm = this.value.toLowerCase().trim();
+            
+            // Show/hide clear button
+            searchClearBtn.style.display = searchTerm ? 'block' : 'none';
+            
+            // Filter session cards
+            const cards = document.querySelectorAll('.session-card');
+            let visibleCount = 0;
+            
+            cards.forEach(card => {
+                const sessionName = card.dataset.sessionName.toLowerCase();
+                const datasetName = card.querySelector('.session-card-subtitle').textContent.toLowerCase();
+                const isMatch = sessionName.includes(searchTerm) || datasetName.includes(searchTerm);
+                
+                card.style.display = isMatch ? 'block' : 'none';
+                if (isMatch) visibleCount++;
+            });
+            
+            // Show no results message if needed
+            const noResultsMsg = document.querySelector('.no-search-results');
+            if (visibleCount === 0 && searchTerm) {
+                if (!noResultsMsg) {
+                    const msg = document.createElement('div');
+                    msg.className = 'no-search-results no-sessions-message';
+                    msg.innerHTML = `No sessions found matching "<strong>${searchTerm}</strong>"`;
+                    document.getElementById('session-grid').appendChild(msg);
+                }
+            } else {
+                document.querySelector('.no-search-results')?.remove();
+            }
+        }
+        
+        // Clear search functionality
+        function clearSessionSearch() {
+            searchInput.value = '';
+            searchClearBtn.style.display = 'none';
+            
+            // Show all cards
+            document.querySelectorAll('.session-card').forEach(card => {
+                card.style.display = 'block';
+            });
+            
+            // Remove no results message
+            document.querySelector('.no-search-results')?.remove();
+            
+            // Focus the search input
+            searchInput.focus();
+        }
+        
+        // Add event listeners
+        searchInput.addEventListener('input', handleSessionSearch);
+        searchClearBtn.addEventListener('click', clearSessionSearch);
+        
+        // Add keyboard support for searching
+        searchInput.addEventListener('keydown', function(e) {
+            // Escape key clears the search
+            if (e.key === 'Escape') {
+                clearSessionSearch();
+            }
+            
+            // Enter key selects the first visible card
+            if (e.key === 'Enter') {
+                const visibleCards = Array.from(document.querySelectorAll('.session-card'))
+                    .filter(card => card.style.display !== 'none');
+                
+                if (visibleCards.length > 0) {
+                    // Clear any previous selection
+                    document.querySelectorAll('.session-card.selected')
+                        .forEach(el => el.classList.remove('selected'));
+                    
+                    // Select the first visible card
+                    visibleCards[0].classList.add('selected');
+                    
+                    // Scroll to it
+                    visibleCards[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        });
+        
+        // Reset file input and display
+        const fileInput = document.getElementById('session-file-upload');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        fileInput.value = '';
+        fileNameDisplay.textContent = '';
+        fileNameDisplay.classList.remove('has-file');
+        
+        // Setup drag and drop functionality
+        const dropArea = document.querySelector('.file-drop-area');
+        
+        // Prevent defaults for drag events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        // Highlight drop area when file is dragged over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+        
+        // Handle file drop
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+        
+        // Set up file upload handler
+        fileInput.onchange = function() {
+            handleFiles(this.files);
+        };
+        
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                // Update file name display
+                fileNameDisplay.textContent = file.name;
+                fileNameDisplay.classList.add('has-file');
+                
+                // Mark as file upload mode
+                document.getElementById('session-modal').dataset.uploadMode = 'true';
+                
+                // Clear any selected session
+                document.querySelector('.session-card.selected')?.classList.remove('selected');
+            }
+        }
+        
+        // Set up toggle button to switch between list and upload views
+        const toggleUploadBtn = document.getElementById('toggle-upload-btn');
+        toggleUploadBtn.onclick = function() {
+            if (document.getElementById('file-upload-section').style.display === 'none') {
+                // Switch to upload view
+                document.getElementById('file-upload-section').style.display = 'block';
+                document.getElementById('session-list-container').style.display = 'none';
+                toggleUploadBtn.innerHTML = '<i class="fas fa-list me-1"></i> Show saved sessions';
+            } else {
+                // Switch to list view
+                document.getElementById('file-upload-section').style.display = 'none';
+                document.getElementById('session-list-container').style.display = 'block';
+                toggleUploadBtn.innerHTML = '<i class="fas fa-file-upload me-1"></i> Upload file';
+                // Reset upload mode
+                document.getElementById('session-modal').dataset.uploadMode = 'false';
+            }
+        };
         
         // Load sessions
         await _loadSessionList();
         
-        // Show modal
+        // Show modal and focus search field
         _sessionModal.show();
+        
+        // Set focus to search field when modal is fully shown
+        $('#session-modal').on('shown.bs.modal', function() {
+            document.getElementById('session-search').focus();
+        });
     }
     
     /**
-     * Load the list of saved sessions
+     * Load the list of saved sessions with improved UI
      * @private
      */
     async function _loadSessionList() {
-        const sessionList = document.getElementById('session-list');
-        sessionList.innerHTML = '<tr><td colspan="4">Loading panel sets...</td></tr>';
+        const sessionGrid = document.getElementById('session-grid');
+        sessionGrid.innerHTML = `
+            <div class="no-sessions-message">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Loading panel sets...
+            </div>
+        `;
         
         try {
             const sessions = await SessionManager.listSessions();
             
             if (sessions && sessions.length > 0) {
-                sessionList.innerHTML = '';
+                // Save the current search term if any
+                const searchInput = document.getElementById('session-search');
+                const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+                
+                sessionGrid.innerHTML = '';
                 
                 sessions.forEach(session => {
-                    const row = document.createElement('tr');
-                    row.className = 'session-list-item';
-                    row.dataset.sessionName = session.name;
+                    const card = document.createElement('div');
+                    card.className = 'session-card';
+                    card.dataset.sessionName = session.name;
                     
-                    const dateStr = new Date(session.timestamp).toLocaleString();
+                    // Format date nicely
+                    let dateObj = new Date(session.timestamp);
+                    const dateStr = dateObj.toLocaleDateString();
+                    const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     
-                    row.innerHTML = `
-                        <td>${session.name}</td>
-                        <td>${session.datasetName || session.dataset}</td>
-                        <td>${dateStr}</td>
-                        <td>
-                            <button class="btn btn-sm btn-danger session-delete" title="Delete">
-                                <i class="fas fa-trash"></i>
+                    // Determine dataset display
+                    const datasetDisplay = session.datasetName || 
+                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset');
+                    
+                    card.innerHTML = `
+                        <div class="session-card-header">
+                            <h5 class="session-card-title">${session.name}</h5>
+                            <div class="session-card-subtitle">${datasetDisplay}</div>
+                            <div class="session-card-actions">
+                                <button class="btn btn-sm btn-outline-danger session-delete session-action-button" title="Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="session-card-date">
+                            <i class="far fa-calendar-alt"></i> ${dateStr} ${timeStr}
+                        </div>
+                        <div class="session-card-footer">
+                            <button class="btn btn-sm btn-outline-secondary session-export" title="Export">
+                                <i class="fas fa-download"></i> Export
                             </button>
-                            <button class="btn btn-sm btn-secondary session-export" title="Export">
-                                <i class="fas fa-download"></i>
-                            </button>
-                        </td>
+                        </div>
                     `;
                     
-                    sessionList.appendChild(row);
+                    sessionGrid.appendChild(card);
                     
                     // Add click handler for selection
-                    row.addEventListener('click', (e) => {
+                    card.addEventListener('click', (e) => {
                         if (!e.target.closest('button')) {
-                            document.querySelectorAll('#session-list tr.selected')
+                            document.querySelectorAll('.session-card.selected')
                                 .forEach(el => el.classList.remove('selected'));
-                            row.classList.add('selected');
+                            card.classList.add('selected');
                         }
                     });
                 });
@@ -792,15 +1061,19 @@ const App = (function() {
                 document.querySelectorAll('.session-delete').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        const row = e.target.closest('tr');
-                        const sessionName = row.dataset.sessionName;
+                        const card = e.target.closest('.session-card');
+                        const sessionName = card.dataset.sessionName;
                         
                         if (confirm(`Delete panel set "${sessionName}"?`)) {
                             const result = await SessionManager.deleteSession(sessionName);
                             if (result.status === 'success') {
-                                row.remove();
-                                if (sessionList.children.length === 0) {
-                                    sessionList.innerHTML = '<tr><td colspan="4">No saved panel sets</td></tr>';
+                                card.remove();
+                                if (sessionGrid.children.length === 0) {
+                                    sessionGrid.innerHTML = `
+                                        <div class="no-sessions-message">
+                                            No saved panel sets found
+                                        </div>
+                                    `;
                                 }
                             } else {
                                 _showError('Failed to delete panel set', result.message);
@@ -813,17 +1086,46 @@ const App = (function() {
                 document.querySelectorAll('.session-export').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const sessionName = e.target.closest('tr').dataset.sessionName;
+                        const card = e.target.closest('.session-card');
+                        const sessionName = card.dataset.sessionName;
                         SessionManager.exportSession(sessionName);
                     });
                 });
+                
+                // Apply search filter if there's an active search
+                if (searchTerm) {
+                    // Let's simulate the search input event to apply filters
+                    searchInput.dispatchEvent(new Event('input'));
+                }
             } else {
-                sessionList.innerHTML = '<tr><td colspan="4">No saved panel sets</td></tr>';
+                sessionGrid.innerHTML = `
+                    <div class="no-sessions-message">
+                        No saved panel sets found
+                    </div>
+                `;
             }
         } catch (error) {
             console.error('Error loading panel sets:', error);
-            sessionList.innerHTML = `<tr><td colspan="4">Error loading panel sets: ${error.message}</td></tr>`;
+            sessionGrid.innerHTML = `
+                <div class="no-sessions-message text-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Error loading panel sets: ${error.message}
+                </div>
+            `;
         }
+    }
+    
+    /**
+     * Sanitize session name by removing special characters and replacing spaces with underscores
+     * @param {string} name - The raw session name
+     * @returns {string} - Sanitized session name
+     * @private
+     */
+    function _sanitizeSessionName(name) {
+        // Replace spaces with underscores and remove special characters
+        return name.trim()
+            .replace(/\s+/g, '_')
+            .replace(/[^\w\-]/g, '');
     }
     
     /**
@@ -835,39 +1137,94 @@ const App = (function() {
         
         if (modalType === 'save') {
             // Handle save session
-            const sessionName = document.getElementById('session-name').value.trim();
+            const sessionNameInput = document.getElementById('session-name');
+            let sessionName = sessionNameInput.value.trim();
             
             if (!sessionName) {
                 alert('Please enter a panel set name');
                 return;
             }
             
-            const result = await SessionManager.saveSession(sessionName);
+            // Sanitize the session name
+            const sanitizedName = _sanitizeSessionName(sessionName);
+            
+            // Check for name collision
+            const sessions = await SessionManager.listSessions();
+            const existingNames = new Set(sessions.map(s => s.name.toLowerCase()));
+            
+            if (existingNames.has(sanitizedName.toLowerCase())) {
+                // If name collision, ask for confirmation
+                if (!confirm(`A panel set with the name "${sanitizedName}" already exists. Do you want to overwrite it?`)) {
+                    return;
+                }
+            }
+            
+            const result = await SessionManager.saveSession(sanitizedName);
             
             if (result.status === 'success') {
                 _sessionModal.hide();
-                _showSuccess('Panel Set saved', `Panel Set "${sessionName}" saved successfully`);
+                _showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
                 _showError('Failed to save panel set', result.message);
             }
         } else if (modalType === 'load') {
-            // Handle load session
-            const selectedRow = document.querySelector('#session-list tr.selected');
-            
-            if (!selectedRow) {
-                alert('Please select a panel set to load');
-                return;
-            }
-            
-            const sessionName = selectedRow.dataset.sessionName;
-            
-            const result = await SessionManager.loadSession(sessionName);
-            
-            if (result.status === 'success') {
-                _sessionModal.hide();
-                //_showSuccess('Panel Set loaded', `Panel Set "${sessionName}" loaded successfully. The panels have been added to your Clone Existing Panel section.`);
+            // Check if we're in file upload mode
+            if (document.getElementById('session-modal').dataset.uploadMode === 'true') {
+                // Handle file upload
+                const fileInput = document.getElementById('session-file-upload');
+                if (fileInput.files.length === 0) {
+                    alert('Please select a file to upload');
+                    return;
+                }
+                
+                // Show loading indicator
+                const confirmBtn = document.getElementById('btn-confirm-session');
+                const originalText = confirmBtn.innerHTML;
+                confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Loading...`;
+                confirmBtn.disabled = true;
+                
+                try {
+                    const file = fileInput.files[0];
+                    const result = await SessionManager.importSession(file);
+                    
+                    if (result.status === 'success') {
+                        // If import successful, load the session
+                        const loadResult = await SessionManager.loadSession(result.name);
+                        
+                        if (loadResult.status === 'success') {
+                            _sessionModal.hide();
+                            _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
+                        } else {
+                            _showError('Failed to load imported panel set', loadResult.message);
+                        }
+                    } else {
+                        _showError('Failed to import panel set', result.message);
+                    }
+                } catch (error) {
+                    _showError('Error', error.message);
+                } finally {
+                    // Restore button
+                    confirmBtn.innerHTML = originalText;
+                    confirmBtn.disabled = false;
+                }
             } else {
-                _showError('Failed to load panel set', result.message);
+                // Handle load from list
+                const selectedCard = document.querySelector('.session-card.selected');
+                
+                if (!selectedCard) {
+                    alert('Please select a panel set to load or switch to upload mode');
+                    return;
+                }
+                
+                const sessionName = selectedCard.dataset.sessionName;
+                
+                const result = await SessionManager.loadSession(sessionName);
+                
+                if (result.status === 'success') {
+                    _sessionModal.hide();
+                } else {
+                    _showError('Failed to load panel set', result.message);
+                }
             }
         }
     }

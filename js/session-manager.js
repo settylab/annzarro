@@ -204,18 +204,47 @@ const SessionManager = (function() {
      * Export panel set as file download
      * @param {string} name - Panel set name
      */
-    function exportSession(name) {
+    async function exportSession(name) {
         if (!name) {
             console.error('Panel set name is required');
             return;
         }
         
-        const link = document.createElement('a');
-        link.href = `${Config.API.SESSIONS_EXPORT}?name=${encodeURIComponent(name)}`;
-        link.download = `${name}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            // First, try to load the session data to ensure it exists
+            const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(name)}`);
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.statusText}`);
+            }
+            
+            // Get the session data
+            const sessionData = await response.json();
+            
+            // Create a Blob from the session data
+            const blob = new Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
+            
+            // Create a URL for the Blob
+            const url = URL.createObjectURL(blob);
+            
+            // Create a link to download the Blob
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${name}.json`;
+            
+            // Click the link to download the file
+            document.body.appendChild(link);
+            link.click();
+            
+            // Clean up
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            return { status: 'success', message: `Session ${name} exported successfully` };
+        } catch (error) {
+            console.error('Error exporting session:', error);
+            return { status: 'error', message: error.message };
+        }
     }
     
     /**
@@ -230,8 +259,35 @@ const SessionManager = (function() {
         }
         
         try {
+            // Sanitize name based on file name
+            let baseName = file.name;
+            
+            // Remove .json extension if present
+            if (baseName.toLowerCase().endsWith('.json')) {
+                baseName = baseName.slice(0, -5);
+            }
+            
+            // Sanitize the base name
+            baseName = baseName.trim()
+                .replace(/\s+/g, '_')
+                .replace(/[^\w\-]/g, '');
+            
+            // Check for name collisions and append counter if needed
+            let finalName = baseName;
+            const sessions = await listSessions();
+            const existingNames = new Set(sessions.map(s => s.name.toLowerCase()));
+            
+            if (existingNames.has(finalName.toLowerCase())) {
+                let counter = 1;
+                do {
+                    finalName = `${baseName}_${counter}`;
+                    counter++;
+                } while (existingNames.has(finalName.toLowerCase()));
+            }
+            
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('name', finalName); // Pass the sanitized name with counter if needed
             
             const response = await fetch(Config.API.SESSIONS_IMPORT, {
                 method: 'POST',
@@ -243,7 +299,7 @@ const SessionManager = (function() {
             }
             
             const result = await response.json();
-            return result;
+            return { ...result, name: finalName }; // Include the final name in the result
         } catch (error) {
             console.error('Error importing session:', error);
             return { status: 'error', message: error.message };
