@@ -25,6 +25,9 @@ const App = (function() {
             // Initialize UI components
             _initUI();
             
+            // Make SessionManager accessible globally
+            window.sessionManager = SessionManager;
+            
             // Initialize panel manager
             // Make sure PanelManager is defined first
             if (typeof PanelManager === 'undefined') {

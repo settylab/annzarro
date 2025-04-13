@@ -20,21 +20,62 @@ export async function loadAxisData(settings, plotType = null) {
 
   const { type, key, column } = settings;
   const datasetPath = DataManager.getCurrentDataset();
+  const rowsArr = null; // Filtering no longer applies
 
-  // Since filtering is no longer used, set rowsArr to null.
-  const rowsArr = null;
-
-  let data;
-  let values;
-  let dataType;
+  let data, values, dataType;
   let categories = null;
 
+  // --- Helper Functions ---
+  // Returns at most maxSample elements of an array.
+  function sampleArray(arr, maxSample = 100) {
+    return arr.length > maxSample ? arr.slice(0, maxSample) : arr;
+  }
+
+  /**
+   * Infer whether the sampled values are mostly numeric or categorical.
+   * Booleans count as categorical.
+   * @param {Array} arr - Array of values.
+   * @returns {string} - 'numerical' or 'categorical'.
+   */
+  function determineDataType(arr) {
+    const sample = sampleArray(arr);
+    if (sample.length === 0) return 'categorical';
+    let boolCount = 0, numCount = 0;
+    sample.forEach(v => {
+      if (v === true || v === false) {
+        boolCount++;
+      } else if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
+        numCount++;
+      }
+    });
+    if (boolCount / sample.length >= 0.8) return 'categorical';
+    if (numCount / sample.length >= 0.8) return 'numerical';
+    return 'categorical';
+  }
+
+  // Convert non-null booleans to strings.
+  function convertBooleans(arr) {
+    return arr.map(v => (v === null || v === undefined) ? v : String(v));
+  }
+
+  // Convert values to numbers when possible while preserving the array length.
+  function processNumericValues(arr) {
+    return arr.map(v => {
+      if (v === null || v === undefined) return NaN;
+      if (typeof v === 'number') return v;
+      if (typeof v === 'object' && v && 'value' in v) return v.value;
+      if (typeof v === 'string') {
+        const parsed = parseFloat(v);
+        return isNaN(parsed) ? NaN : parsed;
+      }
+      return NaN;
+    });
+  }
+
   try {
-    // Special case for 'none' type (constant color).
+    // SPECIAL CASE: 'none' type (constant color).
     if (type === 'none') {
-      // Determine if we're working with gene or cell data based on function parameters
       const isGenePlot = plotType === 'genes';
-      
       if (isGenePlot) {
         const genes = DataManager.getGenes();
         const geneCount = genes ? genes.length : 100;
@@ -48,193 +89,71 @@ export async function loadAxisData(settings, plotType = null) {
       return { values, type: dataType, categories };
     }
 
-    // Process based on settings.type.
+    // Common pattern for most data types.
     switch (type) {
-      case 'obs': {
-        data = await DataManager.loadObs({
-          datasetPath,
-          columns: [key],
-          rows: rowsArr
-        });
-
-        if (!data.data || !data.data[key]) {
-          console.warn(`No data found for obs.${key}`);
-          throw new Error(`No data found for column '${key}' in obs table`);
-        }
-
-        values = data.data[key];
-
-        if (data.categories && data.categories[key]) {
-          dataType = 'categorical';
-          categories = data.categories[key];
-        } else {
-          // Check if at least 80% of values are booleans.
-          const booleanCount = values.filter(v => v === true || v === false).length;
-          if (booleanCount / values.length >= 0.8) {
-            // Convert booleans to their string equivalents.
-            values = values.map(v => (v === null || v === undefined) ? v : String(v));
-            dataType = 'categorical';
-          } else {
-            // Otherwise, infer data type: if >80% of values can be converted to a number, treat as numerical.
-            const numericCount = values.filter(v => {
-              if (v === null || v === undefined) return false;
-              return !isNaN(parseFloat(v));
-            }).length;
-            dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
-          }
-        }
-        break;
-      }
+      case 'obs':
       case 'var': {
-        data = await DataManager.loadVar({
-          datasetPath,
-          columns: [key],
-          rows: rowsArr
-        });
-
+        const loadMethod = type === 'obs' ? DataManager.loadObs : DataManager.loadVar;
+        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr });
         if (!data.data || !data.data[key]) {
-          console.warn(`No data found for var.${key}`);
-          throw new Error(`No data found for column '${key}' in var table`);
+          console.warn(`No data found for ${type}.${key}`);
+          throw new Error(`No data found for column '${key}' in ${type} table`);
         }
-
         values = data.data[key];
-
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
         } else {
-          // Infer data type: if >80% of values can be converted to a number, treat as numerical.
-          const numericCount = values.filter(v => {
-            if (v === null || v === undefined) return false;
-            return !isNaN(parseFloat(v));
-          }).length;
-          dataType = (numericCount / values.length >= 0.8) ? 'numerical' : 'categorical';
+          dataType = determineDataType(values);
+          if (dataType === 'categorical') {
+            values = convertBooleans(values);
+          }
         }
         break;
       }
-      case 'obsm': {
-        data = await DataManager.loadObsm({
-          datasetPath,
-          obsmKey: key,
-          columnName: column,
-          rows: rowsArr
-        });
-
-        if (!data.data || data.data.length === 0) {
-          console.warn(`No data points received for obsm.${key}.${column}`);
-          throw new Error(`No data points found for ${key}.${column}`);
-        }
-
-        values = data.data;
-        dataType = 'numerical';
-        break;
-      }
+      case 'obsm':
       case 'varm': {
-        data = await DataManager.loadVarm({
+        const loadMethod = type === 'obsm' ? DataManager.loadObsm : DataManager.loadVarm;
+        data = await loadMethod({
           datasetPath,
-          varmKey: key,
+          [type === 'obsm' ? 'obsmKey' : 'varmKey']: key,
           columnName: column,
           rows: rowsArr
         });
-
         if (!data.data || data.data.length === 0) {
-          console.warn(`No data points received for varm.${key}.${column}`);
+          console.warn(`No data points received for ${type}.${key}.${column}`);
           throw new Error(`No data points found for ${key}.${column}`);
         }
-
         values = data.data;
         dataType = 'numerical';
         break;
       }
-      case 'obsp': {
-        const cellIndex = DataManager.getCellIndex(column);
-        if (cellIndex === -1) {
-          throw new Error('Focused cell not found in dataset');
-        }
-        data = await DataManager.loadObsp({
-          datasetPath,
-          obspKey: key,
-          rows: [cellIndex]
-        });
-
-        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-          const firstRow = data.data[0];
-          if (Array.isArray(firstRow)) {
-            values = firstRow;
-          } else {
-            console.warn(`Expected array for obsp row, got: ${typeof firstRow}`);
-            values = (firstRow !== undefined && firstRow !== null) ? [firstRow] : [];
-          }
-        } else {
-          console.warn(`Invalid or empty obsp data received`);
-          values = [];
-        }
-
-        if (values && values.length > 0) {
-          // Replace null/undefined with NaN.
-          values = values.map(v => (v === null || v === undefined) ? NaN : v);
-          const firstVal = values[0];
-          if (typeof firstVal === 'object') {
-            console.warn('Obsp values are objects, attempting to convert to numbers');
-            values = values.map(v => {
-              if (v === null || v === undefined) return NaN;
-              if (typeof v === 'number') return v;
-              return (v && 'value' in v) ? v.value : NaN;
-            });
-            dataType = 'numerical';
-          } else if (typeof firstVal === 'string') {
-            console.warn('Obsp values are strings, treating as categorical');
-            dataType = 'categorical';
-          } else {
-            dataType = 'numerical';
-          }
-        } else {
-          dataType = 'numerical';
-        }
-        break;
-      }
+      case 'obsp':
       case 'varp': {
-        const geneIndex = DataManager.getGeneIndex(column);
-        if (geneIndex === -1) {
-          throw new Error('Focused gene not found in dataset');
+        if (type === 'obsp') {
+          const cellIndex = DataManager.getCellIndex(column);
+          if (cellIndex === -1) throw new Error('Focused cell not found in dataset');
+          data = await DataManager.loadObsp({ datasetPath, obspKey: key, rows: [cellIndex] });
+        } else {
+          const geneIndex = DataManager.getGeneIndex(column);
+          if (geneIndex === -1) throw new Error('Focused gene not found in dataset');
+          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [geneIndex] });
         }
-
-        data = await DataManager.loadVarp({
-          datasetPath,
-          varpKey: key,
-          rows: [geneIndex]
-        });
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
-          if (Array.isArray(firstRow)) {
-            values = firstRow;
-          } else {
-            console.warn(`Expected array for varp row, got: ${typeof firstRow}`);
-            values = (firstRow !== undefined && firstRow !== null) ? [firstRow] : [];
-          }
+          values = Array.isArray(firstRow) ? firstRow : ((firstRow !== undefined && firstRow !== null) ? [firstRow] : []);
         } else {
-          console.warn(`Invalid or empty varp data received`);
+          console.warn(`Invalid or empty ${type} data received`);
           values = [];
         }
-
-        if (values && values.length > 0) {
-          // Replace null/undefined with NaN.
-          values = values.map(v => (v === null || v === undefined) ? NaN : v);
-          const firstVal = values[0];
-          if (typeof firstVal === 'object') {
-            console.warn('Varp values are objects, attempting to convert to numbers');
-            values = values.map(v => {
-              if (v === null || v === undefined) return NaN;
-              if (typeof v === 'number') return v;
-              return (v && 'value' in v) ? v.value : NaN;
-            });
-            dataType = 'numerical';
-          } else if (typeof firstVal === 'string') {
-            console.warn('Varp values are strings, treating as categorical');
-            dataType = 'categorical';
-          } else {
-            dataType = 'numerical';
-          }
+        // Preserve length: map nulls/undefined to NaN.
+        values = values.map(v => (v === null || v === undefined) ? NaN : v);
+        const sample = sampleArray(values);
+        if (sample.every(v => typeof v === 'object')) {
+          values = processNumericValues(values);
+          dataType = 'numerical';
+        } else if (sample.every(v => typeof v === 'string')) {
+          dataType = 'categorical';
         } else {
           dataType = 'numerical';
         }
@@ -242,83 +161,55 @@ export async function loadAxisData(settings, plotType = null) {
       }
       case 'layer': {
         if (plotType === 'genes') {
-          // In gene plots, the focused cell defines a row; fetch a column array (colArr) from gene indices.
           const cellIndex = DataManager.getCellIndex(column);
-          if (cellIndex === -1) {
-            throw new Error('Focused cell not found in dataset');
-          }
-          // Obtain gene indices to define the columns.
-          const genes = DataManager.getGenes();
-          const colArr = null;
-
-          // Always use the cell index rather than the cell name with potential special characters
+          if (cellIndex === -1) throw new Error('Focused cell not found in dataset');
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
             rows: [cellIndex],
-            cols: colArr
+            cols: null
           });
           if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-            if (Array.isArray(data.data[0])) {
-              // Assume the first (and only) row corresponds to gene values.
-              values = data.data[0];
-            } else {
-              values = data.data;
-            }
+            values = Array.isArray(data.data[0]) ? data.data[0] : data.data;
           } else {
-            console.warn(`Empty or invalid layer data received for gene plot`);
+            console.warn('Empty or invalid layer data received for gene plot');
             values = [];
           }
           dataType = 'numerical';
         } else {
-          // In non-gene plots, the focused gene defines a column.
           const geneIndex = DataManager.getGeneIndex(column);
-          if (geneIndex === -1) {
-            throw new Error('Focused gene not found in dataset');
-          }
+          if (geneIndex === -1) throw new Error('Focused gene not found in dataset');
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
             rows: rowsArr,
             cols: [geneIndex]
           });
-          if (data.data && typeof data.data === 'object') {
-            if (Array.isArray(data.data)) {
-              if (data.data.length > 0) {
-                if (Array.isArray(data.data[0])) {
-                  try {
-                    // Extract the first element from each row.
-                    values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
-                  } catch (e) {
-                    console.error(`Error extracting values from 2D array:`, e);
-                    values = Array(data.data.length).fill(NaN);
-                  }
-                } else {
-                  values = data.data;
+          if (data.data && Array.isArray(data.data)) {
+            if (data.data.length > 0) {
+              if (Array.isArray(data.data[0])) {
+                try {
+                  values = data.data.map(row => (row[0] === undefined ? NaN : row[0]));
+                } catch (e) {
+                  console.error('Error extracting values from 2D array:', e);
+                  values = Array(data.data.length).fill(NaN);
                 }
               } else {
-                console.warn(`Empty layer data array received`);
-                values = [];
+                values = data.data;
               }
             } else {
-              console.warn(`Unexpected data format received: ${typeof data.data}`);
+              console.warn('Empty layer data array received');
               values = [];
             }
           } else {
-            console.warn(`No valid data array received from layer endpoint`);
+            console.warn(`Unexpected data format received: ${typeof data.data}`);
             values = [];
           }
           if (values.length > 0) {
-            const firstVal = values[0];
-            if (typeof firstVal === 'object') {
-              console.warn('Layer values are objects, attempting to convert to numbers');
-              values = values.map(v => {
-                if (v === null || v === undefined) return NaN;
-                if (typeof v === 'number') return v;
-                return (v && 'value' in v) ? v.value : NaN;
-              });
-            } else if (typeof firstVal === 'string') {
-              console.warn('Layer values are strings, attempting to convert to numbers');
+            const sample = sampleArray(values);
+            if (sample.every(v => typeof v === 'object')) {
+              values = processNumericValues(values);
+            } else if (sample.every(v => typeof v === 'string')) {
               values = values.map(v => {
                 if (v === null || v === undefined) return NaN;
                 const parsed = parseFloat(v);
@@ -334,11 +225,9 @@ export async function loadAxisData(settings, plotType = null) {
         throw new Error(`Unknown data type: ${type}`);
     }
 
-    const result = { values, type: dataType, categories };
-    return result;
-
+    return { values, type: dataType, categories };
   } catch (error) {
-    console.error(`Error loading data for settings`, settings, 'error:', error);
+    console.error('Error loading data for settings', settings, 'error:', error);
     throw new Error(`Failed to load data for (${type}.${key}${column ? '.' + column : ''})`);
   }
 }

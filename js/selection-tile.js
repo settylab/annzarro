@@ -335,8 +335,18 @@ export class SelectionTile {
         console.error(`Sessions list with ID sessions-list-${this.selectionId} not found`);
         return;
       }
+      
+      // Use either provided sessionManager or global window.sessionManager
+      const sessionManager = this.sessionManager || window.sessionManager;
+      
+      if (!sessionManager) {
+        console.error('SessionManager not available');
+        list.innerHTML = '<div class="no-sessions">Session manager not available</div>';
+        return;
+      }
+      
       list.innerHTML = '<div class="no-sessions">Loading sessions...</div>';
-      this.sessionManager.listSessions().then(sessions => {
+      sessionManager.listSessions().then(sessions => {
         if (sessions && sessions.length > 0) {
           list.innerHTML = '';
           sessions.forEach(session => {
@@ -361,9 +371,17 @@ export class SelectionTile {
           <div class="session-dataset">${session.datasetName || session.dataset}</div>
         </div>
       `;
+      
+      // Use either provided sessionManager or global window.sessionManager
+      const sessionManager = this.sessionManager || window.sessionManager;
+      
       item.addEventListener('click', async () => {
         this.remove();
-        await this.sessionManager.loadSession(session.name);
+        if (sessionManager) {
+          await sessionManager.loadSession(session.name);
+        } else {
+          console.error('SessionManager not available, cannot load session');
+        }
       });
       return item;
     }
