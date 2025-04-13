@@ -15,22 +15,45 @@ import { LayoutManager } from './layout-manager.js';
 const SessionManager = (function() {
     // Private variables
     let _currentSession = null; // Stores the current panel set
+    let _autosaveTimer = null; // Timer for autosave
     
     /**
-     * Load list of available panel sets
+     * Load list of available panel sets including the autosave if available
+     * @param {boolean} includeAutosave - Whether to include the autosave session
      * @returns {Promise<Array>} - List of panel sets
      */
-    async function listSessions() {
+    async function listSessions(includeAutosave = true) {
         try {
             const response = await fetch(Config.API.SESSIONS_LIST);
             if (!response.ok) {
                 throw new Error(`API error: ${response.statusText}`);
             }
             
-            const sessions = await response.json();
+            let sessions = await response.json();
+            
+            // Check if we should include the autosave and if it exists
+            if (includeAutosave) {
+                const autosave = loadFromLocalStorage();
+                if (autosave) {
+                    // Add special properties for visualization and sorting
+                    autosave.isAutosave = true;
+                    autosave.isLocalOnly = true;
+                    
+                    // Put autosave at the beginning of the list
+                    sessions = [autosave, ...sessions];
+                }
+            }
+            
             return sessions;
         } catch (error) {
             console.error('Error listing sessions:', error);
+            
+            // Even if the server request fails, try to return the autosave if available
+            if (includeAutosave) {
+                const autosave = loadFromLocalStorage();
+                return autosave ? [autosave] : [];
+            }
+            
             return [];
         }
     }
@@ -149,6 +172,19 @@ const SessionManager = (function() {
         }
         
         try {
+            // Check if this is the autosave session
+            if (name === Config.AUTOSAVE.SESSION_NAME) {
+                const autosaveData = loadFromLocalStorage();
+                
+                if (!autosaveData) {
+                    throw new Error('Autosave data not found');
+                }
+                
+                _applySessionPanels(autosaveData);
+                return { status: 'success', message: 'Autosaved session loaded successfully' };
+            }
+            
+            // Regular server-side session
             const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(name)}`);
             
             if (!response.ok) {
@@ -156,8 +192,6 @@ const SessionManager = (function() {
             }
             
             const sessionData = await response.json();
-            //await _applySessionData(sessionData);
-            //_currentSession = sessionData;
             _applySessionPanels(sessionData);
             
             return { status: 'success', message: `Session ${name} loaded successfully` };
@@ -503,6 +537,147 @@ const SessionManager = (function() {
         return _currentSession !== null;
     }
     
+    /**
+     * Save current panel configuration to browser localStorage
+     * @returns {Promise<Object>} - Save result
+     */
+    async function saveToLocalStorage() {
+        try {
+            // Only autosave if we have panels to save
+            const allPanels = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
+            if (!allPanels || allPanels.length === 0) {
+                return { status: 'skipped', message: 'No panels to autosave' };
+            }
+            
+            // Create the autosave data structure
+            const autosaveData = {};
+            autosaveData.name = Config.AUTOSAVE.SESSION_NAME;
+            autosaveData.timestamp = new Date().toISOString();
+            autosaveData.isAutosave = true;
+            
+            // Save dataset information
+            autosaveData.dataset = DataManager.getCurrentDataset();
+            const datasetStructure = DataManager.getDatasetStructure();
+            autosaveData.datasetName = datasetStructure ? datasetStructure.name : '';
+            
+            // Save focus state
+            autosaveData.constants = {
+                focusedCell: DataManager.getFocusedCell(),
+                focusedGene: DataManager.getFocusedGene(),
+                taxonomyId: DataManager.getTaxonomyId()
+            };
+            
+            // Save panel configurations
+            const panelConfigs = {};
+            
+            allPanels.forEach(panel => {
+                const id = panel.getId();
+                if (!id) {
+                    console.warn('Panel missing ID, skipping in autosave');
+                    return;
+                }
+                
+                const type = panel.getType();
+                if (!type) {
+                    console.warn(`Panel ${id} missing type, skipping in autosave`);
+                    return;
+                }
+                
+                try {
+                    // Get panel configuration and associated data
+                    const config = panel.getConfig() || {};
+                    const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
+                    
+                    // For each panel, store only its configuration
+                    panelConfigs[id] = {
+                        id: id,
+                        type: type,
+                        title: title,
+                        config: config,
+                        isSelectionTile: false
+                    };
+                } catch (err) {
+                    console.error(`Error in autosave for panel ${id}:`, err);
+                }
+            });
+            
+            // Store only the panel configurations in the autosave data
+            autosaveData.panelConfigs = panelConfigs;
+            
+            // Save to localStorage
+            try {
+                localStorage.setItem(Config.AUTOSAVE.STORAGE_KEY, JSON.stringify(autosaveData));
+                console.log('Autosaved panel configuration to localStorage');
+                return { status: 'success', message: 'Autosaved to browser storage' };
+            } catch (e) {
+                // Handle localStorage errors (quota exceeded, etc.)
+                console.error('Error saving to localStorage:', e);
+                return { status: 'error', message: 'Browser storage error: ' + e.message };
+            }
+        } catch (error) {
+            console.error('Error in autosave:', error);
+            return { status: 'error', message: error.message };
+        }
+    }
+    
+    /**
+     * Load autosaved panel configuration from localStorage
+     * @returns {Object|null} - Loaded session data or null if not found
+     */
+    function loadFromLocalStorage() {
+        try {
+            const data = localStorage.getItem(Config.AUTOSAVE.STORAGE_KEY);
+            if (!data) return null;
+            
+            return JSON.parse(data);
+        } catch (error) {
+            console.error('Error loading from localStorage:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Start autosave timer
+     */
+    function startAutosave() {
+        // Clear any existing timer first
+        if (_autosaveTimer) {
+            clearInterval(_autosaveTimer);
+        }
+        
+        // Set up new timer
+        _autosaveTimer = setInterval(async () => {
+            await saveToLocalStorage();
+        }, Config.AUTOSAVE.INTERVAL);
+        
+        console.log('Autosave enabled, saving every', Config.AUTOSAVE.INTERVAL / 1000, 'seconds');
+    }
+    
+    /**
+     * Stop autosave timer
+     */
+    function stopAutosave() {
+        if (_autosaveTimer) {
+            clearInterval(_autosaveTimer);
+            _autosaveTimer = null;
+        }
+    }
+    
+    /**
+     * Get the autosaved session if it exists
+     * @returns {Promise<Object|null>} - Autosaved session or null
+     */
+    function getAutosaveSession() {
+        return loadFromLocalStorage();
+    }
+    
+    /**
+     * Clear autosaved session
+     */
+    function clearAutosave() {
+        localStorage.removeItem(Config.AUTOSAVE.STORAGE_KEY);
+    }
+    
     // Public API
     return {
         listSessions,
@@ -512,7 +687,13 @@ const SessionManager = (function() {
         exportSession,
         importSession,
         getCurrentSession,
-        hasSession
+        hasSession,
+        saveToLocalStorage,
+        loadFromLocalStorage,
+        startAutosave,
+        stopAutosave,
+        getAutosaveSession,
+        clearAutosave
     };
 })();
 

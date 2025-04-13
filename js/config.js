@@ -82,6 +82,14 @@ const Config = (function() {
         MAX_SIZE_BYTES: 1 * 1024 * 1024 * 1024 // ~1 GB
     };
     
+    // Autosave configuration
+    const AUTOSAVE = {
+        ENABLED: true, // Whether autosave is enabled by default
+        INTERVAL: 10000, // 10 seconds autosave interval (in milliseconds)
+        STORAGE_KEY: 'annzarro_autosave', // Local Storage key for autosaved session
+        SESSION_NAME: 'Autosave' // Default name for autosaved sessions
+    };
+    
     // For StringDB API
     const STRING_DB = {
         BASE_URL: 'https://string-db.org/api',
@@ -95,6 +103,7 @@ const Config = (function() {
         API,
         DEFAULTS,
         CACHE,
+        AUTOSAVE,
         STRING_DB,
         PANEL_TYPES
     };

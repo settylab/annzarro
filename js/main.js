@@ -42,13 +42,30 @@ const App = (function() {
             // Load available sessions
             await _loadSessions();
             
-            // Force show the welcome view - PanelManager will handle this with automatic welcome tile
+            // Check for autosave session before loading default dataset
+            const autosave = SessionManager.getAutosaveSession();
+            if (autosave) {
+                console.log('Found autosaved panel configuration');
+                // You can automatically load the autosave here if desired
+                // or just make it available in the sessions list
+            }
             
             // Set default dataset if available
             const datasets = await DataManager.loadDatasets();
             if (datasets && datasets.length > 0) {
                 await _loadDataset(datasets[0].path);
             }
+            
+            // Start autosave functionality if enabled in config
+            if (Config.AUTOSAVE.ENABLED) {
+                SessionManager.startAutosave();
+                console.log('Autosave functionality enabled');
+            }
+            
+            // Add event listener to save state before the page unloads
+            window.addEventListener('beforeunload', async () => {
+                await SessionManager.saveToLocalStorage();
+            });
             
             _isInitialized = true;
         } catch (error) {
@@ -1013,8 +1030,12 @@ const App = (function() {
                 
                 sessions.forEach(session => {
                     const card = document.createElement('div');
-                    card.className = 'session-card';
+                    const isAutosave = session.isAutosave === true;
+                    
+                    // Apply special class for autosave session
+                    card.className = isAutosave ? 'session-card autosave' : 'session-card';
                     card.dataset.sessionName = session.name;
+                    card.dataset.isAutosave = isAutosave;
                     
                     // Format date nicely
                     let dateObj = new Date(session.timestamp);
@@ -1025,9 +1046,32 @@ const App = (function() {
                     const datasetDisplay = session.datasetName || 
                                            (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset');
                     
+                    // Prepare title with autosave badge if needed
+                    const titleHTML = isAutosave ? 
+                        `${session.name} <span class="autosave-indicator"><i class="fas fa-sync-alt me-1"></i> Auto</span>` : 
+                        session.name;
+                    
+                    // Format last saved time for autosave
+                    const autosaveTimeInfo = isAutosave ?
+                        `<div class="autosave-time">Last saved: ${timeStr} on ${dateStr}</div>` : '';
+                    
+                    // Determine storage location for display
+                    const storageInfo = isAutosave ? 
+                        '<div class="browser-storage-indicator"><i class="fas fa-laptop"></i> Stored in browser</div>' : 
+                        '';
+                    
+                    // For autosave, show a restore button instead of export
+                    const footerButtons = isAutosave ? 
+                        `<button class="btn btn-sm btn-info session-restore" title="Restore this autosaved session">
+                            <i class="fas fa-history me-1"></i> Restore
+                        </button>` : 
+                        `<button class="btn btn-sm btn-outline-secondary session-export" title="Export">
+                            <i class="fas fa-download"></i> Export
+                        </button>`;
+                    
                     card.innerHTML = `
                         <div class="session-card-header">
-                            <h5 class="session-card-title">${session.name}</h5>
+                            <h5 class="session-card-title">${titleHTML}</h5>
                             <div class="session-card-subtitle">${datasetDisplay}</div>
                             <div class="session-card-actions">
                                 <button class="btn btn-sm btn-outline-danger session-delete session-action-button" title="Delete">
@@ -1035,13 +1079,15 @@ const App = (function() {
                                 </button>
                             </div>
                         </div>
+                        ${storageInfo}
+                        ${autosaveTimeInfo}
+                        ${!isAutosave ? `
                         <div class="session-card-date">
                             <i class="far fa-calendar-alt"></i> ${dateStr} ${timeStr}
                         </div>
+                        ` : ''}
                         <div class="session-card-footer">
-                            <button class="btn btn-sm btn-outline-secondary session-export" title="Export">
-                                <i class="fas fa-download"></i> Export
-                            </button>
+                            ${footerButtons}
                         </div>
                     `;
                     
@@ -1063,10 +1109,16 @@ const App = (function() {
                         e.stopPropagation();
                         const card = e.target.closest('.session-card');
                         const sessionName = card.dataset.sessionName;
+                        const isAutosave = card.dataset.isAutosave === 'true';
                         
-                        if (confirm(`Delete panel set "${sessionName}"?`)) {
-                            const result = await SessionManager.deleteSession(sessionName);
-                            if (result.status === 'success') {
+                        const confirmMsg = isAutosave ? 
+                            `Delete autosaved session? This will remove it from browser storage.` : 
+                            `Delete panel set "${sessionName}"?`;
+                        
+                        if (confirm(confirmMsg)) {
+                            if (isAutosave) {
+                                // Delete from localStorage
+                                SessionManager.clearAutosave();
                                 card.remove();
                                 if (sessionGrid.children.length === 0) {
                                     sessionGrid.innerHTML = `
@@ -1076,7 +1128,20 @@ const App = (function() {
                                     `;
                                 }
                             } else {
-                                _showError('Failed to delete panel set', result.message);
+                                // Delete from server
+                                const result = await SessionManager.deleteSession(sessionName);
+                                if (result.status === 'success') {
+                                    card.remove();
+                                    if (sessionGrid.children.length === 0) {
+                                        sessionGrid.innerHTML = `
+                                            <div class="no-sessions-message">
+                                                No saved panel sets found
+                                            </div>
+                                        `;
+                                    }
+                                } else {
+                                    _showError('Failed to delete panel set', result.message);
+                                }
                             }
                         }
                     });
@@ -1092,10 +1157,37 @@ const App = (function() {
                     });
                 });
                 
+                // Add restore button handlers for autosave sessions
+                document.querySelectorAll('.session-restore').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const card = e.target.closest('.session-card');
+                        const sessionName = card.dataset.sessionName;
+                        
+                        // Load the autosave session
+                        const result = await SessionManager.loadSession(sessionName);
+                        
+                        if (result.status === 'success') {
+                            _sessionModal.hide();
+                            _showSuccess('Autosave Restored', 'Your autosaved panel configuration has been restored');
+                        } else {
+                            _showError('Failed to restore autosave', result.message);
+                        }
+                    });
+                });
+                
                 // Apply search filter if there's an active search
                 if (searchTerm) {
                     // Let's simulate the search input event to apply filters
                     searchInput.dispatchEvent(new Event('input'));
+                }
+                
+                // We don't auto-select the autosave card anymore
+                // But we'll make sure it's visible
+                const autosaveCard = document.querySelector('.session-card.autosave');
+                if (autosaveCard) {
+                    // Just make sure it's in view without selecting
+                    autosaveCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
             } else {
                 sessionGrid.innerHTML = `
@@ -1125,7 +1217,7 @@ const App = (function() {
         // Replace spaces with underscores and remove special characters
         return name.trim()
             .replace(/\s+/g, '_')
-            .replace(/[^\w\-]/g, '');
+            .replace(/[^\w\\-]/g, '');
     }
     
     /**

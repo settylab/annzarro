@@ -364,9 +364,22 @@ export class SelectionTile {
     _createSessionItem(session) {
       const item = document.createElement('div');
       item.className = 'session-item';
+      
+      // Add special class for autosave session
+      if (session.isAutosave) {
+        item.classList.add('autosave');
+        item.style.borderColor = '#0dcaf0';
+        item.style.backgroundColor = '#f8f9fa';
+      }
+      
       item.innerHTML = `
         <div class="session-info">
-          <div class="session-name">${session.name}</div>
+          <div class="session-name">
+            ${session.name}
+            ${session.isAutosave ? 
+              `<span class="autosave-indicator" style="font-size: 0.7rem; padding: 2px 6px; background-color: #0dcaf0; color: white; border-radius: 10px; margin-left: 8px;">Auto</span>` 
+              : ''}
+          </div>
           <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
           <div class="session-dataset">${session.datasetName || session.dataset}</div>
         </div>

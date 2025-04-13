@@ -492,6 +492,59 @@ div.dtsb-group {
     box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
 }
 
+.session-card.autosave {
+    background-color: #f8f9fa;
+    border-width: 1px;
+    border-color: #0dcaf0;
+    border-left: 1px solid #0dcaf0;
+    position: relative;
+}
+
+.session-card.autosave:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #0dcaf0;
+}
+
+.session-card.autosave.selected {
+    border-color: #0dcaf0;
+    box-shadow: 0 0 0 2px rgba(13, 202, 240, 0.25);
+}
+
+.autosave-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    background-color: #0dcaf0;
+    color: white;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 8px;
+    box-shadow: 0 2px 4px rgba(13, 202, 240, 0.2);
+}
+
+.autosave-time {
+    color: #6c757d;
+    font-weight: normal;
+    font-size: 0.85rem;
+    margin-top: 5px;
+}
+
+/* Browser storage indicator */
+.browser-storage-indicator {
+    display: flex;
+    align-items: center;
+    color: #6c757d;
+    font-size: 0.85rem;
+    padding: 4px 0;
+}
+
+.browser-storage-indicator i {
+    margin-right: 6px;
+    font-size: 0.9rem;
+}
+
 .session-card-header {
     margin-bottom: 12px;
     position: relative;
@@ -544,6 +597,21 @@ div.dtsb-group {
     margin-top: 12px;
 }
 
+/* Subtle styling for autosave session cards */
+.session-card.autosave .session-card-footer {
+    margin-top: 12px;
+    justify-content: flex-end;
+}
+
+.session-card.autosave .session-restore {
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.session-card.autosave .session-restore:hover {
+    background-color: #0bafcf;
+}
+
 .session-action-button {
     font-size: 0.9rem;
     width: 32px;
@@ -572,6 +640,11 @@ div.dtsb-group {
     top: 0;
     z-index: 10;
     padding: 0 8px;
+}
+
+/* Style for the autosave card */
+.session-grid .session-card.autosave {
+    /* Regular grid placement - no special treatment */
 }
 
 .session-search-container .input-group {
@@ -1200,6 +1273,17 @@ div.dtsb-group {
 .session-item:hover {
     border-color: #007bff;
     box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.session-item.autosave {
+    background-color: #f8f9fa;
+    border-color: #0dcaf0;
+}
+
+.session-item.autosave:hover {
+    border-color: #0dcaf0;
+    box-shadow: 0 5px 15px rgba(13, 202, 240, 0.2);
     transform: translateY(-2px);
 }
 
