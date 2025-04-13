@@ -77,8 +77,10 @@ const SessionManager = (function() {
             
             // 1. Save dataset information
             sessionData.dataset = DataManager.getCurrentDataset();
-            const datasetStructure = DataManager.getDatasetStructure();
-            sessionData.datasetName = datasetStructure ? datasetStructure.name : '';
+            // Get dataset name from URL parameter if available
+            const urlParams = new URLSearchParams(window.location.search);
+            const datasetName = urlParams.get('dataset_name');
+            sessionData.datasetName = datasetName || '';
             
             // 2. Save focus state
             sessionData.constants = {
@@ -557,8 +559,10 @@ const SessionManager = (function() {
             
             // Save dataset information
             autosaveData.dataset = DataManager.getCurrentDataset();
-            const datasetStructure = DataManager.getDatasetStructure();
-            autosaveData.datasetName = datasetStructure ? datasetStructure.name : '';
+            // Get dataset name from URL parameter if available
+            const urlParams = new URLSearchParams(window.location.search);
+            const datasetName = urlParams.get('dataset_name');
+            autosaveData.datasetName = datasetName || '';
             
             // Save focus state
             autosaveData.constants = {
@@ -607,7 +611,6 @@ const SessionManager = (function() {
             // Save to localStorage
             try {
                 localStorage.setItem(Config.AUTOSAVE.STORAGE_KEY, JSON.stringify(autosaveData));
-                console.log('Autosaved panel configuration to localStorage');
                 return { status: 'success', message: 'Autosaved to browser storage' };
             } catch (e) {
                 // Handle localStorage errors (quota exceeded, etc.)

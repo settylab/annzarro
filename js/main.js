@@ -1255,7 +1255,7 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
-                _showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
+                //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
                 _showError('Failed to save panel set', result.message);
             }
