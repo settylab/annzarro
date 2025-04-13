@@ -396,9 +396,11 @@ export class SelectionTile {
         } else if (this.variant === "pane") {
           // For pane tiles, attach a click event to remove the tile and close the pane.
           closeBtn.addEventListener('click', () => {
-            this.remove();
             if (this.layoutManager && typeof this.layoutManager.closePanel === 'function') {
-              this.layoutManager.closePanel(this.container);
+                this.layoutManager.closePanel(this.tileSelector);
+                delete this.tileSelector._selectionTileInstance;
+            } else {
+                this.remove();
             }
           });
         }
