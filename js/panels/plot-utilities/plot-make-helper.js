@@ -12,6 +12,8 @@ import { generateDiscreteColors } from './colors.js';
  *       x: { type: string, key: string, column?: string },
  *       y: { type: string, key: string, column?: string },
  *       z: { type: string, key: string, column?: string }  // Optional; if present, generate a 3D layout.
+ *       viewport2D: { xrange: Array, yrange: Array },      // Optional; if present, restore 2D viewport
+ *       viewport3D: { eye: Object, up: Object, center: Object } // Optional; if present, restore 3D camera position
  *     }
  *
  * @returns {Object} layout - The Plotly layout configuration.
@@ -58,9 +60,27 @@ export function createLayout(settings) {
         title: `${settings.z.type}.${settings.z.key}` + (settings.z.column ? `.${settings.z.column}` : '')
       }
     };
+    
+    // Restore 3D camera position if available
+    if (settings.viewport3D) {
+      layout.scene.camera = {
+        eye: settings.viewport3D.eye,
+        up: settings.viewport3D.up,
+        center: settings.viewport3D.center
+      };
+    }
+    
     // Remove the 2D axis configuration for 3D plots.
     delete layout.xaxis;
     delete layout.yaxis;
+  } else if (settings.viewport2D) {
+    // Restore 2D axis ranges if available
+    if (settings.viewport2D.xrange) {
+      layout.xaxis.range = settings.viewport2D.xrange;
+    }
+    if (settings.viewport2D.yrange) {
+      layout.yaxis.range = settings.viewport2D.yrange;
+    }
   }
 
   return layout;
@@ -71,8 +91,9 @@ export function createLayout(settings) {
   * @param {HTMLElement} plotContainer - The container for the plot.
   * @param {Array<Object>} traces - The traces used in the plot.
   * @param {Object} data - The data object containing cell or gene names.
+  * @param {Object} settings - The settings object for the plot.
 */
-export function attachClickHandler(plotContainer, traces, data) {
+export function attachClickHandler(plotContainer, traces, data, settings) {
     plotContainer.on('plotly_click', (e) => {
       if (!e || !e.points || e.points.length === 0) return;
   
@@ -105,7 +126,71 @@ export function attachClickHandler(plotContainer, traces, data) {
         DataManager.setFocusedCell(entityName, false);
       }
     });
+    
+    // Set up viewport state tracking
+    attachViewportTracking(plotContainer, settings);
+}
+
+/**
+ * Attaches event listeners to track the current viewport state on user interaction
+ * and save it to the plot settings.
+ * 
+ * @param {HTMLElement} plotContainer - The container for the plot.
+ * @param {Object} settings - The settings object for the plot.
+ */
+export function attachViewportTracking(plotContainer, settings) {
+  // For 3D plots, track camera position
+  if (settings.z) {
+    plotContainer.on('plotly_relayout', function(eventData) {
+      // Check if the event data includes 3D camera information
+      if (eventData['scene.camera']) {
+        // Initialize viewport3D if it doesn't exist
+        if (!settings.viewport3D) {
+          settings.viewport3D = {};
+        }
+        
+        const camera = eventData['scene.camera'];
+        settings.viewport3D = {
+          eye: camera.eye,
+          up: camera.up,
+          center: camera.center
+        };
+        
+        console.log('3D viewport updated:', settings.viewport3D);
+      }
+    });
+  } 
+  // For 2D plots, track axis ranges
+  else {
+    plotContainer.on('plotly_relayout', function(eventData) {
+      // Check if the event includes axis range information
+      const hasXRange = eventData['xaxis.range'] || eventData['xaxis.range[0]'];
+      const hasYRange = eventData['yaxis.range'] || eventData['yaxis.range[0]'];
+      
+      if (hasXRange || hasYRange) {
+        // Initialize viewport2D if it doesn't exist
+        if (!settings.viewport2D) {
+          settings.viewport2D = {};
+        }
+        
+        // Handle range as array or as separate values
+        if (eventData['xaxis.range']) {
+          settings.viewport2D.xrange = eventData['xaxis.range'];
+        } else if (eventData['xaxis.range[0]'] !== undefined && eventData['xaxis.range[1]'] !== undefined) {
+          settings.viewport2D.xrange = [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']];
+        }
+        
+        if (eventData['yaxis.range']) {
+          settings.viewport2D.yrange = eventData['yaxis.range'];
+        } else if (eventData['yaxis.range[0]'] !== undefined && eventData['yaxis.range[1]'] !== undefined) {
+          settings.viewport2D.yrange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
+        }
+        
+        console.log('2D viewport updated:', settings.viewport2D);
+      }
+    });
   }
+}
   
 
   /**

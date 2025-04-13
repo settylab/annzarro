@@ -509,7 +509,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
-      attachClickHandler(plotContainer, categoricalTraces, data);
+      attachClickHandler(plotContainer, categoricalTraces, data, settings);
       if (settings[highlightKey]) {
         highlightFocusedEntity(plotContainer, data, settings);
       }
@@ -530,7 +530,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
-      attachClickHandler(plotContainer, categoricalTraces, data);
+      attachClickHandler(plotContainer, categoricalTraces, data, settings);
       if (settings[highlightKey]) {
         highlightFocusedEntity(plotContainer, data, settings);
       }
@@ -570,7 +570,7 @@ export async function createPlot(container, plotContainer, settings, data, id) {
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
       }
     );
-    attachClickHandler(plotContainer, [baseTrace], data);
+    attachClickHandler(plotContainer, [baseTrace], data, settings);
     updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
@@ -589,6 +589,6 @@ export async function createPlot(container, plotContainer, settings, data, id) {
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
       }
     );
-    attachClickHandler(plotContainer, [baseTrace], data);
+    attachClickHandler(plotContainer, [baseTrace], data, settings);
   }
 }
