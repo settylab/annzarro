@@ -462,51 +462,51 @@ const SessionManager = (function() {
             
             
             // Get panel configurations and register them as closed panels
-            const panelConfigs = sessionData.panelConfigs || {};
+            const panelConfigs = JSON.parse(JSON.stringify(sessionData.panelConfigs || {}));
 
             // Get all existing panels to compare for uniqueness. 
             // Note: if panels have getID/getTitle, use these methods; otherwise, use direct id/title properties.
             const existingPanels = PanelManager.getAllPanels();
             const existingTitles = new Set(existingPanels.map(panel => panel.getTitle()));
-            const existingIds = new Set(existingPanels.map(panel => panel.getID ? panel.getID() : panel.id));
+            const existingIds = new Set(existingPanels.map(panel => panel.getId ? panel.getId() : panel.id));
 
             // Process each closed panel configuration
             Object.values(panelConfigs)
             .filter(panel => !panel.isSelectionTile)
             .forEach(panel => {
                 if (PanelManager.registerClosedPanel) {
-                // Ensure the title is unique
-                if (panel.title && existingTitles.has(panel.title)) {
-                    let counter = 1;
-                    let newTitle;
-                    do {
-                    newTitle = `${panel.title} (${counter})`;
-                    counter++;
-                    } while (existingTitles.has(newTitle));
-                    panel.title = newTitle;
-                    if (panel.config) {
-                    panel.config.title = newTitle;
+                    // Ensure the title is unique
+                    if (panel.title && existingTitles.has(panel.title)) {
+                        let counter = 1;
+                        let newTitle;
+                        do {
+                            newTitle = `${panel.title} (${counter})`;
+                            counter++;
+                        } while (existingTitles.has(newTitle));
+                        panel.title = newTitle;
+                        if (panel.config) {
+                            panel.config.title = newTitle;
+                        }
                     }
-                }
-                existingTitles.add(panel.title);
+                    existingTitles.add(panel.title);
 
-                // Ensure the id is unique
-                if (panel.id && existingIds.has(panel.id)) {
-                    let counter = 1;
-                    let newId;
-                    do {
-                    newId = `${panel.id}-${counter}`;
-                    counter++;
-                    } while (existingIds.has(newId));
-                    panel.id = newId;
-                    if (panel.config) {
-                    panel.config.id = newId;
+                    // Ensure the id is unique
+                    if (panel.id && existingIds.has(panel.id)) {
+                        let counter = 1;
+                        let newId;
+                        do {
+                            newId = `${panel.id}-${counter}`;
+                            counter++;
+                        } while (existingIds.has(newId));
+                        panel.id = newId;
+                        if (panel.config) {
+                            panel.config.id = newId;
+                        }
                     }
-                }
-                existingIds.add(panel.id);
+                    existingIds.add(panel.id);
 
-                // Register the panel as closed with the unique id
-                PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
+                    // Register the panel as closed with the unique id
+                    PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
                 }
             });
             
