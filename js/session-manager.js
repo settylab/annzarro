@@ -306,7 +306,7 @@ const SessionManager = (function() {
             // Sanitize the base name
             baseName = baseName.trim()
                 .replace(/\s+/g, '_')
-                .replace(/[^\w\-]/g, '');
+                .replace(/[^\w\\-]/g, '');
             
             // Check for name collisions and append counter if needed
             let finalName = baseName;

@@ -772,9 +772,7 @@ const PanelManager = (function() {
         
         // Store reference but don't add to active panels
         _panels.set(panelId, panel);
-        _panelsByType.get(type).add(panel);
-        
-        console.log(`Registered closed panel: ${panelId}`);
+        _panelsByType.get(type).add(panel)
     }
     
     /**
