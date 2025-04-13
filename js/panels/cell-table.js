@@ -4,6 +4,10 @@
  */
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
+import { DataManager } from '../data-manager.js';
+import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
+import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { setupDatasetWatcher } from './table-utilities/dataset-watcher.js';
 
 const CellTablePanel = (function() {
     /**
@@ -16,31 +20,234 @@ const CellTablePanel = (function() {
         const _id = options.id || `cell-table-${Date.now()}`;
         let _title = options.title || 'Cell Table';
         const _container = container;
+        const _plotType = 'cells';
         let _tableContainer = null;
+        let _controlsContainer = null;
+        let _dataTable = null;
+        let _datasetWatcherCleanup = null;
+        let _isFirstLoad = true;
+        
+        // Initialize settings with default options
+        const _settings = {
+            columns: [],
+            searchBuilderEnabled: true,
+            responsive: true,
+            fixedHeader: false,
+            searchBuilderConfig: { criteria: [] },
+            filteredCells: null
+        };
+        
+        // Override with provided options
+        Object.assign(_settings, options);
         
         /**
          * Initialize the panel
          */
-        function init() {
-            _container.innerHTML = `
-                <div class="table-panel">
-                    <div class="table-controls">
-                        <div class="alert alert-info">Cell table configuration options will appear here</div>
-                    </div>
-                    <div class="table-container" id="table-container-${_id}">
-                        <div class="alert alert-secondary">Cell table will appear here</div>
-                    </div>
-                </div>
-            `;
+        async function init() {
+            try {
+                // Create panel structure
+                const { tableContainer, controlsContainer, loadingScreen } = createTablePanelStructure(_container, _id, _settings);
+                
+                // Store references for later use
+                _tableContainer = tableContainer;
+                _controlsContainer = controlsContainer;
+                
+                // Manually update the UI based on dataset loading status
+                const isDatasetLoaded = DataManager.isDatasetLoaded();
+                if (loadingScreen) {
+                    loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
+                }
+                if (controlsContainer) {
+                    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
+                }
+                
+                // Set up dataset watching
+                _datasetWatcherCleanup = setupDatasetWatcher(_id, {
+                    onDatasetLoaded: onDatasetLoaded
+                });
+                
+                // If a dataset is already loaded, initialize the panel
+                if (isDatasetLoaded) {
+                    await onDatasetLoaded(DataManager.getCurrentDataset());
+                }
+                
+                // Set up event listeners
+                _setupEventListeners();
+                
+            } catch (error) {
+                console.error('Error initializing cell table panel:', error);
+                if (_tableContainer) {
+                    _tableContainer.innerHTML = `<div class="alert alert-danger">Error initializing table: ${error.message}</div>`;
+                }
+            }
+        }
+        
+        /**
+         * Handle dataset loaded event
+         * @param {string} datasetPath - The path to the loaded dataset
+         */
+        async function onDatasetLoaded(datasetPath) {
+            try {
+                console.log(`Loading dataset for cell table panel ${_id}: ${datasetPath}`);
+                
+                // Get the dataset structure
+                const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
+                if (!datasetStructure) {
+                    throw new Error('Failed to load dataset structure');
+                }
+                
+                // Initialize UI state with the dataset
+                await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                
+                // If columns are defined, initialize table
+                if (_settings.columns && _settings.columns.length > 0) {
+                    await refreshTable();
+                }
+                
+                _isFirstLoad = false;
+                console.log(`Dataset ${datasetPath} loaded successfully for cell table panel ${_id}`);
+            } catch (error) {
+                console.error(`Error loading dataset for cell table panel ${_id}:`, error);
+                if (_tableContainer) {
+                    _tableContainer.innerHTML = `<div class="alert alert-danger">Error loading dataset: ${error.message}</div>`;
+                }
+                _isFirstLoad = false;
+            }
+        }
+        
+        /**
+         * Set up event listeners
+         */
+        function _setupEventListeners() {
+            // Listen for column updates
+            document.addEventListener('columnsUpdated', async (e) => {
+                if (e.detail.id === _id) {
+                    await refreshTable();
+                }
+            });
             
-            _tableContainer = document.getElementById(`table-container-${_id}`);
+            // Listen for table option changes
+            document.addEventListener('tableOptionChanged', (e) => {
+                if (e.detail.id === _id) {
+                    // Update settings
+                    _settings[e.detail.option] = e.detail.value;
+                    
+                    // Refresh table if already initialized
+                    if (_dataTable) {
+                        refreshTable();
+                    }
+                }
+            });
+            
+            // Listen for search builder toggle
+            document.addEventListener('searchBuilderToggled', (e) => {
+                if (e.detail.id === _id) {
+                    _settings.searchBuilderEnabled = e.detail.enabled;
+                    
+                    // Toggle search builder visibility
+                    if (_dataTable) {
+                        $('.dtsp-searchBuilder').toggle(e.detail.enabled);
+                    }
+                }
+            });
+            
+            // Listen for export CSV request
+            document.addEventListener('exportTableToCsv', (e) => {
+                if (e.detail.id === _id && _dataTable) {
+                    exportTableToCsv(_dataTable, _title);
+                }
+            });
+            
+            // Listen for refresh table request
+            document.addEventListener('refreshTable', (e) => {
+                if (e.detail.id === _id) {
+                    refreshTable();
+                }
+            });
+            
+            // Listen for focused gene changes
+            document.addEventListener('focusedGeneChanged', async (e) => {
+                // Handle both immediate updates and deferred updates
+                setTimeout(() => {
+                    if (_dataTable) {
+                        console.log(`Cell table ${_id} handling focused gene change: ${e.detail.gene}`);
+                        updateTableOnFocusChange(_dataTable, e.detail.gene, 'genes');
+                    }
+                }, 0);
+            });
+        }
+        
+        /**
+         * Refresh the table with current settings
+         */
+        async function refreshTable() {
+            try {
+                // Show loading indicator
+                _tableContainer.innerHTML = `
+                    <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                `;
+                
+                // Load table data
+                const tableData = await loadTableData(_settings, _plotType);
+                
+                // Destroy existing DataTable if it exists
+                if (_dataTable) {
+                    _dataTable.destroy();
+                    _dataTable = null;
+                }
+                
+                // Initialize DataTable
+                if (tableData.data.length > 0) {
+                    _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    
+                    // Store panel settings in DataTables settings
+                    _dataTable.settings()[0]._panelSettings = _settings;
+                } else {
+                    _tableContainer.innerHTML = `
+                        <div class="alert alert-info">
+                            No data available. Please select columns from the control panel.
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('Error refreshing cell table:', error);
+                _tableContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Error loading table data: ${error.message}
+                    </div>
+                `;
+            }
         }
         
         /**
          * Clean up resources
          */
         function cleanup() {
+            if (_dataTable) {
+                _dataTable.destroy();
+                _dataTable = null;
+            }
+            
             _container.innerHTML = '';
+        }
+        
+        /**
+         * Destroy the panel and clean up resources
+         */
+        function destroy() {
+            // Clean up dataset watcher
+            if (_datasetWatcherCleanup) {
+                _datasetWatcherCleanup();
+                _datasetWatcherCleanup = null;
+            }
+            
+            // Call the standard cleanup
+            cleanup();
         }
         
         /**
@@ -49,7 +256,14 @@ const CellTablePanel = (function() {
          * @param {Object} data - Update data
          */
         function onDataUpdate(updateType, data) {
-            // Handle data updates
+            if (updateType === 'datasetChanged') {
+                console.log(`CellTable ${_id}: Dataset changed, reinitializing table`);
+                
+                // For dataset changes, reinitialize the table
+                if (_settings.columns && _settings.columns.length > 0) {
+                    refreshTable();
+                }
+            }
         }
         
         /**
@@ -74,7 +288,8 @@ const CellTablePanel = (function() {
          */
         function setTitle(title) {
             _title = title;
-            // No _settings object in this panel type, but we ensure title is updated in getConfig
+            // Update title in settings to ensure it's included in getConfig()
+            _settings.title = title;
         }
         
         /**
@@ -91,20 +306,44 @@ const CellTablePanel = (function() {
          */
         function getConfig() {
             return {
-                title: _title
+                title: _title,
+                ..._settings
             };
+        }
+        
+        /**
+         * Update panel configuration
+         * @param {Object} config - New configuration
+         */
+        function updateConfig(config) {
+            if (!config) return;
+            
+            // Update title if provided
+            if (config.title) {
+                _title = config.title;
+            }
+            
+            // Update other settings if needed
+            Object.keys(config).forEach(key => {
+                if (key !== 'title' && _settings[key] !== undefined) {
+                    _settings[key] = config[key];
+                }
+            });
         }
         
         // Public API
         return {
             init,
+            refreshTable,
             cleanup,
+            destroy,
             onDataUpdate,
             getId,
             getTitle,
             setTitle,
             getType,
-            getConfig
+            getConfig,
+            updateConfig
         };
     }
     

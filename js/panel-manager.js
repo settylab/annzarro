@@ -777,6 +777,15 @@ const PanelManager = (function() {
         return Array.from(_panels.values());
     }
     
+    /**
+     * Get all active panels
+     * @returns {Array} - Array of active panel instances
+     */
+    function getAllActivePanels() {
+        // Return active panels or all panels if no active panels set exists
+        return getActivePanels ? getActivePanels() : Array.from(_panels.values());
+    }
+    
     // Public API
     return {
         init,
@@ -787,6 +796,7 @@ const PanelManager = (function() {
         getPanelsByType,
         getActivePanels,
         getAllPanels,
+        getAllActivePanels,
         notifyPanels,
         resetPanels,
         saveLayout,
