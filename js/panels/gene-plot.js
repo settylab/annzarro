@@ -5,6 +5,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
+import { setupDatasetWatcher } from './plot-utilities/dataset-watcher.js';
 
 /**
  * Gene Plot Panel
@@ -25,6 +26,7 @@ const GenePlotPanel = (function() {
         let _plotContainer = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
+        let _datasetWatcherCleanup = null;
         
         // Initialize minimal settings, letting the initialization process set data-dependent values
         const _settings = {
@@ -66,7 +68,7 @@ const GenePlotPanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { plotContainer, controlsContainer } = createPanelStructure(_container, _id, _settings);
+                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings);
     
                 // Store references for later use
                 _plotContainer = plotContainer;
@@ -74,25 +76,20 @@ const GenePlotPanel = (function() {
                 
                 console.log('Panel structure created: ', 
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
-                    'controlsContainer=', _controlsContainer ? 'defined' : 'undefined');
+                    'controlsContainer=', _controlsContainer ? 'defined' : 'undefined',
+                    'loadingScreen=', loadingScreen ? 'defined' : 'undefined');
                 
-                // Initialize UI state and then load data
-                console.log('Initializing UI state...');
+                // Set up dataset watching
+                _datasetWatcherCleanup = setupDatasetWatcher(_id, {
+                    onDatasetLoaded: onDatasetLoaded
+                });
                 
-                // Get the dataset structure directly from our internal function
-                const datasetStructure = await DataManager.getDatasetStructure();
-                if (!datasetStructure) {
-                    throw new Error('Failed to load dataset structure');
+                // If a dataset is already loaded, initialize the panel
+                if (DataManager.isDatasetLoaded()) {
+                    await onDatasetLoaded(DataManager.getCurrentDataset());
                 }
                 
-                // Now we have the dataset structure, we can initialize the UI
-                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
-                
-                // Load data and create plot first
-                await refreshPlot();
-                
-                // Only set up event listeners after the plot is created
-                console.log('Plot created, setting up event listeners');
+                // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
             } catch (error) {
                 console.error('Error initializing panel:', error);
@@ -101,6 +98,35 @@ const GenePlotPanel = (function() {
                     _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
                 } else {
                     console.error('Cannot show error - plotContainer is undefined');
+                }
+            }
+        }
+        
+        /**
+         * Handle dataset loaded event
+         * @param {string} datasetPath - The path to the loaded dataset
+         */
+        async function onDatasetLoaded(datasetPath) {
+            try {
+                console.log(`Loading dataset for panel ${_id}: ${datasetPath}`);
+                
+                // Get the dataset structure
+                const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
+                if (!datasetStructure) {
+                    throw new Error('Failed to load dataset structure');
+                }
+                
+                // Initialize UI state with the dataset
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                
+                // Load data and create plot
+                await refreshPlot();
+                
+                console.log(`Dataset ${datasetPath} loaded successfully for panel ${_id}`);
+            } catch (error) {
+                console.error(`Error loading dataset for panel ${_id}:`, error);
+                if (_plotContainer) {
+                    _plotContainer.innerHTML = `<div class="alert alert-danger">Error loading dataset: ${error.message}</div>`;
                 }
             }
         }
@@ -412,6 +438,12 @@ const GenePlotPanel = (function() {
                 console.log(`Disconnecting ResizeObserver for ${_id}`);
                 _resizeObserver.disconnect();
                 _resizeObserver = null;
+            }
+            
+            // Clean up dataset watcher
+            if (_datasetWatcherCleanup) {
+                _datasetWatcherCleanup();
+                _datasetWatcherCleanup = null;
             }
             
             // Call the standard cleanup

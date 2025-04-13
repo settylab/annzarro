@@ -1,6 +1,7 @@
 import { listAvailableColormaps } from './colors.js';
 import { setupAxisSelector } from './panel-ui-update.js';
 import { Config } from '../../config.js';
+import { DataManager } from '../../data-manager.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -47,11 +48,20 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
  * @param {string} settings.categoryPalette - Default discrete palette name.
  * @param {number} [settings.colorMin=0] - Minimum value for color range.
  * @param {number} [settings.colorMax=100] - Maximum value for color range.
- * @returns {{ plotContainer: HTMLElement, controlsContainer: HTMLElement }}
+ * @returns {{ plotContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
 export function createPanelStructure(container, id, settings) {
   container.innerHTML = `
     <div class="plot-panel">
+      <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
+        <div class="loading-content">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <h4 class="mt-3">No dataset loaded</h4>
+          <p>Please select a dataset to begin visualization</p>
+        </div>
+      </div>
       <div class="plot-controls">
         <!-- X and Y Axis Selectors -->
         ${['x', 'y'].map(axis => `
@@ -161,10 +171,35 @@ export function createPanelStructure(container, id, settings) {
   const groupedColormaps = listAvailableColormaps();  // returns { groupLabel: [names] }
   populateColormapSelectorGrouped(categoryPaletteSelector, groupedColormaps, settings.categoryPalette);
 
+  // Check dataset loading status and show/hide UI elements accordingly
+  checkDatasetLoadingStatus(id);
+
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),
-    controlsContainer: container.querySelector('.plot-controls')
+    controlsContainer: container.querySelector('.plot-controls'),
+    loadingScreen: document.getElementById(`loading-screen-${id}`)
   };
+}
+
+/**
+ * Checks if a dataset is loaded and updates UI accordingly
+ * @param {string} id - The panel ID
+ * @returns {boolean} - Whether a dataset is loaded
+ */
+export function checkDatasetLoadingStatus(id) {
+  const isDatasetLoaded = DataManager.isDatasetLoaded();
+  const loadingScreen = document.getElementById(`loading-screen-${id}`);
+  const controlsContainer = document.querySelector(`#plot-container-${id}`).closest('.plot-panel').querySelector('.plot-controls');
+  
+  if (loadingScreen) {
+    loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
+  }
+  
+  if (controlsContainer) {
+    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
+  }
+  
+  return isDatasetLoaded;
 }
 
 /**

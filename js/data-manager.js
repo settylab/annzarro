@@ -13,6 +13,7 @@ const DataManager = (function() {
     let _focusedCell = null;
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
+    let _datasetLoaded = false; // Track if a dataset has been loaded
     
     // Selection history tracking
     let _cellHistory = []; // Array of previously selected cells
@@ -124,6 +125,14 @@ const DataManager = (function() {
                 }
             } else {
                 _focusedGene = null;
+            }
+            
+            // Dispatch a datasetChanged event for components to react to dataset loading
+            if (!silent) {
+                const datasetEvent = new CustomEvent('datasetChanged', {
+                    detail: { dataset: _currentDataset }
+                });
+                document.dispatchEvent(datasetEvent);
             }
             
             return _datasetStructure;
@@ -1027,6 +1036,14 @@ const DataManager = (function() {
         return _genes ? _genes.indexOf(geneName) : -1;
     }
     
+    /**
+     * Check if a dataset is currently loaded
+     * @returns {boolean} - True if a dataset is loaded, false otherwise
+     */
+    function isDatasetLoaded() {
+        return _currentDataset !== null;
+    }
+
     // Public API
     return {
         loadDatasets,
@@ -1058,6 +1075,7 @@ const DataManager = (function() {
         getTaxonomySpecies,
         getCellIndex,
         getGeneIndex,
+        isDatasetLoaded,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,
