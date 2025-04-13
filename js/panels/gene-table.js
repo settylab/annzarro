@@ -8,6 +8,7 @@ import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
 import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
 import { setupDatasetWatcher } from './table-utilities/dataset-watcher.js';
+import { setupTableEventListeners } from './table-utilities/listeners.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -119,61 +120,14 @@ const GeneTablePanel = (function() {
          * Set up event listeners
          */
         function _setupEventListeners() {
-            // Listen for column updates
-            document.addEventListener('columnsUpdated', async (e) => {
-                if (e.detail.id === _id) {
-                    await refreshTable();
-                }
-            });
-            
-            // Listen for table option changes
-            document.addEventListener('tableOptionChanged', (e) => {
-                if (e.detail.id === _id) {
-                    // Update settings
-                    _settings[e.detail.option] = e.detail.value;
-                    
-                    // Refresh table if already initialized
-                    if (_dataTable) {
-                        refreshTable();
-                    }
-                }
-            });
-            
-            // Listen for search builder toggle
-            document.addEventListener('searchBuilderToggled', (e) => {
-                if (e.detail.id === _id) {
-                    _settings.searchBuilderEnabled = e.detail.enabled;
-                    
-                    // Toggle search builder visibility
-                    if (_dataTable) {
-                        $('.dtsp-searchBuilder').toggle(e.detail.enabled);
-                    }
-                }
-            });
-            
-            // Listen for export CSV request
-            document.addEventListener('exportTableToCsv', (e) => {
-                if (e.detail.id === _id && _dataTable) {
-                    exportTableToCsv(_dataTable, _title);
-                }
-            });
-            
-            // Listen for refresh table request
-            document.addEventListener('refreshTable', (e) => {
-                if (e.detail.id === _id) {
-                    refreshTable();
-                }
-            });
-            
-            // Listen for focused cell changes
-            document.addEventListener('focusedCellChanged', async (e) => {
-                // Handle both immediate updates and deferred updates
-                setTimeout(() => {
-                    if (_dataTable) {
-                        console.log(`Gene table ${_id} handling focused cell change: ${e.detail.cell}`);
-                        updateTableOnFocusChange(_dataTable, e.detail.cell, 'cells');
-                    }
-                }, 0);
+            setupTableEventListeners({
+                id: _id,
+                settings: _settings,
+                tableContainer: _tableContainer,
+                dataTable: _dataTable,
+                entityType: 'genes',
+                title: _title,
+                refreshTable: refreshTable
             });
         }
         
