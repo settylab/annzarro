@@ -29,6 +29,15 @@ const Config = (function() {
         SESSIONS_IMPORT: `${API_BASE}/sessions/import`
     };
     
+    // Panel types definition
+    const PANEL_TYPES = [
+        { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
+        { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
+        { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
+        { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
+        { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
+    ];
+    
     // Configure Plotly.js defaults if available
     if (typeof Plotly !== 'undefined') {
         // Apply the willReadFrequently attribute to canvas elements
@@ -86,7 +95,8 @@ const Config = (function() {
         API,
         DEFAULTS,
         CACHE,
-        STRING_DB
+        STRING_DB,
+        PANEL_TYPES
     };
 })();
 

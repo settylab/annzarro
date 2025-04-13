@@ -1,3 +1,5 @@
+import { Config } from './config.js';
+
 export class SelectionTile {
     /**
      * Create a new SelectionTile.
@@ -12,7 +14,6 @@ export class SelectionTile {
      * @param {Function} options.createPanel - Function to create a panel.
      * @param {Map} options.panelsByType - Map grouping panels by type.
      * @param {object} options.counters - Object holding counters for panel types.
-     * @param {Function} options.getPanelTypeIcon - Function returning a panel type icon.
      * @param {Function} options.generateUniqueName - Function to generate a unique panel title.
      * @param {object} options.sessionManager - Object with listSessions and loadSession methods.
      */
@@ -27,7 +28,6 @@ export class SelectionTile {
         createPanel: null,
         panelsByType: new Map(),
         counters: {},
-        getPanelTypeIcon: null,
         generateUniqueName: null,
         sessionManager: null,
       }, options);
@@ -114,13 +114,8 @@ export class SelectionTile {
   
     // --- Panel Types Section ---
     get panelTypes() {
-      return [
-        { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
-        { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-        { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
-        { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
-        { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
-      ];
+      // Use the centralized panel type definitions
+      return Config.PANEL_TYPES;
     }
   
     _initPanelTypeGrid() {
@@ -152,9 +147,16 @@ export class SelectionTile {
   
     /**
      * Helper to format a panel type into a human-friendly title.
-     * Adjust as needed.
+     * Uses the label from centralized panel type definitions
      */
     _formatPanelType(panelType) {
+      // Use the label from centralized panel type definitions
+      const panelTypeObj = Config.PANEL_TYPES.find(pt => pt.type === panelType);
+      if (panelTypeObj && panelTypeObj.label) {
+        return panelTypeObj.label;
+      }
+      
+      // Fallback to original formatting
       return panelType.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
     }
   
@@ -219,7 +221,12 @@ export class SelectionTile {
       if (!this.activePanels.has(panel)) {
         option.classList.add('closed-panel');
       }
-      const typeIcon = this.getPanelTypeIcon(panel.getType());
+      
+      // Get the icon from centralized panel definitions
+      const panelType = panel.getType();
+      const panelConfig = Config.PANEL_TYPES.find(pt => pt.type === panelType);
+      const typeIcon = panelConfig ? panelConfig.icon : 'fas fa-cube';
+      
       option.innerHTML = `
         <div class="tile-type-icon">
           <i class="${typeIcon} fa-3x"></i>

@@ -10,6 +10,7 @@
  */
 import { LayoutManager } from './layout-manager.js';
 import { SelectionTile } from './selection-tile.js';
+import { Config } from './config.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -19,13 +20,7 @@ const PanelManager = (function() {
     const _panelTypes = new Map(); // Panel types (constructors)
     
     // Panel counters for generating unique IDs
-    const _counters = {
-        'cell-plot': 0,
-        'gene-plot': 0,
-        'cell-table': 0,
-        'gene-table': 0,
-        'gene-set': 0
-    };
+    const _counters = {};
     
     // References to DOM elements
     let _container = null;
@@ -43,6 +38,11 @@ const PanelManager = (function() {
             return;
         }
         
+        // Initialize counters from Config.PANEL_TYPES
+        Config.PANEL_TYPES.forEach(panelType => {
+            _counters[panelType.type] = 0;
+        });
+        
         // Initialize the LayoutManager with a callback to create selection tiles
         LayoutManager.init((parentElement) => {
             new SelectionTile({
@@ -54,7 +54,6 @@ const PanelManager = (function() {
                 createPanel: createPanel,
                 panelsByType: _panelsByType,
                 counters: _counters,
-                getPanelTypeIcon: _getPanelTypeIcon,
                 generateUniqueName: _generateUniqueName
             });
         });
@@ -66,13 +65,13 @@ const PanelManager = (function() {
                 _updateSourcePanelSelection = new SelectionTile({
                     container: _container,
                     variant: "welcome",
+                    showSessions: true,
                     panels: _panels,
                     activePanels: _activePanels,
                     layoutManager: LayoutManager,
                     createPanel: createPanel,
                     panelsByType: _panelsByType,
                     counters: _counters,
-                    getPanelTypeIcon: _getPanelTypeIcon,
                     generateUniqueName: _generateUniqueName,
                     sessionManager: window.sessionManager
                 });
@@ -99,23 +98,6 @@ const PanelManager = (function() {
         console.log(`Registered panel type: ${type}`);
     }
     
-    /**
-     * Get icon class for panel type
-     * @param {string} type - Panel type
-     * @returns {string} - Font Awesome icon class
-     * @private
-     */
-    function _getPanelTypeIcon(type) {
-        const icons = {
-            'cell-plot': 'fas fa-microscope',
-            'gene-plot': 'fas fa-dna',
-            'cell-table': 'fas fa-solid fa-list-ul', // fa-table
-            'gene-table': 'fas fa-th-list',
-            'gene-set': 'fas fa-project-diagram'
-        };
-        
-        return icons[type] || 'fas fa-cube';
-    }
     
     
     /**
@@ -289,6 +271,13 @@ const PanelManager = (function() {
      * @private
      */
     function _formatPanelType(type) {
+        // Use the label from centralized panel type definitions
+        const panelType = Config.PANEL_TYPES.find(pt => pt.type === type);
+        if (panelType && panelType.label) {
+            return panelType.label;
+        }
+        
+        // Fallback to original formatting
         return type.split('-').map(word => 
             word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' ');
