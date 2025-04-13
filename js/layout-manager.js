@@ -388,6 +388,8 @@ const LayoutManager = (function() {
         
         const handle = document.createElement('div');
         handle.className = `split-handle ${direction === 'vertical' ? 'horizontal' : 'vertical'}`;
+        // Explicitly mark this as a split handle, not a panel height handle
+        handle.dataset.isSplitHandle = 'true';
         
         const secondPane = document.createElement('div');
         secondPane.className = 'split-pane';
@@ -414,16 +416,18 @@ const LayoutManager = (function() {
         // Set up the resize handle
         setupResizableHandle(handle, firstPane, secondPane, direction);
         
-        // If splitting a panel inside a wrapper, set data attributes to track the relationship
+        // If splitting a panel inside a wrapper, mark the split container as part of the wrapper
         if (isInsidePanelWrapper) {
             // Find the wrapper
             const panelWrapper = container.classList.contains('panel-wrapper') ? 
                                 container : container.closest('.panel-wrapper');
             
             if (panelWrapper && panelWrapper.dataset.panelWrapper === 'true') {
-                // Mark this split container as belonging to a panel wrapper
-                splitContainer.dataset.inPanelWrapper = 'true';
-                splitContainer.dataset.wrapperParentId = panelWrapper.dataset.wrapperId;
+                // Just track the relationship to know which wrapper this split belongs to
+                const wrapperId = panelWrapper.dataset.wrapperId;
+                splitContainer.dataset.parentWrapperId = wrapperId;
+                
+                console.log(`Split created in wrapper with ID: ${wrapperId}`);
             }
         }
         
@@ -519,51 +523,109 @@ const LayoutManager = (function() {
             return;
         }
         
-        // Find if this tile is inside a panel wrapper
+        // Find the panel wrapper that directly contains this tile
         const panelWrapper = tileElement.closest('.panel-wrapper');
         
-        // Find the parent pane of this tile
+        // Check if this panel has a parent wrapper reference (for panels created in splits)
+        const parentWrapperId = tileElement.dataset.parentWrapperId;
+        
+        // Find the parent pane of this tile (if it's in a split)
         const parentPane = tileElement.closest('.split-pane');
         
-        // Check if panel is in a wrapper 
-        if (panelWrapper && panelWrapper.dataset.panelWrapper === 'true') {
-            const panelId = tileElement.dataset.tileId;
-            const wrapperId = panelWrapper.dataset.wrapperId;
+        console.log(`Closing panel ${panelId} (in split: ${parentPane !== null})`);
+        if (parentWrapperId) {
+            console.log(`Panel has parent wrapper reference: ${parentWrapperId}`);
+        }
+        
+        // SIMPLIFIED APPROACH:
+        // 1. If we're in a direct wrapper (not a split), check if this is the last panel
+        // 2. If it is, remove the wrapper and its handle
+        if (panelWrapper && !parentPane) {
+            console.log('Panel is in a direct wrapper (not a split)');
             
-            // Only check for removing if this is a direct split from the original wrapper
-            // (Later splits will have different panel IDs than the wrapper ID)
-            if (panelId === wrapperId) {
-                // Don't remove wrapper yet, check if it contains any children or split containers
-                const remainingTiles = panelWrapper.querySelectorAll('.tile:not(.tile-selector)');
-                const remainingSplits = panelWrapper.querySelectorAll('.split-container');
+            // Check if this is the last real panel in the wrapper
+            const otherPanels = Array.from(
+                panelWrapper.querySelectorAll('.tile:not(.tile-selector)')
+            ).filter(tile => tile !== tileElement);
+            
+            if (otherPanels.length === 0) {
+                console.log('This is the last panel in wrapper. Will remove wrapper and handle.');
                 
-                // Consider the current tile to be closed already
-                const effectiveTileCount = remainingTiles.length - 1;
+                // Find and remove the associated handle
+                const nextSibling = panelWrapper.nextElementSibling;
+                if (nextSibling && 
+                    nextSibling.classList.contains('split-handle') && 
+                    nextSibling.dataset.panelHandle === 'true') {
+                    console.log('Removing panel height handle');
+                    nextSibling.remove();
+                }
                 
-                const hasRemainingPanels = effectiveTileCount > 0 || remainingSplits.length > 0;
+                // Remove the wrapper itself
+                console.log('Removing wrapper element:', panelWrapper);
+                panelWrapper.remove();
+            } else {
+                console.log(`Wrapper still has ${otherPanels.length} other panels. Not removing.`);
+            }
+        }
+        
+        // If this is the last panel in a wrapper that was referenced by a split container,
+        // we need to check if it's time to remove that wrapper
+        if (parentWrapperId) {
+            const parentWrapper = document.querySelector(`.panel-wrapper[data-wrapperId="${parentWrapperId}"]`);
+            if (parentWrapper) {
+                console.log('Checking if we need to remove the parent wrapper:', parentWrapper);
                 
-                if (!hasRemainingPanels) {
-                    // Last panel in the wrapper, remove wrapper and handle
-                    const nextSibling = panelWrapper.nextElementSibling;
-                    if (nextSibling && nextSibling.classList.contains('split-handle') && 
+                // Check if there are any remaining panels in the parent wrapper or its children
+                const allPanelsInParent = Array.from(
+                    parentWrapper.querySelectorAll('.tile:not(.tile-selector)')
+                ).filter(tile => tile !== tileElement);
+                
+                // Find all split containers with this parent wrapper ID
+                const splitContainers = Array.from(
+                    document.querySelectorAll(`.split-container[data-parentWrapperId="${parentWrapperId}"]`)
+                );
+                
+                // Check if there are any panels in those split containers (except this one being closed)
+                let panelsInSplits = 0;
+                splitContainers.forEach(container => {
+                    const panels = Array.from(
+                        container.querySelectorAll('.tile:not(.tile-selector)')
+                    ).filter(tile => tile !== tileElement);
+                    panelsInSplits += panels.length;
+                });
+                
+                const totalPanels = allPanelsInParent.length + panelsInSplits;
+                console.log(`Parent wrapper has ${totalPanels} total panels remaining: ${allPanelsInParent.length} direct + ${panelsInSplits} in splits`);
+                
+                if (totalPanels === 0) {
+                    console.log('Parent wrapper has no panels left. Will remove it and its handle.');
+                    
+                    // Find and remove the associated handle
+                    const nextSibling = parentWrapper.nextElementSibling;
+                    if (nextSibling && 
+                        nextSibling.classList.contains('split-handle') && 
                         nextSibling.dataset.panelHandle === 'true') {
+                        console.log('Removing parent wrapper height handle');
                         nextSibling.remove();
                     }
                     
                     // Remove the wrapper itself
-                    panelWrapper.remove();
-                    
-                    // Check if there are any remaining panel wrappers
-                    const container = document.querySelector('.tile-container');
-                    const remainingWrappers = container.querySelectorAll('.panel-wrapper');
-                    
-                    // If no panel wrappers left, remove all height handles
-                    if (remainingWrappers.length === 0) {
-                        const heightHandles = container.querySelectorAll('.split-handle[data-panel-handle="true"]');
-                        heightHandles.forEach(handle => handle.remove());
-                    }
-                    return;
+                    console.log('Removing parent wrapper element:', parentWrapper);
+                    parentWrapper.remove();
                 }
+            }
+        }
+        
+        // Check if there are any remaining panel wrappers in the main container
+        const container = document.querySelector('.tile-container');
+        if (container) {
+            const remainingWrappers = container.querySelectorAll('.panel-wrapper');
+            
+            // If no panel wrappers left, remove all height handles
+            if (remainingWrappers.length === 0) {
+                console.log('No panel wrappers left. Removing any orphaned handles.');
+                const heightHandles = container.querySelectorAll('.split-handle[data-panel-handle="true"]');
+                heightHandles.forEach(handle => handle.remove());
             }
         }
         
@@ -625,36 +687,78 @@ const LayoutManager = (function() {
             _addTileCallback(containerParent);
         }
         
-        // Check if this was the last split in a panel wrapper
+        // Check if this is a split in a wrapper
         if (containerParent.classList.contains('panel-wrapper') && 
             containerParent.dataset.panelWrapper === 'true') {
             
-            // Check if there are any remaining panels or splits in the wrapper
-            const remainingTiles = containerParent.querySelectorAll('.tile:not(.tile-selector)');
-            const remainingSplits = containerParent.querySelectorAll('.split-container');
+            console.log('Split container was in a panel wrapper');
             
-            // If no panels left in the wrapper, remove the wrapper and its handle
-            if (remainingTiles.length === 0 && remainingSplits.length === 0) {
+            // Check if there are any remaining panels in the wrapper
+            const remainingPanels = Array.from(
+                containerParent.querySelectorAll('.tile:not(.tile-selector)')
+            );
+            
+            // Find all split containers left in this wrapper
+            const remainingSplits = Array.from(
+                containerParent.querySelectorAll('.split-container')
+            );
+            
+            console.log(`Wrapper has ${remainingPanels.length} direct panels and ${remainingSplits.length} splits remaining`);
+            
+            // If the wrapper is now empty, remove it and its handle
+            if (remainingPanels.length === 0 && remainingSplits.length === 0) {
+                console.log('Wrapper is now empty. Removing it and its handle.');
+                
+                // Find and remove the associated handle
                 const nextSibling = containerParent.nextElementSibling;
-                if (nextSibling && nextSibling.classList.contains('split-handle') && 
+                if (nextSibling && 
+                    nextSibling.classList.contains('split-handle') && 
                     nextSibling.dataset.panelHandle === 'true') {
+                    console.log('Removing wrapper height handle');
                     nextSibling.remove();
                 }
                 
                 // Remove the wrapper itself
+                console.log('Removing empty wrapper element:', containerParent);
                 containerParent.remove();
             }
         }
         
-        // Check if there are any remaining panels in the main container
+        // Check if there are any remaining panel wrappers in the main container
         const mainContainer = document.querySelector('.tile-container');
         if (mainContainer) {
             const remainingWrappers = mainContainer.querySelectorAll('.panel-wrapper');
             
             // If no panel wrappers left, remove all height handles
             if (remainingWrappers.length === 0) {
+                console.log('No panels left, removing any orphaned handles');
                 const heightHandles = mainContainer.querySelectorAll('.split-handle[data-panel-handle="true"]');
                 heightHandles.forEach(handle => handle.remove());
+            } else {
+                // Check each wrapper to see if it should really be there (might have counting issues)
+                remainingWrappers.forEach(wrapper => {
+                    const wrapperId = wrapper.dataset.wrapperId;
+                    // If this wrapper has no panels (not even selection tiles), it's an orphan and should be removed
+                    const allTiles = wrapper.querySelectorAll('.tile');
+                    if (allTiles.length === 0) {
+                        console.log('Found orphaned wrapper with ID:', wrapperId, ' - removing it');
+                        // Also remove its handle if it exists
+                        const nextSibling = wrapper.nextElementSibling;
+                        if (nextSibling && nextSibling.classList.contains('split-handle') && 
+                            nextSibling.dataset.panelHandle === 'true') {
+                            nextSibling.remove();
+                        }
+                        wrapper.remove();
+                    }
+                });
+                
+                // Check again after cleanup
+                const finalWrappers = mainContainer.querySelectorAll('.panel-wrapper');
+                if (finalWrappers.length === 0) {
+                    console.log('All wrappers cleaned up, removing any orphaned handles');
+                    const heightHandles = mainContainer.querySelectorAll('.split-handle[data-panel-handle="true"]');
+                    heightHandles.forEach(handle => handle.remove());
+                }
             }
         }
     }
@@ -669,6 +773,13 @@ const LayoutManager = (function() {
      * @returns {Object} - The created panel instance
      */
     function createPanelWithSelectionTile(container, selectionTile, createPanelCallback, panelType, panelConfig = {}) {
+        // Check if container is a split pane - we'll track this for later
+        const isInSplitPane = container.classList.contains('split-pane');
+        
+        // If we're in a split pane, we'll mark this information on the panel
+        if (isInSplitPane) {
+            console.log('Creating panel in a split pane');
+        }
         // Create a wrapper div that won't be replaced
         const panelWrapper = document.createElement('div');
         panelWrapper.className = 'panel-wrapper';
@@ -683,16 +794,29 @@ const LayoutManager = (function() {
         panelElement.className = 'tile';
         panelElement.style.width = '100%';
         panelElement.style.height = '100%';
-        
-        // Add panel to wrapper
-        panelWrapper.appendChild(panelElement);
+        panelElement.style.overflow = 'auto'; // Ensure content is scrollable if needed
         
         // Create a horizontal resize handle
         const handle = document.createElement('div');
         handle.className = 'split-handle horizontal';
         handle.dataset.panelHandle = 'true';
+        // Explicitly mark this as a panel height handle, not a split handle
+        handle.dataset.isPanelHeightHandle = 'true';
         
-        // Insert the wrapper and handle before the selection tile
+        // Add panel to wrapper and insert both elements
+        panelWrapper.appendChild(panelElement);
+        
+        // Mark if this is inside a split pane
+        if (isInSplitPane) {
+            panelElement.dataset.isInSplitPane = 'true';
+            
+            // For debugging: Find the split container and its parent wrapper relationship
+            const splitContainer = container.closest('.split-container');
+            if (splitContainer && splitContainer.dataset.parentWrapperId) {
+                console.log(`This panel's split container belongs to wrapper: ${splitContainer.dataset.parentWrapperId}`);
+            }
+        }
+        
         container.insertBefore(panelWrapper, selectionTile);
         container.insertBefore(handle, selectionTile);
         
@@ -700,15 +824,27 @@ const LayoutManager = (function() {
         const panel = createPanelCallback(panelType, panelConfig, panelElement);
         const panelId = panel.getId();
         
-        // Add ID to panel element and wrapper for tracking
+        // Add ID to elements for tracking
         panelElement.dataset.tileId = panelId;
         panelWrapper.dataset.wrapperId = panelId;
+        
+        // Store a link to the split container's parent wrapper if applicable
+        if (isInSplitPane) {
+            const splitContainer = container.closest('.split-container');
+            if (splitContainer && splitContainer.dataset.parentWrapperId) {
+                // Store the parent wrapper ID directly on the panel element
+                panelElement.dataset.parentWrapperId = splitContainer.dataset.parentWrapperId;
+                console.log(`Panel's parent wrapper ID set to: ${panelElement.dataset.parentWrapperId}`);
+            }
+        }
         
         // Setup resize functionality for the handle
         setupPanelHeightHandle(handle, panelWrapper);
         
         // Store reference to the handle in the wrapper
         panelWrapper.dataset.resizeHandle = true;
+        
+        console.log('Created new panel with ID:', panelId, 'and wrapper with count: 1');
         
         // We don't remove the welcome tile - it stays at the bottom
         

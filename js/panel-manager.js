@@ -61,7 +61,6 @@ const PanelManager = (function() {
         // Show welcome tile automatically if no panels exist
         setTimeout(() => {
             if (_panels.size === 0) {
-                console.log('No panels exist, showing welcome tile...');
                 _updateSourcePanelSelection = new SelectionTile({
                     container: _container,
                     variant: "welcome",
@@ -94,8 +93,6 @@ const PanelManager = (function() {
         if (!Object.prototype.hasOwnProperty.call(_counters, type)) {
             _counters[type] = 0;
         }
-        
-        console.log(`Registered panel type: ${type}`);
     }
     
     
