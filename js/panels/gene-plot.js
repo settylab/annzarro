@@ -27,6 +27,7 @@ const GenePlotPanel = (function() {
         let _controlsContainer = null;
         let _resizeObserver = null;
         let _datasetWatcherCleanup = null;
+        let _isFirstLoad = true;
         
         // Initialize minimal settings, letting the initialization process set data-dependent values
         const _settings = {
@@ -122,12 +123,14 @@ const GenePlotPanel = (function() {
                 // Load data and create plot
                 await refreshPlot();
                 
+                _isFirstLoad = false;
                 console.log(`Dataset ${datasetPath} loaded successfully for panel ${_id}`);
             } catch (error) {
                 console.error(`Error loading dataset for panel ${_id}:`, error);
                 if (_plotContainer) {
                     _plotContainer.innerHTML = `<div class="alert alert-danger">Error loading dataset: ${error.message}</div>`;
                 }
+                _isFirstLoad = false;
             }
         }
         
@@ -344,7 +347,7 @@ const GenePlotPanel = (function() {
          * Reload the data and redraw the plot
          */
         async function refreshPlot() {
-            loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id)
+            loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id, _isFirstLoad)
         }
         
         

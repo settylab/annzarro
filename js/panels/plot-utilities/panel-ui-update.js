@@ -421,6 +421,7 @@ export function updateColorControlsVisibility(container, colorType, id) {
  *   - If settings.lockColorRange is false, resets slider and input values to the computed dataMin/dataMax.
  *     Otherwise, expands the slider range to include both the new data range and the locked values,
  *     keeping the locked values intact.
+ *   - During first load, respects provided colorMin and colorMax values even when lockColorRange is false.
  *
  * For categorical data:
  *   - Updates the category palette selector.
@@ -429,8 +430,9 @@ export function updateColorControlsVisibility(container, colorType, id) {
  * @param {Object} data - The data object (must include data.color as an array and data.colorType).
  * @param {Object} settings - The plot settings object. Should include centeringActive, lockColorRange, colorMin, colorMax, and categoryPalette.
  * @param {string|number} id - Unique identifier used to construct element selectors.
+ * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
  */
-export function updateColorSliderUI(container, data, settings, id) {
+export function updateColorSliderUI(container, data, settings, id, isFirstLoad = false) {
   const csCenterColormapButton = container.querySelector(`#center-colormap-${id}`);
   const csColorMinInput = container.querySelector(`#color-min-${id}`);
   const csColorMaxInput = container.querySelector(`#color-max-${id}`);
@@ -457,7 +459,8 @@ export function updateColorSliderUI(container, data, settings, id) {
         const dataMax = Math.max(...validValues);
 
         // Now, if the color range is not locked, update the actual slider/input values.
-        if (!settings.lockColorRange) {
+        // During first load, respect provided values even when range is not locked
+        if (!settings.lockColorRange && !isFirstLoad) {
           // Set slider ranges based on the data
           csColorMinSlider.min = dataMin;
           csColorMinSlider.max = dataMax;
@@ -479,13 +482,12 @@ export function updateColorSliderUI(container, data, settings, id) {
           if (csColorMaxInput) csColorMaxInput.value = useColorMax.toFixed(2);
           
           // Only update settings if they aren't already set
-          if (settings.colorMin === null) settings.colorMin = dataMin;
-          if (settings.colorMax === null) settings.colorMax = dataMax;
+          settings.colorMin = dataMin;
+          settings.colorMax = dataMax;
         } else {
-          console.log("Color range is locked, keeping previous min/max values");
           // Expand slider range (min, max) to include both the new data range and the locked values.
-          const minSliderRange = Math.min(settings.colorMin, dataMin);
-          const maxSliderRange = Math.max(settings.colorMax, dataMax);
+          const minSliderRange = Math.min(settings.colorMin ?? dataMin, dataMin);
+          const maxSliderRange = Math.max(settings.colorMax ?? dataMax, dataMax);
           csColorMinSlider.min = minSliderRange;
           csColorMaxSlider.min = minSliderRange;
           csColorMinSlider.max = maxSliderRange;
@@ -495,16 +497,16 @@ export function updateColorSliderUI(container, data, settings, id) {
           csColorMinSlider.step = step;
           csColorMaxSlider.step = step;
           // Do not change the locked values; just keep them.
-          csColorMinSlider.value = settings.colorMin !== null ? settings.colorMin : dataMin;
-          csColorMaxSlider.value = settings.colorMax !== null ? settings.colorMax : dataMax; 
+          csColorMinSlider.value = settings.colorMin ?? dataMin;
+          csColorMaxSlider.value = settings.colorMax ?? dataMax;
         }
 
         // (Optional) You might also update the placeholders if desired:
         if (csColorMinInput && csColorMinInput.value === '') {
-          csColorMinInput.placeholder = settings.colorMin !== null ? settings.colorMin : dataMin.toFixed(2);
+          csColorMinInput.placeholder = settings.colorMin ?? dataMin.toFixed(2);
         }
         if (csColorMaxInput && csColorMaxInput.value === '') {
-          csColorMaxInput.placeholder = settings.colorMax !== null ? settings.colorMax : dataMax.toFixed(2);
+          csColorMaxInput.placeholder = settings.colorMin ?? dataMax.toFixed(2);
         }
       }
     }

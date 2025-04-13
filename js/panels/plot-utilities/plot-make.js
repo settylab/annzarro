@@ -242,10 +242,11 @@ export async function loadAxisData(settings, plotType = null) {
  * @param {Object} settings - The settings object for the plot (e.g., axes settings for x, y, z, color).
  * @param {Object} data - A mutable data cache object (e.g., { x, y, z, color, cells, ... }).
  * @param {string|number} id - A unique identifier used to build element selectors.
+ * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
  *
  * @returns {Promise<void>}
  */
-export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id) {
+export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   try {
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
@@ -391,7 +392,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
       console.log(`Creating plot with ${data.x.values.length} data points`);
-      await createPlot(container, plotContainer, settings, data, id);
+      await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
       console.error('Insufficient data for plotting');
@@ -416,10 +417,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  * @param {Object} settings - Object with plot configuration (axes, colors, palettes, etc).
  * @param {Object} data - Data object containing x, y (and optionally z), cells/genes, color, etc.
  * @param {string|number} id - An identifier used to connect the plot to UI controls.
+ * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
  *
  * @returns {Promise<void>}
  */
-export async function createPlot(container, plotContainer, settings, data, id) {
+export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   // Determine if this is a gene plot or cell plot
   const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
   const entityKey = isGenePlot ? 'genes' : 'cells';
@@ -543,16 +545,22 @@ export async function createPlot(container, plotContainer, settings, data, id) {
     baseTrace.marker.reversescale = settings.colorReversed;
     
     // Update color sliders with the loaded data while preserving saved settings
-    updateColorSliderUI(container, data, settings, id);
+    updateColorSliderUI(container, data, settings, id, isFirstLoad);
     
-    // Always set color range for the plot
-    const validValues = data.color.filter(v => !isNaN(v));
-    const dataMin = Math.min(...validValues);
-    const dataMax = Math.max(...validValues);
+    let cmin = settings.colorMin;
+    let cmax = settings.colorMax;
     
-    // Use saved values if they exist, otherwise use data min/max
-    const cmin = settings.colorMin !== null ? settings.colorMin : dataMin;
-    const cmax = settings.colorMax !== null ? settings.colorMax : dataMax;
+    // If either setting is not defined (i.e. null or undefined), compute valid values and update only the missing one.
+    if (cmin == null || cmax == null) {
+      const validValues = data.color.filter(v => !isNaN(v));
+    
+      if (cmin == null) {
+        cmin = Math.min(...validValues);
+      }
+      if (cmax == null) {
+        cmax = Math.max(...validValues);
+      }
+    }
     
     baseTrace.marker.cmin = cmin;
     baseTrace.marker.cmax = cmax;
