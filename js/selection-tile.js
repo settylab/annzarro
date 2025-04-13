@@ -65,7 +65,12 @@ export class SelectionTile {
                 <div class="tile-selection-grid" id="panel-type-grid-${this.selectionId}"></div>
               </div>
               <div class="selection-section" id="clone-panel-section-${this.selectionId}" style="display: none;">
-                <h3>Clone Existing Panel</h3>
+                <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
+                  <h3 style="margin: 0; display: inline-block;">Clone Existing Panel</h3>
+                  <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
+                    <i class="fas fa-trash-alt"></i> Clear closed panels
+                  </button>
+                </div>
                 <div class="source-selection-grid" id="source-panel-grid-${this.selectionId}"></div>
               </div>
               ${this.showSessions ? `
@@ -91,7 +96,12 @@ export class SelectionTile {
                 <div class="tile-selection-grid" id="panel-type-grid-${this.selectionId}"></div>
               </div>
               <div class="selection-section">
-                <h3>Clone Existing Panel</h3>
+                <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
+                  <h3 style="margin: 0; display: inline-block;">Clone Existing Panel</h3>
+                  <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-pane-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
+                    <i class="fas fa-trash-alt"></i> Clear closed panels
+                  </button>
+                </div>
                 <div class="source-selection-grid" id="source-panel-grid-${this.selectionId}"></div>
               </div>
             </div>
@@ -315,16 +325,105 @@ export class SelectionTile {
         return;
       }
       grid.innerHTML = '';
+      
+      // Populate the panel grid
       const allPanels = new Map(this.panels);
       let hasPanels = false;
+      let hasClosedPanels = false;
+      
       allPanels.forEach((panel, id) => {
         hasPanels = true;
+        if (!this.activePanels.has(panel)) {
+          hasClosedPanels = true;
+        }
         const option = this._createSourcePanelOption(panel, id, grid);
         grid.appendChild(option);
       });
+      
       this._attachDeleteHandlers(grid);
+      
+      // Update the clear button visibility
+      this._updateClearButtonVisibility(hasClosedPanels);
+      
       if (!hasPanels) {
         grid.innerHTML = '<div class="no-sessions">No panels available to clone</div>';
+      }
+    }
+    
+    /**
+     * Update the visibility of the clear button based on whether there are closed panels
+     * @param {boolean} hasClosedPanels - Whether there are closed panels
+     * @private 
+     */
+    _updateClearButtonVisibility(hasClosedPanels) {
+      // Find the clear button in both variants
+      const welcomeClearButton = document.getElementById(`clear-closed-panels-${this.selectionId}`);
+      const paneClearButton = document.getElementById(`clear-closed-panels-pane-${this.selectionId}`);
+      
+      // Add click handlers if the buttons exist and don't already have them
+      if (welcomeClearButton && !welcomeClearButton._hasClickHandler) {
+        welcomeClearButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this._clearClosedPanels();
+        });
+        welcomeClearButton._hasClickHandler = true;
+      }
+      
+      if (paneClearButton && !paneClearButton._hasClickHandler) {
+        paneClearButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this._clearClosedPanels();
+        });
+        paneClearButton._hasClickHandler = true;
+      }
+      
+      // Set button visibility based on which one exists and whether there are closed panels
+      if (welcomeClearButton) {
+        welcomeClearButton.style.display = hasClosedPanels ? 'block' : 'none';
+      }
+      
+      if (paneClearButton) {
+        paneClearButton.style.display = hasClosedPanels ? 'block' : 'none';
+      }
+    }
+    
+    /**
+     * Clear all closed panels after confirmation
+     * @private
+     */
+    _clearClosedPanels() {
+      const closedPanels = [];
+      
+      // Collect all closed panels
+      this.panels.forEach((panel, id) => {
+        if (!this.activePanels.has(panel)) {
+          closedPanels.push({ panel, id });
+        }
+      });
+      
+      if (closedPanels.length === 0) {
+        return;
+      }
+      
+      // Ask for confirmation
+      const confirmMessage = `Are you sure you want to delete all ${closedPanels.length} closed panels?`;
+      if (confirm(confirmMessage)) {
+        // Delete all closed panels
+        closedPanels.forEach(({ panel, id }) => {
+          const type = panel.getType();
+          if (this.panelsByType.has(type)) {
+            this.panelsByType.get(type).delete(panel);
+          }
+          this.panels.delete(id);
+        });
+        
+        // Find the grid and refresh it
+        const grid = this.tileSelector.querySelector(`.source-selection-grid`);
+        if (grid) {
+          this._populateSourcePanelGrid(grid);
+        }
       }
     }
   
