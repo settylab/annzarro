@@ -8,7 +8,7 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmMDIzZmFmMi05MjQ2LTRhZTEtYTA4My1mNzNmMDVmN2YxNDkiLCJ1c2VybmFtZSI6ImFkbWluIiwiYWRtaW4iOnRydWUsImV4cCI6MTc0NDcwNjM4OX0.Bg48oQFJ_EAifY0rEDhutIFP9HR6iwD7Up-jd8apj74": 1744706389.9499872
     },
     "last_login": "2025-04-14T01:39:49.949398",
-    "login_attempts": 0,
+    "login_attempts": 1,
     "locked_until": null
   },
   "dom": {
@@ -16,8 +16,11 @@
     "username": "dom",
     "password_hash": "scrypt:32768:8:1$ONyuDSd2c0V0Xcjz$5aca9ca1a6b5ade027c21a5f954799092326ec9e7d114105f09a3aa0a8f90ef27d305fd18b1bb7175b14f911f59f83416e6d6c17112f5d10570b10c5993033bd",
     "is_admin": false,
-    "tokens": {},
-    "last_login": null,
+    "tokens": {
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNGVlNWZlZi1hNDEyLTRiZjEtOTAwOC1kOGEwN2Y1ODM3NTYiLCJ1c2VybmFtZSI6ImRvbSIsImFkbWluIjpmYWxzZSwiZXhwIjoxNzQ0NzA5NDc5fQ.GBiuIUP9NSRvoc0Qequ2N4RJI8yGgftrOJ-44XJKXPs": 1744709479.911167,
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNGVlNWZlZi1hNDEyLTRiZjEtOTAwOC1kOGEwN2Y1ODM3NTYiLCJ1c2VybmFtZSI6ImRvbSIsImFkbWluIjpmYWxzZSwiZXhwIjoxNzQ0NzM2MDU5fQ.2C2jyxZs8qIe9JdK_0XBgKb2cjspeeiGlwlb6YLEmng": 1744736059.420865
+    },
+    "last_login": "2025-04-14T09:54:19.419107",
     "login_attempts": 0,
     "locked_until": null
   }

@@ -92,7 +92,14 @@ class AuthManager:
             max_login_attempts (int, optional): Max failed login attempts before lockout. Defaults to 5.
             lockout_time (int, optional): Account lockout time in seconds. Defaults to 900.
         """
-        self.user_file = user_file
+        # Handle relative paths by making them absolute from package root
+        if not os.path.isabs(user_file):
+            # Get the root directory of the package
+            package_root = Path(__file__).resolve().parent.parent.parent
+            self.user_file = os.path.join(package_root, user_file)
+        else:
+            self.user_file = user_file
+            
         self.token_secret = token_secret or secrets.token_hex(32)
         self.session_timeout = session_timeout
         self.max_login_attempts = max_login_attempts
@@ -101,7 +108,10 @@ class AuthManager:
         self.file_lock = Lock()  # For thread safety
         
         # Create directory if needed
-        os.makedirs(os.path.dirname(os.path.abspath(user_file)), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(self.user_file)), exist_ok=True)
+        
+        # Log the absolute path being used
+        logging.info(f"Auth using user file: {os.path.abspath(self.user_file)}")
         
         # Load existing users
         self._load_users()
@@ -173,20 +183,27 @@ class AuthManager:
         Returns:
             bool: Authentication success
         """
+        logging.info(f"Authentication attempt for user: {username}")
+        
         if username not in self.users:
             logging.warning(f"Authentication failed: User {username} not found")
             return False
             
         user = self.users[username]
+        logging.info(f"Found user in database: {username}")
         
         # Check if account is locked
         if user.locked_until and float(user.locked_until) > time.time():
             lock_remaining = int(float(user.locked_until) - time.time())
             logging.warning(f"Authentication failed: Account {username} is locked for {lock_remaining} seconds")
             return False
+        
+        # Log password hash information for debugging
+        logging.info(f"Password hash type for {username}: {user.password_hash[:20]}...")
             
         # Verify password
         is_valid = self._verify_password(password, user.password_hash)
+        logging.info(f"Password verification result for {username}: {is_valid}")
         
         if is_valid:
             # Reset login attempts on success
@@ -371,20 +388,32 @@ class AuthManager:
         Returns:
             bool: True if password matches
         """
+        logging.info(f"Verifying password with hash type: {stored_hash.split(':')[0] if ':' in stored_hash else 'unknown'}")
+        
         try:
             from werkzeug.security import check_password_hash
-            return check_password_hash(stored_hash, password)
-        except ImportError:
+            result = check_password_hash(stored_hash, password)
+            logging.info(f"Werkzeug password check result: {result}")
+            return result
+        except ImportError as e:
+            logging.warning(f"Werkzeug not available for password verification: {e}")
             # Fallback to custom verification
             if not stored_hash.startswith('pbkdf2:sha256:'):
+                logging.warning(f"Hash format not recognized: {stored_hash[:10]}...")
                 return False
                 
             parts = stored_hash.split('$')
             if len(parts) != 3:
+                logging.warning(f"Hash parts incorrect (expected 3, got {len(parts)})")
                 return False
                 
             salt = parts[1]
             hash_value = parts[2]
             
             calculated_hash = self._hash_password(password, salt)
-            return hash_value == calculated_hash
+            result = hash_value == calculated_hash
+            logging.info(f"Custom password verification result: {result}")
+            return result
+        except Exception as e:
+            logging.error(f"Unexpected error in password verification: {e}")
+            return False

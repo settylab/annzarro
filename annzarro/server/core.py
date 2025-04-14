@@ -120,6 +120,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     if os.environ.get("ANNZARRO_AUTH_ENABLED"):
         app.config["auth_enabled"] = os.environ.get("ANNZARRO_AUTH_ENABLED").lower() in ("true", "1", "yes")
         
+    if os.environ.get("ANNZARRO_USER_FILE"):
+        app.config["user_file"] = os.environ.get("ANNZARRO_USER_FILE")
+        logger.info(f"Using user file from environment: {app.config['user_file']}")
+        
     if os.environ.get("ANNZARRO_SECRET_KEY"):
         app.config["secret_key"] = os.environ.get("ANNZARRO_SECRET_KEY")
         
@@ -164,14 +168,13 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         # Import after app is created to avoid circular imports
         from annzarro.server.auth import AuthManager
         
-        # Create auth manager
+        # Create auth manager with proper path handling
         user_file = app.config.get("user_file", "users.json")
+
         auth_manager = AuthManager(user_file=user_file)
         
         # Store auth manager in app for access in routes
         app.auth_manager = auth_manager
-        
-        logger.info(f"Authentication enabled, using user file: {user_file}")
     
     # Set up routes
     register_routes(app)
@@ -217,19 +220,33 @@ def setup_logging(config: Dict[str, Any]) -> None:
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
-    # Configure logging
-    logging.basicConfig(
-        filename=log_file,
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    # Reset the root logger to avoid duplicate handlers
+    root_logger = logging.getLogger("")
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
     
-    # Add console handler
-    console = logging.StreamHandler()
-    console.setLevel(log_level)
-    console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-    logging.getLogger("").addHandler(console)
+    # Create a formatter
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", 
+                                 datefmt="%Y-%m-%d %H:%M:%S")
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Reduce verbosity of Flask and Werkzeug loggers
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    logging.getLogger("flask").setLevel(logging.WARNING)
 
 def register_routes(app: Flask) -> None:
     """

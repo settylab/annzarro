@@ -15,7 +15,7 @@ import signal
 import time
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 from .data.manager import data_manager
 from .server import run_server
@@ -29,6 +29,56 @@ logging.basicConfig(
 
 logger = logging.getLogger("annzarro")
 
+def load_config(config_path: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+    """
+    Load configuration from a JSON file.
+    
+    Args:
+        config_path: Path to configuration file (optional)
+        
+    Returns:
+        Tuple containing:
+        - Config dictionary
+        - Path to the config file that was loaded, or None if no file was loaded
+    """
+    root_dir = Path(__file__).resolve().parent.parent
+    
+    # List of possible config locations in priority order
+    config_locations = [
+        config_path,  # User-provided path has highest priority
+        os.environ.get("ANNZARRO_CONFIG"),  # Environment variable
+        os.path.join(root_dir, "annzarro", "server", "config.json"),  # Default location
+        os.path.join(os.getcwd(), "annzarro", "server", "config.json"),  # Current directory
+        os.path.join("/etc", "annzarro", "config.json")  # System-wide config
+    ]
+    
+    # Filter out None values
+    config_locations = [loc for loc in config_locations if loc]
+    
+    # Default config
+    config = {}
+    loaded_path = None
+    
+    # Try each config location
+    for config_path in config_locations:
+        try:
+            if os.path.exists(config_path):
+                logger.info(f"Loading configuration from: {config_path}")
+                with open(config_path, 'r') as f:
+                    loaded_config = json.load(f)
+                    config.update(loaded_config)
+                    loaded_path = config_path
+                    break
+        except Exception as e:
+            logger.warning(f"Could not read config file {config_path}: {e}")
+    
+    if loaded_path:
+        logger.info(f"Using configuration from: {loaded_path}")
+    else:
+        logger.warning("No configuration file found, using defaults")
+        
+    return config, loaded_path
+
 def start_server(args: argparse.Namespace) -> int:
     """
     Start the Annzarro server
@@ -39,8 +89,8 @@ def start_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    # Prepare configuration
-    config = {}
+    # Load configuration from file
+    config, config_path = load_config(args.config)
     
     # Set cache options if provided
     if args.cache_memory is not None:
@@ -53,52 +103,128 @@ def start_server(args: argparse.Namespace) -> int:
         config["cache_enabled"] = False
         
     # Enable authentication by default unless explicitly disabled
-    config["auth_enabled"] = not args.no_auth
+    if args.no_auth:
+        config["auth_enabled"] = False
+        logger.info("Authentication is DISABLED by command line flag")
+    else:
+        config["auth_enabled"] = True
+        logger.info("Authentication is ENABLED - a valid username/password will be required")
     
     # Try to start the server in-process
     try:
+        # Start server in a separate process
+        cmd = [sys.executable, "-m", "annzarro.server"]
+        
+        # Add arguments
+        if args.host:
+            cmd.extend(["--host", args.host])
+        if args.port:
+            cmd.extend(["--port", str(args.port)])
+        if args.config:
+            cmd.extend(["--config", args.config])
+        if args.debug:
+            cmd.append("--debug")
+        if args.data_dir:
+            # Expand user directory (~/path) if present
+            expanded_data_dir = os.path.expanduser(args.data_dir)
+            # Convert to absolute path if it's relative
+            if not os.path.isabs(expanded_data_dir):
+                expanded_data_dir = os.path.abspath(expanded_data_dir)
+            cmd.extend(["--data-dir", expanded_data_dir])
+            
+        # Add cache options as environment variables
+        env = os.environ.copy()
+        if args.cache_memory is not None:
+            env["ANNZARRO_CACHE_MEMORY_MB"] = str(args.cache_memory)
+        if args.cache_datasets is not None:
+            env["ANNZARRO_CACHE_DATASET_LIMIT"] = str(args.cache_datasets)
+        if args.no_cache:
+            env["ANNZARRO_CACHE_ENABLED"] = "false"
+            
+        # Set authentication based on arguments
+        if args.no_auth:
+            env["ANNZARRO_AUTH_ENABLED"] = "false"
+            logging.info("Authentication is DISABLED by command line flag")
+        else:
+            env["ANNZARRO_AUTH_ENABLED"] = "true"
+            logging.info("Authentication is ENABLED - a valid username/password will be required")
+        
+        # Get user file path from config
+        user_file = config.get("user_file", "annzarro/server/users.json")
+        
+        # Make sure it's an absolute path
+        if not os.path.isabs(user_file):
+            root_dir = Path(__file__).resolve().parent.parent
+            user_file = os.path.join(root_dir, user_file)
+            
+        # Set environment variable for server
+        env["ANNZARRO_USER_FILE"] = user_file
+        logging.info(f"Setting server user file to: {user_file}")
+        
         if args.detach:
-            # Start server in a separate process
-            cmd = [sys.executable, "-m", "annzarro.server"]
-            
-            # Add arguments
-            if args.host:
-                cmd.extend(["--host", args.host])
-            if args.port:
-                cmd.extend(["--port", str(args.port)])
-            if args.config:
-                cmd.extend(["--config", args.config])
-            if args.debug:
-                cmd.append("--debug")
-            if args.data_dir:
-                # Expand user directory (~/path) if present
-                expanded_data_dir = os.path.expanduser(args.data_dir)
-                # Convert to absolute path if it's relative
-                if not os.path.isabs(expanded_data_dir):
-                    expanded_data_dir = os.path.abspath(expanded_data_dir)
-                cmd.extend(["--data-dir", expanded_data_dir])
-                
-            # Add cache options as environment variables
-            env = os.environ.copy()
-            if args.cache_memory is not None:
-                env["ANNZARRO_CACHE_MEMORY_MB"] = str(args.cache_memory)
-            if args.cache_datasets is not None:
-                env["ANNZARRO_CACHE_DATASET_LIMIT"] = str(args.cache_datasets)
-            if args.no_cache:
-                env["ANNZARRO_CACHE_ENABLED"] = "false"
-                
-            # Set authentication based on arguments
-            env["ANNZARRO_AUTH_ENABLED"] = "false" if args.no_auth else "true"
-            
-            # Start the server as a detached process
-            logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
-            server_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
-            )
+            # Check if using production mode with Gunicorn
+            if args.production:
+                try:
+                    # Try to import gunicorn to check if it's installed
+                    import importlib.util
+                    gunicorn_spec = importlib.util.find_spec("gunicorn")
+                    
+                    if gunicorn_spec is None:
+                        logger.warning("Gunicorn not found. Installing it...")
+                        subprocess.check_call([sys.executable, "-m", "pip", "install", "gunicorn"])
+                    
+                    # Set up Gunicorn command
+                    gunicorn_config = os.path.join(root_dir, "annzarro", "server", "gunicorn_config.py")
+                    
+                    if not os.path.exists(gunicorn_config):
+                        logger.warning(f"Gunicorn config not found at {gunicorn_config}")
+                        logger.warning("Using default Gunicorn settings")
+                        
+                        # Use default configuration
+                        gunicorn_cmd = ["gunicorn", "--bind", f"{args.host}:{args.port}"]
+                    else:
+                        logger.info(f"Using Gunicorn config from {gunicorn_config}")
+                        gunicorn_cmd = ["gunicorn", "-c", gunicorn_config]
+                    
+                    # Add application module
+                    gunicorn_cmd.append("annzarro.server:create_app()")
+                    
+                    # Set config file in environment if specified
+                    if args.config:
+                        env["ANNZARRO_CONFIG"] = os.path.abspath(args.config)
+                    
+                    # Start the server with Gunicorn
+                    logger.info(f"Starting server in production mode: {' '.join(gunicorn_cmd)}")
+                    server_process = subprocess.Popen(
+                        gunicorn_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
+                    )
+                except Exception as e:
+                    logger.error(f"Error starting with Gunicorn: {e}")
+                    logger.info("Falling back to development server")
+                    
+                    # Start with development server
+                    logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
+                    server_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
+                    )
+            else:
+                # Start the server as a detached process with Flask development server
+                logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
+                server_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                    preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
+                )
             
             # Save PID
             with open("annzarro_pid.txt", "w") as f:
@@ -254,22 +380,17 @@ def create_user(args: argparse.Namespace) -> int:
             print("Error: Password cannot be empty")
             return 1
             
-    # Find config file and user_file path
-    root_dir = Path(__file__).resolve().parent.parent
-    config_file = root_dir / "annzarro" / "server" / "config.json"
-    user_file = "annzarro/server/users.json"  # Default
+    # Load configuration using the helper function
+    config, config_path = load_config(args.config)
     
-    if config_file.exists():
-        try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-                user_file = config.get('user_file', user_file)
-        except Exception as e:
-            logger.warning(f"Could not read config file: {e}")
-            
+    # Get user file path from configuration
+    user_file = config.get("user_file", "annzarro/server/users.json")
+    
     # Ensure user file path is absolute
+    root_dir = Path(__file__).resolve().parent.parent
     if not os.path.isabs(user_file):
         user_file = os.path.join(root_dir, user_file)
+        logger.info(f"Using absolute user file path: {user_file}")
     
     # Ensure directory exists
     os.makedirs(os.path.dirname(user_file), exist_ok=True)
@@ -301,22 +422,17 @@ def list_users(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    # Find config file and user_file path
-    root_dir = Path(__file__).resolve().parent.parent
-    config_file = root_dir / "annzarro" / "server" / "config.json"
-    user_file = "annzarro/server/users.json"  # Default
+    # Load configuration using the helper function
+    config, config_path = load_config(args.config)
     
-    if config_file.exists():
-        try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-                user_file = config.get('user_file', user_file)
-        except Exception as e:
-            logger.warning(f"Could not read config file: {e}")
-            
+    # Get user file path from configuration
+    user_file = config.get("user_file", "annzarro/server/users.json")
+    
     # Ensure user file path is absolute
+    root_dir = Path(__file__).resolve().parent.parent
     if not os.path.isabs(user_file):
         user_file = os.path.join(root_dir, user_file)
+        logger.info(f"Using absolute user file path: {user_file}")
     
     # Check if user file exists
     if not os.path.exists(user_file):
@@ -361,22 +477,17 @@ def remove_user(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    # Find config file and user_file path
-    root_dir = Path(__file__).resolve().parent.parent
-    config_file = root_dir / "annzarro" / "server" / "config.json"
-    user_file = "annzarro/server/users.json"  # Default
+    # Load configuration using the helper function
+    config, config_path = load_config(args.config)
     
-    if config_file.exists():
-        try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-                user_file = config.get('user_file', user_file)
-        except Exception as e:
-            logger.warning(f"Could not read config file: {e}")
-            
+    # Get user file path from configuration
+    user_file = config.get("user_file", "annzarro/server/users.json")
+    
     # Ensure user file path is absolute
+    root_dir = Path(__file__).resolve().parent.parent
     if not os.path.isabs(user_file):
         user_file = os.path.join(root_dir, user_file)
+        logger.info(f"Using absolute user file path: {user_file}")
     
     # Check if user file exists
     if not os.path.exists(user_file):
@@ -503,6 +614,9 @@ def main(args: Optional[List[str]] = None) -> int:
     # Authentication options
     start_parser.add_argument("--no-auth", action="store_true", help="Disable authentication")
     
+    # Production options
+    start_parser.add_argument("--production", action="store_true", help="Run with Gunicorn in production mode (removes Flask development server warning)")
+    
     # Cache options
     start_parser.add_argument("--cache-memory", type=int, help="Maximum memory in MB for backend caching (default: 1000)")
     start_parser.add_argument("--cache-datasets", type=int, help="Maximum number of datasets to keep in memory (default: 10)")
@@ -520,14 +634,17 @@ def main(args: Optional[List[str]] = None) -> int:
     add_parser.add_argument("-u", "--username", type=str, help="Username")
     add_parser.add_argument("-p", "--password", type=str, help="Password")
     add_parser.add_argument("-a", "--admin", action="store_true", help="Create user with admin privileges")
+    add_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
     
     # List users command
     list_parser = user_subparsers.add_parser("list", help="List all users")
+    list_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
     
     # Remove user command
     remove_parser = user_subparsers.add_parser("remove", help="Remove a user")
     remove_parser.add_argument("-u", "--username", type=str, help="Username to remove")
     remove_parser.add_argument("-f", "--force", action="store_true", help="Force removal without confirmation")
+    remove_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
     
     # Install command
     install_parser = subparsers.add_parser("install", help="Install requirements")
