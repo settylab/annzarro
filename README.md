@@ -47,6 +47,28 @@ Then open your browser and navigate to:
 http://localhost:8000
 ```
 
+### Desktop Application
+
+AnnZarro can also be run as a standalone desktop application:
+
+```bash
+# Run the desktop app in development mode
+./annzarro-cli desktop run
+
+# Build the desktop application
+./annzarro-cli desktop build
+
+# Build for a specific platform
+./annzarro-cli desktop build --platform windows
+./annzarro-cli desktop build --platform mac
+./annzarro-cli desktop build --platform linux
+
+# Generate application icons (both desktop and web)
+./annzarro-cli desktop icons --icon /path/to/icon.png --all
+```
+
+The desktop application provides a convenient way to use AnnZarro without manually managing the server and browser. You can also generate desktop application icons and web favicons from a high-resolution PNG image.
+
 ### Authentication and User Management
 
 The default admin credentials are:

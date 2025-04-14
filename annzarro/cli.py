@@ -263,6 +263,92 @@ def install_dependencies(args: argparse.Namespace) -> int:
         logger.error(f"Error installing dependencies: {e}")
         return 1
 
+def desktop_command(args: argparse.Namespace) -> int:
+    """
+    Handle desktop application-related commands
+    
+    Args:
+        args: Command line arguments
+        
+    Returns:
+        Exit code
+    """
+    # Import here to avoid circular imports
+    try:
+        from .desktop.builder import build_desktop_app, run_desktop_app
+    except ImportError as e:
+        logger.error(f"Failed to import desktop builder: {e}")
+        logger.error("Please ensure the desktop module is installed.")
+        return 1
+        
+    # Run desktop app in development mode
+    if args.desktop_command == "run":
+        logger.info("Running desktop application in development mode")
+        
+        if run_desktop_app(icon_source=args.icon):
+            logger.info("Desktop application started successfully")
+            return 0
+        else:
+            logger.error("Failed to start desktop application")
+            return 1
+            
+    # Build desktop application
+    elif args.desktop_command == "build":
+        platform = args.platform
+        rebuild = args.rebuild
+        
+        logger.info(f"Building desktop application for {platform or 'all platforms'}")
+        
+        if build_desktop_app(platform, rebuild, icon_source=args.icon):
+            logger.info("Desktop application built successfully")
+            return 0
+        else:
+            logger.error("Failed to build desktop application")
+            return 1
+            
+    # Generate favicons for both desktop and web
+    elif args.desktop_command == "icons":
+        if not args.icon:
+            logger.error("No source icon provided. Use --icon to specify a source icon file.")
+            return 1
+            
+        logger.info(f"Generating icons from {args.icon}")
+        
+        try:
+            # Import icon generator
+            from .desktop.icon_generator import generate_desktop_icons, generate_web_favicons
+            
+            success = True
+            
+            # Generate desktop icons if requested
+            if args.desktop_icons or args.all:
+                logger.info("Generating desktop application icons")
+                if generate_desktop_icons(args.icon):
+                    logger.info("Desktop icons generated successfully")
+                else:
+                    logger.error("Failed to generate desktop icons")
+                    success = False
+                    
+            # Generate web favicons if requested
+            if args.web_icons or args.all:
+                logger.info("Generating web server favicons")
+                if generate_web_favicons(args.icon):
+                    logger.info("Web favicons generated successfully")
+                else:
+                    logger.error("Failed to generate web favicons")
+                    success = False
+                    
+            return 0 if success else 1
+                
+        except ImportError as e:
+            logger.error(f"Failed to import icon generator: {e}")
+            logger.error("Make sure Pillow is installed: pip install Pillow")
+            return 1
+            
+    else:
+        logger.error(f"Unknown desktop command: {args.desktop_command}")
+        return 1
+
 def config_command(args: argparse.Namespace) -> int:
     """
     Handle configuration-related commands
@@ -484,6 +570,33 @@ def main(argv: List[str] = None) -> int:
     config_info_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     config_parser.set_defaults(func=config_command)
+    
+    # Desktop application command
+    desktop_parser = subparsers.add_parser('desktop', help="Desktop application tools")
+    desktop_subparsers = desktop_parser.add_subparsers(dest='desktop_command', help="Desktop command")
+    
+    # Icon argument for all desktop commands
+    desktop_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
+    
+    # Desktop run command
+    desktop_run_parser = desktop_subparsers.add_parser('run', help="Run desktop application in development mode")
+    desktop_run_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
+    
+    # Desktop build command
+    desktop_build_parser = desktop_subparsers.add_parser('build', help="Build desktop application")
+    desktop_build_parser.add_argument('--platform', choices=['windows', 'win', 'mac', 'macos', 'linux', 'all'], 
+                                     help="Target platform (default: current platform)")
+    desktop_build_parser.add_argument('--rebuild', action='store_true', help="Force rebuild dependencies")
+    desktop_build_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
+    
+    # Desktop icons command
+    desktop_icons_parser = desktop_subparsers.add_parser('icons', help="Generate application icons")
+    desktop_icons_parser.add_argument('--icon', type=str, required=True, help="Path to source icon file (high-res PNG)")
+    desktop_icons_parser.add_argument('--desktop-icons', action='store_true', help="Generate desktop application icons")
+    desktop_icons_parser.add_argument('--web-icons', action='store_true', help="Generate web server favicons")
+    desktop_icons_parser.add_argument('--all', action='store_true', help="Generate all icon types")
+    
+    desktop_parser.set_defaults(func=desktop_command)
     
     # Parse arguments
     args = parser.parse_args(argv)

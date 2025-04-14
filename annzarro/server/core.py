@@ -99,7 +99,17 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     """
     # Create Flask app with custom template folder
     template_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
-    app = Flask(__name__, template_folder=template_folder)
+    
+    # Check for static folder with favicon
+    static_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    if os.path.exists(static_folder) and (
+        os.path.exists(os.path.join(static_folder, "favicon.ico")) or
+        os.path.exists(os.path.join(static_folder, "favicon.png"))
+    ):
+        app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+        logger.info(f"Using static folder at {static_folder}")
+    else:
+        app = Flask(__name__, template_folder=template_folder)
     
     # Enable CORS by default for all routes - important during development
     CORS(app)
