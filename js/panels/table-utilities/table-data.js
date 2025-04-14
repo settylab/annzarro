@@ -324,35 +324,17 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             display: flex !important;
             flex-direction: column !important;
             overflow: hidden !important;
+            min-height: 0 !important; /* Critical fix for allowing scrollbody to shrink */
         }
         .dataTables_scrollBody {
             flex: 1 !important;
             overflow: auto !important;
+            min-height: 0 !important; /* Allow the body to shrink */
         }
         
-        /* Custom table styling */
+        /* Minimal table styling */
         table.dataTable {
-            border-collapse: separate !important;
-            border-spacing: 0 !important;
             border: none !important;
-        }
-        
-        table.dataTable td,
-        table.dataTable th {
-            border: none !important;
-        }
-        
-        table.dataTable tbody tr {
-            border-bottom: 1px solid #f1f3f5 !important;
-            transition: background-color 0.15s ease !important;
-        }
-        
-        table.dataTable tbody tr:hover {
-            background-color: rgba(0, 123, 255, 0.04) !important;
-        }
-        
-        table.dataTable.stripe tbody tr.odd {
-            background-color: #fcfcfd !important;
         }
         
         /* Add styles to handle panel folding */
@@ -363,7 +345,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     wrapper.appendChild(styleElement);
     
     const table = document.createElement('table');
-    table.className = 'table table-striped w-100';
+    table.className = 'table table-sm w-100';
     table.style.width = '100%';
     table.style.marginBottom = '0';
     
@@ -382,7 +364,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         pageLength: settings.pageLength || 25,
         lengthMenu: [10, 25, 50, 100, 250],
         // Use the Q character for SearchBuilder in the DOM, move 'i' (info) and 'p' (pagination) elements together
-        dom: 'Qlfrt<"d-flex justify-content-between align-items-center"ip>',
+        dom: 'Qlfrtip',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
         scrollCollapse: true, // Always collapse scroll
@@ -390,29 +372,17 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             header: true,
             footer: false
         },
-        // Enable DataTables built-in hover effect
+        // Styling with hover effect and striped rows
         hover: true,
-        select: {
-            style: 'single',
-            className: 'selected-row'
-        },
-        // Make rows more compact with modern styling
         classes: {
-            sTable: 'table table-sm table-striped table-hover'
+            sTable: 'table table-sm table-hover table-striped'
         },
-        stripeClasses: ['', 'bg-light-subtle'],
+        stripeClasses: ['', 'table-light'],
         autoWidth: false,
-        // Additional styling options
-        createdRow: function(row, data, index) {
-            // Add custom class for styling
-            $(row).addClass('custom-row');
-        },
+        // Keep styling simple, focusing on structure and layout
         rowCallback: function(row, data, index) {
-            // Remove border style from all cells
-            $('td', row).css({
-                'border': 'none',
-                'border-bottom': '1px solid #f1f3f5'
-            });
+            // Just remove borders for a cleaner look
+            $('td', row).css('border', 'none');
         },
         // Configure buttons properly
         buttons: {

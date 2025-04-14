@@ -206,43 +206,38 @@
     
     <!-- Override styles for DataTables -->
     <style>
-        /* Force remove all table borders from DataTables */
-        .table-panel table.dataTable,
-        .table-panel table.dataTable th,
-        .table-panel table.dataTable td {
-            border: none !important;
-            box-shadow: none !important;
-        }
-        
+        /* Compact font size for the table */
+        .table-panel table.dataTable thead th,
         .table-panel table.dataTable tbody td {
-            border-bottom: 1px solid #f1f3f5 !important;
+            font-size: 0.85rem;
+            padding: 4px 8px;
         }
         
-        /* Row hover effect - enhanced for better visibility */
-        .table-panel table.dataTable tbody tr {
-            transition: all 0.15s ease-in-out !important;
+        /* Striped rows and hover effect */
+        .table-panel table.dataTable.stripe tbody tr.odd {
+            background-color: #f8f9fa;
         }
         
-        /* Standard hover classes */
-        .table-panel table.dataTable tbody tr:hover,
-        .table-panel table.dataTable tbody tr.hover,
-        .table-panel table.dataTable.hover tbody tr:hover,
-        .table-panel table.dataTable.table-hover tbody tr:hover {
-            background-color: rgba(0, 123, 255, 0.05) !important;
-            box-shadow: inset 3px 0 0 rgba(0, 123, 255, 0.3) !important;
+        .table-panel table.dataTable tbody tr:hover {
+            background-color: rgba(0, 123, 255, 0.05);
         }
         
-        /* Custom hover indicator */
-        .table-panel table.dataTable tr.custom-row:hover {
-            background-color: rgba(0, 123, 255, 0.05) !important;
-            box-shadow: inset 3px 0 0 rgba(0, 123, 255, 0.4) !important;
+        /* Keep scrolling containers synchronized - critical for header alignment */
+        .table-panel .dataTables_scrollHeadInner,
+        .table-panel .dataTables_scrollHeadInner table {
+            width: 100% !important;
         }
         
-        /* Selected row styling */
-        .table-panel table.dataTable tr.selected,
-        .table-panel table.dataTable tr.selected-row {
-            background-color: rgba(0, 123, 255, 0.1) !important;
-            box-shadow: inset 3px 0 0 rgba(0, 123, 255, 0.6) !important;
+        /* Ensure column headers align with body */
+        .table-panel .dataTables_scrollHead,
+        .table-panel .dataTables_scrollBody {
+            width: 100% !important;
+        }
+        
+        /* Fix column width synchronization */
+        .table-panel table.dataTable thead th,
+        .table-panel table.dataTable tbody td {
+            width: auto !important;
         }
         
         /* No footer border */

@@ -48,7 +48,7 @@ const CellTablePanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { tableContainer, controlsContainer, loadingScreen } = createTablePanelStructure(_container, _id, _settings);
+                const { tableContainer, controlsContainer, loadingScreen } = createTablePanelStructure(_container, _id);
                 
                 // Store references for later use
                 _tableContainer = tableContainer;

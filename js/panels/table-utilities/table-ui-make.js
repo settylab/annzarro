@@ -15,10 +15,9 @@ import {
  * 
  * @param {HTMLElement} container - The DOM element into which the panel will be rendered.
  * @param {string} id - A unique identifier for the panel instance.
- * @param {Object} settings - An object containing configuration values.
  * @returns {{ tableContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
-export function createTablePanelStructure(container, id, settings) {
+export function createTablePanelStructure(container, id) {
     container.innerHTML = `
         <div class="table-panel">
             <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
@@ -34,7 +33,7 @@ export function createTablePanelStructure(container, id, settings) {
                 <div class="control-row">
                     <!-- Left column: Available Columns -->
                     <div class="column-selector">
-                        <h6>Available Columns</h6>
+                        <h6 class="control-section-title">Available Columns</h6>
                         <div class="data-type-tabs">
                             <ul class="nav nav-tabs" role="tablist">
                                 <!-- Data type tabs will be added here based on entity type -->
@@ -88,6 +87,8 @@ export function createTablePanelStructure(container, id, settings) {
 
     // Don't check dataset loading status here - we'll do it in the init method
     // to avoid any DOM-related errors during initialization
+
+    // No resize observer needed
 
     return {
         tableContainer: document.getElementById(`table-container-${id}`),
