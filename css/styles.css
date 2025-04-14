@@ -249,53 +249,166 @@ body {
     padding: 0.5rem;
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
-    overflow-y: auto;
-    max-height: 50vh;
 }
 
 .table-container {
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
     min-height: 0;
     padding: 0.5rem;
+    height: calc(100% - 110px);
 }
 
-.column-selector-container {
+/* Table Control Layout */
+.table-controls .control-row {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    height: 260px;
+}
+
+/* Column Selector (Left Side) */
+.column-selector {
+    flex: 1;
+    width: 60%;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+}
+
+.column-selector h6,
+.column-actions h6 {
+    margin-bottom: 0.25rem;
+    font-size: 0.9rem;
 }
 
 .data-type-tabs {
-    margin-bottom: 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
-.checkbox-list {
-    flex: 1;         /* Take all remaining space */
-    min-height: 0;   /* Crucial in flex layouts */
-    max-height: 300px;
-    width: 400px;
+.data-type-tabs .nav-tabs {
+    font-size: 0.9rem;
+}
+
+.data-type-tabs .tab-content {
+    flex: 1;
     overflow-y: auto;
+    font-size: 0.9rem;
+    min-height: 0;
+    padding: 0.25rem;
     border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-    padding: 0.5rem;
-    background-color: white;
+    border-top: none;
+    border-bottom-left-radius: 0.25rem;
+    border-bottom-right-radius: 0.25rem;
+    margin-bottom: 0.25rem;
 }
 
+/* Column Checkboxes */
+.checkbox-list {
+    padding: 0.25rem;
+}
+
+.form-check.py-0 {
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+}
+
+/* Selected Columns (Right Side) */
+.column-actions {
+    width: 40%;
+    display: flex;
+    flex-direction: column;
+}
+
+.selected-columns {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
 
 .selected-columns-list {
-    max-height: 200px;
+    flex: 1;
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;  /* Allow children to shrink appropriately */
+    font-size: 0.85rem;
+    min-height: 0;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    margin-bottom: 0.5rem;
 }
 
-.table-options {
+.selected-columns-list .list-group-item {
+    padding: 0.25rem 0.5rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.selected-columns-list .list-group-item .text-truncate {
+    max-width: 85%;
+    margin-right: 0.5rem;
+}
+
+/* Remove Button in Selected Columns */
+.selected-columns-list .btn-xs {
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+}
+
+/* Action Buttons */
+.column-actions .action-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.25rem;
+}
+
+/* DataTables Styling */
+.dataTables_wrapper {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+}
+
+.dataTables_scroll {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+.dataTables_scrollBody {
+    flex: 1 !important;
+    overflow: auto !important;
+}
+
+/* SearchBuilder Styling */
+.dtsp-searchBuilder {
+    padding: 8px;
+    border-bottom: 1px solid #dee2e6;
+    background-color: #f8f9fa;
+    display: block !important;
+    min-height: 50px;
+}
+
+.dtsb-group {
+    background-color: #fff;
+    padding: 5px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+.dtsb-criteria {
+    margin-top: 5px !important;
+}
+
+/* Panel Folding Support */
+.dataTables_wrapper.collapsed {
+    display: none !important;
 }
 
 /* DataTable customizations within table panels */

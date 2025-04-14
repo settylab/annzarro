@@ -31,28 +31,28 @@ export function createTablePanelStructure(container, id, settings) {
                 </div>
             </div>
             <div class="table-controls">
-                <div class="d-flex flex-row mb-2 gap-2">
+                <div class="control-row">
                     <!-- Left column: Available Columns -->
-                    <div class="column-selector flex-grow-1" style="width: 60%; display: flex; flex-direction: column;">
-                        <h6 class="mb-1">Available Columns</h6>
-                        <div class="data-type-tabs" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
-                            <ul class="nav nav-tabs nav-sm" style="font-size: 0.9rem;" role="tablist">
+                    <div class="column-selector">
+                        <h6>Available Columns</h6>
+                        <div class="data-type-tabs">
+                            <ul class="nav nav-tabs" role="tablist">
                                 <!-- Data type tabs will be added here based on entity type -->
                             </ul>
-                            <div class="tab-content p-1 border border-top-0 rounded-bottom mb-1" style="flex: 1; overflow-y: auto; font-size: 0.9rem; min-height: 0;">
+                            <div class="tab-content">
                                 <!-- Tab content will be added here based on entity type -->
                             </div>
                         </div>
                     </div>
                     
                     <!-- Right column: Selected Columns and Actions -->
-                    <div class="column-actions" style="width: 40%; display: flex; flex-direction: column;">
-                        <div class="selected-columns" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-                            <h6 class="mb-1">Selected Columns</h6>
-                            <ul id="selected-columns-list-${id}" class="list-group selected-columns-list" style="flex: 1; overflow-y: auto; font-size: 0.85rem; min-height: 0;">
+                    <div class="column-actions">
+                        <div class="selected-columns">
+                            <h6>Selected Columns</h6>
+                            <ul id="selected-columns-list-${id}" class="list-group selected-columns-list">
                                 <!-- Selected columns will be added here -->
                             </ul>
-                            <div class="d-flex justify-content-between mt-1">
+                            <div class="action-buttons">
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-sm btn-secondary" id="refresh-table-${id}">Refresh</button>
                                     <button class="btn btn-sm btn-outline-secondary" id="export-csv-${id}">Export CSV</button>
@@ -68,7 +68,7 @@ export function createTablePanelStructure(container, id, settings) {
                     </div>
                 </div>
             </div>
-            <div class="table-container" id="table-container-${id}" style="height: calc(100% - 110px); overflow: hidden;"></div>
+            <div class="table-container" id="table-container-${id}"></div>
         </div>
     `;
 
@@ -357,8 +357,6 @@ function createCheckboxList(container, items, id, settings) {
         
         const checkboxDiv = document.createElement('div');
         checkboxDiv.className = 'form-check py-0';
-        checkboxDiv.style.fontSize = '0.85rem';
-        checkboxDiv.style.marginBottom = '0.25rem';
         
         const checkbox = document.createElement('input');
         checkbox.className = 'form-check-input column-checkbox';
@@ -593,7 +591,7 @@ function updateSelectedColumnsList(id, settings) {
         
         // Create list item
         const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2';
+        listItem.className = 'list-group-item';
         
         const displayName = getColumnDisplayName({ type, key, column });
         
@@ -601,15 +599,13 @@ function updateSelectedColumnsList(id, settings) {
         const textSpan = document.createElement('span');
         textSpan.textContent = displayName;
         textSpan.title = displayName; // Full name in tooltip
-        textSpan.className = 'text-truncate me-2';
-        textSpan.style.maxWidth = '85%';
+        textSpan.className = 'text-truncate';
         listItem.appendChild(textSpan);
         
         const removeButton = document.createElement('button');
-        removeButton.className = 'btn btn-sm btn-outline-danger btn-xs p-0 px-1';
+        removeButton.className = 'btn btn-outline-danger btn-xs';
         removeButton.innerHTML = '<i class="fas fa-times"></i>';
         removeButton.title = 'Remove from selection';
-        removeButton.style.fontSize = '0.7rem';
         removeButton.addEventListener('click', () => {
             // Uncheck the corresponding checkbox
             const checkboxId = `checkbox-${type}-${key}-${column}-${id}`.replace(/\s+/g, '_');
