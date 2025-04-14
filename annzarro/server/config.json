@@ -1,15 +1,31 @@
 {
-    "host": "127.0.0.1",
+    "host": "0.0.0.0",
     "port": 8000,
     "debug": false,
-    "cors_enabled": false,
+    "cors_enabled": true,
     "cors_origins": "*",
     "https_enabled": false,
+    "cert_file": null,
+    "key_file": null,
     "data_dir": "data",
     "static_dir": null,
     "log_file": "logs/annzarro_server.log",
     "log_level": "INFO",
-    "auth_enabled": false,
+    "auth_enabled": true,
     "user_file": "annzarro/server/users.json",
-    "unified_server": true
+    "workers": 4,
+    "proxy_count": 0,
+    "secret_key": "change-this-in-production",
+    "session_timeout": 3600,
+    "rate_limits": [
+        "200 per minute",
+        "10 per second"
+    ],
+    "behind_proxy": false,
+    "max_upload_size": 100,
+    "unified_server": true,
+    "max_response_elements": 10000000,
+    "max_cells_per_request": 10000000,
+    "max_genes_per_request": 10000000,
+    "max_embedding_dims": 200
 }

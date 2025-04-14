@@ -34,12 +34,22 @@ pip install -r requirements.txt
 
 # Start the server
 python run_annzarro.py --start
+# Or use the modular server directly
+python -m annzarro.server
 ```
 
 Then open your browser and navigate to:
 ```
 http://localhost:8000
 ```
+
+### Authentication
+
+The default admin credentials are:
+- Username: admin
+- Password: annzarro-password
+
+You can enable/disable authentication in `annzarro/server/config.json`.
 
 ### Configuration Options
 
@@ -60,11 +70,12 @@ python run_annzarro.py --start --debug
 ### Server Management
 
 ```bash
-# Check server status
-python server_status.py
-
 # Stop the server
 python run_annzarro.py --stop
+
+# For production deployment, use Gunicorn:
+cd annzarro/server
+./run_gunicorn.sh
 ```
 
 ## User Interface

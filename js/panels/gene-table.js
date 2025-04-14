@@ -105,7 +105,6 @@ const GeneTablePanel = (function() {
                 await refreshTable();
                 
                 _isFirstLoad = false;
-                console.log(`Dataset ${datasetPath} loaded successfully for gene table panel ${_id}`);
             } catch (error) {
                 console.error(`Error loading dataset for gene table panel ${_id}:`, error);
                 if (_tableContainer) {

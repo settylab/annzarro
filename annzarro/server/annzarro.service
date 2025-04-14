@@ -1,0 +1,19 @@
+[Unit]
+Description=Annzarro Data Visualization Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/annzarro
+ExecStart=/usr/bin/python3 /opt/annzarro/run_annzarro.py --start --config /opt/annzarro/server/production_config.json
+ExecStop=/usr/bin/python3 /opt/annzarro/run_annzarro.py --stop
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

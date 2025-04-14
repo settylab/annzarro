@@ -2,7 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { DataManager } from '../../data-manager.js';
-import { Config } from '../../config.js';
+import { setupSearchBuilderCriteriaListener } from './listeners.js';
 
 /**
  * Load data for a table
@@ -423,11 +423,21 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                       undefined,
             display: 'block' // Always display
         },
-        initComplete: function(settings, json) {
+        initComplete: function(dtsettings, json) {
             // The DataTable instance is available as 'this' in the callback
             const api = this.api();
-            const dtSettings = settings || this.settings()[0];
+            const dtSettings = dtsettings || this.settings()[0];
             const panelSettings = dtSettings._panelSettings || {};
+
+            // Add event handlers for entity selection
+            api.on('click', '.entity-index-value', function() {
+                const entity = $(this).data('entity');
+                if (entityType === 'cells') {
+                    DataManager.setFocusedCell(entity);
+                } else {
+                    DataManager.setFocusedGene(entity);
+                }
+            });
             
             // Make sure SearchBuilder is shown
             try {
@@ -438,26 +448,17 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 }
                 
                 // Apply any saved criteria
-                if (panelSettings.searchBuilderConfig?.criteria?.length > 0) {
-                    setTimeout(() => {
-                        try {
-                            api.searchBuilder.rebuild(panelSettings.searchBuilderConfig);
-                            api.draw();
-                        } catch (error) {
-                            console.warn('Error rebuilding SearchBuilder config:', error);
-                        }
-                    }, 100);
-                }
-                
-                // Force SearchBuilder to be visible
-                setTimeout(() => {
-                    const $searchBuilder = $('.dtsp-searchBuilder');
-                    if ($searchBuilder.length) {
-                        $searchBuilder.show();
-                    } else {
-                        console.warn('SearchBuilder container not found');
+                if (settings.searchBuilderConfig?.criteria?.length > 0) {
+                    try {
+                        api.searchBuilder.rebuild(panelSettings.searchBuilderConfig);
+                        api.draw();
+                    } catch (error) {
+                        console.warn('Error rebuilding SearchBuilder config:', error);
                     }
-                }, 200);
+                }
+
+                setupSearchBuilderCriteriaListener(api, settings)
+
             } catch (error) {
                 console.error('Error initializing SearchBuilder:', error);
             }
@@ -481,31 +482,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Initialize the DataTable
     const dataTable = $(table).DataTable(tableOptions);
-    
-    // Add event handlers for entity selection
-    $(table).on('click', '.entity-index-value', function() {
-        const entity = $(this).data('entity');
-        if (entityType === 'cells') {
-            DataManager.setFocusedCell(entity);
-        } else {
-            DataManager.setFocusedGene(entity);
-        }
-    });
-    
-    // Check if SearchBuilder is actually available
-    const hasSearchBuilder = typeof $.fn.dataTable.SearchBuilder !== 'undefined';
-    
-    // Handle SearchBuilder initialization
-    try {
-        // Only try to use SearchBuilder if it's available
-        if (!hasSearchBuilder) {
-            console.warn('SearchBuilder extension is not available, disabling SearchBuilder functionality');
-            // Remove SearchBuilder from DOM if not available
-            $(tableContainer).find('.dt-button[data-name="searchBuilder"]').remove();
-        }
-    } catch (err) {
-        console.warn('Error managing SearchBuilder UI:', err);
-    }
     
     // Return the DataTables instance
     return dataTable;

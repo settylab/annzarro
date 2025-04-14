@@ -119,12 +119,6 @@ function setupCommonEventListeners({
             refreshTable();
         }
     });
-    
-    // Listen for search builder criteria changes
-    if (dataTable) {
-        // Set up SearchBuilder criteria change listener
-        setupSearchBuilderCriteriaListener(dataTable, settings);
-    }
 }
 
 /**
@@ -132,14 +126,15 @@ function setupCommonEventListeners({
  * @param {Object} dataTable - DataTable instance
  * @param {Object} settings - Panel settings
  */
-function setupSearchBuilderCriteriaListener(dataTable, settings) {
+export function setupSearchBuilderCriteriaListener(dataTable, settings) {
     // Initialize searchBuilderConfig if not present
     if (!settings.searchBuilderConfig) {
         settings.searchBuilderConfig = { criteria: [] };
     }
+    console.log('Setting up search builder listener.');
     
     // Add event listener to DataTable for SearchBuilder changes
-    $(dataTable.table().node()).on('searchBuilder.dtsb', function(e, searchBuilder) {
+    dataTable.on('searchBuilder.searchChanged', function(e, searchBuilder) {
         try {
             // Get the current criteria from SearchBuilder
             const criteria = searchBuilder.getDetails();
