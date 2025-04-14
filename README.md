@@ -70,8 +70,11 @@ python run_annzarro.py --start --debug
 ### Server Management
 
 ```bash
-# Stop the server
-python run_annzarro.py --stop
+# Use the simple starter script
+./run_start.sh
+
+# With options
+./run_start.sh --port 8080 --debug
 
 # For production deployment, use Gunicorn:
 cd annzarro/server
