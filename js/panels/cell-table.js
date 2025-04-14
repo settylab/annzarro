@@ -73,8 +73,6 @@ const CellTablePanel = (function() {
                     await onDatasetLoaded(DataManager.getCurrentDataset());
                 }
                 
-                // Set up event listeners
-                _setupEventListeners();
                 
             } catch (error) {
                 console.error('Error initializing cell table panel:', error);

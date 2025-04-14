@@ -391,7 +391,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 {
                     extend: 'csv',
                     text: 'CSV',
-                    className: 'd-none' // Hidden button for programmatic use
+                    className: 'd-none', // Hidden button for programmatic use
+                    filename: function() {
+                        // 'this' here refers to the DataTable API instance.
+                        // Return the dynamically set property or fallback to a default name.
+                        return `${settings.title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}`;
+                      }
                 },
                 {
                     text: 'SearchBuilder',
@@ -411,7 +416,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 }
             }
         },
-        // Modern way to enable search builder
         searchBuilder: {
             preDefined: settings.searchBuilderConfig && 
                       settings.searchBuilderConfig.criteria ? 
@@ -614,36 +618,7 @@ export function exportTableToCsv(dataTable, tableTitle) {
             // When using jQuery object directly
             api = dataTable;
         }
-        
-        // Format the file name using the table title and current date
-        const fileName = `${tableTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
-        
-        // Use DataTables' built-in export functionality
-        if ($.fn.dataTable.Buttons) {
-            // Create a temporary button instance with CSV export configuration
-            new $.fn.dataTable.Buttons(api, {
-                buttons: [
-                    {
-                        extend: 'csv',
-                        text: 'Export CSV',
-                        filename: fileName.replace(/\.csv$/, ''), // Remove file extension as DataTables adds it
-                        exportOptions: {
-                            // Export only visible/filtered rows and columns
-                            modifier: {
-                                search: 'applied',
-                                order: 'applied'
-                            }
-                        }
-                    }
-                ]
-            });
-            
-            // Trigger the CSV export button programmatically
-            api.buttons().trigger();
-        } else {
-            console.error('DataTables Buttons extension not available');
-            alert('Export failed: DataTables Buttons extension is not loaded');
-        }
+        api.button('.buttons-csv').trigger()
     } catch (error) {
         console.error('Error exporting table to CSV:', error);
         alert('Failed to export table to CSV. See console for details.');
