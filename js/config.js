@@ -73,7 +73,9 @@ const Config = (function() {
             '7227': 'Drosophila melanogaster',
             '6239': 'Caenorhabditis elegans',
             '7955': 'Danio rerio'
-        }
+        },
+        // Enable/disable specific panel types in the selection tile
+        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table'] // 'gene-set'
     };
 
     // Cache constraints (for CacheManager)

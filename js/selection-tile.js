@@ -124,8 +124,16 @@ export class SelectionTile {
   
     // --- Panel Types Section ---
     get panelTypes() {
-      // Use the centralized panel type definitions
-      return Config.PANEL_TYPES;
+      // Filter panel types based on enabled types in the config
+      const enabledTypes = Config.DEFAULTS.ENABLED_PANEL_TYPES || [];
+      
+      // If no panel types are specified as enabled, show all panel types
+      if (!enabledTypes.length) {
+        return Config.PANEL_TYPES;
+      }
+      
+      // Filter the panel types to only show enabled ones
+      return Config.PANEL_TYPES.filter(panel => enabledTypes.includes(panel.type));
     }
   
     _initPanelTypeGrid() {
