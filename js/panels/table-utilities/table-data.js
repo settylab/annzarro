@@ -363,8 +363,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthChange: false, // Hide default length selector as we have our own
         pageLength: settings.pageLength || 25,
         lengthMenu: [10, 25, 50, 100, 250],
-        // Use the Q character for SearchBuilder in the DOM, move 'i' (info) and 'p' (pagination) elements together
-        dom: 'Qlfrtip',
+        // Use the Q character for SearchBuilder in the DOM and B for Buttons, 
+        // move 'i' (info) and 'p' (pagination) elements together
+        dom: 'QBlfrtip',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
         scrollCollapse: true, // Always collapse scroll
@@ -384,10 +385,14 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             // Just remove borders for a cleaner look
             $('td', row).css('border', 'none');
         },
-        // Configure buttons properly
+        // Configure buttons properly - include basic export functionality
         buttons: {
             buttons: [
-                'copy', 'csv', 'excel',
+                {
+                    extend: 'csv',
+                    text: 'CSV',
+                    className: 'd-none' // Hidden button for programmatic use
+                },
                 {
                     text: 'SearchBuilder',
                     action: function(e, dt, node, config) {
@@ -595,84 +600,50 @@ export function updateTableOnFocusChange(dataTable, entity, entityType) {
 }
 
 /**
- * Export table data to CSV
+ * Export table data to CSV using DataTables built-in export functionality
  * @param {Object} dataTable - The DataTables instance
  * @param {string} tableTitle - The table title for the file name
  */
 export function exportTableToCsv(dataTable, tableTitle) {
-    const csvContent = [];
-    
     try {
-        // Get DataTables API object - DataTables 1.10+ uses .api(), older versions use .dataTable
+        // Get DataTables API object
         let api;
         if (typeof dataTable.api === 'function') {
             api = dataTable.api();
         } else {
-            // For older DataTables versions or when using jQuery object directly
+            // When using jQuery object directly
             api = dataTable;
         }
         
-        // Get column headers
-        const headerRow = api.columns().header();
-        const headers = [];
+        // Format the file name using the table title and current date
+        const fileName = `${tableTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
         
-        // Extract header text
-        for (let i = 0; i < headerRow.length; i++) {
-            const header = $(headerRow[i]).text();
-            headers.push(header);
-        }
-        
-        csvContent.push(headers.join(','));
-        
-        // Get visible rows
-        const rows = api.rows({ search: 'applied' }).data();
-        const visibleRows = [];
-        
-        // Convert to array for easier handling
-        for (let i = 0; i < rows.length; i++) {
-            visibleRows.push(rows[i]);
-        }
-        
-        // Add each row to CSV content
-        visibleRows.forEach(row => {
-            const values = headers.map(header => {
-                let value = '';
-                
-                // Handle object/array data
-                if (typeof row === 'object') {
-                    // Try to access by property if it exists
-                    if (row[header] !== undefined) {
-                        value = row[header];
-                    } else if (row._) {
-                        // Handle DataTables objects
-                        value = row._[header] || '';
+        // Use DataTables' built-in export functionality
+        if ($.fn.dataTable.Buttons) {
+            // Create a temporary button instance with CSV export configuration
+            new $.fn.dataTable.Buttons(api, {
+                buttons: [
+                    {
+                        extend: 'csv',
+                        text: 'Export CSV',
+                        filename: fileName.replace(/\.csv$/, ''), // Remove file extension as DataTables adds it
+                        exportOptions: {
+                            // Export only visible/filtered rows and columns
+                            modifier: {
+                                search: 'applied',
+                                order: 'applied'
+                            }
+                        }
                     }
-                }
-                
-                // Quote strings with commas
-                if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-                    // Escape double quotes
-                    value = value.replace(/"/g, '""');
-                    return `"${value}"`;
-                }
-                return value;
+                ]
             });
             
-            csvContent.push(values.join(','));
-        });
-        
-        // Create CSV file and download
-        const csvString = csvContent.join('\n');
-        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        
-        // Create download link
-        const downloadLink = document.createElement('a');
-        downloadLink.href = url;
-        downloadLink.download = `${tableTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
+            // Trigger the CSV export button programmatically
+            api.buttons().trigger();
+        } else {
+            console.error('DataTables Buttons extension not available');
+            alert('Export failed: DataTables Buttons extension is not loaded');
+        }
     } catch (error) {
         console.error('Error exporting table to CSV:', error);
         alert('Failed to export table to CSV. See console for details.');
