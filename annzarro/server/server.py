@@ -80,13 +80,18 @@ def run_server(
     ctx.push()
     
     # Ensure data directory exists
-    os.makedirs(final_config["data_dir"], exist_ok=True)
+    data_dir = final_config.get("data_dir", "data")
+    os.makedirs(data_dir, exist_ok=True)
     
     # Log configuration
-    logger.info(f"Starting Annzarro server on {final_config['host']}:{final_config['port']}")
-    logger.info(f"Data directory: {final_config['data_dir']}")
+    host = final_config.get("host", "127.0.0.1")
+    port = final_config.get("port", 8000)
+    debug = final_config.get("debug", False)
+    
+    logger.info(f"Starting Annzarro server on {host}:{port}")
+    logger.info(f"Data directory: {data_dir}")
     logger.info(f"Static directory: {final_config.get('static_dir', 'project root')}")
-    logger.info(f"Debug mode: {final_config['debug']}")
+    logger.info(f"Debug mode: {debug}")
     
     # Handle detached mode if requested
     if detach:
@@ -101,9 +106,9 @@ def run_server(
         # Prepare command for detached process
         cmd = [
             sys.executable, "-m", "annzarro.cli", "start",
-            "--host", final_config["host"],
-            "--port", str(final_config["port"]),
-            "--data-dir", final_config["data_dir"]
+            "--host", host,
+            "--port", str(port),
+            "--data-dir", data_dir
         ]
         
         if final_config.get("debug", False):
@@ -153,9 +158,9 @@ def run_server(
                     logger.warning("Falling back to HTTP.")
             
             app.run(
-                host=final_config["host"],
-                port=final_config["port"],
-                debug=final_config["debug"],
+                host=final_config.get("host", "127.0.0.1"),
+                port=final_config.get("port", 8000),
+                debug=final_config.get("debug", False),
                 threaded=True,
                 ssl_context=ssl_context
             )
