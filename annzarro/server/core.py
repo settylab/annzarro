@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 from functools import wraps
 import time
 
-from flask import Flask, request, jsonify, session, redirect, url_for, current_app
+from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -43,7 +43,15 @@ DEFAULT_CONFIG = {
     "secret_key": "change-this-in-production",  # Secret key for sessions
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
-    "cache_dataset_limit": 10          # Maximum number of datasets to keep in memory
+    "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
+    "app_name": "Annzarro",            # Application name shown on login page
+    "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
+    "contact_info": {                  # Contact information shown on login page
+        "email": None,                 # Contact email address
+        "lab_name": None,              # Name of the lab or organization
+        "lab_url": None,               # Lab/organization website URL
+        "custom_html": None            # Custom HTML content for additional contact info
+    }
 }
 
 def require_auth(f):
@@ -89,8 +97,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     Returns:
         Configured Flask application
     """
-    # Create Flask app
-    app = Flask(__name__)
+    # Create Flask app with custom template folder
+    template_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
+    app = Flask(__name__, template_folder=template_folder)
     
     # Enable CORS by default for all routes - important during development
     CORS(app)
@@ -289,105 +298,17 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     @app.route("/login", methods=["GET"])
     def login_page():
         """Login page"""
-        login_html = """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Annzarro Login</title>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                    background-color: #f5f5f5;
-                    margin: 0;
-                    padding: 0;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                }
-                .login-container {
-                    background-color: white;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-                    padding: 40px;
-                    width: 100%;
-                    max-width: 400px;
-                }
-                h1 {
-                    margin-top: 0;
-                    color: #333;
-                    font-size: 24px;
-                    margin-bottom: 20px;
-                }
-                .form-group {
-                    margin-bottom: 20px;
-                }
-                label {
-                    display: block;
-                    margin-bottom: 8px;
-                    font-weight: 500;
-                    color: #333;
-                }
-                input {
-                    width: 100%;
-                    padding: 10px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    font-size: 16px;
-                    box-sizing: border-box;
-                }
-                button {
-                    background-color: #4285f4;
-                    color: white;
-                    border: none;
-                    padding: 12px 20px;
-                    border-radius: 4px;
-                    font-size: 16px;
-                    cursor: pointer;
-                    width: 100%;
-                    font-weight: 500;
-                }
-                button:hover {
-                    background-color: #3b78e7;
-                }
-                .error-message {
-                    color: #d32f2f;
-                    margin-bottom: 20px;
-                    font-size: 14px;
-                }
-                .logo {
-                    text-align: center;
-                    margin-bottom: 20px;
-                }
-                .logo img {
-                    height: 60px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="login-container">
-                <div class="logo">
-                    <h2>Annzarro</h2>
-                </div>
-                <h1>Sign in</h1>
-                <form action="/login" method="POST">
-                    <div class="form-group">
-                        <label for="username">Username</label>
-                        <input type="text" id="username" name="username" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Password</label>
-                        <input type="password" id="password" name="password" required>
-                    </div>
-                    <button type="submit">Sign in</button>
-                </form>
-            </div>
-        </body>
-        </html>
-        """
-        return login_html
+        # Pass the config variables to the template
+        app_name = app.config.get("app_name", "Annzarro")
+        project_description = app.config.get("project_description", "")
+        contact_info = app.config.get("contact_info", {})
+        
+        return render_template(
+            "login.html",
+            app_name=app_name,
+            project_description=project_description,
+            contact_info=contact_info
+        )
     
     @app.route("/login", methods=["POST"])
     def login():
@@ -409,106 +330,17 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             return redirect("/")
         else:
             # Return login page with error
-            login_html_with_error = """
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Annzarro Login</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                        background-color: #f5f5f5;
-                        margin: 0;
-                        padding: 0;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                    }
-                    .login-container {
-                        background-color: white;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-                        padding: 40px;
-                        width: 100%;
-                        max-width: 400px;
-                    }
-                    h1 {
-                        margin-top: 0;
-                        color: #333;
-                        font-size: 24px;
-                        margin-bottom: 20px;
-                    }
-                    .form-group {
-                        margin-bottom: 20px;
-                    }
-                    label {
-                        display: block;
-                        margin-bottom: 8px;
-                        font-weight: 500;
-                        color: #333;
-                    }
-                    input {
-                        width: 100%;
-                        padding: 10px;
-                        border: 1px solid #ddd;
-                        border-radius: 4px;
-                        font-size: 16px;
-                        box-sizing: border-box;
-                    }
-                    button {
-                        background-color: #4285f4;
-                        color: white;
-                        border: none;
-                        padding: 12px 20px;
-                        border-radius: 4px;
-                        font-size: 16px;
-                        cursor: pointer;
-                        width: 100%;
-                        font-weight: 500;
-                    }
-                    button:hover {
-                        background-color: #3b78e7;
-                    }
-                    .error-message {
-                        color: #d32f2f;
-                        margin-bottom: 20px;
-                        font-size: 14px;
-                    }
-                    .logo {
-                        text-align: center;
-                        margin-bottom: 20px;
-                    }
-                    .logo img {
-                        height: 60px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="login-container">
-                    <div class="logo">
-                        <h2>Annzarro</h2>
-                    </div>
-                    <h1>Sign in</h1>
-                    <div class="error-message">Invalid username or password. Please try again.</div>
-                    <form action="/login" method="POST">
-                        <div class="form-group">
-                            <label for="username">Username</label>
-                            <input type="text" id="username" name="username" required autofocus>
-                        </div>
-                        <div class="form-group">
-                            <label for="password">Password</label>
-                            <input type="password" id="password" name="password" required>
-                        </div>
-                        <button type="submit">Sign in</button>
-                    </form>
-                </div>
-            </body>
-            </html>
-            """
-            return login_html_with_error
+            app_name = app.config.get("app_name", "Annzarro")
+            project_description = app.config.get("project_description", "")
+            contact_info = app.config.get("contact_info", {})
+            
+            return render_template(
+                "login.html",
+                app_name=app_name,
+                project_description=project_description,
+                contact_info=contact_info,
+                error="Invalid username or password. Please try again."
+            )
     
     @app.route("/logout", methods=["GET"])
     def logout():

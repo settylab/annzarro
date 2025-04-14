@@ -6,6 +6,7 @@ const Config = (function() {
     const API_BASE = '/api/v1';
     
     const API = {
+        CONFIG: `${API_BASE}/config`,
         DATASETS: `${API_BASE}/datasets`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
@@ -126,6 +127,39 @@ const Config = (function() {
         CLOSE_MODAL: { key: 'Escape', modifiers: {} }
     };
     
+    // Server configuration that will be loaded at runtime
+    const SERVER_CONFIG = {
+        app_name: null,
+        project_description: null,
+        contact_info: {}
+    };
+    
+    // Function to load server configuration
+    async function loadServerConfig() {
+        try {
+            const response = await fetch(API.CONFIG);
+            if (response.ok) {
+                const config = await response.json();
+                
+                // Update server config
+                Object.assign(SERVER_CONFIG, {
+                    app_name: config.app_name,
+                    project_description: config.project_description,
+                    contact_info: config.contact_info
+                });
+                
+                console.log('Loaded server configuration:', SERVER_CONFIG);
+            } else {
+                console.error('Failed to load server configuration:', response.statusText);
+            }
+        } catch (error) {
+            console.error('Error loading server configuration:', error);
+        }
+    }
+    
+    // Load server config on module initialization
+    loadServerConfig();
+    
     return {
         API,
         DEFAULTS,
@@ -133,7 +167,8 @@ const Config = (function() {
         AUTOSAVE,
         STRING_DB,
         PANEL_TYPES,
-        KEYBOARD_SHORTCUTS
+        KEYBOARD_SHORTCUTS,
+        SERVER_CONFIG
     };
 })();
 

@@ -7,7 +7,7 @@ This module contains routes for serving static files for the web UI.
 import os
 import logging
 from pathlib import Path
-from flask import send_file, send_from_directory, current_app as app
+from flask import send_file, send_from_directory, current_app as app, render_template
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +62,15 @@ def register_static_routes(app, api_version):
         static_dir = os.path.abspath(static_dir)
         logger.debug(f"Serving static content from: {static_dir}")
         
-        # If path is empty or a directory, serve index.html
+        # If path is empty or a directory, render index template
         full_path = os.path.join(static_dir, path)
         if not path or (os.path.exists(full_path) and os.path.isdir(full_path)):
-            index_path = os.path.join(static_dir, "index.html")
-            logger.debug(f"Serving index.html from: {index_path}")
-            return send_file(index_path)
+            logger.debug(f"Rendering index.html template")
+            return render_template(
+                "index.html",
+                app_name=app.config.get("app_name", "Annzarro"),
+                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
+            )
         
         # Check if the file exists
         if os.path.exists(full_path) and os.path.isfile(full_path):
@@ -78,6 +81,10 @@ def register_static_routes(app, api_version):
                 logger.error(f"Error serving file {path}: {e}")
                 return {"error": "Error serving file"}, 500
         else:
-            # File not found - for single page apps, return index.html for client-side routing
-            logger.debug(f"File not found: {full_path}, serving index.html for client-side routing")
-            return send_file(os.path.join(static_dir, "index.html"))
+            # File not found - for single page apps, render the index template for client-side routing
+            logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
+            return render_template(
+                "index.html",
+                app_name=app.config.get("app_name", "Annzarro"),
+                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
+            )

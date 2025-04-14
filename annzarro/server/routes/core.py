@@ -64,12 +64,38 @@ def register_core_routes(app, api_version):
         Returns:
             JSON response with configuration (limited to what clients need to know)
         """
-        # Only return necessary configuration
+        # Define a whitelist of safe configuration values to share with the client
+        # This approach prevents accidental exposure of sensitive information
+        
+        # Basic client-safe configuration
         client_config = {
+            # Basic connectivity info the frontend needs
             "host": app.config.get("host", "127.0.0.1"),
             "port": app.config.get("port", 8000),
-            "data_dir": app.config.get("data_dir", "data")
+            "data_dir": app.config.get("data_dir", "data"),
+            
+            # UI/application information
+            "app_name": app.config.get("app_name", "Annzarro"),
+            "project_description": app.config.get("project_description", "Zarr-based AnnData Visualization Tool"),
+            
+            # Contact info - explicitly extract only what's needed
+            "contact_info": {
+                "lab_name": app.config.get("contact_info", {}).get("lab_name"),
+                "lab_url": app.config.get("contact_info", {}).get("lab_url"),
+                "email": app.config.get("contact_info", {}).get("email"),
+                "custom_html": app.config.get("contact_info", {}).get("custom_html")
+            },
+            
+            # Feature flags and limits - only sharing safe values
+            "max_cells_per_request": app.config.get("max_cells_per_request", 10000),
+            "max_genes_per_request": app.config.get("max_genes_per_request", 10000)
         }
+        
+        # Never share sensitive values like:
+        # - secret_key
+        # - File paths (except data_dir)
+        # - Internal configuration details
+        # - Authentication settings
         
         return jsonify(client_config)
         
@@ -148,8 +174,8 @@ def register_core_routes(app, api_version):
                     "host": app.config.get("host", "127.0.0.1"),
                     "port": app.config.get("port", 8000),
                     "data_dir": data_dir,
-                    "static_dir": app.config.get("static_dir"),
                     "unified_server": app.config.get("unified_server", True)
+                    # static_dir removed - no need to expose internal file paths
                 },
                 "resources": {
                     "memory_usage_mb": round(memory_usage_mb, 2),
