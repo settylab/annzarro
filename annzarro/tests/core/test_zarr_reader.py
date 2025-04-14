@@ -8,6 +8,7 @@ import numpy as np
 import zarr
 from unittest.mock import patch, MagicMock
 
+# For tests we use absolute imports to ensure we're testing the installed package
 from annzarro.core.zarr_reader import ZarrReader
 
 class TestZarrReader(unittest.TestCase):

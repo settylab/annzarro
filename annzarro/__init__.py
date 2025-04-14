@@ -21,14 +21,14 @@ except (ImportError, importlib.metadata.PackageNotFoundError):
     pass  # Keep using the hardcoded version
 
 # Import and expose core modules
-from annzarro.core.zarr_reader import ZarrReader, zarr_reader
+from .core.zarr_reader import ZarrReader, zarr_reader
 
 # Import and expose data management
-from annzarro.data.manager import DataManager
-from annzarro.data import data_manager
+from .data.manager import DataManager
+from .data import data_manager
 
 # Import and expose server functionality
-from annzarro.server.server import run_server
+from .server.server import run_server
 
 # Define public API
 __all__ = [

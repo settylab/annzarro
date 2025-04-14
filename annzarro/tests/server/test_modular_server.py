@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from flask import Flask
+# For tests we use absolute imports to ensure we're testing the installed package
 from annzarro.server.core import create_app, configure_app, setup_logging
 from annzarro.server.routes import (
     register_core_routes,

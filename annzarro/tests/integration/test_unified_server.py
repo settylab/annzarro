@@ -16,6 +16,7 @@ import requests
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+# For tests we use absolute imports to ensure we're testing the installed package
 from annzarro.server.core import create_app
 from annzarro.server.server import run_server
 

@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import numpy as np
 
+# For tests we use absolute imports to ensure we're testing the installed package
 from annzarro.server.core import create_app, DEFAULT_CONFIG
 
 class TestUnsRoutes(unittest.TestCase):

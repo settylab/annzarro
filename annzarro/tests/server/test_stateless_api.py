@@ -8,6 +8,7 @@ import numpy as np
 import os
 from pathlib import Path
 
+# For tests we use absolute imports to ensure we're testing the installed package
 from annzarro.server.core import create_app, DEFAULT_CONFIG
 
 class TestStatelessAPI(unittest.TestCase):

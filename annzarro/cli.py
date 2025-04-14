@@ -12,8 +12,8 @@ import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from annzarro.data.manager import data_manager
-from annzarro.server import run_server
+from .data.manager import data_manager
+from .server import run_server
 
 # Configure logging
 logging.basicConfig(
