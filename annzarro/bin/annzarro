@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""
+Annzarro CLI entry point script
+"""
+
+import sys
+import os
+
+# Add parent directory to path so we can import annzarro
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+from annzarro.cli import main
+
+if __name__ == "__main__":
+    sys.exit(main())

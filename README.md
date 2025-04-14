@@ -30,12 +30,13 @@ git clone https://github.com/settylab/annzarro.git
 cd annzarro
 
 # Install requirements
-pip install -r requirements.txt
+./annzarro-cli install
 
 # Start the server
-python run_annzarro.py --start
-# Or use the modular server directly
-python -m annzarro.server
+./annzarro-cli start
+
+# Start with options
+./annzarro-cli start --port 8080 --debug --data-dir /path/to/data
 ```
 
 Then open your browser and navigate to:
@@ -43,7 +44,7 @@ Then open your browser and navigate to:
 http://localhost:8000
 ```
 
-### Authentication
+### Authentication and User Management
 
 The default admin credentials are:
 - Username: admin
@@ -51,34 +52,49 @@ The default admin credentials are:
 
 You can enable/disable authentication in `annzarro/server/config.json`.
 
-### Configuration Options
+Use the CLI to manage users:
 
 ```bash
-# Specify a custom port
-python run_annzarro.py --start --port 8080
+# Add a new user
+./annzarro-cli user add
 
-# Specify a custom data directory
-python run_annzarro.py --start --data-dir /path/to/data
+# Add an admin user
+./annzarro-cli user add -u username -p password -a
 
-# Allow external connections
-python run_annzarro.py --start --host 0.0.0.0
+# List all users
+./annzarro-cli user list
 
-# Run in debug mode
-python run_annzarro.py --start --debug
+# Remove a user
+./annzarro-cli user remove -u username
 ```
 
 ### Server Management
 
 ```bash
-# Use the simple starter script
-./run_start.sh
+# Start server in the background (daemon mode)
+./annzarro-cli start --detach
 
-# With options
-./run_start.sh --port 8080 --debug
+# Stop the server
+./annzarro-cli stop
 
-# For production deployment, use Gunicorn:
+# Start with specific configuration
+./annzarro-cli start --config /path/to/custom_config.json
+
+# For production deployment with Gunicorn:
 cd annzarro/server
 ./run_gunicorn.sh
+```
+
+### Data Management
+
+Use the CLI to manage datasets:
+
+```bash
+# List available datasets
+./annzarro-cli data list
+
+# Get dataset information
+./annzarro-cli data info /path/to/dataset.zarr
 ```
 
 ## User Interface
@@ -120,6 +136,9 @@ cp -r /path/to/your-dataset.zarr data/
 
 # Or create a symlink
 ln -s /path/to/your-dataset.zarr data/
+
+# Start with a specific data directory
+./run_start.sh --data-dir /path/to/datasets
 ```
 
 The application will automatically detect and display all .zarr directories in the data/ folder.
@@ -174,6 +193,14 @@ Annzarro uses a unified stateless server architecture:
 - **Backend**: Flask server providing both API and static file serving
 - **API**: RESTful endpoints for data access with the dataset_path parameter
 - **Storage**: Support for local and remote zarr archives
+- **Authentication**: Secure session-based authentication with password hashing
+- **Production-Ready**: Gunicorn support for multi-worker deployment
+
+### Server Components
+
+- `annzarro/server/` - Main server package with modular components
+- `annzarro/cli.py` - Command line interface with server and user management
+- `annzarro-cli` - Executable script for easily accessing all features
 
 For more details, see:
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Overall implementation strategy
