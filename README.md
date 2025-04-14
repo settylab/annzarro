@@ -1,4 +1,4 @@
-# Annzarro
+# <span style="color:#357AFA">Annzarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="Annzarro logo">
 
 [![CI Status](https://github.com/settylab/annzarro/workflows/Annzarro%20CI/badge.svg)](https://github.com/settylab/annzarro/actions)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
