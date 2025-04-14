@@ -104,57 +104,67 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # Enable CORS by default for all routes - important during development
     CORS(app)
     
-    # Set default configuration
-    app.config.update(DEFAULT_CONFIG)
-    
-    # Check environment variables before applying provided config
-    if os.environ.get("ANNZARRO_HOST"):
-        app.config["host"] = os.environ.get("ANNZARRO_HOST")
-    
-    if os.environ.get("ANNZARRO_PORT"):
-        try:
-            app.config["port"] = int(os.environ.get("ANNZARRO_PORT"))
-        except ValueError:
-            logger.warning(f"Invalid port in environment variable: {os.environ.get('ANNZARRO_PORT')}")
-    
-    if os.environ.get("ANNZARRO_DATA_DIR"):
-        app.config["data_dir"] = os.environ.get("ANNZARRO_DATA_DIR")
-    
-    if os.environ.get("ANNZARRO_STATIC_DIR"):
-        app.config["static_dir"] = os.environ.get("ANNZARRO_STATIC_DIR")
-    
-    if os.environ.get("ANNZARRO_DEBUG"):
-        app.config["debug"] = os.environ.get("ANNZARRO_DEBUG").lower() in ("true", "1", "yes")
+    # Check if we're using the new configuration system or the old one
+    if config and (isinstance(config, dict) and config.get("__using_config_manager", False)):
+        # We're using the new configuration system - this is already flattened
+        config_copy = dict(config)
+        # Remove the marker before adding to Flask config
+        del config_copy["__using_config_manager"]
+        app.config.update(config_copy)
+        logger.info("Using configuration from configuration manager")
+    else:
+        # Using legacy configuration approach - set default configuration
+        logger.warning("Using legacy configuration approach - consider switching to the new configuration system")
+        app.config.update(DEFAULT_CONFIG)
         
-    if os.environ.get("ANNZARRO_AUTH_ENABLED"):
-        app.config["auth_enabled"] = os.environ.get("ANNZARRO_AUTH_ENABLED").lower() in ("true", "1", "yes")
+        # Apply environment variables for backward compatibility
+        if os.environ.get("ANNZARRO_HOST"):
+            app.config["host"] = os.environ.get("ANNZARRO_HOST")
         
-    if os.environ.get("ANNZARRO_USER_FILE"):
-        app.config["user_file"] = os.environ.get("ANNZARRO_USER_FILE")
-        logger.info(f"Using user file from environment: {app.config['user_file']}")
+        if os.environ.get("ANNZARRO_PORT"):
+            try:
+                app.config["port"] = int(os.environ.get("ANNZARRO_PORT"))
+            except ValueError:
+                logger.warning(f"Invalid port in environment variable: {os.environ.get('ANNZARRO_PORT')}")
         
-    if os.environ.get("ANNZARRO_SECRET_KEY"):
-        app.config["secret_key"] = os.environ.get("ANNZARRO_SECRET_KEY")
+        if os.environ.get("ANNZARRO_DATA_DIR"):
+            app.config["data_dir"] = os.environ.get("ANNZARRO_DATA_DIR")
         
-    # Cache settings
-    if os.environ.get("ANNZARRO_CACHE_MEMORY_MB"):
-        try:
-            app.config["cache_memory_mb"] = int(os.environ.get("ANNZARRO_CACHE_MEMORY_MB"))
-        except ValueError:
-            logger.warning(f"Invalid cache_memory_mb in environment variable: {os.environ.get('ANNZARRO_CACHE_MEMORY_MB')}")
+        if os.environ.get("ANNZARRO_STATIC_DIR"):
+            app.config["static_dir"] = os.environ.get("ANNZARRO_STATIC_DIR")
+        
+        if os.environ.get("ANNZARRO_DEBUG"):
+            app.config["debug"] = os.environ.get("ANNZARRO_DEBUG").lower() in ("true", "1", "yes")
             
-    if os.environ.get("ANNZARRO_CACHE_ENABLED"):
-        app.config["cache_enabled"] = os.environ.get("ANNZARRO_CACHE_ENABLED").lower() in ("true", "1", "yes")
+        if os.environ.get("ANNZARRO_AUTH_ENABLED"):
+            app.config["auth_enabled"] = os.environ.get("ANNZARRO_AUTH_ENABLED").lower() in ("true", "1", "yes")
+            
+        if os.environ.get("ANNZARRO_USER_FILE"):
+            app.config["user_file"] = os.environ.get("ANNZARRO_USER_FILE")
+            logger.info(f"Using user file from environment: {app.config['user_file']}")
+            
+        if os.environ.get("ANNZARRO_SECRET_KEY"):
+            app.config["secret_key"] = os.environ.get("ANNZARRO_SECRET_KEY")
+            
+        # Cache settings
+        if os.environ.get("ANNZARRO_CACHE_MEMORY_MB"):
+            try:
+                app.config["cache_memory_mb"] = int(os.environ.get("ANNZARRO_CACHE_MEMORY_MB"))
+            except ValueError:
+                logger.warning(f"Invalid cache_memory_mb in environment variable: {os.environ.get('ANNZARRO_CACHE_MEMORY_MB')}")
+                
+        if os.environ.get("ANNZARRO_CACHE_ENABLED"):
+            app.config["cache_enabled"] = os.environ.get("ANNZARRO_CACHE_ENABLED").lower() in ("true", "1", "yes")
+            
+        if os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"):
+            try:
+                app.config["cache_dataset_limit"] = int(os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"))
+            except ValueError:
+                logger.warning(f"Invalid cache_dataset_limit in environment variable: {os.environ.get('ANNZARRO_CACHE_DATASET_LIMIT')}")
         
-    if os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"):
-        try:
-            app.config["cache_dataset_limit"] = int(os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"))
-        except ValueError:
-            logger.warning(f"Invalid cache_dataset_limit in environment variable: {os.environ.get('ANNZARRO_CACHE_DATASET_LIMIT')}")
-    
-    # Update with provided config if any (allowing it to override environment variables)
-    if config:
-        app.config.update(config)
+        # Update with provided config if any (allowing it to override environment variables)
+        if config:
+            app.config.update(config)
     
     # Configure the app
     configure_app(app, app.config)

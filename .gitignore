@@ -116,5 +116,12 @@ mypy_cache/
 # Optional REPL history
 .node_repl_history
 
-# anzarro users
+# Authentication files with sensitive information
 annzarro/server/users.json
+data/auth/*.json
+auth/*.json
+.auth/
+*.auth
+config/auth/*.json
+# Keep the config/auth directory, but not its contents
+!config/auth/.gitkeep

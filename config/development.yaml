@@ -1,0 +1,22 @@
+# Annzarro Development Configuration
+# Overrides for development environment
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  debug: true
+  cors_enabled: true  # Enable CORS for development
+  log_level: "DEBUG"
+  
+  # Development-specific cache settings
+  cache_memory_mb: 500  # Lower memory usage for development
+
+auth:
+  enabled: false  # Authentication disabled by default in development
+  user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
+
+# Contact information for development environment
+branding:
+  contact_info:
+    lab_name: "Development Environment"
+    email: "dev@example.com"

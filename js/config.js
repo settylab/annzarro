@@ -129,9 +129,36 @@ const Config = (function() {
     
     // Server configuration that will be loaded at runtime
     const SERVER_CONFIG = {
+        // Branding
         app_name: null,
         project_description: null,
-        contact_info: {}
+        contact_info: {},
+        
+        // Panel configuration
+        enabled_panel_types: null,
+        
+        // Cache configuration
+        ui_cache_max_entries: null,
+        ui_cache_max_size_mb: null,
+        
+        // Autosave configuration
+        ui_autosave_enabled: null,
+        ui_autosave_interval_ms: null,
+        ui_autosave_storage_key: null,
+        ui_autosave_session_name: null,
+        ui_autosave_show_in_list: null,
+        ui_autosave_auto_restore: null,
+        
+        // UI defaults
+        ui_max_cells: null,
+        ui_max_genes: null,
+        ui_point_size: null,
+        ui_point_opacity: null,
+        ui_color_scale: null,
+        ui_taxonomy_id: null,
+        
+        // External integrations
+        integrations: null
     };
     
     // Function to load server configuration
@@ -141,12 +168,45 @@ const Config = (function() {
             if (response.ok) {
                 const config = await response.json();
                 
-                // Update server config
-                Object.assign(SERVER_CONFIG, {
-                    app_name: config.app_name,
-                    project_description: config.project_description,
-                    contact_info: config.contact_info
+                // Update server config with all fields from server
+                Object.keys(config).forEach(key => {
+                    // Don't override server connection info
+                    if (!['host', 'port', 'data_dir'].includes(key)) {
+                        SERVER_CONFIG[key] = config[key];
+                    }
                 });
+                
+                // Override local defaults with server-provided values
+                if (SERVER_CONFIG.ui_max_cells) DEFAULTS.MAX_CELLS = SERVER_CONFIG.ui_max_cells;
+                if (SERVER_CONFIG.ui_max_genes) DEFAULTS.MAX_GENES = SERVER_CONFIG.ui_max_genes;
+                if (SERVER_CONFIG.ui_point_size) DEFAULTS.POINT_SIZE = SERVER_CONFIG.ui_point_size;
+                if (SERVER_CONFIG.ui_point_opacity) DEFAULTS.POINT_OPACITY = SERVER_CONFIG.ui_point_opacity;
+                if (SERVER_CONFIG.ui_color_scale) DEFAULTS.COLOR_SCALE = SERVER_CONFIG.ui_color_scale;
+                if (SERVER_CONFIG.ui_taxonomy_id) DEFAULTS.TAXONOMY_ID = SERVER_CONFIG.ui_taxonomy_id;
+                
+                // Override panel types if provided
+                if (SERVER_CONFIG.enabled_panel_types) {
+                    DEFAULTS.ENABLED_PANEL_TYPES = SERVER_CONFIG.enabled_panel_types;
+                }
+                
+                // Override cache settings if provided
+                if (SERVER_CONFIG.ui_cache_max_entries) CACHE.MAX_ENTRIES = SERVER_CONFIG.ui_cache_max_entries;
+                if (SERVER_CONFIG.ui_cache_max_size_mb) CACHE.MAX_SIZE_BYTES = SERVER_CONFIG.ui_cache_max_size_mb * 1024 * 1024;
+                
+                // Override autosave settings if provided
+                if (SERVER_CONFIG.ui_autosave_enabled !== null) AUTOSAVE.ENABLED = SERVER_CONFIG.ui_autosave_enabled;
+                if (SERVER_CONFIG.ui_autosave_interval_ms) AUTOSAVE.INTERVAL = SERVER_CONFIG.ui_autosave_interval_ms;
+                if (SERVER_CONFIG.ui_autosave_storage_key) AUTOSAVE.STORAGE_KEY = SERVER_CONFIG.ui_autosave_storage_key;
+                if (SERVER_CONFIG.ui_autosave_session_name) AUTOSAVE.SESSION_NAME = SERVER_CONFIG.ui_autosave_session_name;
+                if (SERVER_CONFIG.ui_autosave_show_in_list !== null) AUTOSAVE.SHOW_IN_LIST = SERVER_CONFIG.ui_autosave_show_in_list;
+                if (SERVER_CONFIG.ui_autosave_auto_restore !== null) AUTOSAVE.AUTO_RESTORE = SERVER_CONFIG.ui_autosave_auto_restore;
+                
+                // Override StringDB settings if provided
+                if (SERVER_CONFIG.integrations && SERVER_CONFIG.integrations.string_db) {
+                    const stringDbConfig = SERVER_CONFIG.integrations.string_db;
+                    if (stringDbConfig.base_url) STRING_DB.BASE_URL = stringDbConfig.base_url;
+                    if (stringDbConfig.version) STRING_DB.VERSION = stringDbConfig.version;
+                }
                 
                 console.log('Loaded server configuration:', SERVER_CONFIG);
             } else {

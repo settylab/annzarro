@@ -64,10 +64,35 @@ def register_core_routes(app, api_version):
         Returns:
             JSON response with configuration (limited to what clients need to know)
         """
-        # Define a whitelist of safe configuration values to share with the client
-        # This approach prevents accidental exposure of sensitive information
+        try:
+            # Check if we have access to the config manager
+            from annzarro.utils.config_manager import config_manager
+            
+            # Try to get filtered configuration
+            filtered_config = config_manager.get_filtered_config("public")
+            
+            # If filtered config exists, return it
+            if filtered_config:
+                # Add a few basic connection parameters that might not be in the filtered config
+                # but are needed by the frontend
+                if "host" not in filtered_config and "server" in filtered_config:
+                    filtered_config["host"] = filtered_config.get("server", {}).get("host", app.config.get("host", "127.0.0.1"))
+                    
+                if "port" not in filtered_config and "server" in filtered_config:
+                    filtered_config["port"] = filtered_config.get("server", {}).get("port", app.config.get("port", 8000))
+                    
+                if "data_dir" not in filtered_config and "server" in filtered_config:
+                    filtered_config["data_dir"] = filtered_config.get("server", {}).get("data_dir", app.config.get("data_dir", "data"))
+                
+                return jsonify(filtered_config)
+        except ImportError:
+            # Config manager not available, fall back to default filtering
+            logger.warning("Config manager not available, using default security filtering")
+        except Exception as e:
+            # Something went wrong, fall back to default filtering
+            logger.error(f"Error filtering configuration: {e}")
         
-        # Basic client-safe configuration
+        # Fall back to default filtering approach
         client_config = {
             # Basic connectivity info the frontend needs
             "host": app.config.get("host", "127.0.0.1"),
@@ -88,15 +113,19 @@ def register_core_routes(app, api_version):
             
             # Feature flags and limits - only sharing safe values
             "max_cells_per_request": app.config.get("max_cells_per_request", 10000),
-            "max_genes_per_request": app.config.get("max_genes_per_request", 10000)
+            "max_genes_per_request": app.config.get("max_genes_per_request", 10000),
+            
+            # UI settings
+            "ui_max_cells": app.config.get("ui_max_cells", None),
+            "ui_max_genes": app.config.get("ui_max_genes", None),
+            "ui_point_size": app.config.get("ui_point_size", None),
+            "ui_point_opacity": app.config.get("ui_point_opacity", None),
+            "ui_color_scale": app.config.get("ui_color_scale", None),
+            "ui_taxonomy_id": app.config.get("ui_taxonomy_id", None),
+            "enabled_panel_types": app.config.get("enabled_panel_types", None)
         }
         
-        # Never share sensitive values like:
-        # - secret_key
-        # - File paths (except data_dir)
-        # - Internal configuration details
-        # - Authentication settings
-        
+        # Never share sensitive values
         return jsonify(client_config)
         
     @app.route(f"/api/{api_version}/status", methods=["GET"])

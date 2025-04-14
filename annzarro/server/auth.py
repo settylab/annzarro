@@ -347,6 +347,49 @@ class AuthManager:
             User: User object or None if not found
         """
         return self.users.get(username)
+        
+    def get_users(self):
+        """
+        Get all users
+        
+        Returns:
+            dict: Dictionary of username to User objects
+        """
+        return self.users
+        
+    def add_user(self, username, password, is_admin=False):
+        """
+        Add a new user
+        
+        Args:
+            username (str): Username
+            password (str): Plain text password
+            is_admin (bool, optional): Whether user is admin. Defaults to False.
+            
+        Returns:
+            bool: Success status
+        """
+        return self.create_user(username, password, is_admin)
+        
+    def remove_user(self, username):
+        """
+        Remove a user
+        
+        Args:
+            username (str): Username
+            
+        Returns:
+            bool: Success status
+        """
+        if username not in self.users:
+            logging.warning(f"Cannot remove user: User {username} not found")
+            return False
+            
+        # Remove user
+        del self.users[username]
+        self._save_users()
+        logging.info(f"Removed user: {username}")
+        return True
     
     def _clean_expired_tokens(self, user):
         """

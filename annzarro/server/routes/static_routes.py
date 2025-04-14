@@ -62,6 +62,11 @@ def register_static_routes(app, api_version):
         static_dir = os.path.abspath(static_dir)
         logger.debug(f"Serving static content from: {static_dir}")
         
+        # Security check - reject paths trying to access hidden files or directories
+        if path.startswith('.') or '/..' in path or '/.' in path:
+            logger.warning(f"Blocked access attempt to hidden path: {path}")
+            return {"error": "Access denied"}, 403
+            
         # If path is empty or a directory, render index template
         full_path = os.path.join(static_dir, path)
         if not path or (os.path.exists(full_path) and os.path.isdir(full_path)):
@@ -72,8 +77,19 @@ def register_static_routes(app, api_version):
                 project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
             )
         
-        # Check if the file exists
+        # Check if the file exists and isn't in a protected location
         if os.path.exists(full_path) and os.path.isfile(full_path):
+            # Additional security check - prevent access to sensitive files
+            relative_path = os.path.relpath(full_path, static_dir)
+            if (relative_path.startswith('.') or
+                '/..' in relative_path or 
+                '/.' in relative_path or
+                'users.json' in relative_path.lower() or
+                'config/auth/' in relative_path or
+                '/auth/' in relative_path):
+                logger.warning(f"Blocked access attempt to restricted file: {relative_path}")
+                return {"error": "Access denied"}, 403
+                
             logger.debug(f"Serving file: {full_path}")
             try:
                 return send_from_directory(static_dir, path)

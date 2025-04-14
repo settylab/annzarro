@@ -1,0 +1,273 @@
+# Annzarro Configuration Schema
+# This file defines the schema for the configuration files.
+
+# Schema metadata
+__schema_version: "1.0.0"
+__security_levels:
+  - name: "public"
+    description: "Information that can be safely shared with anyone, including frontend clients"
+  - name: "internal"
+    description: "Information that should only be available to the server components"
+  - name: "sensitive"
+    description: "Security-critical information that should be protected and never exposed via APIs"
+
+# Server configuration
+server:
+  type: object
+  description: Server configuration settings
+  properties:
+    host:
+      type: string
+      description: Host to bind to
+      default: 127.0.0.1
+      security: public
+    port:
+      type: integer
+      description: Port to bind to
+      default: 8000
+      security: public
+    unified_server: 
+      type: boolean
+      description: Whether to use the unified server approach
+      default: true
+      security: public
+    cors_enabled:
+      type: boolean
+      description: Whether to enable CORS
+      default: false
+      security: internal
+    cors_origins:
+      type: string
+      description: CORS origins to allow
+      default: "*"
+      security: internal
+    https_enabled:
+      type: boolean
+      description: Whether to enable HTTPS
+      default: false
+      security: public
+    cert_file:
+      type: [string, "null"]
+      description: Path to SSL certificate file
+      default: null
+      security: sensitive
+    key_file:
+      type: [string, "null"]
+      description: Path to SSL key file
+      default: null
+      security: sensitive
+    data_dir:
+      type: string
+      description: Data directory
+      default: data
+      security: public
+    static_dir:
+      type: [string, "null"]
+      description: Static files directory
+      default: null
+      security: internal
+    log_file:
+      type: string
+      description: Log file path
+      default: annzarro_server.log
+    log_level:
+      type: string
+      description: Log level
+      enum: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+      default: INFO
+    max_response_elements:
+      type: integer
+      description: Maximum number of elements in an array response
+      default: 1000000
+    max_cells_per_request:
+      type: integer
+      description: Maximum number of cells in a single request
+      default: 10000
+    max_genes_per_request:
+      type: integer
+      description: Maximum number of genes in a single request
+      default: 10000
+    max_embedding_dims:
+      type: integer
+      description: Maximum number of dimensions in an embedding request
+      default: 50
+    cache_enabled:
+      type: boolean
+      description: Whether to enable caching
+      default: true
+    cache_memory_mb:
+      type: integer
+      description: Maximum memory in MB for caching
+      default: 1000
+    cache_dataset_limit:
+      type: integer
+      description: Maximum number of datasets to keep in memory
+      default: 10
+  required:
+    - host
+    - port
+    - data_dir
+
+# Authentication configuration
+auth:
+  type: object
+  description: Authentication settings
+  properties:
+    enabled:
+      type: boolean
+      description: Whether to enable authentication
+      default: false
+      security: public
+    user_file:
+      type: string
+      description: Path to user file
+      default: "config/auth/users.json"
+      security: internal
+    secret_key:
+      type: string
+      description: Secret key for sessions
+      default: change-this-in-production
+      security: sensitive
+  required:
+    - enabled
+
+# Branding configuration
+branding:
+  type: object
+  description: Application branding settings
+  security: public
+  properties:
+    app_name:
+      type: string
+      description: Application name
+      default: Annzarro
+      security: public
+    project_description:
+      type: string
+      description: Project description
+      default: Zarr-based AnnData Visualization Tool
+      security: public
+    contact_info:
+      type: object
+      description: Contact information shown on login page
+      security: public
+      properties:
+        lab_name:
+          type: [string, "null"]
+          description: Name of the lab or organization
+          default: null
+        lab_url:
+          type: [string, "null"]
+          description: URL of the lab or organization website
+          default: null
+        email:
+          type: [string, "null"]
+          description: Contact email address
+          default: null
+        custom_html:
+          type: [string, "null"]
+          description: Custom HTML content for additional contact information
+          default: null
+  required:
+    - app_name
+
+# UI configuration
+ui:
+  type: object
+  description: UI settings
+  properties:
+    enabled_panel_types:
+      type: array
+      description: List of enabled panel types
+      items:
+        type: string
+        enum: [cell-plot, gene-plot, cell-table, gene-table, gene-set]
+      default: [cell-plot, gene-plot, cell-table, gene-table]
+    defaults:
+      type: object
+      description: Default UI settings
+      properties:
+        max_cells:
+          type: integer
+          description: Maximum number of cells to display
+          default: 10000
+        max_genes:
+          type: integer
+          description: Maximum number of genes to display
+          default: 10000
+        point_size:
+          type: number
+          description: Default point size
+          default: 5
+        point_opacity:
+          type: number
+          description: Default point opacity
+          default: 1.0
+        color_scale:
+          type: string
+          description: Default color scale
+          default: Portland
+        taxonomy_id:
+          type: string
+          description: Default taxonomy ID
+          default: "9606"
+    cache:
+      type: object
+      description: Client-side cache settings
+      properties:
+        max_entries:
+          type: integer
+          description: Maximum number of cache entries
+          default: 1000
+        max_size_mb:
+          type: integer
+          description: Maximum cache size in MB
+          default: 1024
+    autosave:
+      type: object
+      description: Autosave settings
+      properties:
+        enabled:
+          type: boolean
+          description: Whether to enable autosave
+          default: true
+        interval_ms:
+          type: integer
+          description: Autosave interval in milliseconds
+          default: 10000
+        storage_key:
+          type: string
+          description: Local storage key for autosaved session
+          default: annzarro_autosave
+        session_name:
+          type: string
+          description: Default name for autosaved sessions
+          default: Autosave
+        show_in_list:
+          type: boolean
+          description: Whether to show autosave in session lists
+          default: false
+        auto_restore:
+          type: boolean
+          description: Whether to automatically restore autosave on startup
+          default: true
+  required:
+    - defaults
+
+# External integrations
+integrations:
+  type: object
+  description: External API integrations
+  properties:
+    string_db:
+      type: object
+      description: StringDB API integration
+      properties:
+        base_url:
+          type: string
+          description: StringDB API base URL
+          default: https://string-db.org/api
+        version:
+          type: string
+          description: StringDB API version
+          default: "11.5"

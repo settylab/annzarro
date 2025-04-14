@@ -10,6 +10,7 @@ import logging
 import sys
 import os
 import json
+import yaml
 import getpass
 import signal
 import time
@@ -19,6 +20,7 @@ from typing import List, Optional, Dict, Any, Tuple
 
 from .data.manager import data_manager
 from .server import run_server
+from .utils.config_manager import config_manager
 
 # Configure logging
 logging.basicConfig(
@@ -29,55 +31,39 @@ logging.basicConfig(
 
 logger = logging.getLogger("annzarro")
 
-def load_config(config_path: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+def load_config(
+    config_path: Optional[str] = None,
+    env: str = "development",
+    cli_args: Optional[argparse.Namespace] = None
+) -> Dict[str, Any]:
     """
-    Load configuration from a JSON file.
+    Load configuration using the configuration manager.
     
     Args:
         config_path: Path to configuration file (optional)
+        env: Environment name (development, production)
+        cli_args: Command line arguments
         
     Returns:
-        Tuple containing:
-        - Config dictionary
-        - Path to the config file that was loaded, or None if no file was loaded
+        Configuration dictionary
     """
-    root_dir = Path(__file__).resolve().parent.parent
+    # Load configuration using the manager
+    config = config_manager.load_config(env=env, config_path=config_path, cli_args=cli_args)
     
-    # List of possible config locations in priority order
-    config_locations = [
-        config_path,  # User-provided path has highest priority
-        os.environ.get("ANNZARRO_CONFIG"),  # Environment variable
-        os.path.join(root_dir, "annzarro", "server", "config.json"),  # Default location
-        os.path.join(os.getcwd(), "annzarro", "server", "config.json"),  # Current directory
-        os.path.join("/etc", "annzarro", "config.json")  # System-wide config
-    ]
+    # Validate configuration
+    is_valid, errors = config_manager.validate_config()
+    if not is_valid:
+        for error in errors:
+            logger.error(f"Configuration error: {error}")
+        logger.error("Configuration is invalid. Exiting.")
+        sys.exit(1)
     
-    # Filter out None values
-    config_locations = [loc for loc in config_locations if loc]
+    # Log configuration source information
+    config_info = config_manager.get_config_info()
+    if config_info["sources"]:
+        logger.info(f"Configuration loaded from: {', '.join(config_info['sources'].keys())}")
     
-    # Default config
-    config = {}
-    loaded_path = None
-    
-    # Try each config location
-    for config_path in config_locations:
-        try:
-            if os.path.exists(config_path):
-                logger.info(f"Loading configuration from: {config_path}")
-                with open(config_path, 'r') as f:
-                    loaded_config = json.load(f)
-                    config.update(loaded_config)
-                    loaded_path = config_path
-                    break
-        except Exception as e:
-            logger.warning(f"Could not read config file {config_path}: {e}")
-    
-    if loaded_path:
-        logger.info(f"Using configuration from: {loaded_path}")
-    else:
-        logger.warning("No configuration file found, using defaults")
-        
-    return config, loaded_path
+    return config
 
 def start_server(args: argparse.Namespace) -> int:
     """
@@ -89,191 +75,21 @@ def start_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    # Load configuration from file
-    config, config_path = load_config(args.config)
+    # Load configuration
+    env = "production" if getattr(args, "production", False) else "development"
+    config = load_config(
+        config_path=args.config,
+        env=env,
+        cli_args=args
+    )
     
-    # Set cache options if provided
-    if args.cache_memory is not None:
-        config["cache_memory_mb"] = args.cache_memory
-        
-    if args.cache_datasets is not None:
-        config["cache_dataset_limit"] = args.cache_datasets
+    # Convert to flat structure for the server
+    flask_config = config_manager.to_flask_config()
     
-    if args.no_cache:
-        config["cache_enabled"] = False
-        
-    # Enable authentication by default unless explicitly disabled
-    if args.no_auth:
-        config["auth_enabled"] = False
-        logger.info("Authentication is DISABLED by command line flag")
-    else:
-        config["auth_enabled"] = True
-        logger.info("Authentication is ENABLED - a valid username/password will be required")
+    # Start the server
+    run_server(flask_config, args.detach)
     
-    # Try to start the server in-process
-    try:
-        # Start server in a separate process
-        cmd = [sys.executable, "-m", "annzarro.server"]
-        
-        # Add arguments
-        if args.host:
-            cmd.extend(["--host", args.host])
-        if args.port:
-            cmd.extend(["--port", str(args.port)])
-        if args.config:
-            cmd.extend(["--config", args.config])
-        if args.debug:
-            cmd.append("--debug")
-        if args.data_dir:
-            # Expand user directory (~/path) if present
-            expanded_data_dir = os.path.expanduser(args.data_dir)
-            # Convert to absolute path if it's relative
-            if not os.path.isabs(expanded_data_dir):
-                expanded_data_dir = os.path.abspath(expanded_data_dir)
-            cmd.extend(["--data-dir", expanded_data_dir])
-            
-        # Add cache options as environment variables
-        env = os.environ.copy()
-        if args.cache_memory is not None:
-            env["ANNZARRO_CACHE_MEMORY_MB"] = str(args.cache_memory)
-        if args.cache_datasets is not None:
-            env["ANNZARRO_CACHE_DATASET_LIMIT"] = str(args.cache_datasets)
-        if args.no_cache:
-            env["ANNZARRO_CACHE_ENABLED"] = "false"
-            
-        # Set authentication based on arguments
-        if args.no_auth:
-            env["ANNZARRO_AUTH_ENABLED"] = "false"
-            logging.info("Authentication is DISABLED by command line flag")
-        else:
-            env["ANNZARRO_AUTH_ENABLED"] = "true"
-            logging.info("Authentication is ENABLED - a valid username/password will be required")
-        
-        # Get user file path from config
-        user_file = config.get("user_file", "annzarro/server/users.json")
-        
-        # Make sure it's an absolute path
-        if not os.path.isabs(user_file):
-            root_dir = Path(__file__).resolve().parent.parent
-            user_file = os.path.join(root_dir, user_file)
-            
-        # Set environment variable for server
-        env["ANNZARRO_USER_FILE"] = user_file
-        logging.info(f"Setting server user file to: {user_file}")
-        
-        if args.detach:
-            # Check if using production mode with Gunicorn
-            if args.production:
-                try:
-                    # Try to import gunicorn to check if it's installed
-                    import importlib.util
-                    gunicorn_spec = importlib.util.find_spec("gunicorn")
-                    
-                    if gunicorn_spec is None:
-                        logger.warning("Gunicorn not found. Installing it...")
-                        subprocess.check_call([sys.executable, "-m", "pip", "install", "gunicorn"])
-                    
-                    # Set up Gunicorn command
-                    gunicorn_config = os.path.join(root_dir, "annzarro", "server", "gunicorn_config.py")
-                    
-                    if not os.path.exists(gunicorn_config):
-                        logger.warning(f"Gunicorn config not found at {gunicorn_config}")
-                        logger.warning("Using default Gunicorn settings")
-                        
-                        # Use default configuration
-                        gunicorn_cmd = ["gunicorn", "--bind", f"{args.host}:{args.port}"]
-                    else:
-                        logger.info(f"Using Gunicorn config from {gunicorn_config}")
-                        gunicorn_cmd = ["gunicorn", "-c", gunicorn_config]
-                    
-                    # Add application module
-                    gunicorn_cmd.append("annzarro.server:create_app()")
-                    
-                    # Set config file in environment if specified
-                    if args.config:
-                        env["ANNZARRO_CONFIG"] = os.path.abspath(args.config)
-                    
-                    # Start the server with Gunicorn
-                    logger.info(f"Starting server in production mode: {' '.join(gunicorn_cmd)}")
-                    server_process = subprocess.Popen(
-                        gunicorn_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        env=env,
-                        preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
-                    )
-                except Exception as e:
-                    logger.error(f"Error starting with Gunicorn: {e}")
-                    logger.info("Falling back to development server")
-                    
-                    # Start with development server
-                    logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
-                    server_process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        env=env,
-                        preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
-                    )
-            else:
-                # Start the server as a detached process with Flask development server
-                logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
-                server_process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    env=env,
-                    preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
-                )
-            
-            # Save PID
-            with open("annzarro_pid.txt", "w") as f:
-                f.write(str(server_process.pid))
-                
-            logger.info(f"Server started with PID {server_process.pid}")
-            
-            # Display cache settings if specified
-            if args.cache_memory or args.cache_datasets or args.no_cache:
-                print("Cache settings:")
-                if args.no_cache:
-                    print("- Caching: Disabled")
-                else:
-                    print(f"- Memory limit: {args.cache_memory or 1000} MB")
-                    print(f"- Dataset limit: {args.cache_datasets or 10} datasets")
-            
-            # Display access URL
-            if args.host == "0.0.0.0":
-                try:
-                    import socket
-                    hostname = socket.gethostname()
-                    ip_address = socket.gethostbyname(hostname)
-                    print(f"Server available at:")
-                    print(f"- Local:     http://localhost:{args.port}")
-                    print(f"- Network:   http://{ip_address}:{args.port}")
-                except:
-                    print(f"Server available at: http://localhost:{args.port}")
-            else:
-                print(f"Server available at: http://{args.host}:{args.port}")
-                
-            return 0
-        else:
-            # Start the server in this process
-            logger.info("Starting server...")
-            run_server(
-                config_file=args.config,
-                debug=args.debug,
-                port=args.port,
-                host=args.host,
-                data_dir=args.data_dir,
-                config=config
-            )
-            return 0
-    except KeyboardInterrupt:
-        logger.info("Server interrupted by user")
-        return 0
-    except Exception as e:
-        logger.error(f"Error starting server: {e}")
-        return 1
+    return 0
 
 def stop_server(args: argparse.Namespace) -> int:
     """
@@ -285,65 +101,54 @@ def stop_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    logger.info("Stopping server...")
-    
-    # Try to read PID from file
     try:
-        if os.path.exists("annzarro_pid.txt"):
-            with open("annzarro_pid.txt", "r") as f:
-                pid = int(f.read().strip())
-                
-            logger.info(f"Found server PID: {pid}")
+        pid_file = Path.home() / ".annzarro" / "server.pid"
+        if not pid_file.exists():
+            logger.error("Server is not running (PID file not found)")
+            return 1
             
-            # Try to terminate the process
-            try:
-                os.kill(pid, signal.SIGTERM)
-                
-                # Wait for process to exit
-                for _ in range(5):
-                    time.sleep(1)
-                    try:
-                        # Check if process still exists
-                        os.kill(pid, 0)
-                    except OSError:
-                        # Process has stopped
-                        break
-                else:
-                    # Process didn't stop, try SIGKILL
-                    try:
-                        os.kill(pid, signal.SIGKILL)
-                        logger.info(f"Force-killed server process")
-                    except OSError:
-                        pass
-                        
-                logger.info("Server stopped")
-                os.remove("annzarro_pid.txt")
-                print("Server stopped successfully")
-                return 0
-                
-            except OSError as e:
-                if e.errno == 3:  # No such process
-                    logger.warning(f"No server running with PID {pid}")
-                    os.remove("annzarro_pid.txt")
-                    print("No server running with that PID. Removed PID file.")
-                    return 0
-                else:
-                    logger.error(f"Error stopping server: {e}")
-                    print(f"Error stopping server: {e}")
-                    return 1
-        else:
-            logger.warning("No server PID file found")
-            print("No server PID file found. Server might not be running.")
-            return 0
+        with open(pid_file, 'r') as f:
+            pid = int(f.read().strip())
+            
+        logger.info(f"Stopping Annzarro server (PID: {pid})")
+        
+        try:
+            os.kill(pid, signal.SIGTERM)
+            
+            # Wait for process to terminate
+            for _ in range(10):  # Try for 5 seconds
+                time.sleep(0.5)
+                try:
+                    # If this doesn't raise an exception, the process is still running
+                    os.kill(pid, 0)
+                except OSError:
+                    # Process has terminated
+                    break
+            else:
+                logger.warning("Server did not terminate gracefully, sending SIGKILL")
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    # Process already terminated
+                    pass
+            
+            # Remove PID file
+            pid_file.unlink()
+            logger.info("Server stopped successfully")
+            
+        except ProcessLookupError:
+            logger.warning(f"Process with PID {pid} not found, removing stale PID file")
+            pid_file.unlink()
+            
+        return 0
             
     except Exception as e:
         logger.error(f"Error stopping server: {e}")
-        print(f"Error stopping server: {e}")
         return 1
 
-def create_user(args: argparse.Namespace) -> int:
+def manage_users(args: argparse.Namespace) -> int:
     """
-    Create a new user
+    Manage users for the Annzarro server
     
     Args:
         args: Command line arguments
@@ -351,191 +156,85 @@ def create_user(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    try:
-        from .server.auth import AuthManager
-    except ImportError:
-        logger.error("Failed to import AuthManager")
-        print("Error: Authentication module not found. Make sure the server is correctly installed.")
-        return 1
+    from .server.auth import AuthManager
     
-    # Get username
-    username = args.username
-    if not username:
-        username = input("Enter username: ").strip()
+    # Load configuration to get user file path
+    config = load_config(config_path=args.config)
+    
+    # Extract user file path from full config
+    if "auth" in config and "user_file" in config["auth"]:
+        user_file = config["auth"]["user_file"]
+    else:
+        user_file = "users.json"
+    
+    # Ensure user file directory exists
+    user_file_dir = os.path.dirname(user_file)
+    if user_file_dir and not os.path.exists(user_file_dir):
+        os.makedirs(user_file_dir)
+    
+    # Initialize auth manager
+    auth_manager = AuthManager(user_file=user_file)
+    
+    if args.user_command == "add":
+        # Get username
+        username = args.username
         if not username:
-            print("Error: Username cannot be empty")
+            username = input("Username: ").strip()
+            
+        # Check if user already exists
+        if auth_manager.get_user(username):
+            logger.error(f"User '{username}' already exists")
             return 1
             
-    # Get password
-    password = args.password
-    if not password:
-        password = getpass.getpass("Enter password: ")
-        password_confirm = getpass.getpass("Confirm password: ")
-        
-        if password != password_confirm:
-            print("Error: Passwords do not match")
-            return 1
-            
+        # Get password securely
+        password = args.password
         if not password:
-            print("Error: Password cannot be empty")
+            password = getpass.getpass("Password: ")
+            password_confirm = getpass.getpass("Confirm password: ")
+            
+            if password != password_confirm:
+                logger.error("Passwords do not match")
+                return 1
+                
+        # Add user
+        auth_manager.add_user(username, password, is_admin=args.admin)
+        logger.info(f"User '{username}' added successfully")
+        
+    elif args.user_command == "remove":
+        # Get username
+        username = args.username
+        if not username:
+            username = input("Username to remove: ").strip()
+            
+        # Check if user exists
+        if not auth_manager.get_user(username):
+            logger.error(f"User '{username}' does not exist")
             return 1
             
-    # Load configuration using the helper function
-    config, config_path = load_config(args.config)
-    
-    # Get user file path from configuration
-    user_file = config.get("user_file", "annzarro/server/users.json")
-    
-    # Ensure user file path is absolute
-    root_dir = Path(__file__).resolve().parent.parent
-    if not os.path.isabs(user_file):
-        user_file = os.path.join(root_dir, user_file)
-        logger.info(f"Using absolute user file path: {user_file}")
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(user_file), exist_ok=True)
-    
-    # Create user
-    is_admin = args.admin
-    try:
-        auth_manager = AuthManager(user_file=user_file)
-        if auth_manager.create_user(username, password, is_admin=is_admin):
-            print(f"User '{username}' created successfully")
-            if is_admin:
-                print("User has admin privileges")
-            return 0
-        else:
-            print(f"Error: Failed to create user '{username}'. Username may already exist.")
-            return 1
-    except Exception as e:
-        logger.error(f"Error creating user: {e}")
-        print(f"Error creating user: {e}")
-        return 1
-
-def list_users(args: argparse.Namespace) -> int:
-    """
-    List all users
-    
-    Args:
-        args: Command line arguments
-        
-    Returns:
-        Exit code
-    """
-    # Load configuration using the helper function
-    config, config_path = load_config(args.config)
-    
-    # Get user file path from configuration
-    user_file = config.get("user_file", "annzarro/server/users.json")
-    
-    # Ensure user file path is absolute
-    root_dir = Path(__file__).resolve().parent.parent
-    if not os.path.isabs(user_file):
-        user_file = os.path.join(root_dir, user_file)
-        logger.info(f"Using absolute user file path: {user_file}")
-    
-    # Check if user file exists
-    if not os.path.exists(user_file):
-        print(f"User file not found: {user_file}")
-        return 1
-    
-    # Read user file
-    try:
-        with open(user_file, 'r') as f:
-            users = json.load(f)
-        
-        if not users:
-            print("No users found")
-            return 0
-        
-        print(f"User file: {user_file}")
-        print(f"Found {len(users)} users:")
-        print("-" * 50)
-        
-        format_str = "{:<20} {:<10} {:<30}"
-        print(format_str.format("USERNAME", "ADMIN", "ID"))
-        print("-" * 50)
-        
-        for username, user_data in users.items():
-            is_admin = user_data.get("is_admin", False)
-            user_id = user_data.get("id", "N/A")
-            print(format_str.format(username, "Yes" if is_admin else "No", user_id))
-        
-        return 0
-    except Exception as e:
-        logger.error(f"Error listing users: {e}")
-        print(f"Error listing users: {e}")
-        return 1
-
-def remove_user(args: argparse.Namespace) -> int:
-    """
-    Remove a user
-    
-    Args:
-        args: Command line arguments
-        
-    Returns:
-        Exit code
-    """
-    # Load configuration using the helper function
-    config, config_path = load_config(args.config)
-    
-    # Get user file path from configuration
-    user_file = config.get("user_file", "annzarro/server/users.json")
-    
-    # Ensure user file path is absolute
-    root_dir = Path(__file__).resolve().parent.parent
-    if not os.path.isabs(user_file):
-        user_file = os.path.join(root_dir, user_file)
-        logger.info(f"Using absolute user file path: {user_file}")
-    
-    # Check if user file exists
-    if not os.path.exists(user_file):
-        print(f"User file not found: {user_file}")
-        return 1
-    
-    # Get username
-    username = args.username
-    if not username:
-        username = input("Enter username to remove: ").strip()
-        if not username:
-            print("Error: Username cannot be empty")
-            return 1
-    
-    # Read user file
-    try:
-        with open(user_file, 'r') as f:
-            users = json.load(f)
-        
-        # Check if user exists
-        if username not in users:
-            print(f"Error: User '{username}' not found")
-            return 1
-        
-        # Confirm removal
-        if not args.force:
-            confirm = input(f"Are you sure you want to remove user '{username}'? (y/n): ").lower()
-            if confirm not in ('y', 'yes'):
-                print("User removal cancelled")
-                return 0
-        
         # Remove user
-        del users[username]
+        auth_manager.remove_user(username)
+        logger.info(f"User '{username}' removed successfully")
         
-        # Write updated user file
-        with open(user_file, 'w') as f:
-            json.dump(users, f, indent=2)
-        
-        print(f"User '{username}' removed successfully")
-        return 0
-    except Exception as e:
-        logger.error(f"Error removing user: {e}")
-        print(f"Error removing user: {e}")
-        return 1
+    elif args.user_command == "list":
+        # List users
+        users = auth_manager.get_users()
+        if not users:
+            logger.info("No users found")
+            return 0
+            
+        # Print user information
+        print("\nUsers:")
+        print("=" * 40)
+        for username, user in users.items():
+            print(f"Username: {username}")
+            print(f"Admin: {'Yes' if user.is_admin else 'No'}")
+            print("-" * 40)
+            
+    return 0
 
-def install_requirements(args: argparse.Namespace) -> int:
+def install_dependencies(args: argparse.Namespace) -> int:
     """
-    Install requirements
+    Install dependencies for the Annzarro server
     
     Args:
         args: Command line arguments
@@ -543,51 +242,27 @@ def install_requirements(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    reqs = [
-        "flask",
-        "flask-cors",
-        "flask-limiter",
-        "werkzeug",
-        "gunicorn",
-        "pyjwt",
-        "cryptography",
-        "zarr",
-        "numpy",
-        "pandas",
-        "matplotlib",
-        "numba",
-        "requests",
-        "psutil"
-    ]
-    
-    if args.dev:
-        reqs.extend([
-            "pytest",
-            "pytest-cov",
-            "black",
-            "isort",
-            "pylint",
-            "mypy"
-        ])
-    
-    # Install packages
-    cmd = [sys.executable, "-m", "pip", "install"]
-    if args.user:
-        cmd.append("--user")
-    cmd.extend(reqs)
-    
-    print(f"Installing {len(reqs)} packages...")
     try:
-        subprocess.check_call(cmd)
-        print("Installation completed successfully")
+        # Install Python dependencies
+        logger.info("Installing Python dependencies...")
+        requirements_file = os.path.join(os.path.dirname(__file__), "server", "requirements.txt")
+        
+        if not os.path.exists(requirements_file):
+            logger.error(f"Requirements file not found: {requirements_file}")
+            return 1
+            
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
+        logger.info("Python dependencies installed successfully")
+        
         return 0
-    except subprocess.CalledProcessError as e:
-        print(f"Installation failed: {e}")
+        
+    except Exception as e:
+        logger.error(f"Error installing dependencies: {e}")
         return 1
 
-def main(args: Optional[List[str]] = None) -> int:
+def config_command(args: argparse.Namespace) -> int:
     """
-    Main entry point for the CLI
+    Handle configuration-related commands
     
     Args:
         args: Command line arguments
@@ -595,151 +270,198 @@ def main(args: Optional[List[str]] = None) -> int:
     Returns:
         Exit code
     """
-    parser = argparse.ArgumentParser(
-        description="Annzarro: Python-based Single-Cell Data Visualization Tool"
-    )
+    if args.config_command == "show":
+        # Load and show configuration
+        env = args.env or "development"
+        config = load_config(config_path=args.config, env=env)
+        
+        # Print configuration
+        if args.format == "json":
+            print(json.dumps(config, indent=2))
+        else:  # yaml
+            if 'yaml' not in sys.modules:
+                logger.warning("PyYAML is not installed. Falling back to JSON output.")
+                print(json.dumps(config, indent=2))
+            else:
+                import yaml
+                print(yaml.dump(config, default_flow_style=False))
+            
+    elif args.config_command == "init":
+        # Initialize a new configuration file
+        output_path = args.output
+        if not output_path:
+            output_path = "config.yaml"
+            
+        # Check if file already exists
+        if os.path.exists(output_path) and not args.force:
+            logger.error(f"Configuration file already exists: {output_path}")
+            logger.error("Use --force to overwrite")
+            return 1
+            
+        # Check for YAML support
+        if 'yaml' not in sys.modules:
+            logger.error("PyYAML is not installed. Cannot initialize YAML configuration.")
+            logger.error("Please install PyYAML using: pip install pyyaml")
+            return 1
+                
+        # Load base configuration
+        base_config_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "config", 
+            "base.yaml"
+        )
+        
+        try:
+            import yaml
+            with open(base_config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                
+            # Write to output file
+            with open(output_path, 'w') as f:
+                yaml.dump(config, f, default_flow_style=False)
+                
+            logger.info(f"Configuration file initialized: {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error initializing configuration: {e}")
+            return 1
+            
+    elif args.config_command == "validate":
+        # Validate configuration
+        env = args.env or "development"
+        config = load_config(config_path=args.config, env=env)
+        
+        # Configuration validation is performed in load_config
+        logger.info("Configuration is valid")
+        
+    elif args.config_command == "info":
+        # Show configuration source information
+        env = args.env or "development"
+        load_config(config_path=args.config, env=env)
+        
+        # Get configuration info
+        config_info = config_manager.get_config_info()
+        
+        # Print information
+        print("\nConfiguration Sources:")
+        print("======================")
+        for source_name, source_path in config_info["sources"].items():
+            print(f"{source_name}: {source_path}")
+            
+        print("\nEnvironment Variables:")
+        print("======================")
+        for name, value in config_info["environment_variables"].items():
+            print(f"{name}={value}")
+            
+        print("\nCommand Line Arguments:")
+        print("======================")
+        for arg in config_info["command_line_args"]:
+            print(arg)
+            
+    return 0
+
+def main(argv: List[str] = None) -> int:
+    """
+    Main entry point for the Annzarro CLI
     
-    # Create subparsers for commands
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    Args:
+        argv: Command line arguments
+        
+    Returns:
+        Exit code
+    """
+    parser = argparse.ArgumentParser(description="Annzarro - Zarr-based AnnData Visualization")
+    
+    # Global options
+    parser.add_argument('--config', help="Path to configuration file")
+    parser.add_argument('--debug', action='store_true', help="Enable debug logging")
+    
+    # Create subcommands
+    subparsers = parser.add_subparsers(dest='command', help="Command to run")
     
     # Start command
-    start_parser = subparsers.add_parser("start", help="Start the server")
-    start_parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
-    start_parser.add_argument("-p", "--port", type=int, default=8000, help="Port to listen on")
-    start_parser.add_argument("-c", "--config", type=str, help="Path to config file")
-    start_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    start_parser.add_argument("--data-dir", type=str, default="data", help="Directory containing data files")
-    start_parser.add_argument("--detach", action="store_true", help="Run server in the background")
-    
-    # Authentication options
-    start_parser.add_argument("--no-auth", action="store_true", help="Disable authentication")
-    
-    # Production options
-    start_parser.add_argument("--production", action="store_true", help="Run with Gunicorn in production mode (removes Flask development server warning)")
-    
-    # Cache options
-    start_parser.add_argument("--cache-memory", type=int, help="Maximum memory in MB for backend caching (default: 1000)")
-    start_parser.add_argument("--cache-datasets", type=int, help="Maximum number of datasets to keep in memory (default: 10)")
-    start_parser.add_argument("--no-cache", action="store_true", help="Disable caching for memory-constrained environments")
+    start_parser = subparsers.add_parser('start', help="Start the Annzarro server")
+    start_parser.add_argument('--host', help="Host to bind to")
+    start_parser.add_argument('--port', type=int, help="Port to bind to")
+    start_parser.add_argument('--data-dir', help="Data directory")
+    start_parser.add_argument('--detach', action='store_true', help="Run server in background")
+    start_parser.add_argument('--production', action='store_true', help="Run in production mode")
+    start_parser.set_defaults(func=start_server)
     
     # Stop command
-    stop_parser = subparsers.add_parser("stop", help="Stop the server")
+    stop_parser = subparsers.add_parser('stop', help="Stop the Annzarro server")
+    stop_parser.set_defaults(func=stop_server)
     
-    # User commands
-    user_parser = subparsers.add_parser("user", help="User management")
-    user_subparsers = user_parser.add_subparsers(dest="user_command", help="User command to execute")
+    # User management command
+    user_parser = subparsers.add_parser('user', help="Manage users")
+    user_subparsers = user_parser.add_subparsers(dest='user_command', help="User management command")
     
-    # Add user command
-    add_parser = user_subparsers.add_parser("add", help="Add a new user")
-    add_parser.add_argument("-u", "--username", type=str, help="Username")
-    add_parser.add_argument("-p", "--password", type=str, help="Password")
-    add_parser.add_argument("-a", "--admin", action="store_true", help="Create user with admin privileges")
-    add_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
+    # User add command
+    user_add_parser = user_subparsers.add_parser('add', help="Add a new user")
+    user_add_parser.add_argument('--username', help="Username")
+    user_add_parser.add_argument('--password', help="Password")
+    user_add_parser.add_argument('--admin', action='store_true', help="Make user an admin")
     
-    # List users command
-    list_parser = user_subparsers.add_parser("list", help="List all users")
-    list_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
+    # User remove command
+    user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")
+    user_remove_parser.add_argument('--username', help="Username")
     
-    # Remove user command
-    remove_parser = user_subparsers.add_parser("remove", help="Remove a user")
-    remove_parser.add_argument("-u", "--username", type=str, help="Username to remove")
-    remove_parser.add_argument("-f", "--force", action="store_true", help="Force removal without confirmation")
-    remove_parser.add_argument("-c", "--config", type=str, help="Path to config file (to find user_file)")
+    # User list command
+    user_list_parser = user_subparsers.add_parser('list', help="List users")
+    
+    user_parser.set_defaults(func=manage_users)
     
     # Install command
-    install_parser = subparsers.add_parser("install", help="Install requirements")
-    install_parser.add_argument("--user", action="store_true", help="Install for current user only")
-    install_parser.add_argument("--dev", action="store_true", help="Install development requirements")
+    install_parser = subparsers.add_parser('install', help="Install dependencies")
+    install_parser.set_defaults(func=install_dependencies)
     
-    # Data command
-    data_parser = subparsers.add_parser("data", help="Data management commands")
-    data_subparsers = data_parser.add_subparsers(dest="data_command", help="Data command to execute")
+    # Configuration command
+    config_parser = subparsers.add_parser('config', help="Manage configuration")
+    config_subparsers = config_parser.add_subparsers(dest='config_command', help="Configuration command")
     
-    # List datasets command
-    list_datasets_parser = data_subparsers.add_parser("list", help="List available datasets")
-    list_datasets_parser.add_argument("-d", "--directory", type=str, default="data", 
-                              help="Directory containing datasets")
+    # Config show command
+    config_show_parser = config_subparsers.add_parser('show', help="Show current configuration")
+    config_show_parser.add_argument('--format', choices=['json', 'yaml'], default='yaml', help="Output format")
+    config_show_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
     
-    # Dataset info command
-    info_parser = data_subparsers.add_parser("info", help="Get dataset information")
-    info_parser.add_argument("path", type=str, help="Path to dataset")
+    # Config init command
+    config_init_parser = config_subparsers.add_parser('init', help="Initialize a new configuration file")
+    config_init_parser.add_argument('--output', help="Output file path")
+    config_init_parser.add_argument('--force', action='store_true', help="Overwrite existing file")
+    
+    # Config validate command
+    config_validate_parser = config_subparsers.add_parser('validate', help="Validate configuration")
+    config_validate_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
+    
+    # Config info command
+    config_info_parser = config_subparsers.add_parser('info', help="Show configuration source information")
+    config_info_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
+    
+    config_parser.set_defaults(func=config_command)
     
     # Parse arguments
-    if args is None:
-        args = sys.argv[1:]
-    parsed_args = parser.parse_args(args)
+    args = parser.parse_args(argv)
     
-    # Execute command
-    if parsed_args.command == "start":
-        return start_server(parsed_args)
-    elif parsed_args.command == "stop":
-        return stop_server(parsed_args)
-    elif parsed_args.command == "user":
-        if parsed_args.user_command == "add":
-            return create_user(parsed_args)
-        elif parsed_args.user_command == "list":
-            return list_users(parsed_args)
-        elif parsed_args.user_command == "remove":
-            return remove_user(parsed_args)
-        else:
-            user_parser.print_help()
+    # Set up logging
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        
+    # Run the appropriate function
+    if hasattr(args, 'func'):
+        try:
+            return args.func(args)
+        except KeyboardInterrupt:
+            logger.info("Operation cancelled by user")
             return 1
-    elif parsed_args.command == "install":
-        return install_requirements(parsed_args)
-    elif parsed_args.command == "data":
-        if parsed_args.data_command == "list":
-            # List datasets
-            try:
-                datasets = data_manager.list_datasets(parsed_args.directory)
-                
-                # Print dataset information
-                print(f"Found {len(datasets)} datasets:")
-                for i, dataset in enumerate(datasets, 1):
-                    print(f"{i}. {dataset['name']} ({dataset['path']})")
-                
-                return 0
-            except Exception as e:
-                logger.error(f"Error listing datasets: {e}")
-                return 1
-                
-        elif parsed_args.data_command == "info":
-            # Get dataset information
-            try:
-                info = data_manager.get_dataset_info(parsed_args.path)
-                
-                # Check if there was an error
-                if "error" in info:
-                    print(f"Error: {info['error']}")
-                    return 1
-                
-                # Print dataset information
-                print(f"Dataset: {info['name']}")
-                print(f"Path: {info['path']}")
-                print(f"Shape: {info['shape']} (n_obs: {info['n_obs']}, n_vars: {info['n_vars']})")
-                print(f"Obs columns: {', '.join(info['obs_columns']) if info['obs_columns'] else 'None'}")
-                print(f"Var columns: {', '.join(info['var_columns']) if info['var_columns'] else 'None'}")
-                print(f"Layers: {', '.join(info['layers']) if info['layers'] else 'None'}")
-                print(f"Embeddings: {', '.join(info['embeddings']) if info['embeddings'] else 'None'}")
-                
-                # Print sample data if available
-                if "obs_names_sample" in info and info["obs_names_sample"]:
-                    print(f"\nSample observation names: {', '.join(info['obs_names_sample'][:5])}...")
-                
-                if "var_names_sample" in info and info["var_names_sample"]:
-                    print(f"Sample variable names: {', '.join(info['var_names_sample'][:5])}...")
-                
-                return 0
-            except Exception as e:
-                logger.error(f"Error getting dataset info: {e}")
-                return 1
-        else:
-            # Unknown data command
-            data_parser.print_help()
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            if args.debug:
+                import traceback
+                traceback.print_exc()
             return 1
     else:
-        # No command specified
         parser.print_help()
-        return 0
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,0 +1,32 @@
+# Annzarro Production Configuration
+# Overrides for production environment
+
+server:
+  host: 0.0.0.0  # Listen on all interfaces
+  port: 8000
+  debug: false
+  
+  # Security settings for production
+  cors_enabled: false
+  https_enabled: true  # Enable HTTPS in production
+  cert_file: "/etc/annzarro/ssl/cert.pem"
+  key_file: "/etc/annzarro/ssl/key.pem"
+  
+  # Production logging
+  log_level: "WARNING"
+  log_file: "/var/log/annzarro/server.log"
+  
+  # Resource limits for production
+  max_cells_per_request: 20000
+  max_genes_per_request: 20000
+  cache_memory_mb: 4000
+  cache_dataset_limit: 20
+
+auth:
+  enabled: true  # Enable authentication in production
+  user_file: "/etc/annzarro/users.json"  # Production user file in system directory
+  secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this!
+
+# Proxy configuration (if behind nginx/apache)
+server:
+  proxy_count: 1
