@@ -39,6 +39,22 @@ def start_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
+    # Prepare configuration
+    config = {}
+    
+    # Set cache options if provided
+    if args.cache_memory is not None:
+        config["cache_memory_mb"] = args.cache_memory
+        
+    if args.cache_datasets is not None:
+        config["cache_dataset_limit"] = args.cache_datasets
+    
+    if args.no_cache:
+        config["cache_enabled"] = False
+        
+    # Enable authentication by default unless explicitly disabled
+    config["auth_enabled"] = not args.no_auth
+    
     # Try to start the server in-process
     try:
         if args.detach:
@@ -61,6 +77,18 @@ def start_server(args: argparse.Namespace) -> int:
                 if not os.path.isabs(expanded_data_dir):
                     expanded_data_dir = os.path.abspath(expanded_data_dir)
                 cmd.extend(["--data-dir", expanded_data_dir])
+                
+            # Add cache options as environment variables
+            env = os.environ.copy()
+            if args.cache_memory is not None:
+                env["ANNZARRO_CACHE_MEMORY_MB"] = str(args.cache_memory)
+            if args.cache_datasets is not None:
+                env["ANNZARRO_CACHE_DATASET_LIMIT"] = str(args.cache_datasets)
+            if args.no_cache:
+                env["ANNZARRO_CACHE_ENABLED"] = "false"
+                
+            # Set authentication based on arguments
+            env["ANNZARRO_AUTH_ENABLED"] = "false" if args.no_auth else "true"
             
             # Start the server as a detached process
             logger.info(f"Starting server in detached mode: {' '.join(cmd)}")
@@ -68,6 +96,7 @@ def start_server(args: argparse.Namespace) -> int:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=env,
                 preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
             )
             
@@ -76,6 +105,15 @@ def start_server(args: argparse.Namespace) -> int:
                 f.write(str(server_process.pid))
                 
             logger.info(f"Server started with PID {server_process.pid}")
+            
+            # Display cache settings if specified
+            if args.cache_memory or args.cache_datasets or args.no_cache:
+                print("Cache settings:")
+                if args.no_cache:
+                    print("- Caching: Disabled")
+                else:
+                    print(f"- Memory limit: {args.cache_memory or 1000} MB")
+                    print(f"- Dataset limit: {args.cache_datasets or 10} datasets")
             
             # Display access URL
             if args.host == "0.0.0.0":
@@ -100,7 +138,8 @@ def start_server(args: argparse.Namespace) -> int:
                 debug=args.debug,
                 port=args.port,
                 host=args.host,
-                data_dir=args.data_dir
+                data_dir=args.data_dir,
+                config=config
             )
             return 0
     except KeyboardInterrupt:
@@ -460,6 +499,14 @@ def main(args: Optional[List[str]] = None) -> int:
     start_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     start_parser.add_argument("--data-dir", type=str, default="data", help="Directory containing data files")
     start_parser.add_argument("--detach", action="store_true", help="Run server in the background")
+    
+    # Authentication options
+    start_parser.add_argument("--no-auth", action="store_true", help="Disable authentication")
+    
+    # Cache options
+    start_parser.add_argument("--cache-memory", type=int, help="Maximum memory in MB for backend caching (default: 1000)")
+    start_parser.add_argument("--cache-datasets", type=int, help="Maximum number of datasets to keep in memory (default: 10)")
+    start_parser.add_argument("--no-cache", action="store_true", help="Disable caching for memory-constrained environments")
     
     # Stop command
     stop_parser = subparsers.add_parser("stop", help="Stop the server")

@@ -80,6 +80,15 @@ Use the CLI to manage users:
 # Start with specific configuration
 ./annzarro-cli start --config /path/to/custom_config.json
 
+# Start without authentication for development
+./annzarro-cli start --no-auth
+
+# Configure cache settings for large datasets
+./annzarro-cli start --cache-memory 4000 --cache-datasets 20
+
+# Disable caching for low-memory environments
+./annzarro-cli start --no-cache
+
 # For production deployment with Gunicorn:
 cd annzarro/server
 ./run_gunicorn.sh

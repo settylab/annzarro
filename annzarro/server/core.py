@@ -40,7 +40,10 @@ DEFAULT_CONFIG = {
     "max_cells_per_request": 10000,    # Maximum number of cells in a single request
     "max_genes_per_request": 10000,    # Maximum number of genes in a single request
     "max_embedding_dims": 50,          # Maximum number of dimensions in embedding requests
-    "secret_key": "change-this-in-production"  # Secret key for sessions
+    "secret_key": "change-this-in-production",  # Secret key for sessions
+    "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
+    "cache_enabled": True,             # Whether to enable backend caching
+    "cache_dataset_limit": 10          # Maximum number of datasets to keep in memory
 }
 
 def require_auth(f):
@@ -55,12 +58,16 @@ def require_auth(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        from flask import current_app
+        
         # Check if auth is enabled in the application config
         if not current_app.config.get("auth_enabled", False):
+            logger.debug(f"Auth disabled in config, allowing access to {request.path}")
             return f(*args, **kwargs)
             
         # Check if user is logged in (in session)
         if "user_id" not in session:
+            logger.warning(f"Unauthenticated access attempt to {request.path}")
             # For API routes, return 401 Unauthorized
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Authentication required"}), 401
@@ -68,6 +75,7 @@ def require_auth(f):
             return redirect("/login")
             
         # User is authenticated, proceed with the original function
+        logger.debug(f"Authenticated access to {request.path} by {session['user_id']}")
         return f(*args, **kwargs)
     return decorated_function
 
@@ -114,6 +122,22 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         
     if os.environ.get("ANNZARRO_SECRET_KEY"):
         app.config["secret_key"] = os.environ.get("ANNZARRO_SECRET_KEY")
+        
+    # Cache settings
+    if os.environ.get("ANNZARRO_CACHE_MEMORY_MB"):
+        try:
+            app.config["cache_memory_mb"] = int(os.environ.get("ANNZARRO_CACHE_MEMORY_MB"))
+        except ValueError:
+            logger.warning(f"Invalid cache_memory_mb in environment variable: {os.environ.get('ANNZARRO_CACHE_MEMORY_MB')}")
+            
+    if os.environ.get("ANNZARRO_CACHE_ENABLED"):
+        app.config["cache_enabled"] = os.environ.get("ANNZARRO_CACHE_ENABLED").lower() in ("true", "1", "yes")
+        
+    if os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"):
+        try:
+            app.config["cache_dataset_limit"] = int(os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"))
+        except ValueError:
+            logger.warning(f"Invalid cache_dataset_limit in environment variable: {os.environ.get('ANNZARRO_CACHE_DATASET_LIMIT')}")
     
     # Update with provided config if any (allowing it to override environment variables)
     if config:
@@ -124,6 +148,13 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Setup logging
     setup_logging(app.config)
+    
+    # Initialize zarr reader with cache settings from config
+    from annzarro.core import configure_zarr_reader
+    configure_zarr_reader(app.config)
+    logger.info(f"Zarr reader configured with: cache_memory_mb={app.config.get('cache_memory_mb')}, "
+               f"cache_enabled={app.config.get('cache_enabled')}, "
+               f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
     
     # Set up authentication if enabled
     if app.config.get("auth_enabled", False):

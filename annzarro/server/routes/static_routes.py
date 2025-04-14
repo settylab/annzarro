@@ -37,9 +37,19 @@ def register_static_routes(app, api_version):
         Returns:
             Flask response
         """
+        from annzarro.server.core import require_auth
+        
         # Skip API routes - they will be handled by the API endpoints
         if path.startswith(f"api/{api_version}") or path.startswith(f"api"):
             return {"error": "Not found"}, 404
+            
+        # Authentication check for static files except login page
+        if path != "login" and app.config.get("auth_enabled", False):
+            # Import functions rather than decorating to avoid circular import
+            from flask import session, redirect
+            if "user_id" not in session:
+                logger.warning(f"Unauthenticated access attempt to /{path}")
+                return redirect("/login")
         
         # Get static directory from config
         static_dir = app.config.get("static_dir")

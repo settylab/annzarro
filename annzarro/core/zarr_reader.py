@@ -74,14 +74,31 @@ class ZarrReader:
     - Clean separation of concerns
     """
     
-    def __init__(self):
-        """Initialize the ZarrReader."""
+    def __init__(self, max_memory_mb=1000, enable_caching=True, cache_limit=10):
+        """
+        Initialize the ZarrReader.
+        
+        Args:
+            max_memory_mb: Maximum memory usage in MB for internal caching
+            enable_caching: Whether to enable caching of data
+            cache_limit: Maximum number of datasets to keep in memory
+        """
         # Multiple dataset support
         self.dataset_stores = {}  # Dict of dataset_id -> zarr store
         self.dataset_roots = {}   # Dict of dataset_id -> zarr root
         self.dataset_metadata = {}  # Dict of dataset_id -> metadata
         self.dataset_paths = {}  # Dict of dataset_id -> original path
         self.active_dataset_id = None  # Current active dataset ID
+        
+        # Memory and caching settings
+        self.max_memory_mb = max_memory_mb
+        self.enable_caching = enable_caching
+        self.cache_limit = cache_limit
+        self.memory_usage_mb = 0  # Current memory usage estimate
+        
+        # Caches for different data types
+        self._matrix_cache = {}  # Cache for X, layers, obsm, varm matrices
+        self._dataframe_cache = {}  # Cache for obs, var dataframes
         
         # Optional initialization of backends
         self._check_backends()

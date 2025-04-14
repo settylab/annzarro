@@ -10,5 +10,15 @@
     "last_login": "2025-04-14T01:39:49.949398",
     "login_attempts": 0,
     "locked_until": null
+  },
+  "dom": {
+    "id": "e4ee5fef-a412-4bf1-9008-d8a07f583756",
+    "username": "dom",
+    "password_hash": "scrypt:32768:8:1$ONyuDSd2c0V0Xcjz$5aca9ca1a6b5ade027c21a5f954799092326ec9e7d114105f09a3aa0a8f90ef27d305fd18b1bb7175b14f911f59f83416e6d6c17112f5d10570b10c5993033bd",
+    "is_admin": false,
+    "tokens": {},
+    "last_login": null,
+    "login_attempts": 0,
+    "locked_until": null
   }
 }
