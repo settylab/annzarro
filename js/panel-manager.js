@@ -197,8 +197,11 @@ const PanelManager = (function() {
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
             const plotControls = contentContainer.querySelector('.plot-controls');
-            if (plotControls) {
-                plotControls.style.display = config.controlsVisible ? 'flex' : 'none';
+            const tableControls = contentContainer.querySelector('.table-controls');
+            const controlsElement = plotControls || tableControls;
+            
+            if (controlsElement) {
+                controlsElement.style.display = config.controlsVisible ? 'flex' : 'none';
                 
                 // Update toggle button
                 const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
@@ -301,13 +304,17 @@ const PanelManager = (function() {
         const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
         const contentContainer = tileElement.querySelector('.tile-content');
         
-        // Find the plot-controls element within the panel
+        // Find either plot-controls or table-controls element within the panel
         const plotControls = contentContainer.querySelector('.plot-controls');
-        if (!plotControls) return;
+        const tableControls = contentContainer.querySelector('.table-controls');
+        
+        // Determine which controls element to toggle
+        const controlsElement = plotControls || tableControls;
+        if (!controlsElement) return;
         
         // Toggle controls visibility
-        const isVisible = plotControls.style.display !== 'none';
-        plotControls.style.display = isVisible ? 'none' : 'flex';
+        const isVisible = controlsElement.style.display !== 'none';
+        controlsElement.style.display = isVisible ? 'none' : (plotControls ? 'flex' : 'flex');
         
         // Store state in the panel's config for session saving
         const config = panel.getConfig() || {};
@@ -466,8 +473,11 @@ const PanelManager = (function() {
             if (tileElement) {
                 const contentContainer = tileElement.querySelector('.tile-content');
                 const plotControls = contentContainer?.querySelector('.plot-controls');
-                if (plotControls) {
-                    controlState[id] = plotControls.style.display !== 'none';
+                const tableControls = contentContainer?.querySelector('.table-controls');
+                const controlsElement = plotControls || tableControls;
+                
+                if (controlsElement) {
+                    controlState[id] = controlsElement.style.display !== 'none';
                 }
             }
         });
@@ -585,8 +595,11 @@ const PanelManager = (function() {
                     if (layout.controlState && layout.controlState[id] !== undefined) {
                         const isVisible = layout.controlState[id];
                         const plotControls = contentContainer.querySelector('.plot-controls');
-                        if (plotControls) {
-                            plotControls.style.display = isVisible ? 'flex' : 'none';
+                        const tableControls = contentContainer.querySelector('.table-controls');
+                        const controlsElement = plotControls || tableControls;
+                        
+                        if (controlsElement) {
+                            controlsElement.style.display = isVisible ? 'flex' : 'none';
                             
                             // Update toggle button
                             const toggleBtn = tileElement.querySelector('.tile-toggle-controls');

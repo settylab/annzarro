@@ -15,9 +15,14 @@ import {
  * 
  * @param {HTMLElement} container - The DOM element into which the panel will be rendered.
  * @param {string} id - A unique identifier for the panel instance.
+ * @param {Object} settings - Optional settings object with controlsVisible property
  * @returns {{ tableContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
-export function createTablePanelStructure(container, id) {
+export function createTablePanelStructure(container, id, settings = {}) {
+    // Determine if controls should be visible (default to true if not specified)
+    const controlsVisible = settings.controlsVisible !== false;
+    const controlsDisplay = controlsVisible ? 'flex' : 'none';
+    
     container.innerHTML = `
         <div class="table-panel">
             <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
@@ -29,7 +34,7 @@ export function createTablePanelStructure(container, id) {
                     <p>Please select a dataset to begin visualization</p>
                 </div>
             </div>
-            <div class="table-controls">
+            <div class="table-controls" style="display: ${controlsDisplay};">
                 <div class="control-row">
                     <!-- Left column: Available Columns -->
                     <div class="column-selector">
@@ -70,12 +75,12 @@ export function createTablePanelStructure(container, id) {
                         <!-- Table length (rows per page) moved to control panel -->
                         <div class="table-length">
                             <label for="table-length-${id}">Show entries:</label>
-                            <select id="table-length-${id}" class="form-select form-select-sm">
-                                <option value="10">10</option>
-                                <option value="25" selected>25</option>
-                                <option value="50">50</option>
-                                <option value="100">100</option>
-                                <option value="250">250</option>
+                            <select id="table-length-${id}" class="form-select form-select-sm text-center">
+                                <option value="10">&nbsp;10&nbsp;</option>
+                                <option value="25" selected>&nbsp;25&nbsp;</option>
+                                <option value="50">&nbsp;50&nbsp;</option>
+                                <option value="100">&nbsp;100&nbsp;</option>
+                                <option value="250">&nbsp;250&nbsp;</option>
                             </select>
                         </div>
                     </div>

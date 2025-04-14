@@ -213,7 +213,11 @@
             padding: 4px 8px;
         }
         
-        /* Striped rows and hover effect */
+        /* Striped rows with white and light background */
+        .table-panel table.dataTable.stripe tbody tr.even {
+            background-color: white !important;
+        }
+        
         .table-panel table.dataTable.stripe tbody tr.odd {
             background-color: #f8f9fa;
         }
@@ -238,6 +242,12 @@
         .table-panel table.dataTable thead th,
         .table-panel table.dataTable tbody td {
             width: auto !important;
+        }
+        
+        /* Fix dropdown styling */
+        .table-length .form-select {
+            padding: 0.25rem 2rem 0.25rem 0.5rem;
+            background-position: right 0.5rem center;
         }
         
         /* No footer border */

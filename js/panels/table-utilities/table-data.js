@@ -377,7 +377,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         classes: {
             sTable: 'table table-sm table-hover table-striped'
         },
-        stripeClasses: ['', 'table-light'],
+        stripeClasses: ['even', 'odd'],
         autoWidth: false,
         // Keep styling simple, focusing on structure and layout
         rowCallback: function(row, data, index) {

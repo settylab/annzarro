@@ -337,6 +337,8 @@ body {
     align-items: center;
     margin-top: 0.5rem;
     gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    position: relative;
 }
 
 .table-length label {
@@ -346,8 +348,10 @@ body {
 }
 
 .table-length select {
-    width: auto;
+    width: 70px;
     display: inline-block;
+    padding-right: 20px; /* Space for the dropdown arrow */
+    text-align: left; /* Align text to the left */
 }
 
 .selected-columns {
