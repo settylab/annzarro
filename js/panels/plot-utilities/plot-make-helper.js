@@ -155,6 +155,9 @@ export function attachViewportTracking(plotContainer, settings) {
           up: camera.up,
           center: camera.center
         };
+      } else {
+        // Reset the viewport3D to null to use default camera position
+        settings.viewport3D = null;
       }
     });
   } 
@@ -183,6 +186,12 @@ export function attachViewportTracking(plotContainer, settings) {
         } else if (eventData['yaxis.range[0]'] !== undefined && eventData['yaxis.range[1]'] !== undefined) {
           settings.viewport2D.yrange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
         }
+      }
+      
+      // Handle reset view (when autorange is true after double click or clicking "Reset axes" button)
+      if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
+        // Reset the viewport2D to null to use default axis ranges
+        settings.viewport2D = null;
       }
     });
   }
