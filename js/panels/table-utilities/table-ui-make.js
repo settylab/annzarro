@@ -31,52 +31,44 @@ export function createTablePanelStructure(container, id, settings) {
                 </div>
             </div>
             <div class="table-controls">
-                <div class="column-selector-container">
-                    <h5>Available Columns</h5>
-                    <div class="data-type-tabs">
-                        <ul class="nav nav-tabs" role="tablist">
-                            <!-- Data type tabs will be added here based on entity type -->
-                        </ul>
-                        <div class="tab-content p-2 border border-top-0 rounded-bottom mb-3">
-                            <!-- Tab content will be added here based on entity type -->
+                <div class="d-flex flex-row mb-2 gap-2">
+                    <!-- Left column: Available Columns -->
+                    <div class="column-selector flex-grow-1" style="width: 60%; display: flex; flex-direction: column;">
+                        <h6 class="mb-1">Available Columns</h6>
+                        <div class="data-type-tabs" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                            <ul class="nav nav-tabs nav-sm" style="font-size: 0.9rem;" role="tablist">
+                                <!-- Data type tabs will be added here based on entity type -->
+                            </ul>
+                            <div class="tab-content p-1 border border-top-0 rounded-bottom mb-1" style="flex: 1; overflow-y: auto; font-size: 0.9rem; min-height: 0;">
+                                <!-- Tab content will be added here based on entity type -->
+                            </div>
                         </div>
                     </div>
-                    <div class="selected-columns">
-                        <h5>Selected Columns</h5>
-                        <div class="d-flex align-items-center mb-2">
-                            <div class="flex-grow-1">
-                                <ul id="selected-columns-list-${id}" class="list-group selected-columns-list">
-                                    <!-- Selected columns will be added here -->
-                                </ul>
-                            </div>
-                            <div class="ms-2">
+                    
+                    <!-- Right column: Selected Columns and Actions -->
+                    <div class="column-actions" style="width: 40%; display: flex; flex-direction: column;">
+                        <div class="selected-columns" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                            <h6 class="mb-1">Selected Columns</h6>
+                            <ul id="selected-columns-list-${id}" class="list-group selected-columns-list" style="flex: 1; overflow-y: auto; font-size: 0.85rem; min-height: 0;">
+                                <!-- Selected columns will be added here -->
+                            </ul>
+                            <div class="d-flex justify-content-between mt-1">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-sm btn-secondary" id="refresh-table-${id}">Refresh</button>
+                                    <button class="btn btn-sm btn-outline-secondary" id="export-csv-${id}">Export CSV</button>
+                                </div>
                                 <button class="btn btn-sm btn-primary" id="apply-columns-${id}">Apply Columns</button>
                             </div>
                         </div>
-                    </div>
-                    <div class="table-options">
-                        <h5>Table Options</h5>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="search-builder-enabled-${id}" checked>
-                            <label class="form-check-label" for="search-builder-enabled-${id}">Enable Search Builder</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="responsive-table-${id}" checked>
-                            <label class="form-check-label" for="responsive-table-${id}">Responsive Table</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="fixed-header-${id}">
-                            <label class="form-check-label" for="fixed-header-${id}">Fixed Header</label>
-                        </div>
-                        <div class="d-flex">
-                            <button class="btn btn-sm btn-secondary me-2" id="refresh-table-${id}">Refresh Table</button>
-                            <button class="btn btn-sm btn-outline-secondary" id="export-csv-${id}">Export CSV</button>
-                        </div>
+                        
+                        <!-- Hidden options that are always enabled -->
+                        <input type="hidden" id="search-builder-enabled-${id}" checked>
+                        <input type="hidden" id="fixed-header-${id}" checked>
+                        <input type="hidden" id="responsive-table-${id}">
                     </div>
                 </div>
-                
             </div>
-            <div class="table-container" id="table-container-${id}"></div>
+            <div class="table-container" id="table-container-${id}" style="height: calc(100% - 110px); overflow: hidden;"></div>
         </div>
     `;
 
@@ -164,10 +156,10 @@ export async function initializeTableUIState(id, settings, datasetStructure, ent
 async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
     // Add tabs for obs, obsm, obsp, layer
     const dataSources = [
-        { id: 'obs', name: 'obs', label: 'Cell Annotations' },
-        { id: 'obsm', name: 'obsm', label: 'Cell Matrices' },
-        { id: 'obsp', name: 'obsp', label: 'Cell-Cell Relations' },
-        { id: 'layer', name: 'layer', label: 'Expression Layers' }
+        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
+        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
+        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
     ];
     
     createDataTabs(tabsContainer, tabContent, dataSources, id);
@@ -224,10 +216,10 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
 async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
     // Add tabs for var, varm, varp, layer
     const dataSources = [
-        { id: 'var', name: 'var', label: 'Gene Annotations' },
-        { id: 'varm', name: 'varm', label: 'Gene Matrices' },
-        { id: 'varp', name: 'varp', label: 'Gene-Gene Relations' },
-        { id: 'layer', name: 'layer', label: 'Expression Layers' }
+        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
+        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
+        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
     ];
     
     createDataTabs(tabsContainer, tabContent, dataSources, id);
@@ -364,7 +356,9 @@ function createCheckboxList(container, items, id, settings) {
         const displayName = item.label || getColumnDisplayName(item);
         
         const checkboxDiv = document.createElement('div');
-        checkboxDiv.className = 'form-check';
+        checkboxDiv.className = 'form-check py-0';
+        checkboxDiv.style.fontSize = '0.85rem';
+        checkboxDiv.style.marginBottom = '0.25rem';
         
         const checkbox = document.createElement('input');
         checkbox.className = 'form-check-input column-checkbox';
@@ -599,15 +593,23 @@ function updateSelectedColumnsList(id, settings) {
         
         // Create list item
         const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+        listItem.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2';
         
         const displayName = getColumnDisplayName({ type, key, column });
-        listItem.textContent = displayName;
+        
+        // Create text span with ellipsis for long names
+        const textSpan = document.createElement('span');
+        textSpan.textContent = displayName;
+        textSpan.title = displayName; // Full name in tooltip
+        textSpan.className = 'text-truncate me-2';
+        textSpan.style.maxWidth = '85%';
+        listItem.appendChild(textSpan);
         
         const removeButton = document.createElement('button');
-        removeButton.className = 'btn btn-sm btn-outline-danger';
+        removeButton.className = 'btn btn-sm btn-outline-danger btn-xs p-0 px-1';
         removeButton.innerHTML = '<i class="fas fa-times"></i>';
         removeButton.title = 'Remove from selection';
+        removeButton.style.fontSize = '0.7rem';
         removeButton.addEventListener('click', () => {
             // Uncheck the corresponding checkbox
             const checkboxId = `checkbox-${type}-${key}-${column}-${id}`.replace(/\s+/g, '_');

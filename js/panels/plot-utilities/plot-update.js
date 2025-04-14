@@ -112,14 +112,11 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         if (positionChange) {
             // Recreate plot if switching between 2D and 3D.
             if (is3D !== shouldBe3D) {
-                console.log("Switching between 2D and 3D plot types - recreating plot");
                 loadDataAndCreatePlot();
                 return;
             }
             
             if (isCategorical && hasMultipleTraces) {
-                console.log("Updating positions for categorical data with multiple traces");
-
                 try {
                     // Determine entity type
                     const entities = data[entityType];

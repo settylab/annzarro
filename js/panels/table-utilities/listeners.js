@@ -47,6 +47,14 @@ export function setupTableEventListeners({
             dataTable
         });
     }
+    
+    // Return a cleanup function that can be called when refreshing the table
+    return function cleanupListeners() {
+        // Remove SearchBuilder event listener if dataTable exists
+        if (dataTable && dataTable.table) {
+            $(dataTable.table().node()).off('searchBuilder.dtsb');
+        }
+    };
 }
 
 /**
@@ -109,6 +117,40 @@ function setupCommonEventListeners({
     document.addEventListener('refreshTable', (e) => {
         if (e.detail.id === id) {
             refreshTable();
+        }
+    });
+    
+    // Listen for search builder criteria changes
+    if (dataTable) {
+        // Set up SearchBuilder criteria change listener
+        setupSearchBuilderCriteriaListener(dataTable, settings);
+    }
+}
+
+/**
+ * Set up listener for SearchBuilder criteria changes
+ * @param {Object} dataTable - DataTable instance
+ * @param {Object} settings - Panel settings
+ */
+function setupSearchBuilderCriteriaListener(dataTable, settings) {
+    // Initialize searchBuilderConfig if not present
+    if (!settings.searchBuilderConfig) {
+        settings.searchBuilderConfig = { criteria: [] };
+    }
+    
+    // Add event listener to DataTable for SearchBuilder changes
+    $(dataTable.table().node()).on('searchBuilder.dtsb', function(e, searchBuilder) {
+        try {
+            // Get the current criteria from SearchBuilder
+            const criteria = searchBuilder.getDetails();
+            
+            // Store criteria in panel settings
+            if (criteria) {
+                settings.searchBuilderConfig = criteria;
+                console.log('SearchBuilder criteria updated:', criteria);
+            }
+        } catch (error) {
+            console.error('Error updating SearchBuilder criteria:', error);
         }
     });
 }

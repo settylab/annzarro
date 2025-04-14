@@ -11,14 +11,6 @@ import { Config } from '../../config.js';
  * @returns {Promise<Object>} - The table data with column definitions
  */
 export async function loadTableData(settings, entityType) {
-    if (!settings.columns || settings.columns.length === 0) {
-        return {
-            data: [],
-            columns: [],
-            entityIndex: []
-        };
-    }
-    
     try {
         // Load entity index based on entity type
         const entityIndex = entityType === 'cells' 
@@ -32,9 +24,8 @@ export async function loadTableData(settings, entityType) {
         // First initialize the data array with the entity index
         const data = entityIndex.map(entity => ({ "_index": entity }));
         
-        // Now load each column and add it to the data
-        const columnDefinitions = [];
-        columnDefinitions.push({
+        // Create basic column definitions with entity index
+        const columnDefinitions = [{
             title: entityType === 'cells' ? 'Cell ID' : 'Gene ID',
             data: '_index',
             className: 'dt-center entity-index',
@@ -45,42 +36,45 @@ export async function loadTableData(settings, entityType) {
                 }
                 return data;
             }
-        });
+        }];
         
-        // For each column, load the data and create column definitions
-        for (const column of settings.columns) {
-            // Load data based on column type
-            const columnData = await loadColumnData(column, entityType);
-            
-            // Add column data to the data object
-            const columnKey = getColumnKey(column);
-            if (columnData && columnData.length === entityIndex.length) {
-                data.forEach((row, i) => {
-                    row[columnKey] = columnData[i];
-                });
+        // Only process additional columns if specified
+        if (settings.columns && settings.columns.length > 0) {
+            // For each column, load the data and create column definitions
+            for (const column of settings.columns) {
+                // Load data based on column type
+                const columnData = await loadColumnData(column, entityType);
                 
-                // Add column definition
-                const displayName = getColumnDisplayName(column);
-                columnDefinitions.push({
-                    title: displayName,
-                    data: columnKey,
-                    className: 'dt-center',
-                    render: function(data, type, row) {
-                        if (type === 'display') {
-                            // Format based on data type
-                            if (data === null || data === undefined) {
-                                return '<span class="text-muted">N/A</span>';
-                            } else if (typeof data === 'number') {
-                                return data.toFixed(4).replace(/\.?0+$/, '');
-                            } else if (typeof data === 'boolean') {
-                                return data ? 'Yes' : 'No';
+                // Add column data to the data object
+                const columnKey = getColumnKey(column);
+                if (columnData && columnData.length === entityIndex.length) {
+                    data.forEach((row, i) => {
+                        row[columnKey] = columnData[i];
+                    });
+                    
+                    // Add column definition
+                    const displayName = getColumnDisplayName(column);
+                    columnDefinitions.push({
+                        title: displayName,
+                        data: columnKey,
+                        className: 'dt-center',
+                        render: function(data, type, row) {
+                            if (type === 'display') {
+                                // Format based on data type
+                                if (data === null || data === undefined) {
+                                    return '<span class="text-muted">N/A</span>';
+                                } else if (typeof data === 'number') {
+                                    return data.toFixed(4).replace(/\.?0+$/, '');
+                                } else if (typeof data === 'boolean') {
+                                    return data ? 'Yes' : 'No';
+                                }
                             }
+                            return data;
                         }
-                        return data;
-                    }
-                });
-            } else {
-                console.error(`Column data length (${columnData?.length}) doesn't match entity count (${entityIndex.length}) for ${columnKey}`);
+                    });
+                } else {
+                    console.error(`Column data length (${columnData?.length}) doesn't match entity count (${entityIndex.length}) for ${columnKey}`);
+                }
             }
         }
         
@@ -280,14 +274,22 @@ export function getColumnDisplayName(column) {
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
     } else if (column.type === 'obsp' || column.type === 'varp') {
-        return `${column.key}`;
-    } else if (column.type === 'layer') {
-        if (column.column === 'focused_gene') {
-            return `${column.key}:Focused Gene`;
-        } else if (column.column === 'focused_cell') {
-            return `${column.key}:Focused Cell`;
+        if (column.column === 'focused_cell' || column.column === '_focused_cell') {
+            return `${column.key}: Focused Cell`;
+        } else if (column.column === 'focused_gene' || column.column === '_focused_gene') {
+            return `${column.key}: Focused Gene`;
+        } else if (column.column) {
+            return `${column.key}: ${column.column}`;
         } else {
-            return `${column.key}:${column.column}`;
+            return `${column.key}`;
+        }
+    } else if (column.type === 'layer') {
+        if (column.column === 'focused_gene' || column.column === '_focused_gene') {
+            return `${column.key}: Focused Gene`;
+        } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
+            return `${column.key}: Focused Cell`;
+        } else {
+            return `${column.key}: ${column.column}`;
         }
     }
     return `${column.type}:${column.key}:${column.column}`;
@@ -307,10 +309,54 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Create table element with wrapper for better DataTables styling
     const wrapper = document.createElement('div');
-    wrapper.className = 'table-responsive';
+    wrapper.className = 'w-100 h-100'; // Take full width and height
+    
+    // Add a CSS class to ensure the table wrapper uses proper layout
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+        .dataTables_wrapper {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+        }
+        .dataTables_scroll {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+        }
+        .dataTables_scrollBody {
+            flex: 1 !important;
+            overflow: auto !important;
+        }
+        .dtsp-searchBuilder {
+            padding: 8px;
+            border-bottom: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+            display: block !important;
+            min-height: 50px;
+        }
+        .dtsb-group {
+            background-color: #fff;
+            padding: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .dtsb-criteria {
+            margin-top: 5px !important;
+        }
+        
+        /* Add styles to handle panel folding */
+        .dataTables_wrapper.collapsed {
+            display: none !important;
+        }
+    `;
+    wrapper.appendChild(styleElement);
     
     const table = document.createElement('table');
     table.className = 'table table-striped table-bordered w-100';
+    table.style.width = '100%';
+    table.style.marginBottom = '0';
     
     wrapper.appendChild(table);
     tableContainer.appendChild(wrapper);
@@ -326,33 +372,93 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthChange: true,
         pageLength: 25,
         lengthMenu: [10, 25, 50, 100, 250],
-        dom: settings.searchBuilderEnabled !== false ? 'QBlfrtip' : 'Blfrtip',
-        responsive: settings.responsive !== false,
-        scrollX: settings.responsive === false,
-        scrollY: settings.fixedHeader ? '50vh' : '',
-        scrollCollapse: settings.fixedHeader === true,
-        buttons: [
-            'copy', 'csv', 'excel'
-        ],
-        searchBuilder: settings.searchBuilderConfig && 
-                   settings.searchBuilderConfig.criteria ? 
-                   { preDefined: settings.searchBuilderConfig } : 
-                   {},
-        initComplete: function(settings, json) {
-            // Check if search builder is enabled and there's a valid config
-            if (settings.searchBuilderEnabled !== false && 
-                settings.searchBuilderConfig && 
-                settings.searchBuilderConfig.criteria) {
-                
-                // The DataTable instance is available as 'this' in the callback
-                const api = this.api();
-                if (api.searchBuilder) {
-                    try {
-                        api.searchBuilder.rebuild(settings.searchBuilderConfig);
-                    } catch (error) {
-                        console.warn('Error rebuilding SearchBuilder config:', error);
-                    }
+        // Use the Q character for SearchBuilder in the DOM
+        dom: 'Qlfrtip',
+        responsive: false, // Never use responsive mode
+        scrollX: true, // Always enable horizontal scrolling
+        scrollCollapse: true, // Always collapse scroll
+        fixedHeader: {
+            header: true,
+            footer: false
+        },
+        // Configure buttons properly
+        buttons: {
+            buttons: [
+                'copy', 'csv', 'excel',
+                {
+                    text: 'SearchBuilder',
+                    action: function(e, dt, node, config) {
+                        // Toggle search builder
+                        $('.dtsp-searchBuilder').toggle();
+                    },
+                    className: 'd-none' // Hide button as we show it always
                 }
+            ],
+            dom: {
+                button: {
+                    className: 'btn btn-sm btn-outline-secondary'
+                },
+                container: {
+                    className: 'dt-buttons mb-2'
+                }
+            }
+        },
+        // Modern way to enable search builder
+        searchBuilder: {
+            preDefined: settings.searchBuilderConfig && 
+                      settings.searchBuilderConfig.criteria ? 
+                      settings.searchBuilderConfig : 
+                      undefined,
+            display: 'block' // Always display
+        },
+        initComplete: function(settings, json) {
+            // The DataTable instance is available as 'this' in the callback
+            const api = this.api();
+            const dtSettings = settings || this.settings()[0];
+            const panelSettings = dtSettings._panelSettings || {};
+            
+            // Make sure SearchBuilder is shown
+            try {
+                // Create SearchBuilder if it doesn't exist yet
+                if (!api.searchBuilder) {
+                    api.searchBuilder = new $.fn.dataTable.SearchBuilder(api, {});
+                    api.searchBuilder.container().prependTo($(this).closest('.dataTables_wrapper').find('.dtsp-searchBuilder'));
+                }
+                
+                // Apply any saved criteria
+                if (panelSettings.searchBuilderConfig?.criteria?.length > 0) {
+                    setTimeout(() => {
+                        try {
+                            api.searchBuilder.rebuild(panelSettings.searchBuilderConfig);
+                            api.draw();
+                        } catch (error) {
+                            console.warn('Error rebuilding SearchBuilder config:', error);
+                        }
+                    }, 100);
+                }
+                
+                // Force SearchBuilder to be visible
+                setTimeout(() => {
+                    const $searchBuilder = $('.dtsp-searchBuilder');
+                    if ($searchBuilder.length) {
+                        $searchBuilder.show();
+                    } else {
+                        console.warn('SearchBuilder container not found');
+                    }
+                }, 200);
+            } catch (error) {
+                console.error('Error initializing SearchBuilder:', error);
+            }
+            
+            // Handle fold/unfold button clicks
+            // Add event listener to panel header fold/unfold buttons
+            const panelElement = $(tableContainer).closest('.panel');
+            if (panelElement.length) {
+                panelElement.find('.panel-header .fold-button').on('click', function() {
+                    // When fold button is clicked, add/remove collapsed class to DataTables wrapper
+                    const isCollapsed = panelElement.hasClass('folded');
+                    $(tableContainer).find('.dataTables_wrapper').toggleClass('collapsed', isCollapsed);
+                });
             }
         },
         drawCallback: function(settings) {
@@ -384,13 +490,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             console.warn('SearchBuilder extension is not available, disabling SearchBuilder functionality');
             // Remove SearchBuilder from DOM if not available
             $(tableContainer).find('.dt-button[data-name="searchBuilder"]').remove();
-        } else if (settings.searchBuilderEnabled === false) {
-            // Hide search builder UI if explicitly disabled
-            setTimeout(() => {
-                $(tableContainer).find('.dt-button-collection, .dtsp-searchBuilder').hide();
-                $(tableContainer).find('.dtsb-group').closest('.card, .container, .dataTables_wrapper').hide();
-                $(tableContainer).find('.dt-button[data-name="searchBuilder"]').hide();
-            }, 100);
         }
     } catch (err) {
         console.warn('Error managing SearchBuilder UI:', err);

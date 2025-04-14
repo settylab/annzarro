@@ -271,7 +271,10 @@ body {
 }
 
 .checkbox-list {
-    max-height: 200px;
+    flex: 1;         /* Take all remaining space */
+    min-height: 0;   /* Crucial in flex layouts */
+    max-height: 300px;
+    width: 400px;
     overflow-y: auto;
     border: 1px solid #dee2e6;
     border-radius: 0.25rem;
@@ -279,9 +282,13 @@ body {
     background-color: white;
 }
 
+
 .selected-columns-list {
     max-height: 200px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;  /* Allow children to shrink appropriately */
 }
 
 .table-options {

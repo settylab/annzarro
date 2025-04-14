@@ -26,14 +26,15 @@ const GeneTablePanel = (function() {
         let _controlsContainer = null;
         let _dataTable = null;
         let _datasetWatcherCleanup = null;
+        let _tableListenersCleanup = null;
         let _isFirstLoad = true;
         
         // Initialize settings with default options
         const _settings = {
             columns: [],
-            searchBuilderEnabled: true,
-            responsive: true,
-            fixedHeader: false,
+            searchBuilderEnabled: true, // Always enabled
+            responsive: false, // Disable responsive (use container size)
+            fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
             filteredGenes: null
         };
@@ -100,10 +101,8 @@ const GeneTablePanel = (function() {
                 // Initialize UI state with the dataset
                 await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
                 
-                // If columns are defined, initialize table
-                if (_settings.columns && _settings.columns.length > 0) {
-                    await refreshTable();
-                }
+                // Always initialize the table, even if no columns are selected
+                await refreshTable();
                 
                 _isFirstLoad = false;
                 console.log(`Dataset ${datasetPath} loaded successfully for gene table panel ${_id}`);
@@ -120,7 +119,13 @@ const GeneTablePanel = (function() {
          * Set up event listeners
          */
         function _setupEventListeners() {
-            setupTableEventListeners({
+            // Clean up previous listeners if they exist
+            if (_tableListenersCleanup) {
+                _tableListenersCleanup();
+            }
+            
+            // Set up new listeners and store the cleanup function
+            _tableListenersCleanup = setupTableEventListeners({
                 id: _id,
                 settings: _settings,
                 tableContainer: _tableContainer,
@@ -160,6 +165,9 @@ const GeneTablePanel = (function() {
                     
                     // Store panel settings in DataTables settings
                     _dataTable.settings()[0]._panelSettings = _settings;
+                    
+                    // Set up event listeners after DataTable is initialized
+                    _setupEventListeners();
                 } else {
                     _tableContainer.innerHTML = `
                         <div class="alert alert-info">
@@ -198,6 +206,12 @@ const GeneTablePanel = (function() {
             if (_datasetWatcherCleanup) {
                 _datasetWatcherCleanup();
                 _datasetWatcherCleanup = null;
+            }
+            
+            // Clean up table listeners
+            if (_tableListenersCleanup) {
+                _tableListenersCleanup();
+                _tableListenersCleanup = null;
             }
             
             // Call the standard cleanup
