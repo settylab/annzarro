@@ -1237,6 +1237,7 @@ div.dtsb-group {
     border-radius: 0.25rem;
     height: 38px;
     line-height: 38px;
+    min-width: 180px;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__rendered {

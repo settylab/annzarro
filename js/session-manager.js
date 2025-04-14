@@ -182,7 +182,57 @@ const SessionManager = (function() {
                     throw new Error('Autosave data not found');
                 }
                 
-                _applySessionPanels(autosaveData);
+                await _applySessionPanels(autosaveData);
+
+                // First restore the dataset
+                console.log("Restoring dataset:", autosaveData.dataset);
+                await DataManager.setCurrentDataset(autosaveData.dataset, true);
+                
+                // Set current session dataset information
+                if (!_currentSession) _currentSession = {};
+                _currentSession.dataset = autosaveData.dataset;
+                if (autosaveData.datasetName) _currentSession.datasetName = autosaveData.datasetName;
+                
+                // Update dataset selector in UI - ensure the option exists first
+                const datasetSelector = document.getElementById('dataset-selector');
+                if (datasetSelector) {
+                    // First check if the option exists
+                    let optionExists = false;
+                    for (let i = 0; i < datasetSelector.options.length; i++) {
+                        if (datasetSelector.options[i].value === autosaveData.dataset) {
+                            optionExists = true;
+                            break;
+                        }
+                    }
+                    
+                    // If option doesn't exist, create it
+                    if (!optionExists && window.$ && $.fn.select2) {
+                        const newOption = new Option(
+                            `${autosaveData.dataset} (Custom)`, 
+                            autosaveData.dataset, 
+                            true, 
+                            true
+                        );
+                        $(datasetSelector).append(newOption);
+                    } else if (!optionExists) {
+                        // For regular select (non-Select2)
+                        const option = document.createElement('option');
+                        option.value = autosaveData.dataset;
+                        option.textContent = autosaveData.dataset;
+                        option.selected = true;
+                        datasetSelector.appendChild(option);
+                    } else {
+                        // Option exists, just set the value
+                        datasetSelector.value = autosaveData.dataset;
+                    }
+                    
+                    // If using Select2, update its UI
+                    if (window.$ && $.fn.select2) {
+                        $(datasetSelector).trigger('change.select2');
+                    }
+                }
+                
+
                 return { status: 'success', message: 'Autosaved session loaded successfully' };
             }
             
