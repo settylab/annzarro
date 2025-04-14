@@ -55,7 +55,9 @@ export function createTablePanelStructure(container, id, settings) {
                             <div class="action-buttons">
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-sm btn-secondary" id="refresh-table-${id}">Refresh</button>
-                                    <button class="btn btn-sm btn-outline-secondary" id="export-csv-${id}">Export CSV</button>
+                                    <button class="btn btn-sm btn-outline-primary" id="export-csv-${id}">
+                                        <i class="fas fa-file-csv"></i> Export CSV
+                                    </button>
                                 </div>
                                 <button class="btn btn-sm btn-primary" id="apply-columns-${id}">Apply Columns</button>
                             </div>
@@ -65,6 +67,18 @@ export function createTablePanelStructure(container, id, settings) {
                         <input type="hidden" id="search-builder-enabled-${id}" checked>
                         <input type="hidden" id="fixed-header-${id}" checked>
                         <input type="hidden" id="responsive-table-${id}">
+                        
+                        <!-- Table length (rows per page) moved to control panel -->
+                        <div class="table-length">
+                            <label for="table-length-${id}">Show entries:</label>
+                            <select id="table-length-${id}" class="form-select form-select-sm">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="250">250</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -538,6 +552,23 @@ function setupColumnSelectionEvents(id, settings, entityType) {
             });
             document.dispatchEvent(event);
         });
+    }
+    
+    // Handle table length selector
+    const lengthSelector = document.getElementById(`table-length-${id}`);
+    if (lengthSelector) {
+        lengthSelector.addEventListener('change', (e) => {
+            settings.pageLength = parseInt(e.target.value);
+            const event = new CustomEvent('tableOptionChanged', {
+                detail: { id, option: 'pageLength', value: parseInt(e.target.value) }
+            });
+            document.dispatchEvent(event);
+        });
+        
+        // Set initial value from settings
+        if (settings.pageLength) {
+            lengthSelector.value = settings.pageLength.toString();
+        }
     }
     
     // Handle refresh button

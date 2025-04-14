@@ -329,21 +329,30 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             flex: 1 !important;
             overflow: auto !important;
         }
-        .dtsp-searchBuilder {
-            padding: 8px;
-            border-bottom: 1px solid #dee2e6;
-            background-color: #f8f9fa;
-            display: block !important;
-            min-height: 50px;
+        
+        /* Custom table styling */
+        table.dataTable {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            border: none !important;
         }
-        .dtsb-group {
-            background-color: #fff;
-            padding: 5px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+        
+        table.dataTable td,
+        table.dataTable th {
+            border: none !important;
         }
-        .dtsb-criteria {
-            margin-top: 5px !important;
+        
+        table.dataTable tbody tr {
+            border-bottom: 1px solid #f1f3f5 !important;
+            transition: background-color 0.15s ease !important;
+        }
+        
+        table.dataTable tbody tr:hover {
+            background-color: rgba(0, 123, 255, 0.04) !important;
+        }
+        
+        table.dataTable.stripe tbody tr.odd {
+            background-color: #fcfcfd !important;
         }
         
         /* Add styles to handle panel folding */
@@ -354,7 +363,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     wrapper.appendChild(styleElement);
     
     const table = document.createElement('table');
-    table.className = 'table table-striped table-bordered w-100';
+    table.className = 'table table-striped w-100';
     table.style.width = '100%';
     table.style.marginBottom = '0';
     
@@ -369,17 +378,41 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         ordering: true,
         info: true,
         searching: true,
-        lengthChange: true,
-        pageLength: 25,
+        lengthChange: false, // Hide default length selector as we have our own
+        pageLength: settings.pageLength || 25,
         lengthMenu: [10, 25, 50, 100, 250],
-        // Use the Q character for SearchBuilder in the DOM
-        dom: 'Qlfrtip',
+        // Use the Q character for SearchBuilder in the DOM, move 'i' (info) and 'p' (pagination) elements together
+        dom: 'Qlfrt<"d-flex justify-content-between align-items-center"ip>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
         scrollCollapse: true, // Always collapse scroll
         fixedHeader: {
             header: true,
             footer: false
+        },
+        // Enable DataTables built-in hover effect
+        hover: true,
+        select: {
+            style: 'single',
+            className: 'selected-row'
+        },
+        // Make rows more compact with modern styling
+        classes: {
+            sTable: 'table table-sm table-striped table-hover'
+        },
+        stripeClasses: ['', 'bg-light-subtle'],
+        autoWidth: false,
+        // Additional styling options
+        createdRow: function(row, data, index) {
+            // Add custom class for styling
+            $(row).addClass('custom-row');
+        },
+        rowCallback: function(row, data, index) {
+            // Remove border style from all cells
+            $('td', row).css({
+                'border': 'none',
+                'border-bottom': '1px solid #f1f3f5'
+            });
         },
         // Configure buttons properly
         buttons: {
@@ -598,40 +631,80 @@ export function updateTableOnFocusChange(dataTable, entity, entityType) {
  */
 export function exportTableToCsv(dataTable, tableTitle) {
     const csvContent = [];
-    const api = dataTable.api();
     
-    // Get column headers
-    const headers = api.columns().header().map(th => th.textContent).toArray();
-    csvContent.push(headers.join(','));
-    
-    // Get visible rows
-    const visibleRows = api.rows({ search: 'applied' }).data().toArray();
-    
-    // Add each row to CSV content
-    visibleRows.forEach(row => {
-        const values = headers.map(header => {
-            const value = row[header] !== undefined ? row[header] : '';
+    try {
+        // Get DataTables API object - DataTables 1.10+ uses .api(), older versions use .dataTable
+        let api;
+        if (typeof dataTable.api === 'function') {
+            api = dataTable.api();
+        } else {
+            // For older DataTables versions or when using jQuery object directly
+            api = dataTable;
+        }
+        
+        // Get column headers
+        const headerRow = api.columns().header();
+        const headers = [];
+        
+        // Extract header text
+        for (let i = 0; i < headerRow.length; i++) {
+            const header = $(headerRow[i]).text();
+            headers.push(header);
+        }
+        
+        csvContent.push(headers.join(','));
+        
+        // Get visible rows
+        const rows = api.rows({ search: 'applied' }).data();
+        const visibleRows = [];
+        
+        // Convert to array for easier handling
+        for (let i = 0; i < rows.length; i++) {
+            visibleRows.push(rows[i]);
+        }
+        
+        // Add each row to CSV content
+        visibleRows.forEach(row => {
+            const values = headers.map(header => {
+                let value = '';
+                
+                // Handle object/array data
+                if (typeof row === 'object') {
+                    // Try to access by property if it exists
+                    if (row[header] !== undefined) {
+                        value = row[header];
+                    } else if (row._) {
+                        // Handle DataTables objects
+                        value = row._[header] || '';
+                    }
+                }
+                
+                // Quote strings with commas
+                if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+                    // Escape double quotes
+                    value = value.replace(/"/g, '""');
+                    return `"${value}"`;
+                }
+                return value;
+            });
             
-            // Quote strings with commas
-            if (typeof value === 'string' && value.includes(',')) {
-                return `"${value}"`;
-            }
-            return value;
+            csvContent.push(values.join(','));
         });
         
-        csvContent.push(values.join(','));
-    });
-    
-    // Create CSV file and download
-    const csvString = csvContent.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    // Create download link
-    const downloadLink = document.createElement('a');
-    downloadLink.href = url;
-    downloadLink.download = `${tableTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+        // Create CSV file and download
+        const csvString = csvContent.join('\n');
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        // Create download link
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = `${tableTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    } catch (error) {
+        console.error('Error exporting table to CSV:', error);
+        alert('Failed to export table to CSV. See console for details.');
+    }
 }
