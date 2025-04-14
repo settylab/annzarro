@@ -8,13 +8,13 @@ server:
   
   # Security settings for production
   cors_enabled: false
-  https_enabled: true  # Enable HTTPS in production
-  cert_file: "/etc/annzarro/ssl/cert.pem"
-  key_file: "/etc/annzarro/ssl/key.pem"
+  https_enabled: false  # Set to true when properly configured
+  cert_file: "config/ssl/cert.pem"  # Change to absolute path when properly configured
+  key_file: "config/ssl/key.pem"    # Change to absolute path when properly configured
   
   # Production logging
   log_level: "WARNING"
-  log_file: "/var/log/annzarro/server.log"
+  log_file: "logs/annzarro_server.log"
   
   # Resource limits for production
   max_cells_per_request: 20000
@@ -24,8 +24,8 @@ server:
 
 auth:
   enabled: true  # Enable authentication in production
-  user_file: "/etc/annzarro/users.json"  # Production user file in system directory
-  secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this!
+  user_file: "config/auth/users.json"  # Use the same file as development by default
+  secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this in a real production environment!
 
 # Proxy configuration (if behind nginx/apache)
 server:

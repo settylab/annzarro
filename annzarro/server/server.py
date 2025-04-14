@@ -137,11 +137,27 @@ def run_server(
     else:
         try:
             # Run the server in foreground
+            ssl_context = None
+            if final_config.get("https_enabled", False):
+                # Check if cert and key files exist
+                cert_file = final_config.get("cert_file")
+                key_file = final_config.get("key_file")
+                
+                if cert_file and key_file and os.path.exists(cert_file) and os.path.exists(key_file):
+                    ssl_context = (cert_file, key_file)
+                    logger.info(f"HTTPS enabled with certificate: {cert_file} and key: {key_file}")
+                else:
+                    logger.warning("HTTPS is enabled but certificate or key file is missing or invalid.")
+                    logger.warning(f"Certificate file: {cert_file}")
+                    logger.warning(f"Key file: {key_file}")
+                    logger.warning("Falling back to HTTP.")
+            
             app.run(
                 host=final_config["host"],
                 port=final_config["port"],
                 debug=final_config["debug"],
-                threaded=True
+                threaded=True,
+                ssl_context=ssl_context
             )
         finally:
             # Pop the context when server stops
