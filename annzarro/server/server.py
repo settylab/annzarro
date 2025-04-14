@@ -50,6 +50,9 @@ def run_server(
     # Get configuration from config_file (which can be a dict from config_manager)
     final_config = load_config_from_file(config_file) if config_file else {}
     
+    # Debug output to check what configuration we're receiving
+    logger.info(f"Configuration host value: {final_config.get('host', 'NOT FOUND')}")
+    
     # Update with provided config dictionary if any
     if config:
         final_config.update(config)
@@ -83,7 +86,7 @@ def run_server(
     data_dir = final_config.get("data_dir", "data")
     os.makedirs(data_dir, exist_ok=True)
     
-    # Log configuration
+    # Log configuration with full details
     host = final_config.get("host", "127.0.0.1")
     port = final_config.get("port", 8000)
     debug = final_config.get("debug", False)
@@ -92,6 +95,14 @@ def run_server(
     logger.info(f"Data directory: {data_dir}")
     logger.info(f"Static directory: {final_config.get('static_dir', 'project root')}")
     logger.info(f"Debug mode: {debug}")
+    
+    # Show the full server configuration section for debugging
+    if "server" in final_config:
+        logger.info("Server configuration details:")
+        for key, value in final_config.items():
+            if key.startswith("__"):
+                continue
+            logger.info(f"  - {key}: {value}")
     
     # Handle detached mode if requested
     if detach:

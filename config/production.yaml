@@ -5,6 +5,7 @@ server:
   host: 0.0.0.0  # Listen on all interfaces
   port: 8000
   debug: false
+  data_dir: "data"  # Data directory location
   
   # Security settings for production
   cors_enabled: false
@@ -21,12 +22,14 @@ server:
   max_genes_per_request: 20000
   cache_memory_mb: 4000
   cache_dataset_limit: 20
+  
+  # Proxy configuration (if behind nginx/apache)
+  proxy_count: 1
 
 auth:
   enabled: true  # Enable authentication in production
   user_file: "config/auth/users.json"  # Use the same file as development by default
   secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this in a real production environment!
 
-# Proxy configuration (if behind nginx/apache)
-server:
-  proxy_count: 1
+# Proxy configuration is part of the server section above
+# proxy_count: 1 has been moved inside the main server configuration

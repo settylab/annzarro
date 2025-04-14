@@ -77,6 +77,7 @@ def start_server(args: argparse.Namespace) -> int:
     """
     # Load configuration - default to production for security, use development only when explicitly requested
     env = "development" if getattr(args, "development", False) else "production"
+    logger.info(f"Starting server in {env} mode")
     config = load_config(
         config_path=args.config,
         env=env,
@@ -84,6 +85,7 @@ def start_server(args: argparse.Namespace) -> int:
     )
     
     # Convert to flat structure for the server
+    logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
     flask_config = config_manager.to_flask_config()
     
     # Start the server with the configuration from the config manager
@@ -328,12 +330,54 @@ def config_command(args: argparse.Namespace) -> int:
             return 1
             
     elif args.config_command == "validate":
-        # Validate configuration
-        env = args.env  # Default already set to production
-        config = load_config(config_path=args.config, env=env)
-        
-        # Configuration validation is performed in load_config
-        logger.info("Configuration is valid")
+        if args.file:
+            # Validate a specific file
+            logger.info(f"Validating configuration file: {args.file}")
+            if not os.path.exists(args.file):
+                logger.error(f"File not found: {args.file}")
+                return 1
+                
+            try:
+                # Create a new config manager instance for file validation
+                from annzarro.utils.config_manager import ConfigManager
+                validator = ConfigManager()
+                
+                # Load just the file to validate
+                validator._load_yaml_config(args.file, "file_to_validate")
+                
+                # Check for validation errors
+                is_valid, errors = validator.validate_config()
+                
+                if is_valid:
+                    logger.info(f"Configuration file {args.file} is valid")
+                    return 0
+                else:
+                    logger.error(f"Configuration file {args.file} has validation errors:")
+                    for error in errors:
+                        logger.error(f"  - {error}")
+                    return 1
+            except Exception as e:
+                logger.error(f"Error validating configuration file: {e}")
+                if args.debug:
+                    import traceback
+                    traceback.print_exc()
+                return 1
+        else:
+            # Validate full configuration
+            env = args.env  # Default already set to production
+            config = load_config(config_path=args.config, env=env)
+            
+            # Check validation result
+            is_valid, errors = config_manager.validate_config()
+            
+            if is_valid:
+                logger.info("Configuration is valid")
+                return 0
+            else:
+                logger.error("Configuration validation failed:")
+                for error in errors:
+                    logger.error(f"  - {error}")
+                return 1
         
     elif args.config_command == "info":
         # Show configuration source information
@@ -433,6 +477,7 @@ def main(argv: List[str] = None) -> int:
     # Config validate command
     config_validate_parser = config_subparsers.add_parser('validate', help="Validate configuration")
     config_validate_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
+    config_validate_parser.add_argument('--file', help="Validate a specific configuration file")
     
     # Config info command
     config_info_parser = config_subparsers.add_parser('info', help="Show configuration source information")

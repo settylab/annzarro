@@ -130,11 +130,39 @@ class ConfigManager:
         
         try:
             with open(path, 'r') as f:
+                file_content = f.read()
+                
+                # Check for duplicate keys in YAML files
+                if config_path.endswith(('.yaml', '.yml')) and yaml is not None:
+                    # Simple check for duplicate top-level keys
+                    top_level_keys = []
+                    duplicate_keys = []
+                    for line_num, line in enumerate(file_content.split('\n')):
+                        # Skip comments and empty lines
+                        if line.strip().startswith('#') or not line.strip():
+                            continue
+                            
+                        # Check if this is a top-level key
+                        if not line.startswith(' ') and not line.startswith('\t') and ':' in line:
+                            key = line.split(':', 1)[0].strip()
+                            if key in top_level_keys:
+                                duplicate_keys.append((key, line_num + 1))
+                                logger.warning(f"Warning: Duplicate top-level key '{key}' found in {config_path} at line {line_num + 1}")
+                                logger.warning(f"This will override previous settings and can lead to unexpected configuration behavior!")
+                            else:
+                                top_level_keys.append(key)
+                    
+                    # Store duplicate keys for validation
+                    if duplicate_keys:
+                        if not hasattr(self, '_duplicate_keys'):
+                            self._duplicate_keys = {}
+                        self._duplicate_keys[config_path] = duplicate_keys
+                
                 # Load based on file extension
                 if config_path.endswith(('.yaml', '.yml')):
-                    config_data = yaml.safe_load(f)
+                    config_data = yaml.safe_load(file_content)
                 elif config_path.endswith('.json'):
-                    config_data = json.load(f)
+                    config_data = json.loads(file_content)
                 else:
                     logger.warning(f"Unknown configuration file format: {config_path}")
                     return
@@ -298,6 +326,7 @@ class ConfigManager:
         """
         # Basic validation for now
         errors = []
+        warnings = []
         
         # Check required fields
         required_fields = [
@@ -318,6 +347,18 @@ class ConfigManager:
             if not self.config.get("auth", {}).get("user_file"):
                 errors.append("Authentication is enabled but no user_file is set")
         
+        # Check for duplicate keys in YAML files
+        if hasattr(self, '_duplicate_keys') and self._duplicate_keys:
+            for file_path, duplicates in self._duplicate_keys.items():
+                for key, line_num in duplicates:
+                    warning = f"Duplicate key '{key}' in {file_path} (line {line_num}) - later values will override earlier ones"
+                    warnings.append(warning)
+                    errors.append(warning)  # Treat as an error for validation
+        
+        # Log warnings
+        for warning in warnings:
+            logger.warning(f"Configuration warning: {warning}")
+        
         # TODO: Add more validation as needed
         
         return len(errors) == 0, errors
@@ -336,8 +377,11 @@ class ConfigManager:
         
         # Server section
         if "server" in self.config:
+            logger.info(f"Server host in nested config: {self.config['server'].get('host', 'NOT FOUND')}")
             for key, value in self.config["server"].items():
                 flask_config[key] = value
+            
+        logger.info(f"Final flattened host: {flask_config.get('host', 'NOT FOUND')}")
         
         # Auth section
         if "auth" in self.config:
