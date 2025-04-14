@@ -28,10 +28,10 @@ server:
   log_level: "INFO"
   
   # Rate limiting and protection
-  max_response_elements: 1000000
-  max_cells_per_request: 10000
-  max_genes_per_request: 10000
-  max_embedding_dims: 50
+  max_response_elements: 10000000
+  max_cells_per_request: 10000000
+  max_genes_per_request: 1000000
+  max_embedding_dims: 200
   
   # Caching configuration
   cache_enabled: true
@@ -40,7 +40,7 @@ server:
 
 # Authentication configuration
 auth:
-  enabled: false
+  enabled: true
   user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
   secret_key: "change-this-in-production"  # Will be overridden in production
 
@@ -51,9 +51,9 @@ branding:
   
   # Contact information shown on login page
   contact_info:
-    lab_name: null
-    lab_url: null
-    email: null
+    lab_name: "Setty Lab"
+    lab_url: "https://setty-lab.org"
+    email: "dotto@fredhutch.org"
     custom_html: null
 
 # UI configuration
@@ -68,8 +68,8 @@ ui:
   
   # Default visualization settings
   defaults:
-    max_cells: 10000
-    max_genes: 10000
+    max_cells: 1000000
+    max_genes: 1000000
     point_size: 5
     point_opacity: 1.0
     color_scale: "Portland"

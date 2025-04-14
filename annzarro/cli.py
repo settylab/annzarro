@@ -75,8 +75,8 @@ def start_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    # Load configuration
-    env = "production" if getattr(args, "production", False) else "development"
+    # Load configuration - default to production for security, use development only when explicitly requested
+    env = "development" if getattr(args, "development", False) else "production"
     config = load_config(
         config_path=args.config,
         env=env,
@@ -86,8 +86,9 @@ def start_server(args: argparse.Namespace) -> int:
     # Convert to flat structure for the server
     flask_config = config_manager.to_flask_config()
     
-    # Start the server
-    run_server(flask_config, args.detach)
+    # Start the server with the configuration from the config manager
+    # Pass config as config_file to handle the special case
+    run_server(config_file=flask_config, detach=args.detach)
     
     return 0
 
@@ -272,7 +273,7 @@ def config_command(args: argparse.Namespace) -> int:
     """
     if args.config_command == "show":
         # Load and show configuration
-        env = args.env or "development"
+        env = args.env  # Default already set to production
         config = load_config(config_path=args.config, env=env)
         
         # Print configuration
@@ -328,7 +329,7 @@ def config_command(args: argparse.Namespace) -> int:
             
     elif args.config_command == "validate":
         # Validate configuration
-        env = args.env or "development"
+        env = args.env  # Default already set to production
         config = load_config(config_path=args.config, env=env)
         
         # Configuration validation is performed in load_config
@@ -336,7 +337,7 @@ def config_command(args: argparse.Namespace) -> int:
         
     elif args.config_command == "info":
         # Show configuration source information
-        env = args.env or "development"
+        env = args.env  # Default already set to production
         load_config(config_path=args.config, env=env)
         
         # Get configuration info
@@ -385,7 +386,7 @@ def main(argv: List[str] = None) -> int:
     start_parser.add_argument('--port', type=int, help="Port to bind to")
     start_parser.add_argument('--data-dir', help="Data directory")
     start_parser.add_argument('--detach', action='store_true', help="Run server in background")
-    start_parser.add_argument('--production', action='store_true', help="Run in production mode")
+    start_parser.add_argument('--development', action='store_true', help="Run in development mode (less secure)")
     start_parser.set_defaults(func=start_server)
     
     # Stop command
@@ -422,7 +423,7 @@ def main(argv: List[str] = None) -> int:
     # Config show command
     config_show_parser = config_subparsers.add_parser('show', help="Show current configuration")
     config_show_parser.add_argument('--format', choices=['json', 'yaml'], default='yaml', help="Output format")
-    config_show_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
+    config_show_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     # Config init command
     config_init_parser = config_subparsers.add_parser('init', help="Initialize a new configuration file")
@@ -431,11 +432,11 @@ def main(argv: List[str] = None) -> int:
     
     # Config validate command
     config_validate_parser = config_subparsers.add_parser('validate', help="Validate configuration")
-    config_validate_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
+    config_validate_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     # Config info command
     config_info_parser = config_subparsers.add_parser('info', help="Show configuration source information")
-    config_info_parser.add_argument('--env', choices=['development', 'production'], help="Environment")
+    config_info_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     config_parser.set_defaults(func=config_command)
     

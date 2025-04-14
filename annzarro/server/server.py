@@ -29,37 +29,32 @@ def run_server(
     port: Optional[int] = None,
     host: Optional[str] = None,
     data_dir: Optional[str] = None,
-    static_dir: Optional[str] = None
+    static_dir: Optional[str] = None,
+    detach: bool = False
 ) -> None:
     """
     Run the Annzarro server.
     
     Args:
-        config_file: Path to configuration file (optional)
+        config_file: Path to configuration file or config dictionary (optional)
         config: Configuration dictionary (optional)
         debug: Enable debug mode (optional)
         port: Port to run the server on (optional)
         host: Host to bind to (optional)
         data_dir: Directory to use for data storage (optional)
         static_dir: Directory containing static files (optional)
+        detach: Run server in detached mode (optional)
     """
     global _app_instance
     
-    # Initialize configuration
-    final_config = DEFAULT_CONFIG.copy()
+    # Get configuration from config_file (which can be a dict from config_manager)
+    final_config = load_config_from_file(config_file) if config_file else {}
     
-    # Load config from file if provided
-    if config_file:
-        file_config = load_config_from_file(config_file)
-        final_config.update(file_config)
-    
-    # Update with provided config dictionary
+    # Update with provided config dictionary if any
     if config:
         final_config.update(config)
     
-    # Environment variables are now applied directly in create_app
-    
-    # Override with function parameters
+    # Override with function parameters if provided
     if host:
         final_config["host"] = host
     
@@ -93,17 +88,64 @@ def run_server(
     logger.info(f"Static directory: {final_config.get('static_dir', 'project root')}")
     logger.info(f"Debug mode: {final_config['debug']}")
     
-    try:
-        # Run the server
-        app.run(
-            host=final_config["host"],
-            port=final_config["port"],
-            debug=final_config["debug"],
-            threaded=True
+    # Handle detached mode if requested
+    if detach:
+        import subprocess
+        import sys
+        import time
+        from pathlib import Path
+        
+        # Create a new process for running the server
+        logger.info("Starting server in detached mode")
+        
+        # Prepare command for detached process
+        cmd = [
+            sys.executable, "-m", "annzarro.cli", "start",
+            "--host", final_config["host"],
+            "--port", str(final_config["port"]),
+            "--data-dir", final_config["data_dir"]
+        ]
+        
+        if final_config.get("debug", False):
+            cmd.append("--debug")
+        
+        # Start detached process
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True
         )
-    finally:
-        # Pop the context when server stops
-        ctx.pop()
+        
+        # Wait briefly to check if process started successfully
+        time.sleep(1)
+        if proc.poll() is not None:
+            # Process exited immediately - there was an error
+            stdout, stderr = proc.communicate()
+            logger.error(f"Failed to start server in detached mode: {stderr.decode('utf-8')}")
+            return
+            
+        # Server started successfully in background
+        logger.info(f"Server started in detached mode (PID: {proc.pid})")
+        
+        # Store PID for later management
+        pid_dir = Path.home() / ".annzarro"
+        pid_dir.mkdir(exist_ok=True)
+        with open(pid_dir / "server.pid", "w") as f:
+            f.write(str(proc.pid))
+            
+    else:
+        try:
+            # Run the server in foreground
+            app.run(
+                host=final_config["host"],
+                port=final_config["port"],
+                debug=final_config["debug"],
+                threaded=True
+            )
+        finally:
+            # Pop the context when server stops
+            ctx.pop()
         
 # Helper function to get the current app instance
 def get_app_instance():

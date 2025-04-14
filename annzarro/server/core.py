@@ -104,67 +104,18 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # Enable CORS by default for all routes - important during development
     CORS(app)
     
-    # Check if we're using the new configuration system or the old one
-    if config and (isinstance(config, dict) and config.get("__using_config_manager", False)):
-        # We're using the new configuration system - this is already flattened
+    # Apply configuration
+    if config and isinstance(config, dict):
         config_copy = dict(config)
-        # Remove the marker before adding to Flask config
-        del config_copy["__using_config_manager"]
+        # Remove the marker if it exists before adding to Flask config
+        if "__using_config_manager" in config_copy:
+            del config_copy["__using_config_manager"]
         app.config.update(config_copy)
         logger.info("Using configuration from configuration manager")
     else:
-        # Using legacy configuration approach - set default configuration
-        logger.warning("Using legacy configuration approach - consider switching to the new configuration system")
+        # Fallback if no config was provided
+        logger.warning("No configuration provided, using default configuration")
         app.config.update(DEFAULT_CONFIG)
-        
-        # Apply environment variables for backward compatibility
-        if os.environ.get("ANNZARRO_HOST"):
-            app.config["host"] = os.environ.get("ANNZARRO_HOST")
-        
-        if os.environ.get("ANNZARRO_PORT"):
-            try:
-                app.config["port"] = int(os.environ.get("ANNZARRO_PORT"))
-            except ValueError:
-                logger.warning(f"Invalid port in environment variable: {os.environ.get('ANNZARRO_PORT')}")
-        
-        if os.environ.get("ANNZARRO_DATA_DIR"):
-            app.config["data_dir"] = os.environ.get("ANNZARRO_DATA_DIR")
-        
-        if os.environ.get("ANNZARRO_STATIC_DIR"):
-            app.config["static_dir"] = os.environ.get("ANNZARRO_STATIC_DIR")
-        
-        if os.environ.get("ANNZARRO_DEBUG"):
-            app.config["debug"] = os.environ.get("ANNZARRO_DEBUG").lower() in ("true", "1", "yes")
-            
-        if os.environ.get("ANNZARRO_AUTH_ENABLED"):
-            app.config["auth_enabled"] = os.environ.get("ANNZARRO_AUTH_ENABLED").lower() in ("true", "1", "yes")
-            
-        if os.environ.get("ANNZARRO_USER_FILE"):
-            app.config["user_file"] = os.environ.get("ANNZARRO_USER_FILE")
-            logger.info(f"Using user file from environment: {app.config['user_file']}")
-            
-        if os.environ.get("ANNZARRO_SECRET_KEY"):
-            app.config["secret_key"] = os.environ.get("ANNZARRO_SECRET_KEY")
-            
-        # Cache settings
-        if os.environ.get("ANNZARRO_CACHE_MEMORY_MB"):
-            try:
-                app.config["cache_memory_mb"] = int(os.environ.get("ANNZARRO_CACHE_MEMORY_MB"))
-            except ValueError:
-                logger.warning(f"Invalid cache_memory_mb in environment variable: {os.environ.get('ANNZARRO_CACHE_MEMORY_MB')}")
-                
-        if os.environ.get("ANNZARRO_CACHE_ENABLED"):
-            app.config["cache_enabled"] = os.environ.get("ANNZARRO_CACHE_ENABLED").lower() in ("true", "1", "yes")
-            
-        if os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"):
-            try:
-                app.config["cache_dataset_limit"] = int(os.environ.get("ANNZARRO_CACHE_DATASET_LIMIT"))
-            except ValueError:
-                logger.warning(f"Invalid cache_dataset_limit in environment variable: {os.environ.get('ANNZARRO_CACHE_DATASET_LIMIT')}")
-        
-        # Update with provided config if any (allowing it to override environment variables)
-        if config:
-            app.config.update(config)
     
     # Configure the app
     configure_app(app, app.config)
@@ -384,17 +335,31 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
 
 def load_config_from_file(config_file: str) -> Dict[str, Any]:
     """
-    Load configuration from a JSON file.
+    Load configuration from a JSON file or dictionary.
     
     Args:
-        config_file: Path to the configuration file
+        config_file: Path to the configuration file or configuration dictionary
         
     Returns:
         Configuration dictionary
     """
+    # Handle dictionary input
+    if isinstance(config_file, dict):
+        config_copy = dict(config_file)
+        # Remove the marker if it exists
+        if "__using_config_manager" in config_copy:
+            del config_copy["__using_config_manager"]
+        return config_copy
+        
+    # Load from file if it's a string path
     try:
         with open(config_file, 'r') as f:
-            config = json.load(f)
+            # Determine file format by extension
+            if config_file.endswith(('.yaml', '.yml')):
+                import yaml
+                config = yaml.safe_load(f)
+            else:
+                config = json.load(f)
         return config
     except Exception as e:
         logger.error(f"Error loading config file {config_file}: {e}")

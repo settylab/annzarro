@@ -12,11 +12,11 @@ server:
   cache_memory_mb: 500  # Lower memory usage for development
 
 auth:
-  enabled: false  # Authentication disabled by default in development
+  enabled: false  # Authentication enabled in development
   user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
 
 # Contact information for development environment
 branding:
   contact_info:
     lab_name: "Development Environment"
-    email: "dev@example.com"
+    email: "dotto@fredhutch.org"

@@ -32,11 +32,14 @@ cd annzarro
 # Install requirements
 ./annzarro-cli install
 
-# Start the server
+# Start the server (production mode by default)
 ./annzarro-cli start
 
+# Start in development mode (less secure)
+./annzarro-cli start --development
+
 # Start with options
-./annzarro-cli start --port 8080 --debug --data-dir /path/to/data
+./annzarro-cli start --port 8080 --data-dir /path/to/data
 ```
 
 Then open your browser and navigate to:
@@ -50,7 +53,7 @@ The default admin credentials are:
 - Username: admin
 - Password: annzarro-password
 
-You can enable/disable authentication in `annzarro/server/config.json`.
+Authentication is enabled by default in production mode and can be configured in the YAML configuration files (`config/base.yaml`, `config/production.yaml`, and `config/development.yaml`).
 
 Use the CLI to manage users:
 
@@ -78,16 +81,16 @@ Use the CLI to manage users:
 ./annzarro-cli stop
 
 # Start with specific configuration
-./annzarro-cli start --config /path/to/custom_config.json
+./annzarro-cli start --config /path/to/custom_config.yaml
 
-# Start without authentication for development
-./annzarro-cli start --no-auth
+# Start in development mode (usually has auth disabled)
+./annzarro-cli start --development
 
-# Configure cache settings for large datasets
-./annzarro-cli start --cache-memory 4000 --cache-datasets 20
+# Show current configuration
+./annzarro-cli config show
 
-# Disable caching for low-memory environments
-./annzarro-cli start --no-cache
+# Initialize a custom configuration
+./annzarro-cli config init --output my_config.yaml
 
 # For production deployment with Gunicorn:
 cd annzarro/server
