@@ -10,6 +10,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # Continue with other platforms even if one fails
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         include:
@@ -64,11 +65,18 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Continue with release even if some builds fail
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
+      
+      - name: List downloaded artifacts
+        run: |
+          find . -type f | sort
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: annzarro-*/*
+          # Don't fail if there are no artifacts to upload
+          fail_on_unmatched_files: false

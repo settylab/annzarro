@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "description": "Desktop application for Annzarro",
   "main": "main.js",
-  "author": "Annzarro Contributors",
+  "author": "Setty Lab",
+  "email": "dotto@fredhutch.org",
   "license": "MIT",
   "private": true,
   "repository": {
