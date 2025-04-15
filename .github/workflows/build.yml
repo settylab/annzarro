@@ -41,6 +41,10 @@ jobs:
         if: runner.os != 'Windows'
         run: chmod +x ./annzarro-cli
           
+      - name: Install dependencies via CLI
+        run: |
+          ./annzarro-cli install
+          
       - name: Build desktop app using CLI
         run: |
           ./annzarro-cli desktop build --platform ${{ matrix.platform }}
