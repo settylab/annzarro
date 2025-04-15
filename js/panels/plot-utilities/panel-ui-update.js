@@ -471,17 +471,12 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           csColorMinSlider.step = step;
           csColorMaxSlider.step = step;
           
-          // Use saved values from settings if they exist, otherwise use data min/max
-          const useColorMin = settings.colorMin !== null ? settings.colorMin : dataMin;
-          const useColorMax = settings.colorMax !== null ? settings.colorMax : dataMax;
-          
           // Update UI elements
-          csColorMinSlider.value = useColorMin;
-          csColorMaxSlider.value = useColorMax;
-          if (csColorMinInput) csColorMinInput.value = useColorMin.toFixed(2);
-          if (csColorMaxInput) csColorMaxInput.value = useColorMax.toFixed(2);
+          csColorMinSlider.value = dataMin;
+          csColorMaxSlider.value = dataMax;
+          if (csColorMinInput) csColorMinInput.value = dataMin.toFixed(2);
+          if (csColorMaxInput) csColorMaxInput.value = dataMax.toFixed(2);
           
-          // Only update settings if they aren't already set
           settings.colorMin = dataMin;
           settings.colorMax = dataMax;
         } else {
