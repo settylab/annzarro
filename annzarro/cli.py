@@ -75,6 +75,14 @@ def start_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
+    # Process venv_path if specified
+    venv_path = getattr(args, 'venv_path', None)
+    if venv_path:
+        logger.info(f"Using custom virtual environment: {venv_path}")
+        # If venv_path is specified, set the Python path for the process
+        # This is a no-op for now as we're not using the venv in the server process itself
+        # but we're accepting the parameter to avoid argument parsing errors
+    
     # Load configuration - default to production for security, use development only when explicitly requested
     env = "development" if getattr(args, "development", False) else "production"
     logger.info(f"Starting server in {env} mode")
@@ -83,6 +91,19 @@ def start_server(args: argparse.Namespace) -> int:
         env=env,
         cli_args=args
     )
+    
+    # Override with command-line arguments
+    if args.host:
+        config.setdefault('server', {})['host'] = args.host
+    if args.port:
+        config.setdefault('server', {})['port'] = args.port
+    if args.data_dir:
+        config.setdefault('server', {})['data_dir'] = args.data_dir
+    
+    # Authentication is disabled by default for the desktop app
+    if getattr(args, 'auth_disabled', False):
+        config.setdefault('auth', {})['enabled'] = False
+        logger.info("Authentication disabled by command line flag")
     
     # Convert to flat structure for the server
     logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
@@ -476,10 +497,15 @@ def desktop_command(args: argparse.Namespace) -> int:
     elif args.desktop_command == "build":
         platform = args.platform
         rebuild = args.rebuild
+        bundle_venv = args.bundle_venv
+        venv_path = args.venv_path
         
         logger.info(f"Building desktop application for {platform or 'all platforms'}")
+        if bundle_venv:
+            logger.info(f"Will bundle Python virtual environment{' at ' + venv_path if venv_path else ''}")
         
-        if build_desktop_app(platform, rebuild, icon_source=args.icon):
+        if build_desktop_app(platform, rebuild, icon_source=args.icon, 
+                             bundle_venv=bundle_venv, venv_path=venv_path):
             logger.info("Desktop application built successfully")
             return 0
         else:
@@ -697,6 +723,9 @@ def main(argv: List[str] = None) -> int:
     start_parser.add_argument('--data-dir', help="Data directory")
     start_parser.add_argument('--detach', action='store_true', help="Run server in background")
     start_parser.add_argument('--development', action='store_true', help="Run in development mode (less secure)")
+    start_parser.add_argument('--config', help="Path to configuration file")
+    start_parser.add_argument('--venv-path', help="Path to Python virtual environment")
+    start_parser.add_argument('--auth-disabled', action='store_true', help="Disable authentication")
     start_parser.set_defaults(func=start_server)
     
     # Stop command
@@ -774,6 +803,11 @@ def main(argv: List[str] = None) -> int:
                                      help="Target platform (default: current platform)")
     desktop_build_parser.add_argument('--rebuild', action='store_true', help="Force rebuild dependencies")
     desktop_build_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
+    desktop_build_parser.add_argument('--bundle-venv', action='store_true', default=True, 
+                                     help="Bundle Python virtual environment with the application (default: True)")
+    desktop_build_parser.add_argument('--no-bundle-venv', action='store_false', dest='bundle_venv',
+                                     help="Don't bundle Python virtual environment")
+    desktop_build_parser.add_argument('--venv-path', type=str, help="Custom path for the Python virtual environment")
     
     # Desktop icons command
     desktop_icons_parser = desktop_subparsers.add_parser('icons', help="Generate application icons")

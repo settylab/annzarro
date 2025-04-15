@@ -38,7 +38,8 @@
     ],
     "asarUnpack": [
       "requirements.txt",
-      "bin/${os}-${arch}/**/*"
+      "bin/${os}-${arch}/**/*",
+      "python/**/*"
     ],
     "extraFiles": [
       {
@@ -64,6 +65,8 @@
           "requirements.txt",
           "annzarro-install.py",
           "annzarro-cli",
+          "pyproject.toml",
+          "setup.py",
           "config/**/*.yaml",
           "css/**/*.css",
           "js/**/*.js",
@@ -84,6 +87,11 @@
           "!**/prototype_notebooks/**/*",
           "!**/tests/**/*"
         ]
+      },
+      {
+        "from": "python",
+        "to": "python",
+        "filter": ["**/*"]
       }
     ],
     "mac": {

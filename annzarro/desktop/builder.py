@@ -209,8 +209,8 @@ class ElectronBuilder:
         
     def bundle_python(self, target_dir: Union[str, Path] = None) -> bool:
         """
-        Bundle Python with the application.
-        This is a placeholder for future implementation.
+        Bundle Python with the application by creating a virtual environment.
+        Uses the annzarro-cli to create and set up the Python environment.
         
         Args:
             target_dir: Directory to place bundled Python (optional)
@@ -218,13 +218,83 @@ class ElectronBuilder:
         Returns:
             True if successful, False otherwise
         """
-        # This would use PyInstaller or similar to bundle Python
-        # For now, just log that this is not implemented
-        logger.info("Python bundling not yet implemented")
-        logger.info("The desktop app will use system Python for now")
-        return True
+        if not target_dir:
+            target_dir = self.electron_dir / "python"
         
-def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: str = None) -> bool:
+        target_dir = Path(target_dir)
+        
+        # Create target directory if it doesn't exist
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            
+        logger.info(f"Bundling Python environment to {target_dir}")
+        
+        # Find the CLI script
+        cli_script = self._find_cli_script()
+        if not cli_script:
+            logger.error("Could not find annzarro-cli script")
+            return False
+            
+        try:
+            # Make CLI executable on Unix systems
+            if os.name != 'nt':
+                try:
+                    os.chmod(cli_script, 0o755)
+                except Exception as e:
+                    logger.warning(f"Could not make CLI executable: {e}")
+            
+            # Use the CLI to create a clean virtual environment
+            logger.info("Creating Python virtual environment...")
+            install_cmd = [
+                cli_script,
+                "install",
+                "--clean",
+                "--venv-path", str(target_dir)
+            ]
+            
+            logger.info(f"Running: {' '.join(install_cmd)}")
+            result = subprocess.run(
+                install_cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            
+            logger.info("Python virtual environment created successfully")
+            logger.info(result.stdout)
+            
+            return True
+            
+        except subprocess.SubprocessError as e:
+            logger.error(f"Failed to create Python environment: {e}")
+            logger.error(f"Error output: {e.stderr if hasattr(e, 'stderr') else 'No error output'}")
+            return False
+        except Exception as e:
+            logger.error(f"Error bundling Python: {e}")
+            return False
+            
+    def _find_cli_script(self) -> Optional[str]:
+        """
+        Find the annzarro-cli script.
+        
+        Returns:
+            Path to the CLI script or None if not found
+        """
+        # Look in various places for the CLI script
+        possible_paths = [
+            self.app_root / "annzarro-cli",
+            self.app_root / "bin" / "annzarro-cli",
+            self.app_root / "annzarro" / "bin" / "annzarro-cli"
+        ]
+        
+        for p in possible_paths:
+            if p.exists():
+                return str(p)
+                
+        return None
+        
+def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: str = None,
+                  bundle_venv: bool = True, venv_path: str = None) -> bool:
     """
     Build the desktop application.
     
@@ -232,6 +302,8 @@ def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: 
         platform: Target platform (windows, mac, linux, or all)
         rebuild: Force rebuilding dependencies before build
         icon_source: Path to source icon for generating app icons (optional)
+        bundle_venv: Whether to bundle a Python virtual environment (default: True)
+        venv_path: Custom path for the Python virtual environment (optional)
         
     Returns:
         True if successful, False otherwise
@@ -251,6 +323,14 @@ def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: 
         except Exception as e:
             logger.error(f"Error generating icons: {e}")
             # Continue with the build even if icon generation fails
+    
+    # Bundle Python environment if requested
+    if bundle_venv:
+        logger.info("Bundling Python virtual environment...")
+        if not builder.bundle_python(target_dir=venv_path):
+            logger.error("Failed to bundle Python environment")
+            # Continue with the build even if Python bundling fails
+            logger.warning("Continuing with build without bundled Python")
     
     return builder.build(platform, rebuild)
     
