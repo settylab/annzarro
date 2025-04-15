@@ -110,15 +110,9 @@ def start_server(args: argparse.Namespace) -> int:
         config.setdefault('auth', {})['enabled'] = False
         logger.info("Authentication disabled by ANNZARRO_AUTH_DISABLED environment variable")
     
-    # Log the auth configuration before flattening
-    logger.info(f"Auth configuration before flattening: enabled={config.get('auth', {}).get('enabled', False)}")
-    
     # Convert to flat structure for the server
     logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
     flask_config = config_manager.to_flask_config()
-    
-    # Log the flattened auth configuration 
-    logger.info(f"Auth configuration after flattening: auth_enabled={flask_config.get('auth_enabled', False)}")
     logger.info(flask_config)
     
     # Start the server with the configuration from the config manager

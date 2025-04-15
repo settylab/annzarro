@@ -105,6 +105,40 @@ const App = (function() {
         // Setup keyboard shortcuts
         _initKeyboardShortcuts();
         
+        // Check for Electron environment
+        const isElectron = window.api !== undefined && typeof window.api.selectDirectory === 'function';
+        
+        // Show select directory button if in Electron
+        const selectDirectoryBtn = document.getElementById('select-directory');
+        if (selectDirectoryBtn && isElectron) {
+            selectDirectoryBtn.style.display = 'block';
+            selectDirectoryBtn.addEventListener('click', async () => {
+                try {
+                    const selectedDir = await window.api.selectDirectory();
+                    if (selectedDir) {
+                        // Set the dataset selector to the selected directory path
+                        const datasetSelector = document.getElementById('dataset-selector');
+                        if (datasetSelector) {
+                            // Update the Select2 component if it exists
+                            if (window.$ && $.fn.select2) {
+                                // Create or select option
+                                const newOption = new Option(selectedDir, selectedDir, true, true);
+                                $(datasetSelector).append(newOption).trigger('change');
+                            } else {
+                                // Regular select
+                                datasetSelector.value = selectedDir;
+                                datasetSelector.dispatchEvent(new Event('change'));
+                            }
+                            await _loadDataset(selectedDir);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error selecting directory:', error);
+                    _showError('Failed to select directory', error.message);
+                }
+            });
+        }
+        
         // Setup dataset selector
         const datasetSelector = document.getElementById('dataset-selector');
         if (datasetSelector) {
@@ -120,8 +154,15 @@ const App = (function() {
         const refreshDatasetBtn = document.getElementById('refresh-dataset');
         if (refreshDatasetBtn) {
             refreshDatasetBtn.addEventListener('click', async () => {
+
+                document.getElementById('cell-count').textContent = 'Loading.';
+                document.getElementById('gene-count').textContent = 'Loading.';
+
                 // Clear cache for datasets listing
                 DataManager.clearCache(Config.API.DATASETS);
+
+                document.getElementById('cell-count').textContent = 'Loading..';
+                document.getElementById('gene-count').textContent = 'Loading..';
                 
                 // Reload available datasets
                 await _loadDatasets();
