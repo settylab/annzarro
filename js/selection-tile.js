@@ -327,10 +327,16 @@ export class SelectionTile {
       });
     }
   
+    /**
+     * Populates the source panel grid with available panels
+     * @param {HTMLElement} grid - The grid element to populate
+     * @returns {boolean} - Whether any panels were found to populate the grid
+     * @private
+     */
     _populateSourcePanelGrid(grid) {
       if (!grid) {
         console.error('Source panel grid element not found');
-        return;
+        return false;
       }
       grid.innerHTML = '';
       
@@ -356,6 +362,8 @@ export class SelectionTile {
       if (!hasPanels) {
         grid.innerHTML = '<div class="no-sessions">No panels available to clone</div>';
       }
+      
+      return hasPanels;
     }
     
     /**
@@ -534,14 +542,46 @@ export class SelectionTile {
     // --- Public Methods ---
     /**
      * In welcome variant, update the source panel grid (and show the clone section).
+     * If no panels are available in welcome variant, show the sessions panel instead.
+     * @returns {boolean} - Whether any panels were found to populate the grid
      */
     updateSourcePanelGrid() {
       const grid = this.tileSelector.querySelector(`#source-panel-grid-${this.selectionId}`);
+      
       if (this.variant === "welcome") {
         const cloneSection = this.tileSelector.querySelector(`#clone-panel-section-${this.selectionId}`);
         if (cloneSection) cloneSection.style.display = 'block';
+        
+        const hasPanels = this._populateSourcePanelGrid(grid);
+        
+        // If no panels available and this is welcome tile
+        if (!hasPanels) {
+          // Clear any autosave since there are no panels to restore
+          const sessionManager = this.sessionManager || window.sessionManager;
+          if (sessionManager && typeof sessionManager.clearAutosave === 'function') {
+            console.log('No panels available, clearing autosave');
+            sessionManager.clearAutosave();
+          }
+          
+          // If sessions section is enabled, show it
+          if (this.showSessions) {
+            // Hide the clone section
+            if (cloneSection) cloneSection.style.display = 'none';
+            
+            // Show the sessions section
+            const sessionsSection = this.tileSelector.querySelector(`#selection-section-${this.selectionId}`);
+            if (sessionsSection) {
+              sessionsSection.style.display = 'block';
+              // Refresh the sessions list to make sure it's up to date
+              this.refreshSessionsList();
+            }
+          }
+        }
+        
+        return hasPanels;
+      } else {
+        return this._populateSourcePanelGrid(grid);
       }
-      this._populateSourcePanelGrid(grid);
     }
   
     /**

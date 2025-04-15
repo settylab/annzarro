@@ -598,6 +598,8 @@ const SessionManager = (function() {
             // Only autosave if we have panels to save
             const allPanels = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
             if (!allPanels || allPanels.length === 0) {
+                // No panels to save, remove any existing autosave
+                clearAutosave();
                 return { status: 'skipped', message: 'No panels to autosave' };
             }
             

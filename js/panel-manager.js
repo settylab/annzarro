@@ -24,7 +24,7 @@ const PanelManager = (function() {
     
     // References to DOM elements
     let _container = null;
-    let _updateSourcePanelSelection = null;
+    let _welcomeSelectionTile = null;
     
     /**
      * Initialize the panel manager
@@ -62,7 +62,7 @@ const PanelManager = (function() {
         
         // If there's an autosave session, show a welcome tile with loading indication
         if (options.hasAutosave) {
-            _updateSourcePanelSelection = new SelectionTile({
+            _welcomeSelectionTile = new SelectionTile({
                 container: _container,
                 variant: "welcome",
                 showSessions: false,  // Don't show sessions section
@@ -77,7 +77,7 @@ const PanelManager = (function() {
             });
             
             // Customize the welcome tile to indicate autosave is loading
-            const header = _updateSourcePanelSelection.tileSelector.querySelector('.tile-selection-header');
+            const header = _welcomeSelectionTile.tileSelector.querySelector('.tile-selection-header');
             if (header) {
                 header.innerHTML = `
                     <h2>Loading Dataset and Autosaved Panels</h2>
@@ -89,7 +89,7 @@ const PanelManager = (function() {
         }
         // Otherwise show the standard welcome tile
         else {
-            _updateSourcePanelSelection = new SelectionTile({
+            _welcomeSelectionTile = new SelectionTile({
                 container: _container,
                 variant: "welcome",
                 showSessions: true,
@@ -278,13 +278,13 @@ const PanelManager = (function() {
         });
         
         // Also update the welcome selection tile if it exists
-        if (_updateSourcePanelSelection && typeof _updateSourcePanelSelection.updateSourcePanelGrid === 'function') {
-            _updateSourcePanelSelection.updateSourcePanelGrid();
+        if (_welcomeSelectionTile && typeof _welcomeSelectionTile.updateSourcePanelGrid === 'function') {
+            _welcomeSelectionTile.updateSourcePanelGrid();
             
             // If we have panels and this is the welcome tile, show clone section
             if (_panels.size > 0) {
-                _updateSourcePanelSelection.hideHeader();
-                _updateSourcePanelSelection.toggleSessions(false);
+                _welcomeSelectionTile.hideHeader();
+                _welcomeSelectionTile.toggleSessions(false);
             }
         }
     }
