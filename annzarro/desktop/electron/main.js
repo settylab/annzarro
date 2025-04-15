@@ -354,7 +354,7 @@ async function startServer() {
             
             // On Windows, use a shell command with proper quoting
             if (process.platform === 'win32') {
-                const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled --detach`;
+                const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled`;
                 log.info(`Running Windows command: ${command}`);
                 
                 // Set environment variables for the server process
@@ -378,8 +378,8 @@ async function startServer() {
                     '--host', serverHost,
                     '--config', configPath,
                     '--venv-path', venvPath,
-                    '--auth-disabled',
-                    '--detach'
+                    '--auth-disabled'
+                    // Removed --detach flag to manage process in JavaScript
                 ];
                 
                 log.info(`Running with args: ${JSON.stringify(args)}`);
@@ -408,26 +408,50 @@ async function startServer() {
                 log.error(`Server stderr: ${data.toString().trim()}`);
             });
             
-            serverProcess.on('close', (code) => {
-                log.info(`Server process exited with code ${code}`);
+            // Handle process exit and errors properly
+            serverProcess.on('error', (error) => {
+                log.error(`Server process error: ${error.message}`);
                 isServerRunning = false;
-                serverProcess = null;
                 
-                // Auto-restart if server crashes and mainWindow still exists
-                if (code !== 0 && mainWindow) {
-                    log.warn('Server process crashed, attempting to restart');
-                    setTimeout(() => {
-                        startServer()
-                            .then(() => {
-                                if (mainWindow) {
-                                    mainWindow.loadURL(serverUrl);
-                                }
-                            })
-                            .catch((error) => {
-                                log.error('Failed to restart server:', error);
-                                showErrorScreen('The server crashed and could not be restarted. Please restart the application.');
-                            });
-                    }, 2000);
+                // Only set to null if not already restarting
+                if (serverProcess) {
+                    serverProcess = null;
+                }
+                
+                if (mainWindow) {
+                    showErrorScreen('An error occurred with the server process. Please restart the application.');
+                }
+            });
+            
+            serverProcess.on('exit', (code, signal) => {
+                log.info(`Server process exited with code ${code} and signal ${signal || 'none'}`);
+                isServerRunning = false;
+                
+                // Auto-restart if server exits unexpectedly and mainWindow still exists
+                if (code !== 0 && !signal && mainWindow) {
+                    log.warn('Server process exited unexpectedly, attempting to restart');
+                    
+                    // Only attempt restart if we aren't explicitly shutting down
+                    if (!isQuitting) {
+                        // Clear serverProcess before restarting
+                        serverProcess = null;
+                        
+                        setTimeout(() => {
+                            startServer()
+                                .then(() => {
+                                    if (mainWindow) {
+                                        mainWindow.loadURL(serverUrl);
+                                    }
+                                })
+                                .catch((error) => {
+                                    log.error('Failed to restart server:', error);
+                                    showErrorScreen('The server crashed and could not be restarted. Please restart the application.');
+                                });
+                        }, 2000);
+                    }
+                } else {
+                    // Normal exit or we're in shutdown process
+                    serverProcess = null;
                 }
             });
             
@@ -735,10 +759,35 @@ async function stopServer() {
     let isStopSuccessful = false;
     
     try {
-        log.info('Using CLI to stop server');
+        // First attempt: Terminate the server process directly
+        if (serverProcess) {
+            log.info('Terminating server process directly');
+            try {
+                // Try SIGTERM first for graceful shutdown
+                serverProcess.kill('SIGTERM');
+                
+                // Wait a moment for process to terminate
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Check if process is still running
+                if (serverProcess.killed) {
+                    log.info('Server process terminated gracefully');
+                    isStopSuccessful = true;
+                } else {
+                    // If still running, force kill with SIGKILL
+                    log.warn('Server still running after SIGTERM, using SIGKILL');
+                    serverProcess.kill('SIGKILL');
+                    log.info('Killed server process with SIGKILL');
+                    isStopSuccessful = true;
+                }
+            } catch (killError) {
+                log.error(`Failed to kill server process: ${killError.message}`);
+            }
+        }
         
-        // First attempt: Try stopping gracefully with the CLI
-        if (cliPath) {
+        // If direct termination failed, try CLI stop command
+        if (!isStopSuccessful && cliPath) {
+            log.info('Using CLI to stop server');
             try {
                 // Handle Windows and Unix differently
                 if (process.platform === 'win32') {
@@ -753,74 +802,62 @@ async function stopServer() {
                 
                 log.info('Server stop command completed successfully');
                 isStopSuccessful = true;
-                return;
             } catch (cliError) {
                 log.warn(`CLI stop command failed: ${cliError.message}`);
-                // Continue to other methods if CLI fails
             }
         }
         
-        // Second attempt: Force kill server process if it still exists
-        if (!isStopSuccessful && serverProcess) {
-            log.warn('Force killing server process');
-            try {
-                serverProcess.kill('SIGKILL');
-                log.info('Killed server process successfully');
-                isStopSuccessful = true;
-            } catch (killError) {
-                log.error(`Failed to kill server process: ${killError.message}`);
-            }
-        }
-        
-        // Third attempt: Find and kill any remaining Python processes
-        log.info('Searching for orphaned Python processes...');
-        const processes = await findProcess('name', 'python');
-        let foundAnnzarroProcesses = false;
-        
-        for (const proc of processes) {
-            if (proc.cmd && proc.cmd.includes('annzarro')) {
-                foundAnnzarroProcesses = true;
-                log.warn(`Force killing orphaned Python process: ${proc.pid} - ${proc.cmd}`);
-                try {
-                    process.kill(proc.pid, 'SIGKILL');
-                    log.info(`Successfully killed process ${proc.pid}`);
-                } catch (err) {
-                    log.error(`Failed to kill process ${proc.pid}: ${err.message}`);
+        // Last attempt: Find and kill any remaining Python processes
+        if (!isStopSuccessful) {
+            log.info('Searching for orphaned Python processes...');
+            const processes = await findProcess('name', 'python');
+            let foundAnnzarroProcesses = false;
+            
+            for (const proc of processes) {
+                if (proc.cmd && proc.cmd.includes('annzarro')) {
+                    foundAnnzarroProcesses = true;
+                    log.warn(`Force killing orphaned Python process: ${proc.pid} - ${proc.cmd}`);
+                    try {
+                        process.kill(proc.pid, 'SIGKILL');
+                        log.info(`Successfully killed process ${proc.pid}`);
+                    } catch (err) {
+                        log.error(`Failed to kill process ${proc.pid}: ${err.message}`);
+                    }
                 }
             }
-        }
-        
-        if (foundAnnzarroProcesses) {
-            // Verify all processes were killed
-            const remainingProcesses = await findProcess('name', 'python');
-            const stillRunning = remainingProcesses.filter(proc => 
-                proc.cmd && proc.cmd.includes('annzarro')
-            );
             
-            if (stillRunning.length > 0) {
-                log.error(`Failed to kill ${stillRunning.length} annzarro processes`);
-                stillRunning.forEach(proc => {
-                    log.error(`  - PID ${proc.pid}: ${proc.cmd}`);
-                });
-            } else {
-                log.info('All annzarro processes successfully terminated');
-                isStopSuccessful = true;
-            }
-        }
-        
-        // Fourth attempt: On macOS try the `pkill` command
-        if (process.platform === 'darwin' && !isStopSuccessful) {
-            log.warn('Attempting to use pkill as last resort');
-            try {
-                execSync('pkill -f "python.*annzarro"', { timeout: 3000 });
-                log.info('pkill command executed successfully');
-                isStopSuccessful = true;
-            } catch (pkillError) {
-                // pkill returns non-zero if no processes match
-                if (pkillError.status !== 1) {
-                    log.error(`pkill failed: ${pkillError.message}`);
+            if (foundAnnzarroProcesses) {
+                // Verify all processes were killed
+                const remainingProcesses = await findProcess('name', 'python');
+                const stillRunning = remainingProcesses.filter(proc => 
+                    proc.cmd && proc.cmd.includes('annzarro')
+                );
+                
+                if (stillRunning.length > 0) {
+                    log.error(`Failed to kill ${stillRunning.length} annzarro processes`);
+                    stillRunning.forEach(proc => {
+                        log.error(`  - PID ${proc.pid}: ${proc.cmd}`);
+                    });
                 } else {
-                    log.info('No matching processes found by pkill');
+                    log.info('All annzarro processes successfully terminated');
+                    isStopSuccessful = true;
+                }
+            }
+            
+            // On macOS try the `pkill` command as last resort
+            if (process.platform === 'darwin' && !isStopSuccessful) {
+                log.warn('Attempting to use pkill as last resort');
+                try {
+                    execSync('pkill -f "python.*annzarro"', { timeout: 3000 });
+                    log.info('pkill command executed successfully');
+                    isStopSuccessful = true;
+                } catch (pkillError) {
+                    // pkill returns non-zero if no processes match
+                    if (pkillError.status !== 1) {
+                        log.error(`pkill failed: ${pkillError.message}`);
+                    } else {
+                        log.info('No matching processes found by pkill');
+                    }
                 }
             }
         }
