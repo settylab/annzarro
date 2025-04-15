@@ -357,10 +357,18 @@ async function startServer() {
                 const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled --detach`;
                 log.info(`Running Windows command: ${command}`);
                 
+                // Set environment variables for the server process
+                const winEnv = { 
+                    ...process.env, 
+                    ANNZARRO_AUTH_DISABLED: 'true',
+                    ANNZARRO_ELECTRON_APP: 'true'
+                };
+                
                 // Start the server process
                 serverProcess = spawn(command, {
                     stdio: 'pipe',
-                    shell: true
+                    shell: true,
+                    env: winEnv
                 });
             } else {
                 // On Unix, use a proper args array to avoid shell escaping issues
@@ -376,10 +384,18 @@ async function startServer() {
                 
                 log.info(`Running with args: ${JSON.stringify(args)}`);
                 
-                // Start the server process with shell: false
+                // Set environment variables for the server process
+                const env = { 
+                    ...process.env, 
+                    ANNZARRO_AUTH_DISABLED: 'true',
+                    ANNZARRO_ELECTRON_APP: 'true'
+                };
+                
+                // Start the server process with shell: false for better argument handling
                 serverProcess = spawn(cliPath, args, {
                     stdio: 'pipe',
-                    shell: false
+                    shell: false,
+                    env: env
                 });
             }
             
@@ -711,72 +727,111 @@ async function ensureVenvExists() {
 async function stopServer() {
     log.info('Stopping server...');
     
-    if (!isServerRunning) {
+    if (!isServerRunning && !serverProcess) {
         log.info('Server is not running');
         return;
     }
     
+    let isStopSuccessful = false;
+    
     try {
         log.info('Using CLI to stop server');
         
-        // Handle Windows and Unix differently
-        if (process.platform === 'win32') {
-            // Build the stop command with proper quoting for Windows
-            const command = `"${cliPath}" stop`;
-            
-            // Run stop command but don't wait for it to complete
-            spawn(command, {
-                stdio: 'ignore',
-                shell: true,
-                detached: true
-            }).unref();
-        } else {
-            // Use args array for Unix
-            const args = ['stop'];
-            
-            // Run stop command but don't wait for it to complete
-            spawn(cliPath, args, {
-                stdio: 'ignore',
-                shell: false,
-                detached: true
-            }).unref();
+        // First attempt: Try stopping gracefully with the CLI
+        if (cliPath) {
+            try {
+                // Handle Windows and Unix differently
+                if (process.platform === 'win32') {
+                    // Execute stop command synchronously with a timeout
+                    log.info('Executing stop command on Windows');
+                    execSync(`"${cliPath}" stop`, { timeout: 5000 });
+                } else {
+                    // Execute stop command synchronously with a timeout
+                    log.info('Executing stop command on Unix');
+                    execSync(`"${cliPath}" stop`, { timeout: 5000 });
+                }
+                
+                log.info('Server stop command completed successfully');
+                isStopSuccessful = true;
+                return;
+            } catch (cliError) {
+                log.warn(`CLI stop command failed: ${cliError.message}`);
+                // Continue to other methods if CLI fails
+            }
         }
         
-        isServerRunning = false;
-        log.info('Server stop command issued');
-        
-        // Give some time for the server to stop
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    } catch (error) {
-        log.error('Failed to stop server gracefully:', error);
-        
-        // Force kill if necessary
-        try {
-            if (serverProcess) {
-                log.warn('Force killing server process');
+        // Second attempt: Force kill server process if it still exists
+        if (!isStopSuccessful && serverProcess) {
+            log.warn('Force killing server process');
+            try {
                 serverProcess.kill('SIGKILL');
-                serverProcess = null;
+                log.info('Killed server process successfully');
+                isStopSuccessful = true;
+            } catch (killError) {
+                log.error(`Failed to kill server process: ${killError.message}`);
             }
-            
-            // Find and kill any remaining Python processes
-            const processes = await findProcess('name', 'python');
-            for (const proc of processes) {
-                if (proc.cmd.includes('annzarro')) {
-                    log.warn(`Force killing orphaned Python process: ${proc.pid}`);
-                    try {
-                        process.kill(proc.pid, 'SIGKILL');
-                    } catch (err) {
-                        log.error(`Failed to kill process ${proc.pid}:`, err);
-                    }
+        }
+        
+        // Third attempt: Find and kill any remaining Python processes
+        log.info('Searching for orphaned Python processes...');
+        const processes = await findProcess('name', 'python');
+        let foundAnnzarroProcesses = false;
+        
+        for (const proc of processes) {
+            if (proc.cmd && proc.cmd.includes('annzarro')) {
+                foundAnnzarroProcesses = true;
+                log.warn(`Force killing orphaned Python process: ${proc.pid} - ${proc.cmd}`);
+                try {
+                    process.kill(proc.pid, 'SIGKILL');
+                    log.info(`Successfully killed process ${proc.pid}`);
+                } catch (err) {
+                    log.error(`Failed to kill process ${proc.pid}: ${err.message}`);
                 }
             }
-        } catch (killError) {
-            log.error('Failed to force kill server processes:', killError);
         }
+        
+        if (foundAnnzarroProcesses) {
+            // Verify all processes were killed
+            const remainingProcesses = await findProcess('name', 'python');
+            const stillRunning = remainingProcesses.filter(proc => 
+                proc.cmd && proc.cmd.includes('annzarro')
+            );
+            
+            if (stillRunning.length > 0) {
+                log.error(`Failed to kill ${stillRunning.length} annzarro processes`);
+                stillRunning.forEach(proc => {
+                    log.error(`  - PID ${proc.pid}: ${proc.cmd}`);
+                });
+            } else {
+                log.info('All annzarro processes successfully terminated');
+                isStopSuccessful = true;
+            }
+        }
+        
+        // Fourth attempt: On macOS try the `pkill` command
+        if (process.platform === 'darwin' && !isStopSuccessful) {
+            log.warn('Attempting to use pkill as last resort');
+            try {
+                execSync('pkill -f "python.*annzarro"', { timeout: 3000 });
+                log.info('pkill command executed successfully');
+                isStopSuccessful = true;
+            } catch (pkillError) {
+                // pkill returns non-zero if no processes match
+                if (pkillError.status !== 1) {
+                    log.error(`pkill failed: ${pkillError.message}`);
+                } else {
+                    log.info('No matching processes found by pkill');
+                }
+            }
+        }
+    } catch (error) {
+        log.error('Error during server shutdown sequence:', error);
+    } finally {
+        // Always mark the server as not running to prevent further issues
+        isServerRunning = false;
+        serverProcess = null;
+        log.info('Server shutdown sequence completed');
     }
-    
-    isServerRunning = false;
-    serverProcess = null;
 }
 
 /**
@@ -994,16 +1049,46 @@ app.whenReady().then(() => {
 
 // Quit when all windows are closed
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    app.quit();
 });
 
-// Force app quit and server termination
+// Track if quit process is already in progress
+let isQuitting = false;
+
+// Ensure server is stopped before quitting
 app.on('before-quit', async (event) => {
-    if (isServerRunning) {
-        event.preventDefault();
-        await stopServer();
-        app.quit();
+    // If already quitting, don't prevent default and don't do anything else
+    if (isQuitting) {
+        return;
     }
+    
+    // Prevent the app from quitting immediately
+    event.preventDefault();
+    
+    // Mark that we're in the quit process
+    isQuitting = true;
+    
+    // Log the quit attempt
+    log.info('Application quit requested, ensuring server shutdown...');
+    
+    // Stop the server with a timeout safety
+    const serverStopPromise = stopServer();
+    const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000)); // 5 second max wait
+    
+    try {
+        // Race between normal shutdown and timeout
+        await Promise.race([serverStopPromise, timeoutPromise]);
+        log.info('Server shutdown completed or timed out, proceeding with app quit');
+    } catch (error) {
+        log.error('Error during final server shutdown:', error);
+    }
+    
+    // Continue with app quit after a short delay
+    setTimeout(() => app.exit(0), 100); // Use exit instead of quit to avoid triggering before-quit again
+});
+
+// Note: will-quit won't be triggered when using app.exit()
+// but we keep this handler just in case the app is closed differently
+app.on('will-quit', (event) => {
+    log.info('Application will quit event triggered');
 });

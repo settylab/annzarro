@@ -105,9 +105,21 @@ def start_server(args: argparse.Namespace) -> int:
         config.setdefault('auth', {})['enabled'] = False
         logger.info("Authentication disabled by command line flag")
     
+    # Check for ANNZARRO_AUTH_DISABLED environment variable
+    if os.environ.get('ANNZARRO_AUTH_DISABLED'):
+        config.setdefault('auth', {})['enabled'] = False
+        logger.info("Authentication disabled by ANNZARRO_AUTH_DISABLED environment variable")
+    
+    # Log the auth configuration before flattening
+    logger.info(f"Auth configuration before flattening: enabled={config.get('auth', {}).get('enabled', False)}")
+    
     # Convert to flat structure for the server
     logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
     flask_config = config_manager.to_flask_config()
+    
+    # Log the flattened auth configuration 
+    logger.info(f"Auth configuration after flattening: auth_enabled={flask_config.get('auth_enabled', False)}")
+    logger.info(flask_config)
     
     # Start the server with the configuration from the config manager
     # Pass config as config_file to handle the special case
@@ -126,10 +138,21 @@ def stop_server(args: argparse.Namespace) -> int:
         Exit code
     """
     try:
+        # Look in the standard location first
         pid_file = Path.home() / ".annzarro" / "server.pid"
+        
+        # If the PID file doesn't exist in the home directory, try the temp directory
         if not pid_file.exists():
-            logger.error("Server is not running (PID file not found)")
-            return 1
+            import tempfile
+            temp_pid_file = Path(tempfile.gettempdir()) / "annzarro" / "server.pid"
+            if temp_pid_file.exists():
+                pid_file = temp_pid_file
+                logger.info(f"Using alternative PID file location: {pid_file}")
+            else:
+                logger.error("Server is not running (PID file not found in any location)")
+                return 1
+        
+        logger.info(f"Found PID file at: {pid_file}")
             
         with open(pid_file, 'r') as f:
             pid = int(f.read().strip())

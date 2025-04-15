@@ -122,8 +122,14 @@ def run_server(
             "--data-dir", data_dir
         ]
         
+        # Pass debug flag if enabled
         if final_config.get("debug", False):
             cmd.append("--debug")
+            
+        # Pass auth-disabled flag if auth is disabled
+        if not final_config.get("auth_enabled", True):
+            cmd.append("--auth-disabled")
+            logger.info("Passing --auth-disabled flag to detached process")
         
         # Start detached process
         proc = subprocess.Popen(
@@ -145,10 +151,29 @@ def run_server(
         logger.info(f"Server started in detached mode (PID: {proc.pid})")
         
         # Store PID for later management
+        # Standard location in home directory with a fallback if access fails
         pid_dir = Path.home() / ".annzarro"
-        pid_dir.mkdir(exist_ok=True)
-        with open(pid_dir / "server.pid", "w") as f:
-            f.write(str(proc.pid))
+        try:
+            # Create the directory if it doesn't exist
+            pid_dir.mkdir(exist_ok=True)
+            
+            # Try to write the PID file
+            with open(pid_dir / "server.pid", "w") as f:
+                f.write(str(proc.pid))
+                
+            logger.info(f"PID file written to {pid_dir / 'server.pid'}")
+        except (PermissionError, OSError) as e:
+            # If we can't write to the home directory, try the temp directory
+            logger.warning(f"Failed to write PID to home directory: {e}")
+            try:
+                import tempfile
+                pid_dir = Path(tempfile.gettempdir()) / "annzarro"
+                pid_dir.mkdir(exist_ok=True)
+                with open(pid_dir / "server.pid", "w") as f:
+                    f.write(str(proc.pid))
+                logger.info(f"PID file written to alternative location: {pid_dir / 'server.pid'}")
+            except Exception as e2:
+                logger.error(f"Failed to write PID file to alternative location: {e2}")
             
     else:
         try:

@@ -182,37 +182,19 @@ if [ -d "$VENV_PATH" ]; then
         FILTERED_ARGS=()
         SKIP_NEXT=false
         
-        # Debug: show all arguments passed to the script
-        echo "DEBUG: annzarro script received $# arguments:"
-        for ((i=1; i<=$#; i++)); do
-            echo "DEBUG: Arg $i: '${!i}'"
-        done
-        
         for ((i=1; i<=$#; i++)); do
             if $SKIP_NEXT; then
                 SKIP_NEXT=false
-                echo "DEBUG: Skipping arg $i: '${!i}' (value of --venv-path)"
                 continue
             fi
             
             if [[ "${!i}" == "--venv-path" ]]; then
                 SKIP_NEXT=true
-                echo "DEBUG: Skipping arg $i: '${!i}' (--venv-path flag)"
                 continue
             fi
-            
-            echo "DEBUG: Adding arg $i: '${!i}' to filtered args"
             FILTERED_ARGS+=("${!i}")
         done
         
-        # Debug: show filtered arguments
-        echo "DEBUG: After filtering, passing ${#FILTERED_ARGS[@]} arguments to Python module:"
-        for ((i=0; i<${#FILTERED_ARGS[@]}; i++)); do
-            echo "DEBUG: Filtered arg $i: '${FILTERED_ARGS[$i]}'"
-        done
-        
-        # Debug: construct and show the full command
-        echo "DEBUG: Executing: $PYTHON_BIN -m annzarro.cli ${FILTERED_ARGS[*]}"
         
         # Use Python directly from the virtual environment with filtered arguments
         "$PYTHON_BIN" -m annzarro.cli "${FILTERED_ARGS[@]}"

@@ -75,6 +75,7 @@
           "!**/node_modules/**/*",
           "!**/.git/**/*",
           "!data/**",
+          "!config/auth/**/*",
           "!**/downloads/**/*",
           "!**/venv/**/*",
           "!**/desktop/electron/dist/**/*",
