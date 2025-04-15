@@ -28,8 +28,12 @@ const App = (function() {
             // Make SessionManager accessible globally
             window.sessionManager = SessionManager;
             
-            // Initialize panel manager
-            PanelManager.init('tile-container');
+            // Check for autosave session before initializing panel manager
+            const autosave = SessionManager.getAutosaveSession();
+            const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE;
+            
+            // Initialize panel manager with autosave information
+            PanelManager.init('tile-container', { hasAutosave });
             
             // Load available datasets
             await _loadDatasets();
@@ -37,9 +41,8 @@ const App = (function() {
             // Load available sessions
             await _loadSessions();
             
-            // Check for autosave session and load it automatically if enabled
-            const autosave = SessionManager.getAutosaveSession();
-            if (autosave && Config.AUTOSAVE.AUTO_RESTORE) {
+            // Load autosave session if it exists and auto-restore is enabled
+            if (hasAutosave) {
                 await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
             }
             
@@ -346,13 +349,22 @@ const App = (function() {
      */
     async function _loadDatasets() {
         try {
-            const datasets = await DataManager.loadDatasets();
-            
-            // Populate dataset selector
+            // Show "Loading..." in the dataset selector while loading
             const datasetSelector = document.getElementById('dataset-selector');
             if (datasetSelector) {
                 // Save current value before clearing
                 const currentValue = datasetSelector.value;
+                datasetSelector.innerHTML = '';
+                
+                // Add a loading option
+                const loadingOption = document.createElement('option');
+                loadingOption.value = '';
+                loadingOption.textContent = 'Loading...';
+                datasetSelector.appendChild(loadingOption);
+                
+                const datasets = await DataManager.loadDatasets();
+                
+                // Now clear and repopulate with actual datasets
                 datasetSelector.innerHTML = '';
                 
                 if (datasets && datasets.length > 0) {
@@ -426,7 +438,7 @@ const App = (function() {
                 }
             }
             
-            return datasets;
+            return;
         } catch (error) {
             console.error('Error loading datasets:', error);
             _showError('Failed to load datasets', error.message);

@@ -29,8 +29,10 @@ const PanelManager = (function() {
     /**
      * Initialize the panel manager
      * @param {string} containerId - ID of the container element
+     * @param {Object} options - Optional configuration options
+     * @param {boolean} options.hasAutosave - Whether there's an autosave session
      */
-    function init(containerId) {
+    function init(containerId, options = {}) {
         _container = document.getElementById(containerId);
         
         if (!_container) {
@@ -58,20 +60,49 @@ const PanelManager = (function() {
             });
         });
         
-        // Show welcome tile automatically
-        _updateSourcePanelSelection = new SelectionTile({
-            container: _container,
-            variant: "welcome",
-            showSessions: true,
-            panels: _panels,
-            activePanels: _activePanels,
-            layoutManager: LayoutManager,
-            createPanel: createPanel,
-            panelsByType: _panelsByType,
-            counters: _counters,
-            generateUniqueName: _generateUniqueName,
-            sessionManager: window.sessionManager
-        });
+        // If there's an autosave session, show a welcome tile with loading indication
+        if (options.hasAutosave) {
+            _updateSourcePanelSelection = new SelectionTile({
+                container: _container,
+                variant: "welcome",
+                showSessions: false,  // Don't show sessions section
+                panels: _panels,
+                activePanels: _activePanels,
+                layoutManager: LayoutManager,
+                createPanel: createPanel,
+                panelsByType: _panelsByType,
+                counters: _counters,
+                generateUniqueName: _generateUniqueName,
+                sessionManager: window.sessionManager
+            });
+            
+            // Customize the welcome tile to indicate autosave is loading
+            const header = _updateSourcePanelSelection.tileSelector.querySelector('.tile-selection-header');
+            if (header) {
+                header.innerHTML = `
+                    <h2>Loading Dataset and Autosaved Panels</h2>
+                    <p><div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div> Your previous panel set is being restored...</p>
+                `;
+            }
+        }
+        // Otherwise show the standard welcome tile
+        else {
+            _updateSourcePanelSelection = new SelectionTile({
+                container: _container,
+                variant: "welcome",
+                showSessions: true,
+                panels: _panels,
+                activePanels: _activePanels,
+                layoutManager: LayoutManager,
+                createPanel: createPanel,
+                panelsByType: _panelsByType,
+                counters: _counters,
+                generateUniqueName: _generateUniqueName,
+                sessionManager: window.sessionManager
+            });
+        }
     }
     
     /**
