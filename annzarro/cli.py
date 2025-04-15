@@ -100,12 +100,21 @@ def start_server(args: argparse.Namespace) -> int:
     if args.data_dir:
         config.setdefault('server', {})['data_dir'] = args.data_dir
     
-    # Authentication is disabled by default for the desktop app
+    # Determine if authentication should be enabled
+    host = args.host or config.get('server', {}).get('host')
+    is_non_localhost = host and host not in ('127.0.0.1', 'localhost', '::1')
+    
+    # Enable auth by default for non-localhost or when auth is explicitly configured
+    if is_non_localhost:
+        config.setdefault('auth', {})['enabled'] = True
+        logger.info("Authentication enabled by default for non-localhost host")
+    
+    # Explicit command line flag takes precedence
     if getattr(args, 'auth_disabled', False):
         config.setdefault('auth', {})['enabled'] = False
         logger.info("Authentication disabled by command line flag")
     
-    # Check for ANNZARRO_AUTH_DISABLED environment variable
+    # Environment variable also takes precedence
     if os.environ.get('ANNZARRO_AUTH_DISABLED'):
         config.setdefault('auth', {})['enabled'] = False
         logger.info("Authentication disabled by ANNZARRO_AUTH_DISABLED environment variable")
@@ -115,9 +124,21 @@ def start_server(args: argparse.Namespace) -> int:
     flask_config = config_manager.to_flask_config()
     logger.info(flask_config)
     
+    # Check explicit user preference
+    no_browser = getattr(args, 'no_browser', False)
+    
+    # Check environment variable for headless mode
+    if os.environ.get('ANNZARRO_HEADLESS') is not None:
+        no_browser = True
+        logger.debug("Headless mode detected via environment variable, disabling browser")
+    
     # Start the server with the configuration from the config manager
     # Pass config as config_file to handle the special case
-    run_server(config_file=flask_config, detach=args.detach)
+    run_server(
+        config_file=flask_config, 
+        detach=args.detach,
+        no_browser=no_browser
+    )
     
     return 0
 
@@ -743,6 +764,7 @@ def main(argv: List[str] = None) -> int:
     start_parser.add_argument('--config', help="Path to configuration file")
     start_parser.add_argument('--venv-path', help="Path to Python virtual environment")
     start_parser.add_argument('--auth-disabled', action='store_true', help="Disable authentication")
+    start_parser.add_argument('--no-browser', action='store_true', help="Don't open a browser automatically")
     start_parser.set_defaults(func=start_server)
     
     # Stop command

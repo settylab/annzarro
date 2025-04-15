@@ -7,6 +7,7 @@ through a single unified server on one port.
 """
 
 import os
+import sys
 import json
 import logging
 from pathlib import Path
@@ -30,7 +31,8 @@ def run_server(
     host: Optional[str] = None,
     data_dir: Optional[str] = None,
     static_dir: Optional[str] = None,
-    detach: bool = False
+    detach: bool = False,
+    no_browser: bool = False
 ) -> None:
     """
     Run the Annzarro server.
@@ -44,6 +46,7 @@ def run_server(
         data_dir: Directory to use for data storage (optional)
         static_dir: Directory containing static files (optional)
         detach: Run server in detached mode (optional)
+        no_browser: Don't open a browser automatically (optional)
     """
     global _app_instance
     
@@ -107,7 +110,6 @@ def run_server(
     # Handle detached mode if requested
     if detach:
         import subprocess
-        import sys
         import time
         from pathlib import Path
         
@@ -126,10 +128,19 @@ def run_server(
         if final_config.get("debug", False):
             cmd.append("--debug")
             
-        # Pass auth-disabled flag if auth is disabled
-        if not final_config.get("auth_enabled", True):
-            cmd.append("--auth-disabled")
-            logger.info("Passing --auth-disabled flag to detached process")
+        # Pass auth settings to detached process
+        if "auth_enabled" in final_config:
+            if not final_config.get("auth_enabled"):
+                cmd.append("--auth-disabled")
+                logger.info("Passing --auth-disabled flag to detached process")
+            else:
+                logger.info("Authentication is enabled for detached process")
+            
+        # Always use --no-browser for detached process
+        # The detached process will handle opening its own browser
+        if "--no-browser" not in cmd:
+            cmd.append("--no-browser")
+            logger.info("Using --no-browser flag for detached process")
         
         # Start detached process
         proc = subprocess.Popen(
@@ -193,9 +204,77 @@ def run_server(
                     logger.warning(f"Key file: {key_file}")
                     logger.warning("Falling back to HTTP.")
             
+            # Determine server parameters
+            use_host = final_config.get("host", "127.0.0.1")
+            use_port = final_config.get("port", 8000)
+            
+            # Determine if we should try to open a browser and if we're in headless mode
+            should_open_browser = not no_browser
+            if os.environ.get('ANNZARRO_ELECTRON_APP', 'false') == 'true':
+                logger.info("Should not open browser inside electron app")
+                should_open_browser = False
+            
+            
+            # Infer headless mode if environment variable not set
+            is_headless = False
+            if os.environ.get('ANNZARRO_HEADLESS') is not None:
+                is_headless = True
+                logger.debug("Headless mode detected via environment variable")
+            else:
+                # Try to infer if we're in a headless environment
+                try:
+                    # Check for common headless environment indicators
+                    if 'SSH_CONNECTION' in os.environ or 'SSH_TTY' in os.environ:
+                        logger.debug("Headless mode inferred via SSH environment")
+                        is_headless = True
+                    elif  not os.environ.get('DISPLAY') and not sys.platform.startswith('win') and not sys.platform.startswith('darwin'):
+                        # No display on Linux usually means headless
+                        logger.debug("Headless mode inferred via missing DISPLAY on Linux")
+                        is_headless = True
+                    elif 'CI' in os.environ or 'CONTINUOUS_INTEGRATION' in os.environ:
+                        # CI environments are usually headless
+                        logger.debug("Headless mode inferred via CI environment")
+                        is_headless = True
+                except Exception as e:
+                    logger.debug(f"Error inferring headless mode: {e}")
+                    is_headless = True
+                
+            # Don't open browser in headless mode
+            if is_headless:
+                should_open_browser = False
+                logger.debug("Browser opening disabled due to headless environment")
+            
+            # Set local mode environment variable if we have a browser
+            if should_open_browser:
+                os.environ['ANNZARRO_LOCAL_MODE'] = '1'
+                logger.info("Setting ANNZARRO_LOCAL_MODE=1 for frontend detection")
+            
+            # Try to open browser if requested and not in headless mode
+            if should_open_browser:
+                import threading
+                import webbrowser
+                import time
+                
+                def open_browser():
+                    # Wait for the server to start
+                    time.sleep(1.5)
+                    # Determine protocol (http or https)
+                    protocol = "https" if ssl_context else "http"
+                    # Open browser to the local server
+                    url = f"{protocol}://127.0.0.1:{use_port}"
+                    logger.info(f"Opening browser to {url}")
+                    try:
+                        if not webbrowser.open(url):
+                            logger.warning("Failed to open browser automatically")
+                    except Exception as e:
+                        logger.warning(f"Error opening browser: {e}")
+                
+                # Start browser in a separate thread to not block server startup
+                threading.Thread(target=open_browser).start()
+            
             app.run(
-                host=final_config.get("host", "127.0.0.1"),
-                port=final_config.get("port", 8000),
+                host=use_host,
+                port=use_port,
                 debug=final_config.get("debug", False),
                 threaded=True,
                 ssl_context=ssl_context

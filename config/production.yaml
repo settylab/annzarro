@@ -2,7 +2,7 @@
 # Overrides for production environment
 
 server:
-  host: 0.0.0.0  # Listen on all interfaces
+  host: 127.0.0.1 # 0.0.0.0  # Listen on all interfaces
   port: 8000
   debug: false
   data_dir: "data"  # Data directory location
@@ -27,9 +27,9 @@ server:
   proxy_count: 1
 
 auth:
-  enabled: true  # Enable authentication in production
   user_file: "config/auth/users.json"  # Use the same file as development by default
   secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this in a real production environment!
+  #enabled: true
 
 # Proxy configuration is part of the server section above
 # proxy_count: 1 has been moved inside the main server configuration

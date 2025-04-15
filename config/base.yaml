@@ -40,9 +40,9 @@ server:
 
 # Authentication configuration
 auth:
-  enabled: true
   user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
   secret_key: "change-this-in-production"  # Will be overridden in production
+  #enabled: true
 
 # Application branding
 branding:
