@@ -354,7 +354,7 @@ async function startServer() {
             
             // On Windows, use a shell command with proper quoting
             if (process.platform === 'win32') {
-                const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path="${venvPath}" --auth-disabled --detach`;
+                const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled --detach`;
                 log.info(`Running Windows command: ${command}`);
                 
                 // Start the server process
@@ -369,7 +369,7 @@ async function startServer() {
                     '--port', serverPort.toString(),
                     '--host', serverHost,
                     '--config', configPath,
-                    `--venv-path=${venvPath}`,
+                    '--venv-path', venvPath,
                     '--auth-disabled',
                     '--detach'
                 ];
@@ -595,7 +595,7 @@ async function ensureVenvExists() {
             
             // On Windows, use execSync with a properly quoted command
             if (process.platform === 'win32') {
-                const command = `"${cliPath}" install --clean --venv-path="${venvPath}"`;
+                const command = `"${cliPath}" install --clean --venv-path "${venvPath}"`;
                 log.info(`Executing Windows command: ${command}`);
                 const output = execSync(command, { 
                     encoding: 'utf8',
@@ -606,6 +606,7 @@ async function ensureVenvExists() {
                 return;
             }
             
+            
             // On Unix systems, use spawn with properly separated arguments
             log.info('Using spawn with separated arguments for Unix');
             
@@ -613,7 +614,7 @@ async function ensureVenvExists() {
             const args = [
                 'install',
                 '--clean',
-                `--venv-path=${venvPath}`
+                '--venv-path', venvPath
             ];
             
             log.info(`Spawning process: ${cliPath} with args: ${JSON.stringify(args)}`);
@@ -664,12 +665,12 @@ async function ensureVenvExists() {
                                 const pythonArgs = [
                                     installScript,
                                     '--clean',
-                                    `--venv-path=${venvPath}`
+                                    '--venv-path', venvPath
                                 ];
                                 
                                 log.info(`Running Python directly: ${pythonCmd} ${JSON.stringify(pythonArgs)}`);
                                 
-                                const pythonOutput = execSync(`${pythonCmd} "${installScript}" --clean --venv-path="${venvPath}"`, {
+                                const pythonOutput = execSync(`${pythonCmd} "${installScript}" --clean --venv-path "${venvPath}"`, {
                                     encoding: 'utf8',
                                     maxBuffer: 10 * 1024 * 1024
                                 });
