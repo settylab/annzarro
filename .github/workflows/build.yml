@@ -33,13 +33,17 @@ jobs:
         with:
           node-version: '16'
           
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install -e .
           
-      - name: Build desktop app
+      - name: Make CLI executable (Unix)
+        if: runner.os != 'Windows'
+        run: chmod +x ./annzarro-cli
+          
+      - name: Build desktop app using CLI
         run: |
-          python -m annzarro.cli desktop build --platform ${{ matrix.platform }}
+          ./annzarro-cli desktop build --platform ${{ matrix.platform }}
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v3

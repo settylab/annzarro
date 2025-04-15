@@ -117,6 +117,18 @@ Get the latest desktop app for your platform:
 - [macOS](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.dmg)
 - [Linux](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.AppImage)
 
+### Creating a new release
+
+To create a new release with desktop apps for all platforms:
+
+1. Update version in `annzarro/desktop/electron/package.json`
+2. Create and push a new tag:
+   ```bash
+   git tag v0.1.1
+   git push origin v0.1.1
+   ```
+3. GitHub Actions will automatically build the desktop apps and create a release
+
 ## License
 
 GPL-3.0-or-later
