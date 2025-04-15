@@ -155,13 +155,38 @@ class ElectronBuilder:
         
         # Run the build
         try:
-            result = self._run_npm(build_cmd)
+            # Run the npm command but capture output in real-time
+            process = subprocess.Popen(
+                ['npm'] + build_cmd,
+                cwd=self.electron_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            
+            # Capture and log stdout in real-time
+            stdout_output = ""
+            for line in process.stdout:
+                line = line.strip()
+                if line:
+                    logger.info(f"npm: {line}")
+                    stdout_output += line + "\n"
+            
+            # Capture stderr
+            stderr_output, _ = process.communicate()
+            
+            # Check the return code
+            if process.returncode != 0:
+                logger.error(f"Build failed with exit code {process.returncode}")
+                if stderr_output:
+                    logger.error(f"Error output:\n{stderr_output}")
+                return False
+                
             logger.info("Build successful")
-            logger.info(result.stdout)
             return True
-        except subprocess.SubprocessError as e:
+        except Exception as e:
             logger.error(f"Build failed: {e}")
-            logger.error(f"Error output: {e.stderr if hasattr(e, 'stderr') else 'No error output'}")
             return False
             
     def run_dev(self) -> bool:

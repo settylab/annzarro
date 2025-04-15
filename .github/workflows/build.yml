@@ -46,6 +46,12 @@ jobs:
           ./annzarro-cli install
           
       - name: Build desktop app using CLI
+        env:
+          # Set environment variables to disable publishing
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          ELECTRON_BUILDER_PUBLISH: never
         run: |
           ./annzarro-cli desktop build --platform ${{ matrix.platform }}
           

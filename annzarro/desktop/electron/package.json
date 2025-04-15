@@ -6,6 +6,10 @@
   "author": "Annzarro Contributors",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/settylab/annzarro.git"
+  },
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
@@ -28,10 +32,7 @@
     "directories": {
       "output": "dist"
     },
-    "publish": {
-      "provider": "github",
-      "releaseType": "release"
-    },
+    "publish": false,
     "files": [
       "**/*",
       "requirements.txt",
