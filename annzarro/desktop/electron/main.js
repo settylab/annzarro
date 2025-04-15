@@ -4,18 +4,105 @@ const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const { spawn, execSync } = require('child_process');
+const util = require('util');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 const findProcess = require('find-process');
 
-// Configure logging
+/**
+ * Safely executes a shell command synchronously with EPIPE error handling
+ * 
+ * @param {string} command - The command to execute
+ * @param {object} options - Options for execSync
+ * @returns {string|null} - Command output or null if an error occurred
+ */
+function safeExecSync(command, options = {}) {
+    try {
+        // Set default options to suppress stdio unless explicitly provided
+        const safeOptions = {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+            ...options
+        };
+        
+        // If caller didn't specify stdio, use our safe defaults
+        if (!options.stdio) {
+            safeOptions.stdio = ['ignore', 'pipe', 'pipe'];
+        }
+        
+        const result = execSync(command, safeOptions);
+        return result ? result.toString() : null;
+    } catch (error) {
+        // Safe error logging
+        try {
+            // Only log non-EPIPE errors in detail
+            if (error.code === 'EPIPE') {
+                log.warn(`EPIPE error executing command: ${command.slice(0, 100)}...`);
+            } else {
+                log.error(`Error executing command (${error.code}): ${command.slice(0, 100)}...`);
+                if (error.stderr) log.error(`stderr: ${error.stderr.toString()}`);
+            }
+        } catch (logError) {
+            // Silently handle EPIPE in logging
+            if (logError.code !== 'EPIPE') {
+                console.error(`Error logging execSync failure: ${logError.message}`);
+            }
+        }
+        
+        return null;
+    }
+}
+
+/**
+ * Safely logs a message with EPIPE error handling
+ * 
+ * @param {Function} logFn - The logging function to use (log.info, log.error, etc.)
+ * @param {string} message - The message to log
+ */
+function safeLog(logFn, message) {
+    try {
+        logFn(message);
+    } catch (error) {
+        // Silently handle EPIPE errors
+        if (error.code !== 'EPIPE') {
+            console.error(`Error logging message: ${error.message}`);
+        }
+    }
+}
+
+// Configure logging with EPIPE error prevention
 log.transports.file.level = 'info';
-log.info('App starting...');
+
+// Override the console transport to handle EPIPE errors gracefully
+log.transports.console = {
+    level: 'info',
+    format: '{h}:{i}:{s} {level} {text}',
+    writeFn: (message) => {
+        try {
+            // Only write if process.stdout exists and is writable
+            if (process && process.stdout && process.stdout.writable) {
+                process.stdout.write(message + '\n');
+            }
+        } catch (error) {
+            // Silently handle EPIPE errors
+            if (error.code !== 'EPIPE') {
+                console.error(`Electron-log error: ${error.message}`);
+            }
+        }
+    }
+};
+
+// Safe starting message
+try {
+    log.info('App starting...');
+} catch (error) {
+    console.error('Error during initial logging:', error.message);
+}
 
 // Global references
 let mainWindow = null;
 let serverProcess = null;
-let serverPort = 8000; // Default port
+let serverPort = 39487; // Default port (non-standard to minimize collisions)
 let serverHost = '127.0.0.1';
 let serverUrl = `http://${serverHost}:${serverPort}`;
 let isServerRunning = false;
@@ -26,7 +113,7 @@ let cliPath = null;
 
 // Constants
 const MAX_SERVER_START_ATTEMPTS = 3;
-const DEFAULT_PORT = 8000;
+const DEFAULT_PORT = 39487; // Using a less common port to reduce collision chances
 const CONFIG_FILENAME = 'electron_config.yaml';
 
 /**
@@ -142,14 +229,18 @@ function initializePaths() {
 }
 
 /**
- * Find the annzarro-cli script path
+ * Find the annzarro-cli script path, or create it if needed
  */
 function findCliPath(resourcePath) {
     // Search for the CLI script in order of preference
     const possiblePaths = [
         path.join(resourcePath, 'annzarro-cli'),
         path.join(resourcePath, 'annzarro', 'bin', 'annzarro-cli'),
-        path.join(resourcePath, 'bin', 'annzarro-cli')
+        path.join(resourcePath, 'bin', 'annzarro-cli'),
+        // Add development paths when running from source code
+        path.join(process.cwd(), 'annzarro-cli'),
+        path.join(process.cwd(), 'annzarro', 'bin', 'annzarro-cli'),
+        path.join(process.cwd(), 'bin', 'annzarro-cli')
     ];
     
     for (const p of possiblePaths) {
@@ -159,8 +250,95 @@ function findCliPath(resourcePath) {
         }
     }
     
-    log.error('Could not find annzarro-cli script');
-    return null;
+    // Log the paths we looked for to help with debugging
+    log.error('Could not find annzarro-cli script. Searched in:');
+    possiblePaths.forEach(p => log.error(` - ${p}`));
+    
+    // Try to create the CLI script in the resource path
+    const targetCliPath = path.join(resourcePath, 'annzarro-cli');
+    log.info(`Attempting to create CLI script at: ${targetCliPath}`);
+    
+    // Ensure we have a valid venv path before trying to create a script
+    if (!venvPath) {
+        log.error('Cannot create CLI script without valid venvPath');
+        // Return existing Python (if any) or a standard interpreter
+        return process.platform === 'win32' ? 'python' : 'python3';
+    }
+    
+    try {
+        // Ensure directory exists
+        const resourceDir = path.dirname(targetCliPath);
+        if (!fs.existsSync(resourceDir)) {
+            log.info(`Creating resource directory: ${resourceDir}`);
+            fs.mkdirSync(resourceDir, { recursive: true });
+        }
+        
+        // Create a simplified CLI script that invokes the Python module directly
+        let scriptContent;
+        
+        if (process.platform === 'win32') {
+            // Windows batch script
+            scriptContent = `@echo off
+REM Automatically generated CLI script for Electron app
+setlocal enabledelayedexpansion
+
+REM Get Python path from venv
+set PYTHON_PATH=${venvPath}\\Scripts\\python.exe
+
+REM Check if Python exists
+if not exist "%PYTHON_PATH%" (
+    echo Python not found at: %PYTHON_PATH%
+    exit /b 1
+)
+
+REM Execute the annzarro CLI module
+"%PYTHON_PATH%" -m annzarro.cli %*
+`;
+        } else {
+            // Unix bash script - properly escape all paths
+            scriptContent = `#!/bin/bash
+# Automatically generated CLI script for Electron app
+
+# Get Python path from venv - notice the quotes around the path
+PYTHON_PATH="${venvPath.replace(/(\s+)/g, '\\$1')}/bin/python"
+
+# Check if Python exists
+if [ ! -f "$PYTHON_PATH" ]; then
+    echo "Python not found at: $PYTHON_PATH"
+    exit 1
+fi
+
+# Execute the annzarro CLI module
+"$PYTHON_PATH" -m annzarro.cli "$@"
+`;
+        }
+        
+        // Write the script to the file
+        fs.writeFileSync(targetCliPath, scriptContent);
+        
+        // Make it executable on Unix systems
+        if (process.platform !== 'win32') {
+            safeExecSync(`chmod +x "${targetCliPath}"`);
+            safeLog(log.info, `Made CLI script executable: ${targetCliPath}`);
+        }
+        
+        log.info(`Successfully created CLI script at: ${targetCliPath}`);
+        return targetCliPath;
+    } catch (error) {
+        log.error(`Failed to create CLI script: ${error.message}`);
+        
+        // If we can't create the script, just return a fallback path to Python
+        const pythonPath = process.platform === 'win32' 
+            ? (fs.existsSync(path.join(venvPath, 'Scripts', 'python.exe')) 
+                ? path.join(venvPath, 'Scripts', 'python.exe') 
+                : 'python')
+            : (fs.existsSync(path.join(venvPath, 'bin', 'python')) 
+                ? path.join(venvPath, 'bin', 'python') 
+                : 'python3');
+        
+        log.warn(`Falling back to Python directly: ${pythonPath}`);
+        return pythonPath;
+    }
 }
 
 /**
@@ -345,16 +523,37 @@ async function startServer() {
         try {
             // Make the CLI executable on Unix systems
             if (process.platform !== 'win32') {
-                try {
-                    execSync(`chmod +x "${cliPath}"`);
-                } catch (error) {
-                    log.warn(`Failed to make CLI executable: ${error.message}`);
-                }
+                safeExecSync(`chmod +x "${cliPath}"`);
+                safeLog(log.info, `Ensured CLI is executable: ${cliPath}`);
             }
             
             // On Windows, use a shell command with proper quoting
             if (process.platform === 'win32') {
-                const command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled`;
+                // Determine if we're using Python fallback based on the path
+                const isPythonFallback = 
+                    (typeof cliPath === 'string') && 
+                    (cliPath.includes('python') || 
+                     cliPath === 'python' || 
+                     cliPath.endsWith('python.exe'));
+                
+                let command;
+                
+                if (isPythonFallback) {
+                    // If using Python, use the module instead of CLI
+                    log.info('Using Python module fallback for Windows');
+                    // IMPORTANT: Make sure -m annzarro.cli is treated as a single argument
+                    // and 'start' is treated as a subcommand to the module
+                    command = `"${cliPath}" -m annzarro.cli start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled`;
+                } else {
+                    // Using the CLI script directly
+                    command = `"${cliPath}" start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled`;
+                }
+                
+                // Error handling for null/undefined executable
+                if (!cliPath) {
+                    throw new Error('No executable path available for Windows');
+                }
+                
                 log.info(`Running Windows command: ${command}`);
                 
                 // Set environment variables for the server process
@@ -365,23 +564,88 @@ async function startServer() {
                 };
                 
                 // Start the server process
-                serverProcess = spawn(command, {
-                    stdio: 'pipe',
-                    shell: true,
-                    env: winEnv
-                });
+                try {
+                    serverProcess = spawn(command, {
+                        stdio: 'pipe',
+                        shell: true,
+                        env: winEnv
+                    });
+                    
+                    if (serverProcess && serverProcess.pid) {
+                        log.info(`Windows server process spawned with PID: ${serverProcess.pid}`);
+                    } else {
+                        log.warn('Windows server process spawned but no PID available');
+                    }
+                    
+                    // Add specific error handling for stream errors
+                    if (serverProcess.stdout) {
+                        serverProcess.stdout.on('error', (err) => {
+                            log.error(`Windows stdout stream error: ${err.message}`);
+                        });
+                    }
+                    
+                    if (serverProcess.stderr) {
+                        serverProcess.stderr.on('error', (err) => {
+                            log.error(`Windows stderr stream error: ${err.message}`);
+                        });
+                    }
+                } catch (spawnError) {
+                    throw new Error(`Failed to spawn Windows server process: ${spawnError.message}`);
+                }
             } else {
-                // On Unix, use a proper args array to avoid shell escaping issues
-                const args = [
-                    'start',
-                    '--port', serverPort.toString(),
-                    '--host', serverHost,
-                    '--config', configPath,
-                    '--venv-path', venvPath,
-                    '--auth-disabled'
-                    // Removed --detach flag to manage process in JavaScript
-                ];
+                // Check if we're using the CLI script or Python fallback
+                let args;
+                let executable = cliPath;
+                let useShell = false;
                 
+                // Determine if we're using Python fallback based on the path
+                const isPythonFallback = 
+                    (typeof cliPath === 'string') && 
+                    (cliPath.includes('python') || 
+                     cliPath === 'python' || 
+                     cliPath === 'python3' ||
+                     cliPath.endsWith('python.exe'));
+                
+                if (isPythonFallback) {
+                    // If using Python, use the module instead of CLI
+                    log.info('Using Python module fallback');
+                    // Special handling for Python with spaces in paths
+                    // CRITICAL: The arguments must be passed correctly to the Python module
+                    
+                    // Create command as shell command for Unix platforms to handle paths with spaces
+                    if (process.platform !== 'win32') {
+                        log.info('Using shell execution for Python to handle paths with spaces');
+                        
+                        // Use shell=true and a single command string for Unix platforms
+                        executable = executable;
+                        useShell = true;
+                        args = [`-m annzarro.cli start --port ${serverPort} --host ${serverHost} --config "${configPath}" --venv-path "${venvPath}" --auth-disabled`];
+                    } else {
+                        // Standard args array for Windows
+                        args = [
+                            '-m', 
+                            'annzarro.cli',  // Run as module
+                            'start',         // This is a subcommand for the module, not a script name
+                            '--port', serverPort.toString(),
+                            '--host', serverHost,
+                            '--config', configPath,
+                            '--venv-path', venvPath,
+                            '--auth-disabled'
+                        ];
+                    }
+                } else {
+                    // Using the CLI script directly
+                    args = [
+                        'start',
+                        '--port', serverPort.toString(),
+                        '--host', serverHost,
+                        '--config', configPath,
+                        '--venv-path', venvPath,
+                        '--auth-disabled'
+                    ];
+                }
+                
+                log.info(`Running with executable: ${executable}`);
                 log.info(`Running with args: ${JSON.stringify(args)}`);
                 
                 // Set environment variables for the server process
@@ -392,21 +656,134 @@ async function startServer() {
                 };
                 
                 // Start the server process with shell: false for better argument handling
-                serverProcess = spawn(cliPath, args, {
-                    stdio: 'pipe',
-                    shell: false,
-                    env: env
+                try {
+                    // Error handling for null/undefined executable
+                    if (!executable) {
+                        log.error('No executable path available, falling back to system Python');
+                        executable = process.platform === 'win32' ? 'python' : 'python3';
+                        isPythonFallback = true;
+                        
+                        // Update arguments for Python fallback
+                        args = [
+                            '-m', 
+                            'annzarro.cli',
+                            'start',
+                            '--port', serverPort.toString(),
+                            '--host', serverHost,
+                            '--config', configPath,
+                            '--venv-path', venvPath,
+                            '--auth-disabled'
+                        ];
+                    }
+                    
+                    // Extra logging to debug the exact command we're running
+                    log.info(`Final command: ${executable} ${args.join(' ')}`);
+                    
+                    // Verify the executable exists
+                    if (!fs.existsSync(executable) && !['python', 'python3'].includes(executable)) {
+                        throw new Error(`Executable not found: ${executable}`);
+                    }
+                    
+                    // For scripts, make sure they're executable on Unix
+                    if (process.platform !== 'win32' && !isPythonFallback) {
+                        try {
+                            // Use execSync with options to handle EPIPE errors
+                            execSync(`chmod +x "${executable}"`, {
+                                stdio: ['ignore', 'ignore', 'ignore'] // Suppress all stdio to avoid EPIPE
+                            });
+                        } catch (chmodError) {
+                            // Safely log errors
+                            try {
+                                log.warn(`Failed to make executable: ${chmodError.message}`);
+                            } catch (logError) {
+                                // Silent handling for EPIPE errors in logging
+                                if (logError.code !== 'EPIPE') {
+                                    console.error(`Error logging chmod failure: ${logError.message}`);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Use shell mode for scripts on Unix to ensure proper interpreter handling
+                    if (process.platform !== 'win32' && !isPythonFallback) {
+                        useShell = true;
+                        executable = `'${executable}'`; // Wraps the executable string with single quotes
+                        args = args.map(arg => `'${arg}'`); // Creates a new array with quoted strings
+                    }
+                    
+                    // Spawn the process with appropriate options
+                    serverProcess = spawn(executable, args, {
+                        stdio: 'pipe',
+                        shell: useShell,
+                        env: env
+                    });
+                    
+                    if (serverProcess && serverProcess.pid) {
+                        log.info(`Server process spawned with PID: ${serverProcess.pid}`);
+                    } else {
+                        log.warn('Server process spawned but no PID available');
+                    }
+                    
+                    // Add specific error handling for stream errors
+                    if (serverProcess.stdout) {
+                        serverProcess.stdout.on('error', (err) => {
+                            log.error(`stdout stream error: ${err.message}`);
+                        });
+                    }
+                    
+                    if (serverProcess.stderr) {
+                        serverProcess.stderr.on('error', (err) => {
+                            log.error(`stderr stream error: ${err.message}`);
+                        });
+                    }
+                    
+                } catch (spawnError) {
+                    throw new Error(`Failed to spawn server process: ${spawnError.message}`);
+                }
+            }
+            
+            // Handle server process events with proper error handling
+            if (serverProcess.stdout) {
+                serverProcess.stdout.on('data', (data) => {
+                    try {
+                        log.info(`Server stdout: ${data.toString().trim()}`);
+                    } catch (error) {
+                        // Silent handling for EPIPE errors
+                        if (error.code !== 'EPIPE') {
+                            console.error(`Error logging stdout: ${error.message}`);
+                        }
+                    }
+                });
+                
+                // Add specific error handler for stdout
+                serverProcess.stdout.on('error', (error) => {
+                    // Silent handling for EPIPE errors
+                    if (error.code !== 'EPIPE') {
+                        console.error(`Stdout stream error: ${error.message}`);
+                    }
                 });
             }
             
-            // Handle server process events
-            serverProcess.stdout.on('data', (data) => {
-                log.info(`Server stdout: ${data.toString().trim()}`);
-            });
-            
-            serverProcess.stderr.on('data', (data) => {
-                log.error(`Server stderr: ${data.toString().trim()}`);
-            });
+            if (serverProcess.stderr) {
+                serverProcess.stderr.on('data', (data) => {
+                    try {
+                        log.error(`Server stderr: ${data.toString().trim()}`);
+                    } catch (error) {
+                        // Silent handling for EPIPE errors
+                        if (error.code !== 'EPIPE') {
+                            console.error(`Error logging stderr: ${error.message}`);
+                        }
+                    }
+                });
+                
+                // Add specific error handler for stderr
+                serverProcess.stderr.on('error', (error) => {
+                    // Silent handling for EPIPE errors
+                    if (error.code !== 'EPIPE') {
+                        console.error(`Stderr stream error: ${error.message}`);
+                    }
+                });
+            }
             
             // Handle process exit and errors properly
             serverProcess.on('error', (error) => {
@@ -509,10 +886,10 @@ async function copyBundledVenv(sourcePath, destPath) {
             try {
                 log.info('Clearing existing destination directory');
                 if (process.platform === 'win32') {
-                    execSync(`rmdir /s /q "${destPath}"`, { shell: true });
+                    safeExecSync(`rmdir /s /q "${destPath}"`, { shell: true });
                     fs.mkdirSync(destPath, { recursive: true });
                 } else {
-                    execSync(`rm -rf "${destPath}" && mkdir -p "${destPath}"`, { shell: true });
+                    safeExecSync(`rm -rf "${destPath}" && mkdir -p "${destPath}"`, { shell: true });
                 }
             } catch (error) {
                 log.error(`Failed to clear destination directory: ${error.message}`);
@@ -524,8 +901,8 @@ async function copyBundledVenv(sourcePath, destPath) {
         if (process.platform === 'win32') {
             // Windows xcopy
             const command = `xcopy "${sourcePath}\\*" "${destPath}\\" /E /I /H /Y`;
-            log.info(`Copy command: ${command}`);
-            execSync(command, { shell: true });
+            safeLog(log.info, `Copy command: ${command}`);
+            safeExecSync(command, { shell: true });
         } else {
             // Unix cp
             let command;
@@ -538,8 +915,8 @@ async function copyBundledVenv(sourcePath, destPath) {
                 command = `cp -a "${sourcePath}"/* "${destPath}"/`;
             }
             
-            log.info(`Copy command: ${command}`);
-            execSync(command, { shell: true });
+            safeLog(log.info, `Copy command: ${command}`);
+            safeExecSync(command, { shell: true });
         }
         
         // Make bin files executable on Unix
@@ -547,8 +924,8 @@ async function copyBundledVenv(sourcePath, destPath) {
             try {
                 const binDir = path.join(destPath, 'bin');
                 if (fs.existsSync(binDir)) {
-                    log.info('Making bin files executable');
-                    execSync(`chmod +x ${binDir}/*`, { shell: true });
+                    safeLog(log.info, 'Making bin files executable');
+                    safeExecSync(`chmod +x ${binDir}/*`, { shell: true });
                 }
             } catch (error) {
                 log.warn(`Failed to make bin files executable: ${error.message}`);
@@ -624,11 +1001,8 @@ async function ensureVenvExists() {
         try {
             // Make sure CLI is executable on Unix
             if (process.platform !== 'win32') {
-                try {
-                    execSync(`chmod +x "${cliPath}"`);
-                } catch (error) {
-                    log.warn(`Failed to make CLI executable: ${error.message}`);
-                }
+                safeExecSync(`chmod +x "${cliPath}"`);
+                safeLog(log.info, `Made CLI script executable for installation`);
             }
             
             log.info(`Creating venv at: ${venvPath}`);
@@ -637,7 +1011,7 @@ async function ensureVenvExists() {
             if (process.platform === 'win32') {
                 const command = `"${cliPath}" install --clean --venv-path "${venvPath}"`;
                 log.info(`Executing Windows command: ${command}`);
-                const output = execSync(command, { 
+                const output = safeExecSync(command, { 
                     encoding: 'utf8',
                     maxBuffer: 10 * 1024 * 1024 // 10MB buffer for long outputs
                 });
@@ -710,7 +1084,7 @@ async function ensureVenvExists() {
                                 
                                 log.info(`Running Python directly: ${pythonCmd} ${JSON.stringify(pythonArgs)}`);
                                 
-                                const pythonOutput = execSync(`${pythonCmd} "${installScript}" --clean --venv-path "${venvPath}"`, {
+                                const pythonOutput = safeExecSync(`${pythonCmd} "${installScript}" --clean --venv-path "${venvPath}"`, {
                                     encoding: 'utf8',
                                     maxBuffer: 10 * 1024 * 1024
                                 });
@@ -792,15 +1166,15 @@ async function stopServer() {
                 // Handle Windows and Unix differently
                 if (process.platform === 'win32') {
                     // Execute stop command synchronously with a timeout
-                    log.info('Executing stop command on Windows');
-                    execSync(`"${cliPath}" stop`, { timeout: 5000 });
+                    safeLog(log.info, 'Executing stop command on Windows');
+                    safeExecSync(`"${cliPath}" stop`, { timeout: 5000 });
                 } else {
                     // Execute stop command synchronously with a timeout
-                    log.info('Executing stop command on Unix');
-                    execSync(`"${cliPath}" stop`, { timeout: 5000 });
+                    safeLog(log.info, 'Executing stop command on Unix');
+                    safeExecSync(`"${cliPath}" stop`, { timeout: 5000 });
                 }
                 
-                log.info('Server stop command completed successfully');
+                safeLog(log.info, 'Server stop command completed successfully');
                 isStopSuccessful = true;
             } catch (cliError) {
                 log.warn(`CLI stop command failed: ${cliError.message}`);
@@ -848,8 +1222,8 @@ async function stopServer() {
             if (process.platform === 'darwin' && !isStopSuccessful) {
                 log.warn('Attempting to use pkill as last resort');
                 try {
-                    execSync('pkill -f "python.*annzarro"', { timeout: 3000 });
-                    log.info('pkill command executed successfully');
+                    safeExecSync('pkill -f "python.*annzarro"', { timeout: 3000 });
+                    safeLog(log.info, 'pkill command executed successfully');
                     isStopSuccessful = true;
                 } catch (pkillError) {
                     // pkill returns non-zero if no processes match
