@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "description": "Desktop application for Annzarro",
   "main": "main.js",
-  "author": "Setty Lab",
-  "email": "dotto@fredhutch.org",
+  "author": {
+    "name": "Setty Lab",
+    "email": "noreply@example.com"
+  },
   "license": "MIT",
   "private": true,
   "repository": {
@@ -113,7 +115,9 @@
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Science",
-      "icon": "icons"
+      "icon": "icons",
+      "publish": false,
+      "maintainer": "Dominik Otto <dotto@fredhutch.org>"
     },
     "nsis": {
       "oneClick": false,
