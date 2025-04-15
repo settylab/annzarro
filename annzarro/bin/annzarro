@@ -77,8 +77,9 @@ if [ -d "$VENV_PATH" ]; then
             ARGS+=("--clean")
         fi
         
-        # Try to find UV binary first
+        # Try to find UV binary first - make it globally accessible for use later
         UV_CMD=""
+        UV_EXT=""
         
         # Determine platform
         if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -135,7 +136,33 @@ if [ -d "$VENV_PATH" ]; then
                 if [ -f "$UV_DOWNLOAD_SCRIPT" ]; then
                     echo "Running UV download script: $UV_DOWNLOAD_SCRIPT"
                     chmod +x "$UV_DOWNLOAD_SCRIPT"
-                    "$UV_DOWNLOAD_SCRIPT"
+                    
+                    # Check for platform selection in args
+                    DOWNLOAD_ARGS=()
+                    if [[ " ${ARGS[@]} " =~ " --all-platforms " ]]; then
+                        DOWNLOAD_ARGS+=("--all-platforms")
+                    elif [[ " ${ARGS[@]} " =~ " --platform=" ]]; then
+                        for arg in "${ARGS[@]}"; do
+                            if [[ "$arg" == --platform=* ]]; then
+                                DOWNLOAD_ARGS+=("$arg")
+                                break
+                            fi
+                        done
+                    elif [[ " ${ARGS[@]} " =~ " --platform " ]]; then
+                        PLATFORM_INDEX=-1
+                        for i in "${!ARGS[@]}"; do
+                            if [[ "${ARGS[$i]}" == "--platform" ]]; then
+                                PLATFORM_INDEX=$i
+                                break
+                            fi
+                        done
+                        if [[ $PLATFORM_INDEX -ge 0 ]] && [[ $((PLATFORM_INDEX+1)) -lt ${#ARGS[@]} ]]; then
+                            DOWNLOAD_ARGS+=("--platform=${ARGS[$((PLATFORM_INDEX+1))]}")
+                        fi
+                    fi
+                    
+                    # Execute the download script with appropriate args
+                    "$UV_DOWNLOAD_SCRIPT" "${DOWNLOAD_ARGS[@]}"
                     
                     # Check if download succeeded
                     BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
@@ -195,17 +222,46 @@ if [ -d "$VENV_PATH" ]; then
             FILTERED_ARGS+=("${!i}")
         done
         
-        
-        # Use Python directly from the virtual environment with filtered arguments
-        "$PYTHON_BIN" -m annzarro.cli "${FILTERED_ARGS[@]}"
+        # If we have UV, we can use it instead of the system Python to ensure a clean environment
+        if [ -n "$UV_CMD" ]; then
+            echo "Using UV to run AnnZarro in virtual environment"
+            "$UV_CMD" run -p "$VENV_PATH" -m annzarro.cli "${FILTERED_ARGS[@]}"
+        else
+            # Use Python directly from the virtual environment with filtered arguments
+            "$PYTHON_BIN" -m annzarro.cli "${FILTERED_ARGS[@]}"
+        fi
     else
         echo "Warning: Python executable not found in virtual environment at $PYTHON_BIN"
         echo "Try reinstalling with: $0 install --clean"
         exit 1
     fi
 else
+    # Check if using system Python is explicitly requested
+    if [[ "$*" == *"--no-venv"* ]]; then
+        # Find the Python executable (try python3 first, then python)
+        PYTHON_CMD="python3"
+        if ! command -v $PYTHON_CMD &> /dev/null; then
+            PYTHON_CMD="python"
+            if ! command -v $PYTHON_CMD &> /dev/null; then
+                echo "Error: Neither python3 nor python commands were found on your system."
+                echo "Please install Python 3.7 or later and try again."
+                exit 1
+            fi
+        fi
+        
+        # Filter out --no-venv from arguments
+        FILTERED_ARGS=()
+        for ((i=1; i<=$#; i++)); do
+            if [[ "${!i}" != "--no-venv" ]]; then
+                FILTERED_ARGS+=("${!i}")
+            fi
+        done
+        
+        echo "Using system Python without virtual environment"
+        $PYTHON_CMD -m annzarro.cli "${FILTERED_ARGS[@]}"
+        exit $?
     # Handle case where venv doesn't exist except for install command
-    if [ "$1" == "install" ]; then
+    elif [ "$1" == "install" ]; then
         # For install command, we use the Python interpreter directly
         echo "Initializing AnnZarro installation..."
         echo "This will install dependencies needed for AnnZarro to run."
@@ -239,8 +295,9 @@ else
         # Add the venv path to the arguments explicitly
         ARGS+=("--venv-path" "$VENV_PATH")
         
-        # Try to find UV binary first
+        # Try to find UV binary first - make it globally accessible for use later
         UV_CMD=""
+        UV_EXT=""
         
         # Determine platform
         if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -297,7 +354,33 @@ else
                 if [ -f "$UV_DOWNLOAD_SCRIPT" ]; then
                     echo "Running UV download script: $UV_DOWNLOAD_SCRIPT"
                     chmod +x "$UV_DOWNLOAD_SCRIPT"
-                    "$UV_DOWNLOAD_SCRIPT"
+                    
+                    # Check for platform selection in args
+                    DOWNLOAD_ARGS=()
+                    if [[ " ${ARGS[@]} " =~ " --all-platforms " ]]; then
+                        DOWNLOAD_ARGS+=("--all-platforms")
+                    elif [[ " ${ARGS[@]} " =~ " --platform=" ]]; then
+                        for arg in "${ARGS[@]}"; do
+                            if [[ "$arg" == --platform=* ]]; then
+                                DOWNLOAD_ARGS+=("$arg")
+                                break
+                            fi
+                        done
+                    elif [[ " ${ARGS[@]} " =~ " --platform " ]]; then
+                        PLATFORM_INDEX=-1
+                        for i in "${!ARGS[@]}"; do
+                            if [[ "${ARGS[$i]}" == "--platform" ]]; then
+                                PLATFORM_INDEX=$i
+                                break
+                            fi
+                        done
+                        if [[ $PLATFORM_INDEX -ge 0 ]] && [[ $((PLATFORM_INDEX+1)) -lt ${#ARGS[@]} ]]; then
+                            DOWNLOAD_ARGS+=("--platform=${ARGS[$((PLATFORM_INDEX+1))]}")
+                        fi
+                    fi
+                    
+                    # Execute the download script with appropriate args
+                    "$UV_DOWNLOAD_SCRIPT" "${DOWNLOAD_ARGS[@]}"
                     
                     # Check if download succeeded
                     BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
