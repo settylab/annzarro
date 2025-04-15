@@ -109,6 +109,14 @@ python -m pytest
 - **Backend**: Flask-based REST API with comprehensive zarr support
 - **Desktop**: Electron application with integrated Python server
 
+## Download
+
+Get the latest desktop app for your platform:
+
+- [Windows](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-Setup.exe)
+- [macOS](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.dmg)
+- [Linux](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.AppImage)
+
 ## License
 
 GPL-3.0-or-later

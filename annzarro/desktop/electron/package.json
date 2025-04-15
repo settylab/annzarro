@@ -28,6 +28,10 @@
     "directories": {
       "output": "dist"
     },
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    },
     "files": [
       "**/*",
       "requirements.txt",
