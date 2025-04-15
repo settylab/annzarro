@@ -93,6 +93,30 @@ pyrightconfig.json
 mypy_cache/
 .ruff_cache/
 
+# Python virtual environments for desktop app
+annzarro/desktop/electron/python/
+annzarro/desktop/electron/python*/
+annzarro/desktop/electron/**/lib/python*/
+# Exclude Python venv bin directories but keep our platform-specific uv binaries
+annzarro/desktop/electron/**/bin/python*
+annzarro/desktop/electron/**/bin/pip*
+annzarro/desktop/electron/**/bin/activate*
+annzarro/desktop/electron/**/bin/*.egg-info/
+annzarro/desktop/electron/**/include/
+annzarro/desktop/electron/**/pyvenv.cfg
+annzarro/desktop/electron/**/Scripts/
+annzarro/desktop/electron/**/share/
+
+# Exclude all uv binaries and archives
+annzarro/desktop/electron/bin/**/*.tar.gz
+annzarro/desktop/electron/bin/**/*.zip
+annzarro/desktop/electron/bin/**/uv
+annzarro/desktop/electron/bin/**/uv.exe
+annzarro/desktop/electron/bin/win32-x64/
+annzarro/desktop/electron/bin/darwin-arm64/
+annzarro/desktop/electron/bin/darwin-x64/
+annzarro/desktop/electron/bin/linux-x64/
+
 # Zarr specific
 *.zarr.zip
 
@@ -107,6 +131,18 @@ mypy_cache/
 *.tgz
 *.tar
 *.gz
+
+# UV binaries and archives in root directory
+uv-*.tar.gz
+uv-*.zip
+uv-*-apple-darwin.tar.gz
+uv-*-unknown-linux-*.tar.gz
+uv-*-pc-windows-*.zip
+uv-*.exe
+tmp-*/
+tmp-darwin-*/
+tmp-linux-*/
+tmp-win32-*/
 
 # Cache directories
 .cache/
@@ -125,3 +161,4 @@ auth/*.json
 config/auth/*.json
 # Keep the config/auth directory, but not its contents
 !config/auth/.gitkeep
+annzarro/desktop/downloads/

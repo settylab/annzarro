@@ -246,22 +246,202 @@ def install_dependencies(args: argparse.Namespace) -> int:
         Exit code
     """
     try:
-        # Install Python dependencies
-        logger.info("Installing Python dependencies...")
+        # Determine if we should use a virtual environment (default is True unless no_venv is specified)
+        use_venv = not getattr(args, 'no_venv', False)
+        venv_path = getattr(args, 'venv_path', 'venv')
+        
+        # Try to use uv for faster dependency installation
+        use_uv = getattr(args, 'use_uv', True) and not getattr(args, 'no_uv', False)
+        upgrade = getattr(args, 'upgrade', False)
+        
+        # Find the requirements file
         requirements_file = os.path.join(os.path.dirname(__file__), "server", "requirements.txt")
         
         if not os.path.exists(requirements_file):
             logger.error(f"Requirements file not found: {requirements_file}")
             return 1
+        
+        # Try to find uv executable if requested
+        uv_executable = None
+        if use_uv:
+            uv_executable = find_uv_executable()
+            if not uv_executable:
+                logger.warning("UV not found, falling back to pip")
+                use_uv = False
+            else:
+                logger.info(f"Using UV from {uv_executable} for fast dependency installation")
+        
+        if use_venv:
+            logger.info(f"Setting up virtual environment at {venv_path}")
             
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
-        logger.info("Python dependencies installed successfully")
+            # Create venv directory if it doesn't exist
+            if not os.path.exists(venv_path):
+                os.makedirs(venv_path, exist_ok=True)
+            
+            # Create virtual environment
+            if use_uv:
+                logger.info("Creating virtual environment with UV")
+                subprocess.check_call([uv_executable, 'venv', venv_path])
+            else:
+                logger.info("Creating virtual environment with standard venv module")
+                subprocess.check_call([sys.executable, '-m', 'venv', venv_path])
+            
+            # Get the Python executable from the virtual environment
+            if os.name == 'nt':  # Windows
+                python_executable = os.path.join(venv_path, 'Scripts', 'python.exe')
+                pip_executable = os.path.join(venv_path, 'Scripts', 'pip.exe')
+            else:  # Unix-like
+                python_executable = os.path.join(venv_path, 'bin', 'python')
+                pip_executable = os.path.join(venv_path, 'bin', 'pip')
+            
+            # Setup environment for UV to use the virtual environment
+            env = os.environ.copy()
+            if os.name == 'nt':  # Windows
+                env["VIRTUAL_ENV"] = os.path.abspath(venv_path)
+                env["PATH"] = os.path.join(venv_path, "Scripts") + os.pathsep + env["PATH"]
+            else:  # Unix-like
+                env["VIRTUAL_ENV"] = os.path.abspath(venv_path)
+                env["PATH"] = os.path.join(venv_path, "bin") + os.pathsep + env["PATH"]
+            
+            # Install dependencies in the virtual environment
+            if use_uv:
+                logger.info("Installing dependencies with UV in virtual environment")
+                pip_cmd = [uv_executable, 'pip', 'install', '-r', requirements_file]
+                if upgrade:
+                    pip_cmd.append('--upgrade')
+                subprocess.check_call(pip_cmd, env=env)
+            else:
+                logger.info("Upgrading pip in virtual environment")
+                subprocess.check_call([python_executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
+                
+                # Install dependencies in virtual environment
+                logger.info("Installing dependencies in virtual environment")
+                pip_cmd = [python_executable, '-m', 'pip', 'install', '-r', requirements_file]
+                if upgrade:
+                    pip_cmd.append('--upgrade')
+                subprocess.check_call(pip_cmd)
+            
+            # Install annzarro in development mode
+            logger.info("Installing AnnZarro in development mode in virtual environment")
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if use_uv:
+                subprocess.check_call([uv_executable, 'pip', 'install', '-e', project_root], env=env)
+            else:
+                subprocess.check_call([python_executable, '-m', 'pip', 'install', '-e', project_root])
+            
+            logger.info(f"Virtual environment setup complete at {venv_path}")
+            logger.info(f"Activate with: source {os.path.join(venv_path, 'bin', 'activate')} (Unix) or {os.path.join(venv_path, 'Scripts', 'activate')} (Windows)")
+        
+        else:
+            # Install dependencies directly in current Python environment
+            logger.info("Installing Python dependencies...")
+            
+            if use_uv:
+                # Install with UV
+                pip_cmd = [uv_executable, 'pip', 'install', '-r', requirements_file]
+                if upgrade:
+                    pip_cmd.append('--upgrade')
+                subprocess.check_call(pip_cmd)
+            else:
+                # Install with pip
+                pip_cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
+                if upgrade:
+                    pip_cmd.append('--upgrade')
+                subprocess.check_call(pip_cmd)
+            
+            logger.info("Python dependencies installed successfully")
         
         return 0
         
     except Exception as e:
         logger.error(f"Error installing dependencies: {e}")
+        if getattr(args, 'debug', False):
+            import traceback
+            traceback.print_exc()
         return 1
+
+
+def find_uv_executable() -> str:
+    """
+    Find the uv executable on the system
+    
+    Returns:
+        Path to uv executable or None if not found
+    """
+    # First, check the desktop directory for bundled uv
+    try:
+        desktop_dir = os.path.join(os.path.dirname(__file__), "desktop", "electron", "bin")
+        
+        # Determine platform directory
+        import platform
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+        
+        # Map to directory name
+        if system == 'darwin':  # macOS
+            if 'arm64' in machine or 'aarch64' in machine:
+                platform_dir = 'darwin-arm64'
+            else:
+                platform_dir = 'darwin-x64'
+        elif system == 'windows' or system == 'win32':
+            platform_dir = 'win32-x64'
+        elif system == 'linux':
+            platform_dir = 'linux-x64'
+        else:
+            platform_dir = None
+        
+        # Check for platform-specific uv
+        if platform_dir:
+            uv_name = 'uv.exe' if system == 'windows' or system == 'win32' else 'uv'
+            uv_path = os.path.join(desktop_dir, platform_dir, uv_name)
+            
+            if os.path.exists(uv_path):
+                # Make sure it's executable on Unix
+                if system != 'windows' and system != 'win32':
+                    os.chmod(uv_path, 0o755)
+                return uv_path
+    except Exception as e:
+        logger.debug(f"Error looking for bundled uv: {e}")
+    
+    # Next, check common system locations
+    common_paths = []
+    
+    if os.name == 'nt':  # Windows
+        common_paths.extend([
+            os.path.expanduser('~/.cargo/bin/uv.exe'),
+            'C:\\ProgramData\\uv\\uv.exe',
+            'C:\\Program Files\\uv\\uv.exe',
+            'C:\\Program Files (x86)\\uv\\uv.exe'
+        ])
+    else:  # Unix-like
+        common_paths.extend([
+            '/usr/local/bin/uv',
+            '/usr/bin/uv',
+            '/opt/homebrew/bin/uv',
+            os.path.expanduser('~/.cargo/bin/uv')
+        ])
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # Finally, check if uv is in PATH
+    try:
+        if os.name == 'nt':  # Windows
+            # Check with where command
+            output = subprocess.check_output(['where', 'uv'], stderr=subprocess.STDOUT, text=True)
+            if output:
+                return output.split('\n')[0].strip()
+        else:  # Unix-like
+            # Check with which command
+            output = subprocess.check_output(['which', 'uv'], stderr=subprocess.STDOUT, text=True)
+            if output:
+                return output.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    
+    # UV not found
+    return None
 
 def desktop_command(args: argparse.Namespace) -> int:
     """
@@ -544,7 +724,13 @@ def main(argv: List[str] = None) -> int:
     
     # Install command
     install_parser = subparsers.add_parser('install', help="Install dependencies")
-    install_parser.set_defaults(func=install_dependencies)
+    venv_group = install_parser.add_mutually_exclusive_group()
+    venv_group.add_argument('--venv', action='store_true', help="Create and use a virtual environment (default)")
+    venv_group.add_argument('--no-venv', action='store_true', help="Don't use a virtual environment")
+    install_parser.add_argument('--venv-path', type=str, default='venv', help="Path for virtual environment (default: venv)")
+    install_parser.add_argument('--no-uv', action='store_true', help="Disable UV and use pip instead")
+    install_parser.add_argument('--upgrade', action='store_true', help="Upgrade existing packages")
+    install_parser.set_defaults(func=install_dependencies, use_uv=True)
     
     # Configuration command
     config_parser = subparsers.add_parser('config', help="Manage configuration")

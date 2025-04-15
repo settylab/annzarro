@@ -1,0 +1,57 @@
+/**
+ * Custom CSS styles for the AnnZarro Desktop application
+ */
+
+/* Add desktop-specific styles when in desktop mode */
+body.desktop-app {
+  /* Adjust UI elements for desktop context */
+  --dataset-selector-width: calc(100% - 80px); /* Make room for browse button */
+}
+
+/* The new browse button for dataset selection */
+#browse-dataset {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  height: 38px;
+  width: 38px;
+  padding: 0;
+}
+
+/* Desktop-specific adjustments for panels */
+body.desktop-app .tile {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Nicer scrollbars for desktop */
+body.desktop-app ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body.desktop-app ::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+body.desktop-app ::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+body.desktop-app ::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Desktop-specific modal styling */
+body.desktop-app .modal-content {
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* When hovering over dataset selector items in desktop mode */
+body.desktop-app .select2-results__option--highlighted {
+  background-color: #4285f4 !important;
+  color: white !important;
+}

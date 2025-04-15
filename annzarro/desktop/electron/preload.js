@@ -8,5 +8,12 @@ contextBridge.exposeInMainWorld(
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
     restartServer: () => ipcRenderer.invoke('app:restartServer'),
+    
+    // File system dialog functions
+    selectDirectory: () => ipcRenderer.invoke('app:selectDirectory'),
+    
+    // Environment info
+    getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+    getSystemInfo: () => ipcRenderer.invoke('app:getSystemInfo')
   }
 );

@@ -1,4 +1,4 @@
-# <span style="color:#357AFA">Annzarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="Annzarro logo">
+# <span style="color: #357AFA;">Annzarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="Annzarro logo">
 
 [![CI Status](https://github.com/settylab/annzarro/workflows/Annzarro%20CI/badge.svg)](https://github.com/settylab/annzarro/actions)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
@@ -29,8 +29,20 @@ Annzarro is a modern, browser-based single-cell data visualization tool that all
 git clone https://github.com/settylab/annzarro.git
 cd annzarro
 
-# Install requirements
+# Install requirements (uses virtual environment by default)
 ./annzarro-cli install
+
+# Install without using virtual environment
+./annzarro-cli install --no-venv
+
+# Clean existing virtual environment and reinstall
+./annzarro-cli install --clean
+
+# If you're having trouble with the CLI, you can use the standalone installer directly
+python annzarro-install.py
+
+# See all installation options
+python annzarro-install.py --help
 
 # Start the server (production mode by default)
 ./annzarro-cli start

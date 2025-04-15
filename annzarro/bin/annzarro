@@ -1,16 +1,274 @@
-#!/usr/bin/env python3
-"""
-Annzarro CLI entry point script
-"""
+#!/usr/bin/env bash
+# Wrapper script for annzarro CLI that handles virtual environment activation
 
-import sys
-import os
+# Find the directory containing this script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+VENV_PATH="$DIR/venv"
 
-# Add parent directory to path so we can import annzarro
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, parent_dir)
-
-from annzarro.cli import main
-
-if __name__ == "__main__":
-    sys.exit(main())
+# Check if virtual environment exists
+if [ -d "$VENV_PATH" ]; then
+    # Determine activation script based on platform
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        # Windows
+        ACTIVATE_SCRIPT="$VENV_PATH/Scripts/activate"
+        PYTHON_BIN="$VENV_PATH/Scripts/python.exe"
+    else
+        # Unix-like
+        ACTIVATE_SCRIPT="$VENV_PATH/bin/activate"
+        PYTHON_BIN="$VENV_PATH/bin/python"
+    fi
+    
+    # Special handling for install command to avoid circular dependencies
+    if [ "$1" == "install" ]; then
+        # For install command, we use the Python interpreter directly
+        echo "Initializing AnnZarro installation..."
+        echo "This will install dependencies needed for AnnZarro to run."
+        
+        INSTALLER_SCRIPT="$DIR/annzarro-install.py"
+        if [ ! -f "$INSTALLER_SCRIPT" ]; then
+            echo "Error: Standalone installer script not found: $INSTALLER_SCRIPT"
+            exit 1
+        fi
+        
+        # Launch the installer with arguments
+        ARGS=("$@")
+        ARGS=("${ARGS[@]:1}")  # Remove the first argument (install)
+        
+        # Handle actual cleaning before running the installer
+        if [[ " ${ARGS[@]} " =~ " --clean " ]]; then
+            echo "Cleaning up existing virtual environment..."
+            rm -rf "$VENV_PATH"
+            echo "Virtual environment removed."
+        # Add --clean if not specified and not using --no-venv
+        elif [[ ! " ${ARGS[@]} " =~ " --no-venv " ]]; then
+            ARGS+=("--clean")
+        fi
+        
+        # Try to find UV binary first
+        UV_CMD=""
+        
+        # Determine platform
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # MacOS
+            if [[ $(uname -m) == "arm64" ]]; then
+                UV_PLATFORM_DIR="darwin-arm64"
+            else
+                UV_PLATFORM_DIR="darwin-x64"
+            fi
+        elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+            # Windows
+            UV_PLATFORM_DIR="win32-x64"
+            UV_EXT=".exe"
+        elif [[ "$OSTYPE" == "linux"* ]]; then
+            # Linux
+            UV_PLATFORM_DIR="linux-x64"
+        fi
+        
+        # Check for UV in different bundled locations
+        BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+        echo "Checking for UV at: $BUNDLED_UV"
+        
+        if [ -f "$BUNDLED_UV" ]; then
+            # Make executable on Unix platforms
+            if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
+                chmod +x "$BUNDLED_UV"
+            fi
+            UV_CMD="$BUNDLED_UV"
+            echo "Found bundled UV at $BUNDLED_UV"
+        else
+            # Try other locations
+            ALTERNATIVE_UV="$DIR/annzarro/desktop/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+            echo "Checking for UV at alternative location: $ALTERNATIVE_UV"
+            
+            if [ -f "$ALTERNATIVE_UV" ]; then
+                # Make executable on Unix platforms
+                if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
+                    chmod +x "$ALTERNATIVE_UV"
+                fi
+                UV_CMD="$ALTERNATIVE_UV"
+                echo "Found bundled UV at $ALTERNATIVE_UV"
+            fi
+        fi
+        
+        # If bundled UV not found, try to download it
+        if [ -z "$UV_CMD" ]; then
+            if command -v uv &> /dev/null; then
+                UV_CMD="uv"
+                echo "Using system UV"
+            else
+                echo "UV not found in bundled locations, attempting to download..."
+                UV_DOWNLOAD_SCRIPT="$DIR/annzarro/desktop/scripts/download_uv.sh"
+                
+                if [ -f "$UV_DOWNLOAD_SCRIPT" ]; then
+                    echo "Running UV download script: $UV_DOWNLOAD_SCRIPT"
+                    chmod +x "$UV_DOWNLOAD_SCRIPT"
+                    "$UV_DOWNLOAD_SCRIPT"
+                    
+                    # Check if download succeeded
+                    BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+                    if [ -f "$BUNDLED_UV" ]; then
+                        chmod +x "$BUNDLED_UV"
+                        UV_CMD="$BUNDLED_UV"
+                        echo "Successfully downloaded UV to $BUNDLED_UV"
+                    else
+                        echo "Failed to download UV, falling back to pip"
+                    fi
+                else
+                    echo "UV download script not found, falling back to pip"
+                fi
+            fi
+        fi
+        
+        # Find the Python executable (try python3 first, then python)
+        PYTHON_CMD="python3"
+        if ! command -v $PYTHON_CMD &> /dev/null; then
+            PYTHON_CMD="python"
+            if ! command -v $PYTHON_CMD &> /dev/null; then
+                echo "Error: Neither python3 nor python commands were found on your system."
+                echo "Please install Python 3.7 or later and try again."
+                exit 1
+            fi
+        fi
+        
+        # If UV was found, add --use-uv flag and pass path to installer
+        if [ -n "$UV_CMD" ]; then
+            ARGS+=("--use-uv")
+            ARGS+=("--uv-path" "$UV_CMD")
+            echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]} (with UV support)\n"
+        else
+            echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]}\n"
+        fi
+        
+        $PYTHON_CMD "$INSTALLER_SCRIPT" "${ARGS[@]}"
+        exit $?
+    fi
+    
+    # For all other commands, directly use the Python from the virtual environment
+    if [ -f "$PYTHON_BIN" ]; then
+        # Use Python directly from the virtual environment
+        "$PYTHON_BIN" -m annzarro.cli "$@"
+    else
+        echo "Warning: Python executable not found in virtual environment at $PYTHON_BIN"
+        echo "Try reinstalling with: $0 install --clean"
+        exit 1
+    fi
+else
+    # Handle case where venv doesn't exist except for install command
+    if [ "$1" == "install" ]; then
+        # For install command, we use the Python interpreter directly
+        echo "Initializing AnnZarro installation..."
+        echo "This will install dependencies needed for AnnZarro to run."
+        
+        INSTALLER_SCRIPT="$DIR/annzarro-install.py"
+        if [ ! -f "$INSTALLER_SCRIPT" ]; then
+            echo "Error: Standalone installer script not found: $INSTALLER_SCRIPT"
+            exit 1
+        fi
+        
+        # Launch the installer with arguments
+        ARGS=("$@")
+        ARGS=("${ARGS[@]:1}")  # Remove the first argument (install)
+        
+        # Try to find UV binary first
+        UV_CMD=""
+        
+        # Determine platform
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # MacOS
+            if [[ $(uname -m) == "arm64" ]]; then
+                UV_PLATFORM_DIR="darwin-arm64"
+            else
+                UV_PLATFORM_DIR="darwin-x64"
+            fi
+        elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+            # Windows
+            UV_PLATFORM_DIR="win32-x64"
+            UV_EXT=".exe"
+        elif [[ "$OSTYPE" == "linux"* ]]; then
+            # Linux
+            UV_PLATFORM_DIR="linux-x64"
+        fi
+        
+        # Check for UV in different bundled locations
+        BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+        echo "Checking for UV at: $BUNDLED_UV"
+        
+        if [ -f "$BUNDLED_UV" ]; then
+            # Make executable on Unix platforms
+            if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
+                chmod +x "$BUNDLED_UV"
+            fi
+            UV_CMD="$BUNDLED_UV"
+            echo "Found bundled UV at $BUNDLED_UV"
+        else
+            # Try other locations
+            ALTERNATIVE_UV="$DIR/annzarro/desktop/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+            echo "Checking for UV at alternative location: $ALTERNATIVE_UV"
+            
+            if [ -f "$ALTERNATIVE_UV" ]; then
+                # Make executable on Unix platforms
+                if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
+                    chmod +x "$ALTERNATIVE_UV"
+                fi
+                UV_CMD="$ALTERNATIVE_UV"
+                echo "Found bundled UV at $ALTERNATIVE_UV"
+            fi
+        fi
+        
+        # If bundled UV not found, try to download it
+        if [ -z "$UV_CMD" ]; then
+            if command -v uv &> /dev/null; then
+                UV_CMD="uv"
+                echo "Using system UV"
+            else
+                echo "UV not found in bundled locations, attempting to download..."
+                UV_DOWNLOAD_SCRIPT="$DIR/annzarro/desktop/scripts/download_uv.sh"
+                
+                if [ -f "$UV_DOWNLOAD_SCRIPT" ]; then
+                    echo "Running UV download script: $UV_DOWNLOAD_SCRIPT"
+                    chmod +x "$UV_DOWNLOAD_SCRIPT"
+                    "$UV_DOWNLOAD_SCRIPT"
+                    
+                    # Check if download succeeded
+                    BUNDLED_UV="$DIR/annzarro/desktop/electron/bin/$UV_PLATFORM_DIR/uv$UV_EXT"
+                    if [ -f "$BUNDLED_UV" ]; then
+                        chmod +x "$BUNDLED_UV"
+                        UV_CMD="$BUNDLED_UV"
+                        echo "Successfully downloaded UV to $BUNDLED_UV"
+                    else
+                        echo "Failed to download UV, falling back to pip"
+                    fi
+                else
+                    echo "UV download script not found, falling back to pip"
+                fi
+            fi
+        fi
+        
+        # Find the Python executable (try python3 first, then python)
+        PYTHON_CMD="python3"
+        if ! command -v $PYTHON_CMD &> /dev/null; then
+            PYTHON_CMD="python"
+            if ! command -v $PYTHON_CMD &> /dev/null; then
+                echo "Error: Neither python3 nor python commands were found on your system."
+                echo "Please install Python 3.7 or later and try again."
+                exit 1
+            fi
+        fi
+        
+        # If UV was found, add --use-uv flag and pass path to installer
+        if [ -n "$UV_CMD" ]; then
+            ARGS+=("--use-uv")
+            ARGS+=("--uv-path" "$UV_CMD")
+            echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]} (with UV support)\n"
+        else
+            echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]}\n"
+        fi
+        
+        $PYTHON_CMD "$INSTALLER_SCRIPT" "${ARGS[@]}"
+        exit $?
+    else
+        echo "Virtual environment not found. Please run installation first:"
+        echo "$0 install"
+        exit 1
+    fi
+fi

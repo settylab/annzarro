@@ -18,7 +18,7 @@
     "electron-builder": "^24.0.0"
   },
   "dependencies": {
-    "electron-log": "^4.4.8",
+    "electron-log": "^5.0.0",
     "electron-updater": "^6.1.1",
     "find-process": "^1.4.7"
   },
@@ -30,13 +30,24 @@
     },
     "files": [
       "**/*",
+      "requirements.txt",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/.bin",
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,__pycache__,thumbs.db,.gitignore,.gitattributes,.editorconfig,.idea,appveyor.yml,.travis.yml,circle.yml,npm-debug.log,.nyc_output,yarn.lock,yarn-error.log}"
     ],
     "asarUnpack": [
-      "python/**/*"
+      "python/**/*",
+      "requirements.txt",
+      "annzarro/**/*",
+      "bin/**/*"
+    ],
+    "extraFiles": [
+      {
+        "from": "bin/${os}-${arch}",
+        "to": "bin/${os}-${arch}",
+        "filter": ["**/*"]
+      }
     ],
     "extraResources": [
       {
@@ -46,8 +57,10 @@
           "**/*",
           "!**/node_modules/**/*",
           "!**/.git/**/*",
+          "!**/data/**/*",
           "!**/desktop/electron/dist/**/*",
-          "!**/desktop/electron/node_modules/**/*"
+          "!**/desktop/electron/node_modules/**/*",
+          "!**/logs/**/*"
         ]
       }
     ],

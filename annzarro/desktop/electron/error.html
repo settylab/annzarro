@@ -20,7 +20,8 @@
     .container {
       text-align: center;
       padding: 20px;
-      max-width: 600px;
+      max-width: 700px;
+      width: 100%;
     }
     h1 {
       margin: 0 0 20px 0;
@@ -41,7 +42,7 @@
     }
     .btn {
       display: inline-block;
-      margin: 20px 10px;
+      margin: 15px 10px;
       padding: 10px 20px;
       background-color: #007bff;
       color: white;
@@ -62,7 +63,73 @@
     }
     .logo {
       margin-bottom: 20px;
-      max-width: 150px;
+      max-width: 120px;
+    }
+    .debug-info {
+      background-color: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 4px;
+      padding: 15px;
+      margin: 20px 0;
+      text-align: left;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .help-section {
+      margin-top: 30px;
+      border-top: 1px solid #dee2e6;
+      padding-top: 20px;
+    }
+    .help-section h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    .help-section ul {
+      text-align: left;
+      padding-left: 20px;
+    }
+    .help-section li {
+      margin-bottom: 8px;
+    }
+    .collapsible {
+      background-color: #f1f1f1;
+      color: #444;
+      cursor: pointer;
+      padding: 12px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      border-radius: 4px;
+      margin-top: 10px;
+      margin-bottom: 0;
+      font-weight: 500;
+    }
+    .active, .collapsible:hover {
+      background-color: #e7e7e7;
+    }
+    .collapsible:after {
+      content: '\002B';
+      color: #777;
+      font-weight: bold;
+      float: right;
+      margin-left: 5px;
+    }
+    .active:after {
+      content: "\2212";
+    }
+    .content {
+      padding: 0 12px;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease-out;
+      background-color: #f8f9fa;
+      border-radius: 0 0 4px 4px;
     }
   </style>
 </head>
@@ -72,37 +139,151 @@
     <div class="error-icon">⚠️</div>
     <h1>Server Error</h1>
     <p>The AnnZarro server failed to start. This could be due to:</p>
-    <p>
-      • Another application using the same port<br>
-      • Missing dependencies<br>
-      • Permission issues<br>
-      • Incomplete installation
-    </p>
-    <p>Check the application logs for more details.</p>
+    <ul style="text-align: left; margin: 0 auto; max-width: 500px;">
+      <li>Missing Python dependencies (numpy, zarr, flask)</li>
+      <li>Another application using the same port</li>
+      <li>Permission issues</li>
+      <li>Python module structure not correctly loaded</li>
+    </ul>
+    
+    <button class="collapsible">Troubleshooting Steps</button>
+    <div class="content">
+      <div class="help-section">
+        <h2>Try the following steps:</h2>
+        <ol>
+          <li>Restart the application</li>
+          <li>Install required Python packages manually: <code>pip install numpy zarr flask</code></li>
+          <li>Check if port 8000 is already in use by another application</li>
+          <li>Check that you have proper permissions for the data directory</li>
+          <li>Try running the application from a terminal to see detailed error messages</li>
+        </ol>
+      </div>
+    </div>
+    
+    <button class="collapsible">System Information</button>
+    <div class="content">
+      <div class="debug-info" id="systemInfo">
+        Gathering system information...
+      </div>
+    </div>
+    
+    <button class="collapsible">View Logs</button>
+    <div class="content">
+      <div class="debug-info" id="logInfo">
+        Log files can be found at:
+        <br>macOS: ~/Library/Logs/AnnZarro
+        <br>Windows: %USERPROFILE%\AppData\Roaming\AnnZarro\logs
+        <br>Linux: ~/.config/AnnZarro/logs
+      </div>
+    </div>
+    
     <div class="actions">
       <button class="btn" id="restartBtn">Restart Server</button>
+      <button class="btn secondary" id="checkDependenciesBtn">Check Dependencies</button>
       <button class="btn secondary" id="quitBtn">Quit Application</button>
     </div>
   </div>
   
   <script>
-    // Handle restart button
-    document.getElementById('restartBtn').addEventListener('click', async () => {
+    // Immediately gather system information
+    window.addEventListener('DOMContentLoaded', async () => {
+      // Set up collapsible sections
+      setupCollapsibles();
+      
+      // Get detailed app and system information
       try {
-        await window.api.restartServer();
-        // If successful, reload the page
-        setTimeout(() => {
-          window.location.href = '/'; // Will go to loading screen
-        }, 1000);
+        // Get detailed app information
+        const appInfo = await window.api.getAppInfo();
+        const sysInfo = await window.api.getSystemInfo();
+        
+        // Format system information for display
+        document.getElementById('systemInfo').textContent = `
+App Version: ${await window.api.getVersion()}
+Packaged App: ${appInfo.isPackaged}
+Python Path: ${appInfo.pythonExecutable}
+App Data Path: ${appInfo.appDataPath}
+Virtual Env Path: ${appInfo.venvPath}
+
+OS: ${sysInfo.platform}-${sysInfo.arch}
+Node.js: ${sysInfo.nodeVersion}
+Electron: ${sysInfo.electronVersion}
+CPU Cores: ${sysInfo.cpus}
+Memory: ${Math.round(sysInfo.totalmem / (1024 * 1024 * 1024))}GB total / ${Math.round(sysInfo.freemem / (1024 * 1024 * 1024))}GB free
+
+User Agent: ${navigator.userAgent}
+Screen Size: ${window.screen.width}x${window.screen.height}
+Date/Time: ${new Date().toLocaleString()}
+        `;
       } catch (err) {
-        alert('Failed to restart the server. Please quit and restart the application.');
+        // Fallback to basic information if detailed info unavailable
+        document.getElementById('systemInfo').textContent = `
+App Version: ${await window.api.getVersion()}
+OS: ${navigator.platform}
+User Agent: ${navigator.userAgent}
+Screen Size: ${window.screen.width}x${window.screen.height}
+Date/Time: ${new Date().toLocaleString()}
+Error getting detailed info: ${err.message}
+        `;
       }
+      
+      // Set up button handlers
+      document.getElementById('restartBtn').addEventListener('click', async () => {
+        try {
+          document.getElementById('restartBtn').textContent = 'Restarting...';
+          document.getElementById('restartBtn').disabled = true;
+          
+          await window.api.restartServer();
+          
+          // Wait a bit then reload the page
+          setTimeout(() => {
+            window.location.reload();
+          }, 3000);
+        } catch (err) {
+          alert('Failed to restart the server. Please quit and restart the application.');
+          document.getElementById('restartBtn').textContent = 'Restart Server';
+          document.getElementById('restartBtn').disabled = false;
+        }
+      });
+      
+      document.getElementById('checkDependenciesBtn').addEventListener('click', async () => {
+        try {
+          document.getElementById('checkDependenciesBtn').textContent = 'Checking...';
+          document.getElementById('checkDependenciesBtn').disabled = true;
+          
+          // This will trigger the dependency check in main.js
+          await window.api.restartServer();
+          
+          document.getElementById('checkDependenciesBtn').textContent = 'Dependencies Checked';
+          setTimeout(() => {
+            document.getElementById('checkDependenciesBtn').textContent = 'Check Dependencies';
+            document.getElementById('checkDependenciesBtn').disabled = false;
+          }, 3000);
+        } catch (err) {
+          alert('Failed to check dependencies. Please see the logs for details.');
+          document.getElementById('checkDependenciesBtn').textContent = 'Check Dependencies';
+          document.getElementById('checkDependenciesBtn').disabled = false;
+        }
+      });
+      
+      document.getElementById('quitBtn').addEventListener('click', () => {
+        window.close();
+      });
     });
     
-    // Handle quit button
-    document.getElementById('quitBtn').addEventListener('click', () => {
-      window.close();
-    });
+    function setupCollapsibles() {
+      const collapsibles = document.getElementsByClassName("collapsible");
+      for (let i = 0; i < collapsibles.length; i++) {
+        collapsibles[i].addEventListener("click", function() {
+          this.classList.toggle("active");
+          const content = this.nextElementSibling;
+          if (content.style.maxHeight) {
+            content.style.maxHeight = null;
+          } else {
+            content.style.maxHeight = content.scrollHeight + "px";
+          }
+        });
+      }
+    }
   </script>
 </body>
 </html>
