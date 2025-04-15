@@ -1,180 +1,86 @@
-# <span style="color: #357AFA;">Annzarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="Annzarro logo">
+# <span style="color: #357AFA;">AnnZarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="AnnZarro logo">
 
-[![CI Status](https://github.com/settylab/annzarro/workflows/Annzarro%20CI/badge.svg)](https://github.com/settylab/annzarro/actions)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
-Annzarro is a modern, browser-based single-cell data visualization tool that allows for comprehensive analysis of AnnData objects stored in zarr format. It runs in any modern browser with a lightweight Python backend for data access.
+AnnZarro is a modern single-cell data visualization tool for analyzing AnnData objects stored in zarr format. It features a browser-based interface with a lightweight Python backend and can be used as either a web application or standalone desktop app.
 
-## Features
+## Key Features
 
-- **Browser-based Visualization** - Interactive plots using plotly.js with no Python required for visualization
-- **Stateless Architecture** - Efficient data handling with a stateless API for better scalability
-- **Lazy Loading** - Work with large datasets without loading everything into memory
-- **Flexible Panel System** - Customizable layout with multiple visualization and table panels
-- **Interactive DataTables** - Powerful search and filtering with the DataTables search builder
-- **Complete AnnData Support** - Access to all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers, etc.)
-- **Dataframe Support** - Special handling for dataframe-encoded matrices in obsm/varm
-- **Sparse Matrix Support** - Efficient handling of CSR, CSC, and COO formats
-- **Remote Dataset Access** - Connect to zarr archives via local filesystem, HTTP, or S3
-- **Session Management** - Save and restore your analysis setup
-- **StringDB Integration** - Gene set enrichment and protein interaction networks
+- **Interactive Visualization** - Scatter plots, heatmaps and tables using plotly.js
+- **Comprehensive AnnData Support** - Access all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers)
+- **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
+- **Flexible Access** - Local files, HTTP, or S3 connectivity
+- **Desktop Application** - Standalone cross-platform electron app
 
-## Getting Started
+## Installation & Usage
 
-### Starting the Server
+### Quick Start
 
 ```bash
 # Clone the repository
 git clone https://github.com/settylab/annzarro.git
 cd annzarro
 
-# Install requirements (uses virtual environment by default)
+# Install dependencies (uses virtual environment by default)
 ./annzarro-cli install
 
-# Install without using virtual environment
-./annzarro-cli install --no-venv
-
-# Clean existing virtual environment and reinstall
-./annzarro-cli install --clean
-
-# If you're having trouble with the CLI, you can use the standalone installer directly
-python annzarro-install.py
-
-# See all installation options
-python annzarro-install.py --help
-
-# Start the server (production mode by default)
+# Start the server
 ./annzarro-cli start
 
-# Start in development mode (less secure)
-./annzarro-cli start --development
-
-# Start with options
-./annzarro-cli start --port 8080 --data-dir /path/to/data
-```
-
-Then open your browser and navigate to:
-```
-http://localhost:8000
-```
-
-### Desktop Application
-
-AnnZarro can also be run as a standalone desktop application:
-
-```bash
-# Run the desktop app in development mode
+# Or run the desktop app
 ./annzarro-cli desktop run
-
-# Build the desktop application
-./annzarro-cli desktop build
-
-# Build for a specific platform
-./annzarro-cli desktop build --platform windows
-./annzarro-cli desktop build --platform mac
-./annzarro-cli desktop build --platform linux
-
-# Generate application icons (both desktop and web)
-./annzarro-cli desktop icons --icon /path/to/icon.png --all
 ```
 
-The desktop application provides a convenient way to use AnnZarro without manually managing the server and browser. You can also generate desktop application icons and web favicons from a high-resolution PNG image.
+Then open http://localhost:8000 in your browser if using server mode.
 
-### Authentication and User Management
-
-The default admin credentials are:
-- Username: admin
-- Password: annzarro-password
-
-Authentication is enabled by default in production mode and can be configured in the YAML configuration files (`config/base.yaml`, `config/production.yaml`, and `config/development.yaml`).
-
-Use the CLI to manage users:
+### Installation Options
 
 ```bash
-# Add a new user
-./annzarro-cli user add
+# Install without virtual environment
+./annzarro-cli install --no-venv
 
-# Add an admin user
-./annzarro-cli user add -u username -p password -a
+# Clean reinstall 
+./annzarro-cli install --clean
 
-# List all users
-./annzarro-cli user list
+# Use standalone installer directly
+python annzarro-install.py
 
-# Remove a user
-./annzarro-cli user remove -u username
+# Skip optional dependencies
+./annzarro-cli install --no-extras
 ```
 
-### Server Management
+### Server Commands
 
 ```bash
-# Start server in the background (daemon mode)
+# Start with custom settings
+./annzarro-cli start --port 8080 --data-dir /path/to/data
+
+# Run in background
 ./annzarro-cli start --detach
 
 # Stop the server
 ./annzarro-cli stop
 
-# Start with specific configuration
-./annzarro-cli start --config /path/to/custom_config.yaml
-
-# Start in development mode (usually has auth disabled)
-./annzarro-cli start --development
-
-# Show current configuration
-./annzarro-cli config show
-
-# Initialize a custom configuration
-./annzarro-cli config init --output my_config.yaml
-
-# For production deployment with Gunicorn:
-cd annzarro/server
-./run_gunicorn.sh
+# Manage users
+./annzarro-cli user add
+./annzarro-cli user list
+./annzarro-cli user remove -u username
 ```
 
-### Data Management
-
-Use the CLI to manage datasets:
+### Desktop Application
 
 ```bash
-# List available datasets
-./annzarro-cli data list
+# Run desktop app
+./annzarro-cli desktop run
 
-# Get dataset information
-./annzarro-cli data info /path/to/dataset.zarr
+# Build for distribution
+./annzarro-cli desktop build --platform [windows|mac|linux]
 ```
-
-## User Interface
-
-Annzarro provides a modern, intuitive interface for single-cell data exploration:
-
-### Global Components
-
-- **Dataset Selection** - Browse and select from available datasets
-- **Gene Focus** - Searchable dropdown to select a focused gene
-- **Cell Focus** - Searchable dropdown to select a focused cell
-- **Taxonomy Information** - Track species information for gene analysis
-- **Session Management** - Save and restore analysis sessions
-
-### Visualization Panels
-
-- **Plot Panels** - Create scatter plots, heatmaps, and other visualizations
-- **Table Panels** - Filter and select cells/genes with DataTables
-- **Metadata Panels** - Explore AnnData structure and dataset information
-
-### Plot Configuration
-
-Plots can be created with:
-- Data selection from any AnnData component (.obs, .var, .obsm, .varm, .layers, etc.)
-- Dimension mapping (X, Y, Z axes)
-- Color mapping based on data fields (numerical or categorical)
-- Custom hover information
-- Interactive selection and filtering
 
 ## Working with Data
 
-### Adding Datasets
-
-To add your own datasets, copy or symlink your .zarr directories to the `data/` folder:
+Add datasets by copying or linking .zarr directories to the data/ folder:
 
 ```bash
 # Copy a dataset
@@ -183,83 +89,25 @@ cp -r /path/to/your-dataset.zarr data/
 # Or create a symlink
 ln -s /path/to/your-dataset.zarr data/
 
-# Start with a specific data directory
-./run_start.sh --data-dir /path/to/datasets
+# Use a custom data directory
+./annzarro-cli start --data-dir /path/to/datasets
 ```
-
-The application will automatically detect and display all .zarr directories in the data/ folder.
-
-### Data Requirements
-
-AnnData objects should be saved in zarr format with standard components:
-
-- `.X` - Main expression matrix
-- `.obs` - Cell annotations
-- `.var` - Gene annotations
-- `.obsm` - Multi-dimensional cell annotations (e.g., UMAP, PCA)
-- `.varm` - Multi-dimensional gene annotations
-- `.obsp` - Cell-cell relationships
-- `.varp` - Gene-gene relationships
-- `.layers` - Named alternative expression matrices
-- `.uns` - Unstructured annotations
 
 ## Development
 
-### Backend (Python)
-
 ```bash
-# Install in development mode
-pip install -e .
-
 # Run tests
-python run_tests.py --unit
+python -m pytest
 
-# Start the server for development
-python run_annzarro.py --start --debug
-```
-
-### Frontend (JavaScript)
-
-```bash
-# Install node dependencies
-npm install
-
-# Run JavaScript tests
-npm test
-
-# Run linter
-npm run lint
+# Start in development mode
+./annzarro-cli start --development
 ```
 
 ## Architecture
 
-Annzarro uses a unified stateless server architecture:
-
 - **Frontend**: Pure JavaScript with plotly.js and DataTables
-- **Backend**: Flask server providing both API and static file serving
-- **API**: RESTful endpoints for data access with the dataset_path parameter
-- **Storage**: Support for local and remote zarr archives
-- **Authentication**: Secure session-based authentication with password hashing
-- **Production-Ready**: Gunicorn support for multi-worker deployment
-
-### Server Components
-
-- `annzarro/server/` - Main server package with modular components
-- `annzarro/cli.py` - Command line interface with server and user management
-- `annzarro-cli` - Executable script for easily accessing all features
-
-For more details, see:
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Overall implementation strategy
-- [SERVER_ARCHITECTURE.md](SERVER_ARCHITECTURE.md) - Server design and API endpoints
-- [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md) - Frontend component design
-
-## Browser Requirements
-
-Annzarro works best with recent versions of:
-- Chrome
-- Firefox
-- Safari
-- Edge
+- **Backend**: Flask-based REST API with comprehensive zarr support
+- **Desktop**: Electron application with integrated Python server
 
 ## License
 

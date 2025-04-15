@@ -3,7 +3,21 @@
 
 # Find the directory containing this script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Default virtual environment path
 VENV_PATH="$DIR/venv"
+
+# Check for --venv-path argument and extract it if present
+for ((i=1; i<=$#; i++)); do
+    if [[ "${!i}" == "--venv-path" ]]; then
+        j=$((i+1))
+        if [[ $j -le $# ]]; then
+            # Found a --venv-path argument, use its value
+            VENV_PATH="${!j}"
+            echo "Using custom virtual environment path: $VENV_PATH"
+        fi
+    fi
+done
 
 # Check if virtual environment exists
 if [ -d "$VENV_PATH" ]; then
@@ -31,8 +45,27 @@ if [ -d "$VENV_PATH" ]; then
         fi
         
         # Launch the installer with arguments
-        ARGS=("$@")
-        ARGS=("${ARGS[@]:1}")  # Remove the first argument (install)
+        ARGS=()
+        SKIP_NEXT=false
+        
+        # Process all arguments except the first one (install)
+        for ((i=2; i<=$#; i++)); do
+            if $SKIP_NEXT; then
+                SKIP_NEXT=false
+                continue
+            fi
+            
+            # Skip the --venv-path argument and its value since we handle it separately
+            if [[ "${!i}" == "--venv-path" ]]; then
+                SKIP_NEXT=true
+                continue
+            fi
+            
+            ARGS+=("${!i}")
+        done
+        
+        # Add the venv path to the arguments explicitly
+        ARGS+=("--venv-path" "$VENV_PATH")
         
         # Handle actual cleaning before running the installer
         if [[ " ${ARGS[@]} " =~ " --clean " ]]; then
@@ -145,8 +178,26 @@ if [ -d "$VENV_PATH" ]; then
     
     # For all other commands, directly use the Python from the virtual environment
     if [ -f "$PYTHON_BIN" ]; then
-        # Use Python directly from the virtual environment
-        "$PYTHON_BIN" -m annzarro.cli "$@"
+        # Filter out --venv-path and its value from arguments
+        FILTERED_ARGS=()
+        SKIP_NEXT=false
+        
+        for ((i=1; i<=$#; i++)); do
+            if $SKIP_NEXT; then
+                SKIP_NEXT=false
+                continue
+            fi
+            
+            if [[ "${!i}" == "--venv-path" ]]; then
+                SKIP_NEXT=true
+                continue
+            fi
+            
+            FILTERED_ARGS+=("${!i}")
+        done
+        
+        # Use Python directly from the virtual environment with filtered arguments
+        "$PYTHON_BIN" -m annzarro.cli "${FILTERED_ARGS[@]}"
     else
         echo "Warning: Python executable not found in virtual environment at $PYTHON_BIN"
         echo "Try reinstalling with: $0 install --clean"
@@ -166,8 +217,27 @@ else
         fi
         
         # Launch the installer with arguments
-        ARGS=("$@")
-        ARGS=("${ARGS[@]:1}")  # Remove the first argument (install)
+        ARGS=()
+        SKIP_NEXT=false
+        
+        # Process all arguments except the first one (install)
+        for ((i=2; i<=$#; i++)); do
+            if $SKIP_NEXT; then
+                SKIP_NEXT=false
+                continue
+            fi
+            
+            # Skip the --venv-path argument and its value since we handle it separately
+            if [[ "${!i}" == "--venv-path" ]]; then
+                SKIP_NEXT=true
+                continue
+            fi
+            
+            ARGS+=("${!i}")
+        done
+        
+        # Add the venv path to the arguments explicitly
+        ARGS+=("--venv-path" "$VENV_PATH")
         
         # Try to find UV binary first
         UV_CMD=""

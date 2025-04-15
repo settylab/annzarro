@@ -1,11 +1,13 @@
 #!/bin/bash
 # Script to set up a Python environment for the AnnZarro desktop app
+# Uses the improved annzarro-install.py script to manage dependencies
 
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"
 TARGET_DIR="${SCRIPT_DIR}/electron/python"
-REQUIREMENTS_FILE="${SCRIPT_DIR}/electron/requirements.txt"
+INSTALLER_SCRIPT="${REPO_ROOT}/annzarro-install.py"
 
 echo "Setting up Python environment for AnnZarro desktop app"
 echo "Target directory: ${TARGET_DIR}"
@@ -16,32 +18,24 @@ if [ ! -d "${TARGET_DIR}" ]; then
     echo "Created target directory"
 fi
 
-# Check if requirements file exists
-if [ ! -f "${REQUIREMENTS_FILE}" ]; then
-    echo "Error: Requirements file not found at ${REQUIREMENTS_FILE}"
+# Check if the installer script exists
+if [ ! -f "${INSTALLER_SCRIPT}" ]; then
+    echo "Error: Installer script not found at ${INSTALLER_SCRIPT}"
     exit 1
 fi
 
-# Create virtual environment
-echo "Creating Python virtual environment..."
-python3 -m venv "${TARGET_DIR}"
-echo "Virtual environment created at ${TARGET_DIR}"
+# Run the installer with our target directory as the venv path
+# The improved CLI will automatically check for UV and fall back to pip if needed
+echo "Installing AnnZarro with dependencies..."
+python3 "${INSTALLER_SCRIPT}" --venv-path "${TARGET_DIR}" --clean
 
-# Activate virtual environment
-echo "Activating virtual environment..."
-source "${TARGET_DIR}/bin/activate"
-
-# Upgrade pip
-echo "Upgrading pip..."
-pip install --upgrade pip
-
-# Install dependencies
-echo "Installing dependencies from ${REQUIREMENTS_FILE}..."
-pip install -r "${REQUIREMENTS_FILE}"
-
-# Install AnnZarro package in development mode
-echo "Installing AnnZarro package..."
-pip install -e "${SCRIPT_DIR}/../../"
+# Validate the installation by checking for key files
+if [ -f "${TARGET_DIR}/bin/python" ] || [ -f "${TARGET_DIR}/bin/python3" ]; then
+    echo "Python environment was set up successfully"
+else
+    echo "Warning: Python environment may not have been set up correctly"
+    echo "Check for errors in the installation output"
+fi
 
 echo "Python environment setup complete"
 echo "To activate this environment: source ${TARGET_DIR}/bin/activate"

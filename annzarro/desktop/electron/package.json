@@ -37,10 +37,8 @@
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,__pycache__,thumbs.db,.gitignore,.gitattributes,.editorconfig,.idea,appveyor.yml,.travis.yml,circle.yml,npm-debug.log,.nyc_output,yarn.lock,yarn-error.log}"
     ],
     "asarUnpack": [
-      "python/**/*",
       "requirements.txt",
-      "annzarro/**/*",
-      "bin/**/*"
+      "bin/${os}-${arch}/**/*"
     ],
     "extraFiles": [
       {
@@ -54,13 +52,37 @@
         "from": "../../../",
         "to": "app",
         "filter": [
-          "**/*",
+          "annzarro/**/*.py",
+          "annzarro/**/__init__.py",
+          "annzarro/data/**/*",
+          "annzarro/bin/**/*",
+          "annzarro/core/**/*",
+          "annzarro/server/**/*",
+          "annzarro/utils/**/*",
+          "annzarro/desktop/**/*",
+          "annzarro/ui/**/*",
+          "requirements.txt",
+          "annzarro-install.py",
+          "annzarro-cli",
+          "config/**/*.yaml",
+          "css/**/*.css",
+          "js/**/*.js",
+          "templates/**/*.html",
+          "static/**/*",
           "!**/node_modules/**/*",
           "!**/.git/**/*",
-          "!**/data/**/*",
+          "!data/**",
+          "!**/downloads/**/*",
+          "!**/venv/**/*",
           "!**/desktop/electron/dist/**/*",
           "!**/desktop/electron/node_modules/**/*",
-          "!**/logs/**/*"
+          "!**/desktop/electron/python/**/*",
+          "!**/logs/**/*",
+          "!**/__pycache__/**/*",
+          "!**/.pytest_cache/**/*",
+          "!**/.ipynb_checkpoints/**/*",
+          "!**/prototype_notebooks/**/*",
+          "!**/tests/**/*"
         ]
       }
     ],

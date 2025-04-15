@@ -48,6 +48,7 @@ let serverProcess = null;
 let appPath = null;
 let serverPort = 8000;
 let serverUrl = `http://localhost:${serverPort}`;
+let isServerExternallyManaged = false; // Flag to track if server is managed externally
 let isServerReady = false;
 let pythonExecutable = null;
 let serverStartAttempts = 0;
@@ -173,305 +174,88 @@ function getAppRootPath() {
   }
 }
 
-// Install Python dependencies with uv
+// Find bundled Python environment
+function findBundledPythonEnvironment() {
+  if (app.isPackaged) {
+    // Check for bundled Python in priority order
+    const possiblePaths = [];
+    
+    if (process.platform === 'win32') {
+      // Windows paths
+      possiblePaths.push(
+        path.join(process.resourcesPath, 'app', 'python', 'python.exe'),
+        path.join(process.resourcesPath, 'python', 'python.exe'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'python', 'python.exe')
+      );
+    } else if (process.platform === 'darwin') {
+      // macOS paths - include both system Python locations
+      possiblePaths.push(
+        path.join(process.resourcesPath, 'app', 'python', 'bin', 'python3'),
+        path.join(process.resourcesPath, 'python', 'bin', 'python3'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'python', 'bin', 'python3'),
+        '/usr/bin/python3',
+        '/usr/local/bin/python3',
+        '/opt/homebrew/bin/python3'
+      );
+    } else {
+      // Linux paths
+      possiblePaths.push(
+        path.join(process.resourcesPath, 'app', 'python', 'bin', 'python3'),
+        path.join(process.resourcesPath, 'python', 'bin', 'python3'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'python', 'bin', 'python3'),
+        '/usr/bin/python3'
+      );
+    }
+    
+    // Check if any of the bundled Python paths exist
+    for (const pythonPath of possiblePaths) {
+      if (fs.existsSync(pythonPath)) {
+        log.info(`Found bundled Python at: ${pythonPath}`);
+        return pythonPath;
+      }
+    }
+    
+    log.warn('No bundled Python environment found');
+  }
+  
+  return null;
+}
+
+// Install Python dependencies using the improved annzarro-install.py script
 function installDependencies() {
   return new Promise((resolve, reject) => {
     log.info('Checking and installing Python dependencies...');
     
-    // Get paths for venv and uv
-    const venvPath = app.isPackaged
-      ? path.join(app.getPath('userData'), 'python_venv')
-      : path.join(__dirname, 'python_venv');
+    // First check for a bundled Python environment
+    const bundledPython = findBundledPythonEnvironment();
+    if (bundledPython) {
+      log.info(`Using bundled Python environment: ${bundledPython}`);
+      pythonExecutable = bundledPython;
+      resolve();
+      return;
+    }
     
+    // If no bundled environment, use a user-specific venv as fallback
+    log.info('No bundled Python found, creating virtual environment as fallback...');
+    
+    // Get paths for venv - use a consistent location in userData
+    // This ensures we only have one Python environment and it's properly isolated 
+    const venvPath = path.join(app.getPath('userData'), 'python_venv');
+      
     log.info(`Using virtual environment at: ${venvPath}`);
     
-    // Get platform-specific uv executable
-    const findUvExecutable = () => {
-      if (app.isPackaged) {
-        // Get platform and architecture for binary selection
-        const platform = process.platform;
-        const arch = process.arch;
-        
-        // Map to directory name based on platform and arch
-        let platformDir;
-        if (platform === 'darwin') {
-          platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
-        } else if (platform === 'win32') {
-          platformDir = 'win32-x64';
-        } else if (platform === 'linux') {
-          platformDir = 'linux-x64';
-        } else {
-          platformDir = 'unknown';
-        }
-        
-        // Check for bundled uv in platform-specific directory
-        const uvName = platform === 'win32' ? 'uv.exe' : 'uv';
-        const bundledUvPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'bin', platformDir, uvName);
-        const bundledUvPathAlt = path.join(__dirname, 'bin', platformDir, uvName);
-        
-        if (fs.existsSync(bundledUvPath)) {
-          log.info(`Found uv executable at: ${bundledUvPath}`);
-          return bundledUvPath;
-        } else if (fs.existsSync(bundledUvPathAlt)) {
-          log.info(`Found uv executable at: ${bundledUvPathAlt}`);
-          return bundledUvPathAlt;
-        } else {
-          log.warn(`Bundled uv executable not found at ${bundledUvPath} or ${bundledUvPathAlt}`);
-        }
-      } else {
-        // Development mode - check local bin directory first
-        const devUvPath = path.join(__dirname, 'bin', 
-          process.platform === 'darwin' 
-            ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64')
-            : process.platform === 'win32' ? 'win32-x64' : 'linux-x64',
-          process.platform === 'win32' ? 'uv.exe' : 'uv'
-        );
-        
-        if (fs.existsSync(devUvPath)) {
-          log.info(`Found uv executable at: ${devUvPath}`);
-          return devUvPath;
-        }
-      }
-      
-      // Check for uv in PATH as fallback
-      const uvName = process.platform === 'win32' ? 'uv.exe' : 'uv';
-      
-      // Common locations to check
-      const possiblePaths = [
-        '/usr/local/bin/uv',
-        '/usr/bin/uv',
-        '/opt/homebrew/bin/uv',
-        path.join(process.env.HOME || '', '.cargo', 'bin', 'uv')
-      ];
-      
-      for (const testPath of possiblePaths) {
-        if (fs.existsSync(testPath)) {
-          log.info(`Found system uv executable at: ${testPath}`);
-          return testPath;
-        }
-      }
-      
-      // Default to just the command name, hoping it's in PATH
-      log.warn('No uv executable found, defaulting to system PATH');
-      return uvName;
-    };
+    // Find the annzarro-install.py script
+    const repoRoot = getAppRootPath();
+    const installerScript = path.join(repoRoot, 'annzarro-install.py');
     
-    const uvExecutable = findUvExecutable();
-    log.info(`Using uv at: ${uvExecutable}`);
-    
-    // Find requirements.txt file (try multiple locations)
-    let requirementsPath = '';
-    const possiblePaths = [
-      path.join(__dirname, 'requirements.txt'),
-      path.join(process.resourcesPath, 'requirements.txt'),
-      path.join(appPath, 'requirements.txt'),
-      path.join(process.resourcesPath, 'app.asar.unpacked', 'requirements.txt')
-    ];
-    
-    for (const testPath of possiblePaths) {
-      if (fs.existsSync(testPath)) {
-        requirementsPath = testPath;
-        log.info(`Found requirements file at: ${requirementsPath}`);
-        break;
-      }
-    }
-    
-    if (!requirementsPath) {
-      log.error('Requirements file not found in any expected location');
-      // Create a fallback requirements file with essential dependencies
-      try {
-        const tempRequirementsPath = path.join(app.getPath('temp'), 'annzarro-requirements.txt');
-        log.info(`Creating fallback requirements file at: ${tempRequirementsPath}`);
-        const essentialDeps = [
-          'flask>=2.0.0',
-          'flask-cors>=3.0.0',
-          'zarr>=2.13.0',
-          'numpy>=1.20.0',
-          'pandas>=1.3.0',
-          'matplotlib>=3.4.0',
-          'werkzeug>=2.0.0',
-          'pyjwt>=2.0.0',
-          'cryptography>=35.0.0',
-          'numba>=0.53.0',
-          'psutil>=5.9.0',
-          'pyyaml>=6.0.0'
-        ].join('\n');
-        fs.writeFileSync(tempRequirementsPath, essentialDeps);
-        requirementsPath = tempRequirementsPath;
-      } catch (err) {
-        log.error(`Failed to create fallback requirements file: ${err.message}`);
-        return reject(new Error('Could not find or create requirements file'));
-      }
-    }
-    
-    // Check if venv exists and is correctly configured
-    let venvBinPath = process.platform === 'win32' 
-      ? path.join(venvPath, 'Scripts') 
-      : path.join(venvPath, 'bin');
-    
-    let venvPythonPath = process.platform === 'win32'
-      ? path.join(venvBinPath, 'python.exe')
-      : path.join(venvBinPath, 'python');
-    
-    if (!fs.existsSync(venvPythonPath) && process.platform !== 'win32') {
-      // Try python3 instead of python
-      venvPythonPath = path.join(venvBinPath, 'python3');
-    }
-    
-    // Create site-packages directory in the venv if it doesn't exist
-    const venvSitePackagesDir = path.join(venvPath, 'lib', 
-      process.platform === 'win32' ? 'site-packages' : 'python3*/site-packages');
+    // Check if the installer script exists
+    if (!fs.existsSync(installerScript)) {
+      log.error(`Installer script not found at ${installerScript}`);
       
-    // Check site-packages dir exists for Python modules
-    const venvExists = fs.existsSync(venvPath) && fs.existsSync(venvPythonPath);
-    
-    // Function to install dependencies in the venv
-    const installInVenv = () => {
-      log.info(`Installing dependencies with uv in venv: ${venvPath}`);
+      // Create a minimal installer function using Python's built-in venv
+      log.info('Falling back to basic venv and pip installation');
       
-      // Updated Python path
-      const venvPythonPath = process.platform === 'win32'
-        ? path.join(venvPath, 'Scripts', 'python.exe')
-        : path.join(venvPath, 'bin', 'python');
-      
-      // Update pythonExecutable to use the venv
-      pythonExecutable = venvPythonPath;
-      
-      // Run uv pip install
-      const uvProcess = spawn(uvExecutable, ['pip', 'install', '-r', requirementsPath, '--venv', venvPath], {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-      
-      let uvOutput = '';
-      let uvError = '';
-      
-      uvProcess.stdout.on('data', (data) => {
-        const output = data.toString().trim();
-        uvOutput += output + '\n';
-        log.info(`UV stdout: ${output}`);
-      });
-      
-      uvProcess.stderr.on('data', (data) => {
-        const output = data.toString().trim();
-        uvError += output + '\n';
-        log.error(`UV stderr: ${output}`);
-      });
-      
-      uvProcess.on('close', (code) => {
-        if (code === 0) {
-          log.info('Python dependencies installed successfully with uv');
-          
-          // Also install the annzarro package in development mode if packaged
-          if (app.isPackaged) {
-            log.info('Installing annzarro package');
-            
-            // Use uv to install the annzarro package in development mode
-            const installAnnzarroProcess = spawn(uvExecutable, [
-              'pip', 'install', '-e', appPath, '--venv', venvPath
-            ], {
-              stdio: ['ignore', 'pipe', 'pipe']
-            });
-            
-            installAnnzarroProcess.stdout.on('data', (data) => {
-              log.info(`Install annzarro stdout: ${data.toString().trim()}`);
-            });
-            
-            installAnnzarroProcess.stderr.on('data', (data) => {
-              log.warn(`Install annzarro stderr: ${data.toString().trim()}`);
-            });
-            
-            installAnnzarroProcess.on('close', (installCode) => {
-              if (installCode === 0) {
-                log.info('Annzarro package installed successfully');
-              } else {
-                log.warn(`Failed to install annzarro package, exit code: ${installCode}`);
-              }
-              resolve();
-            });
-            
-            installAnnzarroProcess.on('error', (err) => {
-              log.error(`Error installing annzarro package: ${err.message}`);
-              resolve(); // Continue anyway
-            });
-          } else {
-            resolve();
-          }
-        } else {
-          log.error(`Failed to install dependencies with uv, exit code: ${code}`);
-          log.error(`UV error output: ${uvError}`);
-          
-          // Fall back to pip if uv fails
-          fallbackToPip(requirementsPath, resolve, reject);
-        }
-      });
-      
-      uvProcess.on('error', (err) => {
-        log.error(`Error running uv: ${err.message}`);
-        // Try with pip as fallback
-        fallbackToPip(requirementsPath, resolve, reject);
-      });
-    };
-    
-    // Fallback to pip if uv fails or is not available
-    const fallbackToPip = (requirementsPath, resolve, reject) => {
-      log.info('Falling back to pip for dependency installation');
-      
-      const pipProcess = spawn(pythonExecutable, ['-m', 'pip', 'install', '-r', requirementsPath], {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-      
-      let pipOutput = '';
-      let pipError = '';
-      
-      pipProcess.stdout.on('data', (data) => {
-        const output = data.toString().trim();
-        pipOutput += output + '\n';
-        log.info(`Pip stdout: ${output}`);
-      });
-      
-      pipProcess.stderr.on('data', (data) => {
-        const output = data.toString().trim();
-        pipError += output + '\n';
-        log.error(`Pip stderr: ${output}`);
-      });
-      
-      pipProcess.on('close', (code) => {
-        if (code === 0) {
-          log.info('Python dependencies installed successfully with pip');
-          resolve();
-        } else {
-          log.error(`Failed to install dependencies with pip, exit code: ${code}`);
-          log.error(`Pip error output: ${pipError}`);
-          
-          // Show error to user but continue anyway
-          if (mainWindow) {
-            dialog.showMessageBox(mainWindow, {
-              type: 'warning',
-              title: 'Dependency Installation Warning',
-              message: 'Some dependencies could not be installed automatically.',
-              detail: 'The application may not function correctly. Please check the logs for more information.'
-            });
-          }
-          
-          // Still resolve to continue with app startup
-          resolve();
-        }
-      });
-      
-      pipProcess.on('error', (err) => {
-        log.error(`Error installing dependencies with pip: ${err.message}`);
-        reject(err);
-      });
-    };
-    
-    // Main logic - create venv if needed, then install dependencies
-    if (venvExists) {
-      log.info('Using existing virtual environment');
-      installInVenv();
-    } else {
-      log.info('Creating new virtual environment with uv');
-      
-      // Create virtual environment directory
+      // Ensure the venv directory exists
       if (!fs.existsSync(venvPath)) {
         try {
           fs.mkdirSync(venvPath, { recursive: true });
@@ -481,74 +265,146 @@ function installDependencies() {
         }
       }
       
-      // Create venv with uv directly
-      const uvVenvProcess = spawn(uvExecutable, ['venv', venvPath], {
+      // Create venv with Python's venv module
+      const venvProcess = spawn(pythonExecutable, ['-m', 'venv', venvPath], {
         stdio: ['ignore', 'pipe', 'pipe']
       });
       
-      uvVenvProcess.stdout.on('data', (data) => {
-        log.info(`UV venv stdout: ${data.toString().trim()}`);
-      });
-      
-      uvVenvProcess.stderr.on('data', (data) => {
-        log.error(`UV venv stderr: ${data.toString().trim()}`);
-      });
-      
-      uvVenvProcess.on('close', (code) => {
+      venvProcess.on('close', (code) => {
         if (code === 0) {
-          log.info('Virtual environment created successfully with uv');
-          installInVenv();
+          // Set Python path to venv Python
+          const venvPythonPath = process.platform === 'win32' 
+            ? path.join(venvPath, 'Scripts', 'python.exe')
+            : path.join(venvPath, 'bin', 'python3');
+            
+          // Use pip to install from requirements.txt
+          const requirementsPath = path.join(__dirname, 'requirements.txt');
+          if (fs.existsSync(requirementsPath)) {
+            log.info(`Installing dependencies from ${requirementsPath}`);
+            
+            const pipProcess = spawn(venvPythonPath, ['-m', 'pip', 'install', '-r', requirementsPath], {
+              stdio: ['ignore', 'pipe', 'pipe']
+            });
+            
+            pipProcess.stdout.on('data', (data) => {
+              log.info(`Pip stdout: ${data.toString().trim()}`);
+            });
+            
+            pipProcess.stderr.on('data', (data) => {
+              log.error(`Pip stderr: ${data.toString().trim()}`);
+            });
+            
+            pipProcess.on('close', (pipCode) => {
+              if (pipCode === 0) {
+                log.info('Python dependencies installed successfully');
+                pythonExecutable = venvPythonPath; // Update the Python path
+                resolve();
+              } else {
+                log.error(`Failed to install dependencies with pip, exit code: ${pipCode}`);
+                resolve(); // Continue anyway
+              }
+            });
+            
+            pipProcess.on('error', (err) => {
+              log.error(`Error installing dependencies with pip: ${err.message}`);
+              resolve(); // Continue anyway
+            });
+          } else {
+            log.error(`Requirements file not found at ${requirementsPath}`);
+            resolve(); // Continue anyway
+          }
         } else {
-          log.error(`Failed to create virtual environment with uv, exit code: ${code}`);
-          
-          // Try using python's venv module as fallback
-          const venvProcess = spawn(pythonExecutable, ['-m', 'venv', venvPath], {
-            stdio: ['ignore', 'pipe', 'pipe']
-          });
-          
-          venvProcess.on('close', (venvCode) => {
-            if (venvCode === 0) {
-              log.info('Virtual environment created with python venv module');
-              installInVenv();
-            } else {
-              log.error(`Failed to create virtual environment with python venv, exit code: ${venvCode}`);
-              // Fall back to using system Python without venv
-              fallbackToPip(requirementsPath, resolve, reject);
-            }
-          });
-          
-          venvProcess.on('error', (err) => {
-            log.error(`Error creating venv with python: ${err.message}`);
-            fallbackToPip(requirementsPath, resolve, reject);
-          });
+          log.error(`Failed to create venv, exit code: ${code}`);
+          resolve(); // Continue anyway
         }
       });
       
-      uvVenvProcess.on('error', (err) => {
-        log.error(`Error creating venv with uv: ${err.message}`);
-        
-        // Try using python's venv module as fallback
-        const venvProcess = spawn(pythonExecutable, ['-m', 'venv', venvPath], {
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        venvProcess.on('close', (venvCode) => {
-          if (venvCode === 0) {
-            log.info('Virtual environment created with python venv module');
-            installInVenv();
-          } else {
-            log.error(`Failed to create virtual environment with python venv, exit code: ${venvCode}`);
-            // Fall back to using system Python without venv
-            fallbackToPip(requirementsPath, resolve, reject);
-          }
-        });
-        
-        venvProcess.on('error', (err) => {
-          log.error(`Error creating venv with python: ${err.message}`);
-          fallbackToPip(requirementsPath, resolve, reject);
-        });
+      venvProcess.on('error', (err) => {
+        log.error(`Error creating venv: ${err.message}`);
+        resolve(); // Continue anyway
       });
+      
+      return;
     }
+    
+    // Use the installer script for dependency management
+    log.info(`Found installer script at ${installerScript}`);
+    
+    // Build the installer command (don't use --clean flag as it's not supported)
+    const args = [
+      installerScript,
+      '--venv-path', venvPath
+    ];
+    
+    // Spawn the installer process
+    log.info(`Running installer: ${pythonExecutable} ${args.join(' ')}`);
+    const installerProcess = spawn(pythonExecutable, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    
+    installerProcess.stdout.on('data', (data) => {
+      const output = data.toString().trim();
+      if (output) {
+        log.info(`Installer stdout: ${output}`);
+      }
+    });
+    
+    installerProcess.stderr.on('data', (data) => {
+      const output = data.toString().trim();
+      if (output) {
+        log.error(`Installer stderr: ${output}`);
+      }
+    });
+    
+    installerProcess.on('close', (code) => {
+      if (code === 0) {
+        log.info('Python dependencies installed successfully');
+        
+        // Update pythonExecutable to use the venv Python
+        const venvPythonPath = process.platform === 'win32'
+          ? path.join(venvPath, 'Scripts', 'python.exe')
+          : path.join(venvPath, 'bin', 'python3');
+          
+        if (fs.existsSync(venvPythonPath)) {
+          log.info(`Using virtual environment Python: ${venvPythonPath}`);
+          pythonExecutable = venvPythonPath;
+        } else {
+          log.warn(`Virtual environment Python executable not found at ${venvPythonPath}`);
+          // Try alternate path for Python 
+          const altPath = process.platform === 'win32'
+            ? venvPythonPath
+            : path.join(venvPath, 'bin', 'python');
+            
+          if (fs.existsSync(altPath)) {
+            log.info(`Using alternate Python path: ${altPath}`);
+            pythonExecutable = altPath;
+          } else {
+            log.warn(`No Python found in venv, using system Python: ${pythonExecutable}`);
+          }
+        }
+        
+        resolve();
+      } else {
+        log.error(`Installer failed with exit code: ${code}`);
+        
+        if (mainWindow) {
+          dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            title: 'Dependency Installation Warning',
+            message: 'Some dependencies could not be installed automatically.',
+            detail: 'The application may not function correctly. Please check the logs for more information.'
+          });
+        }
+        
+        // Still resolve to continue with app startup
+        resolve();
+      }
+    });
+    
+    installerProcess.on('error', (err) => {
+      log.error(`Error running installer: ${err.message}`);
+      reject(err);
+    });
   });
 }
 
@@ -570,10 +426,19 @@ function checkPythonModule(moduleName) {
       pythonPaths.push(
         path.join(process.resourcesPath, 'app.asar.unpacked'),
         path.join(process.resourcesPath, 'app.asar.unpacked', 'annzarro'),
+        path.join(process.resourcesPath, 'app', 'annzarro'),
         path.join(app.getPath('userData'), 'python_venv', 'lib', 
           process.platform === 'win32' ? 'site-packages' : 
           `python${pythonExecutable.includes('python3') ? '3' : ''}*/site-packages`)
       );
+      
+      // Add site-packages directories for all Python versions
+      if (process.platform !== 'win32') {
+        // On Unix systems, check various Python version directories
+        for (let i = 7; i <= 12; i++) {
+          pythonPaths.push(path.join(app.getPath('userData'), 'python_venv', 'lib', `python3.${i}`, 'site-packages'));
+        }
+      }
     } else {
       // Add development paths
       pythonPaths.push(
@@ -590,6 +455,41 @@ function checkPythonModule(moduleName) {
     }
     
     env.PYTHONPATH = pythonPaths.join(process.platform === 'win32' ? ';' : ':');
+    
+    // If checking for a specific module that might be missing, try to create a .pth file
+    if (moduleName.startsWith('annzarro') && app.isPackaged) {
+      try {
+        // Find site-packages directory in venv if it exists
+        const venvPath = path.join(app.getPath('userData'), 'python_venv');
+        if (fs.existsSync(venvPath)) {
+          let sitePackagesDir = '';
+          
+          if (process.platform === 'win32') {
+            sitePackagesDir = path.join(venvPath, 'Lib', 'site-packages');
+          } else {
+            // Try to find actual site-packages directory
+            const libDir = path.join(venvPath, 'lib');
+            if (fs.existsSync(libDir)) {
+              const dirs = fs.readdirSync(libDir);
+              const pythonDirs = dirs.filter(dir => dir.startsWith('python'));
+              
+              if (pythonDirs.length > 0) {
+                sitePackagesDir = path.join(libDir, pythonDirs[0], 'site-packages');
+              }
+            }
+          }
+          
+          // If site-packages directory found, create .pth file
+          if (sitePackagesDir && fs.existsSync(sitePackagesDir)) {
+            const pthFile = path.join(sitePackagesDir, 'annzarro.pth');
+            fs.writeFileSync(pthFile, appPath);
+            log.info(`Created Python path file at ${pthFile} pointing to ${appPath}`);
+          }
+        }
+      } catch (err) {
+        log.error(`Error setting up Python paths: ${err.message}`);
+      }
+    }
     
     // Check for a module with more diagnostic information
     const checkScript = `
@@ -631,30 +531,180 @@ except Exception as e:
   });
 }
 
-// Check required dependencies
+// Ensure dependencies are installed
 async function checkDependencies() {
-  log.info('Checking required Python dependencies...');
+  log.info('Checking Python environment...');
   
-  // Check essential modules
-  const essentialModules = ['numpy', 'flask', 'zarr'];
-  const missingModules = [];
-  
-  for (const module of essentialModules) {
-    if (!await checkPythonModule(module)) {
-      missingModules.push(module);
-    }
+  // First check for a bundled Python environment
+  const bundledPython = findBundledPythonEnvironment();
+  if (bundledPython) {
+    log.info(`Using bundled Python environment: ${bundledPython}`);
+    pythonExecutable = bundledPython;
+    return;
   }
   
-  if (missingModules.length > 0) {
-    log.warn(`Missing Python modules: ${missingModules.join(', ')}`);
-    // Install dependencies if missing
-    try {
-      await installDependencies();
-    } catch (err) {
-      log.error(`Failed to install dependencies: ${err.message}`);
+  // If no bundled Python, check for existing venv or create one
+  log.info('No bundled Python found, checking/creating virtual environment as fallback...');
+  
+  try {
+    const venvPath = path.join(app.getPath('userData'), 'python_venv');
+    const cliPath = path.join(appPath, 'annzarro-cli');
+    const installerScript = path.join(appPath, 'annzarro-install.py');
+    
+    // Check if CLI and installer scripts exist
+    const cliExists = fs.existsSync(cliPath);
+    const installerExists = fs.existsSync(installerScript);
+    
+    if (!installerExists) {
+      log.error(`Installer script not found at ${installerScript}`);
+      return;  // Cannot proceed without installer
     }
-  } else {
-    log.info('All essential Python modules are present');
+    
+    log.info(`Python venv path: ${venvPath}`);
+    
+    // Try to make CLI executable if it exists
+    if (cliExists && process.platform !== 'win32') {
+      try {
+        fs.chmodSync(cliPath, 0o755);
+      } catch (err) {
+        log.error(`Failed to make CLI executable: ${err.message}`);
+      }
+    }
+    
+    // Check if venv already exists and has Python
+    const venvPythonPath = process.platform === 'win32'
+      ? path.join(venvPath, 'Scripts', 'python.exe')
+      : path.join(venvPath, 'bin', 'python3');
+      
+    if (fs.existsSync(venvPythonPath)) {
+      log.info(`Virtual environment already exists at ${venvPath}`);
+      pythonExecutable = venvPythonPath;
+      return;
+    }
+    
+    // If venv doesn't exist, create it
+    log.info('Virtual environment not found, setting up...');
+    
+    let installProcess;
+    
+    if (cliExists) {
+      // Use the CLI when available
+      log.info(`Installing dependencies using CLI with venv path: ${venvPath}`);
+      
+      // Spawn the install command (don't use --clean as it's not supported)
+      const installCommand = ['--venv-path', venvPath, 'install'];
+      
+      // Execute the CLI directly or through Python depending on platform
+      if (process.platform === 'win32') {
+        // On Windows, use Python to run the CLI
+        installProcess = await new Promise((resolve, reject) => {
+          const proc = spawn(pythonExecutable, [cliPath, ...installCommand], {
+            cwd: appPath,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+          
+          proc.stdout.on('data', (data) => {
+            log.info(`Install stdout: ${data.toString().trim()}`);
+          });
+          
+          proc.stderr.on('data', (data) => {
+            log.error(`Install stderr: ${data.toString().trim()}`);
+          });
+          
+          proc.on('close', (code) => {
+            if (code === 0) {
+              log.info('Installation completed successfully');
+              resolve(true);
+            } else {
+              log.error(`Installation failed with code ${code}`);
+              resolve(false);
+            }
+          });
+          
+          proc.on('error', (err) => {
+            log.error(`Installation error: ${err.message}`);
+            reject(err);
+          });
+        });
+      } else {
+        // On Unix, execute the CLI script directly
+        installProcess = await new Promise((resolve, reject) => {
+          const proc = spawn(cliPath, installCommand, {
+            cwd: appPath,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+          
+          proc.stdout.on('data', (data) => {
+            log.info(`Install stdout: ${data.toString().trim()}`);
+          });
+          
+          proc.stderr.on('data', (data) => {
+            log.error(`Install stderr: ${data.toString().trim()}`);
+          });
+          
+          proc.on('close', (code) => {
+            if (code === 0) {
+              log.info('Installation completed successfully');
+              resolve(true);
+            } else {
+              log.error(`Installation failed with code ${code}`);
+              resolve(false);
+            }
+          });
+          
+          proc.on('error', (err) => {
+            log.error(`Installation error: ${err.message}`);
+            reject(err);
+          });
+        });
+      }
+    } else {
+      // Fall back to using the installer script directly
+      log.warn(`CLI script not found at ${cliPath}, falling back to direct installer execution`);
+      
+      // No --clean flag for installer
+      const installArgs = ['--venv-path', venvPath];
+      
+      installProcess = await new Promise((resolve, reject) => {
+        const proc = spawn(pythonExecutable, [installerScript, ...installArgs], {
+          cwd: appPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        proc.stdout.on('data', (data) => {
+          log.info(`Installer stdout: ${data.toString().trim()}`);
+        });
+        
+        proc.stderr.on('data', (data) => {
+          log.error(`Installer stderr: ${data.toString().trim()}`);
+        });
+        
+        proc.on('close', (code) => {
+          if (code === 0) {
+            log.info('Installation completed successfully');
+            resolve(true);
+          } else {
+            log.error(`Installation failed with code ${code}`);
+            resolve(false);
+          }
+        });
+        
+        proc.on('error', (err) => {
+          log.error(`Installation error: ${err.message}`);
+          reject(err);
+        });
+      });
+    }
+    
+    log.info('Dependencies installation completed');
+    
+    // Update Python executable to use the venv Python if it exists now
+    if (fs.existsSync(venvPythonPath)) {
+      log.info(`Using virtual environment Python: ${venvPythonPath}`);
+      pythonExecutable = venvPythonPath;
+    }
+  } catch (err) {
+    log.error(`Failed to install dependencies: ${err.message}`);
   }
 }
 
@@ -677,92 +727,84 @@ async function startServer() {
     // Continue anyway - we'll show error if server fails to start
   }
 
-  // Check if port is already in use
+  // Always use a new port for the app's server to avoid conflicts with existing servers
   try {
-    const list = await findProcess('port', serverPort);
+    // Try to find a free port starting from serverPort
+    const newPort = await findFreePort(serverPort);
+    if (newPort !== serverPort) {
+      log.info(`Original port ${serverPort} is in use, found free port: ${newPort}`);
+      serverPort = newPort;
+      serverUrl = `http://localhost:${serverPort}`;
+    } else {
+      log.info(`Using original port: ${serverPort}`);
+    }
     
-    if (list.length > 0) {
-      log.warn(`Port ${serverPort} is already in use by process ${list[0].name} (${list[0].pid})`);
-      
-      // Try to stop the existing process
+    // We don't try to use an existing server - always start our own
+    // This eliminates potential confusion with external servers
+    isServerExternallyManaged = false;
+    isServerReady = false;
+  } catch (err) {
+    log.error(`Error finding free port: ${err.message}`);
+    // Continue with default port if port finding fails
+  }
+
+    // Define the venv path for consistency with installation
+    const venvPath = path.join(app.getPath('userData'), 'python_venv');
+    
+    // Start the server process using annzarro-cli directly
+    // This ensures the CLI handles venv activation properly as it was designed to do
+    let cliPath = path.join(appPath, 'annzarro-cli');
+    
+    // Set up empty data directory for file picker-based operation
+    const emptyDataDir = path.join(app.getPath('userData'), 'data');
+    
+    // Ensure the empty data directory exists
+    if (!fs.existsSync(emptyDataDir)) {
       try {
-        if (process.platform === 'win32') {
-          spawn('taskkill', ['/PID', list[0].pid, '/F']);
-        } else {
-          process.kill(list[0].pid, 'SIGTERM');
-        }
-        log.info(`Killed existing process on port ${serverPort}`);
+        fs.mkdirSync(emptyDataDir, { recursive: true });
+        log.info(`Created empty data directory: ${emptyDataDir}`);
       } catch (err) {
-        log.error(`Failed to kill existing process: ${err.message}`);
-        dialog.showErrorBox(
-          'Port in use',
-          `The port ${serverPort} is already in use by another process. Please close that process and try again.`
-        );
-        if (!mainWindow) {
-          app.quit();
-        }
-        return;
+        log.error(`Failed to create empty data directory: ${err.message}`);
       }
     }
-
-    // Start the server process
-    const args = ['-m', 'annzarro.cli', 'start', '--host', 'localhost', '--port', String(serverPort)];
     
-    // Add data directory if configured
-    const dataDir = app.getPath('userData');
-    if (dataDir) {
-      args.push('--data-dir', path.join(dataDir, 'annzarro_data'));
-    }
+    // Prepare our arguments for the CLI wrapper (using current serverPort value)
+    log.info(`Starting server on port: ${serverPort}`);
+    const startCommand = ['start', '--host', 'localhost', '--port', String(serverPort), '--data-dir', emptyDataDir];
+    
+    // Add venv path to ensure the CLI uses the correct environment
+    startCommand.unshift('--venv-path', venvPath);
 
     // For development, allow running in debug mode
     if (!app.isPackaged) {
-      args.push('--development');
+      startCommand.push('--development');
     }
 
-    log.info(`Spawning Python server: ${pythonExecutable} ${args.join(' ')}`);
-    
-    // Set server process env to include app root path in PYTHONPATH
-    const env = {...process.env};
-    
-    // Add important paths to PYTHONPATH to help find modules
-    const pythonPaths = [
-      appPath, // Base app path
-      process.resourcesPath,
-      path.join(process.resourcesPath, 'app')
-    ];
-    
-    if (app.isPackaged) {
-      // Add specific paths for packaged app
-      pythonPaths.push(
-        path.join(process.resourcesPath, 'app.asar.unpacked'),
-        path.join(process.resourcesPath, 'app.asar.unpacked', 'annzarro'),
-        path.join(app.getPath('userData'), 'python_venv', 'lib', 
-          process.platform === 'win32' ? 'site-packages' : 
-          `python${pythonExecutable.includes('python3') ? '3' : ''}*/site-packages`)
-      );
+    // If on Windows, adjust the CLI path
+    if (process.platform === 'win32') {
+      // On Windows we need to run the Python script directly
+      log.info(`Using CLI from: ${cliPath}`);
+      args = [cliPath, ...startCommand];
+      log.info(`Spawning Python server via CLI: ${pythonExecutable} ${args.join(' ')}`);
     } else {
-      // Add development paths
-      pythonPaths.push(
-        path.resolve(__dirname, '..', '..', '..'), // Project root
-        path.join(__dirname, 'python_venv', 'lib', 
-          process.platform === 'win32' ? 'site-packages' : 
-          `python${pythonExecutable.includes('python3') ? '3' : ''}*/site-packages`)
-      );
+      // On Unix systems we can execute the bash script directly
+      log.info(`Using CLI from: ${cliPath}`);
+      
+      // Ensure the CLI script is executable
+      try {
+        fs.chmodSync(cliPath, 0o755);
+      } catch (err) {
+        log.error(`Failed to make CLI executable: ${err.message}`);
+      }
+      
+      log.info(`Spawning server via CLI: ${cliPath} ${startCommand.join(' ')}`);
     }
     
-    // Add current env PYTHONPATH if it exists
-    if (process.env.PYTHONPATH) {
-      pythonPaths.push(process.env.PYTHONPATH);
-    }
-    
-    env.PYTHONPATH = pythonPaths.join(process.platform === 'win32' ? ';' : ':');
-    log.info(`Setting PYTHONPATH to: ${env.PYTHONPATH}`);
+    // Set basic environment variables
+    const env = {...process.env};
 
-    // Create data directory if it doesn't exist
-    const dataDirectory = path.join(dataDir, 'annzarro_data');
-    if (!fs.existsSync(dataDirectory)) {
-      fs.mkdirSync(dataDirectory, { recursive: true });
-    }
+    // Create data directory if it doesn't exist - we already did this above
+    // No need for additional data directory creation
     
     try {
       // Log the complete command and environment for debugging
@@ -773,44 +815,111 @@ async function startServer() {
         }
       });
       
-      // Create data directory if it doesn't exist
-      if (!fs.existsSync(dataDirectory)) {
-        fs.mkdirSync(dataDirectory, { recursive: true });
-        log.info(`Created data directory: ${dataDirectory}`);
-      }
+      // Data directory already created earlier
       
-      // Spawn the server process
-      serverProcess = spawn(pythonExecutable, args, {
-        cwd: appPath,
-        env,
-        // Ensure stdout and stderr are treated as text
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
+      // Check if CLI script exists
+      const cliExists = fs.existsSync(cliPath);
+      
+      if (!cliExists) {
+        log.warn(`CLI script not found at ${cliPath}, falling back to direct Python execution`);
+        
+        // Fall back to direct Python execution if CLI script not found
+        const pythonArgs = ['-m', 'annzarro.cli', 'start', 
+          '--host', 'localhost', 
+          '--port', String(serverPort),
+          '--data-dir', emptyDataDir
+        ];
+        
+        if (!app.isPackaged) {
+          pythonArgs.push('--development');
+        }
+        
+        log.info(`Spawning Python server directly: ${pythonExecutable} ${pythonArgs.join(' ')}`);
+        
+        serverProcess = spawn(pythonExecutable, pythonArgs, {
+          cwd: appPath,
+          env,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+      } else {
+        // Spawn the server process using the CLI when available
+        if (process.platform === 'win32') {
+          // On Windows, use pythonExecutable to run the CLI script
+          serverProcess = spawn(pythonExecutable, args, {
+            cwd: appPath,
+            env,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+        } else {
+          // On Unix, execute the CLI script directly
+          serverProcess = spawn(cliPath, startCommand, {
+            cwd: appPath,
+            env,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+        }
+      }
 
       // Set up a timeout for server readiness
       const serverReadyTimeout = setTimeout(() => {
-        if (!isServerReady && serverProcess) {
+        if (!isServerReady) {
           log.warn('Server failed to start within timeout period');
           
-          // Show a simple message to the user
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.loadFile(path.join(__dirname, 'error.html'));
+          // No need to check for existing server - just show error
+          if (serverProcess) {
+            // Kill the server process as it's not responding
+            try {
+              serverProcess.kill('SIGKILL');
+              serverProcess = null;
+              log.info('Killed non-responsive server process');
+            } catch (e) {
+              log.error(`Error killing server process: ${e.message}`);
+            }
           }
           
-          // Don't kill the server yet, it might still start up
+          // Show error UI and keep it shown
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            log.error('Loading error page due to server timeout');
+            mainWindow.loadFile(path.join(__dirname, 'error.html'));
+            
+            // Prevent any further attempts to load other URLs
+            mainWindow.webContents.on('will-navigate', (e) => {
+              if (!isServerReady) {
+                e.preventDefault();
+                log.info('Prevented navigation while server is not ready');
+              }
+            });
+          }
         }
-      }, 30000); // 30 seconds timeout
+      }, 15000); // 15 seconds timeout
       
       // Handle server process events
       serverProcess.stdout.on('data', (data) => {
         const output = data.toString().trim();
         log.info(`Server stdout: ${output}`);
         
-        // Check if server is ready
-        if (output.includes('Running on http://')) {
+        // Check for multiple potential messages indicating server is ready
+        // Flask/Werkzeug output format: "* Running on http://..."
+        // Gunicorn output format: "[INFO] Starting gunicorn..." followed by "Listening at: http://..."
+        if (output.includes('Running on http://') || 
+            output.includes('Listening at: http://') ||
+            output.includes('server started') ||
+            output.includes('Application startup complete')) {
+          
           log.info('Server is ready');
           isServerReady = true;
           clearTimeout(serverReadyTimeout);
+          
+          // Extract port information if present to double-check
+          const portMatch = output.match(/localhost:(\d+)/);
+          if (portMatch && portMatch[1]) {
+            const detectedPort = parseInt(portMatch[1]);
+            if (detectedPort !== serverPort) {
+              log.info(`Detected different port than expected: ${detectedPort} vs ${serverPort}`);
+              serverPort = detectedPort;
+              serverUrl = `http://localhost:${serverPort}`;
+            }
+          }
           
           // If window exists but hasn't loaded the URL yet, load it
           if (mainWindow && !mainWindow.webContents.getURL().includes('localhost')) {
@@ -819,12 +928,54 @@ async function startServer() {
               log.error(`Error loading URL in window: ${err.message}`);
             });
           }
+        } else if (output.includes('Debug mode') || output.includes('Press CTRL+C to quit')) {
+          // Alternative server ready patterns
+          setTimeout(() => {
+            if (!isServerReady) {
+              log.info('Server appears to be ready based on debug output');
+              isServerReady = true;
+              clearTimeout(serverReadyTimeout);
+              
+              // If window exists but hasn't loaded the URL yet, load it
+              if (mainWindow && !mainWindow.webContents.getURL().includes('localhost')) {
+                log.info(`Loading ${serverUrl} in main window`);
+                mainWindow.loadURL(serverUrl).catch(err => {
+                  log.error(`Error loading URL in window: ${err.message}`);
+                });
+              }
+            }
+          }, 2000); // Short delay to check if more direct ready messages come
         }
       });
 
       serverProcess.stderr.on('data', (data) => {
         const output = data.toString().trim();
         log.error(`Server stderr: ${output}`);
+        
+        // Check for port in use error
+        if (output.includes('Address already in use') || output.includes('Port 8000 is in use')) {
+          log.warn('Detected server port conflict');
+          
+          // Kill current process
+          if (serverProcess) {
+            serverProcess.kill();
+          }
+          
+          // Auto find a new port and try again
+          if (serverStartAttempts < MAX_SERVER_START_ATTEMPTS) {
+            findFreePort(serverPort + 1).then(newPort => {
+              log.info(`Found new free port: ${newPort}`);
+              serverPort = newPort;
+              serverUrl = `http://localhost:${serverPort}`;
+              
+              // Restart server with new port
+              setTimeout(startServer, 1000);
+            }).catch(err => {
+              log.error(`Failed to find free port: ${err.message}`);
+            });
+          }
+          return;
+        }
         
         // Look for common error patterns in stderr
         if (output.includes('ImportError') || output.includes('ModuleNotFoundError')) {
@@ -840,92 +991,171 @@ async function startServer() {
             // Special handling for annzarro modules
             if (missingModule.startsWith('annzarro.')) {
               log.error(`Package structure issue detected with: ${missingModule}`);
-              log.info('This is likely a packaging problem rather than a missing dependency');
+              log.info('This is a packaging problem rather than a missing dependency');
               
-              // Create symbolic link in the venv site-packages to help with imports
+              // Create enhanced path and symlinks to help with imports
               if (serverStartAttempts <= 2) {
                 try {
-                  // Check if we have a venv to work with
-                  const venvPath = app.isPackaged
-                    ? path.join(app.getPath('userData'), 'python_venv')
-                    : path.join(__dirname, 'python_venv');
+                  // First check if module exists in resources directory
+                  const moduleDir = missingModule.split('.');
+                  const modulePath = path.join(appPath, ...moduleDir);
+                  const parentPath = path.dirname(modulePath);
                   
-                  // Find the actual site-packages directory (may have Python version in path)
-                  let sitePackagesDir = '';
-                  if (process.platform === 'win32') {
-                    sitePackagesDir = path.join(venvPath, 'lib', 'site-packages');
-                  } else {
-                    // Try to find actual site-packages directory 
-                    const libDir = path.join(venvPath, 'lib');
-                    if (fs.existsSync(libDir)) {
-                      const libContents = fs.readdirSync(libDir);
-                      const pythonDirs = libContents.filter(item => item.startsWith('python'));
-                      if (pythonDirs.length > 0) {
-                        // Use the first python directory found
-                        sitePackagesDir = path.join(libDir, pythonDirs[0], 'site-packages');
-                      }
-                    }
-                  }
+                  log.info(`Checking for module directory at: ${parentPath}`);
                   
-                  // If we found site-packages directory, create an annzarro link there
-                  if (sitePackagesDir && fs.existsSync(sitePackagesDir)) {
-                    // Create annzarro.pth file for Python path configuration
-                    const pthFilePath = path.join(sitePackagesDir, 'annzarro.pth');
-                    fs.writeFileSync(pthFilePath, appPath);
-                    log.info(`Created Python path file at: ${pthFilePath} pointing to ${appPath}`);
+                  if (fs.existsSync(parentPath)) {
+                    log.info(`Found parent module directory: ${parentPath}`);
                     
-                    // Also create an annzarro directory symlink/copy if it doesn't exist
-                    const annzarroLinkPath = path.join(sitePackagesDir, 'annzarro');
-                    if (!fs.existsSync(annzarroLinkPath)) {
-                      if (app.isPackaged) {
-                        // In packaged app, create a symbolic link if possible
-                        try {
-                          const targetPath = path.join(appPath, 'annzarro');
-                          if (process.platform === 'win32') {
-                            // On Windows we might need to copy the directory instead
-                            // of creating a symlink due to permission issues
-                            log.info(`Creating directory copy from ${targetPath} to ${annzarroLinkPath}`);
-                            fs.mkdirSync(annzarroLinkPath, { recursive: true });
-                          } else {
-                            // On Unix systems, create a symlink
-                            log.info(`Creating symbolic link from ${targetPath} to ${annzarroLinkPath}`);
-                            fs.symlinkSync(targetPath, annzarroLinkPath, 'dir');
+                    // Create an enhanced PYTHONPATH environment variable
+                    const pythonPaths = [
+                      appPath,
+                      process.resourcesPath,
+                      path.join(process.resourcesPath, 'app'),
+                      path.join(process.resourcesPath, 'app', 'annzarro')
+                    ];
+                    
+                    // Check if we have a venv to work with
+                    const venvPath = app.isPackaged
+                      ? path.join(app.getPath('userData'), 'python_venv')
+                      : path.join(__dirname, 'python_venv');
+                    
+                    if (fs.existsSync(venvPath)) {
+                      // Find all possible site-packages directories
+                      const sitePackagesDirs = [];
+                      
+                      if (process.platform === 'win32') {
+                        // Windows paths
+                        sitePackagesDirs.push(
+                          path.join(venvPath, 'Lib', 'site-packages'),
+                          path.join(venvPath, 'lib', 'site-packages')
+                        );
+                      } else {
+                        // Unix paths - try all possible Python versions
+                        const libDir = path.join(venvPath, 'lib');
+                        if (fs.existsSync(libDir)) {
+                          const libContents = fs.readdirSync(libDir);
+                          const pythonDirs = libContents.filter(item => item.startsWith('python'));
+                          
+                          // Add all Python version site-packages
+                          for (const pyDir of pythonDirs) {
+                            sitePackagesDirs.push(path.join(libDir, pyDir, 'site-packages'));
                           }
-                        } catch (linkErr) {
-                          log.error(`Error creating annzarro symlink: ${linkErr.message}`);
+                          
+                          // Fallback to guessing versions if none found
+                          if (pythonDirs.length === 0) {
+                            for (let i = 7; i <= 12; i++) {
+                              sitePackagesDirs.push(path.join(libDir, `python3.${i}`, 'site-packages'));
+                            }
+                          }
                         }
                       }
+                      
+                      // Add site-packages directories to Python paths
+                      pythonPaths.push(...sitePackagesDirs);
+                      
+                      // Create .pth files in all site-packages directories
+                      for (const sitePackagesDir of sitePackagesDirs) {
+                        if (fs.existsSync(sitePackagesDir)) {
+                          // Create path file first
+                          const pthFilePath = path.join(sitePackagesDir, 'annzarro_app.pth');
+                          fs.writeFileSync(pthFilePath, appPath);
+                          log.info(`Created Python path file at: ${pthFilePath}`);
+                          
+                          // Create symbolic links/directory copies for important modules
+                          const moduleDirs = ['data', 'core', 'server', 'utils'];
+                          
+                          // Create main annzarro directory
+                          const annzarroLinkPath = path.join(sitePackagesDir, 'annzarro');
+                          if (!fs.existsSync(annzarroLinkPath)) {
+                            try {
+                              fs.mkdirSync(annzarroLinkPath, { recursive: true });
+                              log.info(`Created annzarro package directory at ${annzarroLinkPath}`);
+                              
+                              // Create __init__.py
+                              fs.writeFileSync(path.join(annzarroLinkPath, '__init__.py'), '');
+                              
+                              // Create subdirectories with links/copies
+                              for (const dir of moduleDirs) {
+                                const targetPath = path.join(appPath, 'annzarro', dir);
+                                const linkPath = path.join(annzarroLinkPath, dir);
+                                
+                                if (fs.existsSync(targetPath) && !fs.existsSync(linkPath)) {
+                                  // For Windows, copy files instead of symlinking
+                                  if (process.platform === 'win32') {
+                                    fs.mkdirSync(linkPath, { recursive: true });
+                                    
+                                    // Copy __init__.py and other essential files
+                                    const initPyPath = path.join(targetPath, '__init__.py');
+                                    if (fs.existsSync(initPyPath)) {
+                                      fs.copyFileSync(initPyPath, path.join(linkPath, '__init__.py'));
+                                    } else {
+                                      fs.writeFileSync(path.join(linkPath, '__init__.py'), '');
+                                    }
+                                    
+                                    // Copy key implementation files
+                                    if (dir === 'data') {
+                                      const managerPath = path.join(targetPath, 'manager.py');
+                                      if (fs.existsSync(managerPath)) {
+                                        fs.copyFileSync(managerPath, path.join(linkPath, 'manager.py'));
+                                      }
+                                    }
+                                  } else {
+                                    // On Unix, symlink the whole directory
+                                    try {
+                                      fs.symlinkSync(targetPath, linkPath, 'dir');
+                                      log.info(`Created symbolic link from ${targetPath} to ${linkPath}`);
+                                    } catch (linkErr) {
+                                      log.error(`Error creating symlink: ${linkErr.message}`);
+                                      
+                                      // If symlink fails, try directory copy instead
+                                      fs.mkdirSync(linkPath, { recursive: true });
+                                      const initPyPath = path.join(targetPath, '__init__.py');
+                                      if (fs.existsSync(initPyPath)) {
+                                        fs.copyFileSync(initPyPath, path.join(linkPath, '__init__.py'));
+                                      } else {
+                                        fs.writeFileSync(path.join(linkPath, '__init__.py'), '');
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            } catch (dirErr) {
+                              log.error(`Error creating module directories: ${dirErr.message}`);
+                            }
+                          }
+                        }
+                      }
+                    } else {
+                      log.error(`No virtual environment found at: ${venvPath}`);
                     }
                   } else {
-                    log.error(`Could not find site-packages directory in: ${venvPath}`);
+                    log.error(`Parent module directory not found: ${parentPath}`);
                   }
                 } catch (err) {
-                  log.error(`Error creating module symlink: ${err.message}`);
+                  log.error(`Error creating module symlinks: ${err.message}`);
                 }
                 
                 // Kill the process so it restarts with updated path
                 if (serverProcess) {
+                  log.info('Restarting server process with improved path configuration');
                   serverProcess.kill();
                 }
               }
             } else {
-              // Standard missing dependency - install it
+              // Standard missing dependency
               if (serverStartAttempts <= 2) {
-                log.info(`Attempting to install missing module: ${missingModule}`);
-                const pipProcess = spawn(pythonExecutable, ['-m', 'pip', 'install', missingModule], {
-                  stdio: ['ignore', 'pipe', 'pipe']
-                });
+                log.info(`Missing module detected: ${missingModule}`);
+                log.info('Restarting server with full dependency check...');
                 
-                pipProcess.on('close', (code) => {
-                  if (code === 0) {
-                    log.info(`Successfully installed ${missingModule}`);
-                    // Kill the server process so it can be restarted
-                    if (serverProcess) {
-                      serverProcess.kill();
-                    }
-                  } else {
-                    log.error(`Failed to install ${missingModule}, exit code: ${code}`);
+                // Instead of installing individual modules, run the full installer
+                // which will handle all dependencies including this one
+                installDependencies().then(() => {
+                  // Restart the server after dependencies are installed
+                  if (serverProcess) {
+                    serverProcess.kill();
                   }
+                }).catch(err => {
+                  log.error(`Failed to install dependencies: ${err.message}`);
                 });
               }
             }
@@ -983,15 +1213,16 @@ async function startServer() {
         setTimeout(startServer, 1000);
       }
     }
-  } catch (err) {
-    log.error(`Error checking port: ${err.message}`);
-    // Try to start the server anyway
-    startServer();
-  }
 }
 
 // Stop the server gracefully
 function stopServer() {
+  // Don't try to stop externally managed servers
+  if (isServerExternallyManaged) {
+    log.info('Server is externally managed, not stopping');
+    return Promise.resolve();
+  }
+  
   if (!serverProcess) {
     log.info('No server process to stop');
     return Promise.resolve();
@@ -1000,12 +1231,50 @@ function stopServer() {
   log.info('Stopping server...');
   
   return new Promise((resolve) => {
-    // Try to stop the server gracefully first
-    const stopArgs = ['-m', 'annzarro.cli', 'stop'];
-    const stopProcess = spawn(pythonExecutable, stopArgs, {
-      cwd: appPath,
-      env: process.env
-    });
+    // Try to stop the server gracefully 
+    const venvPath = path.join(app.getPath('userData'), 'python_venv');
+    const cliPath = path.join(appPath, 'annzarro-cli');
+    
+    // Check if CLI exists
+    const cliExists = fs.existsSync(cliPath);
+    
+    // Execute the stop command
+    let stopProcess;
+    
+    if (cliExists) {
+      log.info("Using CLI to stop server");
+      // Add venv path to ensure the CLI uses the correct environment
+      const stopArgs = ['--venv-path', venvPath, 'stop'];
+      
+      // Execute the CLI directly or through Python depending on platform
+      if (process.platform === 'win32') {
+        // On Windows, use Python to run the CLI
+        stopProcess = spawn(pythonExecutable, [cliPath, ...stopArgs], {
+          cwd: appPath,
+          env: process.env
+        });
+      } else {
+        // On Unix, execute the CLI script directly
+        // Ensure the CLI script is executable
+        try {
+          fs.chmodSync(cliPath, 0o755);
+        } catch (err) {
+          log.error(`Failed to make CLI executable: ${err.message}`);
+        }
+        
+        stopProcess = spawn(cliPath, stopArgs, {
+          cwd: appPath,
+          env: process.env
+        });
+      }
+    } else {
+      log.warn("CLI not found, using direct Python execution to stop server");
+      // Fall back to direct Python execution
+      stopProcess = spawn(pythonExecutable, ['-m', 'annzarro.cli', 'stop'], {
+        cwd: appPath,
+        env: process.env
+      });
+    }
     
     // Set timeout for force kill if graceful stop fails
     const forceKillTimeout = setTimeout(() => {
@@ -1013,6 +1282,7 @@ function stopServer() {
       if (serverProcess) {
         serverProcess.kill('SIGKILL');
       }
+      serverProcess = null;
       resolve();
     }, 5000);
     
@@ -1036,6 +1306,45 @@ function stopServer() {
   });
 }
 
+// Check if port is in use
+function checkPortInUse(port) {
+  return new Promise((resolve) => {
+    const net = require('net');
+    const tester = net.createServer()
+      .once('error', err => {
+        // If we get EADDRINUSE, the port is in use
+        if (err.code === 'EADDRINUSE') {
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      })
+      .once('listening', () => {
+        // If we can listen, the port is free
+        tester.once('close', () => resolve(false))
+          .close();
+      })
+      .listen(port, 'localhost');
+  });
+}
+
+// Find a free port starting from the given number
+async function findFreePort(startPort) {
+  let port = startPort;
+  const maxPort = startPort + 20; // Try up to 20 ports
+  
+  while (port < maxPort) {
+    const inUse = await checkPortInUse(port);
+    if (!inUse) {
+      return port;
+    }
+    port++;
+  }
+  
+  // If we couldn't find a free port, return the original
+  return startPort;
+}
+
 // Wait for server to be ready
 function waitForServerReady(attempts = 0, maxAttempts = 30, interval = 500) {
   return new Promise((resolve, reject) => {
@@ -1045,7 +1354,22 @@ function waitForServerReady(attempts = 0, maxAttempts = 30, interval = 500) {
     }
     
     if (attempts >= maxAttempts) {
-      reject(new Error('Server failed to start within the timeout period'));
+      // Before rejecting, check if a server is actually running on the port
+      checkPortInUse(serverPort)
+        .then(isInUse => {
+          if (isInUse) {
+            // If port is in use, consider it an external server and mark ready
+            log.info(`Server is running on port ${serverPort}, considering it ready`);
+            isServerExternallyManaged = true;
+            isServerReady = true;
+            resolve();
+          } else {
+            reject(new Error('Server failed to start within the timeout period'));
+          }
+        })
+        .catch(() => {
+          reject(new Error('Server failed to start within the timeout period'));
+        });
       return;
     }
     
@@ -1108,6 +1432,25 @@ function createWindow() {
   // Event listeners for the window
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+  
+  // Handle window close event - stop server when window is closed
+  mainWindow.on('close', async (e) => {
+    if (serverProcess && !app.isQuitting) {
+      // Prevent the window from closing until server is stopped
+      e.preventDefault();
+      
+      log.info('Window closing - stopping server');
+      try {
+        await stopServer();
+        // Now close the window
+        mainWindow.destroy();
+      } catch (err) {
+        log.error(`Error stopping server on window close: ${err.message}`);
+        // Force close anyway
+        mainWindow.destroy();
+      }
+    }
   });
   
   mainWindow.on('ready-to-show', () => {
@@ -1310,8 +1653,8 @@ app.on('before-quit', async (event) => {
     // Ignore errors when disabling logging
   }
   
-  // If server is running, prevent quit and stop server first
-  if (serverProcess) {
+  // If server is running and not externally managed, stop it before quitting
+  if (serverProcess && !isServerExternallyManaged) {
     event.preventDefault();
     
     try {
@@ -1322,6 +1665,8 @@ app.on('before-quit', async (event) => {
       console.error(`Error stopping server: ${err.message}`);
       app.exit(1); // Force exit if there was an error
     }
+  } else if (isServerExternallyManaged) {
+    log.info('Not stopping externally managed server on exit');
   }
 });
 

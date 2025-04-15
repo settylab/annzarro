@@ -142,17 +142,23 @@ def install_dependencies(args):
         if not os.path.exists(extras_file):
             logger.info(f"Creating extras requirements file: {extras_file}")
             with open(extras_file, 'w') as f:
-                f.write("""scipy>=1.8.0  # Includes sparse matrices
-scikit-learn>=1.0.0
-h5py>=3.6.0
-plotly>=5.6.0
-seaborn>=0.11.2
-scanpy>=1.9.0
-statsmodels>=0.13.0
-umap-learn>=0.5.3
-numba>=0.55.0
-pandas>=1.4.0
-anndata>=0.8.0
+                f.write("""# Essential computational libraries
+scipy>=1.8.0          # For sparse matrices and scientific computing
+fsspec>=2022.1.0      # Filesystem interfaces
+dask>=2022.1.0        # Parallel processing
+h5py>=3.6.0           # HDF5 file support
+plotly>=5.6.0         # Interactive visualization
+
+# S3 and remote storage support
+s3fs>=2022.1.0        # S3 bucket access
+
+# The following are optional and can be commented out if not needed
+# scikit-learn>=1.0.0  # Machine learning algorithms 
+# umap-learn>=0.5.3    # Dimensionality reduction
+# seaborn>=0.11.2      # Statistical visualizations
+# scanpy>=1.9.0        # Single-cell analysis
+# statsmodels>=0.13.0  # Statistical models
+# anndata>=0.8.0       # AnnData format support
 """)
                 
         # Include extras unless specifically excluded
