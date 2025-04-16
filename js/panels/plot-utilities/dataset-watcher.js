@@ -2,7 +2,6 @@
  * Dataset watcher module
  * Provides utilities for panels to handle dataset loading/changing
  */
-import { DataManager } from '../../data-manager.js';
 import { checkDatasetLoadingStatus } from './panel-ui-make.js';
 
 /**

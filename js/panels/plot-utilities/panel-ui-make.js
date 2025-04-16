@@ -69,10 +69,14 @@ export function createPanelStructure(container, id, settings) {
           <div class="axis-selector-label">${axis.toUpperCase()}-Axis</div>
           <div class="axis-selector">
             <select class="form-select form-select-sm axis-type-select" data-axis="${axis}" id="${axis}-type-select-${id}">
-              <!-- Options will be set based on plot type -->
+              <option value="">Loading...</option>
             </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="${axis}"></select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="${axis}"></select>
+            <select class="form-select form-select-sm axis-key-select" data-axis="${axis}" disabled>
+              <option value="">Loading...</option>
+            </select>
+            <select class="form-select form-select-sm axis-column-select" data-axis="${axis}" disabled>
+              <option value="">Loading...</option>
+            </select>
           </div>
         </div>
         `).join('')}
@@ -82,10 +86,14 @@ export function createPanelStructure(container, id, settings) {
           <div class="axis-selector-label">Z-Axis (3D)</div>
           <div class="axis-selector">
             <select class="form-select form-select-sm axis-type-select" data-axis="z" id="z-type-select-${id}">
-              <!-- Options will be set based on plot type -->
+              <option value="">Loading...</option>
             </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="z"></select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="z"></select>
+            <select class="form-select form-select-sm axis-key-select" data-axis="z" disabled>
+              <option value="">Loading...</option>
+            </select>
+            <select class="form-select form-select-sm axis-column-select" data-axis="z" disabled>
+              <option value="">Loading...</option>
+            </select>
           </div>
         </div>
 
@@ -94,11 +102,16 @@ export function createPanelStructure(container, id, settings) {
           <div class="axis-selector-label">Color</div>
           <div class="axis-selector">
             <select class="form-select form-select-sm axis-type-select" data-axis="color" id="color-type-select-${id}">
+              <option value="">Loading...</option>
               <option value="none">None (constant)</option>
               <!-- Other options will be set based on plot type -->
             </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="color"></select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="color"></select>
+            <select class="form-select form-select-sm axis-key-select" data-axis="color" disabled>
+              <option value="">Loading...</option>
+            </select>
+            <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
+              <option value="">Loading...</option>
+            </select>
           </div>
 
           <div class="color-options mt-2">
@@ -126,11 +139,13 @@ export function createPanelStructure(container, id, settings) {
                 <label id="numerical-color-label-${id}" class="numerical-color-label me-2 mb-0">Color Map:</label>
                 <label id="categorical-color-label-${id}" class="categorical-color-label me-2 mb-0" style="display:none;">Color Palette:</label>
                 <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${id}">
+                  <option value="">Loading color scales...</option>
                   ${COLOR_SCALES.map(scale => `
                     <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
                   `).join('')}
                 </select>
                 <select class="form-select form-select-sm category-palette-selector flex-grow-1" id="category-palette-${id}" style="display:none;">
+                  <option value="">Loading palettes...</option>
                   <!-- Options populated by external logic -->
                 </select>
               </div>
@@ -189,7 +204,8 @@ export function createPanelStructure(container, id, settings) {
 export function checkDatasetLoadingStatus(id) {
   const isDatasetLoaded = DataManager.isDatasetLoaded();
   const loadingScreen = document.getElementById(`loading-screen-${id}`);
-  const controlsContainer = document.querySelector(`#plot-container-${id}`).closest('.plot-panel').querySelector('.plot-controls');
+  const plotPanel = document.querySelector(`#plot-container-${id}`).closest('.plot-panel');
+  const controlsContainer = plotPanel?.querySelector('.plot-controls');
   
   if (loadingScreen) {
     loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
@@ -197,6 +213,45 @@ export function checkDatasetLoadingStatus(id) {
   
   if (controlsContainer) {
     controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
+  }
+  
+  // Also update the loading status of all select elements
+  if (plotPanel) {
+    const selects = plotPanel.querySelectorAll('select');
+    selects.forEach(select => {
+      if (!isDatasetLoaded) {
+        if (!select.disabled) {
+          select.disabled = true;
+          
+          // If the select doesn't have a loading option yet, add one
+          if (select.options.length === 0 || select.options[0].value !== '' || select.options[0].text !== 'Loading...') {
+            const loadingOption = document.createElement('option');
+            loadingOption.value = '';
+            loadingOption.text = 'Loading...';
+            select.insertBefore(loadingOption, select.firstChild);
+            select.value = '';
+          }
+        }
+      }
+    });
+    
+    // Disable buttons when dataset is not loaded
+    const buttons = plotPanel.querySelectorAll('button');
+    buttons.forEach(button => {
+      button.disabled = !isDatasetLoaded;
+    });
+    
+    // Disable range inputs when dataset is not loaded
+    const rangeInputs = plotPanel.querySelectorAll('input[type="range"]');
+    rangeInputs.forEach(input => {
+      input.disabled = !isDatasetLoaded;
+    });
+    
+    // Disable number inputs when dataset is not loaded
+    const numberInputs = plotPanel.querySelectorAll('input[type="number"]');
+    numberInputs.forEach(input => {
+      input.disabled = !isDatasetLoaded;
+    });
   }
   
   return isDatasetLoaded;

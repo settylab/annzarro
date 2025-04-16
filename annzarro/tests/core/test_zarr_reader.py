@@ -875,6 +875,40 @@ class TestZarrReader(unittest.TestCase):
         with self.assertRaises(Exception):
             self.reader.open_dataset_by_path('/nonexistent/path')
             
+    def test_get_basic_counts(self):
+        """Test getting just the cell and gene counts without full metadata extraction."""
+        # Get the basic counts
+        counts = self.reader.get_basic_counts(self.zarr_path)
+        
+        # Verify we got the correct counts
+        self.assertEqual(counts['cell_count'], 100)
+        self.assertEqual(counts['gene_count'], 50)
+        
+        # Try with a non-existent path
+        with self.assertRaises(Exception):
+            self.reader.get_basic_counts('/nonexistent/path')
+            
+        # Create a zarr store without obs/_index
+        incomplete_path = os.path.join(self.temp_dir.name, 'incomplete.zarr')
+        incomplete_root = zarr.open_group(incomplete_path, mode='w')
+        
+        # Add just X without obs/var
+        X = np.random.rand(80, 40).astype('float32')
+        incomplete_root.create_dataset('X', data=X)
+        
+        # Get counts from X shape
+        counts = self.reader.get_basic_counts(incomplete_path)
+        self.assertEqual(counts['cell_count'], 80)
+        self.assertEqual(counts['gene_count'], 40)
+        
+        # Create an empty zarr store
+        empty_path = os.path.join(self.temp_dir.name, 'empty.zarr')
+        zarr.open_group(empty_path, mode='w')
+        
+        # Should raise an error for invalid AnnData structure
+        with self.assertRaises(ValueError):
+            self.reader.get_basic_counts(empty_path)
+            
     def test_stateless_multi_access(self):
         """Test stateless access to multiple datasets without interference."""
         # Create a second zarr file with different data
