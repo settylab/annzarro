@@ -441,16 +441,20 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
 
   // If centering is active, update the UI accordingly and apply centering.
   if (settings.centeringActive) {
-    csCenterColormapButton.classList.add('active', 'btn-primary');
-    csCenterColormapButton.classList.remove('btn-outline-secondary');
-    csCenterColormapButton.setAttribute('title', 'Centering active - click to disable');
+    if (csCenterColormapButton) {
+      csCenterColormapButton.classList.add('active', 'btn-primary');
+      csCenterColormapButton.classList.remove('btn-outline-secondary');
+      csCenterColormapButton.setAttribute('title', 'Centering active - click to disable');
+    }
     // Delegate the centering update to the applyCentering function.
     applyCentering(container, data, settings, id);
   } else {
     // Reset the center button appearance.
-    csCenterColormapButton.classList.remove('active', 'btn-primary');
-    csCenterColormapButton.classList.add('btn-outline-secondary');
-    csCenterColormapButton.setAttribute('title', 'Center color scale at 0');
+    if (csCenterColormapButton) {
+      csCenterColormapButton.classList.remove('active', 'btn-primary');
+      csCenterColormapButton.classList.add('btn-outline-secondary');
+      csCenterColormapButton.setAttribute('title', 'Center color scale at 0');
+    }
 
     if (csColorMinSlider && csColorMaxSlider && data && data.color && Array.isArray(data.color)) {
       const validValues = data.color.filter(v => !isNaN(v));
