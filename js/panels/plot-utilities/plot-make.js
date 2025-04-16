@@ -575,7 +575,51 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
   } catch (error) {
     console.error('Error loading plot data:', error);
-    plotContainer.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+    
+    // Create a more detailed error message
+    let errorDetails = '';
+    
+    // Check if the error is related to a specific axis
+    if (error.message && error.message.includes('Failed to load data for')) {
+      // Extract the axis information
+      const axisInfo = error.message.match(/\((.*?)\)/);
+      if (axisInfo && axisInfo[1]) {
+        const [type, key, column] = axisInfo[1].split('.');
+        
+        // Create a more user-friendly error message
+        if (type && key) {
+          errorDetails = `<br><br><strong>Failed data:</strong> ${type} "${key}"`;
+          if (column) {
+            errorDetails += `, column "${column}"`;
+          }
+          
+          // Add potential solutions based on the error type
+          errorDetails += '<br><br><strong>Possible solutions:</strong><ul>';
+          
+          if (type === 'layer') {
+            errorDetails += '<li>Check if the selected layer exists in the dataset</li>';
+            errorDetails += '<li>Verify that the specified cell/gene is valid</li>';
+          } else if (type === 'obsm' || type === 'varm') {
+            errorDetails += '<li>Check if the embedding or reduction exists</li>';
+            errorDetails += '<li>Verify that the column index or name is valid</li>';
+          } else if (type === 'obsp' || type === 'varp') {
+            errorDetails += '<li>Check if the connectivity matrix exists</li>';
+            errorDetails += '<li>Ensure a cell/gene is focused before using this data type</li>';
+          } else if (type === 'obs' || type === 'var') {
+            errorDetails += '<li>Check if the column name exists in the obs/var table</li>';
+          }
+          
+          errorDetails += '</ul>';
+        }
+      }
+    }
+    
+    plotContainer.innerHTML = `
+      <div class="alert alert-danger">
+        <h5>Error loading data</h5>
+        <p>${error.message}</p>
+        ${errorDetails}
+      </div>`;
   } finally {
     // Hide the loading indicator when all is done
     loadingIndicator.hide(plotContainer, 'full-plot');
