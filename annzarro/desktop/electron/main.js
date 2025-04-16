@@ -1492,7 +1492,20 @@ app.on('before-quit', async (event) => {
     isQuitting = true;
     
     // Log the quit attempt
-    log.info('Application quit requested, ensuring server shutdown...');
+    log.info('Application quit requested, ensuring frontend autosave and server shutdown...');
+    
+    // Notify the renderer process to perform autosave
+    try {
+        if (mainWindow && mainWindow.webContents) {
+            log.info('Sending will-quit event to renderer for autosave');
+            mainWindow.webContents.send('app:will-quit');
+            
+            // Give frontend time to save (500ms)
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    } catch (e) {
+        log.error('Error sending autosave notification to renderer:', e);
+    }
     
     // Stop the server with a timeout safety
     const serverStopPromise = stopServer();

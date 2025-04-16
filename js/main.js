@@ -1959,6 +1959,20 @@ const App = (function() {
 document.addEventListener('DOMContentLoaded', () => {
     // Start initialization immediately since we're using modules
     App.init();
+    
+    // Register for app close events if in Electron environment
+    if (window.api && typeof window.api.onWillQuit === 'function') {
+        window.api.onWillQuit(async () => {
+            console.log('Application closing - triggering final autosave');
+            try {
+                // Force immediate autosave
+                await SessionManager.saveToLocalStorage();
+                console.log('Final autosave completed successfully');
+            } catch (e) {
+                console.error('Error during final autosave:', e);
+            }
+        });
+    }
 });
 
 // Export the module
