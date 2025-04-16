@@ -154,7 +154,7 @@ tmp-win32-*/
 
 # Authentication files with sensitive information
 annzarro/server/users.json
-data/auth/*.json
+/data
 auth/*.json
 .auth/
 *.auth

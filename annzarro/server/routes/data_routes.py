@@ -1213,9 +1213,26 @@ def register_data_routes(app, api_version):
             for entry in os.listdir(directory_path):
                 entry_path = os.path.join(directory_path, entry)
                 
-                # Check if it's a zarr store (directory with .zarr extension or contains a .zgroup file)
-                is_zarr = (os.path.isdir(entry_path) and entry.endswith(".zarr")) or \
-                          (os.path.isdir(entry_path) and os.path.exists(os.path.join(entry_path, ".zgroup")))
+                # Skip if not a directory
+                if not os.path.isdir(entry_path):
+                    continue
+                
+                # Enhanced zarr store detection
+                is_zarr = False
+                
+                # 1. Check for .zarr extension
+                if entry.endswith(".zarr"):
+                    is_zarr = True
+                # 2. Check for .zgroup file (standard zarr marker)
+                elif os.path.exists(os.path.join(entry_path, ".zgroup")):
+                    is_zarr = True
+                # 3. Check for .zarray file (used in some zarr stores)
+                elif os.path.exists(os.path.join(entry_path, ".zarray")):
+                    is_zarr = True
+                # 4. Check for zarr subdir structure (X, obs, var, obsm, layers are common)
+                elif any(os.path.exists(os.path.join(entry_path, subdir)) 
+                        for subdir in ["X", "obs", "var", "obsm", "layers"]):
+                    is_zarr = True
                 
                 if is_zarr:
                     # Try to get some basic info about the zarr store
@@ -1237,7 +1254,7 @@ def register_data_routes(app, api_version):
                         "cells": cells,
                         "genes": genes
                     })
-                elif os.path.isdir(entry_path):
+                else:
                     # It's a regular directory
                     directories.append({
                         "name": entry,
@@ -1270,51 +1287,67 @@ def register_data_routes(app, api_version):
             # Get data directory from config
             data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
             
-            # Find zarr stores recursively (limited depth)
+            # Only search in the "datasets" subdirectory if it exists
+            datasets_dir = os.path.join(data_dir, "datasets")
+            if not os.path.exists(datasets_dir) or not os.path.isdir(datasets_dir):
+                datasets_dir = data_dir
+            
+            # List for storing zarr datasets
             zarr_stores = []
-            max_depth = 3  # Limit recursive search to 3 levels deep
             
-            def find_zarr_stores(directory, current_depth=0):
-                if current_depth > max_depth:
-                    return
-                
-                try:
-                    for entry in os.listdir(directory):
-                        entry_path = os.path.join(directory, entry)
+            try:
+                # Only search the first level of the datasets directory
+                for entry in os.listdir(datasets_dir):
+                    entry_path = os.path.join(datasets_dir, entry)
+                    
+                    # Skip hidden files and directories
+                    if entry.startswith('.'):
+                        continue
+                    
+                    # Skip if not a directory
+                    if not os.path.isdir(entry_path):
+                        continue
+                    
+                    # Enhanced zarr store detection
+                    is_zarr = False
+                    
+                    # 1. Check for .zarr extension
+                    if entry.endswith(".zarr"):
+                        is_zarr = True
+                    # 2. Check for .zgroup file (standard zarr marker)
+                    elif os.path.exists(os.path.join(entry_path, ".zgroup")):
+                        is_zarr = True
+                    # 3. Check for .zarray file (used in some zarr stores)
+                    elif os.path.exists(os.path.join(entry_path, ".zarray")):
+                        is_zarr = True
+                    # 4. Check for zarr subdir structure (X, obs, var, obsm, layers are common)
+                    elif any(os.path.exists(os.path.join(entry_path, subdir)) 
+                            for subdir in ["X", "obs", "var", "obsm", "layers"]):
+                        is_zarr = True
                         
-                        # Check if it's a zarr store
-                        is_zarr = (os.path.isdir(entry_path) and entry.endswith(".zarr")) or \
-                                  (os.path.isdir(entry_path) and os.path.exists(os.path.join(entry_path, ".zgroup")))
+                    if is_zarr:
+                        # Try to get basic info about the zarr store
+                        try:
+                            # Try to open the zarr store to get shape information
+                            _, metadata = zarr_reader.open_dataset_by_path(entry_path)
+                            shape = metadata.get('shape', (0, 0))
+                            cells = shape[0] if len(shape) > 0 else 0
+                            genes = shape[1] if len(shape) > 1 else 0
+                        except Exception:
+                            # If we can't open the zarr store, just include basic info
+                            cells = 0
+                            genes = 0
                         
-                        if is_zarr:
-                            # Try to get some basic info about the zarr store
-                            try:
-                                # Try to open the zarr store to get shape information
-                                _, metadata = zarr_reader.open_dataset_by_path(entry_path)
-                                shape = metadata.get('shape', (0, 0))
-                                cells = shape[0] if len(shape) > 0 else 0
-                                genes = shape[1] if len(shape) > 1 else 0
-                            except Exception:
-                                # If we can't open the zarr store, just include basic info
-                                cells = 0
-                                genes = 0
-                            
-                            zarr_stores.append({
-                                "name": entry,
-                                "path": entry_path,
-                                "is_link": os.path.islink(entry_path),
-                                "cells": cells,
-                                "genes": genes,
-                                "rel_path": os.path.relpath(entry_path, data_dir)
-                            })
-                        elif os.path.isdir(entry_path) and not entry.startswith('.'):
-                            # Recursively search subdirectories
-                            find_zarr_stores(entry_path, current_depth + 1)
-                except Exception as e:
-                    logger.warning(f"Error listing directory {directory}: {e}")
-            
-            # Start recursive search
-            find_zarr_stores(data_dir)
+                        zarr_stores.append({
+                            "name": entry,
+                            "path": entry_path,
+                            "is_link": os.path.islink(entry_path),
+                            "cells": cells,
+                            "genes": genes,
+                            "rel_path": os.path.relpath(entry_path, data_dir)
+                        })
+            except Exception as e:
+                logger.warning(f"Error listing directory {datasets_dir}: {e}")
             
             # Sort datasets by name
             zarr_stores.sort(key=lambda x: x["name"])
