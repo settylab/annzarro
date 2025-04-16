@@ -334,59 +334,6 @@ const App = (function() {
         
         // No asynchronous sorting events
         
-        const taxonomyIdSelect = document.getElementById('taxonomy-id');
-        if (taxonomyIdSelect) {
-            // Populate options from Config.DEFAULTS.TAXONOMY_SPECIES
-            taxonomyIdSelect.innerHTML = '';
-            Object.entries(Config.DEFAULTS.TAXONOMY_SPECIES).forEach(([id, species]) => {
-                const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${id} (${species})`;
-                // Set selected if it matches the default taxonomy ID
-                if (id === Config.DEFAULTS.TAXONOMY_ID) {
-                    option.selected = true;
-                }
-                taxonomyIdSelect.appendChild(option);
-            });
-            
-            // Add the ability to enter custom value using Select2
-            if (window.$ && $.fn.select2) {
-                $(taxonomyIdSelect).select2({
-                    tags: true, // Allow custom values
-                    placeholder: 'Select or enter a taxonomy ID',
-                    width: '100%',
-                    createTag: function(params) {
-                        // Only create new options for numeric values that look like taxonomy IDs
-                        const term = params.term.trim();
-                        if (!term || !/^\d+$/.test(term)) {
-                            return null;
-                        }
-                        
-                        return {
-                            id: term,
-                            text: `${term} (Custom)`,
-                            newTag: true
-                        };
-                    }
-                });
-                
-                // Make sure select2 change events also trigger our taxonomy ID update
-                $(taxonomyIdSelect).on('select2:select', function(e) {
-                    const taxonomyId = e.params.data.id;
-                    if (taxonomyId) {
-                        DataManager.setTaxonomyId(taxonomyId);
-                    }
-                });
-            }
-            
-            // Handle regular change event for non-select2 fallback
-            taxonomyIdSelect.addEventListener('change', (e) => {
-                const taxonomyId = e.target.value;
-                if (taxonomyId) {
-                    DataManager.setTaxonomyId(taxonomyId);
-                }
-            });
-        }
         
         // Setup session modal buttons
         const confirmSessionBtn = document.getElementById('btn-confirm-session');
@@ -569,12 +516,12 @@ const App = (function() {
                         placeholder: 'Start typing to search for a gene...',
                         allowClear: false, // Don't allow clearing the selection
                         data: genes.map(gene => ({ id: gene, text: gene })),
-                        width: '100%',
+                        width: '100%', // Set fixed width to parent container
+                        minimumResultsForSearch: 0, // Always show search box
                         dropdownCssClass: 'gene-select-dropdown',
-                        dropdownAutoWidth: true,
+                        dropdownAutoWidth: false, // Don't auto-adjust dropdown width
                         selectOnClose: false, // Don't select on close to preserve current selection
                         openOnEnter: false,
-                        minimumResultsForSearch: 0, // Always show search box
                         searchInputPlaceholder: 'Type to filter...',
                         closeOnSelect: false // Keep dropdown open after selecting
                     });
@@ -707,12 +654,12 @@ const App = (function() {
                         placeholder: 'Start typing to search for a cell...',
                         allowClear: false, // Don't allow clearing the selection
                         data: cells.map(cell => ({ id: cell, text: cell })),
-                        width: '100%',
+                        width: '100%', // Set fixed width to parent container
+                        minimumResultsForSearch: 0, // Always show search box
                         dropdownCssClass: 'cell-select-dropdown',
-                        dropdownAutoWidth: true,
+                        dropdownAutoWidth: false, // Don't auto-adjust dropdown width
                         selectOnClose: false, // Don't select on close to preserve current selection
                         openOnEnter: false,
-                        minimumResultsForSearch: 0, // Always show search box
                         searchInputPlaceholder: 'Type to filter...',
                         closeOnSelect: false // Keep dropdown open after selecting
                     });
