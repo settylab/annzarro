@@ -221,15 +221,21 @@ const SessionManager = (function() {
                         option.textContent = autosaveData.dataset;
                         option.selected = true;
                         datasetSelector.appendChild(option);
-                    } else {
-                        // Option exists, just set the value
-                        datasetSelector.value = autosaveData.dataset;
                     }
+                    // Option exists, just set the value
+                    datasetSelector.value = autosaveData.dataset;
                     
                     // If using Select2, update its UI
                     if (window.$ && $.fn.select2) {
-                        $(datasetSelector).trigger('change.select2');
+                        // Create proper event object with dataset value
+                        $(datasetSelector).trigger({
+                            type: 'select2:select',
+                            params: {
+                                data: {id: autosaveData.dataset}
+                            }
+                        });
                     }
+                    
                 }
                 
 

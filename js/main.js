@@ -176,7 +176,12 @@ const App = (function() {
                             if (window.$ && $.fn.select2 && $(datasetSelector).hasClass('select2-hidden-accessible')) {
                                 // Create or select option
                                 const newOption = new Option(selectedDir, selectedDir, true, true);
-                                $(datasetSelector).append(newOption).trigger('change');
+                                $(datasetSelector).append(newOption).trigger({
+                                    type: 'select2:select',
+                                    params: {
+                                        data: {id: selectedDir}
+                                    }
+                                });
                             } else {
                                 // Regular select
                                 datasetSelector.value = selectedDir;
@@ -420,7 +425,12 @@ const App = (function() {
                             $(datasetSelector).append(newOption);
                         }
                         
-                        $(datasetSelector).trigger('change');
+                        $(datasetSelector).trigger({
+                            type: 'select2:select',
+                            params: {
+                                data: {id: currentValue}
+                            }
+                        });
                     }
                 }
             }
