@@ -18,32 +18,57 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         break;
       }
       case 'obs': {
-        const columns = datasetStructure.obs?.columns || Object.keys(datasetStructure.obs || {});
+        let columns = datasetStructure.obs?.columns || Object.keys(datasetStructure.obs || {});
+        // Sort columns alphabetically if there are more than 10
+        if (columns.length > 10) {
+          columns = [...columns].sort((a, b) => a.localeCompare(b));
+        }
         keyOptions = columns.map(col => `<option value="${col}">${col}</option>`);
         break;
       }
       case 'obsm': {
-        const keys = Object.keys(datasetStructure.obsm?.dataframes || {});
+        let keys = Object.keys(datasetStructure.obsm?.dataframes || {});
+        // Sort keys alphabetically if there are more than 10
+        if (keys.length > 10) {
+          keys = [...keys].sort((a, b) => a.localeCompare(b));
+        }
         keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
         break;
       }
       case 'obsp': {
-        keyOptions = (datasetStructure.obsp?.keys || []).map(key => `<option value="${key}">${key}</option>`);
+        let keys = datasetStructure.obsp?.keys || [];
+        // Sort keys alphabetically if there are more than 10
+        if (keys.length > 10) {
+          keys = [...keys].sort((a, b) => a.localeCompare(b));
+        }
+        keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
         break;
       }
       case 'layer': {
-        const keys = datasetStructure.layers?.details?.keys || datasetStructure.layers?.keys || [];
+        let keys = datasetStructure.layers?.details?.keys || datasetStructure.layers?.keys || [];
+        // Sort keys alphabetically if there are more than 10
+        if (keys.length > 10) {
+          keys = [...keys].sort((a, b) => a.localeCompare(b));
+        }
         keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
         break;
       }
       case 'var': {
-        const columns = datasetStructure.var?.columns || Object.keys(datasetStructure.var || {});
+        let columns = datasetStructure.var?.columns || Object.keys(datasetStructure.var || {});
+        // Sort columns alphabetically if there are more than 10
+        if (columns.length > 10) {
+          columns = [...columns].sort((a, b) => a.localeCompare(b));
+        }
         keyOptions = columns.map(col => `<option value="${col}">${col}</option>`);
         break;
       }
       case 'varm':
       case 'varp': {
-        const keys = datasetStructure[type]?.keys || [];
+        let keys = datasetStructure[type]?.keys || [];
+        // Sort keys alphabetically if there are more than 10
+        if (keys.length > 10) {
+          keys = [...keys].sort((a, b) => a.localeCompare(b));
+        }
         keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
         break;
       }
@@ -82,8 +107,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
       case 'obsm': {
         const df = datasetStructure.obsm?.dataframes?.[settings.key];
-        const columns = df?.columns || [];
+        let columns = df?.columns || [];
         if (columns.length > 0) {
+          // Sort columns alphabetically if there are more than 10
+          if (columns.length > 10) {
+            columns = [...columns].sort((a, b) => a.localeCompare(b));
+          }
           columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
           const axisIndexMap = { x: 0, y: 1, z: 2 };
           const idx = axisIndexMap[axis] || 0;
@@ -100,8 +129,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
       case 'varm': {
         const df = datasetStructure.varm?.dataframes?.[settings.key];
-        const columns = df?.columns || [];
+        let columns = df?.columns || [];
         if (columns.length > 0) {
+          // Sort columns alphabetically if there are more than 10
+          if (columns.length > 10) {
+            columns = [...columns].sort((a, b) => a.localeCompare(b));
+          }
           columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
           const axisIndexMap = { x: 0, y: 1, z: 2 };
           const idx = axisIndexMap[axis] || 0;

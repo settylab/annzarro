@@ -691,6 +691,58 @@ class ZarrReader:
         
         return column_info
                 
+    def get_basic_counts(self, path: str) -> Dict[str, int]:
+        """
+        Get only the cell and gene counts from a dataset without extracting full metadata.
+        This is a faster alternative to open_dataset_by_path when only basic counts are needed.
+        
+        Args:
+            path: Path to the zarr directory or file
+            
+        Returns:
+            Dict with cell_count and gene_count
+            
+        Raises:
+            ValueError: If the zarr store doesn't appear to be a valid AnnData structure
+        """
+        try:
+            # Open the zarr store
+            root = zarr.open_group(path, mode='r')
+            
+            # Initialize counts
+            cell_count = 0
+            gene_count = 0
+            
+            # Check if obs and var groups exist
+            if 'obs' in root and '_index' in root['obs']:
+                # Get cell count from _index shape in obs (use shape instead of len)
+                if hasattr(root['obs']['_index'], 'shape'):
+                    cell_count = root['obs']['_index'].shape[0]
+            
+            if 'var' in root and '_index' in root['var']:
+                # Get gene count from _index shape in var (use shape instead of len)
+                if hasattr(root['var']['_index'], 'shape'):
+                    gene_count = root['var']['_index'].shape[0]
+            
+            # If counts are not found, try to get them from X shape if available
+            if (cell_count == 0 or gene_count == 0) and 'X' in root and hasattr(root['X'], 'shape'):
+                shape = root['X'].shape
+                if len(shape) >= 2:
+                    cell_count = shape[0] if cell_count == 0 else cell_count
+                    gene_count = shape[1] if gene_count == 0 else gene_count
+            
+            # If both cell_count and gene_count are still 0, this isn't a valid AnnData structure
+            if cell_count == 0 and gene_count == 0:
+                raise ValueError("No cell or gene counts found in zarr store, not a valid AnnData structure")
+            
+            return {
+                'cell_count': cell_count,
+                'gene_count': gene_count
+            }
+        except Exception as e:
+            logger.error(f"Error getting basic counts from {path}: {e}")
+            raise
+    
     def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract metadata from a zarr root.

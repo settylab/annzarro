@@ -1237,15 +1237,13 @@ def register_data_routes(app, api_version):
                 if is_zarr:
                     # Try to get some basic info about the zarr store
                     try:
-                        # Try to open the zarr store to get shape information
-                        _, metadata = zarr_reader.open_dataset_by_path(entry_path)
-                        shape = metadata.get('shape', (0, 0))
-                        cells = shape[0] if len(shape) > 0 else 0
-                        genes = shape[1] if len(shape) > 1 else 0
+                        # Use the fast method to get only cell and gene counts
+                        counts = zarr_reader.get_basic_counts(entry_path)
+                        cells = counts['cell_count']
+                        genes = counts['gene_count']
                     except Exception:
-                        # If we can't open the zarr store, just include basic info
-                        cells = 0
-                        genes = 0
+                        # Not a valid AnnData zarr store - skip and move to regular directories
+                        continue
                     
                     zarr_stores.append({
                         "name": entry,
@@ -1328,15 +1326,13 @@ def register_data_routes(app, api_version):
                     if is_zarr:
                         # Try to get basic info about the zarr store
                         try:
-                            # Try to open the zarr store to get shape information
-                            _, metadata = zarr_reader.open_dataset_by_path(entry_path)
-                            shape = metadata.get('shape', (0, 0))
-                            cells = shape[0] if len(shape) > 0 else 0
-                            genes = shape[1] if len(shape) > 1 else 0
+                            # Use the fast method to get only cell and gene counts
+                            counts = zarr_reader.get_basic_counts(entry_path)
+                            cells = counts['cell_count']
+                            genes = counts['gene_count']
                         except Exception:
-                            # If we can't open the zarr store, just include basic info
-                            cells = 0
-                            genes = 0
+                            # If we can't open the zarr store or it's not a valid AnnData structure, skip it
+                            continue
                         
                         zarr_stores.append({
                             "name": entry,
