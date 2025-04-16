@@ -1,4 +1,4 @@
-import { populateKeySelector, populateColumnSelector, updateColorSliderUI, setupAxisSelector } from './panel-ui-update.js';
+import { populateKeySelector, populateColumnSelector, updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -604,26 +604,33 @@ function setupAxisSelectorListeners(
       if (settings[axis].type === type) return;
 
       settings[axis].type = type;
+      
+      // Show loading indicators for key and column selects
+      showDropdownLoading(keySelect);
+      showDropdownLoading(columnSelect);
 
       const datasetStructure = await DataManager.getDatasetStructure();
-      if (!datasetStructure) return console.error('No dataset structure');
+      if (!datasetStructure) {
+        console.error('No dataset structure');
+        return;
+      }
 
       populateKeySelector(settings[axis], keySelect, datasetStructure);
       
       // Re-setup the axis selector to update the special buttons
       setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
       
-    if (type === 'none' && axis === 'color') {
-      await loadColorDataAndUpdatePlot(
-        controlsContainer,
-        plotContainer,
-        settings,
-        data,
-        id,
-        loadDataAndCreatePlot
-    );
-      return;
-    }
+      if (type === 'none' && axis === 'color') {
+        await loadColorDataAndUpdatePlot(
+          controlsContainer,
+          plotContainer,
+          settings,
+          data,
+          id,
+          loadDataAndCreatePlot
+        );
+        return;
+      }
 
       const keys = [...keySelect.options].map(o => o.value);
       settings[axis].key = keys[0] || '';
@@ -663,9 +670,15 @@ function setupAxisSelectorListeners(
 
       settings[axis].key = key;
       settings[axis].column = undefined;
-
+      
+      // Show loading indicator for column select
+      showDropdownLoading(columnSelect);
+      
       const datasetStructure = await DataManager.getDatasetStructure();
-      if (!datasetStructure) return console.error('No dataset structure');
+      if (!datasetStructure) {
+        console.error('No dataset structure');
+        return;
+      }
 
       populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
       

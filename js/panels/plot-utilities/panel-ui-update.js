@@ -180,6 +180,16 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
  * @returns {Promise<void>}
  */
+/**
+ * Shows or hides a loading indicator for a dropdown
+ * @param {HTMLElement} dropdown - The select element
+ */
+export function showDropdownLoading(dropdown) {
+  if (!dropdown) return;
+  dropdown.innerHTML = '<option value="">Loading... </option>';
+  dropdown.disabled = true;
+}
+
 export function setupAxisSelector(container, axis, settings, plotType, datasetStructure) {
     const typeSelect = container.querySelector(`.axis-type-select[data-axis="${axis}"]`);
     const keySelect = container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
@@ -189,6 +199,10 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       console.error(`Missing select elements for ${axis} axis`);
       return;
     }
+    
+    // Show loading indicators while initializing
+    showDropdownLoading(keySelect);
+    showDropdownLoading(columnSelect);
   
     // Initialize if completely empty
     if (!settings.type) {
@@ -204,6 +218,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     // Set the UI value
     typeSelect.value = settings.type;
   
+    // Populate dropdowns which will replace loading indicators
     populateKeySelector(settings, keySelect, datasetStructure);
     populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure);
     
