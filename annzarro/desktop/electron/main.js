@@ -198,10 +198,19 @@ function initializePaths() {
         }
     }
     
-    // Set up data path
-    appDataPath = path.join(app.getPath('userData'), 'data');
+    // Set up data path in user's home directory for better writability
+    // This directory will be used for sessions storage and dataset access
+    appDataPath = path.join(os.homedir(), 'annzarro-data');
     if (!fs.existsSync(appDataPath)) {
         fs.mkdirSync(appDataPath, { recursive: true });
+        
+        // Create sessions subdirectory
+        const sessionsPath = path.join(appDataPath, 'sessions');
+        fs.mkdirSync(sessionsPath, { recursive: true });
+        
+        // Create datasets example directory
+        const datasetsPath = path.join(appDataPath, 'datasets');
+        fs.mkdirSync(datasetsPath, { recursive: true });
     }
     
     // Set up venv path in user data directory
@@ -374,7 +383,10 @@ server:
   # HTTPS settings
   https_enabled: false
   
-  # Data storage
+  # Data storage 
+  # Using a dedicated directory in user home for datasets and session storage
+  # This directory is writable and accessible from the dataset dropdown
+  # Supports storing both datasets and user sessions
   data_dir: "${appDataPath.replace(/\\/g, '/')}"
   
   # Logging configuration
