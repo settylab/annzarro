@@ -546,14 +546,14 @@ export class SelectionTile {
       
       item.innerHTML = `
         <div class="session-info">
-          <div class="session-name">
-            ${session.name}
+          <div class="session-name" title="${session.name}">
+            <span class="truncate-text">${session.name}</span>
             ${session.isAutosave ? 
               `<span class="autosave-indicator" style="font-size: 0.7rem; padding: 2px 6px; background-color: #0dcaf0; color: white; border-radius: 10px; margin-left: 8px;">Auto</span>` 
               : ''}
           </div>
           <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
-          <div class="session-dataset">${session.datasetName || session.dataset}</div>
+          <div class="session-dataset truncate-text" title="${session.datasetName || session.dataset}">${session.datasetName || session.dataset}</div>
         </div>
         ${panelPreview}
       `;
