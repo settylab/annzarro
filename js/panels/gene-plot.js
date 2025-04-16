@@ -201,33 +201,39 @@ const GenePlotPanel = (function() {
          */
         async function handleFocusedGeneChanged(focusedGene) {
         
-            // Determine if any setting uses varp data
-            const usesVarpData = _settings.x.type === 'varp' ||
-                                   _settings.y.type === 'varp' ||
-                                   (_settings.z && _settings.z.type === 'varp') ||
-                                   _settings.color.type === 'varp';
+             // Determine if any setting uses varp data
+             const usesVarpData = _settings.x.type === 'varp' ||
+             _settings.y.type === 'varp' ||
+             (_settings.z && _settings.z.type === 'varp') ||
+             _settings.color.type === 'varp';
         
-            if (usesVarpData) {
-                
-                try {
-                    // Array to hold promises for axis updates
-                    const updatePromises = [];
-            
-                    // Process axes that use varp data
-                    ['x', 'y', 'z', 'color'].forEach(axis => {
-                        if (_settings[axis] && _settings[axis].type === 'varp') {
-                            updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
-                        }
-                    });
-            
-                    await Promise.all(updatePromises);
-                } catch (err) {
-                    console.error("Error during varp data updates:", err);
-                    refreshPlot();
+            if (!usesVarpData) {
+                if (_settings.highlightFocusedGene) {
+                    highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
-            } else if (_settings.highlightFocusedGene) {
-                // Highlight the focused gene if there's no varp update required
-                highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
+                return;
+            }
+        
+            try {
+                // Array to hold update promises for axes and color.
+                const updatePromises = [];
+            
+                // Process non-color axes (x, y, z) that use obsp data.
+                ['x', 'y', 'z', 'color'].forEach(axis => {
+                    if (_settings[axis] && _settings[axis].type === 'varp') {
+                        updatePromises.push(refocusAxis(axis, focusedGene, _plotType));
+                    }
+                });
+
+                await Promise.all(updatePromises);
+                // If any axis was updated and highlighting is enabled,
+                // ensure the focused entity is properly highlighted.
+                if (updatePromises.length > 1 && _settings.highlightFocusedGene) {
+                    highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
+                }
+            } catch (err) {
+                console.error("Error during obsp data updates:", err);
+                refreshPlot();
             }
         }
 
@@ -286,7 +292,7 @@ const GenePlotPanel = (function() {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
-                console.error("Error during data updates:", err);
+                console.error("Error during layer updates:", err);
                 refreshPlot();
             }
         }

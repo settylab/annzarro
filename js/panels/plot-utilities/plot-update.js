@@ -177,7 +177,7 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
         // COLOR DATA UPDATES
         if (updateOptions.colors && data.color) {
             let hasFocusedCell = false;
-            if (settings.highlightFocusedCell) {
+            if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
                 removeHighlight(plotContainer);
                 hasFocusedCell = true;
             }

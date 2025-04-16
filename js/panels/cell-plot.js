@@ -212,7 +212,7 @@ const CellPlotPanel = (function() {
                 // Process non-color axes (x, y, z) that use obsp data.
                 ['x', 'y', 'z', 'color'].forEach(axis => {
                     if (_settings[axis] && _settings[axis].type === 'obsp') {
-                        updatePromises.push(refocusAxis(axis, focusedCell, "cells"));
+                        updatePromises.push(refocusAxis(axis, focusedCell, _plotType));
                     }
                 });
 
