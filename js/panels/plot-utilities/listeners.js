@@ -470,7 +470,7 @@ export function setupColorControls(
         settings.colorMin = minValue;
         updateColorRangeDirect('min', minValue);
         _updatePlotElements({
-            colors: true,
+            colors: false,
             colorRange: true,
             filter: settings.hideOutliers
         });
@@ -483,7 +483,7 @@ export function setupColorControls(
         settings.colorMax = maxValue;
         updateColorRangeDirect('max', maxValue);
         _updatePlotElements({
-            colors: true,
+            colors: false,
             colorRange: true,
             filter: settings.hideOutliers
         });

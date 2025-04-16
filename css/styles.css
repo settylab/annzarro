@@ -563,16 +563,14 @@ body {
     margin-top: 0.75rem;
     display: inline-block;
     width: auto;
-    float: left;
     color: #6c757d;
     font-size: 0.8rem;
     padding: 0 !important;
 }
 
 .table-panel .dataTables_paginate {
-    margin-top: 0.75rem;
+    margin-top: 0.rem;
     display: inline-block;
-    float: right;
     padding: 0 !important;
 }
 

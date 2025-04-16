@@ -116,19 +116,17 @@ const App = (function() {
         // Check environment mode flags
         const isElectron = window.api !== undefined && typeof window.api.selectDirectory === 'function';
         const isLocalMode = Config.SERVER_CONFIG.local_mode === true;
-        const hasDirectoryPicker = typeof window.showDirectoryPicker === 'function';
         
         // Log environment detection for debugging
         console.debug('Environment detection:', { 
             isElectron, 
             isLocalMode,
-            hasDirectoryPicker,
             electronModeConfig: Config.SERVER_CONFIG.electron_mode
         });
         
         const selectDirectoryBtn = document.getElementById('select-directory');
         // Only show the button if we're in Electron mode or if we're in local mode AND the browser supports the directory picker API
-        if (selectDirectoryBtn && (isElectron || (isLocalMode && hasDirectoryPicker))) {
+        if (selectDirectoryBtn && (isElectron || isLocalMode)) {
             selectDirectoryBtn.style.display = 'block';
             
             selectDirectoryBtn.addEventListener('click', async () => {
