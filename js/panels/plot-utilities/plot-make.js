@@ -47,10 +47,9 @@ class LoadingIndicator {
    * Shows a loading indicator for the specified container if not already showing
    * @param {HTMLElement} plotContainer - The container to show loading indicator in
    * @param {string} operation - Identifier for the loading operation
-   * @param {boolean} fullReplace - Whether to replace the entire container content
    * @returns {void}
    */
-  show(plotContainer, operation, fullReplace = false) {
+  show(plotContainer, operation) {
     if (!plotContainer) return;
     
     // Generate a stable container ID
@@ -67,32 +66,26 @@ class LoadingIndicator {
     
     // Only modify DOM if this is the first concurrent operation of this type
     if (currentCount === 0) {
-      if (fullReplace) {
-        // Full replace for complete redraws
-        plotContainer.innerHTML = '<div class="spinner"></div> Loading plot data...';
-      } else {
-        // For partial updates, add an overlay
-        const overlayId = `loading-overlay-${containerId}-${operation}`;
-        // Check if overlay already exists and remove it if it does (handles edge cases)
-        const existingOverlay = document.getElementById(overlayId);
-        if (existingOverlay) existingOverlay.remove();
-        
-        // Create new overlay
-        const overlay = document.createElement('div');
-        overlay.id = overlayId;
-        overlay.className = 'loading-overlay';
-        overlay.dataset.operation = operation; // Store operation for fallback cleanup
-        overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
-        overlay.innerHTML = '<div class="spinner"></div> Loading axis data...';
-        
-        // Make sure container has position relative/absolute for proper overlay
-        const containerPosition = window.getComputedStyle(plotContainer).position;
-        if (containerPosition === 'static') {
-          plotContainer.style.position = 'relative';
-        }
-        
-        plotContainer.appendChild(overlay);
+      const overlayId = `loading-overlay-${containerId}-${operation}`;
+      // Check if overlay already exists and remove it if it does (handles edge cases)
+      const existingOverlay = document.getElementById(overlayId);
+      if (existingOverlay) existingOverlay.remove();
+      
+      // Create new overlay
+      const overlay = document.createElement('div');
+      overlay.id = overlayId;
+      overlay.className = 'loading-overlay';
+      overlay.dataset.operation = operation; // Store operation for fallback cleanup
+      overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
+      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...';
+      
+      // Make sure container has position relative/absolute for proper overlay
+      const containerPosition = window.getComputedStyle(plotContainer).position;
+      if (containerPosition === 'static') {
+        plotContainer.style.position = 'relative';
       }
+      
+      plotContainer.appendChild(overlay);
     }
   }
 
@@ -189,7 +182,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
   // Show loading indicator if container is provided
   if (plotContainer) {
-    loadingIndicator.show(plotContainer, 'axis-data', false);
+    loadingIndicator.show(plotContainer, 'axis-data');
   }
 
   try {
@@ -446,8 +439,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
-    // Show a full loading indicator
-    loadingIndicator.show(plotContainer, 'full-plot', true);
+    // Show loading indicator
+    loadingIndicator.show(plotContainer, 'full-plot');
 
     // Validate each axis (x, y, z, color) in settings.
     for (const axis of ['x', 'y', 'z', 'color']) {

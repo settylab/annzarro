@@ -1138,11 +1138,6 @@ div.dtsb-group {
     padding: 0 8px;
 }
 
-/* Style for the autosave card */
-.session-grid .session-card.autosave {
-    /* Regular grid placement - no special treatment */
-}
-
 .session-search-container .input-group {
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     border-radius: 8px;
@@ -1902,7 +1897,6 @@ div.dtsb-group {
 .color-range-controls .btn-group .btn {
     white-space: nowrap !important;
     flex: 0 0 auto !important;
-    float: left !important;
     display: inline-block !important;
     position: relative !important;
 }
@@ -2054,7 +2048,7 @@ div.dtsb-group {
     align-items: center;
     gap: 8px;
     top: 0;
-    right: 0;
+    left: 0;
     background: rgba(255, 255, 255, 0.85);
     padding: 8px 12px;
     border-radius: 4px;
