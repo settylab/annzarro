@@ -188,17 +188,12 @@ const GenePlotPanel = (function() {
                 // Array to hold promises for axis updates
                 const updatePromises = [];
         
-                // Process non-color axes (x, y, z) that use varp data
-                ['x', 'y', 'z'].forEach(axis => {
+                // Process axes that use varp data
+                ['x', 'y', 'z', 'color'].forEach(axis => {
                     if (_settings[axis] && _settings[axis].type === 'varp') {
-                        updatePromises.push(updateAxis(axis, focusedGene, "genes"));
+                        updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
                     }
                 });
-        
-                // Process the color update if it uses varp data
-                if (_settings.color.type === 'varp') {
-                    updatePromises.push(updateAxis('color', focusedGene, "genes"));
-                }
         
                 try {
                     await Promise.all(updatePromises);
@@ -248,28 +243,23 @@ const GenePlotPanel = (function() {
             // Array to hold promises for axis updates (x, y, z)
             const axisUpdatePromises = [];
             
-            // Process each non-color axis if it uses layer data
-            ['x', 'y', 'z'].forEach(axis => {
+            // Process axis if it uses layer data
+            ['x', 'y', 'z', 'color'].forEach(axis => {
                 if (_settings[axis] && _settings[axis].type === 'layer') {
-                    // updateAxis returns a promise even for synchronous operations,
+                    // refocusAxis returns a promise even for synchronous operations,
                     // so we add it to our array for later synchronization.
-                    axisUpdatePromises.push(updateAxis(axis, focusedCell, "cells"));
+                    axisUpdatePromises.push(refocusAxis(axis, focusedCell, "cells"));
                 }
             });
             
-            // Process the color update if using layer data
-            let colorUpdatePromise = Promise.resolve();
-            if (_settings.color.type === 'layer') {
-                colorUpdatePromise = updateAxis('color', focusedCell, "cells");
-            }
             
             // Wait for all asynchronous updates to complete
             try {
-                await Promise.all([...axisUpdatePromises, colorUpdatePromise]);
+                await Promise.all(axisUpdatePromises);
                 
                 // If multiple axis updates occurred and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
-                if (axisUpdatePromises.length > 1 && _settings.highlightFocusedCell) {
+                if (axisUpdatePromises.length > 1 && _settings?.highlightFocusedCell) {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
@@ -284,62 +274,21 @@ const GenePlotPanel = (function() {
          * @param {string} focusedEntity - The entity to focus on
          * @param {string} entityType - Type of entity (genes, cells)
          */
-        async function updateAxis(axis, focusedEntity, entityType) {
-            // Determine the proper highlight flag based on the entity type.
-            const refocusButton = _controlsContainer.querySelector(`#refocus-${axis}`);
-        
-            // Special handling for the 'color' axis.
-            if (axis === 'color') {
-                if (_settings.color.locked) {
-                    if (_settings.color.column !== focusedEntity) {
-                        if (refocusButton) refocusButton.style.display = 'inline-block';
-                    } else {
-                        if (refocusButton) refocusButton.style.display = 'none';
-                    }
-                } else if (_settings.color.column !== focusedEntity) {
-                    _settings.color.column = focusedEntity;
-                    _updateMenueLabelsForFocus(focusedEntity, entityType, axis);
-                    try {
-                        await loadColorDataAndUpdatePlot(
-                            _container,
-                            _plotContainer,
-                            _settings,
-                            _data,
-                            _id,
-                            refreshPlot
-                        );
-                    } catch (err) {
-                        refreshPlot();
-                    }
-                }
-                return;
-            } else {
-                // For non-color axes (x, y, z)
-                if (_settings[axis].locked) {
-                    if (_settings[axis].column !== focusedEntity) {
-                        if (refocusButton) refocusButton.style.display = 'inline-block';
-                    } else {
-                        if (refocusButton) refocusButton.style.display = 'none';
-                    }
-                } else if (_settings[axis].column !== focusedEntity) {
-                    _settings[axis].column = focusedEntity;
-                    _updateMenueLabelsForFocus(focusedEntity, entityType, axis);
-                    try {
-                        const axisData = await loadAxisData(_settings[axis], _plotType);
-                        if (axisData && axisData.values) {
-                            _data[axis] = axisData;
-                            _updatePlotElements({
-                                [`${axis}Axis`]: true,
-                                layout: true
-                            });
-                        } else {
-                            refreshPlot();
-                        }
-                    } catch (err) {
-                        refreshPlot();
-                    }
-                }
-            }
+        async function refocusAxis(axis, focusedEntity, entityType) {
+            await refocusAxisOnEntity(axis, focusedEntity, entityType, {
+            settings: _settings,
+            controlsContainer: _controlsContainer,
+            container: _container,
+            plotContainer: _plotContainer,
+            data: _data,
+            id: _id,
+            plotType: _plotType,
+            refreshPlot,
+            loadAxisData,
+            loadColorDataAndUpdatePlot,
+            updateMenueLabelsForFocus: _updateMenueLabelsForFocus,
+            updatePlotElements: _updatePlotElements
+            });
         }
 
         

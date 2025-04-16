@@ -20,10 +20,10 @@ import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-u
  * @param {boolean} options.colorRange - Whether to update color range (min/max) only.
  * @param {boolean} options.styling - Whether to update visual styling.
  * @param {boolean} options.layout - Whether to update layout properties/
- * @param {Function} loadDataAndCreatePlot - Fallback function to recreate the plot.
+ * @param {Function} refreshPlot - Fallback function to recreate the plot.
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
  */
-export function updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options = {}) {
+export function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -49,7 +49,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
     // Check if there is a Plotly plot in the plotContainer.
     if (!plotContainer.data || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) {
         console.warn("No Plotly plot found in the container, recreating plot");
-        loadDataAndCreatePlot();
+        refreshPlot();
         return;
     }
     
@@ -112,7 +112,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
         if (positionChange) {
             // Recreate plot if switching between 2D and 3D.
             if (is3D !== shouldBe3D) {
-                loadDataAndCreatePlot();
+                refreshPlot();
                 return;
             }
             
@@ -146,7 +146,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
                     });
                 } catch (error) {
                     console.error("Error updating categorical trace positions:", error);
-                    loadDataAndCreatePlot();
+                    refreshPlot();
                     return;
                 }
                 
@@ -187,14 +187,14 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
             if (updateOptions.colorData) {
                 if ((isCategorical && !hasStillMultipleTraces) || (!isCategorical && hasStillMultipleTraces)) {
                     console.log("Switching between categorical and numerical coloring - recreating plot");
-                    loadDataAndCreatePlot();
+                    refreshPlot();
                     return;
                 }
             }
             
             if (isCategorical && updateOptions.colorData) {
                 console.log("Categorical coloring requires recreating the plot");
-                loadDataAndCreatePlot();
+                refreshPlot();
                 return;
             }
             
@@ -342,7 +342,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
     } catch (error) {
         console.error("Error updating plot:", error);
         console.log("Falling back to recreating the plot");
-        loadDataAndCreatePlot();
+        refreshPlot();
     }
 }
 
@@ -355,7 +355,7 @@ export function updatePlotElements(plotContainer, data, settings, loadDataAndCre
  * @param {Object} settings - Settings object containing plot configuration (axes, colors, etc.).
  * @param {Object} data - Data cache object (e.g. { x, y, z, color, cells, … }).
  * @param {string|number} id - Unique identifier used to target UI controls.
- * @param {Function} loadDataAndCreatePlot - A fallback function to recreate the entire plot.
+ * @param {Function} refreshPlot - A fallback function to recreate the entire plot.
  *
  * @returns {Promise<void>}
  */
@@ -365,7 +365,7 @@ export async function loadColorDataAndUpdatePlot(
     settings,
     data,
     id,
-    loadDataAndCreatePlot
+    refreshPlot
 ) {
     try {
 
@@ -391,16 +391,16 @@ export async function loadColorDataAndUpdatePlot(
                 filter: true, // Update filtering if needed.
                 layout: true
             }
-            updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options);
+            updatePlotElements(plotContainer, data, settings, refreshPlot, options);
 
         } else {
             console.warn('No valid color data returned, falling back to full plot reload');
-            loadDataAndCreatePlot();
+            refreshPlot();
         }
     } catch (error) {
         console.error('Error updating color data:', error);
         // Fall back to recreating the plot.
-        loadDataAndCreatePlot();
+        refreshPlot();
     }
 }
 
@@ -577,5 +577,84 @@ export function removeHighlight(plotContainer) {
       }
     } catch (error) {
       console.error("Error removing highlight traces:", error);
+    }
+  }
+
+
+/**
+ * Update the axis based on the focused entity and its type
+ * 
+ * @param {string} axis - Axis to update ('x', 'y', 'z', 'color')
+ * @param {string} focusedEntity - The entity to focus on (e.g., a gene or cell)
+ * @param {string} entityType - Type of the entity ('genes', 'cells')
+ * @param {object} context - Shared state and utilities
+ * @param {object} context.settings - The current settings object
+ * @param {HTMLElement} context.controlsContainer - DOM container holding UI controls
+ * @param {HTMLElement} context.container - Outer container for the plot
+ * @param {HTMLElement} context.plotContainer - Plotly target container
+ * @param {object} context.data - Current data cache for axes
+ * @param {string} context.id - Panel or plot identifier
+ * @param {string} context.plotType - 'cells' or 'genes'
+ * @param {function} context.refreshPlot - Fallback plot refresh function
+ * @param {function} context.updateMenueLabelsForFocus - Updates dropdowns or labels
+ */
+export async function refocusAxisOnEntity(
+    axis,
+    focusedEntity,
+    entityType,
+    {
+      settings,
+      controlsContainer,
+      container,
+      plotContainer,
+      data,
+      id,
+      plotType,
+      refreshPlot,
+      updateMenueLabelsForFocus,
+    }
+  ) {
+    const refocusButton = controlsContainer.querySelector(`#refocus-${axis}`);
+  
+    if (axis === 'color') {
+      if (settings.color.locked) {
+        if (settings.color.column !== focusedEntity) {
+          if (refocusButton) refocusButton.style.display = 'inline-block';
+        } else {
+          if (refocusButton) refocusButton.style.display = 'none';
+        }
+      } else if (settings.color.column !== focusedEntity) {
+        settings.color.column = focusedEntity;
+        updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+        try {
+          await loadColorDataAndUpdatePlot(container, plotContainer, settings, data, id, refreshPlot);
+        } catch (err) {
+          refreshPlot();
+        }
+      }
+      return;
+    }
+  
+    // For x, y, z axes
+    if (settings[axis].locked) {
+      if (settings[axis].column !== focusedEntity) {
+        if (refocusButton) refocusButton.style.display = 'inline-block';
+      } else {
+        if (refocusButton) refocusButton.style.display = 'none';
+      }
+    } else if (settings[axis].column !== focusedEntity) {
+      settings[axis].column = focusedEntity;
+      updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+      try {
+        const axisData = await loadAxisData(settings[axis], plotType);
+        if (axisData && axisData.values) {
+          data[axis] = axisData;
+          updatePlotElements({ [`${axis}Axis`]: true, layout: true });
+        } else {
+          refreshPlot();
+        }
+      } catch (err) {
+        refreshPlot();
+      }
     }
   }
