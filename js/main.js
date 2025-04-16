@@ -46,16 +46,14 @@ const App = (function() {
             // Load available sessions
             await _loadSessions();
             
-            // Load autosave session if it exists and auto-restore is enabled
-            if (hasAutosave) {
-                await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
-            }
-            
             // Set default dataset if available
             const datasets = await DataManager.loadDatasets();
-            if (datasets && datasets.length > 0) {
+            if (datasets && datasets.length > 0 && !hasAutosave) {
                 await _loadDataset(datasets[0].path);
+            } else if (hasAutosave) {
+                await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
             }
+
             
             // Start autosave functionality if enabled in config
             if (Config.AUTOSAVE.ENABLED) {

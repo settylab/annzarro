@@ -321,14 +321,12 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
                         'marker.showscale': true,
                         'showlegend': false
                     };
-                    console.log("Applying colorbar restyle updates:", restyleUpdate);
                     Plotly.restyle(plotContainer, restyleUpdate, [0]);
                 } else if (settings.color.type === 'none' || data.colorType === 'constant') {
                     const restyleUpdate = {
                         'marker.showscale': false,
                         'showlegend': false
                     };
-                    console.log("Applying colorbar restyle updates:", restyleUpdate);
                     Plotly.restyle(plotContainer, restyleUpdate, [0]);
                 }
             }
