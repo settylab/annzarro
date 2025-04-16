@@ -626,11 +626,7 @@ export async function refocusAxisOnEntity(
       } else if (settings.color.column !== focusedEntity) {
         settings.color.column = focusedEntity;
         updateMenueLabelsForFocus(focusedEntity, entityType, axis);
-        try {
-          await loadColorDataAndUpdatePlot(container, plotContainer, settings, data, id, refreshPlot);
-        } catch (err) {
-          refreshPlot();
-        }
+        await loadColorDataAndUpdatePlot(container, plotContainer, settings, data, id, refreshPlot);
       }
       return;
     }
@@ -645,17 +641,13 @@ export async function refocusAxisOnEntity(
     } else if (settings[axis].column !== focusedEntity) {
       settings[axis].column = focusedEntity;
       updateMenueLabelsForFocus(focusedEntity, entityType, axis);
-      try {
-        // Pass the plotContainer to loadAxisData to enable loading indicators
-        const axisData = await loadAxisData(settings[axis], plotType, plotContainer);
-        if (axisData && axisData.values) {
-          data[axis] = axisData;
-          updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
-        } else {
-          refreshPlot();
-        }
-      } catch (err) {
-        refreshPlot();
+      // Pass the plotContainer to loadAxisData to enable loading indicators
+      const axisData = await loadAxisData(settings[axis], plotType, plotContainer);
+      if (!axisData || !axisData.values) {
+        throw new Error(`Loading data for ${axis} generated no values.`);
+      } else {
+        data[axis] = axisData;
+        updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
       }
     }
   }

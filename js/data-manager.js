@@ -97,7 +97,10 @@ const DataManager = (function() {
                 if (!silent) {
                     // Trigger event for components to update
                     const cellEvent = new CustomEvent('focusedCellChanged', {
-                        detail: { cell: _focusedCell }
+                        detail: { 
+                            cell: _focusedCell,
+                            duringDatasetTransition: true  // Add flag to indicate this is part of dataset change
+                        }
                     });
                     document.dispatchEvent(cellEvent);
                 }
@@ -119,7 +122,10 @@ const DataManager = (function() {
                 if (!silent) {
                     // Trigger event for components to update
                     const geneEvent = new CustomEvent('focusedGeneChanged', {
-                        detail: { gene: _focusedGene }
+                        detail: { 
+                            gene: _focusedGene,
+                            duringDatasetTransition: true  // Add flag to indicate this is part of dataset change
+                        }
                     });
                     document.dispatchEvent(geneEvent);
                 }
@@ -132,7 +138,11 @@ const DataManager = (function() {
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {
                 const datasetEvent = new CustomEvent('datasetChanged', {
-                    detail: { dataset: _currentDataset }
+                    detail: { 
+                        dataset: _currentDataset,
+                        focusedCell: _focusedCell,
+                        focusedGene: _focusedGene
+                    }
                 });
                 document.dispatchEvent(datasetEvent);
             }
@@ -776,7 +786,8 @@ const DataManager = (function() {
                 cell: cellName,
                 fromHistory: fromHistory,
                 canGoBack: _cellHistoryIndex > 0,
-                canGoForward: _cellHistoryIndex < _cellHistory.length - 1
+                canGoForward: _cellHistoryIndex < _cellHistory.length - 1,
+                duringDatasetTransition: false // Regular focus change, not during dataset transition
             }
         });
         document.dispatchEvent(event);
@@ -863,7 +874,8 @@ const DataManager = (function() {
                 gene: geneName,
                 fromHistory: fromHistory,
                 canGoBack: _geneHistoryIndex > 0,
-                canGoForward: _geneHistoryIndex < _geneHistory.length - 1
+                canGoForward: _geneHistoryIndex < _geneHistory.length - 1,
+                duringDatasetTransition: false // Regular focus change, not during dataset transition
             }
         });
         document.dispatchEvent(event);

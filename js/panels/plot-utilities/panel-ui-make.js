@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateColorSliderUI } from './panel-ui-update.js';
+import { setupAxisSelector } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 
@@ -34,6 +34,7 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
     }
     selectElement.appendChild(optgroup);
   }
+  selectElement.disabled = false;
 }
 
 /**
@@ -338,6 +339,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
       layerOption.textContent = 'layer';
       selector.appendChild(layerOption);
     }
+    selector.disabled = false; // Enable the selector
   }
   
   // Show the appropriate highlight button

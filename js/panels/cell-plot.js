@@ -156,13 +156,37 @@ const CellPlotPanel = (function() {
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', async (e) => {
                 const focusedCell = e.detail.cell;
-                handleFocusedCellChanged(focusedCell);
+                const duringDatasetTransition = e.detail.duringDatasetTransition || false;
+                
+                if (duringDatasetTransition) {
+                    // During dataset transition, only update menu labels without data reload
+                    ['x', 'y', 'z', 'color'].forEach(axis => {
+                        if (_settings[axis] && _settings[axis].type === 'obsp') {
+                            _updateMenueLabelsForFocus(focusedCell, "cells", axis);
+                        }
+                    });
+                } else {
+                    // Full data reload for normal cell changes
+                    handleFocusedCellChanged(focusedCell);
+                }
             });
             
             // Listen for focused gene changes
             document.addEventListener('focusedGeneChanged', async (e) => {
                 const focusedGene = e.detail.gene;
-                handleFocusedGeneChanged(focusedGene);
+                const duringDatasetTransition = e.detail.duringDatasetTransition || false;
+                
+                if (duringDatasetTransition) {
+                    // During dataset transition, only update menu labels without data reload
+                    ['x', 'y', 'z', 'color'].forEach(axis => {
+                        if (_settings[axis] && _settings[axis].type === 'layer') {
+                            _updateMenueLabelsForFocus(focusedGene, "genes", axis);
+                        }
+                    });
+                } else {
+                    // Full data reload for normal gene changes
+                    handleFocusedGeneChanged(focusedGene);
+                }
             });
         }
 
@@ -181,17 +205,17 @@ const CellPlotPanel = (function() {
                 return;
             }
         
-            // Array to hold update promises for axes and color.
-            const updatePromises = [];
-        
-            // Process non-color axes (x, y, z) that use obsp data.
-            ['x', 'y', 'z', 'color'].forEach(axis => {
-                if (_settings[axis] && _settings[axis].type === 'obsp') {
-                    updatePromises.push(refocusAxis(axis, focusedCell, "cells"));
-                }
-            });
-        
             try {
+                // Array to hold update promises for axes and color.
+                const updatePromises = [];
+            
+                // Process non-color axes (x, y, z) that use obsp data.
+                ['x', 'y', 'z', 'color'].forEach(axis => {
+                    if (_settings[axis] && _settings[axis].type === 'obsp') {
+                        updatePromises.push(refocusAxis(axis, focusedCell, "cells"));
+                    }
+                });
+
                 await Promise.all(updatePromises);
                 // If more than one axis was updated and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
@@ -236,17 +260,18 @@ const CellPlotPanel = (function() {
                 return;
             }
         
-            // Entity type is "genes" for this event.
-            const updatePromises = [];
-        
-            // Process non-color axes (x, y, z) that use layer data.
-            ['x', 'y', 'z', 'color'].forEach(axis => {
-                if (_settings[axis] && _settings[axis].type === 'layer') {
-                    // Call the unified async update method for the axis
-                    updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
-                }
-            });
             try {
+                // Entity type is "genes" for this event.
+                const updatePromises = [];
+            
+                // Process non-color axes (x, y, z) that use layer data.
+                ['x', 'y', 'z', 'color'].forEach(axis => {
+                    if (_settings[axis] && _settings[axis].type === 'layer') {
+                        // Call the unified async update method for the axis
+                        updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
+                    }
+                });
+
                 await Promise.all(updatePromises);
         
                 // Optionally update highlighting if multiple updates occurred and highlighting is enabled.

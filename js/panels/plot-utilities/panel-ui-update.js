@@ -151,10 +151,11 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
       case 'obsp': {
         let focused;
-        if (settings.column && settings.type === 'obsp') {
+        if (settings.column && settings.type === 'obsp' && settings.locked) {
           focused = settings.column;
         } else {
           focused = DataManager.getFocusedCell();
+          settings.column = focused;
         }
         columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
                                 : ['<option value="">Select a focused cell first</option>'];
@@ -162,10 +163,11 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
       case 'varp': {
         let focused;
-        if (settings.column && settings.type === 'varp') {
+        if (settings.column && settings.type === 'varp' && settings.locked) {
           focused = settings.column;
         } else {
           focused = DataManager.getFocusedGene();
+          settings.column = focused;
         }
         columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
                                 : ['<option value="">Select a focused gene first</option>'];
@@ -174,18 +176,20 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       case 'layer': {
         let focused;
         if (plotType === 'cells') {
-          if (settings.column && settings.type === 'layer') {
+          if (settings.column && settings.type === 'layer' && settings.locked) {
             focused = settings.column;
           } else {
             focused = DataManager.getFocusedGene();
+            settings.column = focused;
           }
           columnOptions = focused ? [`<option value="${focused}">Expression of ${focused}</option>`]
                                   : ['<option value="">Select a focused gene first</option>'];
         } else if (plotType === 'genes') {
-          if (settings.column && settings.type === 'layer') {
+          if (settings.column && settings.type === 'layer' && settings.locked) {
             focused = settings.column;
           } else {
             focused = DataManager.getFocusedCell();
+            settings.column = focused;
           }
           columnOptions = focused ? [`<option value="${focused}">Expression in ${focused}</option>`]
                                   : ['<option value="">Select a focused cell first</option>'];

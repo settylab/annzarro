@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { highlightFocusedEntity } from './plot-utilities/plot-update.js';
+import { highlightFocusedEntity, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -160,14 +160,37 @@ const GenePlotPanel = (function() {
             // Listen for focused gene changes
             document.addEventListener('focusedGeneChanged', async (e) => {
                 const focusedGene = e.detail.gene;
-                handleFocusedGeneChanged(focusedGene);
-            
+                const duringDatasetTransition = e.detail.duringDatasetTransition || false;
+                
+                if (duringDatasetTransition) {
+                    // During dataset transition, only update menu labels without data reload
+                    ['x', 'y', 'z', 'color'].forEach(axis => {
+                        if (_settings[axis] && _settings[axis].type === 'varp') {
+                            _updateMenueLabelsForFocus(focusedGene, "genes", axis);
+                        }
+                    });
+                } else {
+                    // Full data reload for normal gene changes
+                    handleFocusedGeneChanged(focusedGene);
+                }
             });
             
             // Listen for focused cell changes
             document.addEventListener('focusedCellChanged', async (e) => {
                 const focusedCell = e.detail.cell;
-                handleFocusedCellChanged(focusedCell);
+                const duringDatasetTransition = e.detail.duringDatasetTransition || false;
+                
+                if (duringDatasetTransition) {
+                    // During dataset transition, only update menu labels without data reload
+                    ['x', 'y', 'z', 'color'].forEach(axis => {
+                        if (_settings[axis] && _settings[axis].type === 'layer') {
+                            _updateMenueLabelsForFocus(focusedCell, "cells", axis);
+                        }
+                    });
+                } else {
+                    // Full data reload for normal cell changes
+                    handleFocusedCellChanged(focusedCell);
+                }
             });
         }
 
@@ -185,17 +208,18 @@ const GenePlotPanel = (function() {
                                    _settings.color.type === 'varp';
         
             if (usesVarpData) {
-                // Array to hold promises for axis updates
-                const updatePromises = [];
-        
-                // Process axes that use varp data
-                ['x', 'y', 'z', 'color'].forEach(axis => {
-                    if (_settings[axis] && _settings[axis].type === 'varp') {
-                        updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
-                    }
-                });
-        
+                
                 try {
+                    // Array to hold promises for axis updates
+                    const updatePromises = [];
+            
+                    // Process axes that use varp data
+                    ['x', 'y', 'z', 'color'].forEach(axis => {
+                        if (_settings[axis] && _settings[axis].type === 'varp') {
+                            updatePromises.push(refocusAxis(axis, focusedGene, "genes"));
+                        }
+                    });
+            
                     await Promise.all(updatePromises);
                 } catch (err) {
                     console.error("Error during varp data updates:", err);
@@ -240,21 +264,20 @@ const GenePlotPanel = (function() {
                 return;
             }
             
-            // Array to hold promises for axis updates (x, y, z)
-            const axisUpdatePromises = [];
-            
-            // Process axis if it uses layer data
-            ['x', 'y', 'z', 'color'].forEach(axis => {
-                if (_settings[axis] && _settings[axis].type === 'layer') {
-                    // refocusAxis returns a promise even for synchronous operations,
-                    // so we add it to our array for later synchronization.
-                    axisUpdatePromises.push(refocusAxis(axis, focusedCell, "cells"));
-                }
-            });
-            
-            
             // Wait for all asynchronous updates to complete
             try {
+                // Array to hold promises for axis updates (x, y, z)
+                const axisUpdatePromises = [];
+                
+                // Process axis if it uses layer data
+                ['x', 'y', 'z', 'color'].forEach(axis => {
+                    if (_settings[axis] && _settings[axis].type === 'layer') {
+                        // refocusAxis returns a promise even for synchronous operations,
+                        // so we add it to our array for later synchronization.
+                        axisUpdatePromises.push(refocusAxis(axis, focusedCell, "cells"));
+                    }
+                });
+                
                 await Promise.all(axisUpdatePromises);
                 
                 // If multiple axis updates occurred and highlighting is enabled,
@@ -276,15 +299,15 @@ const GenePlotPanel = (function() {
          */
         async function refocusAxis(axis, focusedEntity, entityType) {
             await refocusAxisOnEntity(axis, focusedEntity, entityType, {
-            settings: _settings,
-            controlsContainer: _controlsContainer,
-            container: _container,
-            plotContainer: _plotContainer,
-            data: _data,
-            id: _id,
-            plotType: _plotType,
-            refreshPlot,
-            updateMenueLabelsForFocus: _updateMenueLabelsForFocus,
+                settings: _settings,
+                controlsContainer: _controlsContainer,
+                container: _container,
+                plotContainer: _plotContainer,
+                data: _data,
+                id: _id,
+                plotType: _plotType,
+                refreshPlot,
+                updateMenueLabelsForFocus: _updateMenueLabelsForFocus,
             });
         }
 

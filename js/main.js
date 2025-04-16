@@ -175,7 +175,7 @@ const App = (function() {
                         const datasetSelector = document.getElementById('dataset-selector');
                         if (datasetSelector) {
                             // Update the Select2 component if it exists
-                            if (window.$ && $.fn.select2) {
+                            if (window.$ && $.fn.select2 && $(datasetSelector).hasClass('select2-hidden-accessible')) {
                                 // Create or select option
                                 const newOption = new Option(selectedDir, selectedDir, true, true);
                                 $(datasetSelector).append(newOption).trigger('change');
@@ -184,7 +184,6 @@ const App = (function() {
                                 datasetSelector.value = selectedDir;
                                 datasetSelector.dispatchEvent(new Event('change'));
                             }
-                            await _loadDataset(selectedDir);
                         }
                     }
                 } catch (error) {
@@ -194,16 +193,6 @@ const App = (function() {
             });
         }
         
-        // Setup dataset selector
-        const datasetSelector = document.getElementById('dataset-selector');
-        if (datasetSelector) {
-            datasetSelector.addEventListener('change', async (e) => {
-                const datasetPath = e.target.value;
-                if (datasetPath) {
-                    await _loadDataset(datasetPath);
-                }
-            });
-        }
         
         // Setup dataset refresh button
         const refreshDatasetBtn = document.getElementById('refresh-dataset');
@@ -410,6 +399,7 @@ const App = (function() {
                     $(datasetSelector).on('select2:select', function(e) {
                         const datasetPath = e.params.data.id;
                         if (datasetPath) {
+                            // We handle duplicate checks in the _loadDataset function
                             _loadDataset(datasetPath);
                         }
                     });
@@ -451,8 +441,20 @@ const App = (function() {
      * @param {boolean} [silent=false] - If true, don't notify panels (prevents UI reset)
      * @private
      */
+    // Track last dataset path to avoid duplicate loading
+    let _lastLoadedDatasetPath = null;
+    let _isLoadingDataset = false;
+    
     async function _loadDataset(datasetPath, silent = false) {
         try {
+            // Skip loading if we're already loading this dataset or if it's the same as the last loaded
+            if (_isLoadingDataset || datasetPath === _lastLoadedDatasetPath) {
+                console.log(`Skipping duplicate dataset load: ${datasetPath}`);
+                return;
+            }
+            
+            // Set loading flag
+            _isLoadingDataset = true;
             console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
             // Show loading indicators
@@ -477,9 +479,16 @@ const App = (function() {
                 // Notify panels of dataset change - this can cause UI resets
                 PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
             }
+            
+            // Update last loaded dataset path and reset loading flag
+            _lastLoadedDatasetPath = datasetPath;
+            _isLoadingDataset = false;
         } catch (error) {
             console.error('Error loading dataset:', error);
             _showError('Failed to load dataset', error.message);
+            
+            // Reset loading flag on error
+            _isLoadingDataset = false;
         }
     }
     

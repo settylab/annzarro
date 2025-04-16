@@ -395,7 +395,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     return { values, type: dataType, categories };
   } catch (error) {
     console.error('Error loading data for settings', settings, 'error:', error);
-    throw new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''})`);
+    throw new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
   } finally {
     // Hide loading indicator if container was provided
     if (plotContainer) {
@@ -543,16 +543,12 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Load color data concurrently.
     loadPromises.push(
       (async () => {
-        try {
           const colorData = await loadAxisData(settings.color, plotType, plotContainer);
           data.color = colorData.values;
           data.colorType = colorData.type;
           data.colorCategories = colorData.categories;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);
-        } catch (err) {
-          console.error("Error loading color data:", err);
-        }
       })()
     );
 
@@ -575,9 +571,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
   } catch (error) {
     console.error('Error loading plot data:', error);
+
+    // clear data
+    plotContainer.data = [];
     
     // Create a more detailed error message
     let errorDetails = '';
+    let suggestedActions = '';
     
     // Check if the error is related to a specific axis
     if (error.message && error.message.includes('Failed to load data for')) {
@@ -605,6 +605,23 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           } else if (type === 'obsp' || type === 'varp') {
             errorDetails += '<li>Check if the connectivity matrix exists</li>';
             errorDetails += '<li>Ensure a cell/gene is focused before using this data type</li>';
+            
+            // For focused cell/gene not found errors, add specific advice
+            if (error.message.includes('Focused cell not found') || 
+                error.message.includes('Focused gene not found')) {
+              suggestedActions = `
+                <div class="alert alert-info mt-3">
+                  <strong>This is a common issue when opening a saved panel with a new dataset.</strong>
+                  <p>The previously focused cell/gene doesn't exist in the current dataset.</p>
+                  <p><strong>Suggested actions:</strong></p>
+                  <ol>
+                    <li>Select a new cell/gene in this dataset</li>
+                    <li>Consider duplicating this panel before changing if you want to preserve the current configuration</li>
+                    <li>Change the axis type to something that doesn't require a focused cell/gene</li>
+                  </ol>
+                </div>
+              `;
+            }
           } else if (type === 'obs' || type === 'var') {
             errorDetails += '<li>Check if the column name exists in the obs/var table</li>';
           }
@@ -619,7 +636,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         <h5>Error loading data</h5>
         <p>${error.message}</p>
         ${errorDetails}
-      </div>`;
+      </div>
+      ${suggestedActions}`;
   } finally {
     // Hide the loading indicator when all is done
     loadingIndicator.hide(plotContainer, 'full-plot');
