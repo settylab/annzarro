@@ -368,9 +368,9 @@ export async function loadColorDataAndUpdatePlot(
     refreshPlot
 ) {
     try {
-
-        // Load only color data using the imported loadAxisData.
-        const colorData = await loadAxisData(settings.color, data.entities);
+        // Load only color data using the imported loadAxisData, passing the plotContainer
+        // to show loading indicators during color data loading
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer);
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -646,10 +646,11 @@ export async function refocusAxisOnEntity(
       settings[axis].column = focusedEntity;
       updateMenueLabelsForFocus(focusedEntity, entityType, axis);
       try {
-        const axisData = await loadAxisData(settings[axis], plotType);
+        // Pass the plotContainer to loadAxisData to enable loading indicators
+        const axisData = await loadAxisData(settings[axis], plotType, plotContainer);
         if (axisData && axisData.values) {
           data[axis] = axisData;
-          updatePlotElements({ [`${axis}Axis`]: true, layout: true });
+          updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
         } else {
           refreshPlot();
         }

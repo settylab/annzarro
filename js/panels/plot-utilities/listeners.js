@@ -643,7 +643,7 @@ function setupAxisSelectorListeners(
         columnSelect.value = current;
       }
 
-      handleAxisUpdate(axis);
+      handleAxisUpdate(axis, plotType);
     });
   });
 
@@ -682,7 +682,7 @@ function setupAxisSelectorListeners(
         columnSelect.value = current;
       }
 
-      handleAxisUpdate(axis);
+      handleAxisUpdate(axis, plotType);
     });
   });
 
@@ -696,14 +696,19 @@ function setupAxisSelectorListeners(
     select.addEventListener('change', (e) => {
       const axis =  e.currentTarget.dataset.axis;
       settings[axis].column =  e.currentTarget.value;
-      handleAxisUpdate(axis);
+      handleAxisUpdate(axis, plotType);
     });
   });
   
   // Set up lock and refocus button handlers using event delegation
   setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
 
-  function handleAxisUpdate(axis) {
+  /**
+   * 
+   * @param {*} axis 
+   * @param {*} plotType 
+   */
+  function handleAxisUpdate(axis, plotType) {
     if (axis === 'color') {
         loadColorDataAndUpdatePlot(
             controlsContainer,
@@ -714,7 +719,7 @@ function setupAxisSelectorListeners(
             loadDataAndCreatePlot
           )
     } else if (['x', 'y', 'z'].includes(axis)) {
-      loadAxisData(settings[axis]).then(axisData => {
+      loadAxisData(settings[axis], plotType, plotContainer).then(axisData => {
         if (axisData?.values) {
           data[axis] = axisData;
           updatePlotElements(

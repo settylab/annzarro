@@ -4,75 +4,249 @@ import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 
 /**
+ * Manages loading indicators for plot operations with built-in counter to handle
+ * concurrent loading operations properly.
+ */
+class LoadingIndicator {
+  constructor() {
+    this._counters = new WeakMap(); // Use WeakMap to avoid memory leaks
+    this._instanceId = Date.now().toString(36); // Unique instance identifier
+  }
+
+  /**
+   * Generate a stable ID for a container
+   * @param {HTMLElement} container - The container element
+   * @returns {string} - A stable identifier
+   */
+  _getContainerId(container) {
+    // If container already has an ID or data-id attribute, use it
+    if (container.id) return container.id;
+    if (container.dataset.id) return container.dataset.id;
+    
+    // If container doesn't have an ID, generate one and store it
+    if (!container.dataset.loadingId) {
+      // Create a stable ID based on DOM position
+      const domPath = [];
+      let node = container;
+      while (node && node !== document.body) {
+        const siblings = Array.from(node.parentNode?.children || []);
+        const index = siblings.indexOf(node);
+        domPath.unshift(index);
+        node = node.parentNode;
+      }
+      
+      // Create a stable ID that persists for this DOM element
+      const stableId = `loading-container-${this._instanceId}-${domPath.join('-')}`;
+      container.dataset.loadingId = stableId;
+    }
+    
+    return container.dataset.loadingId;
+  }
+
+  /**
+   * Shows a loading indicator for the specified container if not already showing
+   * @param {HTMLElement} plotContainer - The container to show loading indicator in
+   * @param {string} operation - Identifier for the loading operation
+   * @param {boolean} fullReplace - Whether to replace the entire container content
+   * @returns {void}
+   */
+  show(plotContainer, operation, fullReplace = false) {
+    if (!plotContainer) return;
+    
+    // Generate a stable container ID
+    const containerId = this._getContainerId(plotContainer);
+    
+    // Initialize counter map for this container if needed
+    if (!this._counters.has(plotContainer)) {
+      this._counters.set(plotContainer, new Map());
+    }
+    
+    const operationCounts = this._counters.get(plotContainer);
+    const currentCount = operationCounts.get(operation) || 0;
+    operationCounts.set(operation, currentCount + 1);
+    
+    // Only modify DOM if this is the first concurrent operation of this type
+    if (currentCount === 0) {
+      if (fullReplace) {
+        // Full replace for complete redraws
+        plotContainer.innerHTML = '<div class="spinner"></div> Loading plot data...';
+      } else {
+        // For partial updates, add an overlay
+        const overlayId = `loading-overlay-${containerId}-${operation}`;
+        // Check if overlay already exists and remove it if it does (handles edge cases)
+        const existingOverlay = document.getElementById(overlayId);
+        if (existingOverlay) existingOverlay.remove();
+        
+        // Create new overlay
+        const overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.className = 'loading-overlay';
+        overlay.dataset.operation = operation; // Store operation for fallback cleanup
+        overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
+        overlay.innerHTML = '<div class="spinner"></div> Loading axis data...';
+        
+        // Make sure container has position relative/absolute for proper overlay
+        const containerPosition = window.getComputedStyle(plotContainer).position;
+        if (containerPosition === 'static') {
+          plotContainer.style.position = 'relative';
+        }
+        
+        plotContainer.appendChild(overlay);
+      }
+    }
+  }
+
+  /**
+   * Hides the loading indicator for the specified container
+   * @param {HTMLElement} plotContainer - The container to hide loading indicator in
+   * @param {string} operation - Identifier for the loading operation 
+   * @returns {void}
+   */
+  hide(plotContainer, operation) {
+    if (!plotContainer) return;
+    
+    // Get the stable container ID
+    const containerId = this._getContainerId(plotContainer);
+    
+    // Find and remove operation counts
+    if (this._counters.has(plotContainer)) {
+      const operationCounts = this._counters.get(plotContainer);
+      const currentCount = operationCounts.get(operation) || 0;
+      
+      if (currentCount <= 1) {
+        // Last or only operation is complete
+        operationCounts.delete(operation);
+        
+        // Remove any overlay for this operation
+        const overlayId = `loading-overlay-${containerId}-${operation}`;
+        const overlay = document.getElementById(overlayId);
+        if (overlay) {
+          overlay.remove();
+        } else {
+          // Fallback: find by data attributes if ID approach fails
+          const fallbackOverlays = plotContainer.querySelectorAll(
+            `.loading-overlay[data-operation="${operation}"][data-container-id="${containerId}"]`
+          );
+          fallbackOverlays.forEach(el => el.remove());
+        }
+      } else {
+        // Decrement counter for concurrent operations
+        operationCounts.set(operation, currentCount - 1);
+      }
+      
+      // Clean up the container entry if no more operations
+      if (operationCounts.size === 0) {
+        this._counters.delete(plotContainer);
+      }
+    } else {
+      // Fallback: if counter tracking failed, attempt cleanup by data attributes
+      const allOverlays = plotContainer.querySelectorAll(
+        `.loading-overlay[data-operation="${operation}"]`
+      );
+      allOverlays.forEach(el => el.remove());
+    }
+  }
+  
+  /**
+   * Clean up all loading indicators for a container when it's being destroyed
+   * @param {HTMLElement} plotContainer - The container being destroyed
+   */
+  cleanupContainer(plotContainer) {
+    if (!plotContainer) return;
+    
+    // First, delete the counter entry
+    if (this._counters.has(plotContainer)) {
+      this._counters.delete(plotContainer);
+    }
+    
+    // Then remove all loading overlays from the container
+    const overlays = plotContainer.querySelectorAll('.loading-overlay');
+    overlays.forEach(overlay => overlay.remove());
+  }
+}
+
+// Create a singleton instance
+const loadingIndicator = new LoadingIndicator();
+
+// Make loadingIndicator globally available for cleanup
+window.loadingIndicator = loadingIndicator;
+
+/**
  * Loads data for a specific axis from an anndata-derived source.
  * 
  * @param {Object} settings - Axis settings object.
  * @param {string} [plotType=null] - Optional plot type ('cells' or 'genes') to determine context.
+ * @param {HTMLElement} [plotContainer=null] - Container to show loading indicator in.
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
 
-  const { type, key, column } = settings;
-  const datasetPath = DataManager.getCurrentDataset();
-  const rowsArr = null; // Filtering no longer applies
-
-  let data, values, dataType;
-  let categories = null;
-
-  // --- Helper Functions ---
-  // Returns at most maxSample elements of an array.
-  function sampleArray(arr, maxSample = 100) {
-    return arr.length > maxSample ? arr.slice(0, maxSample) : arr;
-  }
-
-  /**
-   * Infer whether the sampled values are mostly numeric or categorical.
-   * Booleans count as categorical.
-   * @param {Array} arr - Array of values.
-   * @returns {string} - 'numerical' or 'categorical'.
-   */
-  function determineDataType(arr) {
-    const sample = sampleArray(arr);
-    if (sample.length === 0) return 'categorical';
-    let boolCount = 0, numCount = 0;
-    sample.forEach(v => {
-      if (v === true || v === false) {
-        boolCount++;
-      } else if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
-        numCount++;
-      }
-    });
-    if (boolCount / sample.length >= 0.8) return 'categorical';
-    if (numCount / sample.length >= 0.8) return 'numerical';
-    return 'categorical';
-  }
-
-  // Convert non-null booleans to strings.
-  function convertBooleans(arr) {
-    return arr.map(v => (v === null || v === undefined) ? v : String(v));
-  }
-
-  // Convert values to numbers when possible while preserving the array length.
-  function processNumericValues(arr) {
-    return arr.map(v => {
-      if (v === null || v === undefined) return NaN;
-      if (typeof v === 'number') return v;
-      if (typeof v === 'object' && v && 'value' in v) return v.value;
-      if (typeof v === 'string') {
-        const parsed = parseFloat(v);
-        return isNaN(parsed) ? NaN : parsed;
-      }
-      return NaN;
-    });
+  // Show loading indicator if container is provided
+  if (plotContainer) {
+    loadingIndicator.show(plotContainer, 'axis-data', false);
   }
 
   try {
+    const { type, key, column } = settings;
+    const datasetPath = DataManager.getCurrentDataset();
+    const rowsArr = null; // Filtering no longer applies
+
+    let data, values, dataType;
+    let categories = null;
+
+    // --- Helper Functions ---
+    // Returns at most maxSample elements of an array.
+    function sampleArray(arr, maxSample = 100) {
+      return arr.length > maxSample ? arr.slice(0, maxSample) : arr;
+    }
+
+    /**
+     * Infer whether the sampled values are mostly numeric or categorical.
+     * Booleans count as categorical.
+     * @param {Array} arr - Array of values.
+     * @returns {string} - 'numerical' or 'categorical'.
+     */
+    function determineDataType(arr) {
+      const sample = sampleArray(arr);
+      if (sample.length === 0) return 'categorical';
+      let boolCount = 0, numCount = 0;
+      sample.forEach(v => {
+        if (v === true || v === false) {
+          boolCount++;
+        } else if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
+          numCount++;
+        }
+      });
+      if (boolCount / sample.length >= 0.8) return 'categorical';
+      if (numCount / sample.length >= 0.8) return 'numerical';
+      return 'categorical';
+    }
+
+    // Convert non-null booleans to strings.
+    function convertBooleans(arr) {
+      return arr.map(v => (v === null || v === undefined) ? v : String(v));
+    }
+
+    // Convert values to numbers when possible while preserving the array length.
+    function processNumericValues(arr) {
+      return arr.map(v => {
+        if (v === null || v === undefined) return NaN;
+        if (typeof v === 'number') return v;
+        if (typeof v === 'object' && v && 'value' in v) return v.value;
+        if (typeof v === 'string') {
+          const parsed = parseFloat(v);
+          return isNaN(parsed) ? NaN : parsed;
+        }
+        return NaN;
+      });
+    }
+
     // SPECIAL CASE: 'none' type (constant color).
     if (type === 'none') {
       const isGenePlot = plotType === 'genes';
@@ -228,7 +402,12 @@ export async function loadAxisData(settings, plotType = null) {
     return { values, type: dataType, categories };
   } catch (error) {
     console.error('Error loading data for settings', settings, 'error:', error);
-    throw new Error(`Failed to load data for (${type}.${key}${column ? '.' + column : ''})`);
+    throw new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''})`);
+  } finally {
+    // Hide loading indicator if container was provided
+    if (plotContainer) {
+      loadingIndicator.hide(plotContainer, 'axis-data');
+    }
   }
 }
 
@@ -267,9 +446,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
-    // Show a loading indicator.
-    plotContainer.innerHTML =
-      '<div class="spinner"></div> Loading plot data...';
+    // Show a full loading indicator
+    loadingIndicator.show(plotContainer, 'full-plot', true);
 
     // Validate each axis (x, y, z, color) in settings.
     for (const axis of ['x', 'y', 'z', 'color']) {
@@ -354,17 +532,17 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
-        data.x = await loadAxisData(settings.x, plotType);
+        data.x = await loadAxisData(settings.x, plotType, plotContainer);
       })(),
       (async () => {
-        data.y = await loadAxisData(settings.y, plotType);
+        data.y = await loadAxisData(settings.y, plotType, plotContainer);
       })()
     ];
 
     if (settings.z) {
       loadPromises.push(
         (async () => {
-          data.z = await loadAxisData(settings.z, plotType);
+          data.z = await loadAxisData(settings.z, plotType, plotContainer);
         })()
       );
     }
@@ -373,7 +551,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     loadPromises.push(
       (async () => {
         try {
-          const colorData = await loadAxisData(settings.color, plotType);
+          const colorData = await loadAxisData(settings.color, plotType, plotContainer);
           data.color = colorData.values;
           data.colorType = colorData.type;
           data.colorCategories = colorData.categories;
@@ -405,6 +583,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
   } catch (error) {
     console.error('Error loading plot data:', error);
     plotContainer.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+  } finally {
+    // Hide the loading indicator when all is done
+    loadingIndicator.hide(plotContainer, 'full-plot');
   }
 }
 

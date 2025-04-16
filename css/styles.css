@@ -2046,3 +2046,35 @@ div.dtsb-group {
     font-size: 0.875rem;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
+
+/* Loading Overlay for Axis Data */
+.loading-overlay {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    top: 0;
+    right: 0;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 8px 12px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    font-size: 0.85rem;
+    color: #495057;
+    border: 1px solid rgba(0, 123, 255, 0.2);
+    animation: fadeIn 0.2s ease-in-out;
+    max-width: 80%;
+}
+
+.loading-overlay .spinner {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+    margin-right: 6px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
-import { loadAxisData, loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity } from './plot-utilities/plot-update.js';
+import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
+import { highlightFocusedEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -284,10 +284,7 @@ const GenePlotPanel = (function() {
             id: _id,
             plotType: _plotType,
             refreshPlot,
-            loadAxisData,
-            loadColorDataAndUpdatePlot,
             updateMenueLabelsForFocus: _updateMenueLabelsForFocus,
-            updatePlotElements: _updatePlotElements
             });
         }
 
@@ -298,31 +295,6 @@ const GenePlotPanel = (function() {
         async function refreshPlot() {
             loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id, _isFirstLoad)
         }
-        
-        
-        /**
-         * Update plot with current settings without recreating it
-         * @param {boolean} fullDataUpdate - Whether to update all data or just visual properties 
-         * @private
-         */
-        /**
-         * Centralized function to efficiently update plot elements
-         * @param {Object} options - Update options
-         * @param {boolean} options.xAxis - Whether to update x-axis data
-         * @param {boolean} options.yAxis - Whether to update y-axis data
-         * @param {boolean} options.zAxis - Whether to update z-axis data
-         * @param {boolean} options.colors - Whether to update any coloring properties
-         * @param {boolean} options.colorData - Whether to update the color data array (set to true for new color data)
-         * @param {boolean} options.colorScale - Whether to update the color scale only
-         * @param {boolean} options.colorRange - Whether to update color range (min/max) only
-         * @param {boolean} options.styling - Whether to update visual styling
-         * @param {boolean} options.layout - Whether to update layout properties 
-         * @param {boolean} options.filter - Whether to update the filtering (hide outliers)
-         * @private
-         */
-        function _updatePlotElements(options = {}) {
-            updatePlotElements(_plotContainer, _data, _settings, refreshPlot, options);
-        }
 
         
         /**
@@ -331,6 +303,13 @@ const GenePlotPanel = (function() {
         function cleanup() {
             // Remove event listeners
             if (_plotContainer) {
+                // Clean up any loading indicators before purging the plot
+                if (window.loadingIndicator && typeof window.loadingIndicator.cleanupContainer === 'function') {
+                    window.loadingIndicator.cleanupContainer(_plotContainer);
+                } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
+                    loadingIndicator.cleanupContainer(_plotContainer);
+                }
+
                 Plotly.purge(_plotContainer);
             }
             
