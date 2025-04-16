@@ -157,6 +157,9 @@ const Config = (function() {
         ui_color_scale: null,
         ui_taxonomy_id: null,
         
+        // Environment settings
+        local_mode: false,
+        
         // External integrations
         integrations: null
     };

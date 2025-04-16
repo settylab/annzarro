@@ -84,6 +84,12 @@ def register_core_routes(app, api_version):
                 if "data_dir" not in filtered_config and "server" in filtered_config:
                     filtered_config["data_dir"] = filtered_config.get("server", {}).get("data_dir", app.config.get("data_dir", "data"))
                 
+                # Add environment flags
+                filtered_config["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
+                filtered_config["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
+                
+                logger.debug(f"Sending environment flags to frontend: electron_mode={filtered_config['electron_mode']}, local_mode={filtered_config['local_mode']}")
+                
                 return jsonify(filtered_config)
         except ImportError:
             # Config manager not available, fall back to default filtering
@@ -122,8 +128,15 @@ def register_core_routes(app, api_version):
             "ui_point_opacity": app.config.get("ui_point_opacity", None),
             "ui_color_scale": app.config.get("ui_color_scale", None),
             "ui_taxonomy_id": app.config.get("ui_taxonomy_id", None),
-            "enabled_panel_types": app.config.get("enabled_panel_types", None)
+            "enabled_panel_types": app.config.get("enabled_panel_types", None),
+            
+            # Environment flags
+            "electron_mode": os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1",
+            "local_mode": os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
         }
+        
+        # Log the environment mode flags
+        logger.debug(f"Sending environment flags to frontend: electron_mode={client_config['electron_mode']}, local_mode={client_config['local_mode']}")
         
         # Never share sensitive values
         return jsonify(client_config)

@@ -113,16 +113,65 @@ const App = (function() {
         // Setup keyboard shortcuts
         _initKeyboardShortcuts();
         
-        // Check for Electron environment
+        // Check environment mode flags
         const isElectron = window.api !== undefined && typeof window.api.selectDirectory === 'function';
+        const isLocalMode = Config.SERVER_CONFIG.local_mode === true;
+        const hasDirectoryPicker = typeof window.showDirectoryPicker === 'function';
         
-        // Show select directory button if in Electron
+        // Log environment detection for debugging
+        console.debug('Environment detection:', { 
+            isElectron, 
+            isLocalMode,
+            hasDirectoryPicker,
+            electronModeConfig: Config.SERVER_CONFIG.electron_mode
+        });
+        
         const selectDirectoryBtn = document.getElementById('select-directory');
-        if (selectDirectoryBtn && isElectron) {
+        // Only show the button if we're in Electron mode or if we're in local mode AND the browser supports the directory picker API
+        if (selectDirectoryBtn && (isElectron || (isLocalMode && hasDirectoryPicker))) {
             selectDirectoryBtn.style.display = 'block';
+            
             selectDirectoryBtn.addEventListener('click', async () => {
                 try {
-                    const selectedDir = await window.api.selectDirectory();
+                    let selectedDir;
+                    
+                    if (isElectron) {
+                        // Use Electron API for directory selection
+                        selectedDir = await window.api.selectDirectory();
+                    } else {
+                        // Use modern File System Access API in local mode
+                        try {
+                            console.log('Using File System Access API for directory selection in local mode');
+                            
+                            // Check if the modern Directory Picker API is available
+                            if (window.showDirectoryPicker) {
+                                try {
+                                    // Show a prompt explaining the user needs to use a local path instead
+                                    const userPath = prompt(
+                                        "The File System Access API doesn't provide actual file paths that the server can use. " +
+                                        "Please enter the actual file system path to the directory you want to open:",
+                                        ""
+                                    );
+                                    
+                                    if (userPath) {
+                                        selectedDir = userPath;
+                                        console.log('User provided directory path:', selectedDir);
+                                    } else {
+                                        throw new Error('No directory path provided');
+                                    }
+                                } catch (e) {
+                                    console.debug('User cancelled directory path input:', e);
+                                    selectedDir = null;
+                                }
+                            } else {
+                                throw new Error('Directory picker API not available');
+                            }
+                        } catch (error) {
+                            console.error('Directory selection failed:', error);
+                            selectedDir = null;
+                        }
+                    }
+                    
                     if (selectedDir) {
                         // Set the dataset selector to the selected directory path
                         const datasetSelector = document.getElementById('dataset-selector');

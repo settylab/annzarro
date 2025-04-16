@@ -210,7 +210,7 @@ def run_server(
             
             # Determine if we should try to open a browser and if we're in headless mode
             should_open_browser = not no_browser
-            if os.environ.get('ANNZARRO_ELECTRON_APP', 'false') == 'true':
+            if os.environ.get('ANNZARRO_ELECTRON_APP', 'false') in ['true', '1']:
                 logger.info("Should not open browser inside electron app")
                 should_open_browser = False
             
