@@ -460,13 +460,38 @@ export class SelectionTile {
         return;
       }
       
+      // Check if preview functions are loaded
+      const previewsAvailable = window._loadAllSessionPreviews && window._updatePanelPreview;
+      
+      // Show loading state
       list.innerHTML = '<div class="no-sessions">Loading sessions...</div>';
+      
+      // Get sessions list
       sessionManager.listSessions().then(sessions => {
         if (sessions && sessions.length > 0) {
           list.innerHTML = '';
+          
+          // Create items
           sessions.forEach(session => {
             list.appendChild(this._createSessionItem(session));
           });
+          
+          // Load previews if available
+          if (previewsAvailable) {
+            this._loadSessionPreviews(sessions);
+          } else {
+            // If previews aren't available, show placeholder text
+            document.querySelectorAll('.session-card-preview').forEach(container => {
+              container.innerHTML = '<div class="panel-preview-empty">Panel info will appear here</div>';
+            });
+            
+            // Try again after a short delay in case the functions are being loaded
+            setTimeout(() => {
+              if (window._loadAllSessionPreviews) {
+                this._loadSessionPreviews(sessions);
+              }
+            }, 1000);
+          }
         } else {
           list.innerHTML = '<div class="no-sessions">No saved panel sets available</div>';
         }
@@ -474,6 +499,31 @@ export class SelectionTile {
         console.error('Error loading panel sets:', error);
         list.innerHTML = '<div class="no-sessions">Error loading panel sets</div>';
       });
+    }
+    
+    /**
+     * Load panel previews for session items
+     * @param {Array} sessions - List of session objects
+     * @private
+     */
+    _loadSessionPreviews(sessions) {
+      // Use the global function from main.js to load all previews
+      if (window._loadAllSessionPreviews) {
+        window._loadAllSessionPreviews(sessions);
+      } else {
+        console.warn('Global preview loading function not available');
+        
+        // If the function isn't available, show a message in the preview containers
+        sessions.forEach(session => {
+          const previewContainers = document.querySelectorAll(
+            `.session-card-preview[data-session-name="${session.name}"]`
+          );
+          
+          previewContainers.forEach(container => {
+            container.innerHTML = `<div class="panel-preview-empty">Preview unavailable</div>`;
+          });
+        });
+      }
     }
   
     _createSessionItem(session) {
@@ -487,6 +537,13 @@ export class SelectionTile {
         item.style.backgroundColor = '#f8f9fa';
       }
       
+      // Create the panel preview placeholder
+      const panelPreview = `<div class="session-card-preview" data-session-name="${session.name}">
+        <div class="panel-preview-loading">
+          <i class="fas fa-spinner fa-pulse"></i>
+        </div>
+      </div>`;
+      
       item.innerHTML = `
         <div class="session-info">
           <div class="session-name">
@@ -498,6 +555,7 @@ export class SelectionTile {
           <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
           <div class="session-dataset">${session.datasetName || session.dataset}</div>
         </div>
+        ${panelPreview}
       `;
       
       // Use either provided sessionManager or global window.sessionManager
@@ -513,6 +571,7 @@ export class SelectionTile {
           console.error('SessionManager not available, cannot load session');
         }
       });
+      
       return item;
     }
   

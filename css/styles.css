@@ -1046,6 +1046,92 @@ div.dtsb-group {
     border-radius: 8px;
 }
 
+/* Session card panel preview */
+.session-card-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0;
+    padding: 6px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    justify-content: center;
+    min-height: 40px;
+    align-items: center;
+}
+
+.session-card-preview i {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    color: #495057;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.session-card-preview i:hover {
+    background-color: #007bff;
+    color: white;
+    transform: scale(1.1);
+}
+
+/* Loading state */
+.panel-preview-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #6c757d;
+}
+
+.panel-preview-loading i {
+    font-size: 16px;
+    color: #6c757d;
+    background-color: transparent;
+}
+
+/* Empty state */
+.panel-preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #6c757d;
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* Error state */
+.panel-preview-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #dc3545;
+    font-size: 12px;
+    font-style: italic;
+}
+
+.panel-preview-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    color: #495057;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    height: 28px;
+}
+
 /* Session search */
 .session-search-container {
     position: sticky;
@@ -1673,8 +1759,7 @@ div.dtsb-group {
 
 .session-item {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
     padding: 1.25rem;
     border: 2px solid #dee2e6;
     border-radius: 0.5rem;
@@ -1687,6 +1772,11 @@ div.dtsb-group {
     border-color: #007bff;
     box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
     transform: translateY(-2px);
+}
+
+.session-item .session-card-preview {
+    margin-top: 10px;
+    min-height: 30px;
 }
 
 .session-item.autosave {

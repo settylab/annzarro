@@ -17,16 +17,21 @@ const App = (function() {
     async function init() {
         if (_isInitialized) return;
         
+        // Expose panel preview functions globally for reuse by other modules
+        window._loadAllSessionPreviews = _loadAllSessionPreviews;
+        window._updatePanelPreview = _updatePanelPreview;
+        window._updateErrorPreview = _updateErrorPreview;
+        
         try {
+
+            // Make SessionManager accessible globally
+            window.sessionManager = SessionManager;
             
             // Initialize Plotly with optimized canvas settings
             _initPlotly();
             
             // Initialize UI components
             _initUI();
-            
-            // Make SessionManager accessible globally
-            window.sessionManager = SessionManager;
             
             // Check for autosave session before initializing panel manager
             const autosave = SessionManager.getAutosaveSession();
@@ -1075,6 +1080,7 @@ const App = (function() {
                 
                 sessionGrid.innerHTML = '';
                 
+                // Create cards for each session
                 sessions.forEach(session => {
                     const card = document.createElement('div');
                     // We no longer include autosave in the session list, but keep logic for backward compatibility
@@ -1117,6 +1123,16 @@ const App = (function() {
                             <i class="fas fa-download"></i> Export
                         </button>`;
                     
+                    // Create panel preview icons based on session data
+                    // Panel configurations might not be included in the session list API
+                    // We'll add a placeholder that will be populated asynchronously
+                    
+                    let panelPreview = `<div class="session-card-preview" data-session-name="${session.name}">
+                        <div class="panel-preview-loading">
+                            <i class="fas fa-spinner fa-pulse"></i>
+                        </div>
+                    </div>`;
+
                     card.innerHTML = `
                         <div class="session-card-header">
                             <h5 class="session-card-title">${titleHTML}</h5>
@@ -1127,6 +1143,7 @@ const App = (function() {
                                 </button>
                             </div>
                         </div>
+                        ${panelPreview}
                         ${storageInfo}
                         ${autosaveTimeInfo}
                         ${!isAutosave ? `
@@ -1150,6 +1167,9 @@ const App = (function() {
                         }
                     });
                 });
+                
+                // Asynchronously load panel previews for all sessions
+                _loadAllSessionPreviews(sessions);
                 
                 // Add delete button handlers
                 document.querySelectorAll('.session-delete').forEach(btn => {
@@ -1253,6 +1273,139 @@ const App = (function() {
                 </div>
             `;
         }
+    }
+    
+    /**
+     * Load panel previews for all sessions asynchronously
+     * @param {Array} sessions - List of session objects
+     * @private
+     */
+    async function _loadAllSessionPreviews(sessions) {
+        
+        // Process sessions in batches to avoid overwhelming the server
+        const BATCH_SIZE = 10;
+        const sessionsCopy = [...sessions];
+        
+        // Function to update preview for a single session
+        async function updatePreview(session) {
+            try {
+                // If the session already has panel configs, just use them
+                if (session.panelConfigs) {
+                    _updatePanelPreview(session);
+                    return;
+                }
+                
+                // For autosave, use loadFromLocalStorage
+                if (session.isAutosave) {
+                    const autosaveData = SessionManager.loadFromLocalStorage();
+                    if (autosaveData && autosaveData.panelConfigs) {
+                        session.panelConfigs = autosaveData.panelConfigs;
+                        _updatePanelPreview(session);
+                    }
+                } else {
+                    // Fetch session data from the server
+                    const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(session.name)}`);
+                    if (response.ok) {
+                        const sessionData = await response.json();
+                        if (sessionData && sessionData.panelConfigs) {
+                            session.panelConfigs = sessionData.panelConfigs;
+                            _updatePanelPreview(session);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Error loading preview for session ${session.name}:`, error);
+                // Update the UI to show error
+                _updateErrorPreview(session);
+            }
+        }
+        
+        // Process sessions in batches
+        while (sessionsCopy.length > 0) {
+            const batch = sessionsCopy.splice(0, BATCH_SIZE);
+            await Promise.all(batch.map(session => updatePreview(session)));
+            
+            // Small delay between batches to avoid overloading
+            if (sessionsCopy.length > 0) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+    }
+    
+    /**
+     * Update the panel preview UI based on session data
+     * @param {Object} session - Session object with panelConfigs
+     * @private
+     */
+    function _updatePanelPreview(session) {
+        // Find all preview containers for this session
+        const previewContainers = document.querySelectorAll(`.session-card-preview[data-session-name="${session.name}"]`);
+        
+        if (!previewContainers.length) return;
+        
+        // Get icons for panel types
+        const typeIcons = {};
+        Config.PANEL_TYPES.forEach(pt => {
+            typeIcons[pt.type] = pt.icon;
+        });
+        
+        if (session.panelConfigs) {
+            const panelConfigs = Object.values(session.panelConfigs)
+                .filter(panel => !panel.isSelectionTile);
+            
+            if (panelConfigs.length > 0) {
+                // Calculate how many icons to show
+                const maxIcons = 7; // Reasonable number that should fit in the card 
+                const visibleIcons = Math.min(panelConfigs.length, maxIcons);
+                const hasMore = panelConfigs.length > maxIcons;
+                
+                // Create the panel preview HTML
+                let previewHTML = '';
+                
+                // Add the visible icons
+                for (let i = 0; i < visibleIcons; i++) {
+                    const panel = panelConfigs[i];
+                    const icon = typeIcons[panel.type] || 'fas fa-window-maximize';
+                    previewHTML += `<i class="${icon}" title="${panel.title || panel.type}"></i>`;
+                }
+                
+                // Add the +N indicator if there are more panels
+                if (hasMore) {
+                    const moreCount = panelConfigs.length - maxIcons;
+                    previewHTML += `<span class="panel-preview-more">+${moreCount}</span>`;
+                }
+                
+                // Update all preview containers
+                previewContainers.forEach(container => {
+                    container.innerHTML = previewHTML;
+                });
+            } else {
+                // No panels in config
+                previewContainers.forEach(container => {
+                    container.innerHTML = `<div class="panel-preview-empty">No panels</div>`;
+                });
+            }
+        } else {
+            // No panel config available
+            previewContainers.forEach(container => {
+                container.innerHTML = `<div class="panel-preview-empty">No panel info</div>`;
+            });
+        }
+    }
+    
+    /**
+     * Update the panel preview UI to show an error
+     * @param {Object} session - Session object
+     * @private
+     */
+    function _updateErrorPreview(session) {
+        const previewContainers = document.querySelectorAll(`.session-card-preview[data-session-name="${session.name}"]`);
+        
+        if (!previewContainers.length) return;
+        
+        previewContainers.forEach(container => {
+            container.innerHTML = `<div class="panel-preview-error">Error loading preview</div>`;
+        });
     }
     
     /**
