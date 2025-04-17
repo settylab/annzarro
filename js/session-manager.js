@@ -183,16 +183,7 @@ const SessionManager = (function() {
                 
                 await _applySessionPanels(autosaveData);
 
-                // First restore the dataset
-                console.log("Restoring dataset:", autosaveData.dataset);
-                await DataManager.setCurrentDataset(autosaveData.dataset, true);
-                
-                // Set current session dataset information
-                if (!_currentSession) _currentSession = {};
-                _currentSession.dataset = autosaveData.dataset;
-                if (autosaveData.datasetName) _currentSession.datasetName = autosaveData.datasetName;
-                
-                // Update dataset selector in UI - ensure the option exists first
+
                 const datasetSelector = document.getElementById('dataset-selector');
                 if (datasetSelector) {
                     // First check if the option exists
@@ -221,10 +212,14 @@ const SessionManager = (function() {
                         option.selected = true;
                         datasetSelector.appendChild(option);
                     }
-                    // Option exists, just set the value
+
                     datasetSelector.value = autosaveData.dataset;
+
+                    // Also manually trigger the change event on the select element
+                    // to ensure UI components are notified about the dataset change
+                    datasetSelector.dispatchEvent(new Event('change'));
                     
-                    // If using Select2, update its UI
+                    // If using Select2, update its UI and load the dataset
                     if (window.$ && $.fn.select2) {
                         // Create proper event object with dataset value
                         $(datasetSelector).trigger({
@@ -233,14 +228,8 @@ const SessionManager = (function() {
                                 data: {id: autosaveData.dataset}
                             }
                         });
-                        
-                        // Also manually trigger the change event on the select element
-                        // to ensure UI components are notified about the dataset change
-                        datasetSelector.dispatchEvent(new Event('change'));
                     }
-                    
                 }
-                
 
                 return { status: 'success', message: 'Autosaved session loaded successfully' };
             }
