@@ -98,9 +98,15 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     else if (settings.history[type].key && keyValues.includes(settings.history[type].key)) {
       settings.key = settings.history[type].key;
     } 
-    // Last resort: use first available key
+    // Last resort: use first available key, but avoid _index if possible
     else {
-      settings.key = keyValues[0] || '';
+      if (type === 'obs' || type === 'var') {
+        // For obs and var types, avoid using _index if there are other options
+        const nonIndexKey = keyValues.find(k => k !== '_index');
+        settings.key = nonIndexKey || keyValues[0] || '';
+      } else {
+        settings.key = keyValues[0] || '';
+      }
     }
     
     keySelect.value = settings.key;

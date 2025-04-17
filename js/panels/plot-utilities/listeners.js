@@ -657,9 +657,20 @@ function setupAxisSelectorListeners(
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
       if (!cols.includes(current)) {
-        // use one of these defaults if available otherwise use the first column unless it is "_index" and there is a second option
+        // Define reasonable defaults based on axis
         const defaultIndex = { x: 0, y: 1, z: 2, color: 3 }[axis];
-        const fallback = cols[defaultIndex] || (cols[0] === '_index' && cols.length > 1 ? cols[1] : cols[0]) || '';
+        
+        // Only avoid _index for obs and var types
+        let fallback;
+        if (newType === 'obs' || newType === 'var') {
+          // For obs and var types, strongly avoid _index
+          const nonIndexValue = cols.find(c => c !== '_index');
+          fallback = nonIndexValue || cols[0] || '';
+        } else {
+          // For other types, use simple positional mapping
+          fallback = cols[defaultIndex] || cols[0] || '';
+        }
+        
         columnSelect.value = fallback;
         settings[axis].column = fallback;
       } else {
@@ -726,9 +737,20 @@ function setupAxisSelectorListeners(
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
       if (!cols.includes(current)) {
-        // use one of these defaults if available otherwise use the first column unless it is "_index" and there is a second option
+        // Define reasonable defaults based on axis
         const defaultIndex = { x: 0, y: 1, z: 2, color: 3 }[axis];
-        const fallback = cols[defaultIndex] || (cols[0] === '_index' && cols.length > 1 ? cols[1] : cols[0]) || '';
+        
+        // Only avoid _index for obs and var types
+        let fallback;
+        if (currentType === 'obs' || currentType === 'var') {
+          // For obs and var types, strongly avoid _index
+          const nonIndexValue = cols.find(c => c !== '_index');
+          fallback = nonIndexValue || cols[0] || '';
+        } else {
+          // For other types, use simple positional mapping  
+          fallback = cols[defaultIndex] || cols[0] || '';
+        }
+        
         columnSelect.value = fallback;
         settings[axis].column = fallback;
       } else {
