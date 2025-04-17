@@ -153,8 +153,8 @@ const CellPlotPanel = (function() {
             })
             
             
-            // Listen for focused cell changes
-            document.addEventListener('focusedCellChanged', async (e) => {
+            // Event handler functions that can be removed when cleaning up
+            const focusedCellChangedHandler = async (e) => {
                 const focusedCell = e.detail.cell;
                 const duringDatasetTransition = e.detail.duringDatasetTransition || false;
                 
@@ -169,10 +169,9 @@ const CellPlotPanel = (function() {
                     // Full data reload for normal cell changes
                     handleFocusedCellChanged(focusedCell);
                 }
-            });
+            };
             
-            // Listen for focused gene changes
-            document.addEventListener('focusedGeneChanged', async (e) => {
+            const focusedGeneChangedHandler = async (e) => {
                 const focusedGene = e.detail.gene;
                 const duringDatasetTransition = e.detail.duringDatasetTransition || false;
                 
@@ -187,7 +186,17 @@ const CellPlotPanel = (function() {
                     // Full data reload for normal gene changes
                     handleFocusedGeneChanged(focusedGene);
                 }
-            });
+            };
+            
+            // Listen for focused cell changes
+            document.addEventListener('focusedCellChanged', focusedCellChangedHandler);
+            
+            // Listen for focused gene changes
+            document.addEventListener('focusedGeneChanged', focusedGeneChangedHandler);
+            
+            // Store handlers so they can be removed during cleanup
+            handleFocusedCellChanged.eventHandler = focusedCellChangedHandler;
+            handleFocusedGeneChanged.eventHandler = focusedGeneChangedHandler;
         }
 
         async function handleFocusedCellChanged(focusedCell) {
@@ -342,6 +351,15 @@ const CellPlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            // Remove document event listeners
+            if (handleFocusedCellChanged.eventHandler) {
+                document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);
+            }
+            
+            if (handleFocusedGeneChanged.eventHandler) {
+                document.removeEventListener('focusedGeneChanged', handleFocusedGeneChanged.eventHandler);
+            }
+
             // Remove event listeners
             if (_plotContainer) {
                 // Clean up any loading indicators before purging the plot
