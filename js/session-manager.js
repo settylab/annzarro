@@ -10,7 +10,6 @@
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
-import { LayoutManager } from './layout-manager.js';
 
 const SessionManager = (function() {
     // Private variables
