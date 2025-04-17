@@ -526,6 +526,18 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
       hideOutliersButton.classList.add('btn-outline-secondary');
     }
   }
+
+  // Reverse colormap button
+  const reverseColormapButton = document.getElementById(`reverse-colormap-${id}`);
+  if (reverseColormapButton) {
+    if (settings.colorReversed) {
+      reverseColormapButton.classList.add('active', 'btn-primary');
+      reverseColormapButton.classList.remove('btn-outline-secondary');
+    } else {
+      reverseColormapButton.classList.remove('active', 'btn-primary');
+      reverseColormapButton.classList.add('btn-outline-secondary');
+    }
+  }
   
   // We can't update color sliders here because the data isn't loaded yet
   // Color sliders will be updated after data is loaded during plot creation
