@@ -291,6 +291,11 @@ const PanelManager = (function() {
                 _welcomeSelectionTile.toggleSessions(false);
             }
         }
+        
+        // Notify SessionManager about panel update to trigger autosave if enabled
+        if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
+            window.sessionManager.notifyPanelUpdate();
+        }
     }
     
     /**

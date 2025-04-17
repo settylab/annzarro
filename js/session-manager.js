@@ -678,6 +678,15 @@ const SessionManager = (function() {
         localStorage.removeItem(Config.AUTOSAVE.STORAGE_KEY);
     }
     
+    /**
+     * Notify the session manager about panel changes that might trigger autosave
+     */
+    function notifyPanelUpdate() {
+        if (Config.AUTOSAVE.ENABLED) {
+            saveToLocalStorage();
+        }
+    }
+    
     // Public API
     return {
         listSessions,
@@ -693,7 +702,8 @@ const SessionManager = (function() {
         startAutosave,
         stopAutosave,
         getAutosaveSession,
-        clearAutosave
+        clearAutosave,
+        notifyPanelUpdate
     };
 })();
 
