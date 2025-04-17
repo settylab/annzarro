@@ -423,14 +423,33 @@ export function setupColorControls(
         }
     }
 
+    // Update sliders and plot when input values change
     colorMinInput.addEventListener('change', (e) => {
         const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        _updateColorRange(minValue, settings.colorMax, true);
+        if (minValue !== null) {
+            // Update the slider with the typed value
+            colorMinSlider.value = minValue;
+            
+            // Manually trigger the slider's input event to use existing handler
+            const inputEvent = new Event('input', { bubbles: true });
+            colorMinSlider.dispatchEvent(inputEvent);
+        } else {
+            _updateColorRange(minValue, settings.colorMax, true);
+        }
     });
 
     colorMaxInput.addEventListener('change', (e) => {
         const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        _updateColorRange(settings.colorMin, maxValue, true);
+        if (maxValue !== null) {
+            // Update the slider with the typed value
+            colorMaxSlider.value = maxValue;
+            
+            // Manually trigger the slider's input event to use existing handler
+            const inputEvent = new Event('input', { bubbles: true });
+            colorMaxSlider.dispatchEvent(inputEvent);
+        } else {
+            _updateColorRange(settings.colorMin, maxValue, true);
+        }
     });
 
     // --- Direct slider update helper ---
