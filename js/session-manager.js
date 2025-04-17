@@ -233,6 +233,10 @@ const SessionManager = (function() {
                                 data: {id: autosaveData.dataset}
                             }
                         });
+                        
+                        // Also manually trigger the change event on the select element
+                        // to ensure UI components are notified about the dataset change
+                        datasetSelector.dispatchEvent(new Event('change'));
                     }
                     
                 }
