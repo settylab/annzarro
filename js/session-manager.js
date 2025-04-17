@@ -458,47 +458,22 @@ const SessionManager = (function() {
             // 4. Get panel configurations and register them as closed panels
             const panelConfigs = sessionData.panelConfigs || {};
             
-            // Register all panels from the configuration as closed panels with unique names
-            const existingPanels = PanelManager.getAllPanels();
-            const existingTitles = new Set(existingPanels.map(panel => panel.getTitle()));
-            
             Object.values(panelConfigs)
                 .filter(panel => !panel.isSelectionTile)
                 .forEach(panel => {
                     if (PanelManager.registerClosedPanel) {
-                        // Make sure the title is unique
-                        if (panel.title && existingTitles.has(panel.title)) {
-                            // Find a unique name by adding a suffix
-                            let counter = 1;
-                            let newTitle;
-                            do {
-                                newTitle = `${panel.title} (${counter})`;
-                                counter++;
-                            } while (existingTitles.has(newTitle));
-                            
-                            panel.title = newTitle;
-                            if (panel.config) {
-                                panel.config.title = newTitle;
-                            }
-                        }
-                        
-                        existingTitles.add(panel.title);
-                        
-                        console.log(`Registering panel from panel set: ${panel.id} - ${panel.title}`);
-                        PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
+                        PanelManager.registerClosedPanel(panel.type, panel.config);
                     }
                 });
             
             // 5. Ensure the source panel selection is updated to show the newly added panels
             if (PanelManager.updateSourcePanelSelection) {
-                console.log('Updating source panel selection to show new panels');
                 PanelManager.updateSourcePanelSelection();
             }
             
             // 6. Trigger a window resize to ensure all plots are properly sized if needed
             setTimeout(() => {
                 window.dispatchEvent(new Event('resize'));
-                console.log('Panel set loaded - panels added to available panels');
             }, 200);
         } catch (error) {
             console.error('Error applying panel set data:', error);
@@ -520,55 +495,13 @@ const SessionManager = (function() {
             // Get panel configurations and register them as closed panels
             const panelConfigs = JSON.parse(JSON.stringify(sessionData.panelConfigs || {}));
 
-            // Get all existing panels to compare for uniqueness. 
-            // Note: if panels have getID/getTitle, use these methods; otherwise, use direct id/title properties.
-            const existingPanels = PanelManager.getAllPanels();
-            const existingTitles = new Set(existingPanels.map(panel => panel.getTitle()));
-            const existingIds = new Set(existingPanels.map(panel => panel.getId ? panel.getId() : panel.id));
 
             // Process each closed panel configuration
             Object.values(panelConfigs)
             .filter(panel => !panel.isSelectionTile)
             .forEach(panel => {
                 if (PanelManager.registerClosedPanel) {
-                    // Ensure the title is unique
-                    if (panel.title && existingTitles.has(panel.title)) {
-                        let counter = 1;
-                        let newTitle;
-                        do {
-                            newTitle = `${panel.title} (${counter})`;
-                            counter++;
-                        } while (existingTitles.has(newTitle));
-                        panel.title = newTitle;
-                        if (panel.config) {
-                            panel.config.title = newTitle;
-                        }
-                    }
-                    existingTitles.add(panel.title);
-
-                    // If the ID doesn't already have the closed- prefix, ensure it has it
-                    if (panel.id && !panel.id.startsWith('closed-')) {
-                        // Add the closed- prefix to ensure no ID collision with active panels
-                        panel.id = `closed-${panel.id}`;
-                    }
-                    
-                    // Even with the prefix, ensure the id is unique among all panels
-                    if (panel.id && existingIds.has(panel.id)) {
-                        let counter = 1;
-                        let newId;
-                        do {
-                            newId = `${panel.id}-${counter}`;
-                            counter++;
-                        } while (existingIds.has(newId));
-                        panel.id = newId;
-                        if (panel.config) {
-                            panel.config.id = newId;
-                        }
-                    }
-                    existingIds.add(panel.id);
-
-                    // Register the panel as closed with the unique id
-                    PanelManager.registerClosedPanel(panel.type, panel.config, panel.id);
+                    PanelManager.registerClosedPanel(panel.type, panel.config);
                 }
             });
             

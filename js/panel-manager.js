@@ -125,10 +125,14 @@ const PanelManager = (function() {
     /**
      * Generate a unique name to avoid collisions
      * @param {string} baseName - Original name
+     * @param {string} [type] - Optional type for more specific naming
      * @returns {string} - Unique name
      * @private
      */
-    function _generateUniqueName(baseName) {
+    function _generateUniqueName(baseName, type = null) {
+        if (!baseName) {
+            baseName = (type ? `${_formatPanelType(type)} ${_counters[type]}` : 'Panel 1');
+        }
         const existingNames = new Set();
         _panels.forEach(panel => {
             existingNames.add(panel.getTitle());
@@ -786,31 +790,36 @@ const PanelManager = (function() {
      * Register a closed panel for potential future cloning
      * @param {string} type - Panel type
      * @param {Object} config - Panel configuration
-     * @param {string} id - Optional panel ID (will be generated if not provided)
+     * @param {string} [id] - Optional panel ID (will be generated if not provided)
+     * @returns {Object} - The created panel instance
      */
-    function registerClosedPanel(type, config, id) {
+    function registerClosedPanel(type, config, id = null) {
         if (!_panelTypes.has(type)) {
             console.error(`Unknown panel type: ${type}`);
-            return;
+            return null;
         }
         
-        // Generate an ID if not provided, prefix with "closed-" to avoid ID collisions with active panels
-        const panelId = id ? (id.startsWith('closed-') ? id : `closed-${id}`) : `closed-${type}-${++_counters[type]}`;
-        
+        // Generate an ID if not provided using the same counter system for active and closed panels
+        config.id = id || `${type}-${++_counters[type]}`;
+        config.title = _generateUniqueName(config.title, type);
+
         // Create a "zombie" panel (stored but not active)
         const Constructor = _panelTypes.get(type);
         const dummyContainer = document.createElement('div'); // Will not be used
         
         const panel = new Constructor(dummyContainer, {
-            id: panelId,
-            title: config.title || `${_formatPanelType(type)} ${_counters[type]}`,
+            id: config.id,
+            title: config.title,
             ...config,
             _closed: true // Mark as closed
         });
         
         // Store reference but don't add to active panels
-        _panels.set(panelId, panel);
-        _panelsByType.get(type).add(panel)
+        _panels.set(config.id, panel);
+        _panelsByType.get(type).add(panel);
+        
+        // Return the panel for additional operations
+        return panel;
     }
     
     /**
@@ -829,6 +838,14 @@ const PanelManager = (function() {
         // Return active panels or all panels if no active panels set exists
         return getActivePanels ? getActivePanels() : Array.from(_panels.values());
     }
+
+    /**
+     * Get the panel types map
+     * @returns {Map} - Map of panel types
+     */
+    function getCounters() {
+        return _counters;
+    }
     
     // Public API
     return {
@@ -841,6 +858,7 @@ const PanelManager = (function() {
         getActivePanels,
         getAllPanels,
         getAllActivePanels,
+        getCounters,
         notifyPanels,
         resetPanels,
         saveLayout,

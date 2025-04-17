@@ -242,6 +242,8 @@ export class SelectionTile {
       
       // Get the icon from centralized panel definitions
       const panelType = panel.getType();
+      const panelId = panel.getId();
+      const panelTitle = panel.getTitle();
       const panelConfig = Config.PANEL_TYPES.find(pt => pt.type === panelType);
       const typeIcon = panelConfig ? panelConfig.icon : 'fas fa-cube';
       
@@ -249,7 +251,7 @@ export class SelectionTile {
         <div class="tile-type-icon">
           <i class="${typeIcon} fa-3x"></i>
         </div>
-        <div class="tile-type-label">${panel.getTitle()}</div>
+        <div class="tile-type-label">${panelTitle}</div>
         ${!this.activePanels.has(panel) ? `
           <div class="panel-status">Closed</div>
           <button class="delete-panel-btn" data-id="${id}" title="Delete">×</button>
@@ -261,14 +263,10 @@ export class SelectionTile {
           return;
         }
         const config = JSON.parse(JSON.stringify(panel.getConfig()));
-        const panelType = panel.getType();
         config.id = `${panelType}-${++this.counters[panelType]}`;
-        config.title = panel.getTitle();
-        const panelId = panel.getId();
-  
-        if (config._closed) {
-          delete config._closed;
-        }
+        config.title = panelTitle;
+        config._closed = false;
+
   
         if (panelId && !this.activePanels.has(panel)) {
           const panelInstance = this.panels.get(panelId);
