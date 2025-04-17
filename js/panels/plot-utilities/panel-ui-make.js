@@ -131,7 +131,7 @@ export function createPanelStructure(container, id, settings) {
               </div>
               <div class="point-opacity-control">
                 <label>Opacity:</label>
-                <input type="range" class="form-range" min="0" max="1" step="0.1" value="${settings.pointOpacity}" id="point-opacity-${id}">
+                <input type="range" class="form-range" min="0" max="1" step="0.01" value="${settings.pointOpacity}" id="point-opacity-${id}">
               </div>
             </div>
 
