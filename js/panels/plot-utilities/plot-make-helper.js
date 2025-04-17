@@ -256,7 +256,7 @@ export function attachViewportTracking(plotContainer, settings) {
         name: category,
         text: indices.map(idx => data[entityKey][idx]),
         customdata: indices, // for click handling
-        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
+        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
         x: indices.map(idx => data.x.values[idx]),
         y: indices.map(idx => data.y.values[idx]),
         marker: {

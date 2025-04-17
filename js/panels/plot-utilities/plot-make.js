@@ -696,6 +696,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     hovertemplate:
       `%{text}<br>x: %{x}<br>y: %{y}` +
       (settings.z ? `<br>z: %{z}` : '') +
+      (data.colorType === 'numerical' ? `<br>c: %{marker.color}` : '') +
       `<extra></extra>`,
     marker: {
       size: settings.pointSize,
@@ -718,7 +719,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     const catValues = data.colorCategories || [...new Set(data.color)];
     const colorKey = `${settings.color.key}_colors`;
     const datasetPath = DataManager.getCurrentDataset();
-
     try {
       const response = await DataManager.loadUns({
         datasetPath: datasetPath,
@@ -732,6 +732,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       }
       // Process categories using the uns (custom) colors if available.
       const categoricalTraces = processCategories(settings, data, catValues, customColors);
+      
       layout.showlegend = true;
       layout.legend = { ...(layout.legend || {}), title: { text: settings.color.key } };
 
@@ -756,6 +757,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
       // Fallback: process without custom colors
       const categoricalTraces = processCategories(settings, data, catValues);
+      
       plotContainer.innerHTML = '';
       Plotly.newPlot(
         plotContainer,
