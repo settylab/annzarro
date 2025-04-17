@@ -17,7 +17,7 @@
  * @returns {string[]} Array of colors in hex, HSL, or RGB format.
  * @throws {Error} If the colormap is unknown or invalid.
  */
-export function generateDiscreteColors(n, colormap = 'tab10', reverse = false) {
+export function generateDiscreteColors(n, colormap = 'hue', reverse = false) {
     // Automatically reverse if colormap ends with "_r"
     if (typeof colormap === "string" && colormap.endsWith("_r")) {
         reverse = !reverse;
@@ -123,10 +123,10 @@ export function listAvailableColormaps() {
     }
   
     return {
+      'Custom': ['hue'],
       'Discrete Palettes': Object.keys(discreteColormaps),
       'Continuous Palettes': Object.keys(continuousColormaps),
       'Chroma Palettes': chromaColormaps,
-      'Custom': ['hue']
     };
   }
 
