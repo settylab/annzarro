@@ -220,8 +220,13 @@ export function attachViewportTracking(plotContainer, settings) {
       selectedPalette = customColors;
     } else {
         try {
-          // Try to generate a palette using the provided palette name.
-          selectedPalette = generateDiscreteColors(catValues.length, settings.categoryPalette);
+          if (settings.categoryPalette === "uns") {
+            // If "uns" is selected but no custom colors are provided, fall back to default palette.
+            selectedPalette = generateDiscreteColors(catValues.length);
+          } else {
+            // Generate a color palette based on the provided palette name.
+            selectedPalette = generateDiscreteColors(catValues.length, settings.categoryPalette);
+          }
         }
         catch (error) {
           console.error(`Error generating color palette "${settings.categoryPalette}": ${error}`);

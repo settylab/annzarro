@@ -595,15 +595,40 @@ function setupAxisSelectorListeners(
   selectors.forEach(select => {
     select.addEventListener('change', async (e) => {
       const axis =  e.currentTarget.dataset.axis;
-      const type =  e.currentTarget.value;
+      const newType =  e.currentTarget.value;
       const keySelect = controlsContainer.querySelector(`.axis-key-select[data-axis="${axis}"]`);
       const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
 
       if (!keySelect || !columnSelect) return console.error(`Missing axis elements for ${axis}`);
 
-      if (settings[axis].type === type) return;
-
-      settings[axis].type = type;
+      if (settings[axis].type === newType) return;
+      
+      // Store the current values in history before changing them
+      const oldType = settings[axis].type;
+      const oldKey = settings[axis].key;
+      const oldColumn = settings[axis].column;
+      
+      // Initialize history storage if needed
+      if (!settings[axis].history) {
+        settings[axis].history = {};
+      }
+      if (!settings[axis].history[oldType]) {
+        settings[axis].history[oldType] = { key: oldKey, columns: {} };
+      }
+      
+      // Store the current column for the current key
+      if (oldKey && (oldType === 'obsm' || oldType === 'varm')) {
+        if (!settings[axis].history[oldType].columns) {
+          settings[axis].history[oldType].columns = {};
+        }
+        settings[axis].history[oldType].columns[oldKey] = oldColumn;
+      }
+      
+      // Store the current key for the current type
+      settings[axis].history[oldType].key = oldKey;
+      
+      // Now change the type
+      settings[axis].type = newType;
       
       // Show loading indicators for key and column selects
       showDropdownLoading(keySelect);
@@ -614,13 +639,10 @@ function setupAxisSelectorListeners(
         console.error('No dataset structure');
         return;
       }
-
-      populateKeySelector(settings[axis], keySelect, datasetStructure);
       
-      // Re-setup the axis selector to update the special buttons
       setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
       
-      if (type === 'none' && axis === 'color') {
+      if (newType === 'none' && axis === 'color') {
         await loadColorDataAndUpdatePlot(
           controlsContainer,
           plotContainer,
@@ -632,18 +654,12 @@ function setupAxisSelectorListeners(
         return;
       }
 
-      const keys = [...keySelect.options].map(o => o.value);
-      settings[axis].key = keys[0] || '';
-      keySelect.value = settings[axis].key;
-      settings[axis].column = undefined;
-
-      populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
-
-
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
       if (!cols.includes(current)) {
-        const fallback = cols[{ x: 0, y: 1, z: 2 }[axis]] || cols[0] || '';
+        // use one of these defaults if available otherwise use the first column unless it is "_index" and there is a second option
+        const defaultIndex = { x: 0, y: 1, z: 2, color: 3 }[axis];
+        const fallback = cols[defaultIndex] || (cols[0] === '_index' && cols.length > 1 ? cols[1] : cols[0]) || '';
         columnSelect.value = fallback;
         settings[axis].column = fallback;
       } else {
@@ -663,12 +679,37 @@ function setupAxisSelectorListeners(
   keySelectors.forEach(select => {
     select.addEventListener('change', async (e) => {
       const axis =  e.currentTarget.dataset.axis;
-      const key =  e.currentTarget.value;
+      const newKey =  e.currentTarget.value;
       const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
 
       if (!columnSelect) return console.error(`Missing column select for ${axis}`);
 
-      settings[axis].key = key;
+      // Get current values before changing them
+      const currentType = settings[axis].type;
+      const oldKey = settings[axis].key;
+      const oldColumn = settings[axis].column;
+      
+      // Store the current column for the current key before changing
+      if (currentType === 'obsm' || currentType === 'varm') {
+        // Initialize history storage if needed
+        if (!settings[axis].history) {
+          settings[axis].history = {};
+        }
+        if (!settings[axis].history[currentType]) {
+          settings[axis].history[currentType] = { key: oldKey, columns: {} };
+        }
+        if (!settings[axis].history[currentType].columns) {
+          settings[axis].history[currentType].columns = {};
+        }
+        
+        // Store the old column for the old key
+        if (oldKey && oldColumn) {
+          settings[axis].history[currentType].columns[oldKey] = oldColumn;
+        }
+      }
+      
+      // Now change the key and clear the column
+      settings[axis].key = newKey;
       settings[axis].column = undefined;
       
       // Show loading indicator for column select
@@ -680,15 +721,14 @@ function setupAxisSelectorListeners(
         return;
       }
 
-      populateColumnSelector(settings[axis], columnSelect, axis, plotType, datasetStructure);
-      
-      // Re-setup the axis selector to ensure special buttons are correct
       setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
 
       const cols = [...columnSelect.options].map(o => o.value);
       const current = settings[axis].column;
       if (!cols.includes(current)) {
-        const fallback = cols[{ x: 0, y: 1, z: 2 }[axis]] || cols[0] || '';
+        // use one of these defaults if available otherwise use the first column unless it is "_index" and there is a second option
+        const defaultIndex = { x: 0, y: 1, z: 2, color: 3 }[axis];
+        const fallback = cols[defaultIndex] || (cols[0] === '_index' && cols.length > 1 ? cols[1] : cols[0]) || '';
         columnSelect.value = fallback;
         settings[axis].column = fallback;
       } else {

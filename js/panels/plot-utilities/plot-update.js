@@ -443,6 +443,11 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   let traceIndex = 0;
   const entityArray = data[entityType];
 
+  if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
+    console.warn("Plot data is not available for highlighting");
+    return;
+  }
+
   // Check if the data is categorical with multiple traces.
   const isCategorical = data.colorType === 'categorical';
   const dataTraces = plotContainer.data.filter(trace => trace && 

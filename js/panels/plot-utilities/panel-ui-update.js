@@ -7,9 +7,19 @@ import { DataManager } from '../../data-manager.js';
  * @param {Object} datasetStructure - Structure of the loaded dataset
  */
 export function populateKeySelector(settings, keySelect, datasetStructure) {
-    const type = settings.type || 'obsm';
+    const type = settings.type || 'layer';
     let keyOptions = [];
     keySelect.disabled = false;
+  
+    // Initialize the settings history if it doesn't exist
+    if (!settings.history) {
+      settings.history = {};
+    }
+    
+    // Initialize the type history if it doesn't exist
+    if (!settings.history[type]) {
+      settings.history[type] = { key: null };
+    }
   
     switch (type) {
       case 'none': {
@@ -79,10 +89,23 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     keySelect.innerHTML = keyOptions.length ? keyOptions.join('') : '<option value="">No options available</option>';
   
     const keyValues = Array.from(keySelect.options).map(opt => opt.value);
-    if (!keyValues.includes(settings.key)) {
+    
+    // First check if current selection is valid
+    if (keyValues.includes(settings.key)) {
+      // Current key is valid, keep it
+    }
+    // If not, try to restore previously used key for this type
+    else if (settings.history[type].key && keyValues.includes(settings.history[type].key)) {
+      settings.key = settings.history[type].key;
+    } 
+    // Last resort: use first available key
+    else {
       settings.key = keyValues[0] || '';
     }
+    
     keySelect.value = settings.key;
+    
+    // We no longer need this line as we're storing the history in the event handlers
   }
   
   /**
@@ -94,7 +117,23 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
    * @param {Object} datasetStructure - Structure of the loaded dataset
    */
   export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
-    const type = settings.type || (plotType=='cells' ? 'obsm' : 'varm');
+  // Initialize the settings history if it doesn't exist
+  if (!settings.history) {
+    settings.history = {};
+  }
+  
+  // Make sure we have the type defined
+  const type = settings.type || (plotType === 'cells' ? 'obsm' : 'varm');
+  
+  // Initialize the type history if it doesn't exist
+  if (!settings.history[type]) {
+    settings.history[type] = { key: '', columns: {} };
+  }
+  
+  // Initialize the columns object for this type if it doesn't exist
+  if (!settings.history[type].columns) {
+    settings.history[type].columns = {};
+  }
     let columnOptions = [];
     columnSelect.disabled = false;
   
@@ -114,9 +153,24 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
             columns = [...columns].sort((a, b) => a.localeCompare(b));
           }
           columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
-          const axisIndexMap = { x: 0, y: 1, z: 2 };
-          const idx = axisIndexMap[axis] || 0;
-          if (!columns.includes(settings.column)) {
+          
+          // Try to use previously saved column for this key
+          if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
+            settings.column = settings.history[type].columns[settings.key];
+          } else if (!columns.includes(settings.column)) {
+            // Fall back to positional mapping if no history or not in available columns
+            const axisIndexMap = { x: 0, y: 1, z: 2 };
+            let idx = axisIndexMap[axis] || 0;
+            
+            // Skip _index column if possible
+            if (columns[idx] === "_index" && columns.length > idx + 1) {
+              idx += 1;
+            } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
+              // If we're about to default to index 0 and it's "_index", use the next one
+              settings.column = columns[1];
+              return;
+            }
+            
             settings.column = columns[idx] || columns[0];
           }
         } else {
@@ -136,9 +190,24 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
             columns = [...columns].sort((a, b) => a.localeCompare(b));
           }
           columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
-          const axisIndexMap = { x: 0, y: 1, z: 2 };
-          const idx = axisIndexMap[axis] || 0;
-          if (!columns.includes(settings.column)) {
+          
+          // Try to use previously saved column for this key
+          if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
+            settings.column = settings.history[type].columns[settings.key];
+          } else if (!columns.includes(settings.column)) {
+            // Fall back to positional mapping if no history or not in available columns
+            const axisIndexMap = { x: 0, y: 1, z: 2 };
+            let idx = axisIndexMap[axis] || 0;
+            
+            // Skip _index column if possible
+            if (columns[idx] === "_index" && columns.length > idx + 1) {
+              idx += 1;
+            } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
+              // If we're about to default to index 0 and it's "_index", use the next one
+              settings.column = columns[1];
+              return;
+            }
+            
             settings.column = columns[idx] || columns[0];
           }
         } else {
@@ -200,10 +269,25 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
   
     columnSelect.innerHTML = columnOptions.join('');
     const colValues = Array.from(columnSelect.options).map(opt => opt.value);
-    if (!colValues.includes(settings.column)) {
+    
+    // First check if current column selection is valid
+    if (colValues.includes(settings.column)) {
+      // Current column is valid, keep it
+    }
+    // For obsm and varm types, try to restore from history if current is invalid
+    else if ((type === 'obsm' || type === 'varm') && 
+             settings.history[type]?.columns?.[settings.key] && 
+             colValues.includes(settings.history[type].columns[settings.key])) {
+      settings.column = settings.history[type].columns[settings.key];
+    }
+    // Last resort: use first available value
+    else {
       settings.column = columnSelect.value || '';
     }
+    
     columnSelect.value = settings.column;
+    
+    // We no longer need this code as we're storing the history in the event handlers
   }
   
 
