@@ -70,7 +70,7 @@ const DataManager = (function() {
      */
     async function setCurrentDataset(datasetPath, silent = false) {
         try {
-            _currentDataset = null;
+            _currentDataset = datasetPath;
             
             // Store current focused items to check if they exist in new dataset
             const previousFocusedCell = _focusedCell;
@@ -132,8 +132,6 @@ const DataManager = (function() {
             } else {
                 _focusedGene = null;
             }
-
-            _currentDataset = datasetPath;
             
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {

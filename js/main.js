@@ -463,6 +463,7 @@ const App = (function() {
             
             // Set loading flag
             _isLoadingDataset = true;
+            _lastLoadedDatasetPath = datasetPath;
             console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
             // Show loading indicators
@@ -489,7 +490,6 @@ const App = (function() {
             }
             
             // Update last loaded dataset path and reset loading flag
-            _lastLoadedDatasetPath = datasetPath;
             _isLoadingDataset = false;
         } catch (error) {
             console.error('Error loading dataset:', error);
