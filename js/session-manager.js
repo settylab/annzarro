@@ -546,7 +546,13 @@ const SessionManager = (function() {
                     }
                     existingTitles.add(panel.title);
 
-                    // Ensure the id is unique
+                    // If the ID doesn't already have the closed- prefix, ensure it has it
+                    if (panel.id && !panel.id.startsWith('closed-')) {
+                        // Add the closed- prefix to ensure no ID collision with active panels
+                        panel.id = `closed-${panel.id}`;
+                    }
+                    
+                    // Even with the prefix, ensure the id is unique among all panels
                     if (panel.id && existingIds.has(panel.id)) {
                         let counter = 1;
                         let newId;

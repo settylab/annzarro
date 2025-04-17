@@ -794,8 +794,8 @@ const PanelManager = (function() {
             return;
         }
         
-        // Generate an ID if not provided
-        const panelId = id || `${type}-${++_counters[type]}`;
+        // Generate an ID if not provided, prefix with "closed-" to avoid ID collisions with active panels
+        const panelId = id ? (id.startsWith('closed-') ? id : `closed-${id}`) : `closed-${type}-${++_counters[type]}`;
         
         // Create a "zombie" panel (stored but not active)
         const Constructor = _panelTypes.get(type);

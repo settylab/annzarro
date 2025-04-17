@@ -266,6 +266,10 @@ export class SelectionTile {
         config.title = panel.getTitle();
         const panelId = panel.getId();
   
+        if (config._closed) {
+          delete config._closed;
+        }
+  
         if (panelId && !this.activePanels.has(panel)) {
           const panelInstance = this.panels.get(panelId);
           if (panelInstance) {
