@@ -845,4 +845,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     );
     attachClickHandler(plotContainer, [baseTrace], data, settings);
   }
+  if (settings[highlightKey]) {
+    highlightFocusedEntity(plotContainer, data, settings);
+  }
 }
