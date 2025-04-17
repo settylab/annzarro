@@ -347,7 +347,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       }
     }
   
-    console.log(`Axis '${axis}' setup complete with key='${settings.key}' and column='${settings.column}'`);
+    console.log(`Axis '${axis}' setup complete with type='${settings.type}' key='${settings.key}' and column='${settings.column}'`);
 }
 
   

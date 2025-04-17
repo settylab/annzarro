@@ -269,7 +269,6 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
         
         // LAYOUT UPDATES (e.g., axis titles and colorbar properties)
         if (updateOptions.layout) {
-            console.log("Updating layout properties");
             
             if (!plotContainer || !plotContainer.data || !plotContainer.data[0]) {
                 console.warn("Unable to update layout: plot or container is not valid");
@@ -302,7 +301,6 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
             }
             
             if (Object.keys(layoutUpdate).length > 0) {
-                console.log("Applying layout updates:", layoutUpdate);
                 Plotly.relayout(plotContainer, layoutUpdate);
             }
             
