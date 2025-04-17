@@ -23,8 +23,9 @@ import { processCategories } from './plot-make-helper.js';
  * @param {boolean} options.layout - Whether to update layout properties/
  * @param {Function} refreshPlot - Fallback function to recreate the plot.
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
+ * @returns {Promise<void>}
  */
-export function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+export async function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -186,108 +187,132 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
             const hasStillMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
             
             if (updateOptions.colorData) {
-              // When switching from categorical (multiple traces) to numerical (single trace)
-              if (!isCategorical && hasStillMultipleTraces) {
-                  // Create a new single trace using the data object
-                  const newTrace = {
-                      type: settings.z ? 'scatter3d' : 'scattergl',
-                      mode: 'markers',
-                      x: data.x.values,
-                      y: data.y.values,
-                      text: data[entityType],
-                      customdata: Array.from({ length: data[entityType].length }, (_, i) => i),
-                      hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
-                          (settings.z ? `<br>z: %{z}` : '') +
-                          `<br>c: %{marker.color}<extra></extra>`,
-                      marker: {
-                          size: settings.pointSize,
-                          opacity: settings.pointOpacity,
-                          color: data.color,
-                          colorscale: settings.colorScale,
-                          reversescale: settings.colorReversed,
-                          cmin: settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v))),
-                          cmax: settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v))),
-                          colorbar: {
-                              title: {
-                                  text: `${settings.color.type}.${settings.color.key}` + 
-                                        (settings.color.column ? `.${settings.color.column}` : ''),
-                                  side: 'right',
-                                  font: { size: 12 }
-                              },
-                              titleside: 'right'
-                          },
-                          showscale: true
-                      },
-                      showlegend: false
-                  };
-                  
-                  if (settings.z) newTrace.z = data.z.values;
-                  
-                  // First remove all traces
-                  while (plotContainer.data.length > 0) {
-                      Plotly.deleteTraces(plotContainer, 0);
-                  }
-                  
-                  // Add the new trace
-                  Plotly.addTraces(plotContainer, newTrace);
-                  
-                  // Update layout for numerical coloring (hide legend)
-                  Plotly.relayout(plotContainer, {
-                      showlegend: false
-                  });
-                  
-                  // Re-highlight focused entity if needed
-                  if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                      highlightFocusedEntity(plotContainer, data, settings, entityType);
-                  }
-                      
-              } else if (isCategorical) {
-                  // Get unique category values and prepare color data
-                  const catValues = data.colorCategories || [...new Set(data.color)];
-                  let customColors = null;
-                  
-                  // Try to load custom colors from uns if categoryPalette is set to "uns"
-                  if (settings.categoryPalette === "uns") {
-                      const colorKey = `${settings.color.key}_colors`;
-                      const datasetPath = DataManager.getCurrentDataset();
-                      try {
-                          // DataManager.loadUns is async
-                          const response = DataManager.loadUns({
-                              datasetPath: datasetPath,
-                              unsKey: colorKey
-                          });
-                          
-                          if (response && response.data) {
-                              customColors = Array.isArray(response.data) ? response.data : [response.data];
-                          }
-                      } catch (error) {
-                          console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
-                      }
-                  }
-                  
-                  // Process categories to create traces for each category
-                  const categoricalTraces = processCategories(settings, data, catValues, customColors);
-                  
-                  // Remove all existing traces
-                  while (plotContainer.data.length > 0) {
-                      Plotly.deleteTraces(plotContainer, 0);
-                  }
-                  
-                  // Add new categorical traces
-                  Plotly.addTraces(plotContainer, categoricalTraces);
-                  
-                  // Update layout to show legend
-                  Plotly.relayout(plotContainer, {
-                      showlegend: true,
-                      'legend.title.text': settings.color.key
-                  });
-                  
-                  // Re-highlight focused entity if needed
-                  if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                      highlightFocusedEntity(plotContainer, data, settings, entityType);
-                  }
+                // When switching from categorical (multiple traces) to numerical (single trace)
+                if (!isCategorical && hasStillMultipleTraces) {
+                    try {
+                        // Create a new single trace using the data object
+                        const newTrace = {
+                            type: settings.z ? 'scatter3d' : 'scattergl',
+                            mode: 'markers',
+                            x: data.x.values,
+                            y: data.y.values,
+                            text: data[entityType],
+                            customdata: Array.from({ length: data[entityType].length }, (_, i) => i),
+                            hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
+                                (settings.z ? `<br>z: %{z}` : '') +
+                                `<br>c: %{marker.color}<extra></extra>`,
+                            marker: {
+                                size: settings.pointSize,
+                                opacity: settings.pointOpacity,
+                                color: data.color,
+                                colorscale: settings.colorScale,
+                                reversescale: settings.colorReversed,
+                                cmin: settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v))),
+                                cmax: settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v))),
+                                colorbar: {
+                                    title: {
+                                        text: `${settings.color.type}.${settings.color.key}` + 
+                                              (settings.color.column ? `.${settings.color.column}` : ''),
+                                        side: 'right',
+                                        font: { size: 12 }
+                                    },
+                                    titleside: 'right'
+                                },
+                                showscale: true
+                            },
+                            showlegend: false
+                        };
+                        
+                        if (settings.z) newTrace.z = data.z.values;
+                        
+                        // First remove all traces
+                        while (plotContainer.data.length > 0) {
+                            Plotly.deleteTraces(plotContainer, 0);
+                        }
+                        
+                        // Add the new trace
+                        Plotly.addTraces(plotContainer, newTrace);
+                        
+                        // Update layout for numerical coloring (hide legend)
+                        Plotly.relayout(plotContainer, {
+                            showlegend: false
+                        });
+                        
+                        // Re-highlight focused entity if needed
+                        if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
+                            highlightFocusedEntity(plotContainer, data, settings, entityType);
+                        }
+                        
+                        return;
+                    } catch (error) {
+                        console.error("Error converting from categorical to numerical coloring:", error);
+                        refreshPlot();
+                        return;
+                    }
+                }
+                
+                // Handle case where we're switching from numerical to categorical
+                if (isCategorical && !hasStillMultipleTraces) {
+                    console.log("Switching from numerical to categorical coloring");
+                    // This will be handled by the categorical update code below
+                }
+            }
+            
+            if (isCategorical && updateOptions.colorData) {
+                try {
+                    // Get unique category values and prepare color data
+                    const catValues = data.colorCategories || [...new Set(data.color)];
+                    let customColors = null;
                     
-              } else if (isNumerical) {
+                    // Try to load custom colors from uns if categoryPalette is set to "uns"
+                    if (settings.categoryPalette === "uns") {
+                        const colorKey = `${settings.color.key}_colors`;
+                        const datasetPath = DataManager.getCurrentDataset();
+                        try {
+                            const response = await DataManager.loadUns({
+                                datasetPath: datasetPath,
+                                unsKey: colorKey
+                            });
+                            
+                            if (response && response.data) {
+                                customColors = Array.isArray(response.data) ? response.data : [response.data];
+                            }
+                        } catch (error) {
+                            console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
+                        }
+                    }
+                    
+                    // Process categories to create traces for each category
+                    const categoricalTraces = processCategories(settings, data, catValues, customColors);
+                    
+                    // Remove all existing traces
+                    while (plotContainer.data.length > 0) {
+                        Plotly.deleteTraces(plotContainer, 0);
+                    }
+                    
+                    // Add new categorical traces
+                    Plotly.addTraces(plotContainer, categoricalTraces);
+                    
+                    // Update layout to show legend
+                    Plotly.relayout(plotContainer, {
+                        showlegend: true,
+                        'legend.title.text': settings.color.key
+                    });
+                    
+                    // Re-highlight focused entity if needed
+                    if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
+                        highlightFocusedEntity(plotContainer, data, settings, entityType);
+                    }
+                    
+                    return;
+                } catch (error) {
+                    console.error("Error updating categorical colors:", error);
+                    refreshPlot();
+                    return;
+                }
+            }
+            
+            if (isNumerical && data.color && data.color.length > 0) {
                 const update = {};
                 const applyMask = idx => !indexMask || indexMask[idx];
 
@@ -325,15 +350,12 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
                 if (Object.keys(update).length > 0) {
                     Plotly.restyle(plotContainer, update, [0]);
                 }
-            } else {
-                refreshPlot();
             }
             
             // Re-add highlight for the focused entity if needed.
             if (hasFocusedCell) {
                 highlightFocusedEntity(plotContainer, data, settings, entityType);
             }
-          }
         }
         
         // STYLING UPDATES (e.g., point size and opacity)

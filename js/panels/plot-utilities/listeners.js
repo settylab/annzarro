@@ -1,4 +1,4 @@
-import { populateKeySelector, populateColumnSelector, updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
+import { updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
 import { loadAxisData } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -390,7 +390,10 @@ export function setupColorControls(
     categoryPaletteSelect.addEventListener('change', (e) => {
         settings.categoryPalette = e.currentTarget.value;
         if (plotContainer && data.colorType === 'categorical') {
-            loadDataAndCreatePlot();
+            _updatePlotElements({
+                colors: true,
+                colorData: true  // Trigger categorical color update without reloading data
+            });
         }
     });
 
