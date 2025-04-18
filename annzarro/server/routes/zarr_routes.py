@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
-from ...core.zarr_reader import zarr_reader
+from ...core import zarr_reader
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,60 @@ def register_zarr_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
+    
+    @app.route(f"/api/{api_version}/cache/info", methods=["GET"])
+    def get_cache_info():
+        """
+        Get information about the current cache state.
+        
+        Returns:
+            JSON response with cache information
+        """
+        try:
+            # Get cache info
+            result = zarr_reader.get_cache_info()
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error getting cache info: {str(e)}")
+            return jsonify({
+                "status": "error", 
+                "message": f"Failed to get cache info: {str(e)}"
+            }), 500
+            
+    @app.route(f"/api/{api_version}/cache/reset", methods=["POST"])
+    def reset_cache():
+        """
+        Reset the zarr reader cache.
+        
+        Query parameters:
+            dataset_id: Optional dataset ID to clear from cache.
+                       If not provided, clears the entire cache.
+        
+        Returns:
+            JSON response with cache reset result
+        """
+        try:
+            # Get optional dataset_id query parameter
+            dataset_id = request.args.get('dataset_id', None)
+            
+            # Clear the cache
+            result = zarr_reader.clear_cache(dataset_id=dataset_id)
+            
+            # Add cache configuration to the response
+            result["cache_config"] = {
+                "cache_enabled": zarr_reader.enable_caching,
+                "cache_memory_mb": zarr_reader.max_memory_mb,
+                "cache_dataset_limit": zarr_reader.cache_limit
+            }
+            
+            # Return result as JSON
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error clearing cache: {str(e)}")
+            return jsonify({
+                "status": "error", 
+                "message": f"Failed to clear cache: {str(e)}"
+            }), 500
     
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
     def get_dataset_metadata(dataset_path: str):
