@@ -826,6 +826,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     );
     attachClickHandler(plotContainer, [baseTrace], data, settings);
     updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
+      .catch(error => console.error("Error in initial updatePlotElements:", error))
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';

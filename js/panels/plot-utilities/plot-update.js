@@ -23,8 +23,9 @@ import { processCategories } from './plot-make-helper.js';
  * @param {boolean} options.layout - Whether to update layout properties/
  * @param {Function} refreshPlot - Fallback function to recreate the plot.
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
+ * @returns {Promise<void>} A promise that resolves when the update is complete.
  */
-export function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+export async function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -252,7 +253,7 @@ export function updatePlotElements(plotContainer, data, settings, refreshPlot, o
                       const datasetPath = DataManager.getCurrentDataset();
                       try {
                           // DataManager.loadUns is async
-                          const response = DataManager.loadUns({
+                          const response = await DataManager.loadUns({
                               datasetPath: datasetPath,
                               unsKey: colorKey
                           });

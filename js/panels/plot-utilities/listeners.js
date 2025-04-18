@@ -170,7 +170,11 @@ export function setupPlotControlListeners(
     pointSizeSlider.addEventListener('input', (e) => {
       const newSize = parseFloat(e.target.value);
       settings.pointSize = newSize;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true });
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
+        .catch(error => {
+          console.error("Error updating point size:", error);
+          loadDataAndCreatePlot();
+        });
     });
   
     // --- Point Opacity Slider ---
@@ -178,7 +182,11 @@ export function setupPlotControlListeners(
     pointOpacitySlider.addEventListener('input', (e) => {
       const newOpacity = parseFloat(e.target.value);
       settings.pointOpacity = newOpacity;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true });
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
+        .catch(error => {
+          console.error("Error updating point opacity:", error);
+          loadDataAndCreatePlot();
+        });
     });
   
     // --- Show Grid Toggle ---
@@ -313,7 +321,11 @@ export function setupPlotControlListeners(
         lockRangeButton.classList.add('btn-outline-secondary');
       }
       // Optionally trigger a plot update if needed:
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { colorRange: true });
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { colorRange: true })
+        .catch(error => {
+          console.error("Error updating color range:", error);
+          loadDataAndCreatePlot();
+        });
     });
   }
 
@@ -341,7 +353,11 @@ export function setupColorControls(
 
     // helper closure to avoid passing all parameters
     function _updatePlotElements(options = {}) {
-        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options);
+        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, options)
+            .catch(error => {
+                console.error("Error in _updatePlotElements:", error);
+                loadDataAndCreatePlot();
+            });
     }
 
 
@@ -828,7 +844,10 @@ function setupAxisSelectorListeners(
               [`${axis}Axis`]: true, 
               layout: true 
             }
-          );
+          ).catch(error => {
+            console.error(`Error updating ${axis} axis:`, error);
+            loadDataAndCreatePlot();
+          });
         } else {
           loadDataAndCreatePlot();
         }

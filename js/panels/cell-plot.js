@@ -343,7 +343,11 @@ const CellPlotPanel = (function() {
          * @private
          */
         function _updatePlotElements(options = {}) {
-            updatePlotElements(_plotContainer, _data, _settings, refreshPlot, options);
+            updatePlotElements(_plotContainer, _data, _settings, refreshPlot, options)
+                .catch(error => {
+                    console.error("Error in CellPlotPanel._updatePlotElements:", error);
+                    refreshPlot();
+                });
         }
 
         
