@@ -12,7 +12,7 @@ from pathlib import Path
 from flask import jsonify, request, current_app as app
 import json
 
-from ...core.zarr_reader import zarr_reader
+from ...core import zarr_reader
 from ...data.manager import data_manager
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def register_data_routes(app, api_version):
         if dataset_path:
             # Use the direct access approach for stateless operation
             try:
-                root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
+                _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
                 
                 # Format basic info
                 shape = metadata.get('shape', (0, 0))
@@ -70,7 +70,7 @@ def register_data_routes(app, api_version):
                 
                 # Generate a dataset ID from the path if needed
                 if not dataset_id:
-                    dataset_id = os.path.basename(os.path.normpath(dataset_path))
+                    dataset_id = dataset_path
                     info["dataset_id"] = dataset_id
                     
                 return jsonify(info)
@@ -109,7 +109,7 @@ def register_data_routes(app, api_version):
     
         try:
             # Only wrap the risky operation of opening the dataset.
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
+            _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
         except FileNotFoundError as fnfe:
             logger.exception(f"Dataset not found: {dataset_path}")
             return jsonify({"error": "Dataset not found"}), 404
@@ -175,7 +175,7 @@ def register_data_routes(app, api_version):
                 "embeddings": metadata.get("embeddings", [])
             }
             # Use pathlib for consistency when adding dataset_id.
-            dataset_structure["dataset_id"] = Path(dataset_path).name
+            dataset_structure["dataset_id"] = dataset_path
     
             return jsonify(dataset_structure)
         except Exception as e:
@@ -935,7 +935,7 @@ def register_data_routes(app, api_version):
         
         try:
             # Use direct zarr access for stateless operation
-            genes = zarr_reader.get_gene_names(dataset_path)
+            genes = zarr_reader.get_gene_names(dataset_path, use_cache=True)
             
             return jsonify({
                 "genes": genes,
@@ -963,8 +963,10 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            # Use direct zarr access for stateless operation
-            cells = zarr_reader.get_cell_names(dataset_path)
+            # Use direct zarr access WITH CACHING ENABLED
+            logger.info(f"API CELLS: Loading cell names for {dataset_path} with use_cache=True")
+            cells = zarr_reader.get_cell_names(dataset_path, use_cache=True)
+            logger.info(f"API CELLS: Successfully loaded {len(cells)} cells")
             
             return jsonify({
                 "cells": cells,
