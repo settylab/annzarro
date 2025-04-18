@@ -172,8 +172,8 @@ export function createPanelStructure(container, id, settings) {
                 <div class="btn-group d-flex flex-row flex-nowrap" role="group">
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}">Center at 0</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}">Reverse Colormap</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}">Lock Range</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
                 </div>
               </div>
