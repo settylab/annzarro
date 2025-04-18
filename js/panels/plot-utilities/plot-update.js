@@ -186,7 +186,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             
             const hasStillMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
             
-            if (updateOptions.colorData) {
+            if (updateOptions.colorData || updateOptions.colors) {
               // When switching from categorical (multiple traces) to numerical (single trace)
               if (!isCategorical && hasStillMultipleTraces) {
                   // Create a new single trace using the data object

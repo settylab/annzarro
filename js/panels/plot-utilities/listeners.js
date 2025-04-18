@@ -296,9 +296,6 @@ export function setupPlotControlListeners(
     // --- Refresh Plot Button ---
     const refreshPlotButton = controlsContainer.querySelector(`#refresh-plot-${id}`);
     refreshPlotButton.addEventListener('click', () => {
-      if (plotContainer) {
-        plotContainer.innerHTML = '<div class="alert alert-info">Refreshing plot...</div>';
-      }
       loadDataAndCreatePlot();
     });
   
@@ -392,25 +389,17 @@ export function setupColorControls(
     colorScaleSelect.addEventListener('change', (e) => {
         const newColorScale = e.target.value;
         settings.colorScale = newColorScale;
-        // For numerical data, update visual properties; categorical uses discrete colors so reload plot.
-        if (data.colorType === 'numerical' && plotContainer) {
-            _updatePlotElements({ colors: true, colorScale: true });
-            console.log(`Updated colorscale to ${newColorScale} without redrawing`);
-        } else {
-            loadDataAndCreatePlot();
-        }
+        _updatePlotElements({ colors: true, colorScale: true });
     });
 
     // --- Category palette selector ---
     const categoryPaletteSelect = controlsContainer.querySelector(`#category-palette-${id}`);
     categoryPaletteSelect.addEventListener('change', (e) => {
         settings.categoryPalette = e.currentTarget.value;
-        if (plotContainer && data.colorType === 'categorical') {
-            _updatePlotElements({
-                colors: true,
-                colorData: true  // Trigger categorical color update without reloading data
-            });
-        }
+        _updatePlotElements({
+            colors: true,
+            colorData: true  // Trigger categorical color update without reloading data
+        });
     });
 
     // --- Color range inputs and sliders ---
