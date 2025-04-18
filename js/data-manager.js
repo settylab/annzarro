@@ -32,10 +32,32 @@ const DataManager = (function() {
         const cached = CacheManager.get(fullUrl);
         if (cached !== undefined) return cached;
 
-        const response = await fetch(fullUrl);
-        const data = await response.json();
-        CacheManager.set(fullUrl, data);
-        return data;
+        try {
+            const response = await fetch(fullUrl);
+            const data = await response.json();
+            CacheManager.set(fullUrl, data);
+            return data;
+        } catch (error) {
+            // Add resilience for JSON parsing errors (like NaN or Infinity values)
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                console.error('JSON parsing error in response from', fullUrl, error);
+                
+                // Try one more time with text response and sanitization
+                const retryResponse = await fetch(fullUrl);
+                const textData = await retryResponse.text();
+                try {
+                    // Simple regex to replace NaN and Infinity values with null
+                    const sanitized = textData.replace(/:\s*(NaN|-?Infinity)\s*([,}])/g, ': null$2');
+                    const parsedData = JSON.parse(sanitized);
+                    console.warn('Recovered from JSON parse error via sanitization');
+                    CacheManager.set(fullUrl, parsedData);
+                    return parsedData;
+                } catch (e) {
+                    throw new Error(`Failed to parse response: ${error.message}`);
+                }
+            }
+            throw error;
+        }
     }
 
     function refreshCacheForDataset(datasetPath = _currentDataset) {

@@ -14,6 +14,7 @@ from functools import wraps
 import time
 
 from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
+from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -110,6 +111,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         logger.info(f"Using static folder at {static_folder}")
     else:
         app = Flask(__name__, template_folder=template_folder)
+    
+    # Set custom JSON encoder that handles NaN values
+    app.json_encoder = NumpyJSONEncoder
+    logger.info("Using custom JSON encoder to handle NaN/Infinity values")
     
     # Enable CORS by default for all routes - important during development
     CORS(app)

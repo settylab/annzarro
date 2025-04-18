@@ -6,6 +6,7 @@ particularly for handling NumPy arrays and other scientific data types.
 """
 
 import json
+import math
 import numpy as np
 from typing import Any, Dict, List, Union, Optional
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 class NumpyJSONEncoder(json.JSONEncoder):
     """
     JSON encoder that can handle NumPy arrays and other scientific data types.
+    Optimized for performance and proper handling of special values.
     """
     
     def default(self, obj: Any) -> Any:
@@ -25,16 +27,40 @@ class NumpyJSONEncoder(json.JSONEncoder):
         Returns:
             JSON-serializable representation of the object
         """
-        if isinstance(obj, np.integer):
+        # Handle numeric types
+        if isinstance(obj, (np.integer, np.bool_)):
             return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
+        
+        # Handle floating point values (both NumPy and Python)
+        if isinstance(obj, (np.floating, float)):
+            # Consistently convert NaN and Infinity to null for JavaScript compatibility
+            try:
+                if np.isnan(obj) or math.isnan(obj):
+                    return None
+                if np.isinf(obj) or math.isinf(obj):
+                    return None
+            except (TypeError, AttributeError):
+                pass  # Skip error if isnan/isinf not applicable
+            
+            # Regular float value
+            if isinstance(obj, np.floating):
+                return float(obj)
+            return obj
+        
+        # Handle arrays efficiently
+        if isinstance(obj, np.ndarray):
+            # Special handling for structured arrays
+            if obj.dtype.kind == 'V':
+                return {name: obj[name].tolist() for name in obj.dtype.names}
             return obj.tolist()
-        elif isinstance(obj, Path):
+        
+        # Common Python types
+        if isinstance(obj, (Path, bytes)):
             return str(obj)
-        elif isinstance(obj, set):
+        if isinstance(obj, (set, frozenset)):
             return list(obj)
+            
+        # Fall back to parent implementation
         return super().default(obj)
 
 def to_json(obj: Any) -> str:
