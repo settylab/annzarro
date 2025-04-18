@@ -658,6 +658,34 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  *
  * @returns {Promise<void>}
  */
+/**
+ * Ensures the filter widget exists in the plot container
+ * 
+ * @param {HTMLElement} plotContainer - The container element holding the plot
+ * @returns {void}
+ */
+function ensureFilterWidget(plotContainer) {
+  const plotId = plotContainer.id.replace('plot-container-', '');
+  let filterWidget = document.getElementById(`filter-widget-${plotId}`);
+  
+  if (!filterWidget) {
+    // If the widget doesn't exist (was cleared), recreate it
+    filterWidget = document.createElement('div');
+    filterWidget.id = `filter-widget-${plotId}`;
+    filterWidget.className = 'datapoint-filter-widget hidden';
+    filterWidget.innerHTML = `
+      <div class="filter-stats-title">Removed Datapoints</div>
+      <ul class="filter-stats-list">
+        <!-- Filter stats will be inserted here -->
+      </ul>
+      <div class="filter-total">
+        <span>Total:</span> <span class="filter-total-count">0 (0%)</span>
+      </div>
+    `;
+    plotContainer.appendChild(filterWidget);
+  }
+}
+
 export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   // Determine if this is a gene plot or cell plot
   const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
@@ -936,6 +964,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.yanchor = posConfig.legendYanchor;
 
       plotContainer.innerHTML = '';
+      ensureFilterWidget(plotContainer);
+      
       Plotly.newPlot(
         plotContainer,
         categoricalTraces,
@@ -958,6 +988,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       const categoricalTraces = processCategories(settings, data, catValues);
       
       plotContainer.innerHTML = '';
+      ensureFilterWidget(plotContainer);
+      
       Plotly.newPlot(
         plotContainer,
         categoricalTraces,
@@ -1024,6 +1056,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
 
     plotContainer.innerHTML = '';
+    ensureFilterWidget(plotContainer);
+    
     Plotly.newPlot(
       plotContainer,
       [baseTrace],
@@ -1045,6 +1079,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     delete baseTrace.marker.colorscale;
     console.log('Using constant color for all points');
     plotContainer.innerHTML = '';
+    ensureFilterWidget(plotContainer);
+    
     Plotly.newPlot(
       plotContainer,
       [baseTrace],

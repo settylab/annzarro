@@ -7,6 +7,102 @@ import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 
 
 /**
+ * Updates the datapoint filter widget with the current filter statistics
+ * 
+ * @param {HTMLElement} plotContainer - The DOM element containing the plot
+ * @param {object} filterStats - Statistics about filtered datapoints
+ * @param {number} filterStats.xNaN - Number of NaN values in x-axis data
+ * @param {number} filterStats.yNaN - Number of NaN values in y-axis data
+ * @param {number} filterStats.zNaN - Number of NaN values in z-axis data
+ * @param {number} filterStats.colorNaN - Number of NaN values in color data
+ * @param {number} filterStats.colorOutliers - Number of outliers in color data
+ * @param {number} filterStats.total - Total number of datapoints
+ * @param {number} filterStats.filtered - Total number of filtered datapoints
+ */
+function updateFilterWidget(plotContainer, filterStats) {
+    const plotId = plotContainer.id.replace('plot-container-', '');
+    const widget = document.getElementById(`filter-widget-${plotId}`);
+    
+    if (!widget) return;
+    
+    const statsList = widget.querySelector('.filter-stats-list');
+    const totalCount = widget.querySelector('.filter-total-count');
+    
+    // Clear existing items
+    statsList.innerHTML = '';
+    
+    // Track if we have any filters to display
+    let hasFilters = false;
+    
+    // Add items for each filter reason - axis NaNs are always filtered by Plotly
+    if (filterStats.xNaN > 0) {
+        hasFilters = true;
+        statsList.innerHTML += `
+            <li class="filter-stats-item">
+                <span class="filter-reason">X-axis NaN:</span>
+                <span class="filter-count">${filterStats.xNaN}</span>
+            </li>
+        `;
+    }
+    
+    if (filterStats.yNaN > 0) {
+        hasFilters = true;
+        statsList.innerHTML += `
+            <li class="filter-stats-item">
+                <span class="filter-reason">Y-axis NaN:</span>
+                <span class="filter-count">${filterStats.yNaN}</span>
+            </li>
+        `;
+    }
+    
+    if (filterStats.zNaN > 0) {
+        hasFilters = true;
+        statsList.innerHTML += `
+            <li class="filter-stats-item">
+                <span class="filter-reason">Z-axis NaN:</span>
+                <span class="filter-count">${filterStats.zNaN}</span>
+            </li>
+        `;
+    }
+    
+    // Only show color NaN when hideNaN is active
+    if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
+        hasFilters = true;
+        statsList.innerHTML += `
+            <li class="filter-stats-item">
+                <span class="filter-reason">Color NaN:</span>
+                <span class="filter-count">${filterStats.colorNaN}</span>
+            </li>
+        `;
+    }
+    
+    // Only show color outliers when hideOutliers is active
+    if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
+        hasFilters = true;
+        statsList.innerHTML += `
+            <li class="filter-stats-item">
+                <span class="filter-reason">Color outliers:</span>
+                <span class="filter-count">${filterStats.colorOutliers}</span>
+            </li>
+        `;
+    }
+    
+    // Update total count and percentage
+    const percentage = filterStats.total > 0 
+        ? Math.round((filterStats.filtered / filterStats.total) * 100) 
+        : 0;
+    
+    totalCount.textContent = `${filterStats.filtered} (${percentage}%)`;
+    
+    // Show/hide the widget based on whether there are any filters
+    if (hasFilters) {
+        widget.classList.remove('hidden');
+    } else {
+        widget.classList.add('hidden');
+    }
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
@@ -62,11 +158,55 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         const hasMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
         const entityType = data.entities
 
-        // Create an index mask for filtering out outliers and NaN values if needed.
+        // Initialize filter statistics
+        const filterStats = {
+            xNaN: 0,
+            yNaN: 0,
+            zNaN: 0,
+            colorNaN: 0,
+            colorOutliers: 0,
+            total: data.x?.values?.length || 0,
+            filtered: 0,
+            hideNaNActive: settings.hideNaN === true,
+            hideOutliersActive: settings.hideOutliers === true
+        };
+
+        // Count NaN values in each dimension
+        if (data.x && data.x.values) {
+            filterStats.xNaN = data.x.values.filter(v => v === null || isNaN(v)).length;
+        }
+        
+        if (data.y && data.y.values) {
+            filterStats.yNaN = data.y.values.filter(v => v === null || isNaN(v)).length;
+        }
+        
+        if (settings.z && data.z && data.z.values) {
+            filterStats.zNaN = data.z.values.filter(v => v === null || isNaN(v)).length;
+        }
+
+        // Create a composite mask for all filtering reasons
         let indexMask = null;
+        let colorNanMask = null;
+        let colorOutlierMask = null;
         const hasColorData = isNumerical && data.color;
         
         if (hasColorData) {
+            // Count NaN values in color data
+            filterStats.colorNaN = data.color.filter(v => v === null || isNaN(v)).length;
+            
+            // Create specific masks for different filter reasons to track statistics
+            colorNanMask = data.color.map(v => v !== null && !isNaN(v));
+            
+            if (settings.hideOutliers) {
+                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
+                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
+                colorOutlierMask = data.color.map(v => !isNaN(v) && v >= cmin && v <= cmax);
+                
+                // Count outliers (points within valid range but outside color bounds)
+                filterStats.colorOutliers = data.color.filter(v => !isNaN(v) && (v < cmin || v > cmax)).length;
+            }
+            
+            // Combined filtering based on settings
             if (settings.hideOutliers && settings.hideNaN) {
                 // Filter both outliers and NaN
                 const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
@@ -82,6 +222,39 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 indexMask = data.color.map((v) => v !== null && !isNaN(v));
             }
         }
+        
+        // Apply axis NaN filtering automatically (Plotly does this anyway)
+        // This creates a mask for valid points across all dimensions
+        const xNanMask = data.x?.values?.map(v => v !== null && !isNaN(v)) || [];
+        const yNanMask = data.y?.values?.map(v => v !== null && !isNaN(v)) || [];
+        const zNanMask = settings.z && data.z?.values ? data.z.values.map(v => v !== null && !isNaN(v)) : null;
+        
+        // Create the final composite mask that accounts for all filtering reasons
+        let filteredCount = 0;
+        
+        if (indexMask) {
+            // If we already have a color-based mask, combine it with axis NaN filtering
+            indexMask = indexMask.map((keep, i) => {
+                const axisValid = xNanMask[i] && yNanMask[i] && (zNanMask === null || zNanMask[i]);
+                const shouldKeep = keep && axisValid;
+                if (!shouldKeep) filteredCount++;
+                return shouldKeep;
+            });
+        } else {
+            // If we don't have a color-based mask, just use axis NaN filtering
+            indexMask = xNanMask.map((xValid, i) => {
+                const yValid = yNanMask[i];
+                const zValid = zNanMask === null || zNanMask[i];
+                const shouldKeep = xValid && yValid && zValid;
+                if (!shouldKeep) filteredCount++;
+                return shouldKeep;
+            });
+        }
+        
+        filterStats.filtered = filteredCount;
+        
+        // Update the filter widget with statistics
+        updateFilterWidget(plotContainer, filterStats);
 
         // FILTER-ONLY MODE: apply filtering updates only.
         if (updateOptions.filter) {

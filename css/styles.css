@@ -2176,3 +2176,60 @@ div.dtsb-group {
     from { opacity: 0; }
     to { opacity: 1; }
 }
+
+/* Datapoint filter info widget */
+.datapoint-filter-widget {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background-color: rgba(248, 249, 250, 0.85);
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    color: #666;
+    max-width: 200px;
+    z-index: 10;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.datapoint-filter-widget.hidden {
+    opacity: 0;
+}
+
+.filter-stats-title {
+    font-weight: 600;
+    font-size: 0.75rem;
+    margin-bottom: 3px;
+    color: #495057;
+}
+
+.filter-stats-list {
+    margin: 0;
+    padding: 0;
+    list-style-type: none;
+}
+
+.filter-stats-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.filter-reason {
+    margin-right: 8px;
+}
+
+.filter-count {
+    font-weight: 500;
+}
+
+.filter-total {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    font-weight: 600;
+    color: #495057;
+}

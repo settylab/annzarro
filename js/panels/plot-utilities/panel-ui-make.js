@@ -181,7 +181,17 @@ export function createPanelStructure(container, id, settings) {
           </div>
         </div>
       </div>
-      <div class="plot-container" id="plot-container-${id}"></div>
+      <div class="plot-container" id="plot-container-${id}">
+        <div class="datapoint-filter-widget hidden" id="filter-widget-${id}">
+          <div class="filter-stats-title">Removed Datapoints</div>
+          <ul class="filter-stats-list">
+            <!-- Filter stats will be inserted here -->
+          </ul>
+          <div class="filter-total">
+            <span>Total:</span> <span class="filter-total-count">0 (0%)</span>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
