@@ -173,76 +173,60 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
 
         // 0. Prep
         const totalPts = data.x.values.length;
-        const dims = ['x','y'];
-        if (settings.z && data.z?.values) dims.push('z');
 
-        // 1. Axis‐wise NaN masks & counts
-        const axisMasks = {};
-        for (const dim of dims) {
-          const vals = data[dim].values;
-          axisMasks[dim] = vals.map(v => v !== null && !isNaN(v));
-          filterStats[`${dim}NaN`] = totalPts - axisMasks[dim].filter(Boolean).length;
+        // 1. Build per‑axis masks & NaN‐counts
+        const xMask = data.x.values.map(v => v != null && !isNaN(v));
+        filterStats.xNaN = totalPts - xMask.filter(Boolean).length;
+
+        const yMask = data.y.values.map(v => v != null && !isNaN(v));
+        filterStats.yNaN = totalPts - yMask.filter(Boolean).length;
+
+        let zMask = null;
+        if (settings.z && data.z?.values) {
+          zMask = data.z.values.map(v => v != null && !isNaN(v));
+          filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
         }
-        // one mask that’s true only if all axes are valid
-        const axisMask = Array.from({ length: totalPts }, (_, i) =>
-          dims.every(dim => axisMasks[dim][i])
-        );
 
-        // 2. Color‐based masks & counts (if numerical)
-        let colorNanMask = [];
-        let colorOutlierMask = [];
+        // 2. Build color masks & stats (only if color data present)
+        let colorValidMask = null;
+        let colorRangeMask = null;
+
         if (isNumerical && Array.isArray(data.color)) {
-          // a) valid‑number mask
-          colorNanMask = data.color.map(v => v !== null && !isNaN(v));
-          filterStats.colorNaN = colorNanMask.filter(isValid => !isValid).length;
+          // a) “valid number” mask
+          colorValidMask = data.color.map(v => v != null && !isNaN(v));
+          filterStats.colorNaN = totalPts - colorValidMask.filter(Boolean).length;
 
-          // b) outlier mask
+          // b) “in‐range” mask for outliers
           if (settings.hideOutliers) {
-            // 1. collect only the real numbers
-            const numericVals = data.color.filter(v => v != null && !isNaN(v));
+            const numericVals = data.color.filter(v => !isNaN(v));
             const cmin = settings.colorMin ?? Math.min(...numericVals);
             const cmax = settings.colorMax ?? Math.max(...numericVals);
-          
-            // 2. keep any null/NaN OR anything inside [cmin,cmax]
-            colorOutlierMask = data.color.map(v =>
-              v == null       // keep null
-              || isNaN(v)     // keep NaN
+
+            colorRangeMask = data.color.map(v =>
+              v == null        // always keep null
+              || isNaN(v)      // always keep NaN
               || (v >= cmin && v <= cmax)
             );
-          
-            // 3. count only the truly numeric outliers
+            // count only the *numeric* outliers
             filterStats.colorOutliers = data.color.filter(v =>
               v != null && !isNaN(v) && (v < cmin || v > cmax)
             ).length;
           }
         }
 
-        // 3. Build indexMask exactly like before
-        let indexMask;
-        if (colorNanMask.length) {
-          if (settings.hideNaN && settings.hideOutliers) {
-            indexMask = colorNanMask.map((ok,i) => ok && colorOutlierMask[i]);
-          } else if (settings.hideNaN) {
-            indexMask = [...colorNanMask];
-          } else if (settings.hideOutliers) {
-            indexMask = [...colorOutlierMask];
-          } else {
-            indexMask = data.color.map(() => true);
-          }
-        } else {
-          indexMask = axisMask.slice();
-        }
+        // 3. Gather the masks we need
+        const masks = [xMask, yMask];
+        if (zMask)            masks.push(zMask);
+        if (colorValidMask)   masks.push(colorValidMask);
+        if (colorRangeMask)   masks.push(colorRangeMask);
 
-        // 4. Merge with axisMask & count final filtered
-        let removedCount = 0;
-        indexMask = indexMask.map((keep,i) => {
-          const valid = keep && axisMask[i];
-          const isColorNaN = isNumerical && (data.color[i] === null || isNaN(data.color[i]));
-          const countAsFiltered = !valid && (!isColorNaN || settings.hideNaN);
-          if (countAsFiltered) removedCount++;
-          return valid;
-        });
-        filterStats.filtered = removedCount;
+        // 4. Build the final indexMask by requiring *all* masks pass
+        const indexMask = Array.from({ length: totalPts }, (_, i) =>
+          masks.every(mask => mask[i])
+        );
+
+        // 5. Compute filtered‐count once
+        filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
         
         // Update the filter widget with statistics
         updateFilterWidget(plotContainer, filterStats);
