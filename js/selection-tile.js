@@ -66,7 +66,7 @@ export class SelectionTile {
               </div>
               <div class="selection-section" id="clone-panel-section-${this.selectionId}" style="display: none;">
                 <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
-                  <h3 style="margin: 0; display: inline-block;">Clone Existing Panel</h3>
+                  <h3 style="margin: 0; display: inline-block;">Reopen or Duplicate Panel/h3>
                   <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
                     <i class="fas fa-trash-alt"></i> Clear closed panels
                   </button>
@@ -97,7 +97,7 @@ export class SelectionTile {
               </div>
               <div class="selection-section">
                 <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
-                  <h3 style="margin: 0; display: inline-block;">Clone Existing Panel</h3>
+                  <h3 style="margin: 0; display: inline-block;">Reopen or Duplicate Panel</h3>
                   <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-pane-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
                     <i class="fas fa-trash-alt"></i> Clear closed panels
                   </button>
