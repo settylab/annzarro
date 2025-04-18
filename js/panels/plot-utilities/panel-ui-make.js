@@ -207,8 +207,23 @@ export function createPanelStructure(container, id, settings) {
 export function checkDatasetLoadingStatus(id) {
   const isDatasetLoaded = DataManager.isDatasetLoaded();
   const loadingScreen = document.getElementById(`loading-screen-${id}`);
-  const plotPanel = document.querySelector(`#plot-container-${id}`).closest('.plot-panel');
-  const controlsContainer = plotPanel?.querySelector('.plot-controls');
+  const plotContainer = document.getElementById(`plot-container-${id}`);
+  
+  // Handle case where plot container doesn't exist or isn't in DOM yet
+  if (!plotContainer) {
+    console.warn(`Plot container with ID plot-container-${id} not found`);
+    return isDatasetLoaded;
+  }
+  
+  const plotPanel = plotContainer.closest('.plot-panel');
+  
+  // Handle case where plot panel doesn't exist
+  if (!plotPanel) {
+    console.warn(`Plot panel for ID ${id} not found`);
+    return isDatasetLoaded;
+  }
+  
+  const controlsContainer = plotPanel.querySelector('.plot-controls');
   
   if (loadingScreen) {
     loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
