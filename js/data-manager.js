@@ -22,11 +22,25 @@ const DataManager = (function() {
     let _geneHistoryIndex = -1; // Current position in gene history
     
     /**
-     * Fetch data from API with caching
-     * @param {string} url - API URL
-     * @param {Object} params - URL parameters
-     * @returns {Promise<Object>} - API response
+     * Very fast “safe” JSON.parse that converts
+     * unquoted NaN/Infinity/-Infinity into null.
+     * @param {string} jsonText - JSON text to parse
+     * @returns {Object} Parsed JSON object
      */
+    function _safeJSONParse(text) {
+        try {
+        return JSON.parse(text);
+        } catch (err) {
+        console.warn('Invalid JSON, sanitizing special floats…', err.message);
+        // only replace tokens that aren’t inside quotes:
+        // lookbehind (?<=[\[:,\s]) and lookahead (?=[,\]\}\s])
+        const FIX_SPECIAL = /(?<=[\[\{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
+        const cleaned = text.replace(FIX_SPECIAL, 'null');
+        // second chance
+        return JSON.parse(cleaned);
+        }
+    }
+
     async function _fetchWithCache(url, params = {}) {
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const cached = CacheManager.get(fullUrl);
@@ -34,28 +48,15 @@ const DataManager = (function() {
 
         try {
             const response = await fetch(fullUrl);
-            const data = await response.json();
+            
+            // Use the safer JSON parsing approach
+            const text = await response.text();
+            const data = _safeJSONParse(text);
+            
             CacheManager.set(fullUrl, data);
             return data;
         } catch (error) {
-            // Add resilience for JSON parsing errors (like NaN or Infinity values)
-            if (error instanceof SyntaxError && error.message.includes('JSON')) {
-                console.error('JSON parsing error in response from', fullUrl, error);
-                
-                // Try one more time with text response and sanitization
-                const retryResponse = await fetch(fullUrl);
-                const textData = await retryResponse.text();
-                try {
-                    // Simple regex to replace NaN and Infinity values with null
-                    const sanitized = textData.replace(/:\s*(NaN|-?Infinity)\s*([,}])/g, ': null$2');
-                    const parsedData = JSON.parse(sanitized);
-                    console.warn('Recovered from JSON parse error via sanitization');
-                    CacheManager.set(fullUrl, parsedData);
-                    return parsedData;
-                } catch (e) {
-                    throw new Error(`Failed to parse response: ${error.message}`);
-                }
-            }
+            console.error('Error fetching from', fullUrl, error);
             throw error;
         }
     }
