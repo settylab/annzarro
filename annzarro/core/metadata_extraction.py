@@ -1,0 +1,384 @@
+"""
+Efficient zarr metadata extraction using visititems traversal.
+
+This module provides an optimized function for extracting metadata from zarr stores
+using the visititems traversal method for faster performance without loading data.
+"""
+
+import zarr
+import time
+import logging
+from typing import Dict, List, Tuple, Optional, Any, Union
+
+logger = logging.getLogger(__name__)
+
+def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
+    """
+    Extract metadata from a zarr store using visititems for efficient single-pass traversal
+    without loading actual data.
+    
+    This implementation is significantly faster than the original approach because it:
+    1. Uses visititems to traverse the zarr store in a single pass
+    2. Only examines metadata attributes without loading actual data arrays
+    3. Provides configurable detail levels for different performance needs
+    
+    Args:
+        path: Path to the zarr store
+        detail_level: Level of detail to extract
+            'minimal' - Only basic structure (fastest)
+            'standard' - Column names and embeddings (faster)
+            'full' - Complete detailed metadata (default)
+        
+    Returns:
+        Dict of metadata
+    """
+    start_time = time.time()
+    
+    # Open zarr store - very fast operation
+    zs = zarr.open(path)
+    open_time = time.time()
+    
+    # Initialize metadata with basic structural components
+    metadata = {
+        'has_X': 'X' in zs,
+        'has_obs': 'obs' in zs,
+        'has_var': 'var' in zs,
+        'has_obsm': 'obsm' in zs,
+        'has_varm': 'varm' in zs,
+        'has_layers': 'layers' in zs,
+        'has_uns': 'uns' in zs,
+        'has_obsp': 'obsp' in zs,
+        'has_varp': 'varp' in zs,
+    }
+    
+    # Extract shape - always needed even for minimal level
+    shape = None
+    
+    # Method 1: Get from X attributes (for sparse matrices)
+    if metadata['has_X'] and hasattr(zs['X'], 'attrs') and 'shape' in zs['X'].attrs:
+        shape = tuple(zs['X'].attrs['shape'])
+        logger.info(f"Got shape from X.attrs: {shape}")
+    
+    # Method 2: Get from X shape directly (without loading data)
+    elif metadata['has_X'] and hasattr(zs['X'], 'shape'):
+        shape = zs['X'].shape
+        logger.info(f"Got shape from X.shape: {shape}")
+    
+    # Method 3: Infer from obs and var indices
+    elif metadata['has_obs'] and metadata['has_var'] and '_index' in zs['obs'] and '_index' in zs['var']:
+        n_obs = zs['obs']['_index'].shape[0]  # Just reads metadata
+        n_vars = zs['var']['_index'].shape[0]  # Just reads metadata
+        shape = (n_obs, n_vars)
+        logger.info(f"Inferred shape from obs/var indices: {shape}")
+    
+    # Method 4: Try from layers
+    elif metadata['has_layers'] and list(zs['layers'].keys()):
+        layer_name = list(zs['layers'].keys())[0]
+        layer = zs['layers'][layer_name]
+        
+        if hasattr(layer, 'attrs') and 'shape' in layer.attrs:
+            shape = tuple(layer.attrs['shape'])
+            logger.info(f"Got shape from layer {layer_name} attrs: {shape}")
+        elif hasattr(layer, 'shape'):
+            shape = layer.shape
+            logger.info(f"Got shape from layer {layer_name} shape: {shape}")
+    
+    metadata['shape'] = shape if shape is not None else (0, 0)
+    
+    # For minimal level, we're done
+    if detail_level == 'minimal':
+        logger.info(f"Zarr metadata extraction (minimal): {time.time() - start_time:.4f}s")
+        return metadata
+    
+    # --- Standard level metadata ---
+    
+    # Extract column lists, embeddings, and key lists - all fast operations
+    if metadata['has_obs']:
+        metadata['obs_columns'] = list(zs['obs'].keys())
+    else:
+        metadata['obs_columns'] = []
+        
+    if metadata['has_var']:
+        metadata['var_columns'] = list(zs['var'].keys())
+    else:
+        metadata['var_columns'] = []
+        
+    if metadata['has_obsm']:
+        metadata['embeddings'] = [key for key in zs['obsm'].keys() if key.startswith('X_')]
+        metadata['obsm'] = {'keys': list(zs['obsm'].keys())}
+    else:
+        metadata['embeddings'] = []
+        
+    if metadata['has_layers']:
+        metadata['layers'] = {'keys': list(zs['layers'].keys())}
+    
+    if metadata['has_obsp']:
+        metadata['obsp'] = {'keys': list(zs['obsp'].keys())}
+        
+    if metadata['has_varp']:
+        metadata['varp'] = {'keys': list(zs['varp'].keys())}
+        
+    if metadata['has_varm']:
+        metadata['varm'] = {'keys': list(zs['varm'].keys())}
+        
+    if metadata['has_uns']:
+        metadata['uns'] = {'keys': list(zs['uns'].keys())}
+    
+    standard_time = time.time()
+    
+    # For standard level, we're done
+    if detail_level == 'standard':
+        logger.info(f"Zarr metadata extraction (standard): {time.time() - start_time:.4f}s")
+        return metadata
+    
+    # --- Full level metadata (using visititems) ---
+    
+    # Initialize containers for detailed info
+    metadata['obs_columns_info'] = {}
+    metadata['var_columns_info'] = {}
+    metadata['layers_info'] = {}
+    metadata['obsm_info'] = {}
+    metadata['obsm_dataframes'] = {}
+    metadata['varm_info'] = {}
+    metadata['varm_dataframes'] = {}
+    
+    # Track processed items to avoid duplicates
+    processed = set()
+    
+    # Helper function to gather data about the zarr structure
+    def visitor_function(name: str, obj: Any) -> None:
+        """Process each item during hierarchy traversal"""
+        # Skip if already processed
+        if name in processed:
+            return
+            
+        processed.add(name)
+        
+        # Extract attributes if available
+        attrs = {}
+        if hasattr(obj, 'attrs'):
+            attrs = dict(obj.attrs)
+        
+        # Handle arrays (direct access)
+        if hasattr(obj, 'shape'):
+            # Process arrays based on their path
+            path_parts = name.split('/')
+            
+            # Handle obs columns
+            if len(path_parts) >= 2 and path_parts[0] == 'obs':
+                col_name = path_parts[1]
+                if col_name != '_index' and len(path_parts) == 2:
+                    info = {'type': str(obj.dtype)}
+                    metadata['obs_columns_info'][col_name] = info
+            
+            # Handle var columns
+            elif len(path_parts) >= 2 and path_parts[0] == 'var':
+                col_name = path_parts[1]
+                if col_name != '_index' and len(path_parts) == 2:
+                    info = {'type': str(obj.dtype)}
+                    metadata['var_columns_info'][col_name] = info
+            
+            # Handle obsm arrays
+            elif len(path_parts) >= 2 and path_parts[0] == 'obsm':
+                obsm_name = path_parts[1]
+                if len(path_parts) == 2:  # Direct array
+                    metadata['obsm_info'][obsm_name] = {
+                        'type': str(obj.dtype),
+                        'shape': obj.shape
+                    }
+                    
+                    # Add to dataframes if 2D
+                    if len(obj.shape) > 1:
+                        metadata['obsm_dataframes'][obsm_name] = {
+                            'columns': [str(i) for i in range(obj.shape[1])],
+                            'is_array': True,
+                            'array_shape': obj.shape,
+                            'array_dtype': str(obj.dtype)
+                        }
+                
+                elif len(path_parts) == 3:  # Column within a dataframe
+                    df_name = path_parts[1]
+                    col_name = path_parts[2]
+                    
+                    # Ensure dataframe entry exists
+                    if df_name not in metadata['obsm_dataframes']:
+                        metadata['obsm_dataframes'][df_name] = {
+                            'columns': [],
+                            'columns_info': {}
+                        }
+                    
+                    # Add column info
+                    if 'columns' in metadata['obsm_dataframes'][df_name] and col_name not in metadata['obsm_dataframes'][df_name]['columns']:
+                        metadata['obsm_dataframes'][df_name]['columns'].append(col_name)
+                    
+                    # Add column metadata
+                    if 'columns_info' in metadata['obsm_dataframes'][df_name]:
+                        metadata['obsm_dataframes'][df_name]['columns_info'][col_name] = {'type': str(obj.dtype)}
+            
+            # Handle varm arrays
+            elif len(path_parts) >= 2 and path_parts[0] == 'varm':
+                varm_name = path_parts[1]
+                if len(path_parts) == 2:  # Direct array
+                    metadata['varm_info'][varm_name] = {
+                        'type': str(obj.dtype),
+                        'shape': obj.shape
+                    }
+                    
+                    # Add to dataframes if 2D
+                    if len(obj.shape) > 1:
+                        metadata['varm_dataframes'][varm_name] = {
+                            'columns': [str(i) for i in range(obj.shape[1])],
+                            'is_array': True,
+                            'array_shape': obj.shape,
+                            'array_dtype': str(obj.dtype)
+                        }
+                
+                elif len(path_parts) == 3:  # Column within a dataframe
+                    df_name = path_parts[1]
+                    col_name = path_parts[2]
+                    
+                    # Ensure dataframe entry exists
+                    if df_name not in metadata['varm_dataframes']:
+                        metadata['varm_dataframes'][df_name] = {
+                            'columns': [],
+                            'columns_info': {}
+                        }
+                    
+                    # Add column info
+                    if 'columns' in metadata['varm_dataframes'][df_name] and col_name not in metadata['varm_dataframes'][df_name]['columns']:
+                        metadata['varm_dataframes'][df_name]['columns'].append(col_name)
+                    
+                    # Add column metadata
+                    if 'columns_info' in metadata['varm_dataframes'][df_name]:
+                        metadata['varm_dataframes'][df_name]['columns_info'][col_name] = {'type': str(obj.dtype)}
+        
+        # Handle groups
+        elif isinstance(obj, zarr.Group):
+            # Extract attributes for type detection
+            encoding_type = attrs.get('encoding-type')
+            
+            # Check for sparse matrices in groups
+            if encoding_type in ['csr_matrix', 'csc_matrix', 'coo_matrix'] and 'shape' in attrs:
+                shape = tuple(attrs['shape'])
+                path_parts = name.split('/')
+                
+                # Handle X matrix
+                if name == 'X':
+                    pass  # Already handled in shape detection
+                
+                # Handle layers
+                elif len(path_parts) == 2 and path_parts[0] == 'layers':
+                    layer_name = path_parts[1]
+                    metadata['layers_info'][layer_name] = {
+                        'type': encoding_type,
+                        'shape': shape
+                    }
+            
+            # Handle categorical columns
+            elif encoding_type == 'categorical':
+                path_parts = name.split('/')
+                
+                # Handle obs categorical
+                if len(path_parts) == 2 and path_parts[0] == 'obs':
+                    col_name = path_parts[1]
+                    metadata['obs_columns_info'][col_name] = {'type': 'categorical'}
+                
+                # Handle var categorical
+                elif len(path_parts) == 2 and path_parts[0] == 'var':
+                    col_name = path_parts[1]
+                    metadata['var_columns_info'][col_name] = {'type': 'categorical'}
+            
+            # Handle root-level containers
+            elif name == 'layers':
+                # Process each layer to get its type
+                for layer_key in obj.keys():
+                    layer = obj[layer_key]
+                    
+                    # Skip if already processed
+                    if layer_key in metadata['layers_info']:
+                        continue
+                        
+                    layer_info = {'type': 'unknown'}
+                    
+                    # Check for arrays (dense layers)
+                    if hasattr(layer, 'dtype'):
+                        layer_info = {
+                            'type': str(layer.dtype),
+                            'shape': layer.shape
+                        }
+                    # Check for sparse matrices
+                    elif hasattr(layer, 'attrs'):
+                        layer_attrs = dict(layer.attrs)
+                        if 'encoding-type' in layer_attrs and layer_attrs['encoding-type'] in ['csr_matrix', 'csc_matrix', 'coo_matrix']:
+                            layer_info = {
+                                'type': layer_attrs['encoding-type']
+                            }
+                            if 'shape' in layer_attrs:
+                                layer_info['shape'] = tuple(layer_attrs['shape'])
+                    
+                    metadata['layers_info'][layer_key] = layer_info
+            
+            # Handle dataframe groups in obsm and varm
+            elif len(name.split('/')) == 2:
+                path_parts = name.split('/')
+                if path_parts[0] == 'obsm':
+                    df_name = path_parts[1]
+                    columns = list(obj.keys())
+                    
+                    # Add to obsm_info
+                    metadata['obsm_info'][df_name] = {
+                        'type': 'dataframe',
+                        'columns': columns
+                    }
+                    
+                    # Add to obsm_dataframes
+                    if df_name not in metadata['obsm_dataframes']:
+                        metadata['obsm_dataframes'][df_name] = {
+                            'columns': columns,
+                            'columns_info': {}
+                        }
+                        
+                        # Add encoding info if available
+                        if 'encoding-type' in attrs:
+                            metadata['obsm_dataframes'][df_name]['encoding_type'] = attrs['encoding-type']
+                        if 'encoding-version' in attrs:
+                            metadata['obsm_dataframes'][df_name]['encoding_version'] = attrs['encoding-version']
+                
+                elif path_parts[0] == 'varm':
+                    df_name = path_parts[1]
+                    columns = list(obj.keys())
+                    
+                    # Add to varm_info
+                    metadata['varm_info'][df_name] = {
+                        'type': 'dataframe',
+                        'columns': columns
+                    }
+                    
+                    # Add to varm_dataframes
+                    if df_name not in metadata['varm_dataframes']:
+                        metadata['varm_dataframes'][df_name] = {
+                            'columns': columns,
+                            'columns_info': {}
+                        }
+                        
+                        # Add encoding info if available
+                        if 'encoding-type' in attrs:
+                            metadata['varm_dataframes'][df_name]['encoding_type'] = attrs['encoding-type']
+                        if 'encoding-version' in attrs:
+                            metadata['varm_dataframes'][df_name]['encoding_version'] = attrs['encoding-version']
+    
+    # Traverse the zarr hierarchy in a single pass
+    zs.visititems(visitor_function)
+    
+    # Sort any lists for consistency
+    for key in ['obs_columns', 'var_columns']:
+        if key in metadata and isinstance(metadata[key], list):
+            metadata[key] = sorted(metadata[key])
+    
+    visit_time = time.time()
+    logger.info(f"Zarr metadata extraction (full): {time.time() - start_time:.4f}s "
+                f"(Open: {open_time - start_time:.4f}s, "
+                f"Standard: {standard_time - open_time:.4f}s, "
+                f"Detailed: {visit_time - standard_time:.4f}s)")
+    
+    return metadata

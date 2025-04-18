@@ -27,6 +27,8 @@ import uuid
 import warnings
 from collections import defaultdict
 
+from .metadata_extraction import extract_metadata
+
 # Try to import optional dependencies
 try:
     import dask.array as da
@@ -368,15 +370,18 @@ class ZarrReader:
                 self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
             raise
     
-    def open_dataset_by_path(self, path: str, metadata: bool=True) -> Tuple[zarr.Group, Dict[str, Any]]:
+    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full') -> Tuple[zarr.Group, Dict[str, Any]]:
         """
         Open a dataset by path without storing any state (stateless operation).
-        This is useful for direct access to datasets without maintaining state.
-        
+
         Args:
             path: Path to the zarr directory or file
             metadata: If metadata should be returned (Default=True).
-            
+            metadata_level: Level of metadata detail to extract:
+                'minimal' - Basic structure only (fastest)
+                'standard' - Column names and embeddings (faster)
+                'full' - Complete detailed metadata (default)
+
         Returns:
             Tuple of (zarr root, metadata dict)
         """
@@ -385,12 +390,12 @@ class ZarrReader:
             if path.startswith("s3://"):
                 if not S3FS_AVAILABLE:
                     raise ImportError("s3fs package required for S3 access. Install with 'pip install s3fs'.")
-                
+
                 # Parse S3 path
                 parts = path.replace("s3://", "").split("/", 1)
                 bucket = parts[0]
                 key = parts[1] if len(parts) > 1 else ""
-                
+
                 # Create S3 filesystem
                 fs = s3fs.S3FileSystem(anon=True)
                 store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
@@ -407,10 +412,10 @@ class ZarrReader:
 
             if not metadata:
                 return root
-            
-            # Extract metadata
-            metadata = self._extract_metadata(root)
-            
+
+            # Extract metadata with the requested detail level
+            metadata = self._extract_metadata(root, detail_level=metadata_level)
+
             return root, metadata
         except Exception as e:
             logger.error(f"Error opening dataset by path {path}: {e}")
@@ -743,9 +748,39 @@ class ZarrReader:
             logger.error(f"Error getting basic counts from {path}: {e}")
             raise
     
-    def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+    def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None, detail_level : Optional[str] = "standard") -> Dict[str, Any]:
         """
         Extract metadata from a zarr root.
+        
+        Args:
+            root: Zarr root group
+            dataset_id: Optional dataset ID
+            
+        Returns:
+            Dict of metadata
+        """
+        # Try to get the path for the store
+        path = None
+        if hasattr(root, 'store'):
+            if hasattr(root.store, 'path'):
+                path = root.store.path
+            elif hasattr(root.store, 'dir_path'):  # For some zarr storage backends
+                path = root.store.dir_path
+            
+        if path:
+            # Use the efficient visititems-based implementation if path is available
+            metadata = extract_metadata(root, detail_level=detail_level)
+        else:
+            # Fallback to legacy implementation for non-standard stores
+            # This keeps compatibility with unusual storage backends
+            metadata = self._extract_metadata_legacy(root, dataset_id)
+        
+        return metadata
+
+    def _extract_metadata_legacy(self, root: zarr.Group, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Legacy implementation of metadata extraction.
+        Used as fallback when path-based extraction is not possible.
         
         Args:
             root: Zarr root group
