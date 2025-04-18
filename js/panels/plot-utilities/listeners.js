@@ -321,8 +321,6 @@ export function setupColorControls(
             // For full data updates, update colors and data
             _updatePlotElements({
                 colors: true,
-                colorData: true,  // Include the full color data array
-                colorScale: true, // Update the color scale
                 colorRange: true, // Update the color range
                 styling: true,
                 layout: true
@@ -332,9 +330,8 @@ export function setupColorControls(
             // For visual-only updates
             _updatePlotElements({
                 styling: true,
-                colors: settings.colorMin !== null || settings.colorMax !== null,
+                colors: false,
                 colorRange: settings.colorMin !== null || settings.colorMax !== null,
-                colorData: false // Don't update the actual color data array
             });
         }
     }
@@ -352,8 +349,7 @@ export function setupColorControls(
     categoryPaletteSelect.addEventListener('change', (e) => {
         settings.categoryPalette = e.currentTarget.value;
         _updatePlotElements({
-            colors: true,
-            colorData: true  // Trigger categorical color update without reloading data
+            colors: true
         });
     });
 
@@ -840,7 +836,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
     
     console.log(`Button ${buttonType} clicked for axis ${axis}, type: ${dataType}`);
     
-    if (buttonType === 'lock') {
+    if (buttonType === 'lock' && axis) {
       // Handle lock button click
       settings[axis].locked = !settings[axis].locked;
       

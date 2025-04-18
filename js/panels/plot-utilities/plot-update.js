@@ -17,7 +17,6 @@ import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
  * @param {boolean} options.yAxis - Whether to update y-axis data.
  * @param {boolean} options.zAxis - Whether to update z-axis data.
  * @param {boolean} options.colors - Whether to update any coloring properties.
- * @param {boolean} options.colorData - Whether to update the color data array (set to true for new color data).
  * @param {boolean} options.colorScale - Whether to update the color scale only.
  * @param {boolean} options.colorRange - Whether to update color range (min/max) only.
  * @param {boolean} options.styling - Whether to update visual styling.
@@ -32,7 +31,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         yAxis: false,
         zAxis: false,
         colors: false,
-        colorData: false,
         colorScale: false,
         colorRange: false,
         styling: false,
@@ -187,129 +185,126 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             
             const hasStillMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
             
-            if (updateOptions.colorData || updateOptions.colors) {
-              // When switching from categorical (multiple traces) to numerical (single trace)
-              if (!isCategorical && hasStillMultipleTraces) {
-                  // Create a new single trace using the data object
-                  const newTrace = {
-                      type: settings.z ? 'scatter3d' : 'scattergl',
-                      mode: 'markers',
-                      x: data.x.values,
-                      y: data.y.values,
-                      text: data[entityType],
-                      customdata: Array.from({ length: data[entityType].length }, (_, i) => i),
-                      hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
-                          (settings.z ? `<br>z: %{z}` : '') +
-                          `<br>c: %{marker.color}<extra></extra>`,
-                      marker: {
-                          size: settings.pointSize,
-                          opacity: settings.pointOpacity,
-                          color: data.color,
-                          colorscale: settings.colorScale,
-                          reversescale: settings.colorReversed,
-                          cmin: settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v))),
-                          cmax: settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v))),
-                          colorbar: {
-                              title: {
-                                  text: `${settings.color.type}.${settings.color.key}` + 
-                                        (settings.color.column ? `.${settings.color.column}` : ''),
-                                  side: 'right',
-                                  font: { size: 12 }
-                              },
-                              titleside: 'right'
-                          },
-                          showscale: true
-                      },
-                      showlegend: false
-                  };
-                  
-                  if (settings.z) newTrace.z = data.z.values;
-                  
-                  // First remove all traces
-                  while (plotContainer.data.length > 0) {
-                      Plotly.deleteTraces(plotContainer, 0);
-                  }
-                  
-                  // Add the new trace
-                  Plotly.addTraces(plotContainer, newTrace);
-                  
-                  // Re-highlight focused entity if needed
-                  if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                      highlightFocusedEntity(plotContainer, data, settings, entityType);
-                  }
-                  applyAllAestheticSettings(plotContainer, settings);
-                      
-              } else if (isCategorical) {
-                  // Get unique category values and prepare color data
-                  const catValues = data.colorCategories || [...new Set(data.color)];
-                  let customColors = null;
-                  
-                  // Try to load custom colors from uns if categoryPalette is set to "uns"
-                  if (settings.categoryPalette === "uns") {
-                      const colorKey = `${settings.color.key}_colors`;
-                      const datasetPath = DataManager.getCurrentDataset();
-                      try {
-                          // DataManager.loadUns is async
-                          const response = await DataManager.loadUns({
-                              datasetPath: datasetPath,
-                              unsKey: colorKey
-                          });
-                          
-                          if (response && response.data) {
-                              customColors = Array.isArray(response.data) ? response.data : [response.data];
-                          }
-                      } catch (error) {
-                          console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
-                      }
-                  }
-                  
-                  // Process categories to create traces for each category
-                  const categoricalTraces = processCategories(settings, data, catValues, customColors);
-                  
-                  // Remove all existing traces
-                  while (plotContainer.data.length > 0) {
-                      Plotly.deleteTraces(plotContainer, 0);
-                  }
-                  
-                  // Add new categorical traces
-                  Plotly.addTraces(plotContainer, categoricalTraces);
-                  
-                  // Re-highlight focused entity if needed
-                  if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                      highlightFocusedEntity(plotContainer, data, settings, entityType);
-                  }
-                  applyAllAestheticSettings(plotContainer, settings);
-                    
-              } else if (isNumerical) {
-                const update = {};
-                const applyMask = idx => !indexMask || indexMask[idx];
-
-                if (updateOptions.colorData) {
-                    update['marker.color'] = [data.color.filter((_, i) => applyMask(i))];
+            // When switching from categorical (multiple traces) to numerical (single trace)
+            if (!isCategorical && hasStillMultipleTraces) {
+                // Create a new single trace using the data object
+                const newTrace = {
+                    type: settings.z ? 'scatter3d' : 'scattergl',
+                    mode: 'markers',
+                    x: data.x.values,
+                    y: data.y.values,
+                    text: data[entityType],
+                    customdata: Array.from({ length: data[entityType].length }, (_, i) => i),
+                    hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
+                        (settings.z ? `<br>z: %{z}` : '') +
+                        `<br>c: %{marker.color}<extra></extra>`,
+                    marker: {
+                        size: settings.pointSize,
+                        opacity: settings.pointOpacity,
+                        color: data.color,
+                        colorscale: settings.colorScale,
+                        reversescale: settings.colorReversed,
+                        cmin: settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v))),
+                        cmax: settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v))),
+                        colorbar: {
+                            title: {
+                                text: `${settings.color.type}.${settings.color.key}` + 
+                                      (settings.color.column ? `.${settings.color.column}` : ''),
+                                side: 'right',
+                                font: { size: 12 }
+                            },
+                            titleside: 'right'
+                        },
+                        showscale: true
+                    },
+                    showlegend: false
+                };
+                
+                if (settings.z) newTrace.z = data.z.values;
+                
+                // First remove all traces
+                while (plotContainer.data.length > 0) {
+                    Plotly.deleteTraces(plotContainer, 0);
                 }
                 
-                if (updateOptions.colorScale || updateOptions.colorData) {
-                    update['marker.colorscale'] = settings.colorScale;
-                    update['marker.reversescale'] = settings.colorReversed;
-                }
+                // Add the new trace
+                Plotly.addTraces(plotContainer, newTrace);
                 
-                if (settings.colorMin !== null && (updateOptions.colorRange || updateOptions.colorData)) {
-                    update['marker.cmin'] = settings.colorMin;
-                }
-                
-                if (settings.colorMax !== null && (updateOptions.colorRange || updateOptions.colorData)) {
-                    update['marker.cmax'] = settings.colorMax;
-                }
-                
-                if (Object.keys(update).length > 0) {
-                    Plotly.restyle(plotContainer, update, [0]);
+                // Re-highlight focused entity if needed
+                if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
+                    highlightFocusedEntity(plotContainer, data, settings, entityType);
                 }
                 applyAllAestheticSettings(plotContainer, settings);
+                    
+            } else if (isCategorical) {
+                // Get unique category values and prepare color data
+                const catValues = data.colorCategories || [...new Set(data.color)];
+                let customColors = null;
+                
+                // Try to load custom colors from uns if categoryPalette is set to "uns"
+                if (settings.categoryPalette === "uns") {
+                    const colorKey = `${settings.color.key}_colors`;
+                    const datasetPath = DataManager.getCurrentDataset();
+                    try {
+                        // DataManager.loadUns is async
+                        const response = await DataManager.loadUns({
+                            datasetPath: datasetPath,
+                            unsKey: colorKey
+                        });
+                        
+                        if (response && response.data) {
+                            customColors = Array.isArray(response.data) ? response.data : [response.data];
+                        }
+                    } catch (error) {
+                        console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
+                    }
+                }
+                
+                // Process categories to create traces for each category
+                const categoricalTraces = processCategories(settings, data, catValues, customColors);
+                
+                // Remove all existing traces
+                while (plotContainer.data.length > 0) {
+                    Plotly.deleteTraces(plotContainer, 0);
+                }
+                
+                // Add new categorical traces
+                Plotly.addTraces(plotContainer, categoricalTraces);
+                
+                // Re-highlight focused entity if needed
+                if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
+                    highlightFocusedEntity(plotContainer, data, settings, entityType);
+                }
+                applyAllAestheticSettings(plotContainer, settings);
+                  
+            } else if (isNumerical) {
+              const update = {};
+              const applyMask = idx => !indexMask || indexMask[idx];
+
+              if (updateOptions.colors) {
+                  update['marker.color'] = [data.color.filter((_, i) => applyMask(i))];
+              }
+              
+              if (updateOptions.colorScale || updateOptions.colors) {
+                  update['marker.colorscale'] = settings.colorScale;
+                  update['marker.reversescale'] = settings.colorReversed;
+              }
+              
+              if (settings.colorMin !== null && (updateOptions.colorRange || updateOptions.colors)) {
+                  update['marker.cmin'] = settings.colorMin;
+              }
+              
+              if (settings.colorMax !== null && (updateOptions.colorRange || updateOptions.colors)) {
+                  update['marker.cmax'] = settings.colorMax;
+              }
+              
+              if (Object.keys(update).length > 0) {
+                  Plotly.restyle(plotContainer, update, [0]);
+              }
+              applyAllAestheticSettings(plotContainer, settings);
             } else if (data.colorType === 'constant') {
                 const update = {};
-                if (updateOptions.colorData) {
-                    update['marker.color'] = 'rgba(150, 150, 150, 0.7)';
-                }
+                update['marker.color'] = 'rgba(150, 150, 150, 0.7)';
                 update['marker.showscale'] = false;
                 update['showlegend'] = false;
                 
@@ -320,10 +315,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 refreshPlot();
             }
             
-            // Re-add highlight for the focused entity if needed.
-            if (hasFocusedCell) {
-                highlightFocusedEntity(plotContainer, data, settings, entityType);
-            }
+          // Re-add highlight for the focused entity if needed.
+          if (hasFocusedCell) {
+              highlightFocusedEntity(plotContainer, data, settings, entityType);
           }
         }
         
@@ -438,7 +432,6 @@ export async function loadColorDataAndUpdatePlot(
             // Use the centralized update system to update plot elements.
             const options = {
                 colors: true,
-                colorData: true, // New color data loaded.
                 colorScale: true, // May need to update color scale.
                 colorRange: true, // May need to update color range.
                 filter: true, // Update filtering if needed.
