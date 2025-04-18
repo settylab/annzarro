@@ -174,6 +174,7 @@ export function createPanelStructure(container, id, settings) {
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}">Reverse Colormap</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}">Lock Range</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
                 </div>
               </div>
             </div>
@@ -472,6 +473,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   settings.x = settings.x || {};
   settings.y = settings.y || {};
   settings.color = settings.color || { type: isGenePlot ? 'var' : 'obs', key: '', column: '' };
+  settings.hideNaN = settings.hideNaN || false;
   
   // Initialize aesthetic settings
   initializeAestheticsSettings(settings);
@@ -544,6 +546,18 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     } else {
       hideOutliersButton.classList.remove('active', 'btn-primary');
       hideOutliersButton.classList.add('btn-outline-secondary');
+    }
+  }
+  
+  // Hide NaN button
+  const hideNanButton = document.getElementById(`hide-nan-${id}`);
+  if (hideNanButton) {
+    if (settings.hideNaN) {
+      hideNanButton.classList.add('active', 'btn-primary');
+      hideNanButton.classList.remove('btn-outline-secondary');
+    } else {
+      hideNanButton.classList.remove('active', 'btn-primary');
+      hideNanButton.classList.add('btn-outline-secondary');
     }
   }
 

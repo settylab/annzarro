@@ -62,12 +62,25 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         const hasMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
         const entityType = data.entities
 
-        // Create an index mask for filtering out outliers if needed.
+        // Create an index mask for filtering out outliers and NaN values if needed.
         let indexMask = null;
-        if (settings.hideOutliers && isNumerical && data.color) {
-            const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color);
-            const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color);
-            indexMask = data.color.map((v) => v >= cmin && v <= cmax);
+        const hasColorData = isNumerical && data.color;
+        
+        if (hasColorData) {
+            if (settings.hideOutliers && settings.hideNaN) {
+                // Filter both outliers and NaN
+                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
+                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
+                indexMask = data.color.map((v) => v !== null && !isNaN(v) && v >= cmin && v <= cmax);
+            } else if (settings.hideOutliers) {
+                // Filter only outliers
+                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
+                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
+                indexMask = data.color.map((v) => v >= cmin && v <= cmax);
+            } else if (settings.hideNaN) {
+                // Filter only NaN values
+                indexMask = data.color.map((v) => v !== null && !isNaN(v));
+            }
         }
 
         // FILTER-ONLY MODE: apply filtering updates only.

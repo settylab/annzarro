@@ -440,6 +440,27 @@ export function setupColorControls(
         }
         _updatePlotElements({ filter: true });
     });
+    
+    // --- Hide NaN button ---
+    const hideNanButton = controlsContainer.querySelector(`#hide-nan-${id}`);
+    if (settings.hideNaN) {
+        hideNanButton.classList.add('active', 'btn-primary');
+        hideNanButton.classList.remove('btn-outline-secondary');
+    } else {
+        hideNanButton.classList.remove('active', 'btn-primary');
+        hideNanButton.classList.add('btn-outline-secondary');
+    }
+    hideNanButton.addEventListener('click', () => {
+        settings.hideNaN = !settings.hideNaN;
+        if (settings.hideNaN) {
+            hideNanButton.classList.add('active', 'btn-primary');
+            hideNanButton.classList.remove('btn-outline-secondary');
+        } else {
+            hideNanButton.classList.remove('active', 'btn-primary');
+            hideNanButton.classList.add('btn-outline-secondary');
+        }
+        _updatePlotElements({ filter: true });
+    });
 
     // --- Min slider ---
     colorMinSlider.addEventListener('input', (e) => {
