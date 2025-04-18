@@ -2,6 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import { loadAxisData } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
+import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 
 
 
@@ -232,10 +233,31 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   // Add the new trace
                   Plotly.addTraces(plotContainer, newTrace);
                   
-                  // Update layout for numerical coloring (hide legend)
+                  // Update layout for numerical coloring (hide legend, set colorbar position)
+                  // Import the positioning function
+                  const { getPositioningByLocation } = await import('./plot-aesthetics-menu.js');
+                  const position = settings.legendPosition || 'right';
+                  const colorbarPosition = getPositioningByLocation(position);
+                  
+                  // First update layout properties
                   Plotly.relayout(plotContainer, {
                       showlegend: false
                   });
+                  
+                  // Then update colorbar position with restyle
+                  const colorbarUpdate = {};
+                  if (colorbarPosition) {
+                      colorbarUpdate['marker.colorbar.x'] = colorbarPosition.x;
+                      colorbarUpdate['marker.colorbar.xanchor'] = colorbarPosition.xanchor;
+                      colorbarUpdate['marker.colorbar.y'] = colorbarPosition.y;
+                      colorbarUpdate['marker.colorbar.yanchor'] = colorbarPosition.yanchor;
+                      colorbarUpdate['marker.colorbar.titleside'] = colorbarPosition.titleside;
+                      if (colorbarPosition.orientation !== undefined) {
+                          colorbarUpdate['marker.colorbar.orientation'] = colorbarPosition.orientation;
+                      }
+                      
+                      Plotly.restyle(plotContainer, colorbarUpdate, [0]);
+                  }
                   
                   // Re-highlight focused entity if needed
                   if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
@@ -277,11 +299,23 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   // Add new categorical traces
                   Plotly.addTraces(plotContainer, categoricalTraces);
                   
-                  // Update layout to show legend
-                  Plotly.relayout(plotContainer, {
+                  // Update layout to show legend and apply legend position settings
+                  // Import the positioning function
+                  const { getPositioningByLocation } = await import('./plot-aesthetics-menu.js');
+                  const position = settings.legendPosition || 'right';
+                  const posConfig = getPositioningByLocation(position);
+                  
+                  const legendUpdate = {
                       showlegend: true,
-                      'legend.title.text': settings.color.key
-                  });
+                      'legend.title.text': settings.color.key,
+                      'legend.orientation': posConfig.legendOrientation,
+                      'legend.x': posConfig.legendX,
+                      'legend.y': posConfig.legendY,
+                      'legend.xanchor': posConfig.legendXanchor,
+                      'legend.yanchor': posConfig.legendYanchor
+                  };
+                  
+                  Plotly.relayout(plotContainer, legendUpdate);
                   
                   // Re-highlight focused entity if needed
                   if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
@@ -368,34 +402,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 return;
             }
             
-            const layoutUpdate = {};
-            
-            if (settings && settings.x && settings.x.type && settings.x.key) {
-                const xAxisTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
-                if (is3D) {
-                    layoutUpdate['scene.xaxis.title'] = xAxisTitle;
-                } else {
-                    layoutUpdate['xaxis.title'] = xAxisTitle;
-                }
-            }
-            
-            if (settings && settings.y && settings.y.type && settings.y.key) {
-                const yAxisTitle = `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`;
-                if (is3D) {
-                    layoutUpdate['scene.yaxis.title'] = yAxisTitle;
-                } else {
-                    layoutUpdate['yaxis.title'] = yAxisTitle;
-                }
-            }
-            
-            if (is3D && settings && settings.z && settings.z.type && settings.z.key) {
-                const zAxisTitle = `${settings.z.type}.${settings.z.key}${settings.z.column ? `.${settings.z.column}` : ''}`;
-                layoutUpdate['scene.zaxis.title'] = zAxisTitle;
-            }
-            
-            if (Object.keys(layoutUpdate).length > 0) {
-                Plotly.relayout(plotContainer, layoutUpdate);
-            }
+            // Use the imported applyAllAestheticSettings function
+            applyAllAestheticSettings(plotContainer, settings);
             
             if (settings && settings.color && settings.color.type && settings.color.key) {
                 if (data.colorType === 'numerical') {

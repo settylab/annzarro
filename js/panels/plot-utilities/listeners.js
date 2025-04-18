@@ -2,6 +2,13 @@ import { updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './p
 import { loadAxisData } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
+import { 
+  setupAestheticsMenuListeners, 
+  createAestheticsMenu,
+  applyAllAestheticSettings,
+  initializeAestheticsSettings,
+  createPopoverContent
+} from './plot-aesthetics-menu.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -188,62 +195,10 @@ export function setupPlotControlListeners(
           loadDataAndCreatePlot();
         });
     });
-  
-    // --- Show Grid Toggle ---
-    const showGridToggle = controlsContainer.querySelector(`#show-grid-${id}`);
-    if (settings.showGrid) {
-      showGridToggle.classList.add('active', 'btn-primary');
-      showGridToggle.classList.remove('btn-outline-secondary');
-    } else {
-      showGridToggle.classList.remove('active', 'btn-primary');
-      showGridToggle.classList.add('btn-outline-secondary');
-    }
-    showGridToggle.addEventListener('click', () => {
-      settings.showGrid = !settings.showGrid;
-      if (settings.showGrid) {
-        showGridToggle.classList.add('active', 'btn-primary');
-        showGridToggle.classList.remove('btn-outline-secondary');
-      } else {
-        showGridToggle.classList.remove('active', 'btn-primary');
-        showGridToggle.classList.add('btn-outline-secondary');
-      }
-      if (plotContainer) {
-        const update = {
-          // 2D axes
-          'xaxis.showgrid': settings.showGrid,
-          'yaxis.showgrid': settings.showGrid,
-          'xaxis.showline': settings.showGrid,
-          'yaxis.showline': settings.showGrid,
-          'xaxis.zeroline': settings.showGrid,
-          'yaxis.zeroline': settings.showGrid,
-          'xaxis.ticks': settings.showGrid ? '' : 'none',
-          'yaxis.ticks': settings.showGrid ? '' : 'none',
-          'xaxis.showticklabels': settings.showGrid,
-          'yaxis.showticklabels': settings.showGrid,
-        };
-        // For 3D plots.
-        if (settings.z) {
-          Object.assign(update, {
-            'scene.xaxis.showgrid': settings.showGrid,
-            'scene.yaxis.showgrid': settings.showGrid,
-            'scene.zaxis.showgrid': settings.showGrid,
-            'scene.xaxis.showline': settings.showGrid,
-            'scene.yaxis.showline': settings.showGrid,
-            'scene.zaxis.showline': settings.showGrid,
-            'scene.xaxis.zeroline': settings.showGrid,
-            'scene.yaxis.zeroline': settings.showGrid,
-            'scene.zaxis.zeroline': settings.showGrid,
-            'scene.xaxis.ticks': settings.showGrid ? '' : 'none',
-            'scene.yaxis.ticks': settings.showGrid ? '' : 'none',
-            'scene.zaxis.ticks': settings.showGrid ? '' : 'none',
-            'scene.xaxis.showticklabels': settings.showGrid,
-            'scene.yaxis.showticklabels': settings.showGrid,
-            'scene.zaxis.showticklabels': settings.showGrid,
-          });
-        }
-        Plotly.relayout(plotContainer, update);
-      }
-    });
+    
+    const existingBtn = controlsContainer.querySelector(`#aesthetics-menu-btn-${id}`);
+    const cleanupAesthetics = createAestheticsMenu(id, existingBtn, controlsContainer, plotContainer, settings);
+    plotContainer._aestheticsCleanup = cleanupAesthetics;
   
     // --- Highlight Focused Cell Toggle (conditional) ---
   const highlightFocusedCellToggle = controlsContainer.querySelector(`#highlight-focused-cell-${id}`);

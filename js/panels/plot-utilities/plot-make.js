@@ -2,6 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
+import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -693,6 +694,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     y: data.y.values,
     text: entities,
     customdata: Array.from({ length: entities.length }, (_, i) => i),
+    showlegend: false,
     hovertemplate:
       `%{text}<br>x: %{x}<br>y: %{y}` +
       (settings.z ? `<br>z: %{z}` : '') +
@@ -709,6 +711,194 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Build layout with our pure helper
   const layout = createLayout(settings);
+
+  // Apply aesthetic settings from the settings object
+  if (settings) {
+    // Apply margin settings if defined
+    if (settings.margins) {
+      layout.margin = settings.margins;
+    }
+
+    // Apply background color settings
+    if (settings.bgColor) {
+      layout.paper_bgcolor = settings.bgColor;
+      layout.plot_bgcolor = settings.bgColor;
+    }
+
+    // Apply dark mode settings
+    if (settings.darkMode) {
+      const textColor = '#ffffff';
+      const gridColor = '#444444';
+      const bgColor = '#1e1e1e';
+      
+      layout.paper_bgcolor = bgColor;
+      layout.plot_bgcolor = bgColor;
+      layout.font = layout.font || {};
+      layout.font.color = textColor;
+      
+      if (settings.z) { // 3D plot
+        layout.scene = layout.scene || {};
+        layout.scene.bgcolor = bgColor;
+        layout.scene.xaxis = layout.scene.xaxis || {};
+        layout.scene.yaxis = layout.scene.yaxis || {};
+        layout.scene.zaxis = layout.scene.zaxis || {};
+        layout.scene.xaxis.gridcolor = gridColor;
+        layout.scene.yaxis.gridcolor = gridColor;
+        layout.scene.zaxis.gridcolor = gridColor;
+        layout.scene.xaxis.color = textColor;
+        layout.scene.yaxis.color = textColor;
+        layout.scene.zaxis.color = textColor;
+      } else { // 2D plot
+        layout.xaxis = layout.xaxis || {};
+        layout.yaxis = layout.yaxis || {};
+        layout.xaxis.gridcolor = gridColor;
+        layout.yaxis.gridcolor = gridColor;
+        layout.xaxis.color = textColor;
+        layout.yaxis.color = textColor;
+      }
+    }
+
+    // Apply font size settings
+    if (settings.fontSize) {
+      // Set the global font size
+      layout.font = layout.font || {};
+      layout.font.size = settings.fontSize;
+      
+      if (settings.z) { // 3D plot
+        // Make sure all required objects exist
+        layout.scene = layout.scene || {};
+        layout.scene.xaxis = layout.scene.xaxis || {};
+        layout.scene.yaxis = layout.scene.yaxis || {};
+        layout.scene.zaxis = layout.scene.zaxis || {};
+        
+        // Initialize axis title objects if needed
+        if (typeof layout.scene.xaxis.title === 'string') {
+          const text = layout.scene.xaxis.title;
+          layout.scene.xaxis.title = { text: text, font: {} };
+        } else {
+          layout.scene.xaxis.title = layout.scene.xaxis.title || { text: '', font: {} };
+          layout.scene.xaxis.title.font = layout.scene.xaxis.title.font || {};
+        }
+        
+        if (typeof layout.scene.yaxis.title === 'string') {
+          const text = layout.scene.yaxis.title;
+          layout.scene.yaxis.title = { text: text, font: {} };
+        } else {
+          layout.scene.yaxis.title = layout.scene.yaxis.title || { text: '', font: {} };
+          layout.scene.yaxis.title.font = layout.scene.yaxis.title.font || {};
+        }
+        
+        if (typeof layout.scene.zaxis.title === 'string') {
+          const text = layout.scene.zaxis.title;
+          layout.scene.zaxis.title = { text: text, font: {} };
+        } else {
+          layout.scene.zaxis.title = layout.scene.zaxis.title || { text: '', font: {} };
+          layout.scene.zaxis.title.font = layout.scene.zaxis.title.font || {};
+        }
+        
+        // Set font sizes
+        layout.scene.xaxis.title.font.size = settings.fontSize + 2;
+        layout.scene.yaxis.title.font.size = settings.fontSize + 2;
+        layout.scene.zaxis.title.font.size = settings.fontSize + 2;
+        
+        // Initialize and set tick font sizes
+        layout.scene.xaxis.tickfont = layout.scene.xaxis.tickfont || {};
+        layout.scene.yaxis.tickfont = layout.scene.yaxis.tickfont || {};
+        layout.scene.zaxis.tickfont = layout.scene.zaxis.tickfont || {};
+        layout.scene.xaxis.tickfont.size = settings.fontSize;
+        layout.scene.yaxis.tickfont.size = settings.fontSize;
+        layout.scene.zaxis.tickfont.size = settings.fontSize;
+      } else { // 2D plot
+        // Make sure all required objects exist
+        layout.xaxis = layout.xaxis || {};
+        layout.yaxis = layout.yaxis || {};
+        
+        // Initialize axis title objects if needed
+        if (typeof layout.xaxis.title === 'string') {
+          const text = layout.xaxis.title;
+          layout.xaxis.title = { text: text, font: {} };
+        } else {
+          layout.xaxis.title = layout.xaxis.title || { text: '', font: {} };
+          layout.xaxis.title.font = layout.xaxis.title.font || {};
+        }
+        
+        if (typeof layout.yaxis.title === 'string') {
+          const text = layout.yaxis.title;
+          layout.yaxis.title = { text: text, font: {} };
+        } else {
+          layout.yaxis.title = layout.yaxis.title || { text: '', font: {} };
+          layout.yaxis.title.font = layout.yaxis.title.font || {};
+        }
+        
+        // Set font sizes
+        layout.xaxis.title.font.size = settings.fontSize + 2;
+        layout.yaxis.title.font.size = settings.fontSize + 2;
+        
+        // Initialize and set tick font sizes
+        layout.xaxis.tickfont = layout.xaxis.tickfont || {};
+        layout.yaxis.tickfont = layout.yaxis.tickfont || {};
+        layout.xaxis.tickfont.size = settings.fontSize;
+        layout.yaxis.tickfont.size = settings.fontSize;
+      }
+    }
+
+    // Apply axis visibility settings
+    if (settings.showAxisTitles === false) {
+      if (settings.z) {
+        if (layout.scene && layout.scene.xaxis && layout.scene.xaxis.title) layout.scene.xaxis.title.text = '';
+        if (layout.scene && layout.scene.yaxis && layout.scene.yaxis.title) layout.scene.yaxis.title.text = '';
+        if (layout.scene && layout.scene.zaxis && layout.scene.zaxis.title) layout.scene.zaxis.title.text = '';
+      } else {
+        if (layout.xaxis && layout.xaxis.title) layout.xaxis.title.text = '';
+        if (layout.yaxis && layout.yaxis.title) layout.yaxis.title.text = '';
+      }
+    }
+    
+    // Apply tick label visibility
+    if (settings.showAxisLabels === false) {
+      if (settings.z) {
+        if (layout.scene && layout.scene.xaxis) layout.scene.xaxis.showticklabels = false;
+        if (layout.scene && layout.scene.yaxis) layout.scene.yaxis.showticklabels = false;
+        if (layout.scene && layout.scene.zaxis) layout.scene.zaxis.showticklabels = false;
+      } else {
+        if (layout.xaxis) layout.xaxis.showticklabels = false;
+        if (layout.yaxis) layout.yaxis.showticklabels = false;
+      }
+    }
+    
+    // Apply axis line visibility
+    if (settings.showAxisLines === false) {
+      if (settings.z) {
+        if (layout.scene && layout.scene.xaxis) layout.scene.xaxis.showline = false;
+        if (layout.scene && layout.scene.yaxis) layout.scene.yaxis.showline = false;
+        if (layout.scene && layout.scene.zaxis) layout.scene.zaxis.showline = false;
+      } else {
+        if (layout.xaxis) layout.xaxis.showline = false;
+        if (layout.yaxis) layout.yaxis.showline = false;
+      }
+    }
+
+    // Apply legend settings
+    if (settings.showLegend === false) {
+      layout.showlegend = false;
+    }
+
+    // Apply interaction settings
+    if (settings.showHoverInfo === false) {
+      layout.hovermode = false;
+    }
+
+    if (settings.enableZoom === false) {
+      if (settings.z) {
+        layout.scene = layout.scene || {};
+      } else {
+        layout.xaxis = layout.xaxis || {};
+        layout.yaxis = layout.yaxis || {};
+        layout.xaxis.fixedrange = true;
+        layout.yaxis.fixedrange = true;
+      }
+    }
+  }
 
   // Branch for different color types
   if (data.colorType === 'categorical') {
@@ -735,6 +925,15 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       
       layout.showlegend = true;
       layout.legend = { ...(layout.legend || {}), title: { text: settings.color.key } };
+
+      const position = settings.legendPosition || 'right';
+      const posConfig = getPositioningByLocation(position);
+      
+      layout.legend.orientation = posConfig.legendOrientation;
+      layout.legend.x = posConfig.legendX;
+      layout.legend.y = posConfig.legendY;
+      layout.legend.xanchor = posConfig.legendXanchor;
+      layout.legend.yanchor = posConfig.legendYanchor;
 
       plotContainer.innerHTML = '';
       Plotly.newPlot(
@@ -812,6 +1011,19 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       },
       titleside: 'right'
     };
+
+    // Use the centralized positioning function
+    const position = settings.legendPosition || 'right';
+    const posConfig = getPositioningByLocation(position);
+    
+    baseTrace.marker.colorbar.x = posConfig.x;
+    baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
+    baseTrace.marker.colorbar.y = posConfig.y;
+    baseTrace.marker.colorbar.yanchor = posConfig.yanchor;
+    baseTrace.marker.colorbar.titleside = posConfig.titleside;
+    baseTrace.marker.colorbar.orientation = posConfig.orientation;
+
+
     plotContainer.innerHTML = '';
     Plotly.newPlot(
       plotContainer,

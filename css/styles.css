@@ -2000,6 +2000,96 @@ div.dtsb-group {
     padding: 0.5rem;
 }
 
+/* Plot Aesthetics Menu */
+.aesthetics-popover {
+    max-width: 350px;
+    width: 350px;
+}
+
+/* Style for active plot options button */
+.btn-aesthetics-active {
+    background-color: #0d6efd !important;
+    color: white !important;
+    border-color: #0d6efd !important;
+}
+
+.aesthetics-menu-content {
+    padding: 10px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.aesthetics-section {
+    margin-bottom: 18px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    padding: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.aesthetics-section h6 {
+    margin-bottom: 10px;
+    font-weight: 600;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 5px;
+    color: #495057;
+}
+
+.export-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    flex: 1;
+    min-width: 70px;
+    text-align: center;
+}
+
+.form-label.mb-1 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #495057;
+}
+
+.gap-2 {
+    gap: 0.5rem;
+}
+
+/* Color picker styling */
+.form-control-color {
+    width: 50px;
+    padding: 2px;
+    height: 32px;
+}
+
+/* Improved margins sections */
+.aesthetics-section .row.g-2 {
+    margin: 0 -5px;
+}
+
+.aesthetics-section .col-6 {
+    padding: 0 5px;
+}
+
+/* Style for number inputs in aesthetics menu */
+.aesthetics-section input[type="number"] {
+    font-size: 0.85rem;
+}
+
+/* Toggle switches for better appearance */
+.aesthetics-section .form-check-input {
+    cursor: pointer;
+}
+
+.aesthetics-section .form-check-label {
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+/* Legend position dropdown styling */
+.aesthetics-section select.form-select-sm {
+    font-size: 0.85rem;
+    height: 32px;
+}
+
 .feature-type-list {
     margin-bottom: 0.5rem;
 }

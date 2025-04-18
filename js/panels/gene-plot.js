@@ -47,7 +47,9 @@ const GenePlotPanel = (function() {
             hideNonSubset: false,
             showGrid: true,    // Show grid lines by default
             lockColorRange: false,  // Don't lock color range by default
-            highlightFocusedGene: true // Highlight focused gene by default
+            highlightFocusedGene: true, // Highlight focused gene by default
+            exportWidth: 1200,      // Default export width in pixels
+            exportHeight: 800       // Default export height in pixels
         };
         
         

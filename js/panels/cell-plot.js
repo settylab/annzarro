@@ -47,7 +47,9 @@ const CellPlotPanel = (function() {
             hideNonSubset: false,
             showGrid: true,    // Show grid lines by default
             lockColorRange: false,  // Don't lock color range by default
-            highlightFocusedCell: true // Highlight focused cell by default
+            highlightFocusedCell: true, // Highlight focused cell by default
+            exportWidth: 1200,      // Default export width in pixels
+            exportHeight: 800       // Default export height in pixels
         };
         
         
@@ -371,6 +373,12 @@ const CellPlotPanel = (function() {
                     window.loadingIndicator.cleanupContainer(_plotContainer);
                 } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
                     loadingIndicator.cleanupContainer(_plotContainer);
+                }
+                
+                // Clean up aesthetics menu event listeners
+                if (_plotContainer._aestheticsCleanup && typeof _plotContainer._aestheticsCleanup === 'function') {
+                    _plotContainer._aestheticsCleanup();
+                    _plotContainer._aestheticsCleanup = null;
                 }
                 
                 Plotly.purge(_plotContainer);

@@ -36,11 +36,17 @@ export function createLayout(settings) {
     // For 2D plots, xaxis and yaxis are defined.
     xaxis: {
       ...baseAxis,
-      title: `${settings.x.type}.${settings.x.key}` + (settings.x.column ? `.${settings.x.column}` : '')
+      title: {
+        text: `${settings.x.type}.${settings.x.key}` + (settings.x.column ? `.${settings.x.column}` : ''),
+        font: {}
+      }
     },
     yaxis: {
       ...baseAxis,
-      title: `${settings.y.type}.${settings.y.key}` + (settings.y.column ? `.${settings.y.column}` : '')
+      title: {
+        text: `${settings.y.type}.${settings.y.key}` + (settings.y.column ? `.${settings.y.column}` : ''),
+        font: {}
+      }
     }
   };
 
@@ -57,7 +63,10 @@ export function createLayout(settings) {
       },
       zaxis: {
         ...baseAxis,
-        title: `${settings.z.type}.${settings.z.key}` + (settings.z.column ? `.${settings.z.column}` : '')
+        title: {
+          text: `${settings.z.type}.${settings.z.key}` + (settings.z.column ? `.${settings.z.column}` : ''),
+          font: {}
+        }
       }
     };
     

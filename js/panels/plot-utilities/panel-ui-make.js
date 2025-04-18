@@ -2,6 +2,7 @@ import { listAvailableColormaps } from './colors.js';
 import { setupAxisSelector } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
+import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -120,10 +121,10 @@ export function createPanelStructure(container, id, settings) {
           <div class="color-options mt-2">
             <div class="btn-group" role="group">
               <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${id}">3D Plot</button>
-              <button class="btn btn-sm active btn-primary me-2" id="show-grid-${id}">Show Grid</button>
               <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-cell-${id}" style="display:none;">Highlight Focused Cell</button>
               <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-gene-${id}" style="display:none;">Highlight Focused Gene</button>
               <button class="btn btn-sm btn-outline-secondary me-2" id="refresh-plot-${id}">Refresh</button>
+              <button class="btn btn-sm btn-outline-secondary me-2" id="aesthetics-menu-btn-${id}"><i class="fas fa-sliders-h"></i> Plot Options</button>
             </div>
 
             <div class="point-controls">
@@ -142,7 +143,6 @@ export function createPanelStructure(container, id, settings) {
                 <label id="numerical-color-label-${id}" class="numerical-color-label me-2 mb-0">Color Map:</label>
                 <label id="categorical-color-label-${id}" class="categorical-color-label me-2 mb-0" style="display:none;">Color Palette:</label>
                 <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${id}">
-                  <option value="">Loading color scales...</option>
                   ${COLOR_SCALES.map(scale => `
                     <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
                   `).join('')}
@@ -457,6 +457,9 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   settings.x = settings.x || {};
   settings.y = settings.y || {};
   settings.color = settings.color || { type: isGenePlot ? 'var' : 'obs', key: '', column: '' };
+  
+  // Initialize aesthetic settings
+  initializeAestheticsSettings(settings);
 
   // Axis selectors
   setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure);
