@@ -552,7 +552,7 @@ class ZarrReader:
             self.dataset_paths[dataset_id] = path  # Track the original path
             
             # Extract metadata for this dataset
-            metadata = self._extract_metadata(store, dataset_id)
+            metadata = self._extract_metadata(store, dataset_id, disable_caching=False)
             self.dataset_metadata[dataset_id] = metadata
             
             # Set as active dataset
@@ -653,7 +653,7 @@ class ZarrReader:
             self.dataset_paths[dataset_id] = url  # Track the original URL
             
             # Extract metadata for this dataset
-            metadata = self._extract_metadata(zarr_store, dataset_id)
+            metadata = self._extract_metadata(zarr_store, dataset_id, disable_caching=False)
             self.dataset_metadata[dataset_id] = metadata
             
             # Set as active dataset
@@ -733,7 +733,7 @@ class ZarrReader:
             self.dataset_paths[dataset_id] = f"s3://{bucket}/{key}"  # Track the S3 path
             
             # Extract metadata for this dataset
-            metadata = self._extract_metadata(zarr_store, dataset_id)
+            metadata = self._extract_metadata(zarr_store, dataset_id, disable_caching=False)
             self.dataset_metadata[dataset_id] = metadata
             
             # Set as active dataset
@@ -754,9 +754,9 @@ class ZarrReader:
                 self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
             raise
     
-    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full') -> Tuple[zarr.Group, Dict[str, Any]]:
+    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full', use_cache: bool=False) -> Tuple[zarr.Group, Dict[str, Any]]:
         """
-        Open a dataset by path without storing any state (stateless operation).
+        Open a dataset by path.
 
         Args:
             path: Path to the zarr directory or file
@@ -765,6 +765,8 @@ class ZarrReader:
                 'minimal' - Basic structure only (fastest)
                 'standard' - Column names and embeddings (faster)
                 'full' - Complete detailed metadata (default)
+            use_cache: Whether to cache the results (Default=False). When True,
+                       this will store the dataset in memory for faster future access.
 
         Returns:
             Tuple of (zarr root, metadata dict)
@@ -797,15 +799,56 @@ class ZarrReader:
             if not metadata:
                 return root
             
-            temp_dataset_id = f"temp_{os.path.basename(os.path.normpath(path))}"
-
-            if path:
-                # Extract metadata with the requested detail level
-                metadata = self._extract_metadata(root, dataset_id=temp_dataset_id, detail_level=metadata_level)
-            else:
-                metadata = self._extract_metadata_legacy(root, dataset_id=temp_dataset_id)
+            # Create a dataset_id based on the path - create a consistent ID
+            dataset_id = os.path.basename(os.path.normpath(path))
+            
+            # For stateless operation, use a temporary ID prefix
+            temp_id_prefix = "temp_" if not use_cache or not self.enable_caching else ""
+            temp_dataset_id = f"{temp_id_prefix}{dataset_id}"
+            
+            # If using cache, register the dataset in our internal stores
+            if use_cache and self.enable_caching:
+                # Check if it's already loaded
+                if dataset_id in self.dataset_roots:
+                    logger.info(f"Dataset {dataset_id} already in cache, returning cached version")
+                    root = self.dataset_roots[dataset_id]
+                    metadata_dict = self.dataset_metadata[dataset_id]
+                    return root, metadata_dict
                 
-            return root, metadata
+                # If not already loaded, we'll load it here (outside this block)
+                # and register it later after extracting metadata
+                logger.info(f"Dataset {dataset_id} not in cache, loading and caching")
+            
+            # Extract metadata - don't pass dataset_id for caching inside these functions
+            # We'll cache at this higher level instead
+            if path:
+                # Extract metadata with the requested detail level - disable internal caching
+                # as we'll handle caching at this higher level for better consistency
+                metadata_dict = self._extract_metadata(root, dataset_id=temp_dataset_id, 
+                                                     detail_level=metadata_level, disable_caching=True)
+            else:
+                # Use legacy extraction method with caching disabled
+                metadata_dict = self._extract_metadata_legacy(root, dataset_id=temp_dataset_id, 
+                                                           disable_caching=True)
+            
+            # Now that we have metadata, register in cache if needed
+            if use_cache and self.enable_caching:
+                # Store dataset in all our tracking structures
+                self.dataset_roots[dataset_id] = root
+                self.dataset_paths[dataset_id] = path
+                self.dataset_metadata[dataset_id] = metadata_dict
+                
+                # If this is the first dataset, make it active
+                if not self.active_dataset_id:
+                    self.active_dataset_id = dataset_id
+                    
+                # Also cache the metadata dictionary itself
+                metadata_cache_key = f"{dataset_id}:metadata"
+                self._add_to_cache(metadata_cache_key, metadata_dict, cache_type='metadata')
+                
+                logger.info(f"Dataset {dataset_id} cached for future use")
+                
+            return root, metadata_dict
         except Exception as e:
             logger.error(f"Error opening dataset by path {path}: {e}")
             raise
@@ -1137,7 +1180,8 @@ class ZarrReader:
             logger.error(f"Error getting basic counts from {path}: {e}")
             raise
     
-    def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None, detail_level: Optional[str] = "full") -> Dict[str, Any]:
+    def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None, 
+                      detail_level: Optional[str] = "full", disable_caching: bool = False) -> Dict[str, Any]:
       """
       Extract metadata from a zarr root.
 
@@ -1145,12 +1189,13 @@ class ZarrReader:
           root: Zarr root group
           dataset_id: Optional dataset ID
           detail_level: Level of detail to extract ('minimal', 'standard', or 'full')
+          disable_caching: If True, don't cache the metadata results even if caching is enabled
 
       Returns:
           Dict of metadata
       """
-      # Check if metadata is already cached
-      if self.enable_caching:
+      # Check if metadata is already cached (unless disabled)
+      if self.enable_caching and not disable_caching:
           if dataset_id is not None:
               # If dataset_id is provided, use it for cache key
               cache_key = f"{dataset_id}:metadata:{detail_level}"
@@ -1204,8 +1249,8 @@ class ZarrReader:
                       if key in metadata:
                           del metadata[key]
 
-      # Cache the result if caching is enabled
-      if self.enable_caching:
+      # Cache the result if caching is enabled and not disabled
+      if self.enable_caching and not disable_caching:
           if dataset_id is not None:
               cache_key = f"{dataset_id}:metadata:{detail_level}"
               self._add_to_cache(cache_key, metadata, cache_type='metadata')
@@ -1215,7 +1260,8 @@ class ZarrReader:
 
       return metadata
 
-    def _extract_metadata_legacy(self, root: zarr.Group, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+    def _extract_metadata_legacy(self, root: zarr.Group, dataset_id: Optional[str] = None, 
+                            disable_caching: bool = False) -> Dict[str, Any]:
         """
         Legacy implementation of metadata extraction.
         Used as fallback when path-based extraction is not possible.
@@ -1223,13 +1269,14 @@ class ZarrReader:
         Args:
             root: Zarr root group
             dataset_id: Optional dataset ID
+            disable_caching: If True, don't cache the metadata results even if caching is enabled
             
         Returns:
             Dict of metadata
         """
 
-        # If dataset_id is provided, check if metadata is already cached
-        if dataset_id is not None and self.enable_caching:
+        # If dataset_id is provided, check if metadata is already cached (unless disabled)
+        if dataset_id is not None and self.enable_caching and not disable_caching:
             cache_key = f"{dataset_id}:metadata_legacy"
             cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
             if cached_metadata is not None:
@@ -1504,11 +1551,11 @@ class ZarrReader:
         if metadata['has_uns'] and hasattr(root['uns'], 'keys'):
             metadata['uns'] = {'keys': list(root['uns'].keys())}
         
-        # Cache metadata if caching is enabled and dataset_id is provided
-        if dataset_id is not None and self.enable_caching:
-            cache_key = f"{dataset_id}:metadata"
+        # Cache metadata if caching is enabled and dataset_id is provided and not disabled
+        if dataset_id is not None and self.enable_caching and not disable_caching:
+            cache_key = f"{dataset_id}:metadata_legacy"
             self._add_to_cache(cache_key, metadata, cache_type='metadata')
-            logger.debug(f"Cached metadata for dataset {dataset_id}")
+            logger.debug(f"Cached legacy metadata for dataset {dataset_id}")
             
         return metadata
     

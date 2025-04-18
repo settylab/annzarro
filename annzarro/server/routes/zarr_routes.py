@@ -92,7 +92,7 @@ def register_zarr_routes(app, api_version):
         try:
             # Use the stateless approach to get dataset info
             # Use direct file access without maintaining state
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
             # Generate a dataset ID from the path if needed
             dataset_id = os.path.basename(os.path.normpath(dataset_path))
@@ -223,7 +223,7 @@ def register_zarr_routes(app, api_version):
             
         try:
             # Use direct zarr access for stateless operation
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
             # Extract data based on AnnData structure
             result = zarr_reader.get_anndata_structure(root, metadata)
@@ -282,7 +282,7 @@ def register_zarr_routes(app, api_version):
         """
         try:
             # Use the stateless approach to get dataset info
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
             # Check if dataset has uns
             if not metadata.get("has_uns", False):
@@ -323,7 +323,7 @@ def register_zarr_routes(app, api_version):
             
         try:
             # Use the stateless approach to get dataset info
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
             # Check if dataset has uns
             if not metadata.get("has_uns", False):
@@ -368,7 +368,7 @@ def register_zarr_routes(app, api_version):
         """
         try:
             # Use the stateless approach to get dataset info
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
             # Check if dataset has uns
             if not metadata.get("has_uns", False):

@@ -46,7 +46,7 @@ def register_data_routes(app, api_version):
         if dataset_path:
             # Use the direct access approach for stateless operation
             try:
-                root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+                root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
                 
                 # Format basic info
                 shape = metadata.get('shape', (0, 0))
@@ -109,7 +109,7 @@ def register_data_routes(app, api_version):
     
         try:
             # Only wrap the risky operation of opening the dataset.
-            root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+            root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
         except FileNotFoundError as fnfe:
             logger.exception(f"Dataset not found: {dataset_path}")
             return jsonify({"error": "Dataset not found"}), 404

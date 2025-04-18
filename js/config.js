@@ -22,6 +22,7 @@ const Config = (function() {
         X: `${API_BASE}/data/X`,
         BY_PATH: `${API_BASE}/data/by_path`,
         UNS: `${API_BASE}/data/uns`,
+        CACHE_RESET: `${API_BASE}/cache/reset`,
         SESSIONS_LIST: `${API_BASE}/sessions/list`,
         SESSIONS_SAVE: `${API_BASE}/sessions/save`,
         SESSIONS_LOAD: `${API_BASE}/sessions/load`,

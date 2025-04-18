@@ -70,6 +70,35 @@ const DataManager = (function() {
         // Optionally re-fetch structure/cells/genes
         return setCurrentDataset(datasetPath);
     }
+
+    /**
+     * Reset backend zarr reader cache for a specific dataset or all datasets
+     * @param {string} [datasetPath] - Optional dataset path to reset cache for
+     * @returns {Promise<Object>} - Cache reset result information
+     */
+    async function resetBackendCache(datasetPath = null) {
+        try {
+            const params = {};
+            if (datasetPath) {
+                params.dataset_id = datasetPath;
+            }
+            
+            const response = await fetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Backend cache reset result:', data);
+            return data;
+        } catch (error) {
+            console.error('Error resetting backend cache:', error);
+            throw error;
+        }
+    }
     
     /**
      * Load list of available datasets
@@ -1113,6 +1142,7 @@ const DataManager = (function() {
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,
+        resetBackendCache,
         getCacheKeys: () => CacheManager.keys(),
         // History navigation functions
         navigateCellHistoryBack,

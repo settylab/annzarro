@@ -202,22 +202,41 @@ const App = (function() {
         if (refreshDatasetBtn) {
             refreshDatasetBtn.addEventListener('click', async () => {
 
+                // Get current dataset path if one is selected
+                const datasetSelector = document.getElementById('dataset-selector');
+                const datasetPath = datasetSelector.value;
+                
+                // Reset backend cache for the current dataset (if one is selected)
+                if (!datasetPath) {
+                    console.warn('No dataset selected for refresh');
+                    return;
+                }
+                _lastLoadedDatasetPath = null; // Reset last loaded dataset path to avoid duplicate loading
+
                 document.getElementById('cell-count').textContent = 'Loading.';
                 document.getElementById('gene-count').textContent = 'Loading.';
 
-                // Clear cache for datasets listing
+                // Clear frontend cache for datasets listing
                 DataManager.clearCache(Config.API.DATASETS);
-
+                
                 document.getElementById('cell-count').textContent = 'Loading..';
                 document.getElementById('gene-count').textContent = 'Loading..';
+
+                // Reset backend cache for the current dataset (if one is selected)
+                try {
+                    // Reset backend cache for this specific dataset
+                    await DataManager.resetBackendCache(datasetPath);
+                } catch (e) {
+                    console.warn('Error resetting backend cache:', e);
+                    // Continue even if backend cache reset fails
+                }
                 
                 // Reload available datasets
                 await _loadDatasets();
                 
                 // Then refresh current dataset if one is selected
-                const datasetPath = datasetSelector.value;
                 if (datasetPath) {
-                    // Clear the DataManager cache for this dataset
+                    // Clear the DataManager's frontend cache for this dataset
                     DataManager.refreshCacheForDataset(datasetPath);
                     await _loadDataset(datasetPath);
                 }
@@ -339,109 +358,88 @@ const App = (function() {
      * @private
      */
     async function _loadDatasets() {
-        try {
-            // Show "Loading..." in the dataset selector while loading
-            const datasetSelector = document.getElementById('dataset-selector');
-            if (datasetSelector) {
-                // Save current value before clearing
-                const currentValue = datasetSelector.value;
-                datasetSelector.innerHTML = '';
-                
-                // Add a loading option
-                const loadingOption = document.createElement('option');
-                loadingOption.value = '';
-                loadingOption.textContent = 'Loading...';
-                datasetSelector.appendChild(loadingOption);
-                
-                const datasets = await DataManager.loadDatasets();
-                
-                // Now clear and repopulate with actual datasets
-                datasetSelector.innerHTML = '';
-                
-                if (datasets && datasets.length > 0) {
-                    datasets.forEach(dataset => {
-                        const option = document.createElement('option');
-                        option.value = dataset.path;
-                        option.textContent = dataset.name || dataset.path;
-                        datasetSelector.appendChild(option);
-                    });
-                } else {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = 'No datasets available';
-                    datasetSelector.appendChild(option);
-                }
-                
-                // Set up Select2 for custom dataset paths if available
-                if (window.$ && $.fn.select2) {
-                    // Destroy previous Select2 instance if it exists
-                    if ($(datasetSelector).hasClass('select2-hidden-accessible')) {
-                        $(datasetSelector).select2('destroy');
-                    }
-                    
-                    $(datasetSelector).select2({
-                        tags: true, // Allow custom values
-                        placeholder: 'Select or enter a dataset path',
-                        width: '100%',
-                        createTag: function(params) {
-                            // Allow custom path entries
-                            const term = params.term.trim();
-                            if (!term) {
-                                return null;
-                            }
-                            
-                            return {
-                                id: term,
-                                text: `${term} (Custom)`,
-                                newTag: true
-                            };
-                        }
-                    });
-                    
-                    // Make sure select2 change events also trigger dataset loading
-                    $(datasetSelector).on('select2:select', function(e) {
-                        const datasetPath = e.params.data.id;
-                        if (datasetPath) {
-                            // We handle duplicate checks in the _loadDataset function
-                            _loadDataset(datasetPath);
-                        }
-                    });
-                    
-                    // Try to restore previous value if possible
-                    if (currentValue) {
-                        // Look for matching option
-                        let found = false;
-                        for (let i = 0; i < datasetSelector.options.length; i++) {
-                            if (datasetSelector.options[i].value === currentValue) {
-                                datasetSelector.value = currentValue;
-                                found = true;
-                                break;
-                            }
-                        }
-                        
-                        // If not found but we have a value, create a custom option
-                        if (!found && currentValue) {
-                            const newOption = new Option(currentValue + ' (Custom)', currentValue, true, true);
-                            $(datasetSelector).append(newOption);
-                        }
-                        
-                        $(datasetSelector).trigger({
-                            type: 'select2:select',
-                            params: {
-                                data: {id: currentValue}
-                            }
-                        });
-                    }
-                }
-            }
-            
-            return;
-        } catch (error) {
-            console.error('Error loading datasets:', error);
-            _showError('Failed to load datasets', error.message);
-            return [];
+        const sel = document.getElementById('dataset-selector');
+        if (!sel) return;
+      
+        // 0) remember current selection
+        const currentValue = sel.value;
+      
+        // 1) destroy any existing Select2 so the native <select> is visible
+        if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) {
+          $(sel).select2('destroy');
         }
-    }
+      
+        // 2) show loading placeholder
+        sel.disabled     = true;
+        sel.innerHTML    = '';
+        sel.appendChild(new Option('Loading...', '', true, true));
+      
+        // 3) yield to browser so “Loading…” actually paints
+        await new Promise(resolve => setTimeout(resolve, 0));
+      
+        // 4) fetch the list
+        let datasets;
+        try {
+          datasets = await DataManager.loadDatasets();
+        } catch (err) {
+          console.error('Error loading datasets:', err);
+          sel.innerHTML = '';
+          sel.appendChild(new Option('Error loading datasets', '', true, true));
+          sel.disabled = false;
+          return;
+        }
+      
+        // 5) clear & populate real options
+        sel.disabled  = false;
+        sel.innerHTML = '';
+        if (datasets && datasets.length) {
+          datasets.forEach(ds => {
+            sel.appendChild(new Option(ds.name || ds.path, ds.path));
+          });
+        } else {
+          sel.appendChild(new Option('No datasets available', '', true, true));
+        }
+      
+        // 6) restore previousValue on native <select>
+        if (currentValue) {
+          const exists = Array.from(sel.options).some(o => o.value === currentValue);
+          if (exists) {
+            sel.value = currentValue;
+          } else {
+            const custom = new Option(`${currentValue} (Custom)`, currentValue, true, true);
+            sel.add(custom);
+            sel.value = currentValue;
+          }
+        }
+      
+        // 7) if Select2 is present, re‑init it exactly as before
+        if (window.$ && $.fn.select2) {
+          $(sel).select2({
+            tags:        true,
+            placeholder: 'Select or enter a dataset path',
+            width:       '100%',
+            createTag: params => {
+              const term = params.term.trim();
+              return term
+                ? { id: term, text: `${term} (Custom)`, newTag: true }
+                : null;
+            }
+          });
+      
+          // 8) restore selection in the Select2 widget
+          if (currentValue) {
+            $(sel).val(currentValue).trigger('change');
+          }
+      
+          // 9) bind the select2:select → _loadDataset handler
+          $(sel)
+            .off('select2:select')
+            .on('select2:select', e => {
+              const datasetPath = e.params.data.id;
+              if (datasetPath) _loadDataset(datasetPath);
+            });
+        }
+      }
     
     /**
      * Load a specific dataset
