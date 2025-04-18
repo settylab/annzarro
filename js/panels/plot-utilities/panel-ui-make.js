@@ -14,10 +14,12 @@ const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES)
  * @param {string} [selected] - Optional selected value.
  */
 export function populateColormapSelectorGrouped(selectElement, colormapGroups, selected = '') {
+  // clear existing options
+  selectElement.innerHTML = '';
   // Insert the first menu option for "uns" colors
   const unsOption = document.createElement('option');
   unsOption.value = 'uns';
-  unsOption.textContent = 'As stored in adata.uns';
+  unsOption.textContent = 'As stored in adata.uns if available';
   if (selected === 'uns') unsOption.selected = true;
   selectElement.appendChild(unsOption);
 
