@@ -65,7 +65,7 @@ function updateFilterWidget(plotContainer, filterStats) {
         `;
     }
     
-    // Only show color NaN when hideNaN is active
+    // Only show color NaN in the stats when hideNaN is active
     if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
         hasFilters = true;
         statsList.innerHTML += `
@@ -171,87 +171,78 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             hideOutliersActive: settings.hideOutliers === true
         };
 
-        // Count NaN values in each dimension
-        if (data.x && data.x.values) {
-            filterStats.xNaN = data.x.values.filter(v => v === null || isNaN(v)).length;
+        // 0. Prep
+        const totalPts = data.x.values.length;
+        const dims = ['x','y'];
+        if (settings.z && data.z?.values) dims.push('z');
+
+        // 1. Axis‐wise NaN masks & counts
+        const axisMasks = {};
+        for (const dim of dims) {
+          const vals = data[dim].values;
+          axisMasks[dim] = vals.map(v => v !== null && !isNaN(v));
+          filterStats[`${dim}NaN`] = totalPts - axisMasks[dim].filter(Boolean).length;
         }
-        
-        if (data.y && data.y.values) {
-            filterStats.yNaN = data.y.values.filter(v => v === null || isNaN(v)).length;
-        }
-        
-        if (settings.z && data.z && data.z.values) {
-            filterStats.zNaN = data.z.values.filter(v => v === null || isNaN(v)).length;
+        // one mask that’s true only if all axes are valid
+        const axisMask = Array.from({ length: totalPts }, (_, i) =>
+          dims.every(dim => axisMasks[dim][i])
+        );
+
+        // 2. Color‐based masks & counts (if numerical)
+        let colorNanMask = [];
+        let colorOutlierMask = [];
+        if (isNumerical && Array.isArray(data.color)) {
+          // a) valid‑number mask
+          colorNanMask = data.color.map(v => v !== null && !isNaN(v));
+          filterStats.colorNaN = colorNanMask.filter(isValid => !isValid).length;
+
+          // b) outlier mask
+          if (settings.hideOutliers) {
+            // 1. collect only the real numbers
+            const numericVals = data.color.filter(v => v != null && !isNaN(v));
+            const cmin = settings.colorMin ?? Math.min(...numericVals);
+            const cmax = settings.colorMax ?? Math.max(...numericVals);
+          
+            // 2. keep any null/NaN OR anything inside [cmin,cmax]
+            colorOutlierMask = data.color.map(v =>
+              v == null       // keep null
+              || isNaN(v)     // keep NaN
+              || (v >= cmin && v <= cmax)
+            );
+          
+            // 3. count only the truly numeric outliers
+            filterStats.colorOutliers = data.color.filter(v =>
+              v != null && !isNaN(v) && (v < cmin || v > cmax)
+            ).length;
+          }
         }
 
-        // Create a composite mask for all filtering reasons
-        let indexMask = null;
-        let colorNanMask = null;
-        let colorOutlierMask = null;
-        const hasColorData = isNumerical && data.color;
-        
-        if (hasColorData) {
-            // Count NaN values in color data
-            filterStats.colorNaN = data.color.filter(v => v === null || isNaN(v)).length;
-            
-            // Create specific masks for different filter reasons to track statistics
-            colorNanMask = data.color.map(v => v !== null && !isNaN(v));
-            
-            if (settings.hideOutliers) {
-                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
-                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
-                colorOutlierMask = data.color.map(v => !isNaN(v) && v >= cmin && v <= cmax);
-                
-                // Count outliers (points within valid range but outside color bounds)
-                filterStats.colorOutliers = data.color.filter(v => !isNaN(v) && (v < cmin || v > cmax)).length;
-            }
-            
-            // Combined filtering based on settings
-            if (settings.hideOutliers && settings.hideNaN) {
-                // Filter both outliers and NaN
-                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
-                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
-                indexMask = data.color.map((v) => v !== null && !isNaN(v) && v >= cmin && v <= cmax);
-            } else if (settings.hideOutliers) {
-                // Filter only outliers
-                const cmin = settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v)));
-                const cmax = settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v)));
-                indexMask = data.color.map((v) => v >= cmin && v <= cmax);
-            } else if (settings.hideNaN) {
-                // Filter only NaN values
-                indexMask = data.color.map((v) => v !== null && !isNaN(v));
-            }
-        }
-        
-        // Apply axis NaN filtering automatically (Plotly does this anyway)
-        // This creates a mask for valid points across all dimensions
-        const xNanMask = data.x?.values?.map(v => v !== null && !isNaN(v)) || [];
-        const yNanMask = data.y?.values?.map(v => v !== null && !isNaN(v)) || [];
-        const zNanMask = settings.z && data.z?.values ? data.z.values.map(v => v !== null && !isNaN(v)) : null;
-        
-        // Create the final composite mask that accounts for all filtering reasons
-        let filteredCount = 0;
-        
-        if (indexMask) {
-            // If we already have a color-based mask, combine it with axis NaN filtering
-            indexMask = indexMask.map((keep, i) => {
-                const axisValid = xNanMask[i] && yNanMask[i] && (zNanMask === null || zNanMask[i]);
-                const shouldKeep = keep && axisValid;
-                if (!shouldKeep) filteredCount++;
-                return shouldKeep;
-            });
+        // 3. Build indexMask exactly like before
+        let indexMask;
+        if (colorNanMask.length) {
+          if (settings.hideNaN && settings.hideOutliers) {
+            indexMask = colorNanMask.map((ok,i) => ok && colorOutlierMask[i]);
+          } else if (settings.hideNaN) {
+            indexMask = [...colorNanMask];
+          } else if (settings.hideOutliers) {
+            indexMask = [...colorOutlierMask];
+          } else {
+            indexMask = data.color.map(() => true);
+          }
         } else {
-            // If we don't have a color-based mask, just use axis NaN filtering
-            indexMask = xNanMask.map((xValid, i) => {
-                const yValid = yNanMask[i];
-                const zValid = zNanMask === null || zNanMask[i];
-                const shouldKeep = xValid && yValid && zValid;
-                if (!shouldKeep) filteredCount++;
-                return shouldKeep;
-            });
+          indexMask = axisMask.slice();
         }
-        
-        filterStats.filtered = filteredCount;
+
+        // 4. Merge with axisMask & count final filtered
+        let removedCount = 0;
+        indexMask = indexMask.map((keep,i) => {
+          const valid = keep && axisMask[i];
+          const isColorNaN = isNumerical && (data.color[i] === null || isNaN(data.color[i]));
+          const countAsFiltered = !valid && (!isColorNaN || settings.hideNaN);
+          if (countAsFiltered) removedCount++;
+          return valid;
+        });
+        filterStats.filtered = removedCount;
         
         // Update the filter widget with statistics
         updateFilterWidget(plotContainer, filterStats);

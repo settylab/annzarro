@@ -857,7 +857,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
     
     console.log(`Button ${buttonType} clicked for axis ${axis}, type: ${dataType}`);
     
-    if (buttonType === 'lock' && axis) {
+    if (buttonType === 'lock' && settings[axis]) {
       // Handle lock button click
       settings[axis].locked = !settings[axis].locked;
       
