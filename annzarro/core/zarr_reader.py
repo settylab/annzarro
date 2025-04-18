@@ -99,6 +99,10 @@ class ZarrReader:
         # Caches for different data types
         self._matrix_cache = {}  # Cache for X, layers, obsm, varm matrices
         self._dataframe_cache = {}  # Cache for obs, var dataframes
+        self._metadata_cache = {}  # Cache for metadata objects
+        
+        # Cache access timestamps for LRU eviction
+        self._cache_access_times = {}  # Dict of cache_key -> last access timestamp
         
         # Optional initialization of backends
         self._check_backends()
@@ -119,6 +123,386 @@ class ZarrReader:
         # Check if sparse matrices can be supported
         if not SCIPY_SPARSE_AVAILABLE:
             logger.warning("SciPy sparse matrix support is not available. Sparse matrices will be converted to dense.")
+            
+    def _estimate_size_mb(self, obj):
+        """
+        Estimate the memory size of an object in MB.
+        
+        Args:
+            obj: The object to estimate size for
+            
+        Returns:
+            float: Estimated size in MB
+        """
+        import sys
+        
+        # For numpy arrays, we can get exact size
+        if hasattr(obj, 'nbytes'):
+            return obj.nbytes / (1024 * 1024)
+            
+        # For pandas DataFrames or Series
+        if hasattr(obj, 'memory_usage'):
+            try:
+                # Deep=True accounts for object dtypes
+                mem_usage = obj.memory_usage(deep=True)
+                if hasattr(mem_usage, 'sum'):
+                    return mem_usage.sum() / (1024 * 1024)
+                else:
+                    return mem_usage / (1024 * 1024)
+            except:
+                pass
+        
+        # For other objects, use sys.getsizeof as a rough estimate
+        # This is not accurate for nested objects but gives a baseline
+        try:
+            # For small objects, add a minimum size to prevent underestimation
+            min_size_mb = 0.1  # 100KB minimum
+            size_mb = sys.getsizeof(obj) / (1024 * 1024)
+            return max(size_mb, min_size_mb)
+        except:
+            # If we can't estimate, assume 1MB to be safe
+            return 1.0
+    
+    def _manage_cache_size(self):
+        """
+        Manage cache size by removing least recently used items when limits are exceeded.
+        """
+        if not self.enable_caching:
+            return
+            
+        # Check if we're over memory limit
+        if self.memory_usage_mb > self.max_memory_mb:
+            logger.info(f"Cache memory usage ({self.memory_usage_mb:.2f}MB) exceeds limit ({self.max_memory_mb}MB), evicting items")
+            
+            # Get all cache keys with their access times
+            all_cache_items = []
+            
+            for key in self._matrix_cache:
+                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'matrix'))
+                
+            for key in self._dataframe_cache:
+                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'dataframe'))
+                
+            for key in self._metadata_cache:
+                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'metadata'))
+            
+            # Sort by access time (oldest first)
+            all_cache_items.sort(key=lambda x: x[1])
+            
+            # Remove items until we're under the limit
+            for key, access_time, cache_type in all_cache_items:
+                if self.memory_usage_mb <= self.max_memory_mb * 0.8:  # Add 20% buffer
+                    break
+                    
+                # Remove from appropriate cache
+                if cache_type == 'matrix' and key in self._matrix_cache:
+                    # Estimate size
+                    size_mb = self._estimate_size_mb(self._matrix_cache[key])
+                    del self._matrix_cache[key]
+                    self.memory_usage_mb -= size_mb
+                    logger.debug(f"Removed matrix {key} from cache, freed {size_mb:.2f}MB")
+                    
+                elif cache_type == 'dataframe' and key in self._dataframe_cache:
+                    # Estimate size
+                    size_mb = self._estimate_size_mb(self._dataframe_cache[key])
+                    del self._dataframe_cache[key]
+                    self.memory_usage_mb -= size_mb
+                    logger.debug(f"Removed dataframe {key} from cache, freed {size_mb:.2f}MB")
+                    
+                elif cache_type == 'metadata' and key in self._metadata_cache:
+                    # Estimate size
+                    size_mb = self._estimate_size_mb(self._metadata_cache[key])
+                    del self._metadata_cache[key]
+                    self.memory_usage_mb -= size_mb
+                    logger.debug(f"Removed metadata {key} from cache, freed {size_mb:.2f}MB")
+                
+                # Remove from access times
+                if key in self._cache_access_times:
+                    del self._cache_access_times[key]
+        
+        # Check if we're over dataset limit
+        unique_datasets = set()
+        
+        # Collect all unique dataset IDs from caches
+        for key in list(self._matrix_cache.keys()) + list(self._dataframe_cache.keys()) + list(self._metadata_cache.keys()):
+            if ":" in key:
+                ds_id = key.split(":", 1)[0]
+                unique_datasets.add(ds_id)
+        
+        # If we have too many datasets, remove the least recently used ones
+        if len(unique_datasets) > self.cache_limit:
+            logger.info(f"Cache has {len(unique_datasets)} datasets, exceeding limit of {self.cache_limit}, evicting least used datasets")
+            
+            # Calculate last access time for each dataset
+            dataset_access_times = {}
+            for ds_id in unique_datasets:
+                # Find the most recent access for any item in this dataset
+                most_recent = 0
+                for key, access_time in self._cache_access_times.items():
+                    if key.startswith(f"{ds_id}:"):
+                        most_recent = max(most_recent, access_time)
+                dataset_access_times[ds_id] = most_recent
+            
+            # Sort datasets by access time
+            sorted_datasets = sorted(dataset_access_times.items(), key=lambda x: x[1])
+            
+            # Calculate how many to remove
+            num_to_remove = len(unique_datasets) - self.cache_limit
+            
+            # Remove the oldest datasets
+            for ds_id, _ in sorted_datasets[:num_to_remove]:
+                self._remove_dataset_from_cache(ds_id)
+                logger.info(f"Removed dataset {ds_id} from cache due to dataset limit")
+    
+    def _remove_dataset_from_cache(self, dataset_id):
+        """
+        Remove all cached items for a specific dataset.
+        
+        Args:
+            dataset_id: The dataset ID to remove from cache
+        """
+        # Remove from matrix cache
+        keys_to_remove = []
+        for key in self._matrix_cache:
+            if key.startswith(f"{dataset_id}:"):
+                keys_to_remove.append(key)
+                # Update memory usage
+                size_mb = self._estimate_size_mb(self._matrix_cache[key])
+                self.memory_usage_mb -= size_mb
+                
+        for key in keys_to_remove:
+            del self._matrix_cache[key]
+            if key in self._cache_access_times:
+                del self._cache_access_times[key]
+        
+        # Remove from dataframe cache
+        keys_to_remove = []
+        for key in self._dataframe_cache:
+            if key.startswith(f"{dataset_id}:"):
+                keys_to_remove.append(key)
+                # Update memory usage
+                size_mb = self._estimate_size_mb(self._dataframe_cache[key])
+                self.memory_usage_mb -= size_mb
+                
+        for key in keys_to_remove:
+            del self._dataframe_cache[key]
+            if key in self._cache_access_times:
+                del self._cache_access_times[key]
+        
+        # Remove from metadata cache
+        keys_to_remove = []
+        for key in self._metadata_cache:
+            if key.startswith(f"{dataset_id}:"):
+                keys_to_remove.append(key)
+                # Update memory usage
+                size_mb = self._estimate_size_mb(self._metadata_cache[key])
+                self.memory_usage_mb -= size_mb
+                
+        for key in keys_to_remove:
+            del self._metadata_cache[key]
+            if key in self._cache_access_times:
+                del self._cache_access_times[key]
+    
+    def _add_to_cache(self, key, data, cache_type='matrix'):
+        """
+        Add an item to the appropriate cache with memory tracking.
+        
+        Args:
+            key: Cache key
+            data: Data to cache
+            cache_type: Type of cache ('matrix', 'dataframe', or 'metadata')
+        """
+        if not self.enable_caching:
+            return
+        
+        # Estimate size
+        size_mb = self._estimate_size_mb(data)
+        
+        # Check if adding this item would exceed memory limit
+        if self.memory_usage_mb + size_mb > self.max_memory_mb:
+            # Try to free up space
+            self._manage_cache_size()
+            
+            # Check again if we have room
+            if self.memory_usage_mb + size_mb > self.max_memory_mb:
+                logger.warning(f"Cannot cache {key}, size ({size_mb:.2f}MB) exceeds available space")
+                return
+        
+        # Add to appropriate cache
+        if cache_type == 'matrix':
+            self._matrix_cache[key] = data
+        elif cache_type == 'dataframe':
+            self._dataframe_cache[key] = data
+        elif cache_type == 'metadata':
+            self._metadata_cache[key] = data
+        else:
+            logger.warning(f"Unknown cache type: {cache_type}")
+            return
+        
+        # Update memory usage
+        self.memory_usage_mb += size_mb
+        
+        # Update access time
+        import time
+        self._cache_access_times[key] = time.time()
+        
+        # Check if we need to manage cache size
+        if (self.memory_usage_mb > self.max_memory_mb or 
+            len(set(k.split(':', 1)[0] for k in self._cache_access_times if ':' in k)) > self.cache_limit):
+            self._manage_cache_size()
+    
+    def _get_from_cache(self, key, cache_type='matrix'):
+        """
+        Get an item from the appropriate cache and update access time.
+        
+        Args:
+            key: Cache key
+            cache_type: Type of cache ('matrix', 'dataframe', or 'metadata')
+            
+        Returns:
+            Cached data or None if not found
+        """
+        if not self.enable_caching:
+            return None
+        
+        # Check appropriate cache
+        if cache_type == 'matrix' and key in self._matrix_cache:
+            data = self._matrix_cache[key]
+        elif cache_type == 'dataframe' and key in self._dataframe_cache:
+            data = self._dataframe_cache[key]
+        elif cache_type == 'metadata' and key in self._metadata_cache:
+            data = self._metadata_cache[key]
+        else:
+            return None
+        
+        # Update access time
+        import time
+        self._cache_access_times[key] = time.time()
+        
+        return data
+    
+    def get_cache_info(self):
+        """
+        Get information about the current cache state.
+        
+        Returns:
+            dict: Information about the current cache
+        """
+        # Count items per dataset
+        dataset_counts = {}
+        
+        # Analyze matrix cache
+        for key in self._matrix_cache:
+            if ":" in key:
+                ds_id = key.split(":", 1)[0]
+                if ds_id not in dataset_counts:
+                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
+                dataset_counts[ds_id]["matrices"] += 1
+        
+        # Analyze dataframe cache
+        for key in self._dataframe_cache:
+            if ":" in key:
+                ds_id = key.split(":", 1)[0]
+                if ds_id not in dataset_counts:
+                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
+                dataset_counts[ds_id]["dataframes"] += 1
+                
+        # Analyze metadata cache
+        for key in self._metadata_cache:
+            if ":" in key:
+                ds_id = key.split(":", 1)[0]
+                if ds_id not in dataset_counts:
+                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
+                dataset_counts[ds_id]["metadata"] += 1
+        
+        # Get dataset access times
+        import time
+        current_time = time.time()
+        dataset_access_times = {}
+        
+        for key, access_time in self._cache_access_times.items():
+            if ":" in key:
+                ds_id = key.split(":", 1)[0]
+                if ds_id not in dataset_access_times or access_time > dataset_access_times[ds_id]:
+                    dataset_access_times[ds_id] = access_time
+        
+        # Add access time info to dataset counts
+        for ds_id, access_time in dataset_access_times.items():
+            if ds_id in dataset_counts:
+                dataset_counts[ds_id]["last_access"] = access_time
+                dataset_counts[ds_id]["last_access_seconds_ago"] = int(current_time - access_time)
+        
+        return {
+            "status": "success",
+            "cache_enabled": self.enable_caching,
+            "cache_memory_mb": self.max_memory_mb,
+            "cache_dataset_limit": self.cache_limit,
+            "current_memory_usage_mb": self.memory_usage_mb,
+            "matrix_cache_items": len(self._matrix_cache),
+            "dataframe_cache_items": len(self._dataframe_cache),
+            "metadata_cache_items": len(self._metadata_cache),
+            "total_cached_items": len(self._matrix_cache) + len(self._dataframe_cache) + len(self._metadata_cache),
+            "unique_datasets": len(set(k.split(':', 1)[0] for k in self._cache_access_times if ':' in k)),
+            "datasets": dataset_counts
+        }
+    
+    def clear_cache(self, dataset_id=None):
+        """
+        Clear the internal data cache.
+        
+        Args:
+            dataset_id: Optional dataset ID to clear from cache.
+                       If None, clears the entire cache.
+                       
+        Returns:
+            dict: Information about the cleared cache
+        """
+        result = {
+            "status": "success",
+            "cache_cleared": True,
+            "memory_before": self.memory_usage_mb,
+        }
+        
+        if dataset_id:
+            # Use the helper method to remove dataset from cache
+            cache_items_before = (
+                len(self._matrix_cache) + 
+                len(self._dataframe_cache) + 
+                len(self._metadata_cache)
+            )
+            
+            # Use the internal method to handle all caches
+            self._remove_dataset_from_cache(dataset_id)
+            
+            cache_items_after = (
+                len(self._matrix_cache) + 
+                len(self._dataframe_cache) + 
+                len(self._metadata_cache)
+            )
+                    
+            logger.info(f"Cleared cache for dataset {dataset_id}, removed {cache_items_before - cache_items_after} items")
+            result["dataset_id"] = dataset_id
+            result["items_cleared"] = cache_items_before - cache_items_after
+        else:
+            # Clear all caches
+            matrix_count = len(self._matrix_cache)
+            df_count = len(self._dataframe_cache)
+            metadata_count = len(self._metadata_cache)
+            
+            self._matrix_cache.clear()
+            self._dataframe_cache.clear()
+            self._metadata_cache.clear()
+            self._cache_access_times.clear()
+            self.memory_usage_mb = 0  # Reset memory usage counter
+            
+            logger.info(f"Cleared entire cache: {matrix_count} matrices, {df_count} dataframes, and {metadata_count} metadata objects")
+            result["items_cleared"] = matrix_count + df_count + metadata_count
+            
+        # Update the result with new memory usage
+        result["memory_after"] = self.memory_usage_mb
+        result["memory_freed"] = result["memory_before"] - result["memory_after"]
+        
+        return result
     
     def open_zarr(self, path: str, dataset_id: Optional[str] = None) -> str:
         """
@@ -408,8 +792,9 @@ class ZarrReader:
             if not metadata:
                 return root
             
-            # Extract metadata
-            metadata = self._extract_metadata(root)
+            # Extract metadata - create a temporary dataset_id for caching
+            temp_dataset_id = f"temp_{os.path.basename(os.path.normpath(path))}"
+            metadata = self._extract_metadata(root, dataset_id=temp_dataset_id)
             
             return root, metadata
         except Exception as e:
@@ -754,6 +1139,15 @@ class ZarrReader:
         Returns:
             Dict of metadata
         """
+        # If dataset_id is provided, check if metadata is already cached
+        if dataset_id is not None and self.enable_caching:
+            cache_key = f"{dataset_id}:metadata"
+            cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
+            if cached_metadata is not None:
+                logger.debug(f"Using cached metadata for dataset {dataset_id}")
+                return cached_metadata
+        
+        # If not cached, extract metadata
         metadata = {}
         
         # Get dataset shape
@@ -1019,6 +1413,12 @@ class ZarrReader:
         # Get uns keys
         if metadata['has_uns'] and hasattr(root['uns'], 'keys'):
             metadata['uns'] = {'keys': list(root['uns'].keys())}
+        
+        # Cache metadata if caching is enabled and dataset_id is provided
+        if dataset_id is not None and self.enable_caching:
+            cache_key = f"{dataset_id}:metadata"
+            self._add_to_cache(cache_key, metadata, cache_type='metadata')
+            logger.debug(f"Cached metadata for dataset {dataset_id}")
             
         return metadata
     
@@ -1035,10 +1435,31 @@ class ZarrReader:
         if dataset_id is None:
             dataset_id = self.active_dataset_id
             
-        if dataset_id not in self.dataset_metadata:
+        if dataset_id is None:
             return {}
+        
+        # Check cache first
+        if self.enable_caching:
+            cache_key = f"{dataset_id}:metadata"
+            cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
+            if cached_metadata is not None:
+                logger.debug(f"Using cached metadata for dataset {dataset_id}")
+                return cached_metadata
             
-        return self.dataset_metadata[dataset_id]
+        # If not in cache, check instance variable
+        if dataset_id in self.dataset_metadata:
+            metadata = self.dataset_metadata[dataset_id]
+            
+            # Add to cache for future use
+            if self.enable_caching:
+                cache_key = f"{dataset_id}:metadata"
+                self._add_to_cache(cache_key, metadata, cache_type='metadata')
+                logger.debug(f"Cached metadata for dataset {dataset_id} from instance variable")
+                
+            return metadata
+            
+        # If we get here, metadata is not available
+        return {}
             
     def _is_sparse_matrix(self, matrix) -> Tuple[bool, Optional[str]]:
         """
