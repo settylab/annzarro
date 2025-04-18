@@ -2,7 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
-import { getPositioningByLocation } from './plot-aesthetics-menu.js';
+import { getPositioningByLocation, applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -1008,8 +1008,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           (settings.color.column ? `.${settings.color.column}` : ''),
         side: 'right',
         font: { size: 12 }
-      },
-      titleside: 'right'
+      }
     };
 
     // Use the centralized positioning function
@@ -1039,6 +1038,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     attachClickHandler(plotContainer, [baseTrace], data, settings);
     updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
       .catch(error => console.error("Error in initial updatePlotElements:", error))
+    applyAllAestheticSettings(plotContainer, settings);
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';

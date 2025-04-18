@@ -233,36 +233,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   // Add the new trace
                   Plotly.addTraces(plotContainer, newTrace);
                   
-                  // Update layout for numerical coloring (hide legend, set colorbar position)
-                  // Import the positioning function
-                  const { getPositioningByLocation } = await import('./plot-aesthetics-menu.js');
-                  const position = settings.legendPosition || 'right';
-                  const colorbarPosition = getPositioningByLocation(position);
-                  
-                  // First update layout properties
-                  Plotly.relayout(plotContainer, {
-                      showlegend: false
-                  });
-                  
-                  // Then update colorbar position with restyle
-                  const colorbarUpdate = {};
-                  if (colorbarPosition) {
-                      colorbarUpdate['marker.colorbar.x'] = colorbarPosition.x;
-                      colorbarUpdate['marker.colorbar.xanchor'] = colorbarPosition.xanchor;
-                      colorbarUpdate['marker.colorbar.y'] = colorbarPosition.y;
-                      colorbarUpdate['marker.colorbar.yanchor'] = colorbarPosition.yanchor;
-                      colorbarUpdate['marker.colorbar.titleside'] = colorbarPosition.titleside;
-                      if (colorbarPosition.orientation !== undefined) {
-                          colorbarUpdate['marker.colorbar.orientation'] = colorbarPosition.orientation;
-                      }
-                      
-                      Plotly.restyle(plotContainer, colorbarUpdate, [0]);
-                  }
-                  
                   // Re-highlight focused entity if needed
                   if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
                       highlightFocusedEntity(plotContainer, data, settings, entityType);
                   }
+                  applyAllAestheticSettings(plotContainer, settings);
                       
               } else if (isCategorical) {
                   // Get unique category values and prepare color data
@@ -299,28 +274,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   // Add new categorical traces
                   Plotly.addTraces(plotContainer, categoricalTraces);
                   
-                  // Update layout to show legend and apply legend position settings
-                  // Import the positioning function
-                  const { getPositioningByLocation } = await import('./plot-aesthetics-menu.js');
-                  const position = settings.legendPosition || 'right';
-                  const posConfig = getPositioningByLocation(position);
-                  
-                  const legendUpdate = {
-                      showlegend: true,
-                      'legend.title.text': settings.color.key,
-                      'legend.orientation': posConfig.legendOrientation,
-                      'legend.x': posConfig.legendX,
-                      'legend.y': posConfig.legendY,
-                      'legend.xanchor': posConfig.legendXanchor,
-                      'legend.yanchor': posConfig.legendYanchor
-                  };
-                  
-                  Plotly.relayout(plotContainer, legendUpdate);
-                  
                   // Re-highlight focused entity if needed
                   if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
                       highlightFocusedEntity(plotContainer, data, settings, entityType);
                   }
+                  applyAllAestheticSettings(plotContainer, settings);
                     
               } else if (isNumerical) {
                 const update = {};
@@ -343,12 +301,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     update['marker.cmax'] = settings.colorMax;
                 }
                 
-                update['marker.showscale'] = true;
-                update['showlegend'] = false;
-                
                 if (Object.keys(update).length > 0) {
                     Plotly.restyle(plotContainer, update, [0]);
                 }
+                applyAllAestheticSettings(plotContainer, settings);
             } else if (data.colorType === 'constant') {
                 const update = {};
                 if (updateOptions.colorData) {
@@ -402,9 +358,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 return;
             }
             
-            // Use the imported applyAllAestheticSettings function
-            applyAllAestheticSettings(plotContainer, settings);
-            
             if (settings && settings.color && settings.color.type && settings.color.key) {
                 if (data.colorType === 'numerical') {
                     const colorbar = {
@@ -429,6 +382,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     Plotly.restyle(plotContainer, restyleUpdate, [0]);
                 }
             }
+                        
+            // Use the imported applyAllAestheticSettings function
+            applyAllAestheticSettings(plotContainer, settings);
         }
         
         // If position data changed, update the highlighted cell.

@@ -206,17 +206,17 @@ export function createPopoverContent(id, settings) {
         <div class="aesthetics-section">
             <h6>Export</h6>
             <div class="d-flex flex-wrap gap-2 mb-2">
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="svg" data-id="${id}">
-                    <i class="fas fa-file-image"></i> SVG
-                </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="png" data-id="${id}">
-                    <i class="fas fa-file-image"></i> PNG
-                </button>
                 <button class="btn btn-sm btn-outline-primary export-btn" data-format="jpeg" data-id="${id}">
                     <i class="fas fa-file-image"></i> JPEG
                 </button>
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="svg" data-id="${id}">
+                    <i class="fas fa-file-image"></i> SVG
+                </button>
                 <button class="btn btn-sm btn-outline-primary export-btn" data-format="webp" data-id="${id}">
-                    <i class="fas fa-file-image"></i> WebP
+                    <i class="fas fa-file-image"></i> WEBP
+                </button>
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="png" data-id="${id}">
+                    <i class="fas fa-file-image"></i> PNG
                 </button>
                 <button class="btn btn-sm btn-outline-secondary" id="copy-to-clipboard-${id}">
                     <i class="fas fa-clipboard"></i> Copy
@@ -430,8 +430,8 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        // Legend position
-        if (target.id === `legend-position-${id}`) {
+        // Legend position - only update when selection changes, not on dropdown open
+        if (target.id === `legend-position-${id}` && e.type === 'change') {
             settings.legendPosition = target.value;
             updateLegendPosition(plotContainer, settings);
             notifySettingsChanged(id, 'legendPosition', settings.legendPosition);
@@ -752,31 +752,32 @@ function updateLegendVisibility(plotDiv, settings) {
   
     // 3) Per-trace toggles
     plotDiv.data.forEach((trace, i) => {
-      const update = {};
-      const hasMarkerCB = trace.marker && trace.marker.colorscale;
-      const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);
-  
-      if (hasMarkerCB) {
-        // continuous scatter: hide from legend, toggle marker colorbar
-        update.showlegend             = false;
-        update['marker.showscale']    = show;
-      }
-      else if (hasTraceCB) {
-        // heatmap/contour/surface: hide from legend, toggle trace colorbar
-        update.showlegend = false;
-        update.showscale   = show;
-      }
-      else {
-        // categorical / other traces: toggle legend, ensure no leftover colorbars
-        update.showlegend          = show;
-        if (trace.marker) update['marker.showscale'] = false;
-        if (trace.showscale !== undefined) update.showscale = false;
-      }
-  
-      // apply if anything changed
-      if (Object.keys(update).length) {
-        Plotly.restyle(plotDiv, update, [i]);
-      }
+        if (typeof trace.name === 'string' && trace.name.includes('Focused')) return;
+        const update = {};
+        const hasMarkerCB = trace.marker && trace.marker.colorscale;
+        const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);
+    
+        if (hasMarkerCB) {
+            // continuous scatter: hide from legend, toggle marker colorbar
+            update.showlegend             = false;
+            update['marker.showscale']    = show;
+        }
+        else if (hasTraceCB) {
+            // heatmap/contour/surface: hide from legend, toggle trace colorbar
+            update.showlegend = false;
+            update.showscale   = show;
+        }
+        else {
+            // categorical / other traces: toggle legend, ensure no leftover colorbars
+            update.showlegend          = show;
+            if (trace.marker) update['marker.showscale'] = false;
+            if (trace.showscale !== undefined) update.showscale = false;
+        }
+    
+        // apply if anything changed
+        if (Object.keys(update).length) {
+            Plotly.restyle(plotDiv, update, [i]);
+        }
     });
   }
 
@@ -812,7 +813,7 @@ export function getPositioningByLocation(position) {
         legendOrientation: 'h', legendX: 0.5, legendY: -0.15,
         legendXanchor: 'center', legendYanchor: 'top',
         x: 0.5, xanchor: 'center', y: -0.1, yanchor: 'bottom',
-        orientation: 'h', titleside: 'top'
+        orientation: 'h', titleside: 'bottom'
       }
     };
     return positioning[position] || positioning.right;
@@ -836,45 +837,57 @@ export function getPositioningByLocation(position) {
       'legend.yanchor':     posConfig.legendYanchor
     });
   
-    // 2) Global coloraxis positioning (layout update)
-    //    This will move any colorbar for traces using `marker.coloraxis` or `coloraxis`
+    // 2) Shared coloraxis: hide → update → show
+    // ------------------------------------------------
+    // hide any existing shared bar
+    Plotly.relayout(plotContainer, { 'coloraxis.showscale': false });
+    // update its geometry
     Plotly.relayout(plotContainer, {
-      'coloraxis.colorbar.x':       posConfig.x,
-      'coloraxis.colorbar.y':       posConfig.y,
-      'coloraxis.colorbar.xanchor': posConfig.xanchor,
-      'coloraxis.colorbar.yanchor': posConfig.yanchor,
+      'coloraxis.colorbar.x':         posConfig.x,
+      'coloraxis.colorbar.y':         posConfig.y,
+      'coloraxis.colorbar.xanchor':   posConfig.xanchor,
+      'coloraxis.colorbar.yanchor':   posConfig.yanchor,
       'coloraxis.colorbar.orientation': posConfig.orientation,
       'coloraxis.colorbar.titleside':   posConfig.titleside
     });
+    // re‑show it
+    Plotly.relayout(plotContainer, { 'coloraxis.showscale': true });
   
-    // 3) Per‑trace colorbars (marker or heatmap/contour) via restyle
+    // 3) Per‑trace bars: hide → update → show
+    // ------------------------------------------------
     plotContainer.data.forEach((trace, i) => {
-      const update = {};
+      if (typeof trace.name === 'string' && trace.name.includes('Focused')) return;
   
-      // scatter‐style traces with marker.colorbar
-      const isScatter = trace.marker &&
-                        Array.isArray(trace.marker.color) &&
-                        trace.marker.colorscale;
-      if (isScatter) {
-        update['marker.colorbar.x']         = posConfig.x;
-        update['marker.colorbar.y']         = posConfig.y;
-        update['marker.colorbar.xanchor']   = posConfig.xanchor;
-        update['marker.colorbar.yanchor']   = posConfig.yanchor;
-        update['marker.colorbar.orientation'] = posConfig.orientation;
-        update['marker.colorbar.titleside']   = posConfig.titleside;
-        Plotly.restyle(plotContainer, update, [i]);
-  
+      // scatter traces with marker.colorbar
+      const isScatter = trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale;
       // heatmap/contour/surface traces
-      } else if (trace.type &&
-                 ['heatmap','contour','surface'].includes(trace.type) &&
-                 trace.colorbar) {
-        update['colorbar.x']         = posConfig.x;
-        update['colorbar.y']         = posConfig.y;
-        update['colorbar.xanchor']   = posConfig.xanchor;
-        update['colorbar.yanchor']   = posConfig.yanchor;
-        update['colorbar.orientation'] = posConfig.orientation;
-        update['colorbar.titleside']   = posConfig.titleside;
-        Plotly.restyle(plotContainer, update, [i]);
+      const isHeat   = trace.type && ['heatmap','contour','surface'].includes(trace.type) && trace.colorbar;
+  
+      if (isScatter) {
+        // 3a) Hide old colorbar
+        Plotly.restyle(plotContainer, { 'marker.showscale': false }, [i]);
+        // 3b) Update position/orientation + re‑show
+        Plotly.restyle(plotContainer, {
+          'marker.colorbar.x':          posConfig.x,
+          'marker.colorbar.y':          posConfig.y,
+          'marker.colorbar.xanchor':    posConfig.xanchor,
+          'marker.colorbar.yanchor':    posConfig.yanchor,
+          'marker.colorbar.orientation': posConfig.orientation,
+          'marker.colorbar.titleside':   posConfig.titleside,
+          'marker.showscale':           true
+        }, [i]);
+      }
+      else if (isHeat) {
+        Plotly.restyle(plotContainer, { showscale: false }, [i]);
+        Plotly.restyle(plotContainer, {
+          'colorbar.x':          posConfig.x,
+          'colorbar.y':          posConfig.y,
+          'colorbar.xanchor':    posConfig.xanchor,
+          'colorbar.yanchor':    posConfig.yanchor,
+          'colorbar.orientation': posConfig.orientation,
+          'colorbar.titleside':   posConfig.titleside,
+          showscale:             true
+        }, [i]);
       }
     });
   }
@@ -894,98 +907,87 @@ function updateHoverMode(plotContainer, settings) {
     Plotly.relayout(plotContainer, update);
 }
 
+// module‑scope flag
+let _exportInProgress = false;
+
 /**
  * Export the plot as an image
  * @param {HTMLElement} plotContainer - Plot container element
- * @param {string} format - Export format ('svg', 'png', 'jpeg', or 'webp')
- * @param {Object} settings - Plot settings object
+ * @param {string} format            - 'svg', 'png', 'jpeg', 'webp'
+ * @param {Object} settings          - may include exportWidth, exportHeight, scaleExport
  */
-export function exportPlot(plotContainer, format, settings) {
-    if (!plotContainer) return;
-    
-    const width = settings.exportWidth || 1200;
-    const height = settings.exportHeight || 800;
-    const scale = settings.scaleExport ? 2 : 1;
-    const filename = `plot_${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    
-    const config = {
-        format: format,
-        width: width,
-        height: height,
-        scale: scale,
-        filename: filename
-    };
-    
-    Plotly.downloadImage(plotContainer, config)
-        .catch(error => {
-            console.error('Error exporting plot:', error);
-            alert('Failed to export plot. Please try again.');
-        });
+export async function exportPlot(plotContainer, format, settings) {
+  if (!plotContainer) return;
+  if (_exportInProgress) {
+    console.warn('Export already in progress – please wait.');
+    return;
+  }
+  _exportInProgress = true;
+
+  const width  = settings.exportWidth  || 1200;
+  const height = settings.exportHeight ||  800;
+  const scale  = settings.scaleExport ? 2 : 1;
+  const filename = 'plot_' + new Date()
+    .toISOString()
+    .replace(/[:.]/g, '-');
+
+  const config = { format, width, height, scale, filename };
+
+  try {
+    await Plotly.downloadImage(plotContainer, config);
+  } catch (err) {
+    console.error('Error exporting plot:', err);
+    alert('Failed to export plot. Please try again.');
+  } finally {
+    _exportInProgress = false;
+  }
 }
 
 /**
- * Copy the plot to clipboard as an image
- * @param {HTMLElement} plotContainer - Plot container element
- * @param {Object} settings - Plot settings object
+ * Copy the Plotly plot to clipboard as a PNG image
+ * @param {HTMLElement} plotContainer – Plotly graph div
+ * @param {Object} settings – May include exportWidth, exportHeight
  */
-function copyPlotToClipboard(plotContainer, settings) {
+async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
-    
-    const width = settings.exportWidth || 1200;
-    const height = settings.exportHeight || 800;
-    const scale = 1; // Simplified - always use scale 1
-    
+    const width  = settings.exportWidth  || 1200;
+    const height = settings.exportHeight ||  800;
+  
     try {
-        // First we create an image from the plot
-        Plotly.toImage(plotContainer, {
-            format: 'png',
-            width: width,
-            height: height,
-            scale: scale
-        }).then(dataUrl => {
-            // Get just the data part of the URL (after the comma)
-            const base64Data = dataUrl.split(',')[1];
-            
-            // Create a simple download link as a fallback
-            // This will work in all browsers, even if clipboard API is not available
-            const downloadLink = document.createElement('a');
-            downloadLink.href = dataUrl;
-            downloadLink.download = `plot_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-            
-            // Try the clipboard API first
-            try {
-                // Create a textarea to temporarily hold the data URL
-                const textarea = document.createElement('textarea');
-                textarea.value = dataUrl;
-                document.body.appendChild(textarea);
-                textarea.select();
-                
-                // Try to copy the data URL to clipboard
-                const success = document.execCommand('copy');
-                
-                // Remove the temporary textarea
-                document.body.removeChild(textarea);
-                
-                if (success) {
-                    // Show success message
-                    alert('Image data URL copied to clipboard. You can paste it in apps that support data URLs.');
-                } else {
-                    // If copy command failed, offer download instead
-                    alert('Could not copy to clipboard. Click OK to download the image instead.');
-                    downloadLink.click();
-                }
-            } catch (err) {
-                // If clipboard API failed, offer download
-                console.error('Clipboard API error:', err);
-                alert('This browser does not support copying to clipboard. Click OK to download the image instead.');
-                downloadLink.click();
-            }
-        });
-    } catch (error) {
-        console.error('Error preparing image for clipboard:', error);
-        alert('Failed to copy or download plot. Please try exporting instead.');
+      // 1) Render plot to a data‐URL
+      const dataUrl = await Plotly.toImage(plotContainer, {
+        format: 'png', width, height, scale: 1
+      });
+  
+      // 2) Convert the data‐URL to a Blob
+      const blob = await fetch(dataUrl).then(res => res.blob());
+  
+      // 3) Attempt to write the blob into the clipboard
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        alert('✔️ Plot image copied to clipboard!');
+      } else {
+        throw new Error('Clipboard API not supported');
+      }
     }
-}
+    catch (err) {
+      console.warn('Clipboard copy failed, downloading image instead:', err);
+  
+      // Fallback: force-download the PNG
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(
+        await fetch(Plotly.toImage(plotContainer, { format:'png', width, height })).then(r=>r.blob())
+      );
+      downloadLink.download = `plot_${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+  
+      alert('Plot exported as PNG.');  
+    }
+  }
 
 /**
  * Apply all aesthetic settings to a plot

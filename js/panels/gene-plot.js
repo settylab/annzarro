@@ -359,6 +359,12 @@ const GenePlotPanel = (function() {
                     loadingIndicator.cleanupContainer(_plotContainer);
                 }
 
+                // Clean up aesthetics menu event listeners
+                if (_plotContainer._aestheticsCleanup && typeof _plotContainer._aestheticsCleanup === 'function') {
+                    _plotContainer._aestheticsCleanup();
+                    _plotContainer._aestheticsCleanup = null;
+                }
+
                 Plotly.purge(_plotContainer);
             }
             
