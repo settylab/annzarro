@@ -65,11 +65,25 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
         logger.info(f"Got shape from X.shape: {shape}")
     
     # Method 3: Infer from obs and var indices
-    elif metadata['has_obs'] and metadata['has_var'] and '_index' in zs['obs'] and '_index' in zs['var']:
-        n_obs = zs['obs']['_index'].shape[0]  # Just reads metadata
-        n_vars = zs['var']['_index'].shape[0]  # Just reads metadata
-        shape = (n_obs, n_vars)
-        logger.info(f"Inferred shape from obs/var indices: {shape}")
+    elif metadata['has_obs'] and metadata['has_var']:
+        # Check for _index attribute in obs group
+        obs_index_column = '_index'
+        if hasattr(zs['obs'], 'attrs') and '_index' in zs['obs'].attrs:
+            obs_index_column = zs['obs'].attrs['_index']
+            logger.debug(f"Using custom index column '{obs_index_column}' for obs group from _index attribute")
+        
+        # Check for _index attribute in var group
+        var_index_column = '_index'
+        if hasattr(zs['var'], 'attrs') and '_index' in zs['var'].attrs:
+            var_index_column = zs['var'].attrs['_index']
+            logger.debug(f"Using custom index column '{var_index_column}' for var group from _index attribute")
+        
+        # Use custom index columns if they exist
+        if obs_index_column in zs['obs'] and var_index_column in zs['var']:
+            n_obs = zs['obs'][obs_index_column].shape[0]  # Just reads metadata
+            n_vars = zs['var'][var_index_column].shape[0]  # Just reads metadata
+            shape = (n_obs, n_vars)
+            logger.info(f"Inferred shape from obs/var indices: {shape}")
     
     # Method 4: Try from layers
     elif metadata['has_layers'] and list(zs['layers'].keys()):
@@ -167,14 +181,26 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
             # Handle obs columns
             if len(path_parts) >= 2 and path_parts[0] == 'obs':
                 col_name = path_parts[1]
-                if col_name != '_index' and len(path_parts) == 2:
+                
+                # Get the index column name from attributes or default to '_index'
+                obs_index_column = '_index'
+                if hasattr(zs['obs'], 'attrs') and '_index' in zs['obs'].attrs:
+                    obs_index_column = zs['obs'].attrs['_index']
+                
+                if col_name != obs_index_column and len(path_parts) == 2:
                     info = {'type': str(obj.dtype)}
                     metadata['obs_columns_info'][col_name] = info
             
             # Handle var columns
             elif len(path_parts) >= 2 and path_parts[0] == 'var':
                 col_name = path_parts[1]
-                if col_name != '_index' and len(path_parts) == 2:
+                
+                # Get the index column name from attributes or default to '_index'
+                var_index_column = '_index'
+                if hasattr(zs['var'], 'attrs') and '_index' in zs['var'].attrs:
+                    var_index_column = zs['var'].attrs['_index']
+                
+                if col_name != var_index_column and len(path_parts) == 2:
                     info = {'type': str(obj.dtype)}
                     metadata['var_columns_info'][col_name] = info
             
@@ -323,7 +349,8 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
                 path_parts = name.split('/')
                 if path_parts[0] == 'obsm':
                     df_name = path_parts[1]
-                    columns = list(obj.keys())
+                    # Filter out '_index' from columns list
+                    columns = [col for col in obj.keys() if col != '_index']
                     
                     # Add to obsm_info
                     metadata['obsm_info'][df_name] = {
@@ -346,7 +373,8 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
                 
                 elif path_parts[0] == 'varm':
                     df_name = path_parts[1]
-                    columns = list(obj.keys())
+                    # Filter out '_index' from columns list
+                    columns = [col for col in obj.keys() if col != '_index']
                     
                     # Add to varm_info
                     metadata['varm_info'][df_name] = {

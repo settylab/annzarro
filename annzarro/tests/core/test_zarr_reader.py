@@ -541,9 +541,9 @@ class TestZarrReader(unittest.TestCase):
         
         # Test getting all columns
         obs = self.reader.get_obs(dataset_id=dataset_id)
-        self.assertIn('_index', obs)
-        self.assertIn('cell_type', obs)
-        self.assertEqual(len(obs['_index']), 100)
+        self.assertIn('_index', obs['data'])
+        self.assertIn('cell_type', obs['data'])
+        self.assertEqual(len(obs['data']['_index']), 100)
         
         # Test getting a specific column
         cell_types = self.reader.get_obs('cell_type', dataset_id=dataset_id)
@@ -566,9 +566,9 @@ class TestZarrReader(unittest.TestCase):
         
         # Test getting all columns
         var = self.reader.get_var(dataset_id=dataset_id)
-        self.assertIn('_index', var)
-        self.assertIn('gene_name', var)
-        self.assertEqual(len(var['_index']), 50)
+        self.assertIn('_index', var['data'])
+        self.assertIn('gene_name', var['data'])
+        self.assertEqual(len(var['data']['_index']), 50)
         
         # Test getting a specific column
         gene_names = self.reader.get_var('gene_name', dataset_id=dataset_id)
@@ -744,9 +744,9 @@ class TestZarrReader(unittest.TestCase):
         connectivities = self.reader.get_obsp('connectivities')
         self.assertEqual(connectivities.shape, (100, 100))
         
-        # Test getting a subset using indices
+        # Test getting a subset using row_indices and col_indices
         indices = [0, 1, 2]
-        conn_subset = self.reader.get_obsp('connectivities', indices=indices)
+        conn_subset = self.reader.get_obsp('connectivities', row_indices=indices, col_indices=indices)
         self.assertEqual(conn_subset.shape, (3, 3))
         
         # Verify diagonal values of connectivities (should be 1.0)
@@ -801,9 +801,9 @@ class TestZarrReader(unittest.TestCase):
         correlation = self.reader.get_varp('correlation')
         self.assertEqual(correlation.shape, (50, 50))
         
-        # Test getting a subset using indices
+        # Test getting a subset using row_indices and col_indices 
         indices = [0, 1, 2]
-        corr_subset = self.reader.get_varp('correlation', indices=indices)
+        corr_subset = self.reader.get_varp('correlation', row_indices=indices, col_indices=indices)
         self.assertEqual(corr_subset.shape, (3, 3))
         
         # Verify diagonal values of correlation (should be 1.0)

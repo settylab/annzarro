@@ -1213,16 +1213,29 @@ class ZarrReader:
             cell_count = 0
             gene_count = 0
             
-            # Check if obs and var groups exist
-            if 'obs' in root and '_index' in root['obs']:
-                # Get cell count from _index shape in obs (use shape instead of len)
-                if hasattr(root['obs']['_index'], 'shape'):
-                    cell_count = root['obs']['_index'].shape[0]
+            # Check if obs group exists
+            if 'obs' in root:
+                # Check for _index attribute in obs group to determine the column name
+                index_column = '_index'
+                if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
+                    index_column = root['obs'].attrs['_index']
+                    logger.debug(f"Using custom index column '{index_column}' for obs group from _index attribute")
+                
+                # Get cell count from index column shape
+                if index_column in root['obs'] and hasattr(root['obs'][index_column], 'shape'):
+                    cell_count = root['obs'][index_column].shape[0]
             
-            if 'var' in root and '_index' in root['var']:
-                # Get gene count from _index shape in var (use shape instead of len)
-                if hasattr(root['var']['_index'], 'shape'):
-                    gene_count = root['var']['_index'].shape[0]
+            # Check if var group exists
+            if 'var' in root:
+                # Check for _index attribute in var group to determine the column name
+                index_column = '_index'
+                if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
+                    index_column = root['var'].attrs['_index']
+                    logger.debug(f"Using custom index column '{index_column}' for var group from _index attribute")
+                
+                # Get gene count from index column shape
+                if index_column in root['var'] and hasattr(root['var'][index_column], 'shape'):
+                    gene_count = root['var'][index_column].shape[0]
             
             # If counts are not found, try to get them from X shape if available
             if (cell_count == 0 or gene_count == 0) and 'X' in root and hasattr(root['X'], 'shape'):
@@ -1770,8 +1783,23 @@ class ZarrReader:
         if column_names is not None:
             columns_to_get = [col for col in column_names if col in root['obs']]
         else:
-            # Filter out _index as it's a special key
-            columns_to_get = [col for col in root['obs'].keys() if col != '_index']
+            # Get the index column name from attributes or default to '_index'
+            obs_index_column = '_index'
+            if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
+                obs_index_column = root['obs'].attrs['_index']
+                
+            # Filter out the index column as it's a special key
+            columns_to_get = [col for col in root['obs'].keys() if col != obs_index_column]
+            
+            # Add _index as a column for backwards compatibility with tests
+            if obs_index_column in root['obs']:
+                try:
+                    # Get cell names
+                    cell_names = root['obs'][obs_index_column][:]
+                    result['data']['_index'] = cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
+                except Exception as e:
+                    logger.error(f"Error getting cell names: {e}")
+                    result['data']['_index'] = []
         
         # Get each column
         for col in columns_to_get:
@@ -1867,8 +1895,23 @@ class ZarrReader:
         if column_names is not None:
             columns_to_get = [col for col in column_names if col in root['var']]
         else:
-            # Filter out _index as it's a special key
-            columns_to_get = [col for col in root['var'].keys() if col != '_index']
+            # Get the index column name from attributes or default to '_index'
+            var_index_column = '_index'
+            if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
+                var_index_column = root['var'].attrs['_index']
+                
+            # Filter out the index column as it's a special key
+            columns_to_get = [col for col in root['var'].keys() if col != var_index_column]
+            
+            # Add _index as a column for backwards compatibility with tests
+            if var_index_column in root['var']:
+                try:
+                    # Get gene names
+                    gene_names = root['var'][var_index_column][:]
+                    result['data']['_index'] = gene_names.tolist() if hasattr(gene_names, 'tolist') else list(gene_names)
+                except Exception as e:
+                    logger.error(f"Error getting gene names: {e}")
+                    result['data']['_index'] = []
         
         # Get each column
         for col in columns_to_get:
@@ -2822,12 +2865,23 @@ class ZarrReader:
             # Get the root for the specified dataset ID
             root = self._get_root(dataset_id)
         
-        if root is None or 'var' not in root or '_index' not in root['var']:
+        if root is None or 'var' not in root:
+            return []
+            
+        # Check for _index attribute in var group
+        index_column = '_index'
+        if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
+            index_column = root['var'].attrs['_index']
+            logger.debug(f"Using custom index column '{index_column}' for var group from _index attribute")
+        
+        # Check if the index column exists
+        if index_column not in root['var']:
+            logger.warning(f"Index column '{index_column}' not found in var group")
             return []
         
         # Get gene names
         try:
-            gene_names = root['var']['_index'][:]
+            gene_names = root['var'][index_column][:]
             return gene_names.tolist() if hasattr(gene_names, 'tolist') else list(gene_names)
         except Exception as e:
             logger.error(f"Error getting gene names: {e}")
@@ -2885,12 +2939,23 @@ class ZarrReader:
             # Get the root for the specified dataset ID
             root = self._get_root(dataset_id)
         
-        if root is None or 'obs' not in root or '_index' not in root['obs']:
+        if root is None or 'obs' not in root:
+            return []
+            
+        # Check for _index attribute in obs group
+        index_column = '_index'
+        if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
+            index_column = root['obs'].attrs['_index']
+            logger.debug(f"Using custom index column '{index_column}' for obs group from _index attribute")
+        
+        # Check if the index column exists
+        if index_column not in root['obs']:
+            logger.warning(f"Index column '{index_column}' not found in obs group")
             return []
         
         # Get cell names
         try:
-            cell_names = root['obs']['_index'][:]
+            cell_names = root['obs'][index_column][:]
             return cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
         except Exception as e:
             logger.error(f"Error getting cell names: {e}")
@@ -3060,20 +3125,34 @@ class ZarrReader:
         }
         
         # Add variable names
-        if metadata.get("has_var", False) and '_index' in root['var']:
-            try:
-                var_names = root['var']['_index'][:10]  # Get first 10 for preview
-                result["var_names"] = var_names.tolist() if hasattr(var_names, 'tolist') else list(var_names)
-            except Exception as e:
-                logger.error(f"Error getting var names: {e}")
+        if metadata.get("has_var", False):
+            # Check for _index attribute in var group to determine the column name
+            var_index_column = '_index'
+            if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
+                var_index_column = root['var'].attrs['_index']
+                logger.debug(f"Using custom index column '{var_index_column}' for var group from _index attribute")
+            
+            if var_index_column in root['var']:
+                try:
+                    var_names = root['var'][var_index_column][:10]  # Get first 10 for preview
+                    result["var_names"] = var_names.tolist() if hasattr(var_names, 'tolist') else list(var_names)
+                except Exception as e:
+                    logger.error(f"Error getting var names: {e}")
         
         # Add observation names
-        if metadata.get("has_obs", False) and '_index' in root['obs']:
-            try:
-                obs_names = root['obs']['_index'][:10]  # Get first 10 for preview
-                result["obs_names"] = obs_names.tolist() if hasattr(obs_names, 'tolist') else list(obs_names)
-            except Exception as e:
-                logger.error(f"Error getting obs names: {e}")
+        if metadata.get("has_obs", False):
+            # Check for _index attribute in obs group to determine the column name
+            obs_index_column = '_index'
+            if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
+                obs_index_column = root['obs'].attrs['_index']
+                logger.debug(f"Using custom index column '{obs_index_column}' for obs group from _index attribute")
+            
+            if obs_index_column in root['obs']:
+                try:
+                    obs_names = root['obs'][obs_index_column][:10]  # Get first 10 for preview
+                    result["obs_names"] = obs_names.tolist() if hasattr(obs_names, 'tolist') else list(obs_names)
+                except Exception as e:
+                    logger.error(f"Error getting obs names: {e}")
         
         # Add obs and var columns
         if metadata.get("has_obs", False):
