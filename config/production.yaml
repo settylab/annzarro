@@ -4,7 +4,7 @@
 server:
   host: 127.0.0.1 # 0.0.0.0  # Listen on all interfaces
   port: 8000
-  debug: false
+  debug: true
   data_dir: "data"  # Data directory location
   
   # Security settings for production
@@ -14,7 +14,7 @@ server:
   key_file: "config/ssl/key.pem"    # Change to absolute path when properly configured
   
   # Production logging
-  log_level: "WARNING"
+  log_level: "INFO"
   log_file: "logs/annzarro_server.log"
   
   # Resource limits for production

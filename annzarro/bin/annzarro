@@ -190,6 +190,11 @@ if [ -d "$VENV_PATH" ]; then
             fi
         fi
         
+        # Always download external resources for electron app by default
+        echo "Will download external resources for Electron app (included by default)"
+        # Use the correct flag that matches the installer script
+        ARGS+=("--all")
+        
         # If UV was found, add --use-uv flag and pass path to installer
         if [ -n "$UV_CMD" ]; then
             ARGS+=("--use-uv")
@@ -407,6 +412,11 @@ else
                 exit 1
             fi
         fi
+        
+        # Always download external resources for electron app by default
+        echo "Will download external resources for Electron app (included by default)"
+        # Use the correct flag that matches the installer script
+        ARGS+=("--all")
         
         # If UV was found, add --use-uv flag and pass path to installer
         if [ -n "$UV_CMD" ]; then

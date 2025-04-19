@@ -19,6 +19,11 @@ import argparse
 import logging
 import traceback
 import platform
+import urllib.request
+import json
+import re
+import shutil
+from pathlib import Path
 
 # Configure basic logging
 logging.basicConfig(
@@ -27,6 +32,297 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 logger = logging.getLogger("annzarro-install")
+
+# External resources to download for electron packaging
+EXTERNAL_RESOURCES = [
+    # CSS files
+    {"url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.dataTables.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/select/1.6.2/css/select.dataTables.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css", "type": "css"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css", "type": "css"},
+    {"url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css", "type": "css"},
+    
+    # JavaScript files - Core libraries
+    {"url": "https://code.jquery.com/jquery-3.6.4.min.js", "type": "js"},
+    {"url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js", "type": "js"},
+    {"url": "https://cdn.plot.ly/plotly-2.20.0.min.js", "type": "js"},
+    
+    # DataTables bundled package with all required extensions
+    {"url": "https://datatables.net/download/builder?bs5/jszip-3.10.1/pdfmake-0.2.7/dt-2.2.2/b-3.2.2/b-colvis-3.2.2/b-html5-3.2.2/b-print-3.2.2/cr-2.0.4/fc-5.0.4/fh-4.0.1/r-3.0.4/sc-2.4.3/sb-1.8.2/sp-2.3.3", "type": "datatables_bundle"},
+    
+    # Other libraries
+    {"url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js", "type": "js"},
+    {"url": "https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js", "type": "js"},
+]
+
+# FontAwesome has additional CSS and web font files we need to download
+FONTAWESOME_RESOURCES = [
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.woff2", "type": "font"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2", "type": "font"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2", "type": "font"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-v4compatibility.woff2", "type": "font"},
+]
+
+def download_external_resources(repo_root, args):
+    """
+    Download external CSS and JavaScript resources for offline use in the Electron app
+    
+    Args:
+        repo_root: Root directory of the repository
+        args: Command line arguments
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    # Always download resources by default with --all, or if explicitly requested
+    # Can be disabled with --no-electron-resources
+    if hasattr(args, 'no_electron_resources') and args.no_electron_resources:
+        logger.debug("Skipping external resources download (disabled by flag)")
+        return True
+    
+    logger.info("Downloading external resources for offline use in Electron app")
+    
+    # Special handling for DataTables bundle
+    try:
+        import requests
+        import zipfile
+        import io
+        import tempfile
+        import shutil
+        
+        logger.info("Setting up DataTables bundle download...")
+        
+        # DataTables bundle URL from the download builder
+        datatables_url = next((r['url'] for r in EXTERNAL_RESOURCES if r['type'] == 'datatables_bundle'), None)
+        
+        if datatables_url:
+            logger.info(f"Downloading DataTables bundle from: {datatables_url}")
+            
+            # Create DataTables directory in vendor
+            datatables_dir = os.path.join(repo_root, "static", "vendor", "DataTables")
+            os.makedirs(datatables_dir, exist_ok=True)
+            
+            # Create a temporary directory to extract the ZIP
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                # Fetch the DataTables bundle
+                try:
+                    response = requests.get(datatables_url)
+                    if response.status_code == 200 and response.headers.get('content-type') == 'application/zip':
+                        # Save the zip file to the temp directory
+                        zip_path = os.path.join(tmpdirname, 'datatables.zip')
+                        with open(zip_path, 'wb') as f:
+                            f.write(response.content)
+                            
+                        # Extract the zip file
+                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                            zip_ref.extractall(tmpdirname)
+                        
+                        # Find and copy the datatables.min.js and datatables.min.css files
+                        for root, dirs, files in os.walk(tmpdirname):
+                            for file in files:
+                                if file == 'datatables.min.js' or file == 'datatables.min.css':
+                                    src_path = os.path.join(root, file)
+                                    dst_path = os.path.join(datatables_dir, file)
+                                    logger.info(f"Copying {file} to {dst_path}")
+                                    shutil.copy2(src_path, dst_path)
+                        
+                        logger.info("DataTables bundle successfully installed")
+                    else:
+                        logger.error(f"Failed to download DataTables bundle: HTTP {response.status_code}")
+                        # Return True anyway to continue with other downloads
+                except Exception as e:
+                    logger.error(f"Error downloading DataTables bundle: {e}")
+    except ImportError:
+        logger.error("Could not import required modules for DataTables bundle download. Need requests module.")
+        logger.info("Will continue with other downloads...")
+    
+    # Create static directory structure for all assets
+    static_dir = os.path.join(repo_root, "static")
+    if not os.path.exists(static_dir):
+        logger.info(f"Creating static directory: {static_dir}")
+        os.makedirs(static_dir, exist_ok=True)
+        
+    # Set up CSS directory
+    static_css_dir = os.path.join(static_dir, "css")
+    logger.info(f"Creating static/css directory: {static_css_dir}")
+    os.makedirs(static_css_dir, exist_ok=True)
+    
+    # Create or ensure styles.css exists
+    styles_path = os.path.join(static_css_dir, "styles.css")
+    if not os.path.exists(styles_path):
+        logger.info(f"Creating empty styles.css in static/css")
+        with open(styles_path, 'w') as f:
+            f.write("/* AnnZarro custom styles */\n")
+    
+    # Set up JavaScript directories
+    static_js_dir = os.path.join(static_dir, "js")
+    logger.info(f"Creating static/js directory: {static_js_dir}")
+    os.makedirs(static_js_dir, exist_ok=True)
+    
+    # Create panels directory in static/js
+    static_panels_dir = os.path.join(static_js_dir, "panels")
+    logger.info(f"Creating static/js/panels directory: {static_panels_dir}")
+    os.makedirs(static_panels_dir, exist_ok=True)
+    
+    # JS files are now directly in static/js - no need to copy from js/ directory
+    logger.info("Using JS files directly from static/js directory")
+    
+    # Create directories for storing resources
+    static_dir = os.path.join(repo_root, "static")
+    vendor_dir = os.path.join(static_dir, "vendor")
+    
+    # Create subdirectories for different resource types
+    css_dir = os.path.join(vendor_dir, "css")
+    js_dir = os.path.join(vendor_dir, "js")
+    fonts_dir = os.path.join(vendor_dir, "webfonts")
+    
+    for directory in [static_dir, vendor_dir, css_dir, js_dir, fonts_dir]:
+        os.makedirs(directory, exist_ok=True)
+        logger.debug(f"Created directory: {directory}")
+    
+    # Download each resource
+    success_count = 0
+    
+    all_resources = EXTERNAL_RESOURCES + FONTAWESOME_RESOURCES
+    total_resources = len(all_resources)
+    
+    for i, resource in enumerate(all_resources, 1):
+        url = resource["url"]
+        res_type = resource["type"]
+        
+        # Extract filename from URL
+        filename = url.split("/")[-1]
+        
+        # Determine target directory based on resource type
+        if res_type == "css":
+            target_dir = css_dir
+        elif res_type == "js":
+            target_dir = js_dir
+        elif res_type == "font":
+            target_dir = fonts_dir
+        else:
+            target_dir = vendor_dir
+        
+        target_path = os.path.join(target_dir, filename)
+        
+        try:
+            logger.info(f"Downloading [{i}/{total_resources}]: {filename}")
+            urllib.request.urlretrieve(url, target_path)
+            logger.debug(f"Downloaded {url} to {target_path}")
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Failed to download {url}: {e}")
+    
+    if success_count == total_resources:
+        logger.info(f"Successfully downloaded all {total_resources} external resources")
+        
+        # Now update the index.html template to use local resources
+        template_dir = os.path.join(repo_root, "templates")
+        index_path = os.path.join(template_dir, "index.html")
+        
+        if os.path.exists(index_path):
+            try:
+                with open(index_path, 'r') as f:
+                    content = f.read()
+                
+                # Replace external CSS
+                for resource in [r for r in EXTERNAL_RESOURCES if r["type"] == "css"]:
+                    url = resource["url"]
+                    filename = url.split("/")[-1]
+                    content = content.replace(
+                        f'href="{url}"',
+                        f'href="{{ url_for(\'static\', filename=\'vendor/css/{filename}\') }}"'
+                    )
+                
+                # Replace external JS
+                for resource in [r for r in EXTERNAL_RESOURCES if r["type"] == "js"]:
+                    url = resource["url"]
+                    filename = url.split("/")[-1]
+                    content = content.replace(
+                        f'src="{url}"',
+                        f'src="{{ url_for(\'static\', filename=\'vendor/js/{filename}\') }}"'
+                    )
+                
+                # Special handling for FontAwesome CSS that references webfonts
+                if "all.min.css" in content:
+                    # Add a patch to fix the font paths in FontAwesome CSS
+                    font_fix_css = """
+    <!-- Fix for FontAwesome webfont paths -->
+    <style>
+        @font-face {
+            font-family: 'Font Awesome 6 Free';
+            font-style: normal;
+            font-weight: 900;
+            font-display: block;
+            src: url("{{ url_for('static', filename='vendor/webfonts/fa-solid-900.woff2') }}") format("woff2");
+        }
+        @font-face {
+            font-family: 'Font Awesome 6 Free';
+            font-style: normal;
+            font-weight: 400;
+            font-display: block;
+            src: url("{{ url_for('static', filename='vendor/webfonts/fa-regular-400.woff2') }}") format("woff2");
+        }
+        @font-face {
+            font-family: 'Font Awesome 6 Brands';
+            font-style: normal;
+            font-weight: 400;
+            font-display: block;
+            src: url("{{ url_for('static', filename='vendor/webfonts/fa-brands-400.woff2') }}") format("woff2");
+        }
+        @font-face {
+            font-family: 'Font Awesome 6 Free';
+            font-style: normal;
+            font-weight: 900;
+            font-display: block;
+            src: url("{{ url_for('static', filename='vendor/webfonts/fa-v4compatibility.woff2') }}") format("woff2");
+        }
+    </style>
+                    """
+                    # Add the font fix after the CSS include
+                    content = content.replace(
+                        'href="{{ url_for(\'static\', filename=\'vendor/css/all.min.css\') }}"',
+                        'href="{{ url_for(\'static\', filename=\'vendor/css/all.min.css\') }}"' + font_fix_css
+                    )
+                
+                # Write the updated content back
+                with open(index_path, 'w') as f:
+                    f.write(content)
+                
+                logger.info(f"Updated {index_path} to use local resources")
+                
+                # Also patch the CSS files to use local fonts
+                fa_css_path = os.path.join(css_dir, "all.min.css")
+                if os.path.exists(fa_css_path):
+                    try:
+                        with open(fa_css_path, 'r') as f:
+                            fa_css = f.read()
+                        
+                        # Replace remote webfont references with local ones
+                        fa_css = fa_css.replace(
+                            "../webfonts/", 
+                            "../webfonts/"
+                        )
+                        
+                        with open(fa_css_path, 'w') as f:
+                            f.write(fa_css)
+                        
+                        logger.info(f"Updated FontAwesome CSS to use local webfonts")
+                    except Exception as e:
+                        logger.error(f"Failed to patch FontAwesome CSS: {e}")
+                
+                return True
+            except Exception as e:
+                logger.error(f"Failed to update index.html template: {e}")
+                return False
+        else:
+            logger.error(f"Index template not found: {index_path}")
+            return False
+    else:
+        logger.error(f"Only downloaded {success_count}/{total_resources} resources")
+        return False
 
 def find_uv_executable():
     """
@@ -133,6 +429,11 @@ def install_dependencies(args):
         repo_root = os.path.dirname(os.path.abspath(__file__))
         requirements_file = os.path.join(repo_root, "annzarro", "server", "requirements.txt")
         extras_file = os.path.join(repo_root, "annzarro", "server", "requirements-extras.txt")
+        
+        # Download external resources for Electron app (always by default unless disabled)
+        if not download_external_resources(repo_root, args):
+            logger.warning("Failed to download some external resources for Electron app")
+            # Continue with installation anyway - this isn't fatal
         
         if not os.path.exists(requirements_file):
             logger.error(f"Requirements file not found: {requirements_file}")
@@ -444,6 +745,12 @@ def main():
     parser.add_argument('--no-extras', action='store_true', help="Skip installing optional dependencies")
     parser.add_argument('--upgrade', action='store_true', help="Upgrade existing packages")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
+    
+    # Electron app options
+    parser.add_argument('--no-electron-resources', action='store_true', 
+                        help="Skip downloading external CSS/JS resources for offline use in Electron app")
+    parser.add_argument('--all', action='store_true', 
+                        help="Full installation including all extras")
     
     args = parser.parse_args()
     

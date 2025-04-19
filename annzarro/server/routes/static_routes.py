@@ -97,6 +97,11 @@ def register_static_routes(app, api_version):
                 logger.error(f"Error serving file {path}: {e}")
                 return {"error": "Error serving file"}, 500
         else:
+            # Special case for source maps - just return 204 No Content to prevent console errors
+            if path.endswith('.map'):
+                logger.debug(f"Source map requested but not found: {path}, returning empty response")
+                return '', 204
+                
             # File not found - for single page apps, render the index template for client-side routing
             logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
             return render_template(
