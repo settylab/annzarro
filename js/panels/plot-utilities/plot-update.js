@@ -1,5 +1,5 @@
 import { DataManager } from '../../data-manager.js';
-import { loadAxisData } from '../plot-utilities/plot-make.js';
+import { loadAxisData, createFilterMask, applyFilterMask, filterDataPoints } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
@@ -158,75 +158,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         const hasMultipleTraces = plotContainer.data && plotContainer.data.length > 1;
         const entityType = data.entities
 
-        // Initialize filter statistics
-        const filterStats = {
-            xNaN: 0,
-            yNaN: 0,
-            zNaN: 0,
-            colorNaN: 0,
-            colorOutliers: 0,
-            total: data.x?.values?.length || 0,
-            filtered: 0,
-            hideNaNActive: settings.hideNaN === true,
-            hideOutliersActive: settings.hideOutliers === true
-        };
-
-        // 0. Prep
-        const totalPts = data.x.values.length;
-
-        // 1. Build per‑axis masks & NaN‐counts
-        const xMask = data.x.values.map(v => v != null && !isNaN(v));
-        filterStats.xNaN = totalPts - xMask.filter(Boolean).length;
-
-        const yMask = data.y.values.map(v => v != null && !isNaN(v));
-        filterStats.yNaN = totalPts - yMask.filter(Boolean).length;
-
-        let zMask = null;
-        if (settings.z && data.z?.values) {
-          zMask = data.z.values.map(v => v != null && !isNaN(v));
-          filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
-        }
-
-        // 2. Build color masks & stats (only if color data present)
-        let colorValidMask = null;
-        let colorRangeMask = null;
-
-        if (isNumerical && Array.isArray(data.color)) {
-          // a) “valid number” mask
-          colorValidMask = data.color.map(v => v != null && !isNaN(v));
-          filterStats.colorNaN = totalPts - colorValidMask.filter(Boolean).length;
-
-          // b) “in‐range” mask for outliers
-          if (settings.hideOutliers) {
-            const numericVals = data.color.filter(v => !isNaN(v));
-            const cmin = settings.colorMin ?? Math.min(...numericVals);
-            const cmax = settings.colorMax ?? Math.max(...numericVals);
-
-            colorRangeMask = data.color.map(v =>
-              v == null        // always keep null
-              || isNaN(v)      // always keep NaN
-              || (v >= cmin && v <= cmax)
-            );
-            // count only the *numeric* outliers
-            filterStats.colorOutliers = data.color.filter(v =>
-              v != null && !isNaN(v) && (v < cmin || v > cmax)
-            ).length;
-          }
-        }
-
-        // 3. Gather the masks we need
-        const masks = [xMask, yMask];
-        if (zMask)            masks.push(zMask);
-        if (colorValidMask)   masks.push(colorValidMask);
-        if (colorRangeMask)   masks.push(colorRangeMask);
-
-        // 4. Build the final indexMask by requiring *all* masks pass
-        const indexMask = Array.from({ length: totalPts }, (_, i) =>
-          masks.every(mask => mask[i])
-        );
-
-        // 5. Compute filtered‐count once
-        filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
+        // Apply filtering using the shared functions from plot-make.js
+        
+        // First create the mask and get statistics - always run this to count NaNs
+        const { indexMask, filterStats } = createFilterMask(data, settings);
         
         // Update the filter widget with statistics
         updateFilterWidget(plotContainer, filterStats);
@@ -240,31 +175,24 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             if (!entities) {
                 console.warn("Entities data is not present, skipping filtering updates.");
             } else {
-                if (indexMask) {
-                    filteredX = data.x.values.filter((_, i) => indexMask[i]);
-                    filteredY = data.y.values.filter((_, i) => indexMask[i]);
-                    filteredZ = settings.z && data.z ? data.z.values.filter((_, i) => indexMask[i]) : undefined;
-                    filteredColor = data.color.filter((_, i) => indexMask[i]);
-                    filteredText = entities.filter((_, i) => indexMask[i]);
-                    filteredCustom = Array.from({length: entities.length}, (_, i) => i).filter((_, i) => indexMask[i]);
-                } else {
-                    filteredX = data.x.values;
-                    filteredY = data.y.values;
-                    filteredZ = settings.z && data.z ? data.z.values : undefined;
-                    filteredColor = data.color;
-                    filteredText = entities;
-                    filteredCustom = Array.from({length: entities.length}, (_, i) => i);
+                // Apply the filter mask only if explicit filtering is enabled
+                let filteredData = data;
+                if (settings.hideNaN || settings.hideOutliers) {
+                    filteredData = applyFilterMask(data, indexMask);
                 }
                 
                 const update = {
-                    x: [filteredX],
-                    y: [filteredY],
-                    'marker.color': [filteredColor],
-                    text: [filteredText],
-                    customdata: [filteredCustom]
+                    x: [filteredData.x.values],
+                    y: [filteredData.y.values],
+                    'marker.color': [filteredData.color],
+                    text: [filteredData[entityType]],
+                    customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
                 };
-                if (shouldBe3D && filteredZ) update.z = [filteredZ];
-
+                
+                if (shouldBe3D && filteredData.z) {
+                    update.z = [filteredData.z.values];
+                }
+                
                 Plotly.restyle(plotContainer, update, [0]);
             }
         }

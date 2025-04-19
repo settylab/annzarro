@@ -686,6 +686,237 @@ function ensureFilterWidget(plotContainer) {
   }
 }
 
+/**
+ * Create a filter mask and statistics for data points based on various criteria
+ * 
+ * @param {Object} data - Data object containing all data values
+ * @param {Object} settings - Plot settings
+ * @returns {Object} - Object containing indexMask and filter statistics
+ */
+export function createFilterMask(data, settings) {
+  // Initialize filter statistics
+  const filterStats = {
+    xNaN: 0,
+    yNaN: 0,
+    zNaN: 0,
+    colorNaN: 0,
+    colorOutliers: 0,
+    total: data.x?.values?.length || 0,
+    filtered: 0,
+    hideNaNActive: settings.hideNaN === true,
+    hideOutliersActive: settings.hideOutliers === true
+  };
+
+  const totalPts = data.x.values.length;
+  if (totalPts === 0) return { indexMask: null, filterStats };
+
+  // 1. Build per-axis masks & NaN-counts
+  const xMask = data.x.values.map(v => v != null && !isNaN(v));
+  filterStats.xNaN = totalPts - xMask.filter(Boolean).length;
+
+  const yMask = data.y.values.map(v => v != null && !isNaN(v));
+  filterStats.yNaN = totalPts - yMask.filter(Boolean).length;
+
+  let zMask = null;
+  if (settings.z && data.z?.values) {
+    zMask = data.z.values.map(v => v != null && !isNaN(v));
+    filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
+  }
+
+  // 2. Build color masks & stats (only if color data present and options enabled)
+  let colorValidMask = null;
+  let colorRangeMask = null;
+
+  if (data.colorType === 'numerical' && Array.isArray(data.color)) {
+    // a) "valid number" mask
+    colorValidMask = data.color.map(v => v != null && !isNaN(v));
+    filterStats.colorNaN = totalPts - colorValidMask.filter(Boolean).length;
+
+    // b) "in-range" mask for outliers
+    if (settings.hideOutliers) {
+      const numericVals = data.color.filter(v => !isNaN(v));
+      const cmin = settings.colorMin ?? Math.min(...numericVals);
+      const cmax = settings.colorMax ?? Math.max(...numericVals);
+
+      colorRangeMask = data.color.map(v =>
+        v == null        // always keep null
+        || isNaN(v)      // always keep NaN
+        || (v >= cmin && v <= cmax)
+      );
+      // count only the *numeric* outliers
+      filterStats.colorOutliers = data.color.filter(v =>
+        v != null && !isNaN(v) && (v < cmin || v > cmax)
+      ).length;
+    }
+  }
+
+  // 3. Gather only the masks we need for explicit filtering
+  const masks = [xMask, yMask];
+  if (zMask) masks.push(zMask);
+  
+  // Only apply these filters if the corresponding settings are enabled
+  if (colorValidMask && settings.hideNaN) masks.push(colorValidMask);
+  if (colorRangeMask && settings.hideOutliers) masks.push(colorRangeMask);
+
+  // 4. Build the final indexMask
+  let indexMask;
+  if (masks.length > 0) {
+    // If we have masks to apply, build a mask requiring all filters to pass
+    indexMask = Array.from({ length: totalPts }, (_, i) =>
+      masks.every(mask => mask[i])
+    );
+  } else {
+    // If no explicit filtering, use a pass-through mask
+    indexMask = Array.from({ length: totalPts }, () => true);
+  }
+
+  // 5. Compute filtered count
+  filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
+
+  return { indexMask, filterStats };
+}
+
+/**
+ * Apply a filter mask to data
+ * 
+ * @param {Object} data - Data object containing all data values
+ * @param {Array<boolean>} indexMask - Boolean mask indicating which points to keep
+ * @returns {Object} - Filtered data object
+ */
+export function applyFilterMask(data, indexMask) {
+  if (!indexMask) return data;
+  
+  const entityType = data.entities;
+  const entities = data[entityType];
+
+  const filteredData = {
+    ...data,
+    x: { ...data.x, values: data.x.values.filter((_, i) => indexMask[i]) },
+    y: { ...data.y, values: data.y.values.filter((_, i) => indexMask[i]) }
+  };
+
+  if (data.z) {
+    filteredData.z = { ...data.z, values: data.z.values.filter((_, i) => indexMask[i]) };
+  }
+
+  filteredData.color = data.color.filter((_, i) => indexMask[i]);
+  filteredData[entityType] = entities.filter((_, i) => indexMask[i]);
+  
+  // Keep track of the mask
+  filteredData.indexMask = indexMask;
+
+  return filteredData;
+}
+
+/**
+ * Filter data points based on various criteria
+ * 
+ * @param {Object} data - Data object containing all data values
+ * @param {Object} settings - Plot settings
+ * @returns {Object} - Object containing filtered data and filter statistics
+ */
+export function filterDataPoints(data, settings) {
+  // First create the mask and statistics
+  const { indexMask, filterStats } = createFilterMask(data, settings);
+  
+  // Then apply the mask to the data
+  const filteredData = applyFilterMask(data, indexMask);
+  
+  // Add the statistics to the result
+  filteredData.filterStats = filterStats;
+  
+  return { data: filteredData, filterStats };
+}
+
+/**
+ * Updates the datapoint filter widget with the current filter statistics
+ * 
+ * @param {HTMLElement} plotContainer - The DOM element containing the plot
+ * @param {object} filterStats - Statistics about filtered datapoints
+ */
+function updateFilterWidget(plotContainer, filterStats) {
+  const plotId = plotContainer.id.replace('plot-container-', '');
+  const widget = document.getElementById(`filter-widget-${plotId}`);
+  
+  if (!widget) return;
+  
+  const statsList = widget.querySelector('.filter-stats-list');
+  const totalCount = widget.querySelector('.filter-total-count');
+  
+  // Clear existing items
+  statsList.innerHTML = '';
+  
+  // Track if we have any filters to display
+  let hasFilters = false;
+  
+  // Add items for each filter reason - axis NaNs are always filtered by Plotly
+  if (filterStats.xNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">X-axis NaN:</span>
+        <span class="filter-count">${filterStats.xNaN}</span>
+      </li>
+    `;
+  }
+  
+  if (filterStats.yNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Y-axis NaN:</span>
+        <span class="filter-count">${filterStats.yNaN}</span>
+      </li>
+    `;
+  }
+  
+  if (filterStats.zNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Z-axis NaN:</span>
+        <span class="filter-count">${filterStats.zNaN}</span>
+      </li>
+    `;
+  }
+  
+  // Only show color NaN in the stats when hideNaN is active
+  if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Color NaN:</span>
+        <span class="filter-count">${filterStats.colorNaN}</span>
+      </li>
+    `;
+  }
+  
+  // Only show color outliers when hideOutliers is active
+  if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Color outliers:</span>
+        <span class="filter-count">${filterStats.colorOutliers}</span>
+      </li>
+    `;
+  }
+  
+  // Update total count and percentage
+  const percentage = filterStats.total > 0 
+    ? Math.round((filterStats.filtered / filterStats.total) * 100) 
+    : 0;
+  
+  totalCount.textContent = `${filterStats.filtered} (${percentage}%)`;
+  
+  // Show/hide the widget based on whether there are any filters
+  if (hasFilters) {
+    widget.classList.remove('hidden');
+  } else {
+    widget.classList.add('hidden');
+  }
+}
+
 export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   // Import aesthetic defaults
   const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
@@ -758,27 +989,36 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     }
   }
 
+  // Create filter mask to gather statistics and handle filtering
+  const { indexMask, filterStats } = createFilterMask(data, settings);
+  
+  // Apply the filter mask only if explicit filtering is enabled
+  let filteredData = data;
+  if (settings.hideNaN || settings.hideOutliers) {
+    filteredData = applyFilterMask(data, indexMask);
+  }
+  
   // Prepare base trace (works for numerical and constant coloring)
   const baseTrace = {
     type: settings.z ? 'scatter3d' : 'scattergl',
     mode: 'markers',
-    x: data.x.values,
-    y: data.y.values,
-    text: entities,
-    customdata: Array.from({ length: entities.length }, (_, i) => i),
+    x: filteredData.x.values,
+    y: filteredData.y.values,
+    text: filteredData[entityKey],
+    customdata: Array.from({ length: filteredData[entityKey].length }, (_, i) => i),
     showlegend: false,
     hovertemplate:
       `%{text}<br>x: %{x}<br>y: %{y}` +
       (settings.z ? `<br>z: %{z}` : '') +
-      (data.colorType === 'numerical' ? `<br>c: %{marker.color}` : '') +
+      (filteredData.colorType === 'numerical' ? `<br>c: %{marker.color}` : '') +
       `<extra></extra>`,
     marker: {
       size: settings.pointSize,
       opacity: settings.pointOpacity
     }
   };
-  if (settings.z && data.z) {
-    baseTrace.z = data.z.values;
+  if (settings.z && filteredData.z) {
+    baseTrace.z = filteredData.z.values;
   }
 
   // Build layout with our pure helper
@@ -790,7 +1030,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     size: settings.fontSize,
     color: settings.textColor
   };
-  
   
   // Initialize settings with defaults if not set
   settings.axisLineWidth = settings.axisLineWidth || defaults.AXIS_LINE_WIDTH || 1;
@@ -808,7 +1047,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   layout.yaxis.gridwidth = settings.gridLineWidth;
   layout.xaxis.zerolinewidth = settings.zeroLineWidth;
   layout.yaxis.zerolinewidth = settings.zeroLineWidth;
-  
   
   // Apply text color to all axis title fonts and tick fonts
   if (settings.z) { // 3D plot
@@ -883,6 +1121,13 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     layout.scene.yaxis.zerolinewidth = settings.zeroLineWidth;
     layout.scene.zaxis.zerolinewidth = settings.zeroLineWidth;
     
+    // Apply zero line visibility and color
+    layout.scene.xaxis.zeroline = settings.showZeroLines;
+    layout.scene.yaxis.zeroline = settings.showZeroLines;
+    layout.scene.zaxis.zeroline = settings.showZeroLines;
+    layout.scene.xaxis.zerolinecolor = settings.zeroLineColor;
+    layout.scene.yaxis.zerolinecolor = settings.zeroLineColor;
+    layout.scene.zaxis.zerolinecolor = settings.zeroLineColor;
     
   } else { // 2D plot
     // Make sure all required objects exist
@@ -927,6 +1172,12 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     
     layout.xaxis.tickfont.color = settings.textColor;
     layout.yaxis.tickfont.color = settings.textColor;
+    
+    // Apply zero line visibility and color
+    layout.xaxis.zeroline = settings.showZeroLines;
+    layout.yaxis.zeroline = settings.showZeroLines;
+    layout.xaxis.zerolinecolor = settings.zeroLineColor;
+    layout.yaxis.zerolinecolor = settings.zeroLineColor;
   }
 
   // Apply aesthetic settings from the settings object
@@ -959,10 +1210,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         layout.scene.zaxis.backgroundcolor = settings.backdropColor;
       }
     }
-
-    // Dark mode settings now handled via theme application
-
-    // Font settings now handled more comprehensively at the beginning of the function
 
     // Apply axis visibility settings
     if (settings.showAxisTitles === false) {
@@ -1022,13 +1269,20 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     }
   }
 
+  // Setup the filter widget regardless of color type
+  plotContainer.innerHTML = '';
+  ensureFilterWidget(plotContainer);
+  
+  // Always update the filter widget with statistics
+  updateFilterWidget(plotContainer, filterStats);
+
   // Branch for different color types
-  if (data.colorType === 'categorical') {
+  if (filteredData.colorType === 'categorical') {
     // Remove colorscale if present
     delete baseTrace.marker.colorscale;
 
     // Derive the unique category values
-    const catValues = data.colorCategories || [...new Set(data.color)];
+    const catValues = filteredData.colorCategories || [...new Set(filteredData.color)];
     const colorKey = `${settings.color.key}_colors`;
     const datasetPath = DataManager.getCurrentDataset();
     try {
@@ -1043,7 +1297,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           : [response.data];
       }
       // Process categories using the uns (custom) colors if available.
-      const categoricalTraces = processCategories(settings, data, catValues, customColors);
+      const categoricalTraces = processCategories(settings, filteredData, catValues, customColors);
       
       layout.showlegend = true;
       layout.legend = { ...(layout.legend || {}), title: { text: settings.color.key } };
@@ -1056,9 +1310,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.y = posConfig.legendY;
       layout.legend.xanchor = posConfig.legendXanchor;
       layout.legend.yanchor = posConfig.legendYanchor;
-
-      plotContainer.innerHTML = '';
-      ensureFilterWidget(plotContainer);
       
       Plotly.newPlot(
         plotContainer,
@@ -1071,18 +1322,15 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
-      attachClickHandler(plotContainer, categoricalTraces, data, settings);
+      attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);
       if (settings[highlightKey]) {
-        highlightFocusedEntity(plotContainer, data, settings);
+        highlightFocusedEntity(plotContainer, filteredData, settings);
       }
       return;
     } catch (error) {
       console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
       // Fallback: process without custom colors
-      const categoricalTraces = processCategories(settings, data, catValues);
-      
-      plotContainer.innerHTML = '';
-      ensureFilterWidget(plotContainer);
+      const categoricalTraces = processCategories(settings, filteredData, catValues);
       
       Plotly.newPlot(
         plotContainer,
@@ -1095,27 +1343,27 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
-      attachClickHandler(plotContainer, categoricalTraces, data, settings);
+      attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);
       if (settings[highlightKey]) {
-        highlightFocusedEntity(plotContainer, data, settings);
+        highlightFocusedEntity(plotContainer, filteredData, settings);
       }
       return;
     }
-  } else if (data.colorType === 'numerical') {
+  } else if (filteredData.colorType === 'numerical') {
     // Numerical coloring branch.
-    baseTrace.marker.color = data.color;
+    baseTrace.marker.color = filteredData.color;
     baseTrace.marker.colorscale = settings.colorScale;
     baseTrace.marker.reversescale = settings.colorReversed;
     
     // Update color sliders with the loaded data while preserving saved settings
-    updateColorSliderUI(container, data, settings, id, isFirstLoad);
+    updateColorSliderUI(container, filteredData, settings, id, isFirstLoad);
     
     let cmin = settings.colorMin;
     let cmax = settings.colorMax;
     
     // If either setting is not defined (i.e. null or undefined), compute valid values and update only the missing one.
     if (cmin == null || cmax == null) {
-      const validValues = data.color.filter(v => !isNaN(v));
+      const validValues = filteredData.color.filter(v => !isNaN(v));
     
       if (cmin == null) {
         cmin = Math.min(...validValues);
@@ -1148,10 +1396,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     baseTrace.marker.colorbar.titleside = posConfig.titleside;
     baseTrace.marker.colorbar.orientation = posConfig.orientation;
 
-
-    plotContainer.innerHTML = '';
-    ensureFilterWidget(plotContainer);
-    
     Plotly.newPlot(
       plotContainer,
       [baseTrace],
@@ -1163,16 +1407,12 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
       }
     );
-    attachClickHandler(plotContainer, [baseTrace], data, settings);
-    updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
-      .catch(error => console.error("Error in initial updatePlotElements:", error));
-  } else if (data.colorType === 'constant') {
+    attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
+  } else if (filteredData.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
     delete baseTrace.marker.colorscale;
     console.log('Using constant color for all points');
-    plotContainer.innerHTML = '';
-    ensureFilterWidget(plotContainer);
     
     Plotly.newPlot(
       plotContainer,
@@ -1185,9 +1425,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
       }
     );
-    attachClickHandler(plotContainer, [baseTrace], data, settings);
+    attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
   }
   if (settings[highlightKey]) {
-    highlightFocusedEntity(plotContainer, data, settings);
+    highlightFocusedEntity(plotContainer, filteredData, settings);
   }
 }

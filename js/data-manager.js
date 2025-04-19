@@ -31,7 +31,6 @@ const DataManager = (function() {
         try {
         return JSON.parse(text);
         } catch (err) {
-        console.warn('Invalid JSON, sanitizing special floats…', err.message);
         // only replace tokens that aren’t inside quotes:
         // lookbehind (?<=[\[:,\s]) and lookahead (?=[,\]\}\s])
         const FIX_SPECIAL = /(?<=[\[\{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
