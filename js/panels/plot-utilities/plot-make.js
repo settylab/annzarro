@@ -2,7 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
-import { getPositioningByLocation, applyAllAestheticSettings } from './plot-aesthetics-menu.js';
+import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -687,6 +687,49 @@ function ensureFilterWidget(plotContainer) {
 }
 
 export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
+  // Import aesthetic defaults
+  const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
+  
+  // Apply default aesthetic settings if not already set
+  initializeAestheticsSettings(settings);
+  
+  // Ensure ALL aesthetic settings are set explicitly
+  settings.showGrid = settings.showGrid !== undefined ? settings.showGrid : defaults.SHOW_GRID || true;
+  settings.showAxisTitles = settings.showAxisTitles !== undefined ? settings.showAxisTitles : defaults.SHOW_AXIS_TITLES || true;
+  settings.showAxisLabels = settings.showAxisLabels !== undefined ? settings.showAxisLabels : defaults.SHOW_AXIS_LABELS || true;
+  settings.showAxisLines = settings.showAxisLines !== undefined ? settings.showAxisLines : defaults.SHOW_AXIS_LINES || true;
+  settings.showZeroLines = settings.showZeroLines !== undefined ? settings.showZeroLines : defaults.SHOW_ZERO_LINES || false;
+  settings.showLegend = settings.showLegend !== undefined ? settings.showLegend : defaults.SHOW_LEGEND || true;
+  
+  // Colors with fallbacks
+  settings.bgColor = settings.bgColor || defaults.BG_COLOR || '#ffffff';
+  settings.gridColor = settings.gridColor || defaults.GRID_COLOR || '#e6e6e6';
+  settings.axisColor = settings.axisColor || defaults.AXIS_COLOR || '#000000';
+  settings.textColor = settings.textColor || defaults.TEXT_COLOR || '#000000';
+  settings.zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR || '#cccccc';
+  
+  // Fonts and sizing
+  settings.fontSize = settings.fontSize || defaults.FONT_SIZE || 12;
+  settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY || 'Arial, Helvetica, sans-serif';
+  
+  // Margins with fallbacks
+  if (!settings.margins) {
+    settings.margins = defaults.MARGINS || { l: 80, r: 80, t: 80, b: 60, pad: 4 };
+  }
+  
+  // Export options
+  settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH || 1200;
+  settings.exportHeight = settings.exportHeight || defaults.EXPORT_HEIGHT || 800;
+  settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT || false;
+  
+  // Legend settings
+  settings.legendPosition = settings.legendPosition || defaults.LEGEND_POSITION || 'right';
+  
+  // Interaction settings
+  settings.enableZoom = settings.enableZoom !== undefined ? settings.enableZoom : defaults.ENABLE_ZOOM || true;
+  settings.enablePan = settings.enablePan !== undefined ? settings.enablePan : defaults.ENABLE_PAN || true;
+  settings.showHoverInfo = settings.showHoverInfo !== undefined ? settings.showHoverInfo : defaults.SHOW_HOVER_INFO || true;
+  
   // Determine if this is a gene plot or cell plot
   const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
   const entityKey = isGenePlot ? 'genes' : 'cells';
@@ -739,6 +782,118 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Build layout with our pure helper
   const layout = createLayout(settings);
+  
+  // Ensure font and color settings are applied to the layout globally
+  layout.font = {
+    family: settings.fontFamily,
+    size: settings.fontSize,
+    color: settings.textColor
+  };
+  
+  // Apply text color to all axis title fonts and tick fonts
+  if (settings.z) { // 3D plot
+    // Make sure all required objects exist
+    layout.scene = layout.scene || {};
+    layout.scene.xaxis = layout.scene.xaxis || {};
+    layout.scene.yaxis = layout.scene.yaxis || {};
+    layout.scene.zaxis = layout.scene.zaxis || {};
+    
+    // Initialize and set title fonts with proper color
+    layout.scene.xaxis.title = layout.scene.xaxis.title || { text: '', font: {} };
+    layout.scene.yaxis.title = layout.scene.yaxis.title || { text: '', font: {} };
+    layout.scene.zaxis.title = layout.scene.zaxis.title || { text: '', font: {} };
+    
+    if (typeof layout.scene.xaxis.title === 'string') {
+      const text = layout.scene.xaxis.title;
+      layout.scene.xaxis.title = { text: text, font: {} };
+    }
+    if (typeof layout.scene.yaxis.title === 'string') {
+      const text = layout.scene.yaxis.title;
+      layout.scene.yaxis.title = { text: text, font: {} };
+    }
+    if (typeof layout.scene.zaxis.title === 'string') {
+      const text = layout.scene.zaxis.title;
+      layout.scene.zaxis.title = { text: text, font: {} };
+    }
+    
+    // Set font properties including color
+    layout.scene.xaxis.title.font = layout.scene.xaxis.title.font || {};
+    layout.scene.yaxis.title.font = layout.scene.yaxis.title.font || {};
+    layout.scene.zaxis.title.font = layout.scene.zaxis.title.font || {};
+    
+    layout.scene.xaxis.title.font.family = settings.fontFamily;
+    layout.scene.yaxis.title.font.family = settings.fontFamily;
+    layout.scene.zaxis.title.font.family = settings.fontFamily;
+    
+    layout.scene.xaxis.title.font.size = settings.fontSize + 2;
+    layout.scene.yaxis.title.font.size = settings.fontSize + 2;
+    layout.scene.zaxis.title.font.size = settings.fontSize + 2;
+    
+    layout.scene.xaxis.title.font.color = settings.textColor;
+    layout.scene.yaxis.title.font.color = settings.textColor;
+    layout.scene.zaxis.title.font.color = settings.textColor;
+    
+    // Initialize and set tick fonts
+    layout.scene.xaxis.tickfont = layout.scene.xaxis.tickfont || {};
+    layout.scene.yaxis.tickfont = layout.scene.yaxis.tickfont || {};
+    layout.scene.zaxis.tickfont = layout.scene.zaxis.tickfont || {};
+    
+    layout.scene.xaxis.tickfont.family = settings.fontFamily;
+    layout.scene.yaxis.tickfont.family = settings.fontFamily;
+    layout.scene.zaxis.tickfont.family = settings.fontFamily;
+    
+    layout.scene.xaxis.tickfont.size = settings.fontSize;
+    layout.scene.yaxis.tickfont.size = settings.fontSize;
+    layout.scene.zaxis.tickfont.size = settings.fontSize;
+    
+    layout.scene.xaxis.tickfont.color = settings.textColor;
+    layout.scene.yaxis.tickfont.color = settings.textColor;
+    layout.scene.zaxis.tickfont.color = settings.textColor;
+    
+  } else { // 2D plot
+    // Make sure all required objects exist
+    layout.xaxis = layout.xaxis || {};
+    layout.yaxis = layout.yaxis || {};
+    
+    // Initialize and set title fonts with proper color
+    layout.xaxis.title = layout.xaxis.title || { text: '', font: {} };
+    layout.yaxis.title = layout.yaxis.title || { text: '', font: {} };
+    
+    if (typeof layout.xaxis.title === 'string') {
+      const text = layout.xaxis.title;
+      layout.xaxis.title = { text: text, font: {} };
+    }
+    if (typeof layout.yaxis.title === 'string') {
+      const text = layout.yaxis.title;
+      layout.yaxis.title = { text: text, font: {} };
+    }
+    
+    // Set font properties including color
+    layout.xaxis.title.font = layout.xaxis.title.font || {};
+    layout.yaxis.title.font = layout.yaxis.title.font || {};
+    
+    layout.xaxis.title.font.family = settings.fontFamily;
+    layout.yaxis.title.font.family = settings.fontFamily;
+    
+    layout.xaxis.title.font.size = settings.fontSize + 2;
+    layout.yaxis.title.font.size = settings.fontSize + 2;
+    
+    layout.xaxis.title.font.color = settings.textColor;
+    layout.yaxis.title.font.color = settings.textColor;
+    
+    // Initialize and set tick fonts
+    layout.xaxis.tickfont = layout.xaxis.tickfont || {};
+    layout.yaxis.tickfont = layout.yaxis.tickfont || {};
+    
+    layout.xaxis.tickfont.family = settings.fontFamily;
+    layout.yaxis.tickfont.family = settings.fontFamily;
+    
+    layout.xaxis.tickfont.size = settings.fontSize;
+    layout.yaxis.tickfont.size = settings.fontSize;
+    
+    layout.xaxis.tickfont.color = settings.textColor;
+    layout.yaxis.tickfont.color = settings.textColor;
+  }
 
   // Apply aesthetic settings from the settings object
   if (settings) {
@@ -751,124 +906,17 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     if (settings.bgColor) {
       layout.paper_bgcolor = settings.bgColor;
       layout.plot_bgcolor = settings.bgColor;
-    }
-
-    // Apply dark mode settings
-    if (settings.darkMode) {
-      const textColor = '#ffffff';
-      const gridColor = '#444444';
-      const bgColor = '#1e1e1e';
       
-      layout.paper_bgcolor = bgColor;
-      layout.plot_bgcolor = bgColor;
-      layout.font = layout.font || {};
-      layout.font.color = textColor;
-      
-      if (settings.z) { // 3D plot
+      // For 3D plots, also set the scene background
+      if (settings.z) {
         layout.scene = layout.scene || {};
-        layout.scene.bgcolor = bgColor;
-        layout.scene.xaxis = layout.scene.xaxis || {};
-        layout.scene.yaxis = layout.scene.yaxis || {};
-        layout.scene.zaxis = layout.scene.zaxis || {};
-        layout.scene.xaxis.gridcolor = gridColor;
-        layout.scene.yaxis.gridcolor = gridColor;
-        layout.scene.zaxis.gridcolor = gridColor;
-        layout.scene.xaxis.color = textColor;
-        layout.scene.yaxis.color = textColor;
-        layout.scene.zaxis.color = textColor;
-      } else { // 2D plot
-        layout.xaxis = layout.xaxis || {};
-        layout.yaxis = layout.yaxis || {};
-        layout.xaxis.gridcolor = gridColor;
-        layout.yaxis.gridcolor = gridColor;
-        layout.xaxis.color = textColor;
-        layout.yaxis.color = textColor;
+        layout.scene.bgcolor = settings.bgColor;
       }
     }
 
-    // Apply font size settings
-    if (settings.fontSize) {
-      // Set the global font size
-      layout.font = layout.font || {};
-      layout.font.size = settings.fontSize;
-      
-      if (settings.z) { // 3D plot
-        // Make sure all required objects exist
-        layout.scene = layout.scene || {};
-        layout.scene.xaxis = layout.scene.xaxis || {};
-        layout.scene.yaxis = layout.scene.yaxis || {};
-        layout.scene.zaxis = layout.scene.zaxis || {};
-        
-        // Initialize axis title objects if needed
-        if (typeof layout.scene.xaxis.title === 'string') {
-          const text = layout.scene.xaxis.title;
-          layout.scene.xaxis.title = { text: text, font: {} };
-        } else {
-          layout.scene.xaxis.title = layout.scene.xaxis.title || { text: '', font: {} };
-          layout.scene.xaxis.title.font = layout.scene.xaxis.title.font || {};
-        }
-        
-        if (typeof layout.scene.yaxis.title === 'string') {
-          const text = layout.scene.yaxis.title;
-          layout.scene.yaxis.title = { text: text, font: {} };
-        } else {
-          layout.scene.yaxis.title = layout.scene.yaxis.title || { text: '', font: {} };
-          layout.scene.yaxis.title.font = layout.scene.yaxis.title.font || {};
-        }
-        
-        if (typeof layout.scene.zaxis.title === 'string') {
-          const text = layout.scene.zaxis.title;
-          layout.scene.zaxis.title = { text: text, font: {} };
-        } else {
-          layout.scene.zaxis.title = layout.scene.zaxis.title || { text: '', font: {} };
-          layout.scene.zaxis.title.font = layout.scene.zaxis.title.font || {};
-        }
-        
-        // Set font sizes
-        layout.scene.xaxis.title.font.size = settings.fontSize + 2;
-        layout.scene.yaxis.title.font.size = settings.fontSize + 2;
-        layout.scene.zaxis.title.font.size = settings.fontSize + 2;
-        
-        // Initialize and set tick font sizes
-        layout.scene.xaxis.tickfont = layout.scene.xaxis.tickfont || {};
-        layout.scene.yaxis.tickfont = layout.scene.yaxis.tickfont || {};
-        layout.scene.zaxis.tickfont = layout.scene.zaxis.tickfont || {};
-        layout.scene.xaxis.tickfont.size = settings.fontSize;
-        layout.scene.yaxis.tickfont.size = settings.fontSize;
-        layout.scene.zaxis.tickfont.size = settings.fontSize;
-      } else { // 2D plot
-        // Make sure all required objects exist
-        layout.xaxis = layout.xaxis || {};
-        layout.yaxis = layout.yaxis || {};
-        
-        // Initialize axis title objects if needed
-        if (typeof layout.xaxis.title === 'string') {
-          const text = layout.xaxis.title;
-          layout.xaxis.title = { text: text, font: {} };
-        } else {
-          layout.xaxis.title = layout.xaxis.title || { text: '', font: {} };
-          layout.xaxis.title.font = layout.xaxis.title.font || {};
-        }
-        
-        if (typeof layout.yaxis.title === 'string') {
-          const text = layout.yaxis.title;
-          layout.yaxis.title = { text: text, font: {} };
-        } else {
-          layout.yaxis.title = layout.yaxis.title || { text: '', font: {} };
-          layout.yaxis.title.font = layout.yaxis.title.font || {};
-        }
-        
-        // Set font sizes
-        layout.xaxis.title.font.size = settings.fontSize + 2;
-        layout.yaxis.title.font.size = settings.fontSize + 2;
-        
-        // Initialize and set tick font sizes
-        layout.xaxis.tickfont = layout.xaxis.tickfont || {};
-        layout.yaxis.tickfont = layout.yaxis.tickfont || {};
-        layout.xaxis.tickfont.size = settings.fontSize;
-        layout.yaxis.tickfont.size = settings.fontSize;
-      }
-    }
+    // Dark mode settings now handled via theme application
+
+    // Font settings now handled more comprehensively at the beginning of the function
 
     // Apply axis visibility settings
     if (settings.showAxisTitles === false) {
@@ -1071,8 +1119,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     );
     attachClickHandler(plotContainer, [baseTrace], data, settings);
     updatePlotElements(plotContainer, data, settings, null, { filter: true, colorRange: true })
-      .catch(error => console.error("Error in initial updatePlotElements:", error))
-    applyAllAestheticSettings(plotContainer, settings);
+      .catch(error => console.error("Error in initial updatePlotElements:", error));
   } else if (data.colorType === 'constant') {
     // Constant coloring branch.
     baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';

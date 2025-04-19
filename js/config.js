@@ -77,7 +77,56 @@ const Config = (function() {
             '7955': 'Danio rerio'
         },
         // Enable/disable specific panel types in the selection tile
-        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table'] // 'gene-set'
+        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table'], // 'gene-set'
+        
+        // Plot aesthetics defaults
+        PLOT_AESTHETICS: {
+            // Grid settings
+            SHOW_GRID: true,
+            
+            // Axes settings
+            SHOW_AXIS_TITLES: true,
+            SHOW_AXIS_LABELS: true,
+            SHOW_AXIS_LINES: true,
+            SHOW_ZERO_LINES: false,
+            
+            // Default colors (light theme)
+            BG_COLOR: '#ffffff',
+            GRID_COLOR: '#e6e6e6',
+            AXIS_COLOR: '#000000',
+            TEXT_COLOR: '#000000',
+            ZERO_LINE_COLOR: '#cccccc',
+            
+            // Dark theme colors (for application via button)
+            DARK_THEME: {
+                BG_COLOR: '#1e1e1e',
+                GRID_COLOR: '#444444',
+                AXIS_COLOR: '#ffffff',
+                TEXT_COLOR: '#ffffff',
+                ZERO_LINE_COLOR: '#666666'
+            },
+            
+            // Fonts
+            FONT_SIZE: 12,
+            FONT_FAMILY: 'Arial, Helvetica, sans-serif',
+            
+            // Margins
+            MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },
+            
+            // Legend settings
+            SHOW_LEGEND: true,
+            LEGEND_POSITION: 'right',
+            
+            // Export options
+            EXPORT_WIDTH: 1200,
+            EXPORT_HEIGHT: 800,
+            SCALE_EXPORT: false,
+            
+            // Interaction settings
+            ENABLE_ZOOM: true,
+            ENABLE_PAN: true,
+            SHOW_HOVER_INFO: true
+        }
     };
 
     // Cache constraints (for CacheManager)
