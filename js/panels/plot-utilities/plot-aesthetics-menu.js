@@ -99,6 +99,23 @@ export function createPopoverContent(id, settings) {
                     <button class="btn btn-sm btn-outline-secondary" id="reset-bg-color-${id}">Reset</button>
                 </div>
             </div>
+            
+            <!-- 3D Backdrop Settings (only shown for 3D plots) -->
+            <div class="mb-2 ${settings.z ? '' : 'd-none'}" id="backdrop-container-${id}">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label mb-0">3D Backdrop</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="show-backdrop-${id}" 
+                            ${settings.showBackdrop ? 'checked' : ''}>
+                        <label class="form-check-label" for="show-backdrop-${id}">Show</label>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="color" class="form-control form-control-sm form-control-color" 
+                        id="backdrop-color-${id}" value="${settings.backdropColor || '#f0f0f0'}" title="Choose 3D backdrop color">
+                    <button class="btn btn-sm btn-outline-secondary" id="reset-backdrop-color-${id}">Reset</button>
+                </div>
+            </div>
 
             <!-- Color Theme Buttons -->
             <div class="mb-2">
@@ -110,16 +127,6 @@ export function createPopoverContent(id, settings) {
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="dark-theme-${id}">
                         <i class="fas fa-moon"></i> Dark Theme
                     </button>
-                </div>
-            </div>
-            
-            <!-- Text Color -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Text Color</label>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="text-color-${id}" value="${settings.textColor || '#000000'}" title="Choose text color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
                 </div>
             </div>
         </div>
@@ -167,6 +174,29 @@ export function createPopoverContent(id, settings) {
                         ${settings.showZeroLines ? 'checked' : ''}>
                     <label class="form-check-label" for="zero-lines-${id}">Show Zero Lines</label>
                 </div>
+                
+                <!-- Line Width Settings -->
+                <div class="mt-2">
+                    <label class="form-label mb-1">Line Widths</label>
+                    <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text">Axis</span>
+                        <input type="number" class="form-control" id="axis-line-width-${id}" 
+                            value="${settings.axisLineWidth}" min="0.1" max="10" step="0.1">
+                        <span class="input-group-text">px</span>
+                    </div>
+                    <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text">Grid</span>
+                        <input type="number" class="form-control" id="grid-line-width-${id}" 
+                            value="${settings.gridLineWidth}" min="0.1" max="10" step="0.1">
+                        <span class="input-group-text">px</span>
+                    </div>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">Zero</span>
+                        <input type="number" class="form-control" id="zero-line-width-${id}" 
+                            value="${settings.zeroLineWidth}" min="0.1" max="10" step="0.1">
+                        <span class="input-group-text">px</span>
+                    </div>
+                </div>
             </div>
             
             <!-- Axis Color -->
@@ -201,11 +231,18 @@ export function createPopoverContent(id, settings) {
                     <option value="Verdana, sans-serif" ${settings.fontFamily === 'Verdana, sans-serif' ? 'selected' : ''}>Verdana</option>
                 </select>
                 
-                <div class="input-group input-group-sm">
+                <div class="input-group input-group-sm mb-2">
                     <span class="input-group-text">Size</span>
                     <input type="number" class="form-control" id="font-size-${id}" 
                         value="${settings.fontSize || 12}" min="8" max="24" step="1">
                     <span class="input-group-text">px</span>
+                </div>
+                
+                <div class="d-flex align-items-center gap-2">
+                    <label class="form-label mb-0 me-2">Color</label>
+                    <input type="color" class="form-control form-control-sm form-control-color" 
+                        id="text-color-${id}" value="${settings.textColor || '#000000'}" title="Choose text color">
+                    <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
                 </div>
             </div>
         </div>
@@ -368,6 +405,18 @@ export function initializeAestheticsSettings(settings) {
     settings.axisColor = settings.axisColor || defaults.AXIS_COLOR;
     settings.textColor = settings.textColor || defaults.TEXT_COLOR;
     settings.zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR;
+    settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR;
+    
+    // 3D Backdrop settings
+    settings.showBackdrop = settings.showBackdrop !== undefined ? settings.showBackdrop : defaults.SHOW_BACKDROP;
+    
+    // Line width settings
+    settings.axisLineWidth = settings.axisLineWidth || defaults.AXIS_LINE_WIDTH || 1;
+    settings.gridLineWidth = settings.gridLineWidth || defaults.GRID_LINE_WIDTH || 1;
+    settings.zeroLineWidth = settings.zeroLineWidth || defaults.ZERO_LINE_WIDTH || 1;
+    
+    // Tick settings
+    settings.tickDensity = settings.tickDensity || defaults.TICK_DENSITY || 'auto';
     
     // Fonts and sizing
     settings.fontSize = settings.fontSize || defaults.FONT_SIZE;
@@ -463,6 +512,33 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
+        // Toggle 3D backdrop visibility
+        if (target.id === `show-backdrop-${id}`) {
+            settings.showBackdrop = target.checked;
+            update3DBackdrop(plotContainer, settings);
+            notifySettingsChanged(id, 'showBackdrop', settings.showBackdrop);
+            return;
+        }
+        
+        // 3D Backdrop color
+        if (target.id === `backdrop-color-${id}`) {
+            settings.backdropColor = target.value;
+            update3DBackdrop(plotContainer, settings);
+            notifySettingsChanged(id, 'backdropColor', settings.backdropColor);
+            return;
+        }
+        
+        // Reset backdrop color
+        if (target.id === `reset-backdrop-color-${id}`) {
+            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
+            const colorInput = container.querySelector(`#backdrop-color-${id}`);
+            settings.backdropColor = defaults.BACKDROP_COLOR || '#f0f0f0';
+            if (colorInput) colorInput.value = settings.backdropColor;
+            update3DBackdrop(plotContainer, settings);
+            notifySettingsChanged(id, 'backdropColor', settings.backdropColor);
+            return;
+        }
+        
         // Text color
         if (target.id === `text-color-${id}`) {
             settings.textColor = target.value;
@@ -549,6 +625,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             settings.axisColor = defaults.AXIS_COLOR || '#000000';
             settings.textColor = defaults.TEXT_COLOR || '#000000';
             settings.zeroLineColor = defaults.ZERO_LINE_COLOR || '#cccccc';
+            settings.backdropColor = defaults.BACKDROP_COLOR || '#f0f0f0';
             
             // Update color inputs
             updateColorInputs(container, id, settings);
@@ -562,7 +639,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 {setting: 'gridColor', value: settings.gridColor},
                 {setting: 'axisColor', value: settings.axisColor},
                 {setting: 'textColor', value: settings.textColor},
-                {setting: 'zeroLineColor', value: settings.zeroLineColor}
+                {setting: 'zeroLineColor', value: settings.zeroLineColor},
+                {setting: 'backdropColor', value: settings.backdropColor},
+                {setting: 'showBackdrop', value: settings.showBackdrop}
             ]);
             return;
         }
@@ -584,6 +663,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             settings.axisColor = darkTheme.AXIS_COLOR;
             settings.textColor = darkTheme.TEXT_COLOR;
             settings.zeroLineColor = darkTheme.ZERO_LINE_COLOR;
+            settings.backdropColor = darkTheme.BACKDROP_COLOR || '#121212';
             
             // Update color inputs
             updateColorInputs(container, id, settings);
@@ -597,7 +677,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 {setting: 'gridColor', value: settings.gridColor},
                 {setting: 'axisColor', value: settings.axisColor},
                 {setting: 'textColor', value: settings.textColor},
-                {setting: 'zeroLineColor', value: settings.zeroLineColor}
+                {setting: 'zeroLineColor', value: settings.zeroLineColor},
+                {setting: 'backdropColor', value: settings.backdropColor},
+                {setting: 'showBackdrop', value: settings.showBackdrop}
             ]);
             return;
         }
@@ -633,6 +715,31 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             notifySettingsChanged(id, 'showZeroLines', settings.showZeroLines);
             return;
         }
+        
+        // Axis line width
+        if (target.id === `axis-line-width-${id}`) {
+            settings.axisLineWidth = parseFloat(target.value);
+            updateLineWidths(plotContainer, settings);
+            notifySettingsChanged(id, 'axisLineWidth', settings.axisLineWidth);
+            return;
+        }
+        
+        // Grid line width
+        if (target.id === `grid-line-width-${id}`) {
+            settings.gridLineWidth = parseFloat(target.value);
+            updateLineWidths(plotContainer, settings);
+            notifySettingsChanged(id, 'gridLineWidth', settings.gridLineWidth);
+            return;
+        }
+        
+        // Zero line width
+        if (target.id === `zero-line-width-${id}`) {
+            settings.zeroLineWidth = parseFloat(target.value);
+            updateLineWidths(plotContainer, settings);
+            notifySettingsChanged(id, 'zeroLineWidth', settings.zeroLineWidth);
+            return;
+        }
+        
         
         // Font family change
         if (target.id === `font-family-${id}`) {
@@ -918,6 +1025,59 @@ function updateAxisVisibility(plotContainer, settings) {
 }
 
 /**
+ * Update line widths for axes, grid, and zero lines
+ * @param {HTMLElement} plotContainer - Plot container element
+ * @param {Object} settings - Plot settings object
+ */
+function updateLineWidths(plotContainer, settings) {
+    if (!plotContainer) return;
+    
+    const is3D = settings.z !== null;
+    const update = {};
+    
+    // Axis line width
+    if (settings.axisLineWidth !== undefined) {
+        if (is3D) {
+            update['scene.xaxis.linewidth'] = settings.axisLineWidth;
+            update['scene.yaxis.linewidth'] = settings.axisLineWidth;
+            update['scene.zaxis.linewidth'] = settings.axisLineWidth;
+        } else {
+            update['xaxis.linewidth'] = settings.axisLineWidth;
+            update['yaxis.linewidth'] = settings.axisLineWidth;
+        }
+    }
+    
+    // Grid line width
+    if (settings.gridLineWidth !== undefined) {
+        if (is3D) {
+            update['scene.xaxis.gridwidth'] = settings.gridLineWidth;
+            update['scene.yaxis.gridwidth'] = settings.gridLineWidth;
+            update['scene.zaxis.gridwidth'] = settings.gridLineWidth;
+        } else {
+            update['xaxis.gridwidth'] = settings.gridLineWidth;
+            update['yaxis.gridwidth'] = settings.gridLineWidth;
+        }
+    }
+    
+    // Zero line width
+    if (settings.zeroLineWidth !== undefined) {
+        if (is3D) {
+            update['scene.xaxis.zerolinewidth'] = settings.zeroLineWidth;
+            update['scene.yaxis.zerolinewidth'] = settings.zeroLineWidth;
+            update['scene.zaxis.zerolinewidth'] = settings.zeroLineWidth;
+        } else {
+            update['xaxis.zerolinewidth'] = settings.zeroLineWidth;
+            update['yaxis.zerolinewidth'] = settings.zeroLineWidth;
+        }
+    }
+    
+    if (Object.keys(update).length > 0) {
+        Plotly.relayout(plotContainer, update);
+    }
+}
+
+
+/**
  * Update plot background color
  * @param {HTMLElement} plotContainer - Plot container element
  * @param {Object} settings - Plot settings object
@@ -935,6 +1095,26 @@ function updatePlotBackground(plotContainer, settings) {
     if (is3D) {
         update['scene.bgcolor'] = settings.bgColor;
     }
+    
+    Plotly.relayout(plotContainer, update);
+}
+
+/**
+ * Update 3D backdrop visibility and color
+ * @param {HTMLElement} plotContainer - Plot container element
+ * @param {Object} settings - Plot settings object
+ */
+function update3DBackdrop(plotContainer, settings) {
+    if (!plotContainer || !settings.z) return;
+    
+    const update = {
+        'scene.xaxis.showbackground': settings.showBackdrop,
+        'scene.yaxis.showbackground': settings.showBackdrop,
+        'scene.zaxis.showbackground': settings.showBackdrop,
+        'scene.xaxis.backgroundcolor': settings.backdropColor,
+        'scene.yaxis.backgroundcolor': settings.backdropColor,
+        'scene.zaxis.backgroundcolor': settings.backdropColor
+    };
     
     Plotly.relayout(plotContainer, update);
 }
@@ -1064,12 +1244,14 @@ export function updateColorInputs(container, id, settings) {
     const gridColorInput = document.getElementById(`grid-color-${id}`);
     const axisColorInput = document.getElementById(`axis-color-${id}`);
     const zeroLineColorInput = document.getElementById(`zero-line-color-${id}`);
+    const backdropColorInput = document.getElementById(`backdrop-color-${id}`);
     
     if (bgColorInput) bgColorInput.value = settings.bgColor;
     if (textColorInput) textColorInput.value = settings.textColor;
     if (gridColorInput) gridColorInput.value = settings.gridColor;
     if (axisColorInput) axisColorInput.value = settings.axisColor;
     if (zeroLineColorInput) zeroLineColorInput.value = settings.zeroLineColor;
+    if (backdropColorInput) backdropColorInput.value = settings.backdropColor;
 }
 
 /**
@@ -1104,6 +1286,12 @@ export function applyThemeColors(plotContainer, settings) {
     if (is3D) {
         Object.assign(update, {
             'scene.bgcolor': settings.bgColor,
+            'scene.xaxis.showbackground': settings.showBackdrop,
+            'scene.yaxis.showbackground': settings.showBackdrop,
+            'scene.zaxis.showbackground': settings.showBackdrop,
+            'scene.xaxis.backgroundcolor': settings.backdropColor,
+            'scene.yaxis.backgroundcolor': settings.backdropColor,
+            'scene.zaxis.backgroundcolor': settings.backdropColor,
             'scene.xaxis.gridcolor': settings.gridColor,
             'scene.yaxis.gridcolor': settings.gridColor,
             'scene.zaxis.gridcolor': settings.gridColor,
@@ -1500,14 +1688,20 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.showgrid': settings.showGrid,
         'xaxis.gridcolor': gridColor,
         'yaxis.gridcolor': gridColor,
+        'xaxis.gridwidth': settings.gridLineWidth || 1,
+        'yaxis.gridwidth': settings.gridLineWidth || 1,
         'xaxis.showline': settings.showAxisLines !== false,
         'yaxis.showline': settings.showAxisLines !== false,
         'xaxis.linecolor': axisColor,
         'yaxis.linecolor': axisColor,
+        'xaxis.linewidth': settings.axisLineWidth || 1,
+        'yaxis.linewidth': settings.axisLineWidth || 1,
         'xaxis.zeroline': settings.showZeroLines,
         'yaxis.zeroline': settings.showZeroLines,
         'xaxis.zerolinecolor': zeroLineColor,
         'yaxis.zerolinecolor': zeroLineColor,
+        'xaxis.zerolinewidth': settings.zeroLineWidth || 1,
+        'yaxis.zerolinewidth': settings.zeroLineWidth || 1,
         'xaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
         'yaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
         'xaxis.tickcolor': axisColor,
@@ -1529,16 +1723,27 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
         'yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
         'xaxis.tickfont.color': textColor,
-        'yaxis.tickfont.color': textColor
+        'yaxis.tickfont.color': textColor,
+        
     };
     
     // For 3D plots
     if (is3D) {
+        const backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
         Object.assign(update, {
             'scene.bgcolor': bgColor,
+            'scene.xaxis.showbackground': settings.showBackdrop,
+            'scene.yaxis.showbackground': settings.showBackdrop,
+            'scene.zaxis.showbackground': settings.showBackdrop,
+            'scene.xaxis.backgroundcolor': backdropColor,
+            'scene.yaxis.backgroundcolor': backdropColor,
+            'scene.zaxis.backgroundcolor': backdropColor,
             'scene.xaxis.gridcolor': gridColor,
             'scene.yaxis.gridcolor': gridColor,
             'scene.zaxis.gridcolor': gridColor,
+            'scene.xaxis.gridwidth': settings.gridLineWidth || 1,
+            'scene.yaxis.gridwidth': settings.gridLineWidth || 1,
+            'scene.zaxis.gridwidth': settings.gridLineWidth || 1,
             'scene.xaxis.showgrid': settings.showGrid,
             'scene.yaxis.showgrid': settings.showGrid,
             'scene.zaxis.showgrid': settings.showGrid,
@@ -1548,12 +1753,18 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.linecolor': axisColor,
             'scene.yaxis.linecolor': axisColor,
             'scene.zaxis.linecolor': axisColor,
+            'scene.xaxis.linewidth': settings.axisLineWidth || 1,
+            'scene.yaxis.linewidth': settings.axisLineWidth || 1,
+            'scene.zaxis.linewidth': settings.axisLineWidth || 1,
             'scene.xaxis.zeroline': settings.showZeroLines,
             'scene.yaxis.zeroline': settings.showZeroLines,
             'scene.zaxis.zeroline': settings.showZeroLines,
             'scene.xaxis.zerolinecolor': zeroLineColor,
             'scene.yaxis.zerolinecolor': zeroLineColor,
             'scene.zaxis.zerolinecolor': zeroLineColor,
+            'scene.xaxis.zerolinewidth': settings.zeroLineWidth || 1,
+            'scene.yaxis.zerolinewidth': settings.zeroLineWidth || 1,
+            'scene.zaxis.zerolinewidth': settings.zeroLineWidth || 1,
             'scene.xaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
             'scene.yaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
             'scene.zaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
@@ -1586,7 +1797,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.zaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
             'scene.xaxis.tickfont.color': textColor,
             'scene.yaxis.tickfont.color': textColor,
-            'scene.zaxis.tickfont.color': textColor
+            'scene.zaxis.tickfont.color': textColor,
+            
         });
         
         // 3D interaction settings

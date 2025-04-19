@@ -707,6 +707,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   settings.axisColor = settings.axisColor || defaults.AXIS_COLOR || '#000000';
   settings.textColor = settings.textColor || defaults.TEXT_COLOR || '#000000';
   settings.zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR || '#cccccc';
+  settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
   
   // Fonts and sizing
   settings.fontSize = settings.fontSize || defaults.FONT_SIZE || 12;
@@ -790,6 +791,25 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     color: settings.textColor
   };
   
+  
+  // Initialize settings with defaults if not set
+  settings.axisLineWidth = settings.axisLineWidth || defaults.AXIS_LINE_WIDTH || 1;
+  settings.gridLineWidth = settings.gridLineWidth || defaults.GRID_LINE_WIDTH || 1;
+  settings.zeroLineWidth = settings.zeroLineWidth || defaults.ZERO_LINE_WIDTH || 1;
+  settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
+  settings.showBackdrop = settings.showBackdrop !== undefined ? settings.showBackdrop : defaults.SHOW_BACKDROP;
+  
+  // Apply line width settings
+  layout.xaxis = layout.xaxis || {};
+  layout.yaxis = layout.yaxis || {};
+  layout.xaxis.linewidth = settings.axisLineWidth;
+  layout.yaxis.linewidth = settings.axisLineWidth;
+  layout.xaxis.gridwidth = settings.gridLineWidth;
+  layout.yaxis.gridwidth = settings.gridLineWidth;
+  layout.xaxis.zerolinewidth = settings.zeroLineWidth;
+  layout.yaxis.zerolinewidth = settings.zeroLineWidth;
+  
+  
   // Apply text color to all axis title fonts and tick fonts
   if (settings.z) { // 3D plot
     // Make sure all required objects exist
@@ -850,6 +870,20 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     layout.scene.yaxis.tickfont.color = settings.textColor;
     layout.scene.zaxis.tickfont.color = settings.textColor;
     
+    // Apply line width settings for 3D
+    layout.scene.xaxis.linewidth = settings.axisLineWidth;
+    layout.scene.yaxis.linewidth = settings.axisLineWidth;
+    layout.scene.zaxis.linewidth = settings.axisLineWidth;
+    
+    layout.scene.xaxis.gridwidth = settings.gridLineWidth;
+    layout.scene.yaxis.gridwidth = settings.gridLineWidth;
+    layout.scene.zaxis.gridwidth = settings.gridLineWidth;
+    
+    layout.scene.xaxis.zerolinewidth = settings.zeroLineWidth;
+    layout.scene.yaxis.zerolinewidth = settings.zeroLineWidth;
+    layout.scene.zaxis.zerolinewidth = settings.zeroLineWidth;
+    
+    
   } else { // 2D plot
     // Make sure all required objects exist
     layout.xaxis = layout.xaxis || {};
@@ -907,10 +941,22 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.paper_bgcolor = settings.bgColor;
       layout.plot_bgcolor = settings.bgColor;
       
-      // For 3D plots, also set the scene background
+      // For 3D plots, also set the scene background and backdrop colors
       if (settings.z) {
         layout.scene = layout.scene || {};
         layout.scene.bgcolor = settings.bgColor;
+        
+        // Set backdrop color for each axis
+        layout.scene.xaxis = layout.scene.xaxis || {};
+        layout.scene.yaxis = layout.scene.yaxis || {};
+        layout.scene.zaxis = layout.scene.zaxis || {};
+        
+        layout.scene.xaxis.showbackground = settings.showBackdrop;
+        layout.scene.yaxis.showbackground = settings.showBackdrop;
+        layout.scene.zaxis.showbackground = settings.showBackdrop;
+        layout.scene.xaxis.backgroundcolor = settings.backdropColor;
+        layout.scene.yaxis.backgroundcolor = settings.backdropColor;
+        layout.scene.zaxis.backgroundcolor = settings.backdropColor;
       }
     }
 

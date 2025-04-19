@@ -96,6 +96,15 @@ const Config = (function() {
             AXIS_COLOR: '#000000',
             TEXT_COLOR: '#000000',
             ZERO_LINE_COLOR: '#cccccc',
+            BACKDROP_COLOR: '#f0f0f0', // 3D backdrop color
+            
+            // 3D backdrop settings
+            SHOW_BACKDROP: false, // Hidden by default
+            
+            // Line width settings
+            AXIS_LINE_WIDTH: 1,
+            GRID_LINE_WIDTH: 1,
+            ZERO_LINE_WIDTH: 1,
             
             // Dark theme colors (for application via button)
             DARK_THEME: {
@@ -103,7 +112,8 @@ const Config = (function() {
                 GRID_COLOR: '#444444',
                 AXIS_COLOR: '#ffffff',
                 TEXT_COLOR: '#ffffff',
-                ZERO_LINE_COLOR: '#666666'
+                ZERO_LINE_COLOR: '#666666',
+                BACKDROP_COLOR: '#121212' // 3D backdrop color for dark theme
             },
             
             // Fonts
