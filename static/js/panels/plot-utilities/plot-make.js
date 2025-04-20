@@ -601,10 +601,12 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       
       // Single check for abortion after all promises complete or fail
       if (signal && signal.aborted) {
+        // Always clean up loading indicator before throwing
+        loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot creation aborted', 'AbortError');
       }
     } catch (error) {
-      // Clean up loading indicator
+      // Always clean up loading indicator for any error
       loadingIndicator.hide(plotContainer, 'full-plot');
       
       // For abort errors, make sure we only throw a standardized error
@@ -707,11 +709,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         </div>
         ${suggestedActions}`;
     }
-    
-    // Always rethrow the error to allow the caller to handle it
-    throw error;
   } finally {
-    // Hide the loading indicator when all is done
+    // Always hide the loading indicator in the finally block to ensure it happens
+    // regardless of success, error or abortion
     loadingIndicator.hide(plotContainer, 'full-plot');
   }
 }
