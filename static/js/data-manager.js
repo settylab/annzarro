@@ -40,22 +40,40 @@ const DataManager = (function() {
         }
     }
 
-    async function _fetchWithCache(url, params = {}) {
+    async function _fetchWithCache(url, params = {}, signal = null) {
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const cached = CacheManager.get(fullUrl);
-        if (cached !== undefined) return cached;
+        if (cached !== undefined && !signal?.aborted) return cached;
 
         try {
-            const response = await fetch(fullUrl);
+            // If we have a signal and it's already aborted, throw immediately
+            if (signal && signal.aborted) {
+                throw new DOMException("Fetch request was aborted", "AbortError");
+            }
+            
+            // Use the abort signal with the fetch request
+            const response = await fetch(fullUrl, { signal });
             
             // Use the safer JSON parsing approach
             const text = await response.text();
             const data = _safeJSONParse(text);
             
-            CacheManager.set(fullUrl, data);
+            // Cache the result (if not aborted during the fetch)
+            if (!signal?.aborted) {
+                CacheManager.set(fullUrl, data);
+            }
+            
             return data;
         } catch (error) {
-            console.error('Error fetching from', fullUrl, error);
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error fetching from', fullUrl, error);
+            } else {
+                // Suppress this log in production
+                if (Config.DEBUG_MODE) {
+                    console.log('Fetch aborted for', fullUrl);
+                }
+            }
             throw error;
         }
     }
@@ -117,9 +135,10 @@ const DataManager = (function() {
      * Set the current dataset and load basic information
      * @param {string} datasetPath - Path to the dataset
      * @param {boolean} [silent=false] - If true, don't trigger events or UI updates
+     * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Object>} - Dataset info
      */
-    async function setCurrentDataset(datasetPath, silent = false) {
+    async function setCurrentDataset(datasetPath, silent = false, signal = null) {
         try {
             _currentDataset = datasetPath;
             
@@ -127,12 +146,30 @@ const DataManager = (function() {
             const previousFocusedCell = _focusedCell;
             const previousFocusedGene = _focusedGene;
             
+            // Check for abort signal before each async operation
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
+            }
+            
             // Load dataset structure
-            const _datasetStructure = await getDatasetStructure(datasetPath);
+            const _datasetStructure = await getDatasetStructure(datasetPath, signal);
+            
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
+            }
             
             // Load cells and genes
-            _cells = await loadCells(datasetPath);
-            _genes = await loadGenes(datasetPath);
+            _cells = await loadCells(datasetPath, signal);
+            
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
+            }
+            
+            _genes = await loadGenes(datasetPath, signal);
+            
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
+            }
             
             // Check if previously focused cell exists in new dataset
             if (_cells && _cells.length > 0) {
@@ -157,6 +194,10 @@ const DataManager = (function() {
                 }
             } else {
                 _focusedCell = null;
+            }
+            
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
             }
             
             // Check if previously focused gene exists in new dataset
@@ -184,6 +225,10 @@ const DataManager = (function() {
                 _focusedGene = null;
             }
             
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset loading aborted", "AbortError");
+            }
+            
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {
                 const datasetEvent = new CustomEvent('datasetChanged', {
@@ -198,7 +243,12 @@ const DataManager = (function() {
             
             return _datasetStructure;
         } catch (error) {
-            console.error('Error setting dataset:', error);
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error setting dataset:', error);
+            } else if (Config.DEBUG_MODE) {
+                console.debug('Dataset loading aborted');
+            }
             throw error;
         }
     }
@@ -206,16 +256,22 @@ const DataManager = (function() {
     /**
      * Load complete dataset structure
      * @param {string} [datasetPath] - Optional path to the dataset. Defaults to the current dataset.
+     * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Object>} - Dataset structure
      */
-    async function getDatasetStructure(datasetPath) {
+    async function getDatasetStructure(datasetPath, signal = null) {
         const path = datasetPath || _currentDataset;
         if (!path) {
             throw new Error('No dataset path provided or set as current.');
         }
 
         try {
-            const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: path });
+            // Check for abort before making request
+            if (signal && signal.aborted) {
+                throw new DOMException("Dataset structure loading aborted", "AbortError");
+            }
+            
+            const data = await _fetchWithCache(Config.API.DATASET_STRUCTURE, { dataset_path: path }, signal);
 
             if (!data) {
                 throw new Error('Received empty dataset structure from API');
@@ -223,7 +279,12 @@ const DataManager = (function() {
 
             return data;
         } catch (error) {
-            console.error('Error loading dataset structure:', error);
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error loading dataset structure:', error);
+            } else if (Config.DEBUG_MODE) {
+                console.debug('Dataset structure loading aborted');
+            }
             throw error;
         }
     }
@@ -231,14 +292,31 @@ const DataManager = (function() {
     /**
      * Load cell names from the dataset
      * @param {string} datasetPath - Path to the dataset
+     * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Array<string>>} - List of cell names
      */
-    async function loadCells(datasetPath) {
+    async function loadCells(datasetPath, signal = null) {
         try {
-            const data = await _fetchWithCache(Config.API.CELLS, { dataset_path: datasetPath });
+            // Check for abort before making request
+            if (signal && signal.aborted) {
+                throw new DOMException("Cells loading aborted", "AbortError");
+            }
+            
+            const data = await _fetchWithCache(Config.API.CELLS, { dataset_path: datasetPath }, signal);
             return data.cells;
         } catch (error) {
-            console.error('Error loading cells:', error);
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error loading cells:', error);
+            } else if (Config.DEBUG_MODE) {
+                console.debug('Cells loading aborted');
+            }
+            
+            // If this is an abort error, rethrow it
+            if (error && error.name === 'AbortError') {
+                throw error;
+            }
+            
             return [];
         }
     }
@@ -246,14 +324,31 @@ const DataManager = (function() {
     /**
      * Load gene names from the dataset
      * @param {string} datasetPath - Path to the dataset
+     * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Array<string>>} - List of gene names
      */
-    async function loadGenes(datasetPath) {
+    async function loadGenes(datasetPath, signal = null) {
         try {
-            const data = await _fetchWithCache(Config.API.GENES, { dataset_path: datasetPath });
+            // Check for abort before making request
+            if (signal && signal.aborted) {
+                throw new DOMException("Genes loading aborted", "AbortError");
+            }
+            
+            const data = await _fetchWithCache(Config.API.GENES, { dataset_path: datasetPath }, signal);
             return data.genes;
         } catch (error) {
-            console.error('Error loading genes:', error);
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error loading genes:', error);
+            } else if (Config.DEBUG_MODE) {
+                console.debug('Genes loading aborted');
+            }
+            
+            // If this is an abort error, rethrow it
+            if (error && error.name === 'AbortError') {
+                throw error;
+            }
+            
             return [];
         }
     }

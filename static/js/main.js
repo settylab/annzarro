@@ -450,14 +450,26 @@ const App = (function() {
     // Track last dataset path to avoid duplicate loading
     let _lastLoadedDatasetPath = null;
     let _isLoadingDataset = false;
+    let _currentLoadingAbortController = null;
     
     async function _loadDataset(datasetPath, silent = false) {
         try {
-            // Skip loading if we're already loading this dataset or if it's the same as the last loaded
-            if (_isLoadingDataset || datasetPath === _lastLoadedDatasetPath) {
+            // Skip loading if it's the same as the last loaded (not just loading)
+            if (datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset) {
                 console.log(`Skipping duplicate dataset load: ${datasetPath}`);
                 return;
             }
+            
+            // If we're already loading something, abort it
+            if (_isLoadingDataset && _currentLoadingAbortController) {
+                console.log(`Aborting current dataset load to start new one: ${datasetPath}`);
+                _currentLoadingAbortController.abort();
+                _currentLoadingAbortController = null;
+            }
+            
+            // Create a new abort controller for this loading operation
+            _currentLoadingAbortController = new AbortController();
+            const signal = _currentLoadingAbortController.signal;
             
             // Set loading flag
             _isLoadingDataset = true;
@@ -469,17 +481,49 @@ const App = (function() {
             document.getElementById('gene-count').textContent = 'Loading...';
             document.getElementById('dataset-path').textContent = datasetPath;
             
+            // Check for abort before proceeding with each major step
+            if (signal.aborted) {
+                console.log(`Dataset load aborted before loading: ${datasetPath}`);
+                _isLoadingDataset = false;
+                return;
+            }
+            
             // Load dataset
-            const datasetStructure = await DataManager.setCurrentDataset(datasetPath, silent);
+            const datasetStructure = await DataManager.setCurrentDataset(datasetPath, silent, signal);
+            
+            if (signal.aborted) {
+                console.log(`Dataset load aborted after loading structure: ${datasetPath}`);
+                _isLoadingDataset = false;
+                return;
+            }
             
             // Update dataset info
             document.getElementById('cell-count').textContent = datasetStructure.n_obs || 0;
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
             
+            if (signal.aborted) {
+                console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
+                _isLoadingDataset = false;
+                return;
+            }
+            
             // Populate gene and cell selectors
             await _populateGeneSelector();
+            
+            if (signal.aborted) {
+                console.log(`Dataset load aborted after populating gene selector: ${datasetPath}`);
+                _isLoadingDataset = false;
+                return;
+            }
+            
             await _populateCellSelector();
+            
+            if (signal.aborted) {
+                console.log(`Dataset load aborted after populating cell selector: ${datasetPath}`);
+                _isLoadingDataset = false;
+                return;
+            }
             
             // Only notify panels if not in silent mode
             if (!silent) {
@@ -489,12 +533,22 @@ const App = (function() {
             
             // Update last loaded dataset path and reset loading flag
             _isLoadingDataset = false;
+            _currentLoadingAbortController = null;
         } catch (error) {
-            console.error('Error loading dataset:', error);
-            _showError('Failed to load dataset', error.message);
+            // Check if this is an abort error 
+            if (error && error.name === 'AbortError') {
+                // Only log in debug mode to avoid console spam
+                if (Config.DEBUG_MODE) {
+                    console.debug(`Dataset load was aborted: ${datasetPath}`);
+                }
+            } else {
+                console.error('Error loading dataset:', error);
+                _showError('Failed to load dataset', error.message);
+            }
             
             // Reset loading flag on error
             _isLoadingDataset = false;
+            _currentLoadingAbortController = null;
         }
     }
     
