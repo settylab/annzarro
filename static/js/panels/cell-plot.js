@@ -316,11 +316,53 @@ const CellPlotPanel = (function() {
         }
 
         
+        // Track the current loading operation for cancellation
+        let _currentLoadOperation = null;
+        
         /**
          * Reload the data and redraw the plot
+         * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
+         * @returns {Promise<void>} - Promise that resolves when the plot is refreshed
          */
-        async function refreshPlot() {
-            loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id, _isFirstLoad)
+        async function refreshPlot(signal) {
+            // If there's an existing loading operation, abort it
+            if (_currentLoadOperation) {
+                _currentLoadOperation.abort();
+                _currentLoadOperation = null;
+            }
+            
+            // Create a new abort controller if not provided through signal
+            if (!signal) {
+                _currentLoadOperation = new AbortController();
+                signal = _currentLoadOperation.signal;
+            }
+            
+            try {
+                // Pass the abort signal to the data loading function
+                await loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id, _isFirstLoad, signal);
+                
+                // Clear the abort controller reference on successful completion
+                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
+                    _currentLoadOperation = null;
+                }
+            } catch (error) {
+                // Only log non-abort errors
+                if (!error || error.name !== 'AbortError') {
+                    console.error(`Error refreshing cell plot ${_id}:`, error);
+                } else if (window.Config && window.Config.DEBUG_MODE) {
+                    console.debug(`Plot refresh aborted for ${_id}`);
+                }
+                
+                // Clear the abort controller reference
+                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
+                    _currentLoadOperation = null;
+                }
+                
+                // Rethrow non-abort errors
+                if (!error || error.name !== 'AbortError') {
+                    throw error;
+                }
+            }
         }
         
         
@@ -458,13 +500,37 @@ const CellPlotPanel = (function() {
          * Handle data updates, especially dataset changes
          * @param {string} updateType - Type of update
          * @param {Object} data - Update data
+         * @returns {Promise<void>} - Promise that resolves when the update is complete
          */
-        function onDataUpdate(updateType, data) {
+        async function onDataUpdate(updateType, updateData) {
+            // Check if an abort signal was provided in the update data
+            const signal = updateData && updateData._abortSignal;
+            
+            // Process the update based on type
             if (updateType === 'datasetChanged') {
-                console.log(`CellPlot ${_id}: Dataset changed, reinitializing plot`);
-                // For dataset changes, fully reinitialize the plot
-                refreshPlot();
+                if (window.Config && window.Config.DEBUG_MODE) {
+                    console.log(`CellPlot ${_id}: Dataset changed, reinitializing plot`);
+                }
+                
+                // For dataset changes, fully reinitialize the plot with abort signal
+                try {
+                    await refreshPlot(signal);
+                    
+                    // If we get here, the operation completed successfully
+                    return;
+                } catch (error) {
+                    // If this is an abort error, propagate it
+                    if (error && error.name === 'AbortError') {
+                        throw error;
+                    }
+                    
+                    // Otherwise log and continue
+                    console.error(`Error updating cell plot ${_id}:`, error);
+                }
             }
+            
+            // Return a resolved promise to indicate completion
+            return Promise.resolve();
         }
 
         /**

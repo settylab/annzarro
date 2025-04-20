@@ -8,10 +8,16 @@ import { setupSearchBuilderCriteriaListener } from './listeners.js';
  * Load data for a table
  * @param {Object} settings - The table settings
  * @param {string} entityType - Type of entities ('cells' or 'genes')
+ * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
  * @returns {Promise<Object>} - The table data with column definitions
  */
-export async function loadTableData(settings, entityType) {
+export async function loadTableData(settings, entityType, signal = null) {
     try {
+        // Check if already aborted
+        if (signal && signal.aborted) {
+            throw new DOMException('Table data loading aborted', 'AbortError');
+        }
+        
         // Load entity index based on entity type
         const entityIndex = entityType === 'cells' 
             ? DataManager.getCells() 
@@ -19,6 +25,11 @@ export async function loadTableData(settings, entityType) {
         
         if (!entityIndex || entityIndex.length === 0) {
             throw new Error(`No ${entityType} found in dataset`);
+        }
+        
+        // Check if aborted after fetching entity index
+        if (signal && signal.aborted) {
+            throw new DOMException('Table data loading aborted after entity index fetch', 'AbortError');
         }
         
         // First initialize the data array with the entity index
@@ -42,8 +53,18 @@ export async function loadTableData(settings, entityType) {
         if (settings.columns && settings.columns.length > 0) {
             // For each column, load the data and create column definitions
             for (const column of settings.columns) {
+                // Check for abort before loading each column
+                if (signal && signal.aborted) {
+                    throw new DOMException(`Table data loading aborted before loading column ${getColumnKey(column)}`, 'AbortError');
+                }
+                
                 // Load data based on column type
-                const columnData = await loadColumnData(column, entityType);
+                const columnData = await loadColumnData(column, entityType, signal);
+                
+                // Check if aborted after loading column data
+                if (signal && signal.aborted) {
+                    throw new DOMException(`Table data loading aborted after loading column ${getColumnKey(column)}`, 'AbortError');
+                }
                 
                 // Add column data to the data object
                 const columnKey = getColumnKey(column);
@@ -78,6 +99,11 @@ export async function loadTableData(settings, entityType) {
             }
         }
         
+        // Final abort check before returning
+        if (signal && signal.aborted) {
+            throw new DOMException('Table data loading aborted before completion', 'AbortError');
+        }
+        
         return {
             data: data,
             columns: columnDefinitions,
@@ -85,7 +111,14 @@ export async function loadTableData(settings, entityType) {
         };
         
     } catch (error) {
-        console.error('Error loading table data:', error);
+        // Only log non-abort errors
+        if (!error || error.name !== 'AbortError') {
+            console.error('Error loading table data:', error);
+        } else {
+            if (window.Config && window.Config.DEBUG_MODE) {
+                console.debug('Table data loading was aborted:', error.message);
+            }
+        }
         throw error;
     }
 }
@@ -94,9 +127,10 @@ export async function loadTableData(settings, entityType) {
  * Load data for a specific column
  * @param {Object} column - The column configuration
  * @param {string} entityType - Type of entities ('cells' or 'genes')
+ * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
  * @returns {Promise<Array>} - The column data
  */
-async function loadColumnData(column, entityType) {
+async function loadColumnData(column, entityType, signal = null) {
     const { type, key, column: columnName } = column;
     
     try {

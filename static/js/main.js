@@ -528,7 +528,8 @@ const App = (function() {
             // Only notify panels if not in silent mode
             if (!silent) {
                 // Notify panels of dataset change - this can cause UI resets
-                PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
+                // Use await to ensure panels are updated (or update is aborted) before completing
+                await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
             }
             
             // Update last loaded dataset path and reset loading flag

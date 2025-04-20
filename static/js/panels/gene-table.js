@@ -135,11 +135,28 @@ const GeneTablePanel = (function() {
             });
         }
         
+        // Track the current loading operation for cancellation
+        let _currentLoadOperation = null;
+        
         /**
          * Refresh the table with current settings
+         * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
+         * @returns {Promise<void>} - Promise that resolves when the table is refreshed
          */
-        async function refreshTable() {
+        async function refreshTable(signal) {
             try {
+                // If there's an existing loading operation, abort it
+                if (_currentLoadOperation) {
+                    _currentLoadOperation.abort();
+                    _currentLoadOperation = null;
+                }
+                
+                // Create a new abort controller if not provided through signal
+                if (!signal) {
+                    _currentLoadOperation = new AbortController();
+                    signal = _currentLoadOperation.signal;
+                }
+                
                 // Show loading indicator
                 _tableContainer.innerHTML = `
                     <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
@@ -149,8 +166,18 @@ const GeneTablePanel = (function() {
                     </div>
                 `;
                 
-                // Load table data
-                const tableData = await loadTableData(_settings, _plotType);
+                // Check if operation is aborted before loading data
+                if (signal.aborted) {
+                    throw new DOMException('Table refresh aborted before loading data', 'AbortError');
+                }
+                
+                // Load table data with abort signal
+                const tableData = await loadTableData(_settings, _plotType, signal);
+                
+                // Check if operation is aborted after loading data
+                if (signal.aborted) {
+                    throw new DOMException('Table refresh aborted after loading data', 'AbortError');
+                }
                 
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
@@ -175,13 +202,37 @@ const GeneTablePanel = (function() {
                     `;
                 }
                 
+                // Clear the abort controller reference on successful completion
+                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
+                    _currentLoadOperation = null;
+                }
+                
             } catch (error) {
-                console.error('Error refreshing gene table:', error);
-                _tableContainer.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading table data: ${error.message}
-                    </div>
-                `;
+                // Clear the abort controller reference
+                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
+                    _currentLoadOperation = null;
+                }
+                
+                // Handle errors differently based on type
+                if (error && error.name === 'AbortError') {
+                    // If operation was aborted, log only in debug mode
+                    if (window.Config && window.Config.DEBUG_MODE) {
+                        console.debug(`Gene table refresh aborted for ${_id}`);
+                    }
+                } else {
+                    // For actual errors, show error message
+                    console.error('Error refreshing gene table:', error);
+                    _tableContainer.innerHTML = `
+                        <div class="alert alert-danger">
+                            Error loading table data: ${error.message}
+                        </div>
+                    `;
+                }
+                
+                // Rethrow abort errors to signal upstream that operation was cancelled
+                if (error && error.name === 'AbortError') {
+                    throw error;
+                }
             }
         }
         
@@ -221,16 +272,39 @@ const GeneTablePanel = (function() {
          * Handle data updates from other components
          * @param {string} updateType - Type of update
          * @param {Object} data - Update data
+         * @returns {Promise<void>} - Promise that resolves when the update is complete
          */
-        function onDataUpdate(updateType, data) {
+        async function onDataUpdate(updateType, updateData) {
+            // Check if an abort signal was provided in the update data
+            const signal = updateData && updateData._abortSignal;
+            
             if (updateType === 'datasetChanged') {
-                console.log(`GeneTable ${_id}: Dataset changed, reinitializing table`);
+                if (window.Config && window.Config.DEBUG_MODE) {
+                    console.log(`GeneTable ${_id}: Dataset changed, reinitializing table`);
+                }
                 
-                // For dataset changes, reinitialize the table
+                // For dataset changes, reinitialize the table only if columns are defined
                 if (_settings.columns && _settings.columns.length > 0) {
-                    refreshTable();
+                    try {
+                        // Pass the abort signal to refreshTable
+                        await refreshTable(signal);
+                        
+                        // If we get here, the operation completed successfully
+                        return;
+                    } catch (error) {
+                        // If this is an abort error, propagate it
+                        if (error && error.name === 'AbortError') {
+                            throw error;
+                        }
+                        
+                        // Otherwise log and continue
+                        console.error(`Error updating gene table ${_id}:`, error);
+                    }
                 }
             }
+            
+            // Return a resolved promise to indicate completion
+            return Promise.resolve();
         }
         
         /**

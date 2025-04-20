@@ -416,11 +416,17 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
  * @param {Object} data - A mutable data cache object (e.g., { x, y, z, color, cells, ... }).
  * @param {string|number} id - A unique identifier used to build element selectors.
  * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
+ * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation.
  *
  * @returns {Promise<void>}
  */
-export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
+export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false, signal = null) {
   try {
+    // Check if operation is already aborted before doing anything
+    if (signal && signal.aborted) {
+      throw new DOMException('Plot creation aborted', 'AbortError');
+    }
+    
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
     
@@ -438,6 +444,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         plotContainer.innerHTML = '<div class="alert alert-warning">No cells available</div>';
         return;
       }
+    }
+    
+    // Check again for abort signal before showing loading indicator
+    if (signal && signal.aborted) {
+      throw new DOMException('Plot creation aborted', 'AbortError');
     }
 
     // Show loading indicator
@@ -523,12 +534,24 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Determine the plot type for loading the appropriate data
     const plotType = isGenePlot ? 'genes' : 'cells';
     
+    // Check for abort before starting data loading
+    if (signal && signal.aborted) {
+      throw new DOMException('Plot creation aborted before data loading', 'AbortError');
+    }
+    
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
+        // Check for abort signal at each async step
+        if (signal && signal.aborted) {
+          throw new DOMException('X axis data loading aborted', 'AbortError');
+        }
         data.x = await loadAxisData(settings.x, plotType, plotContainer);
       })(),
       (async () => {
+        if (signal && signal.aborted) {
+          throw new DOMException('Y axis data loading aborted', 'AbortError');
+        }
         data.y = await loadAxisData(settings.y, plotType, plotContainer);
       })()
     ];
@@ -536,6 +559,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (settings.z) {
       loadPromises.push(
         (async () => {
+          if (signal && signal.aborted) {
+            throw new DOMException('Z axis data loading aborted', 'AbortError');
+          }
           data.z = await loadAxisData(settings.z, plotType, plotContainer);
         })()
       );
@@ -544,6 +570,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Load color data concurrently.
     loadPromises.push(
       (async () => {
+          if (signal && signal.aborted) {
+            throw new DOMException('Color data loading aborted', 'AbortError');
+          }
           const colorData = await loadAxisData(settings.color, plotType, plotContainer);
           data.color = colorData.values;
           data.colorType = colorData.type;
@@ -553,8 +582,39 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       })()
     );
 
-    // Wait until all data is loaded.
-    await Promise.all(loadPromises);
+    try {
+      // Wait until all data is loaded or one of them is aborted
+      await Promise.all(loadPromises).catch(error => {
+        // If this is an abort error, capture it but don't throw yet
+        // This prevents multiple abort errors from cascading
+        if (error.name === 'AbortError') {
+          console.debug('Data loading aborted in one of the load promises');
+          // Mark signal as aborted if it wasn't already
+          if (signal && !signal.aborted && signal.abort) {
+            signal.abort();
+          }
+        } else {
+          // For non-abort errors, rethrow immediately
+          throw error;
+        }
+      });
+      
+      // Single check for abortion after all promises complete or fail
+      if (signal && signal.aborted) {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      }
+    } catch (error) {
+      // Clean up loading indicator
+      loadingIndicator.hide(plotContainer, 'full-plot');
+      
+      // For abort errors, make sure we only throw a standardized error
+      if (error.name === 'AbortError') {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      } else {
+        // For other errors, rethrow as-is
+        throw error;
+      }
+    }
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
@@ -571,74 +631,85 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       </div>`;
     }
   } catch (error) {
-    console.error('Error loading plot data:', error);
+    // Skip error display for abort errors - they're expected during cancellation
+    if (error && error.name === 'AbortError') {
+      if (window.Config && window.Config.DEBUG_MODE) {
+        console.debug('Plot loading was aborted:', error.message);
+      }
+    } else {
+      console.error('Error loading plot data:', error);
 
-    // clear data
-    plotContainer.data = [];
-    
-    // Create a more detailed error message
-    let errorDetails = '';
-    let suggestedActions = '';
-    
-    // Check if the error is related to a specific axis
-    if (error.message && error.message.includes('Failed to load data for')) {
-      // Extract the axis information
-      const axisInfo = error.message.match(/\((.*?)\)/);
-      if (axisInfo && axisInfo[1]) {
-        const [type, key, column] = axisInfo[1].split('.');
-        
-        // Create a more user-friendly error message
-        if (type && key) {
-          errorDetails = `<br><br><strong>Failed data:</strong> ${type} "${key}"`;
-          if (column) {
-            errorDetails += `, column "${column}"`;
-          }
+      // clear data
+      plotContainer.data = [];
+      
+      // Create a more detailed error message
+      let errorDetails = '';
+      let suggestedActions = '';
+      
+      // Check if the error is related to a specific axis
+      if (error.message && error.message.includes('Failed to load data for')) {
+        // Extract the axis information
+        const axisInfo = error.message.match(/\((.*?)\)/);
+        if (axisInfo && axisInfo[1]) {
+          const [type, key, column] = axisInfo[1].split('.');
           
-          // Add potential solutions based on the error type
-          errorDetails += '<br><br><strong>Possible solutions:</strong><ul>';
-          
-          if (type === 'layer') {
-            errorDetails += '<li>Check if the selected layer exists in the dataset</li>';
-            errorDetails += '<li>Verify that the specified cell/gene is valid</li>';
-          } else if (type === 'obsm' || type === 'varm') {
-            errorDetails += '<li>Check if the embedding or reduction exists</li>';
-            errorDetails += '<li>Verify that the column index or name is valid</li>';
-          } else if (type === 'obsp' || type === 'varp') {
-            errorDetails += '<li>Check if the connectivity matrix exists</li>';
-            errorDetails += '<li>Ensure a cell/gene is focused before using this data type</li>';
-            
-            // For focused cell/gene not found errors, add specific advice
-            if (error.message.includes('Focused cell not found') || 
-                error.message.includes('Focused gene not found')) {
-              suggestedActions = `
-                <div class="alert alert-info mt-3">
-                  <strong>This is a common issue when opening a saved panel with a new dataset.</strong>
-                  <p>The previously focused cell/gene doesn't exist in the current dataset.</p>
-                  <p><strong>Suggested actions:</strong></p>
-                  <ol>
-                    <li>Select a new cell/gene in this dataset</li>
-                    <li>Consider duplicating this panel before changing if you want to preserve the current configuration</li>
-                    <li>Change the axis type to something that doesn't require a focused cell/gene</li>
-                  </ol>
-                </div>
-              `;
+          // Create a more user-friendly error message
+          if (type && key) {
+            errorDetails = `<br><br><strong>Failed data:</strong> ${type} "${key}"`;
+            if (column) {
+              errorDetails += `, column "${column}"`;
             }
-          } else if (type === 'obs' || type === 'var') {
-            errorDetails += '<li>Check if the column name exists in the obs/var table</li>';
+            
+            // Add potential solutions based on the error type
+            errorDetails += '<br><br><strong>Possible solutions:</strong><ul>';
+            
+            if (type === 'layer') {
+              errorDetails += '<li>Check if the selected layer exists in the dataset</li>';
+              errorDetails += '<li>Verify that the specified cell/gene is valid</li>';
+            } else if (type === 'obsm' || type === 'varm') {
+              errorDetails += '<li>Check if the embedding or reduction exists</li>';
+              errorDetails += '<li>Verify that the column index or name is valid</li>';
+            } else if (type === 'obsp' || type === 'varp') {
+              errorDetails += '<li>Check if the connectivity matrix exists</li>';
+              errorDetails += '<li>Ensure a cell/gene is focused before using this data type</li>';
+              
+              // For focused cell/gene not found errors, add specific advice
+              if (error.message.includes('Focused cell not found') || 
+                  error.message.includes('Focused gene not found')) {
+                suggestedActions = `
+                  <div class="alert alert-info mt-3">
+                    <strong>This is a common issue when opening a saved panel with a new dataset.</strong>
+                    <p>The previously focused cell/gene doesn't exist in the current dataset.</p>
+                    <p><strong>Suggested actions:</strong></p>
+                    <ol>
+                      <li>Select a new cell/gene in this dataset</li>
+                      <li>Consider duplicating this panel before changing if you want to preserve the current configuration</li>
+                      <li>Change the axis type to something that doesn't require a focused cell/gene</li>
+                    </ol>
+                  </div>
+                `;
+              }
+            } else if (type === 'obs' || type === 'var') {
+              errorDetails += '<li>Check if the column name exists in the obs/var table</li>';
+            }
+            
+            errorDetails += '</ul>';
           }
-          
-          errorDetails += '</ul>';
         }
       }
+      
+      // Only update the UI for actual errors, not abort errors
+      plotContainer.innerHTML = `
+        <div class="alert alert-danger">
+          <h5>Error loading data</h5>
+          <p>${error.message}</p>
+          ${errorDetails}
+        </div>
+        ${suggestedActions}`;
     }
     
-    plotContainer.innerHTML = `
-      <div class="alert alert-danger">
-        <h5>Error loading data</h5>
-        <p>${error.message}</p>
-        ${errorDetails}
-      </div>
-      ${suggestedActions}`;
+    // Always rethrow the error to allow the caller to handle it
+    throw error;
   } finally {
     // Hide the loading indicator when all is done
     loadingIndicator.hide(plotContainer, 'full-plot');

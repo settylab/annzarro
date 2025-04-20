@@ -452,17 +452,78 @@ const PanelManager = (function() {
         return Array.from(_panelsByType.get(type) || []);
     }
     
+    // Track active data update signal for cancellation
+    let _currentUpdateAbortController = null;
+    
     /**
      * Notify panels of a data update
      * @param {string} updateType - Type of update
      * @param {Object} data - Update data
+     * @returns {Promise<void>} - Promise that resolves when all panels are updated
      */
-    function notifyPanels(updateType, data) {
+    async function notifyPanels(updateType, data) {
+        // If there's an ongoing update, abort it
+        if (_currentUpdateAbortController) {
+            console.debug(`Aborting current panel updates for ${updateType}`);
+            _currentUpdateAbortController.abort();
+            _currentUpdateAbortController = null;
+        }
+        
+        // Create a new abort controller for this update batch
+        _currentUpdateAbortController = new AbortController();
+        const signal = _currentUpdateAbortController.signal;
+        
+        // Add the signal to the data object so panels can check for abort
+        const updateData = {
+            ...data,
+            _abortSignal: signal
+        };
+        
+        // Create an array of promises for all panel updates
+        const updatePromises = [];
+        
+        // Notify each panel and collect promises for async updates
         _activePanels.forEach(panel => {
             if (typeof panel.onDataUpdate === 'function') {
-                panel.onDataUpdate(updateType, data);
+                try {
+                    const result = panel.onDataUpdate(updateType, updateData);
+                    
+                    // If the panel returns a promise, add it to our collection
+                    if (result instanceof Promise) {
+                        updatePromises.push(result.catch(err => {
+                            // Only log non-abort errors
+                            if (!err || err.name !== 'AbortError') {
+                                console.error(`Error updating panel ${panel.getId()}:`, err);
+                            }
+                        }));
+                    }
+                } catch (error) {
+                    console.error(`Error in panel ${panel.getId()} update:`, error);
+                }
             }
         });
+        
+        // Wait for all panel updates to complete or be aborted
+        try {
+            await Promise.all(updatePromises);
+            
+            // Clear the controller reference after successful completion
+            if (_currentUpdateAbortController && _currentUpdateAbortController.signal === signal) {
+                _currentUpdateAbortController = null;
+            }
+        } catch (error) {
+            // Only log non-abort errors
+            if (!error || error.name !== 'AbortError') {
+                console.error('Error during panel updates:', error);
+            } else if (Config.DEBUG_MODE) {
+                console.debug('Panel updates were aborted');
+            }
+            
+            // Clear the controller reference if it's still the current one
+            if (_currentUpdateAbortController && _currentUpdateAbortController.signal === signal) {
+                _currentUpdateAbortController = null;
+            }
+        }
     }
     
     /**
