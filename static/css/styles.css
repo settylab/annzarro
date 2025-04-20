@@ -1316,17 +1316,34 @@ div.dtsb-group {
     border-radius: 0.25rem;
     height: 38px;
     line-height: 38px;
-    min-width: 180px;
 }
 
 /* Ensure consistent width for gene and cell selectors */
-#focused-gene, #focused-cell {
-    width: 100% !important;
+#focused-gene {
+    width: 160px !important;
+}
+
+#focused-cell {
+    width: 220px !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Dataset selector should have a moderate width */
+#dataset-selector {
+    min-width: 180px !important;
+    max-width: 200px !important;
 }
 
 /* Fix Select2 container width to match parent */
 .select2-container {
-    width: 100% !important;
+    width: auto !important;
+}
+
+/* Fix dropdown container height to be more consistent */
+.select2-container--open .select2-dropdown.select2-dropdown--below,
+.select2-container--open .select2-dropdown.select2-dropdown--above {
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 /* Fix Select2 selection text rendering */
@@ -1336,6 +1353,7 @@ div.dtsb-group {
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
+    max-width: 100%;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__arrow {
@@ -1381,8 +1399,19 @@ div.dtsb-group {
 }
 
 /* Custom Select2 dropdowns */
-.gene-select-dropdown, .cell-select-dropdown {
-    min-width: 400px !important;
+.gene-select-dropdown {
+    min-width: 300px !important;
+    width: 300px !important;
+    max-height: 600px !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
+    border: 1px solid #adb5bd !important;
+    overflow: hidden !important; /* Remove outer scrollbar */
+}
+
+.cell-select-dropdown {
+    min-width: 320px !important;
+    width: 320px !important;
+    max-height: 600px !important;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
     border: 1px solid #adb5bd !important;
     overflow: hidden !important; /* Remove outer scrollbar */
@@ -1390,11 +1419,16 @@ div.dtsb-group {
 
 .gene-select-dropdown .select2-results__options, 
 .cell-select-dropdown .select2-results__options {
-    max-height: 600px !important; /* Make dropdown even longer */
+    max-height: 580px !important; /* Make dropdown even longer */
 }
 
 .select2-results__option {
     padding: 8px 12px !important;
+    height: 36px !important; /* Fixed height to prevent jumping */
+    line-height: 20px !important; /* Consistent line height */
+    white-space: nowrap; /* Prevent wrapping */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Show ellipsis for long text */
 }
 
 .select2-results__option--highlighted {
@@ -1402,19 +1436,12 @@ div.dtsb-group {
     color: white !important;
 }
 
-/* Style for selected item in dropdown */
+/* Style for selected item in dropdown - without checkmark */
 .select2-results__option[aria-selected=true] {
     background-color: #e0f7fa !important;
     color: #222 !important;
     font-weight: bold !important;
-    position: relative !important;
 }
-
-.select2-results__option[aria-selected=true]::before {
-    content: "✓ ";
-    color: #007bff;
-}
-
 /* Highlighted selected item (hover over already selected) */
 .select2-container--default .select2-results__option--highlighted[aria-selected=true] {
     background-color: #0069d9 !important;
@@ -1423,6 +1450,7 @@ div.dtsb-group {
 
 .select2-container--open .select2-dropdown {
     animation: select2FadeIn 0.2s ease-in-out;
+    min-width: 200px !important;
 }
 
 /* Fix the container to be higher priority and avoid scroll issues */

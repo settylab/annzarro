@@ -295,6 +295,10 @@ const App = (function() {
                 focusedGeneSelect.value = e.detail.gene;
                 if (window.$ && $.fn.select2) {
                     $(focusedGeneSelect).trigger('change.select2');
+                    // Force width update when gene changes programmatically
+                    const $container = $(focusedGeneSelect).next('.select2-container');
+                    const containerWidth = 160; // Fixed width in pixels
+                    $container.width(containerWidth);
                 }
             }
         });
@@ -339,6 +343,10 @@ const App = (function() {
                 focusedCellSelect.value = e.detail.cell;
                 if (window.$ && $.fn.select2) {
                     $(focusedCellSelect).trigger('change.select2');
+                    // Force width update when cell changes programmatically
+                    const $container = $(focusedCellSelect).next('.select2-container');
+                    const containerWidth = 180; // Fixed width in pixels
+                    $container.width(containerWidth);
                 }
             }
         });
@@ -644,6 +652,23 @@ const App = (function() {
                         }
                     });
                     
+                    // Set a fixed width for gene selector on initialization and maintain it
+                    $(focusedGeneSelect).on('select2:opening select2:closing change', function(e) {
+                        const $container = $(this).next('.select2-container');
+                        // Use fixed width instead of percentage of parent
+                        const containerWidth = 180; // Fixed width in pixels
+                        if (containerWidth > 0) {
+                            $container.width(containerWidth);
+                            // Also fix the selection text to avoid overflowing
+                            $container.find('.select2-selection__rendered').css({
+                                'width': (containerWidth - 30) + 'px',
+                                'text-overflow': 'ellipsis',
+                                'white-space': 'nowrap',
+                                'overflow': 'hidden'
+                            });
+                        }
+                    });
+                    
                     // Prevent losing selection when dropdown is closed without selecting
                     $(focusedGeneSelect).on('select2:closing', function(e) {
                         // Store the current value to ensure it's preserved
@@ -657,11 +682,11 @@ const App = (function() {
                         }, 10);
                     });
                     
-                    // Increase dropdown width on open
+                    // Set dropdown width on open (narrower than default)
                     $(focusedGeneSelect).on('select2:open', function() {
                         setTimeout(function() {
                             $('.gene-select-dropdown').css({
-                                'width': '400px'
+                                'width': '300px' // Narrower dropdown
                             });
                             $('.gene-select-dropdown .select2-results__options').css({
                                 'max-height': '600px'
@@ -683,6 +708,12 @@ const App = (function() {
                     // Update select2 if it's active
                     if (window.$ && $.fn.select2) {
                         $(focusedGeneSelect).trigger('change');
+                        // Force width update after selection change
+                        const $container = $(focusedGeneSelect).next('.select2-container');
+                        const containerWidth = $(focusedGeneSelect).parent().width() * 0.9;
+                        if (containerWidth > 0) {
+                            $container.width(containerWidth);
+                        }
                     }
                 }
             }
@@ -782,6 +813,21 @@ const App = (function() {
                         }
                     });
                     
+                    // Prevent resizing by forcing a fixed width regardless of content
+                    $(focusedCellSelect).on('select2:opening select2:closing change', function(e) {
+                        const $container = $(this).next('.select2-container');
+                        // Force fixed width in pixels
+                        const containerWidth = 220;
+                        $container.width(containerWidth);
+                        // Also fix the selection text to avoid overflowing
+                        $container.find('.select2-selection__rendered').css({
+                            'width': (containerWidth - 30) + 'px',
+                            'text-overflow': 'ellipsis',
+                            'white-space': 'nowrap',
+                            'overflow': 'hidden'
+                        });
+                    });
+                    
                     // Prevent losing selection when dropdown is closed without selecting
                     $(focusedCellSelect).on('select2:closing', function(e) {
                         // Store the current value to ensure it's preserved
@@ -795,11 +841,11 @@ const App = (function() {
                         }, 10);
                     });
                     
-                    // Increase dropdown width on open
+                    // Set dropdown width on open (narrower than default)
                     $(focusedCellSelect).on('select2:open', function() {
                         setTimeout(function() {
                             $('.cell-select-dropdown').css({
-                                'width': '400px'
+                                'width': '320px' // Wider dropdown for cell selector
                             });
                             $('.cell-select-dropdown .select2-results__options').css({
                                 'max-height': '600px'
@@ -821,6 +867,9 @@ const App = (function() {
                     // Update select2 if it's active
                     if (window.$ && $.fn.select2) {
                         $(focusedCellSelect).trigger('change');
+                        // Force width update after selection change
+                        const $container = $(focusedCellSelect).next('.select2-container');
+                        $container.width(220); // Fixed width
                     }
                 }
             }
