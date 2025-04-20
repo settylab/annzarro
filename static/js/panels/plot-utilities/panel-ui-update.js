@@ -232,7 +232,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
           focused = DataManager.getFocusedCell();
           settings.column = focused;
         }
-        columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
+        columnOptions = focused ? [`<option value="${focused}">Focused cell to ${focused}</option>`]
                                 : ['<option value="">Select a focused cell first</option>'];
         break;
       }
@@ -244,7 +244,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
           focused = DataManager.getFocusedGene();
           settings.column = focused;
         }
-        columnOptions = focused ? [`<option value="${focused}">Connections to ${focused}</option>`]
+        columnOptions = focused ? [`<option value="${focused}">Focused gene to ${focused}</option>`]
                                 : ['<option value="">Select a focused gene first</option>'];
         break;
       }
@@ -257,7 +257,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
             focused = DataManager.getFocusedGene();
             settings.column = focused;
           }
-          columnOptions = focused ? [`<option value="${focused}">Expression of ${focused}</option>`]
+          columnOptions = focused ? [`<option value="${focused}">Focused gene ${focused}</option>`]
                                   : ['<option value="">Select a focused gene first</option>'];
         } else if (plotType === 'genes') {
           if (settings.column && settings.type === 'layer' && settings.locked) {
@@ -266,7 +266,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
             focused = DataManager.getFocusedCell();
             settings.column = focused;
           }
-          columnOptions = focused ? [`<option value="${focused}">Expression in ${focused}</option>`]
+          columnOptions = focused ? [`<option value="${focused}">Focused cell ${focused}</option>`]
                                   : ['<option value="">Select a focused cell first</option>'];
         }
         break;

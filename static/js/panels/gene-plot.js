@@ -263,9 +263,9 @@ const GenePlotPanel = (function() {
             }
             // Update the label of the first option in the select element
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'cells') {
-                columnSelect.options[0].text = `Expression of ${focusedEntity}`;
+                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
             } else if (_settings[axis] && _settings[axis].type === 'varp' && endityType === 'genes') {
-                columnSelect.options[0].text = `Connection to ${focusedEntity}`;
+                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
             }
         }
 
