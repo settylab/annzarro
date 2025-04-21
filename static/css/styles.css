@@ -345,10 +345,11 @@ body {
 
 /* Selected Columns (Right Side) */
 .column-actions {
-    width: 40%;
+    width: 40%; /* Balanced width - more than 50% but not too dominant */
     display: flex;
     flex-direction: column;
     min-height: 0; /* Allow shrinking */
+    padding-left: 0.5rem; /* Add a bit of padding for separation */
 }
 
 /* Table length control in panel */
@@ -407,6 +408,26 @@ body {
 .selected-columns-list .btn-xs {
     padding: 0 0.25rem;
     font-size: 0.7rem;
+}
+
+/* Table action buttons */
+.action-buttons {
+    display: flex;
+    gap: 0.25rem; /* Reduced gap */
+    margin-top: 0.5rem;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.action-buttons .btn-group {
+    flex-wrap: nowrap;
+}
+
+.action-buttons button {
+    white-space: nowrap;
+    padding-left: 0.4rem; /* More compact padding */
+    padding-right: 0.4rem;
+    font-size: 0.8rem; /* Slightly smaller font */
 }
 
 

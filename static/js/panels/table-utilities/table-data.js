@@ -439,12 +439,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         'max-height': '24px'
     });
     
-    // Ensure wrapper stays within container bounds
-    $(tableContainer).find('.dataTables_wrapper').css({
-        'max-width': '100%', 
-        'width': '100%'
-    });
-    
     // Return the DataTables instance
     return dataTable;
 }

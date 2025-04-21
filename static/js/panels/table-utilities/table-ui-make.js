@@ -57,13 +57,12 @@ export function createTablePanelStructure(container, id, settings = {}) {
                                 <!-- Selected columns will be added here -->
                             </ul>
                             <div class="action-buttons">
-                                <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-sm btn-secondary" id="refresh-table-${id}">Refresh</button>
-                                    <button class="btn btn-sm btn-outline-primary" id="export-csv-${id}">
-                                        <i class="fas fa-file-csv"></i> Export CSV
-                                    </button>
-                                </div>
-                                <button class="btn btn-sm btn-primary" id="apply-columns-${id}">Apply Columns</button>
+                                <button class="btn btn-sm btn-outline-primary" id="export-csv-${id}">
+                                    <i class="fas fa-file-csv"></i> Export CSV
+                                </button>
+                                <button class="btn btn-sm btn-primary" id="apply-columns-${id}">
+                                    <i class="fas fa-sync-alt"></i> Apply Changes
+                                </button>
                             </div>
                         </div>
                         
@@ -509,10 +508,12 @@ function setupColumnSelectionEvents(id, settings, entityType) {
         // Add the event listener to the new button
         newApplyButton.addEventListener('click', () => {
             console.log(`Apply columns clicked for ${id}`);
-            const event = new CustomEvent('columnsUpdated', {
+            
+            // The columnsUpdated event already triggers a refresh
+            const columnsEvent = new CustomEvent('columnsUpdated', {
                 detail: { id, columns: settings.columns }
             });
-            document.dispatchEvent(event);
+            document.dispatchEvent(columnsEvent);
         });
     }
     
@@ -583,16 +584,7 @@ function setupColumnSelectionEvents(id, settings, entityType) {
         }
     }
     
-    // Handle refresh button
-    const refreshButton = document.getElementById(`refresh-table-${id}`);
-    if (refreshButton) {
-        refreshButton.addEventListener('click', () => {
-            const event = new CustomEvent('refreshTable', {
-                detail: { id }
-            });
-            document.dispatchEvent(event);
-        });
-    }
+    // No refresh button anymore - it's combined with apply-columns
 }
 
 /**
