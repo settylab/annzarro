@@ -253,11 +253,31 @@ body {
 
 .table-container {
     flex: 1;
-    overflow: hidden;
+    overflow: visible; /* Let content overflow for pagination */
     min-height: 0; /* Critical fix for allowing header to show in small panels */
     padding: 0.5rem;
-    height: auto;
+    height: calc(100% - 50px); /* Leave space for pagination */
+    max-height: calc(100% - 50px); /* Ensure it doesn't exceed container */
+    position: relative;
 }
+
+/* Compact DataTables styling */
+.table-panel table.dataTable {
+    width: 100% !important;
+    margin: 0 !important;
+}
+
+.table-panel table.dataTable tbody td {
+    padding: 3px 8px !important;
+    font-size: 0.82rem !important;
+    vertical-align: middle !important;
+}
+
+/* Ensure dataTables wrapper doesn't overflow */
+.table-panel .dataTables_wrapper {
+    width: 100% !important;
+}
+
 
 /* Table Control Layout */
 .table-controls .control-row {
@@ -389,239 +409,6 @@ body {
     font-size: 0.7rem;
 }
 
-/* Action Buttons */
-.column-actions .action-buttons {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.25rem;
-}
-
-/* DataTables Styling */
-.dataTables_wrapper {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-}
-
-.dataTables_scroll {
-    flex: 1 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    overflow: hidden !important;
-}
-
-.dataTables_scrollBody {
-    flex: 1 !important;
-    overflow: auto !important;
-}
-
-/* Basic SearchBuilder container styling */
-.dtsp-searchBuilder {
-    padding: 8px;
-    border-bottom: 1px solid #dee2e6;
-    background-color: #f8f9fa;
-    display: block !important;
-    min-height: 50px;
-}
-
-/* Search Builder styling - simple fixes for compatibility */
-.dtsb-group {
-    background-color: #fff;
-}
-
-.dtsb-criteria {
-    margin-top: 5px;
-}
-
-/* Panel Folding Support */
-.dataTables_wrapper.collapsed {
-    display: none !important;
-}
-
-/* DataTable customizations within table panels */
-.table-panel .dataTables_wrapper {
-    padding: 0.5rem;
-    width: 100%;
-}
-
-.table-panel .dataTables_filter {
-    margin-bottom: 0.5rem;
-}
-
-.table-panel .dataTables_length {
-    margin-bottom: 0.5rem;
-    display: none; /* Hide length menu as requested */
-}
-
-/* Make table more compact and modern */
-.table-panel table.dataTable td,
-.table-panel table.dataTable th {
-    padding: 4px 8px;
-    font-size: 0.85rem;
-    border: none;
-}
-
-/* Override the CSS from jquery.dataTables.min.css to remove borders */
-.table-panel .dataTables_wrapper .dataTables_scroll,
-.table-panel .dataTables_wrapper .dataTables_scrollHead,
-.table-panel .dataTables_wrapper .dataTables_scrollBody {
-    border: none !important;
-}
-
-.table-panel .dataTables_wrapper .dataTables_scrollHead table.dataTable,
-.table-panel .dataTables_wrapper .dataTables_scrollBody table.dataTable {
-    border-top: none !important;
-    border-left: none !important;
-    border-right: none !important;
-}
-
-/* Clean table styling without overriding too much */
-.table-panel table.dataTable {
-    margin: 0 !important;
-    width: 100% !important;
-}
-
-.table-panel table.dataTable.no-footer {
-    border-bottom: none !important;
-}
-
-.table-panel table.dataTable thead th,
-.table-panel table.dataTable thead td {
-    background-color: #f8f9fa !important;
-    border-bottom: 1px solid #e9ecef !important;
-    border-top: none !important;
-    font-weight: 500 !important;
-    color: #495057 !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
-}
-
-.table-panel table.dataTable tbody tr {
-    transition: background-color 0.15s ease !important;
-}
-
-.table-panel table.dataTable tbody td {
-    border: none !important;
-    border-bottom: 1px solid #f1f3f5 !important;
-    padding: 6px 8px !important;
-}
-
-.table-panel table.dataTable tbody tr:hover {
-    background-color: rgba(0, 123, 255, 0.04) !important;
-}
-
-.table-panel table.dataTable.stripe tbody tr.odd {
-    background-color: #fcfcfd !important;
-}
-
-.table-panel table.dataTable.hover tbody tr:hover,
-.table-panel table.dataTable.hover tbody tr.odd:hover {
-    background-color: rgba(0, 123, 255, 0.04) !important;
-}
-
-/* Ensure the table has proper border styling */
-.table-panel table.dataTable.border-bottom-0 {
-    border-bottom: none !important;
-}
-
-.table-panel table.dataTable.border-0 tbody td {
-    border: none !important;
-}
-
-/* Override Bootstrap's border styling for tables */
-.table-panel .table, 
-.table-panel .table thead,
-.table-panel .table tbody,
-.table-panel .table tr,
-.table-panel .table th,
-.table-panel .table td {
-    border-color: #f1f3f5 !important;
-}
-
-.table-panel .table-striped > tbody > tr:nth-of-type(odd) > * {
-    border-top-color: #f1f3f5 !important;
-    border-bottom-color: #f1f3f5 !important;
-}
-
-.table-panel .table tbody tr td,
-.table-panel .table-striped > tbody > tr > td {
-    border-bottom: 1px solid #f1f3f5 !important;
-    border-left: none !important;
-    border-right: none !important;
-    border-top: none !important;
-}
-
-/* Soften borders */
-.table-panel .dataTables_wrapper {
-    border-radius: 6px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-/* Put info and pagination on the same line with modern styling */
-.table-panel .dataTables_info {
-    margin-top: 0.75rem;
-    display: inline-block;
-    width: auto;
-    color: #6c757d;
-    font-size: 0.8rem;
-    padding: 0 !important;
-}
-
-.table-panel .dataTables_paginate {
-    margin-top: 0.rem;
-    display: inline-block;
-    padding: 0 !important;
-}
-
-/* Add some space at the bottom for better spacing */
-.table-panel .dataTables_wrapper {
-    padding-bottom: 0.5rem;
-}
-
-/* Modern pagination buttons */
-.table-panel .dataTables_paginate .paginate_button {
-    border: none !important;
-    border-radius: 4px !important;
-    padding: 0.25rem 0.5rem !important;
-    margin: 0 2px !important;
-    background: transparent !important;
-    color: #495057 !important;
-}
-
-.table-panel .dataTables_paginate .paginate_button:hover {
-    background-color: #e9ecef !important;
-    color: #212529 !important;
-}
-
-.table-panel .dataTables_paginate .paginate_button.current {
-    background-color: #007bff !important;
-    color: white !important;
-}
-
-.table-panel .dataTables_paginate .paginate_button.current:hover {
-    background-color: #0069d9 !important;
-}
-
-/* Modern search input */
-.table-panel .dataTables_filter input {
-    border: 1px solid #ced4da;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.85rem;
-    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-}
-
-.table-panel .dataTables_filter input:focus {
-    border-color: #80bdff;
-    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-    outline: 0;
-}
-
-.table-panel .dataTables_processing {
-    background-color: rgba(255, 255, 255, 0.8);
-    z-index: 1;
-}
 
 /* Entity index styling - modern look */
 .entity-index-value {

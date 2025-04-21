@@ -349,53 +349,9 @@ export function getColumnDisplayName(column) {
  * @returns {Object} - The DataTables instance
  */
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
-    // Clear the container
-    tableContainer.innerHTML = '';
-    
-    // Create table element with wrapper for better DataTables styling
-    const wrapper = document.createElement('div');
-    wrapper.className = 'w-100 h-100'; // Take full width and height
-    
-    // Add a CSS class to ensure the table wrapper uses proper layout
-    const styleElement = document.createElement('style');
-    styleElement.textContent = `
-        .dataTables_wrapper {
-            display: flex !important;
-            flex-direction: column !important;
-            height: 100% !important;
-        }
-        .dataTables_scroll {
-            flex: 1 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            overflow: hidden !important;
-            min-height: 0 !important; /* Critical fix for allowing scrollbody to shrink */
-        }
-        .dataTables_scrollBody {
-            flex: 1 !important;
-            overflow: auto !important;
-            min-height: 0 !important; /* Allow the body to shrink */
-        }
-        
-        /* Minimal table styling */
-        table.dataTable {
-            border: none !important;
-        }
-        
-        /* Add styles to handle panel folding */
-        .dataTables_wrapper.collapsed {
-            display: none !important;
-        }
-    `;
-    wrapper.appendChild(styleElement);
-    
-    const table = document.createElement('table');
-    table.className = 'table table-sm w-100';
-    table.style.width = '100%';
-    table.style.marginBottom = '0';
-    
-    wrapper.appendChild(table);
-    tableContainer.appendChild(wrapper);
+    // Clear the container and add a table element
+    tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
+    const table = tableContainer.querySelector('table');
     
     // Configure DataTables options
     const tableOptions = {
@@ -408,28 +364,19 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthChange: false, // Hide default length selector as we have our own
         pageLength: settings.pageLength || 25,
         lengthMenu: [10, 25, 50, 100, 250],
-        // Use the Q character for SearchBuilder in the DOM and B for Buttons, 
-        // move 'i' (info) and 'p' (pagination) elements together
-        dom: 'QBlfrtip',
-        responsive: false, // Never use responsive mode
-        scrollX: true, // Always enable horizontal scrolling
-        scrollCollapse: true, // Always collapse scroll
-        fixedHeader: {
-            header: true,
-            footer: false
-        },
-        // Styling with hover effect and striped rows
+        // Standard Bootstrap 5 DataTables layout with SearchBuilder and search box
+        dom: '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
+             '<"row"<"col-sm-12"tr>>' +
+             '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
+        scrollY: '100%', // Use percentage to fill container
+        scrollCollapse: true,
+        scrollX: false, // No horizontal scrolling
+        fixedHeader: false, // Disable fixed header to avoid duplicate header issue
+        
+        // Use Bootstrap's built-in styling for striping
         hover: true,
-        classes: {
-            sTable: 'table table-sm table-hover table-striped'
-        },
-        stripeClasses: ['even', 'odd'],
-        autoWidth: false,
-        // Keep styling simple, focusing on structure and layout
-        rowCallback: function(row, data, index) {
-            // Just remove borders for a cleaner look
-            $('td', row).css('border', 'none');
-        },
+        stripe: true,
+        autoWidth: true,
         // Configure buttons properly - include basic export functionality
         buttons: {
             buttons: [
@@ -442,24 +389,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                         // Return the dynamically set property or fallback to a default name.
                         return `${settings.title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}`;
                       }
-                },
-                {
-                    text: 'SearchBuilder',
-                    action: function(e, dt, node, config) {
-                        // Toggle search builder
-                        $('.dtsp-searchBuilder').toggle();
-                    },
-                    className: 'd-none' // Hide button as we show it always
                 }
-            ],
-            dom: {
-                button: {
-                    className: 'btn btn-sm btn-outline-secondary'
-                },
-                container: {
-                    className: 'dt-buttons mb-2'
-                }
-            }
+            ]
         },
         searchBuilder: {
             preDefined: settings.searchBuilderConfig && 
@@ -486,38 +417,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             
             // Make sure SearchBuilder is shown
             try {
-                // Create SearchBuilder if it doesn't exist yet
-                if (!api.searchBuilder) {
-                    api.searchBuilder = new $.fn.dataTable.SearchBuilder(api, {});
-                    api.searchBuilder.container().prependTo($(this).closest('.dataTables_wrapper').find('.dtsp-searchBuilder'));
-                }
-                
-                // Apply any saved criteria
-                if (settings.searchBuilderConfig?.criteria?.length > 0) {
-                    try {
-                        api.searchBuilder.rebuild(panelSettings.searchBuilderConfig);
-                        api.draw();
-                    } catch (error) {
-                        console.warn('Error rebuilding SearchBuilder config:', error);
-                    }
-                }
-
                 setupSearchBuilderCriteriaListener(api, settings)
 
             } catch (error) {
                 console.error('Error initializing SearchBuilder:', error);
             }
             
-            // Handle fold/unfold button clicks
-            // Add event listener to panel header fold/unfold buttons
-            const panelElement = $(tableContainer).closest('.panel');
-            if (panelElement.length) {
-                panelElement.find('.panel-header .fold-button').on('click', function() {
-                    // When fold button is clicked, add/remove collapsed class to DataTables wrapper
-                    const isCollapsed = panelElement.hasClass('folded');
-                    $(tableContainer).find('.dataTables_wrapper').toggleClass('collapsed', isCollapsed);
-                });
-            }
         },
         drawCallback: function(settings) {
             // Update settings with filtered data
@@ -527,6 +432,18 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Initialize the DataTable
     const dataTable = $(table).DataTable(tableOptions);
+    
+    // Set compact row height for better density
+    $(tableContainer).find('table.dataTable tbody tr').css({
+        'height': '24px',
+        'max-height': '24px'
+    });
+    
+    // Ensure wrapper stays within container bounds
+    $(tableContainer).find('.dataTables_wrapper').css({
+        'max-width': '100%', 
+        'width': '100%'
+    });
     
     // Return the DataTables instance
     return dataTable;
