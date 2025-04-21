@@ -134,6 +134,11 @@ async function loadColumnData(column, entityType, signal = null) {
     const { type, key, column: columnName } = column;
     
     try {
+        // Check if already aborted before any data loading
+        if (signal && signal.aborted) {
+            throw new DOMException(`Table column data loading aborted for ${type}.${key}.${columnName}`, 'AbortError');
+        }
+        
         // Load data based on column type and entity type
         if (entityType === 'cells') {
             // Cell table data
@@ -279,6 +284,12 @@ async function loadColumnData(column, entityType, signal = null) {
         
         return [];
     } catch (error) {
+        // If it's an abort error, propagate it upwards
+        if (error && error.name === 'AbortError') {
+            throw error;
+        }
+        
+        // Otherwise log the error and return null values
         console.error(`Error loading column data for ${type}.${key}.${columnName}:`, error);
         // Return null values instead of failing completely
         return entityType === 'cells' 

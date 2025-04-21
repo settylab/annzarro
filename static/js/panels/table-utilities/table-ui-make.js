@@ -502,7 +502,13 @@ function setupColumnSelectionEvents(id, settings, entityType) {
     // Handle apply button
     const applyButton = document.getElementById(`apply-columns-${id}`);
     if (applyButton) {
-        applyButton.addEventListener('click', () => {
+        // Clear all existing click listeners by cloning the button
+        const newApplyButton = applyButton.cloneNode(true);
+        applyButton.parentNode.replaceChild(newApplyButton, applyButton);
+        
+        // Add the event listener to the new button
+        newApplyButton.addEventListener('click', () => {
+            console.log(`Apply columns clicked for ${id}`);
             const event = new CustomEvent('columnsUpdated', {
                 detail: { id, columns: settings.columns }
             });

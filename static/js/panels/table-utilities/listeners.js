@@ -77,7 +77,14 @@ function setupCommonEventListeners({
     // Listen for column updates
     document.addEventListener('columnsUpdated', async (e) => {
         if (e.detail.id === id) {
-            await refreshTable();
+            try {
+                await refreshTable();
+            } catch (error) {
+                // Handle AbortError gracefully, don't log it as an error
+                if (error && error.name !== 'AbortError') {
+                    console.error('Error refreshing table after columns update:', error);
+                }
+            }
         }
     });
     
@@ -131,7 +138,6 @@ export function setupSearchBuilderCriteriaListener(dataTable, settings) {
     if (!settings.searchBuilderConfig) {
         settings.searchBuilderConfig = { criteria: [] };
     }
-    console.log('Setting up search builder listener.');
     
     // Add event listener to DataTable for SearchBuilder changes
     dataTable.on('searchBuilder.searchChanged', function(e, searchBuilder) {
