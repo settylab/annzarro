@@ -3,6 +3,7 @@ import { setupAxisSelector } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
+import * as $ from '../../utils/jquery-helpers.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -10,40 +11,38 @@ const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES)
 /**
  * Injects available colormaps into a <select> element with <optgroup> support.
  * The first element is set to "uns" with the text "As stored in adata.uns".
- * @param {HTMLSelectElement} selectElement - The <select> element to populate.
+ * @param {HTMLSelectElement|jQuery} selectElement - The <select> element to populate.
  * @param {Object} colormapGroups - Output of listAvailableColormaps()
  * @param {string} [selected] - Optional selected value.
  */
 export function populateColormapSelectorGrouped(selectElement, colormapGroups, selected = '') {
+  const $select = jQuery(selectElement);
+  
   // clear existing options
-  selectElement.innerHTML = '';
+  $select.empty();
+  
   // Insert the first menu option for "uns" colors
-  const unsOption = document.createElement('option');
-  unsOption.value = 'uns';
-  unsOption.textContent = 'As stored in adata.uns if available';
-  if (selected === 'uns') unsOption.selected = true;
-  selectElement.appendChild(unsOption);
+  $select.append(new Option('As stored in adata.uns if available', 'uns', selected === 'uns', selected === 'uns'));
 
   // Process the remaining colormaps grouped by category
   for (const [groupLabel, colormaps] of Object.entries(colormapGroups)) {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = groupLabel;
+    const $optgroup = jQuery('<optgroup></optgroup>').attr('label', groupLabel);
+    
     for (const cmap of colormaps) {
-      const option = document.createElement('option');
-      option.value = cmap;
-      option.textContent = cmap;
-      if (cmap === selected) option.selected = true;
-      optgroup.appendChild(option);
+      const isSelected = cmap === selected;
+      $optgroup.append(new Option(cmap, cmap, isSelected, isSelected));
     }
-    selectElement.appendChild(optgroup);
+    
+    $select.append($optgroup);
   }
-  selectElement.disabled = false;
+  
+  $select.prop('disabled', false);
 }
 
 /**
  * Generates and injects a plot panel HTML structure into the given container.
  *
- * @param {HTMLElement} container - The DOM element into which the panel will be rendered.
+ * @param {HTMLElement|jQuery} container - The DOM element into which the panel will be rendered.
  * @param {string} id - A unique identifier for the panel instance.
  * @param {Object} settings - An object containing configuration values.
  * @param {number} settings.pointSize - Default point size for plotting.
@@ -55,7 +54,9 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
  * @returns {{ plotContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
 export function createPanelStructure(container, id, settings) {
-  container.innerHTML = `
+  const $container = jQuery(container);
+  
+  $container.html(`
     <div class="plot-panel">
       <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
         <div class="loading-content">
@@ -193,10 +194,10 @@ export function createPanelStructure(container, id, settings) {
         </div>
       </div>
     </div>
-  `;
+  `);
 
   // Inject colormaps into the discrete palette selector
-  const categoryPaletteSelector = container.querySelector(`#category-palette-${id}`);
+  const categoryPaletteSelector = $container.find(`#category-palette-${id}`)[0];
   const groupedColormaps = listAvailableColormaps();  // returns { groupLabel: [names] }
   populateColormapSelectorGrouped(categoryPaletteSelector, groupedColormaps, settings.categoryPalette);
 
@@ -205,7 +206,7 @@ export function createPanelStructure(container, id, settings) {
 
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),
-    controlsContainer: container.querySelector('.plot-controls'),
+    controlsContainer: $container.find('.plot-controls')[0],
     loadingScreen: document.getElementById(`loading-screen-${id}`)
   };
 }
@@ -217,70 +218,62 @@ export function createPanelStructure(container, id, settings) {
  */
 export function checkDatasetLoadingStatus(id) {
   const isDatasetLoaded = DataManager.isDatasetLoaded();
-  const loadingScreen = document.getElementById(`loading-screen-${id}`);
-  const plotContainer = document.getElementById(`plot-container-${id}`);
+  const $loadingScreen = jQuery(`#loading-screen-${id}`);
+  const $plotContainer = jQuery(`#plot-container-${id}`);
   
   // Handle case where plot container doesn't exist or isn't in DOM yet
-  if (!plotContainer) {
+  if (!$plotContainer.length) {
     console.warn(`Plot container with ID plot-container-${id} not found`);
     return isDatasetLoaded;
   }
   
-  const plotPanel = plotContainer.closest('.plot-panel');
+  const $plotPanel = $plotContainer.closest('.plot-panel');
   
   // Handle case where plot panel doesn't exist
-  if (!plotPanel) {
+  if (!$plotPanel.length) {
     console.warn(`Plot panel for ID ${id} not found`);
     return isDatasetLoaded;
   }
   
-  const controlsContainer = plotPanel.querySelector('.plot-controls');
+  const $controlsContainer = $plotPanel.find('.plot-controls');
   
-  if (loadingScreen) {
-    loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
+  if ($loadingScreen.length) {
+    $loadingScreen.toggle(!isDatasetLoaded);
   }
   
-  if (controlsContainer) {
-    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
+  if ($controlsContainer.length) {
+    $controlsContainer.toggle(isDatasetLoaded);
   }
   
   // Also update the loading status of all select elements
-  if (plotPanel) {
-    const selects = plotPanel.querySelectorAll('select');
-    selects.forEach(select => {
+  if ($plotPanel.length) {
+    // Update select elements
+    $plotPanel.find('select').each(function() {
+      const $select = jQuery(this);
+      
       if (!isDatasetLoaded) {
-        if (!select.disabled) {
-          select.disabled = true;
+        if (!$select.prop('disabled')) {
+          $select.prop('disabled', true);
           
           // If the select doesn't have a loading option yet, add one
-          if (select.options.length === 0 || select.options[0].value !== '' || select.options[0].text !== 'Loading...') {
-            const loadingOption = document.createElement('option');
-            loadingOption.value = '';
-            loadingOption.text = 'Loading...';
-            select.insertBefore(loadingOption, select.firstChild);
-            select.value = '';
+          if ($select.find('option').length === 0 || 
+              $select.find('option:first').val() !== '' || 
+              $select.find('option:first').text() !== 'Loading...') {
+            $select.prepend('<option value="">Loading...</option>');
+            $select.val('');
           }
         }
       }
     });
     
     // Disable buttons when dataset is not loaded
-    const buttons = plotPanel.querySelectorAll('button');
-    buttons.forEach(button => {
-      button.disabled = !isDatasetLoaded;
-    });
+    $plotPanel.find('button').prop('disabled', !isDatasetLoaded);
     
     // Disable range inputs when dataset is not loaded
-    const rangeInputs = plotPanel.querySelectorAll('input[type="range"]');
-    rangeInputs.forEach(input => {
-      input.disabled = !isDatasetLoaded;
-    });
+    $plotPanel.find('input[type="range"]').prop('disabled', !isDatasetLoaded);
     
     // Disable number inputs when dataset is not loaded
-    const numberInputs = plotPanel.querySelectorAll('input[type="number"]');
-    numberInputs.forEach(input => {
-      input.disabled = !isDatasetLoaded;
-    });
+    $plotPanel.find('input[type="number"]').prop('disabled', !isDatasetLoaded);
   }
   
   return isDatasetLoaded;
@@ -303,84 +296,62 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   
   // Configure the axis type selectors based on plot type
   const isGenePlot = plotType === 'genes';
-  const container = controlsContainer.closest('.plot-panel');
+  const $container = jQuery(controlsContainer).closest('.plot-panel');
   
   // Set up the correct axis options based on plot type
   for (const axis of ['x', 'y', 'z', 'color']) {
-    const selector = container.querySelector(`#${axis}-type-select-${id}`);
-    if (!selector) continue;
+    const $selector = $container.find(`#${axis}-type-select-${id}`);
+    if (!$selector.length) continue;
     
     // Clear existing options
-    selector.innerHTML = '';
+    $selector.empty();
     
     // Add 'none' option for color only
     if (axis === 'color') {
-      const noneOption = document.createElement('option');
-      noneOption.value = 'none';
-      noneOption.textContent = 'None (constant)';
-      selector.appendChild(noneOption);
+      $selector.append(new Option('None (constant)', 'none'));
     }
     
     // Add appropriate options based on plot type
     if (isGenePlot) {
       // Gene plot: var, varm, varp, layer
-      const varOption = document.createElement('option');
-      varOption.value = 'var';
-      varOption.textContent = 'var';
-      selector.appendChild(varOption);
+      const options = [
+        { value: 'var', text: 'var' },
+        { value: 'varm', text: 'varm', selected: true },
+        { value: 'varp', text: 'varp' },
+        { value: 'layer', text: 'layer' }
+      ];
       
-      const varmOption = document.createElement('option');
-      varmOption.value = 'varm';
-      varmOption.textContent = 'varm';
-      varmOption.selected = true;
-      selector.appendChild(varmOption);
-      
-      const varpOption = document.createElement('option');
-      varpOption.value = 'varp';
-      varpOption.textContent = 'varp';
-      selector.appendChild(varpOption);
-      
-      const layerOption = document.createElement('option');
-      layerOption.value = 'layer';
-      layerOption.textContent = 'layer';
-      selector.appendChild(layerOption);
+      options.forEach(opt => {
+        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
+      });
     } else {
       // Cell plot: obs, obsm, obsp, layer
-      const obsOption = document.createElement('option');
-      obsOption.value = 'obs';
-      obsOption.textContent = 'obs';
-      selector.appendChild(obsOption);
+      const options = [
+        { value: 'obs', text: 'obs' },
+        { value: 'obsm', text: 'obsm', selected: true },
+        { value: 'obsp', text: 'obsp' },
+        { value: 'layer', text: 'layer' }
+      ];
       
-      const obsmOption = document.createElement('option');
-      obsmOption.value = 'obsm';
-      obsmOption.textContent = 'obsm';
-      obsmOption.selected = true;
-      selector.appendChild(obsmOption);
-      
-      const obspOption = document.createElement('option');
-      obspOption.value = 'obsp';
-      obspOption.textContent = 'obsp';
-      selector.appendChild(obspOption);
-      
-      const layerOption = document.createElement('option');
-      layerOption.value = 'layer';
-      layerOption.textContent = 'layer';
-      selector.appendChild(layerOption);
+      options.forEach(opt => {
+        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
+      });
     }
-    selector.disabled = false; // Enable the selector
+    
+    $selector.prop('disabled', false); // Enable the selector
   }
   
   // Show the appropriate highlight button
-  const highlightFocusedCellButton = container.querySelector(`#highlight-focused-cell-${id}`);
-  const highlightFocusedGeneButton = container.querySelector(`#highlight-focused-gene-${id}`);
+  const $highlightFocusedCellButton = $container.find(`#highlight-focused-cell-${id}`);
+  const $highlightFocusedGeneButton = $container.find(`#highlight-focused-gene-${id}`);
   
-  if (highlightFocusedCellButton && highlightFocusedGeneButton) {
+  if ($highlightFocusedCellButton.length && $highlightFocusedGeneButton.length) {
     if (isGenePlot) {
-      highlightFocusedCellButton.style.display = 'none';
-      highlightFocusedGeneButton.style.display = 'inline-block';
+      $highlightFocusedCellButton.hide();
+      $highlightFocusedGeneButton.show();
     } else {
-      highlightFocusedCellButton.style.display = 'inline-block';
-      highlightFocusedGeneButton.style.display = 'none';
+      $highlightFocusedCellButton.show();
+      $highlightFocusedGeneButton.hide();
     }
   }
 
@@ -493,13 +464,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure);
 
   if (settings.z) {
-    const toggle = document.getElementById(`z-axis-toggle-${id}`);
-    toggle?.classList.add('active', 'btn-primary');
-    toggle?.classList.remove('btn-outline-secondary');
-    toggle?.setAttribute('title', '3rd dimension active - click to disable');
+    const $toggle = jQuery(`#z-axis-toggle-${id}`);
+    $.updateButtonState($toggle, true);
+    $toggle.attr('title', '3rd dimension active - click to disable');
 
-    const zContainer = document.getElementById(`z-axis-container-${id}`);
-    if (zContainer) zContainer.style.display = 'block';
+    const $zContainer = jQuery(`#z-axis-container-${id}`);
+    $zContainer.show();
     setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
   } else if (settings.z === undefined) {
     settings.z = null; // ensure no legacy 3D state
@@ -508,79 +478,49 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
 
   // Point controls - ensure sliders reflect the panel's settings
-  const pointSizeSlider = document.getElementById(`point-size-${id}`);
-  if (pointSizeSlider) pointSizeSlider.value = settings.pointSize;
+  const $pointSizeSlider = jQuery(`#point-size-${id}`);
+  if ($pointSizeSlider.length) $pointSizeSlider.val(settings.pointSize);
   
-  const pointOpacitySlider = document.getElementById(`point-opacity-${id}`);
-  if (pointOpacitySlider) pointOpacitySlider.value = settings.pointOpacity;
+  const $pointOpacitySlider = jQuery(`#point-opacity-${id}`);
+  if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
   
   // Color controls
-  const colorScaleSelect = document.getElementById(`color-scale-${id}`);
-  if (colorScaleSelect && settings.colorScale) colorScaleSelect.value = settings.colorScale;
+  const $colorScaleSelect = jQuery(`#color-scale-${id}`);
+  if ($colorScaleSelect.length && settings.colorScale) $colorScaleSelect.val(settings.colorScale);
   
-  const categoryPaletteSelect = document.getElementById(`category-palette-${id}`);
-  if (categoryPaletteSelect && settings.categoryPalette) categoryPaletteSelect.value = settings.categoryPalette;
+  const $categoryPaletteSelect = jQuery(`#category-palette-${id}`);
+  if ($categoryPaletteSelect.length && settings.categoryPalette) $categoryPaletteSelect.val(settings.categoryPalette);
   
   // Lock range button
-  const lockRangeButton = document.getElementById(`lock-range-${id}`);
-  if (lockRangeButton) {
-    if (settings.lockColorRange) {
-      lockRangeButton.classList.add('active', 'btn-primary');
-      lockRangeButton.classList.remove('btn-outline-secondary');
-    } else {
-      lockRangeButton.classList.remove('active', 'btn-primary');
-      lockRangeButton.classList.add('btn-outline-secondary');
-    }
+  const $lockRangeButton = jQuery(`#lock-range-${id}`);
+  if ($lockRangeButton.length) {
+    $.updateButtonState($lockRangeButton, settings.lockColorRange);
   }
   
   // Center colormap button
-  const centerColormapButton = document.getElementById(`center-colormap-${id}`);
-  if (centerColormapButton) {
-    if (settings.centeringActive) {
-      centerColormapButton.classList.add('active', 'btn-primary');
-      centerColormapButton.classList.remove('btn-outline-secondary');
-      centerColormapButton.setAttribute('title', 'Centering active - click to disable');
-    } else {
-      centerColormapButton.classList.remove('active', 'btn-primary');
-      centerColormapButton.classList.add('btn-outline-secondary');
-      centerColormapButton.setAttribute('title', 'Center color scale at 0');
-    }
+  const $centerColormapButton = jQuery(`#center-colormap-${id}`);
+  if ($centerColormapButton.length) {
+    $.updateButtonState($centerColormapButton, settings.centeringActive);
+    $centerColormapButton.attr('title', settings.centeringActive ? 
+      'Centering active - click to disable' : 'Center color scale at 0');
   }
   
   // Hide outliers button
-  const hideOutliersButton = document.getElementById(`hide-outliers-${id}`);
-  if (hideOutliersButton) {
-    if (settings.hideOutliers) {
-      hideOutliersButton.classList.add('active', 'btn-primary');
-      hideOutliersButton.classList.remove('btn-outline-secondary');
-    } else {
-      hideOutliersButton.classList.remove('active', 'btn-primary');
-      hideOutliersButton.classList.add('btn-outline-secondary');
-    }
+  const $hideOutliersButton = jQuery(`#hide-outliers-${id}`);
+  if ($hideOutliersButton.length) {
+    $.updateButtonState($hideOutliersButton, settings.hideOutliers);
   }
   
   // Hide NaN button
-  const hideNanButton = document.getElementById(`hide-nan-${id}`);
-  if (hideNanButton) {
-    if (settings.hideNaN) {
-      hideNanButton.classList.add('active', 'btn-primary');
-      hideNanButton.classList.remove('btn-outline-secondary');
-    } else {
-      hideNanButton.classList.remove('active', 'btn-primary');
-      hideNanButton.classList.add('btn-outline-secondary');
-    }
+  const $hideNanButton = jQuery(`#hide-nan-${id}`);
+  if ($hideNanButton.length) {
+    $.updateButtonState($hideNanButton, settings.hideNaN);
   }
-
+  
   // Reverse colormap button
-  const reverseColormapButton = document.getElementById(`reverse-colormap-${id}`);
-  if (reverseColormapButton) {
-    if (settings.colorReversed) {
-      reverseColormapButton.classList.add('active', 'btn-primary');
-      reverseColormapButton.classList.remove('btn-outline-secondary');
-    } else {
-      reverseColormapButton.classList.remove('active', 'btn-primary');
-      reverseColormapButton.classList.add('btn-outline-secondary');
-    }
+  const $reverseColormapButton = jQuery(`#reverse-colormap-${id}`);
+  if ($reverseColormapButton.length) {
+    $.updateButtonState($reverseColormapButton, settings.colorReversed);
   }
   
   // We can't update color sliders here because the data isn't loaded yet

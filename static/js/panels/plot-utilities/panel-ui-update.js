@@ -1,4 +1,5 @@
 import { DataManager } from '../../data-manager.js';
+import * as $ from '../../utils/jquery-helpers.js';
 
 /**
  * Populates only the key selector for a given axis.
@@ -9,7 +10,8 @@ import { DataManager } from '../../data-manager.js';
 export function populateKeySelector(settings, keySelect, datasetStructure) {
     const type = settings.type || 'layer';
     let keyOptions = [];
-    keySelect.disabled = false;
+    const $keySelect = jQuery(keySelect);
+    $keySelect.prop('disabled', false);
   
     // Initialize the settings history if it doesn't exist
     if (!settings.history) {
@@ -23,8 +25,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
   
     switch (type) {
       case 'none': {
-        keyOptions = ['<option value="">N/A</option>'];
-        keySelect.disabled = true;
+        keyOptions = [{ value: '', text: 'N/A', selected: false }];
+        $keySelect.prop('disabled', true);
         break;
       }
       case 'obs': {
@@ -33,7 +35,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (columns.length > 10) {
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = columns.map(col => `<option value="${col}">${col}</option>`);
+        keyOptions = columns.map(col => ({ value: col, text: col }));
         break;
       }
       case 'obsm': {
@@ -42,7 +44,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
+        keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
       case 'obsp': {
@@ -51,7 +53,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
+        keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
       case 'layer': {
@@ -60,7 +62,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
+        keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
       case 'var': {
@@ -69,7 +71,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (columns.length > 10) {
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = columns.map(col => `<option value="${col}">${col}</option>`);
+        keyOptions = columns.map(col => ({ value: col, text: col }));
         break;
       }
       case 'varm':
@@ -79,16 +81,23 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
         }
-        keyOptions = keys.map(key => `<option value="${key}">${key}</option>`);
+        keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
       default:
         console.warn(`Unsupported type in populateKeySelector: ${type}`);
     }
   
-    keySelect.innerHTML = keyOptions.length ? keyOptions.join('') : '<option value="">No options available</option>';
+    // Use jQuery to populate the select element
+    if (keyOptions.length) {
+      $.createSelect(keyOptions, $keySelect);
+    } else {
+      $.createSelect([{ value: '', text: 'No options available' }], $keySelect);
+    }
   
-    const keyValues = Array.from(keySelect.options).map(opt => opt.value);
+    const keyValues = $keySelect.find('option').map(function() {
+      return jQuery(this).val();
+    }).get();
     
     // First check if current selection is valid
     if (keyValues.includes(settings.key)) {
@@ -109,20 +118,19 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       }
     }
     
-    keySelect.value = settings.key;
-    
-    // We no longer need this line as we're storing the history in the event handlers
-  }
+    // Set the select value using jQuery
+    $.setSelectValue($keySelect, settings.key, false);
+}
   
-  /**
-   * Populates only the column selector based on current key.
-   * @param {Object} settings - Axis settings object (will be updated)
-   * @param {HTMLSelectElement} columnSelect - The column select dropdown
-   * @param {string} axis - Axis name ('x', 'y', 'z', or 'color')
-   * @param {string} plotType - Either 'cells' or 'genes'
-   * @param {Object} datasetStructure - Structure of the loaded dataset
-   */
-  export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
+/**
+ * Populates only the column selector based on current key.
+ * @param {Object} settings - Axis settings object (will be updated)
+ * @param {HTMLSelectElement} columnSelect - The column select dropdown
+ * @param {string} axis - Axis name ('x', 'y', 'z', or 'color')
+ * @param {string} plotType - Either 'cells' or 'genes'
+ * @param {Object} datasetStructure - Structure of the loaded dataset
+ */
+export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
@@ -140,163 +148,181 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
   if (!settings.history[type].columns) {
     settings.history[type].columns = {};
   }
-    let columnOptions = [];
-    columnSelect.disabled = false;
   
-    switch (type) {
-      case 'obs':
-      case 'var': {
-        columnOptions = ['<option value="">N/A</option>'];
-        columnSelect.disabled = true;
-        break;
-      }
-      case 'obsm': {
-        const df = datasetStructure.obsm?.dataframes?.[settings.key];
-        let columns = df?.columns || [];
-        if (columns.length > 0) {
-          // Sort columns alphabetically if there are more than 10
-          if (columns.length > 10) {
-            columns = [...columns].sort((a, b) => a.localeCompare(b));
-          }
-          columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
+  let columnOptions = [];
+  const $columnSelect = jQuery(columnSelect);
+  $columnSelect.prop('disabled', false);
+
+  switch (type) {
+    case 'obs':
+    case 'var': {
+      columnOptions = [{ value: '', text: 'N/A' }];
+      $columnSelect.prop('disabled', true);
+      break;
+    }
+    case 'obsm': {
+      const df = datasetStructure.obsm?.dataframes?.[settings.key];
+      let columns = df?.columns || [];
+      if (columns.length > 0) {
+        // Sort columns alphabetically if there are more than 10
+        if (columns.length > 10) {
+          columns = [...columns].sort((a, b) => a.localeCompare(b));
+        }
+        columnOptions = columns.map(col => ({ value: col, text: col }));
+        
+        // Try to use previously saved column for this key
+        if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
+          settings.column = settings.history[type].columns[settings.key];
+        } else if (!columns.includes(settings.column)) {
+          // Fall back to positional mapping if no history or not in available columns
+          const axisIndexMap = { x: 0, y: 1, z: 2 };
+          let idx = axisIndexMap[axis] || 0;
           
-          // Try to use previously saved column for this key
-          if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
-            settings.column = settings.history[type].columns[settings.key];
-          } else if (!columns.includes(settings.column)) {
-            // Fall back to positional mapping if no history or not in available columns
-            const axisIndexMap = { x: 0, y: 1, z: 2 };
-            let idx = axisIndexMap[axis] || 0;
-            
-            // Skip _index column if possible
-            if (columns[idx] === "_index" && columns.length > idx + 1) {
-              idx += 1;
-            } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
-              // If we're about to default to index 0 and it's "_index", use the next one
-              settings.column = columns[1];
-              return;
-            }
-            
-            settings.column = columns[idx] || columns[0];
+          // Skip _index column if possible
+          if (columns[idx] === "_index" && columns.length > idx + 1) {
+            idx += 1;
+          } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
+            // If we're about to default to index 0 and it's "_index", use the next one
+            settings.column = columns[1];
+            return;
           }
-        } else {
-          columnOptions = Array.from({ length: 3 }, (_, i) => `<option value="${i}">${i}</option>`);
-          if (!['0', '1', '2'].includes(settings.column)) {
-            settings.column = axis === 'x' ? '0' : axis === 'y' ? '1' : '2';
-          }
-        }
-        break;
-      }
-      case 'varm': {
-        const df = datasetStructure.varm?.dataframes?.[settings.key];
-        let columns = df?.columns || [];
-        if (columns.length > 0) {
-          // Sort columns alphabetically if there are more than 10
-          if (columns.length > 10) {
-            columns = [...columns].sort((a, b) => a.localeCompare(b));
-          }
-          columnOptions = columns.map(col => `<option value="${col}">${col}</option>`);
           
-          // Try to use previously saved column for this key
-          if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
-            settings.column = settings.history[type].columns[settings.key];
-          } else if (!columns.includes(settings.column)) {
-            // Fall back to positional mapping if no history or not in available columns
-            const axisIndexMap = { x: 0, y: 1, z: 2 };
-            let idx = axisIndexMap[axis] || 0;
-            
-            // Skip _index column if possible
-            if (columns[idx] === "_index" && columns.length > idx + 1) {
-              idx += 1;
-            } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
-              // If we're about to default to index 0 and it's "_index", use the next one
-              settings.column = columns[1];
-              return;
-            }
-            
-            settings.column = columns[idx] || columns[0];
-          }
-        } else {
-          columnOptions = Array.from({ length: 3 }, (_, i) => `<option value="${i}">${i}</option>`);
-          if (!['0', '1', '2'].includes(settings.column)) {
-            settings.column = axis === 'x' ? '0' : axis === 'y' ? '1' : '2';
-          }
+          settings.column = columns[idx] || columns[0];
         }
-        break;
-      }
-      case 'obsp': {
-        let focused;
-        if (settings.column && settings.type === 'obsp' && settings.locked) {
-          focused = settings.column;
-        } else {
-          focused = DataManager.getFocusedCell();
-          settings.column = focused;
+      } else {
+        columnOptions = Array.from({ length: 3 }, (_, i) => ({ value: i.toString(), text: i.toString() }));
+        if (!['0', '1', '2'].includes(settings.column)) {
+          settings.column = axis === 'x' ? '0' : axis === 'y' ? '1' : '2';
         }
-        columnOptions = focused ? [`<option value="${focused}">Focused cell to ${focused}</option>`]
-                                : ['<option value="">Select a focused cell first</option>'];
-        break;
       }
-      case 'varp': {
-        let focused;
-        if (settings.column && settings.type === 'varp' && settings.locked) {
+      break;
+    }
+    case 'varm': {
+      const df = datasetStructure.varm?.dataframes?.[settings.key];
+      let columns = df?.columns || [];
+      if (columns.length > 0) {
+        // Sort columns alphabetically if there are more than 10
+        if (columns.length > 10) {
+          columns = [...columns].sort((a, b) => a.localeCompare(b));
+        }
+        columnOptions = columns.map(col => ({ value: col, text: col }));
+        
+        // Try to use previously saved column for this key
+        if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key])) {
+          settings.column = settings.history[type].columns[settings.key];
+        } else if (!columns.includes(settings.column)) {
+          // Fall back to positional mapping if no history or not in available columns
+          const axisIndexMap = { x: 0, y: 1, z: 2 };
+          let idx = axisIndexMap[axis] || 0;
+          
+          // Skip _index column if possible
+          if (columns[idx] === "_index" && columns.length > idx + 1) {
+            idx += 1;
+          } else if (idx === 0 && columns[0] === "_index" && columns.length > 1) {
+            // If we're about to default to index 0 and it's "_index", use the next one
+            settings.column = columns[1];
+            return;
+          }
+          
+          settings.column = columns[idx] || columns[0];
+        }
+      } else {
+        columnOptions = Array.from({ length: 3 }, (_, i) => ({ value: i.toString(), text: i.toString() }));
+        if (!['0', '1', '2'].includes(settings.column)) {
+          settings.column = axis === 'x' ? '0' : axis === 'y' ? '1' : '2';
+        }
+      }
+      break;
+    }
+    case 'obsp': {
+      let focused;
+      if (settings.column && settings.type === 'obsp' && settings.locked) {
+        focused = settings.column;
+      } else {
+        focused = DataManager.getFocusedCell();
+        settings.column = focused;
+      }
+      columnOptions = focused ? 
+        [{ value: focused, text: `Focused cell to ${focused}` }] : 
+        [{ value: '', text: 'Select a focused cell first' }];
+      break;
+    }
+    case 'varp': {
+      let focused;
+      if (settings.column && settings.type === 'varp' && settings.locked) {
+        focused = settings.column;
+      } else {
+        focused = DataManager.getFocusedGene();
+        settings.column = focused;
+      }
+      columnOptions = focused ? 
+        [{ value: focused, text: `Focused gene to ${focused}` }] : 
+        [{ value: '', text: 'Select a focused gene first' }];
+      break;
+    }
+    case 'layer': {
+      let focused;
+      if (plotType === 'cells') {
+        if (settings.column && settings.type === 'layer' && settings.locked) {
           focused = settings.column;
         } else {
           focused = DataManager.getFocusedGene();
           settings.column = focused;
         }
-        columnOptions = focused ? [`<option value="${focused}">Focused gene to ${focused}</option>`]
-                                : ['<option value="">Select a focused gene first</option>'];
-        break;
-      }
-      case 'layer': {
-        let focused;
-        if (plotType === 'cells') {
-          if (settings.column && settings.type === 'layer' && settings.locked) {
-            focused = settings.column;
-          } else {
-            focused = DataManager.getFocusedGene();
-            settings.column = focused;
-          }
-          columnOptions = focused ? [`<option value="${focused}">Focused gene ${focused}</option>`]
-                                  : ['<option value="">Select a focused gene first</option>'];
-        } else if (plotType === 'genes') {
-          if (settings.column && settings.type === 'layer' && settings.locked) {
-            focused = settings.column;
-          } else {
-            focused = DataManager.getFocusedCell();
-            settings.column = focused;
-          }
-          columnOptions = focused ? [`<option value="${focused}">Focused cell ${focused}</option>`]
-                                  : ['<option value="">Select a focused cell first</option>'];
+        columnOptions = focused ? 
+          [{ value: focused, text: `Focused gene ${focused}` }] : 
+          [{ value: '', text: 'Select a focused gene first' }];
+      } else if (plotType === 'genes') {
+        if (settings.column && settings.type === 'layer' && settings.locked) {
+          focused = settings.column;
+        } else {
+          focused = DataManager.getFocusedCell();
+          settings.column = focused;
         }
-        break;
+        columnOptions = focused ? 
+          [{ value: focused, text: `Focused cell ${focused}` }] : 
+          [{ value: '', text: 'Select a focused cell first' }];
       }
+      break;
     }
+  }
+
+  // Use jQuery to populate the select element
+  $.createSelect(columnOptions, $columnSelect);
+
+  const colValues = $columnSelect.find('option').map(function() {
+    return jQuery(this).val();
+  }).get();
   
-    columnSelect.innerHTML = columnOptions.join('');
-    const colValues = Array.from(columnSelect.options).map(opt => opt.value);
-    
-    // First check if current column selection is valid
-    if (colValues.includes(settings.column)) {
-      // Current column is valid, keep it
-    }
-    // For obsm and varm types, try to restore from history if current is invalid
-    else if ((type === 'obsm' || type === 'varm') && 
-             settings.history[type]?.columns?.[settings.key] && 
-             colValues.includes(settings.history[type].columns[settings.key])) {
-      settings.column = settings.history[type].columns[settings.key];
-    }
-    // Last resort: use first available value
-    else {
-      settings.column = columnSelect.value || '';
-    }
-    
-    columnSelect.value = settings.column;
-    
-    // We no longer need this code as we're storing the history in the event handlers
+  // First check if current column selection is valid
+  if (colValues.includes(settings.column)) {
+    // Current column is valid, keep it
+  }
+  // For obsm and varm types, try to restore from history if current is invalid
+  else if ((type === 'obsm' || type === 'varm') && 
+           settings.history[type]?.columns?.[settings.key] && 
+           colValues.includes(settings.history[type].columns[settings.key])) {
+    settings.column = settings.history[type].columns[settings.key];
+  }
+  // Last resort: use first available value
+  else {
+    settings.column = $columnSelect.val() || '';
   }
   
+  // Set the select value using jQuery
+  $.setSelectValue($columnSelect, settings.column, false);
+}
 
+/**
+ * Shows or hides a loading indicator for a dropdown
+ * @param {HTMLElement} dropdown - The select element
+ */
+export function showDropdownLoading(dropdown) {
+  if (!dropdown) return;
+  const $dropdown = jQuery(dropdown);
+  $dropdown.html('<option value="">Loading... </option>');
+  $dropdown.prop('disabled', true);
+}
 
 /**
  * Function to set up axis selector.
@@ -307,29 +333,20 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
  * @returns {Promise<void>}
  */
-/**
- * Shows or hides a loading indicator for a dropdown
- * @param {HTMLElement} dropdown - The select element
- */
-export function showDropdownLoading(dropdown) {
-  if (!dropdown) return;
-  dropdown.innerHTML = '<option value="">Loading... </option>';
-  dropdown.disabled = true;
-}
-
 export function setupAxisSelector(container, axis, settings, plotType, datasetStructure) {
-    const typeSelect = container.querySelector(`.axis-type-select[data-axis="${axis}"]`);
-    const keySelect = container.querySelector(`.axis-key-select[data-axis="${axis}"]`);
-    const columnSelect = container.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+    const $container = jQuery(container);
+    const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
+    const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
+    const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
   
-    if (!typeSelect || !keySelect || !columnSelect) {
+    if (!$typeSelect.length || !$keySelect.length || !$columnSelect.length) {
       console.error(`Missing select elements for ${axis} axis`);
       return;
     }
     
     // Show loading indicators while initializing
-    showDropdownLoading(keySelect);
-    showDropdownLoading(columnSelect);
+    showDropdownLoading($keySelect);
+    showDropdownLoading($columnSelect);
   
     // Initialize if completely empty
     if (!settings.type) {
@@ -343,88 +360,90 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     settings.column = settings.column || '';
     
     // Set the UI value
-    typeSelect.value = settings.type;
+    $.setSelectValue($typeSelect, settings.type, false);
   
     // Populate dropdowns which will replace loading indicators
-    populateKeySelector(settings, keySelect, datasetStructure);
-    populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure);
+    populateKeySelector(settings, $keySelect[0], datasetStructure);
+    populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
-    const axisSelector = columnSelect.closest('.axis-selector');
-    if (axisSelector) {
+    const $axisSelector = $columnSelect.closest('.axis-selector');
+    if ($axisSelector.length) {
       // Check if the type requires the special buttons
       const needsSpecialButtons = ['layer', 'obsp', 'varp'].includes(settings.type);
       
       // Get existing buttons container if it exists
-      let buttonsContainer = axisSelector.querySelector(`.axis-special-buttons-${axis}`);
+      let $buttonsContainer = $axisSelector.find(`.axis-special-buttons-${axis}`);
       
       // If container exists but buttons not needed, remove it
-      if (buttonsContainer && !needsSpecialButtons) {
-        buttonsContainer.remove();
+      if ($buttonsContainer.length && !needsSpecialButtons) {
+        $buttonsContainer.remove();
         return;
       }
       
       // If buttons are needed but container doesn't exist, create it
-      if (needsSpecialButtons && !buttonsContainer) {
-        buttonsContainer = document.createElement('div');
-        buttonsContainer.className = `axis-special-buttons-${axis}`;
+      if (needsSpecialButtons && !$buttonsContainer.length) {
+        $buttonsContainer = $.createElement('div', {
+          class: `axis-special-buttons-${axis}`
+        });
         
         // Create refocus button
-        const refocusButton = document.createElement('button');
-        refocusButton.id = `refocus-${axis}`;
-        refocusButton.className = 'btn btn-sm btn-outline-secondary';
-        refocusButton.title = 'Refocus to current selection';
-        refocusButton.innerHTML = '<i class="fas fa-crosshairs"></i>';
-        refocusButton.dataset.axis = axis;
-        refocusButton.dataset.type = settings.type;
-        buttonsContainer.appendChild(refocusButton);
+        const $refocusButton = $.createElement('button', {
+          id: `refocus-${axis}`,
+          class: 'btn btn-sm btn-outline-secondary',
+          title: 'Refocus to current selection',
+          'data-axis': axis,
+          'data-type': settings.type
+        }, '<i class="fas fa-crosshairs"></i>');
+        $buttonsContainer.append($refocusButton);
         
         // Create lock button
-        const lockButton = document.createElement('button');
-        lockButton.id = `lock-${axis}`;
-        lockButton.dataset.axis = axis;
-        lockButton.dataset.type = settings.type;
-        buttonsContainer.appendChild(lockButton);
+        const $lockButton = $.createElement('button', {
+          id: `lock-${axis}`,
+          class: 'btn btn-sm btn-outline-secondary',
+          'data-axis': axis,
+          'data-type': settings.type
+        });
+        $buttonsContainer.append($lockButton);
         
         // Add container to DOM
-        axisSelector.appendChild(buttonsContainer);
+        $axisSelector.append($buttonsContainer);
       } 
       
       // If buttons are needed and container exists, update button properties
-      if (needsSpecialButtons && buttonsContainer) {
+      if (needsSpecialButtons && $buttonsContainer.length) {
         // Initialize the locked state if not already set
         if (settings.locked === undefined) {
           settings.locked = false;
         }
         
         // Get references to buttons
-        const refocusButton = buttonsContainer.querySelector(`#refocus-${axis}`);
-        const lockButton = buttonsContainer.querySelector(`#lock-${axis}`);
+        const $refocusButton = $buttonsContainer.find(`#refocus-${axis}`);
+        const $lockButton = $buttonsContainer.find(`#lock-${axis}`);
         
         // Update data type attribute for both buttons
-        if (refocusButton) {
-          refocusButton.dataset.type = settings.type;
+        if ($refocusButton.length) {
+          $refocusButton.attr('data-type', settings.type);
         }
         
-        if (lockButton) {
-          lockButton.dataset.type = settings.type;
+        if ($lockButton.length) {
+          $lockButton.attr('data-type', settings.type);
           
           // Apply the right classes based on locked state
+          $.updateButtonState($lockButton, settings.locked, 'btn-primary active', 'btn-outline-secondary');
+          
+          // Update title and icon
           if (settings.locked) {
-            lockButton.className = 'btn btn-sm btn-primary active';
-            lockButton.setAttribute('aria-pressed', 'true');
-            lockButton.title = 'Unlock (follow focused element)';
-            lockButton.innerHTML = '<i class="fas fa-lock"></i>';
+            $lockButton.attr('title', 'Unlock (follow focused element)');
+            $lockButton.html('<i class="fas fa-lock"></i>');
           } else {
-            lockButton.className = 'btn btn-sm btn-outline-secondary';
-            lockButton.setAttribute('aria-pressed', 'false');
-            lockButton.title = 'Lock (keep current selection)';
-            lockButton.innerHTML = '<i class="fas fa-lock-open"></i>';
+            $lockButton.attr('title', 'Lock (keep current selection)');
+            $lockButton.html('<i class="fas fa-lock-open"></i>');
           }
         }
         
         // Show refocus button if locked and there's a different focus available
-        if (refocusButton) {
+        if ($refocusButton.length) {
           const shouldShowRefocus = settings.locked && (
             (settings.type === 'layer' && plotType === 'cells' && DataManager.getFocusedGene() && DataManager.getFocusedGene() !== settings.column) ||
             (settings.type === 'layer' && plotType === 'genes' && DataManager.getFocusedCell() && DataManager.getFocusedCell() !== settings.column) ||
@@ -432,7 +451,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
             (settings.type === 'varp' && DataManager.getFocusedGene() && DataManager.getFocusedGene() !== settings.column)
           );
           
-          refocusButton.style.display = shouldShowRefocus ? 'inline-flex' : 'none';
+          $.showHide($refocusButton, shouldShowRefocus, 'inline-flex');
         }
       }
     }
@@ -440,7 +459,6 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     console.log(`Axis '${axis}' setup complete with type='${settings.type}' key='${settings.key}' and column='${settings.column}'`);
 }
 
-  
 /**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
@@ -450,107 +468,108 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
  * @param {string|number} id - The unique identifier used for element IDs.
  */
 export function updateColorControlsVisibility(container, colorType, id) {
-  const colorRangeContainer = container.querySelector(`#color-range-container-${id}`);
-  const colorScaleSelect = container.querySelector(`#color-scale-${id}`);
-  const categoryPaletteSelect = container.querySelector(`#category-palette-${id}`);
-  const colorMinInput = container.querySelector(`#color-min-${id}`);
-  const colorMaxInput = container.querySelector(`#color-max-${id}`);
-  const colorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-  const colorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
-  const centerColormapButton = container.querySelector(`#center-colormap-${id}`);
-  const hideOutliersButton = container.querySelector(`#hide-outliers-${id}`);
-  const numericalLabel = container.querySelector(`#numerical-color-label-${id}`);
-  const categoricalLabel = container.querySelector(`#categorical-color-label-${id}`);
+  const $container = jQuery(container);
+  const $colorRangeContainer = $container.find(`#color-range-container-${id}`);
+  const $colorScaleSelect = $container.find(`#color-scale-${id}`);
+  const $categoryPaletteSelect = $container.find(`#category-palette-${id}`);
+  const $colorMinInput = $container.find(`#color-min-${id}`);
+  const $colorMaxInput = $container.find(`#color-max-${id}`);
+  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
+  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
+  const $centerColormapButton = $container.find(`#center-colormap-${id}`);
+  const $hideOutliersButton = $container.find(`#hide-outliers-${id}`);
+  const $numericalLabel = $container.find(`#numerical-color-label-${id}`);
+  const $categoricalLabel = $container.find(`#categorical-color-label-${id}`);
 
-  const colorMinSliderContainer = colorMinSlider ? colorMinSlider.closest('.color-min-slider-container') : null;
-  const colorMaxSliderContainer = colorMaxSlider ? colorMaxSlider.closest('.color-max-slider-container') : null;
+  const $colorMinSliderContainer = $colorMinSlider.closest('.color-min-slider-container');
+  const $colorMaxSliderContainer = $colorMaxSlider.closest('.color-max-slider-container');
 
-  if (!colorRangeContainer) return;
+  if (!$colorRangeContainer.length) return;
 
   if (colorType === 'numerical') {
-    // Show numerical color controls.
-    colorRangeContainer.style.display = 'flex';
-    if (colorScaleSelect) colorScaleSelect.style.display = 'block';
-    if (categoryPaletteSelect) categoryPaletteSelect.style.display = 'none';
-    if (colorMinInput) colorMinInput.style.display = 'block';
-    if (colorMaxInput) colorMaxInput.style.display = 'block';
-    if (colorMinSlider) colorMinSlider.style.display = 'block';
-    if (colorMaxSlider) colorMaxSlider.style.display = 'block';
+    // Show numerical color controls
+    $colorRangeContainer.css('display', 'flex');
+    $.showHide($colorScaleSelect, true, 'block');
+    $.showHide($categoryPaletteSelect, false);
+    $.showHide($colorMinInput, true, 'block');
+    $.showHide($colorMaxInput, true, 'block');
+    $.showHide($colorMinSlider, true, 'block');
+    $.showHide($colorMaxSlider, true, 'block');
     
-    // Show slider containers with Min/Max labels.
-    if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'block';
-    if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'block';
+    // Show slider containers with Min/Max labels
+    $.showHide($colorMinSliderContainer, true, 'block');
+    $.showHide($colorMaxSliderContainer, true, 'block');
     
-    // Override inline styles for control buttons.
-    if (centerColormapButton)
-      centerColormapButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
-    if (hideOutliersButton)
-      hideOutliersButton.setAttribute('style', 'display: inline-block !important; margin-right: 4px !important');
+    // Override inline styles for control buttons
+    $centerColormapButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
+    $hideOutliersButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
     
-    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
-    if (lockRangeButton)
-      lockRangeButton.setAttribute('style', 'display: inline-block !important');
+    const $lockRangeButton = $container.find(`#lock-range-${id}`);
+    if ($lockRangeButton.length) {
+      $lockRangeButton.attr('style', 'display: inline-block !important');
+    }
     
-    // Show toolbar for numerical controls.
-    const buttonToolbar = container.querySelector('.btn-toolbar');
-    if (buttonToolbar) {
-      buttonToolbar.setAttribute('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
-      buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
-        group.setAttribute('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
+    // Show toolbar for numerical controls
+    const $buttonToolbar = $container.find('.btn-toolbar');
+    if ($buttonToolbar.length) {
+      $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
+      $buttonToolbar.find('.btn-group').each(function() {
+        jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
       });
     }
     
-    // Show the entire color range inputs section.
-    const colorRangeInputs = container.querySelector('.color-range-inputs');
-    if (colorRangeInputs) colorRangeInputs.style.display = 'block';
+    // Show the entire color range inputs section
+    const $colorRangeInputs = $container.find('.color-range-inputs');
+    $.showHide($colorRangeInputs, true, 'block');
     
   } else if (colorType === 'categorical') {
-    // Show categorical color controls.
-    colorRangeContainer.style.display = 'flex';
-    if (colorScaleSelect) colorScaleSelect.style.display = 'none';
-    if (categoryPaletteSelect) {
-      categoryPaletteSelect.style.display = 'block';
-      categoryPaletteSelect.style.margin = '10px 0';
+    // Show categorical color controls
+    $colorRangeContainer.css('display', 'flex');
+    $.showHide($colorScaleSelect, false);
+    
+    if ($categoryPaletteSelect.length) {
+      $.showHide($categoryPaletteSelect, true, 'block');
+      $categoryPaletteSelect.css('margin', '10px 0');
     }
-    if (colorMinInput) colorMinInput.style.display = 'none';
-    if (colorMaxInput) colorMaxInput.style.display = 'none';
-    if (colorMinSlider) colorMinSlider.style.display = 'none';
-    if (colorMaxSlider) colorMaxSlider.style.display = 'none';
     
-    // Hide slider containers with Min/Max labels.
-    if (colorMinSliderContainer) colorMinSliderContainer.style.display = 'none';
-    if (colorMaxSliderContainer) colorMaxSliderContainer.style.display = 'none';
+    $.showHide($colorMinInput, false);
+    $.showHide($colorMaxInput, false);
+    $.showHide($colorMinSlider, false);
+    $.showHide($colorMaxSlider, false);
     
-    // Hide numerical control buttons.
-    if (centerColormapButton)
-      centerColormapButton.setAttribute('style', 'display: none !important');
-    if (hideOutliersButton)
-      hideOutliersButton.setAttribute('style', 'display: none !important');
+    // Hide slider containers with Min/Max labels
+    $.showHide($colorMinSliderContainer, false);
+    $.showHide($colorMaxSliderContainer, false);
     
-    const lockRangeButton = container.querySelector(`#lock-range-${id}`);
-    if (lockRangeButton)
-      lockRangeButton.setAttribute('style', 'display: none !important');
+    // Hide numerical control buttons
+    $centerColormapButton.attr('style', 'display: none !important');
+    $hideOutliersButton.attr('style', 'display: none !important');
     
-    // Hide the button toolbar and its button groups.
-    const buttonToolbar = container.querySelector('.btn-toolbar');
-    if (buttonToolbar) {
-      buttonToolbar.setAttribute('style', 'display: none !important');
-      buttonToolbar.querySelectorAll('.btn-group').forEach(group => {
-        group.setAttribute('style', 'display: none !important');
+    const $lockRangeButton = $container.find(`#lock-range-${id}`);
+    if ($lockRangeButton.length) {
+      $lockRangeButton.attr('style', 'display: none !important');
+    }
+    
+    // Hide the button toolbar and its button groups
+    const $buttonToolbar = $container.find('.btn-toolbar');
+    if ($buttonToolbar.length) {
+      $buttonToolbar.attr('style', 'display: none !important');
+      $buttonToolbar.find('.btn-group').each(function() {
+        jQuery(this).attr('style', 'display: none !important');
       });
     }
     
-    // Hide the entire color range inputs section.
-    const colorRangeInputs = container.querySelector('.color-range-inputs');
-    if (colorRangeInputs) colorRangeInputs.style.display = 'none';
+    // Hide the entire color range inputs section
+    const $colorRangeInputs = $container.find('.color-range-inputs');
+    $.showHide($colorRangeInputs, false);
     
-    // Show/hide labels.
-    if (numericalLabel) numericalLabel.style.display = 'none';
-    if (categoricalLabel) categoricalLabel.style.display = 'inline';
+    // Show/hide labels
+    $.showHide($numericalLabel, false);
+    $.showHide($categoricalLabel, true, 'inline');
     
   } else {
-    // For 'none' type, hide the entire color controls.
-    colorRangeContainer.style.display = 'none';
+    // For 'none' type, hide the entire color controls
+    $.showHide($colorRangeContainer, false);
   }
 }
 
@@ -575,30 +594,29 @@ export function updateColorControlsVisibility(container, colorType, id) {
  * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
  */
 export function updateColorSliderUI(container, data, settings, id, isFirstLoad = false) {
-  const csCenterColormapButton = container.querySelector(`#center-colormap-${id}`);
-  const csColorMinInput = container.querySelector(`#color-min-${id}`);
-  const csColorMaxInput = container.querySelector(`#color-max-${id}`);
-  const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-  const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
+  const $container = jQuery(container);
+  const $centerColormapButton = $container.find(`#center-colormap-${id}`);
+  const $colorMinInput = $container.find(`#color-min-${id}`);
+  const $colorMaxInput = $container.find(`#color-max-${id}`);
+  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
+  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
 
-  // If centering is active, update the UI accordingly and apply centering.
+  // If centering is active, update the UI accordingly and apply centering
   if (settings.centeringActive) {
-    if (csCenterColormapButton) {
-      csCenterColormapButton.classList.add('active', 'btn-primary');
-      csCenterColormapButton.classList.remove('btn-outline-secondary');
-      csCenterColormapButton.setAttribute('title', 'Centering active - click to disable');
+    if ($centerColormapButton.length) {
+      $.updateButtonState($centerColormapButton, true);
+      $centerColormapButton.attr('title', 'Centering active - click to disable');
     }
-    // Delegate the centering update to the applyCentering function.
+    // Delegate the centering update to the applyCentering function
     applyCentering(container, data, settings, id);
   } else {
-    // Reset the center button appearance.
-    if (csCenterColormapButton) {
-      csCenterColormapButton.classList.remove('active', 'btn-primary');
-      csCenterColormapButton.classList.add('btn-outline-secondary');
-      csCenterColormapButton.setAttribute('title', 'Center color scale at 0');
+    // Reset the center button appearance
+    if ($centerColormapButton.length) {
+      $.updateButtonState($centerColormapButton, false);
+      $centerColormapButton.attr('title', 'Center color scale at 0');
     }
 
-    if (csColorMinSlider && csColorMaxSlider && data && data.color && Array.isArray(data.color)) {
+    if ($colorMinSlider.length && $colorMaxSlider.length && data && data.color && Array.isArray(data.color)) {
       const validValues = data.color.filter(v => !isNaN(v));
       if (validValues.length > 0) {
         const dataMin = Math.min(...validValues);
@@ -608,46 +626,64 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
         // During first load, respect provided values even when range is not locked
         if (!settings.lockColorRange && !isFirstLoad) {
           // Set slider ranges based on the data
-          csColorMinSlider.min = dataMin;
-          csColorMinSlider.max = dataMax;
-          csColorMaxSlider.min = dataMin;
-          csColorMaxSlider.max = dataMax;
+          $colorMinSlider.attr({
+            min: dataMin,
+            max: dataMax
+          });
+          
+          $colorMaxSlider.attr({
+            min: dataMin,
+            max: dataMax
+          });
+          
           const range = dataMax - dataMin;
-          const step = range / 500
-          csColorMinSlider.step = step;
-          csColorMaxSlider.step = step;
+          const step = range / 500;
+          
+          $colorMinSlider.attr('step', step);
+          $colorMaxSlider.attr('step', step);
           
           // Update UI elements
-          csColorMinSlider.value = dataMin;
-          csColorMaxSlider.value = dataMax;
-          if (csColorMinInput) csColorMinInput.value = dataMin.toFixed(2);
-          if (csColorMaxInput) csColorMaxInput.value = dataMax.toFixed(2);
+          $colorMinSlider.val(dataMin);
+          $colorMaxSlider.val(dataMax);
+          
+          if ($colorMinInput.length) $colorMinInput.val(dataMin.toFixed(2));
+          if ($colorMaxInput.length) $colorMaxInput.val(dataMax.toFixed(2));
           
           settings.colorMin = dataMin;
           settings.colorMax = dataMax;
         } else {
-          // Expand slider range (min, max) to include both the new data range and the locked values.
+          // Expand slider range (min, max) to include both the new data range and the locked values
           const minSliderRange = Math.min(settings.colorMin ?? dataMin, dataMin);
           const maxSliderRange = Math.max(settings.colorMax ?? dataMax, dataMax);
-          csColorMinSlider.min = minSliderRange;
-          csColorMaxSlider.min = minSliderRange;
-          csColorMinSlider.max = maxSliderRange;
-          csColorMaxSlider.max = maxSliderRange;
+          
+          $colorMinSlider.attr({
+            min: minSliderRange,
+            max: maxSliderRange
+          });
+          
+          $colorMaxSlider.attr({
+            min: minSliderRange,
+            max: maxSliderRange
+          });
+          
           const range = dataMax - dataMin;
-          const step = range / 500
-          csColorMinSlider.step = step;
-          csColorMaxSlider.step = step;
-          // Do not change the locked values; just keep them.
-          csColorMinSlider.value = settings.colorMin ?? dataMin;
-          csColorMaxSlider.value = settings.colorMax ?? dataMax;
+          const step = range / 500;
+          
+          $colorMinSlider.attr('step', step);
+          $colorMaxSlider.attr('step', step);
+          
+          // Do not change the locked values; just keep them
+          $colorMinSlider.val(settings.colorMin ?? dataMin);
+          $colorMaxSlider.val(settings.colorMax ?? dataMax);
         }
 
-        // (Optional) You might also update the placeholders if desired:
-        if (csColorMinInput && csColorMinInput.value === '') {
-          csColorMinInput.placeholder = settings.colorMin ?? dataMin.toFixed(2);
+        // Update input placeholders if fields are empty
+        if ($colorMinInput.length && $colorMinInput.val() === '') {
+          $colorMinInput.attr('placeholder', (settings.colorMin ?? dataMin).toFixed(2));
         }
-        if (csColorMaxInput && csColorMaxInput.value === '') {
-          csColorMaxInput.placeholder = settings.colorMin ?? dataMax.toFixed(2);
+        
+        if ($colorMaxInput.length && $colorMaxInput.val() === '') {
+          $colorMaxInput.attr('placeholder', (settings.colorMax ?? dataMax).toFixed(2));
         }
       }
     }
@@ -666,70 +702,85 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
  * @param {Object} data - The data object (must have data.color as an array).
  * @param {Object} settings - The settings object (must include settings.centeringActive).
  * @param {string|number} id - Unique identifier used for element selectors.
- * @param {Function} loadDataAndCreatePlot - Function to redraw the plot elements.
  */
 export function applyCentering(container, data, settings, id) {
   if (!data || !data.color || !Array.isArray(data.color)) return;
   if (!settings.centeringActive) return;
 
-  // Filter valid numeric values.
+  // Filter valid numeric values
   const validValues = data.color.filter(v => !isNaN(v));
   if (validValues.length === 0) return;
 
-  // Compute the absolute maximum value from both ends.
+  // Compute the absolute maximum value from both ends
   const absMaxComputed = Math.max(
     Math.abs(Math.min(...validValues)),
     Math.abs(Math.max(...validValues))
   );
 
-  // If not locked, update settings with the computed symmetric range.
+  // If not locked, update settings with the computed symmetric range
   if (!settings.lockColorRange) {
     settings.colorMin = -absMaxComputed;
     settings.colorMax = absMaxComputed;
   }
-  // Otherwise, keep the locked values and do not modify settings.colorMin/colorMax.
+  // Otherwise, keep the locked values and do not modify settings.colorMin/colorMax
 
-  // Use the effective values for the UI update.
+  // Use the effective values for the UI update
   const effectiveColorMin = settings.lockColorRange ? settings.colorMin : -absMaxComputed;
   const effectiveColorMax = settings.lockColorRange ? settings.colorMax : absMaxComputed;
 
-  // Update input fields.
-  const csColorMinInput = container.querySelector(`#color-min-${id}`);
-  const csColorMaxInput = container.querySelector(`#color-max-${id}`);
-  if (csColorMinInput) csColorMinInput.value = effectiveColorMin.toFixed(2);
-  if (csColorMaxInput) csColorMaxInput.value = effectiveColorMax.toFixed(2);
+  // Update input fields
+  const $container = jQuery(container);
+  const $colorMinInput = $container.find(`#color-min-${id}`);
+  const $colorMaxInput = $container.find(`#color-max-${id}`);
+  
+  if ($colorMinInput.length) $colorMinInput.val(effectiveColorMin.toFixed(2));
+  if ($colorMaxInput.length) $colorMaxInput.val(effectiveColorMax.toFixed(2));
 
-  // Update slider controls.
-  const csColorMinSlider = container.querySelector(`#color-min-slider-${id}`);
-  const csColorMaxSlider = container.querySelector(`#color-max-slider-${id}`);
-  if (csColorMinSlider && csColorMaxSlider) {
+  // Update slider controls
+  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
+  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
+  
+  if ($colorMinSlider.length && $colorMaxSlider.length) {
     const dataMin = Math.min(...validValues);
     const dataMax = Math.max(...validValues);
 
     if (!settings.lockColorRange) {
-      // Set sliders for a perfectly centered range.
-      csColorMinSlider.min = Math.min(-absMaxComputed, dataMin);
-      csColorMinSlider.max = 0;
-      csColorMaxSlider.min = 0;
-      csColorMaxSlider.max = Math.max(absMaxComputed, dataMax);
-      csColorMinSlider.value = effectiveColorMin;
-      csColorMaxSlider.value = effectiveColorMax;
+      // Set sliders for a perfectly centered range
+      $colorMinSlider.attr({
+        min: Math.min(-absMaxComputed, dataMin),
+        max: 0
+      });
+      
+      $colorMaxSlider.attr({
+        min: 0,
+        max: Math.max(absMaxComputed, dataMax)
+      });
+      
+      $colorMinSlider.val(effectiveColorMin);
+      $colorMaxSlider.val(effectiveColorMax);
     } else {
-      // Locked: expand the slider range to include both locked values and the new data range.
+      // Locked: expand the slider range to include both locked values and the new data range
       const newSliderMin = Math.min(settings.colorMin, -absMaxComputed, dataMin);
       const newSliderMax = Math.max(settings.colorMax, absMaxComputed, dataMax);
-      csColorMinSlider.min = newSliderMin;
-      csColorMaxSlider.min = newSliderMin;
-      csColorMinSlider.max = newSliderMax;
-      csColorMaxSlider.max = newSliderMax;
-      // Preserve the locked slider values.
-      csColorMinSlider.value = settings.colorMin;
-      csColorMaxSlider.value = settings.colorMax;
+      
+      $colorMinSlider.attr({
+        min: newSliderMin,
+        max: newSliderMax
+      });
+      
+      $colorMaxSlider.attr({
+        min: newSliderMin,
+        max: newSliderMax
+      });
+      
+      // Preserve the locked slider values
+      $colorMinSlider.val(settings.colorMin);
+      $colorMaxSlider.val(settings.colorMax);
     }
 
-    // Compute a step value (here using absMaxComputed/500 as an example).
+    // Compute a step value
     const step = absMaxComputed / 500;
-    csColorMinSlider.step = step;
-    csColorMaxSlider.step = step;
+    $colorMinSlider.attr('step', step);
+    $colorMaxSlider.attr('step', step);
   }
 }
