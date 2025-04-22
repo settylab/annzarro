@@ -554,6 +554,13 @@ export async function loadColorDataAndUpdatePlot(
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
+  // Capture current view state before making changes
+  let currentLayout = null;
+  if (plotContainer && plotContainer.layout) {
+    // Store current view state
+    currentLayout = JSON.parse(JSON.stringify(plotContainer.layout));
+  }
+
   // Determine which property to use: cells or genes.
   entityType = entityType || data.entities
   if (!plotContainer || !data || !data[entityType] || !data.x || !data.y ||
@@ -561,10 +568,6 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     console.warn(`Missing required data for highlighting ${entityType}`);
     return;
   }
-//   if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
-//     console.warn("Plot data is not available for highlighting");
-//     return;
-//   }
 
   // Get the focused entity based on type.
   const focusedEntity = entityType === 'cells'
@@ -675,15 +678,47 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   // Update existing highlight trace if one exists; otherwise add a new one.
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
     trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
+  
+  // Prepare layout update to preserve the current view state
+  const layoutUpdate = {};
+  if (currentLayout) {
+    if (is3D && currentLayout.scene) {
+      // For 3D plots, preserve camera settings
+      layoutUpdate.scene = {
+        camera: currentLayout.scene.camera
+      };
+    } else {
+      // For 2D plots, preserve axis ranges
+      if (currentLayout.xaxis && currentLayout.xaxis.range) {
+        layoutUpdate.xaxis = { range: currentLayout.xaxis.range };
+      }
+      if (currentLayout.yaxis && currentLayout.yaxis.range) {
+        layoutUpdate.yaxis = { range: currentLayout.yaxis.range };
+      }
+    }
+  }
+
+  // Update the plot with the highlight trace
   if (existingIdx >= 0) {
-    Plotly.restyle(plotContainer, {
-      x: [highlightTrace.x],
-      y: [highlightTrace.y],
-      z: is3D ? [highlightTrace.z] : undefined,
-      type: highlightTrace.type
-    }, existingIdx);
+    // Update existing highlight trace
+    Plotly.update(plotContainer, 
+      {
+        x: [highlightTrace.x],
+        y: [highlightTrace.y],
+        z: is3D ? [highlightTrace.z] : undefined,
+        type: highlightTrace.type
+      }, 
+      layoutUpdate,
+      [existingIdx]
+    );
   } else {
-    Plotly.addTraces(plotContainer, highlightTrace);
+    // Add new highlight trace and preserve layout
+    Plotly.addTraces(plotContainer, highlightTrace)
+      .then(() => {
+        if (Object.keys(layoutUpdate).length > 0) {
+          Plotly.relayout(plotContainer, layoutUpdate);
+        }
+      });
   }
 }
 
