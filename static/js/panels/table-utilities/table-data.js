@@ -391,9 +391,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-            preDefined: settings.searchBuilderConfig && settings.searchBuilderConfig.criteria
-            ? settings.searchBuilderConfig
-            : undefined,
+            preDefined: settings.searchBuilderConfig,
             display: 'block' // Always display
         },
         initComplete: function(dtsettings, json) {
@@ -412,21 +410,11 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 }
             });
             
-        },
-        drawCallback: function(settings) {
-            // Update settings with filtered data
-            updateFilteredSet(this, settings, entityType);
         }
     };
     
     // Initialize the DataTable
     const dataTable = $(table).DataTable(tableOptions);
-    
-    // Set compact row height for better density
-    $(tableContainer).find('table.dataTable tbody tr').css({
-        'height': '24px',
-        'max-height': '24px'
-    });
 
     Object.defineProperty(settings, 'searchBuilderConfig', {
         configurable: true,
@@ -435,63 +423,21 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
           return dataTable.searchBuilder.getDetails();
         }
       });
+
+    Object.defineProperty(settings, 'currentEntries', {
+        configurable: true,
+        get() {
+          // returns an array of the original-data indexes 
+          // for every row that survives the current search/filter
+          return dataTable
+            .rows({ search: 'applied', order: 'applied' })
+            .indexes()
+            .toArray();
+        }
+      });
     
     // Return the DataTables instance
     return dataTable;
-}
-
-/**
- * Update settings with filtered entities
- * @param {Object} dataTable - The DataTables instance
- * @param {Object} settings - The DataTables settings
- * @param {string} entityType - Type of entities ('cells' or 'genes')
- */
-function updateFilteredSet(dataTable, dtSettings, entityType) {
-    try {
-        // Get all visible rows
-        const api = new $.fn.dataTable.Api(dtSettings);
-        let filteredData = [];
-        
-        try {
-            // Try to get filtered data
-            filteredData = api.rows({ search: 'applied' }).data().toArray();
-        } catch (err) {
-            console.warn('Error getting filtered rows:', err);
-            return;
-        }
-        
-        // Extract entity indices
-        const filteredEntities = filteredData.map(row => row._index);
-        
-        // Store in the panel settings
-        if (dtSettings._panelSettings) {
-            if (entityType === 'cells') {
-                dtSettings._panelSettings.filteredCells = filteredEntities;
-                
-                // Dispatch event
-                const event = new CustomEvent('filteredCellsUpdated', {
-                    detail: {
-                        id: dtSettings._panelSettings.id,
-                        filteredCells: filteredEntities
-                    }
-                });
-                document.dispatchEvent(event);
-            } else {
-                dtSettings._panelSettings.filteredGenes = filteredEntities;
-                
-                // Dispatch event
-                const event = new CustomEvent('filteredGenesUpdated', {
-                    detail: {
-                        id: dtSettings._panelSettings.id,
-                        filteredGenes: filteredEntities
-                    }
-                });
-                document.dispatchEvent(event);
-            }
-        }
-    } catch (err) {
-        console.error('Error updating filtered entities:', err);
-    }
 }
 
 /**

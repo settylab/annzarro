@@ -300,30 +300,54 @@ body {
     flex-direction: column !important;
     height: 100% !important;
     overflow: hidden !important; /* hide any stray scrollbars here */
-  }
+}
   
-  /* 2) Pin the DT head at the top */
-  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-head {
+/* 2) Pin the DT head at the top */
+.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-head {
     position: sticky !important;
     top: 0 !important;
     z-index: 2 !important;
-  }
+}
   
   /* 3) Pin the DT footer at the bottom */
-  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-foot {
+.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-foot {
     position: sticky !important;
     bottom: 0 !important;
     z-index: 2 !important;
-  }
+}
   
   /* 4) Let *only* the body flex & scroll both ways */
-  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-body {
+.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-body {
     flex: 1 1 0 !important;
     min-height: 0 !important;
     min-width: 0 !important;
     overflow: auto !important;
-  }
+}
+
+/* Compact row height for all DataTables */
+table.dataTable tbody tr {
+    height: 24px !important;
+    max-height: 24px !important;
+}
   
+
+/* DataTables index clickable
+/* Entity index styling - modern look */
+.entity-index-value {
+    color: #007bff;
+    cursor: pointer;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.entity-index-value:hover {
+    text-decoration: none;
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
 /* Column Selector (Left Side) */
 .column-selector {
     flex: 1;
