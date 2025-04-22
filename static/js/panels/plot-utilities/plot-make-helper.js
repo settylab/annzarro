@@ -216,8 +216,7 @@ export function attachViewportTracking(plotContainer, settings) {
    * @returns {Array<Object>} - Array of Plotly trace objects for each category.
    */
   export function processCategories(settings, data, catValues, customColors = null) {
-    // If custom colors are provided from 'uns', store them
-  
+    // Generate a color palette
     let selectedPalette;
     
     // Check if custom colors are provided in settings.
@@ -242,16 +241,72 @@ export function attachViewportTracking(plotContainer, settings) {
           // Fallback to a default palette if the provided one fails.
           selectedPalette = generateDiscreteColors(catValues.length);
         }
-
     }
   
     const traces = [];
+    const tableTraces = []; // Separate array for table entities to control ordering
     
     // Determine if this is a gene plot or cell plot
     const isGenePlot = data.genes !== undefined;
     const entityKey = isGenePlot ? 'genes' : 'cells';
-  
-    // For each category, split the data into a separate Plotly trace.
+
+    // Check if table filtering is active (for highlighting or removal)
+    const isTableFilterActive = settings.tableFilter && settings.tableFilter !== 'none' && data.tableEntities;
+    
+    // For non-table entries when we want to show them in gray
+    let allNonTableIndices = [];
+    
+    // First pass: collect all indices and separate table vs non-table
+    if (isTableFilterActive) {
+      catValues.forEach((category, i) => {
+        // Get indices of all points that belong to this category.
+        const indices = data.color.reduce((acc, val, idx) => {
+          if (val === category) acc.push(idx);
+          return acc;
+        }, []);
+        
+        if (indices.length === 0) return; // Skip this category if there are no points
+        
+        // Collect non-table indices
+        for (const idx of indices) {
+          if (!data.tableEntities.has(data[entityKey][idx])) {
+            allNonTableIndices.push(idx);
+          }
+        }
+      });
+    }
+    
+    // Create a single trace for all non-table entities if needed
+    // Only do this when we're NOT removing non-table entries completely
+    if (isTableFilterActive && !settings.removeNonTableEntries && allNonTableIndices.length > 0) {
+      // Create one trace for all non-table entities with gray color
+      const nonTableTrace = {
+        type: settings.z ? 'scatter3d' : 'scattergl',
+        mode: 'markers',
+        name: 'Not in table',
+        text: allNonTableIndices.map(idx => data[entityKey][idx]),
+        customdata: allNonTableIndices, // for click handling
+        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
+        x: allNonTableIndices.map(idx => data.x.values[idx]),
+        y: allNonTableIndices.map(idx => data.y.values[idx]),
+        marker: {
+          size: settings.pointSize,
+          opacity: settings.pointOpacity,
+          color: 'rgba(180, 180, 180, 1.)'
+        },
+        showlegend: true
+      };
+      
+      // Add z-axis values for 3D plots if applicable
+      if (settings.z && data.z) {
+        nonTableTrace.z = allNonTableIndices.map(idx => data.z.values[idx]);
+      }
+      
+      // Add non-table trace first (so it's drawn at the bottom)
+      traces.push(nonTableTrace);
+    }
+    
+    // Second pass: create traces for each category
     catValues.forEach((category, i) => {
       // Get indices of all points that belong to this category.
       const indices = data.color.reduce((acc, val, idx) => {
@@ -262,32 +317,77 @@ export function attachViewportTracking(plotContainer, settings) {
       if (indices.length === 0) return; // Skip this category if there are no points
   
       const categoryColor = selectedPalette[i % selectedPalette.length];
-  
-      // Build the trace object for this category.
-      const catTrace = {
-        type: settings.z ? 'scatter3d' : 'scattergl',
-        mode: 'markers',
-        name: category,
-        text: indices.map(idx => data[entityKey][idx]),
-        customdata: indices, // for click handling
-        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
-        x: indices.map(idx => data.x.values[idx]),
-        y: indices.map(idx => data.y.values[idx]),
-        marker: {
-          size: settings.pointSize,
-          opacity: settings.pointOpacity,
-          color: categoryColor
-        },
-        showlegend: true
-      };
-  
-      // Add z-axis values for 3D plots if applicable.
-      if (settings.z && data.z) {
-        catTrace.z = indices.map(idx => data.z.values[idx]);
+      
+      // Handle table filtering
+      if (isTableFilterActive) {
+        // Split indices into table entities only
+        const tableIndices = [];
+        
+        for (const idx of indices) {
+          if (data.tableEntities.has(data[entityKey][idx])) {
+            tableIndices.push(idx);
+          }
+        }
+        
+        // Only show entities in the table for this category
+        if (tableIndices.length === 0) return; // Skip if no entities in this category are in the table
+        
+        // Create a trace for the table entities only
+        const tableTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: category,
+          text: tableIndices.map(idx => data[entityKey][idx]),
+          customdata: tableIndices, // for click handling
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
+          x: tableIndices.map(idx => data.x.values[idx]),
+          y: tableIndices.map(idx => data.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: categoryColor
+          },
+          showlegend: true
+        };
+        
+        // Add z-axis values for 3D plots if applicable
+        if (settings.z && data.z) {
+          tableTrace.z = tableIndices.map(idx => data.z.values[idx]);
+        }
+        
+        tableTraces.push(tableTrace);
       }
-  
-      traces.push(catTrace);
+      // No table filtering active, create a normal trace
+      else {
+        // Build the normal trace object for this category.
+        const catTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: category,
+          text: indices.map(idx => data[entityKey][idx]),
+          customdata: indices, // for click handling
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
+          x: indices.map(idx => data.x.values[idx]),
+          y: indices.map(idx => data.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: categoryColor
+          },
+          showlegend: true
+        };
+    
+        // Add z-axis values for 3D plots if applicable.
+        if (settings.z && data.z) {
+          catTrace.z = indices.map(idx => data.z.values[idx]);
+        }
+    
+        tableTraces.push(catTrace);
+      }
     });
+    
+    // Add table traces after non-table trace
+    traces.push(...tableTraces);
   
     return traces;
   }

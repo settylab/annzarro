@@ -36,6 +36,7 @@ const GeneTablePanel = (function() {
             responsive: false, // Disable responsive (use container size)
             fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
+            currentEntries: [],
             filteredGenes: null
         };
         

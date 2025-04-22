@@ -391,14 +391,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-            preDefined: settings.searchBuilderConfig,
-            display: 'block' // Always display
-        },
+                preDefined: settings.searchBuilderConfig,
+                display: 'block' // Always display
+            },
         initComplete: function(dtsettings, json) {
             // The DataTable instance is available as 'this' in the callback
             const api = this.api();
-            const dtSettings = dtsettings || this.settings()[0];
-            const panelSettings = dtSettings._panelSettings || {};
 
             // Add event handlers for entity selection
             api.on('click', '.entity-index-value', function() {
@@ -414,27 +412,82 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     };
     
     // Initialize the DataTable
-    const dataTable = $(table).DataTable(tableOptions);
+    let dataTable;
+    try {
+        dataTable = $(table).DataTable(tableOptions);
+    } catch (error) {
+        console.error('Error initializing DataTable with SearchBuilder criteria:', error);
+        dataTable = $(table).DataTable();
+    }
 
     Object.defineProperty(settings, 'searchBuilderConfig', {
         configurable: true,
         get() {
           // this function will run each time someone does `settings.searchBuilderConfig`
-          return dataTable.searchBuilder.getDetails();
+          try {
+            return dataTable.searchBuilder ? dataTable.searchBuilder.getDetails() : {};
+          } catch (error) {
+            console.warn('Failed to get searchBuilder details, returning empty object', error);
+            return {};
+          }
         }
       });
 
+    // Keep track of previous entries to detect changes
+    let previousEntries = [];
+    
     Object.defineProperty(settings, 'currentEntries', {
         configurable: true,
         get() {
           // returns an array of the original-data indexes 
           // for every row that survives the current search/filter
-          return dataTable
-            .rows({ search: 'applied', order: 'applied' })
-            .indexes()
-            .toArray();
+          try {
+            return dataTable
+                .rows({ search: 'applied', order: 'applied' })
+                .indexes()
+                .toArray();
+          } catch (error) {
+            console.warn('Failed to get current entries, returning empty array', error);
+            return [];
+          }
         }
       });
+    
+    // Add event listeners for data redraw (after search/filter changes)
+    dataTable.on('draw.dt', function() {
+        // Get the current entries (deep copy since toArray() is already made in the getter)
+        const currentEntries = [...settings.currentEntries];
+        
+        // Check if the entries have changed
+        let entriesChanged = false;
+        
+        if (previousEntries.length !== currentEntries.length) {
+            entriesChanged = true;
+        } else {
+            // Compare the entries arrays - they should be in the same order
+            for (let i = 0; i < currentEntries.length; i++) {
+                if (currentEntries[i] !== previousEntries[i]) {
+                    entriesChanged = true;
+                    break;
+                }
+            }
+        }
+        
+        // Only notify if entries actually changed
+        if (entriesChanged && window.PanelManager && window.PanelManager.notifyPanels && settings.id) {
+            // Update the previous entries with a deep copy
+            previousEntries = [...currentEntries];
+            
+            // Notify panels when table selection changes
+            window.PanelManager.notifyPanels('tableFiltered', { 
+                id: settings.id,
+                type: entityType 
+            });
+        }
+    });
+    
+    // Initialize previousEntries with a deep copy
+    previousEntries = [...settings.currentEntries];
     
     // Return the DataTables instance
     return dataTable;

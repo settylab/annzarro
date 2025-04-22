@@ -16,6 +16,7 @@ import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
  * @param {number} filterStats.zNaN - Number of NaN values in z-axis data
  * @param {number} filterStats.colorNaN - Number of NaN values in color data
  * @param {number} filterStats.colorOutliers - Number of outliers in color data
+ * @param {number} filterStats.tableFiltered - Number of table-filtered datapoints
  * @param {number} filterStats.total - Total number of datapoints
  * @param {number} filterStats.filtered - Total number of filtered datapoints
  */
@@ -85,6 +86,20 @@ function updateFilterWidget(plotContainer, filterStats) {
                 <span class="filter-count">${filterStats.colorOutliers}</span>
             </li>
         `;
+    }
+    
+    // Show table filtered entries when table filter is active and either 
+    // they're being removed or there are some to remove
+    if (filterStats.tableFilterActive) {
+        if (filterStats.tableFiltered > 0) {
+            hasFilters = true;
+            statsList.innerHTML += `
+                <li class="filter-stats-item">
+                    <span class="filter-reason">Table filtered:</span>
+                    <span class="filter-count">${filterStats.tableFiltered}</span>
+                </li>
+            `;
+        }
     }
     
     // Update total count and percentage
@@ -841,3 +856,29 @@ export async function refocusAxisOnEntity(
       }
     }
   }
+
+
+/**
+ * Updates a plot when a table filter has changed
+ * @param {HTMLElement} plotContainer - The plot container
+ * @param {Object} data - The data object
+ * @param {Object} settings - The settings object 
+ * @param {Function} refreshPlot - Function to refresh the plot
+ * @returns {Promise<void>} - Promise that resolves when update is complete
+ */
+export function updatePlotOnTableChange(plotContainer, data, settings, refreshPlot) {
+  if (!settings.tableFilter || settings.tableFilter === 'none') {
+    return Promise.resolve(); // No table filter active
+  }
+  
+  console.log(`Updating plot after table change with filter: ${settings.tableFilter}`);
+  
+  // Use updatePlotElements for faster updates without reloading all data
+  return updatePlotElements(plotContainer, data, settings, refreshPlot, { 
+    filter: true, 
+    colors: true 
+  }).catch(error => {
+    console.error("Error updating plot with table filter:", error);
+    return refreshPlot(); // Fall back to full plot refresh if update fails
+  });
+}

@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
+import { updatePlotElements, updatePlotOnTableChange, highlightFocusedEntity, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -526,6 +526,33 @@ const CellPlotPanel = (function() {
                     
                     // Otherwise log and continue
                     console.error(`Error updating cell plot ${_id}:`, error);
+                }
+            } 
+            
+            // Handle table updates for filtering
+            else if ((updateType === 'tableChanged' || updateType === 'tableFiltered') && 
+                     _settings.tableFilter && 
+                     _settings.tableFilter !== 'none') {
+                     
+                // Check if the update is from the table we're using for filtering
+                const tableId = updateData.id || '';
+                
+                if (tableId === _settings.tableFilter) {
+                    if (window.Config && window.Config.DEBUG_MODE) {
+                        console.log(`CellPlot ${_id}: Filtered table ${tableId} changed, updating plot`);
+                    }
+                    
+                    try {                        
+                        // Update the plot based on the table change
+                        await updatePlotOnTableChange(_plotContainer, _data, _settings, refreshPlot);
+                        
+                        return;
+                    } catch (error) {
+                        if (error && error.name === 'AbortError') {
+                            throw error;
+                        }
+                        console.error(`Error updating cell plot ${_id} after table change:`, error);
+                    }
                 }
             }
             

@@ -772,10 +772,12 @@ export function createFilterMask(data, settings) {
     zNaN: 0,
     colorNaN: 0,
     colorOutliers: 0,
+    tableFiltered: 0,
     total: data.x?.values?.length || 0,
     filtered: 0,
     hideNaNActive: settings.hideNaN === true,
-    hideOutliersActive: settings.hideOutliers === true
+    hideOutliersActive: settings.hideOutliers === true,
+    tableFilterActive: settings.tableFilter && settings.tableFilter !== 'none'
   };
 
   const totalPts = data.x.values.length;
@@ -821,15 +823,69 @@ export function createFilterMask(data, settings) {
     }
   }
 
-  // 3. Gather only the masks we need for explicit filtering
+  // 3. Create table filter mask if a table is selected
+  let tableFilterMask = null;
+  if (settings.tableFilter && settings.tableFilter !== 'none') {
+    // Try to get the table panel from PanelManager
+    const tablePanel = window.PanelManager && window.PanelManager.getPanel(settings.tableFilter);
+    
+    if (tablePanel) {
+      // Get the table settings which contains currentEntries property
+      const tableConfig = tablePanel.getConfig && tablePanel.getConfig();
+      
+      if (tableConfig && Array.isArray(tableConfig.currentEntries)) {
+        // Create a Set of entities in the table for O(1) lookup
+        const tableEntities = new Set();
+        const entityType = data.entities; // 'cells' or 'genes'
+        
+        // Get the current entities based on their indices
+        tableConfig.currentEntries.forEach(index => {
+          // Get the actual entity name from the table data
+          const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
+          if (entities && index < entities.length) {
+            const entityName = entities[index];
+            if (entityName) {
+              tableEntities.add(entityName);
+            }
+          }
+        });
+        
+        // Always store the table entities for visual differentiation
+        data.tableEntities = tableEntities;
+        
+        // Calculate how many entities are not in the table
+        const nonTableCount = data[entityType].filter(entity => !tableEntities.has(entity)).length;
+        
+        // If we want to completely remove non-table entries
+        if (settings.removeNonTableEntries) {
+          // Create mask that includes only entities present in the table
+          tableFilterMask = data[entityType].map(entity => tableEntities.has(entity));
+          
+          // Only count filtered entries in stats when they are actually removed
+          filterStats.tableFiltered = nonTableCount;
+        } 
+        // Otherwise we'll color them differently (gray), but not filter them out
+        else {
+          // No filtering mask when we're just coloring differently
+          tableFilterMask = null;
+          
+          // Don't count as filtered since they're just grayed out, not removed
+          filterStats.tableFiltered = 0;
+        }
+      }
+    }
+  }
+
+  // 4. Gather only the masks we need for explicit filtering
   const masks = [xMask, yMask];
   if (zMask) masks.push(zMask);
   
   // Only apply these filters if the corresponding settings are enabled
   if (colorValidMask && settings.hideNaN) masks.push(colorValidMask);
   if (colorRangeMask && settings.hideOutliers) masks.push(colorRangeMask);
+  if (tableFilterMask && settings.removeNonTableEntries) masks.push(tableFilterMask);
 
-  // 4. Build the final indexMask
+  // 5. Build the final indexMask
   let indexMask;
   if (masks.length > 0) {
     // If we have masks to apply, build a mask requiring all filters to pass
@@ -841,7 +897,7 @@ export function createFilterMask(data, settings) {
     indexMask = Array.from({ length: totalPts }, () => true);
   }
 
-  // 5. Compute filtered count
+  // 6. Compute filtered count
   filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
 
   return { indexMask, filterStats };
@@ -969,6 +1025,18 @@ function updateFilterWidget(plotContainer, filterStats) {
       <li class="filter-stats-item">
         <span class="filter-reason">Color outliers:</span>
         <span class="filter-count">${filterStats.colorOutliers}</span>
+      </li>
+    `;
+  }
+  
+  // Only show table filtered entries when removeNonTableEntries is active 
+  // and there are actually entries being filtered out
+  if (filterStats.tableFiltered > 0 && filterStats.tableFilterActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Table filtered:</span>
+        <span class="filter-count">${filterStats.tableFiltered}</span>
       </li>
     `;
   }
@@ -1383,20 +1451,28 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     const catValues = filteredData.colorCategories || [...new Set(filteredData.color)];
     const colorKey = `${settings.color.key}_colors`;
     const datasetPath = DataManager.getCurrentDataset();
+    
     try {
+      // Load custom colors from uns
       const response = await DataManager.loadUns({
         datasetPath: datasetPath,
         unsKey: colorKey
       });
+      
       let customColors = null;
       if (response && response.data) {
         customColors = Array.isArray(response.data)
           ? response.data
           : [response.data];
       }
+      
       // Process categories using the uns (custom) colors if available.
+      // The processCategories function now handles both table filtering modes:
+      // 1. When removeNonTableEntries is true, only table entities are shown
+      // 2. When removeNonTableEntries is false, non-table entities are shown in gray
       const categoricalTraces = processCategories(settings, filteredData, catValues, customColors);
       
+      // Set up the legend
       layout.showlegend = true;
       layout.legend = { 
         ...(layout.legend || {}), 
@@ -1410,6 +1486,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         }
       };
 
+      // Position the legend based on settings
       const position = settings.legendPosition || 'right';
       const posConfig = getPositioningByLocation(position);
       
@@ -1419,6 +1496,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.xanchor = posConfig.legendXanchor;
       layout.legend.yanchor = posConfig.legendYanchor;
       
+      // Create the plot with categorical traces
       Plotly.newPlot(
         plotContainer,
         categoricalTraces,
@@ -1430,6 +1508,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
+      
+      // Attach click handler and highlight focused entity if needed
       attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);
       if (settings[highlightKey]) {
         highlightFocusedEntity(plotContainer, filteredData, settings);
@@ -1437,6 +1517,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       return;
     } catch (error) {
       console.warn(`Error fetching custom colors from uns.${colorKey}:`, error);
+      
       // Fallback: process without custom colors
       const categoricalTraces = processCategories(settings, filteredData, catValues);
       
@@ -1451,6 +1532,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
         }
       );
+      
       attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);
       if (settings[highlightKey]) {
         highlightFocusedEntity(plotContainer, filteredData, settings);
@@ -1458,86 +1540,338 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       return;
     }
   } else if (filteredData.colorType === 'numerical') {
-    // Numerical coloring branch.
-    baseTrace.marker.color = filteredData.color;
-    baseTrace.marker.colorscale = settings.colorScale;
-    baseTrace.marker.reversescale = settings.colorReversed;
-    
-    // Update color sliders with the loaded data while preserving saved settings
-    updateColorSliderUI(container, filteredData, settings, id, isFirstLoad);
-    
-    let cmin = settings.colorMin;
-    let cmax = settings.colorMax;
-    
-    // If either setting is not defined (i.e. null or undefined), compute valid values and update only the missing one.
-    if (cmin == null || cmax == null) {
-      const validValues = filteredData.color.filter(v => !isNaN(v));
-    
-      if (cmin == null) {
-        cmin = Math.min(...validValues);
-      }
-      if (cmax == null) {
-        cmax = Math.max(...validValues);
-      }
-    }
-    
-    baseTrace.marker.cmin = cmin;
-    baseTrace.marker.cmax = cmax;
-    baseTrace.marker.colorbar = {
-      title: {
-        text:
-          `${settings.color.type}.${settings.color.key}` +
-          (settings.color.column ? `.${settings.color.column}` : ''),
-        side: 'right',
-        font: { 
-          size: settings.fontSize ? settings.fontSize + 2 : 14,
-          family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-          color: settings.textColor || '#000000'
+    // Check if table filtering is active but entries are not being removed
+    if (settings.tableFilter && settings.tableFilter !== 'none' && 
+        filteredData.tableEntities) {
+      
+      // For numerical coloring with table filtering, we need to create two traces:
+      // 1. A trace for all entities not in the table (colored gray)
+      // 2. A trace for entities in the table (colored by their numeric values)
+      
+      const entityKey = filteredData.entities === 'cells' ? 'cells' : 'genes';
+      const tableEntities = filteredData.tableEntities;
+      
+      // Create arrays for table and non-table entities
+      const tableIndices = [];
+      const nonTableIndices = [];
+      
+      // Separate indices into table and non-table
+      filteredData[entityKey].forEach((entity, idx) => {
+        if (tableEntities.has(entity)) {
+          tableIndices.push(idx);
+        } else {
+          nonTableIndices.push(idx);
+        }
+      });
+      
+      // Update color sliders with the loaded data while preserving saved settings
+      updateColorSliderUI(container, filteredData, settings, id, isFirstLoad);
+      
+      let cmin = settings.colorMin;
+      let cmax = settings.colorMax;
+      
+      // If either setting is not defined (i.e. null or undefined), compute valid values and update only the missing one.
+      if (cmin == null || cmax == null) {
+        const validValues = filteredData.color.filter(v => !isNaN(v));
+      
+        if (cmin == null) {
+          cmin = Math.min(...validValues);
+        }
+        if (cmax == null) {
+          cmax = Math.max(...validValues);
         }
       }
-    };
-
-    // Use the centralized positioning function
-    const position = settings.legendPosition || 'right';
-    const posConfig = getPositioningByLocation(position);
-    
-    baseTrace.marker.colorbar.x = posConfig.x;
-    baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
-    baseTrace.marker.colorbar.y = posConfig.y;
-    baseTrace.marker.colorbar.yanchor = posConfig.yanchor;
-    baseTrace.marker.colorbar.titleside = posConfig.titleside;
-    baseTrace.marker.colorbar.orientation = posConfig.orientation;
-
-    Plotly.newPlot(
-      plotContainer,
-      [baseTrace],
-      layout,
-      window.plotlyDefaultConfig || {
-        responsive: true,
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+      
+      // Common colorbar settings for table entities
+      const colorbarSettings = {
+        title: {
+          text: `${settings.color.type}.${settings.color.key}` +
+                (settings.color.column ? `.${settings.color.column}` : ''),
+          side: 'right',
+          font: { 
+            size: settings.fontSize ? settings.fontSize + 2 : 14,
+            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+            color: settings.textColor || '#000000'
+          }
+        }
+      };
+      
+      // Use the centralized positioning function
+      const position = settings.legendPosition || 'right';
+      const posConfig = getPositioningByLocation(position);
+      
+      colorbarSettings.x = posConfig.x;
+      colorbarSettings.xanchor = posConfig.xanchor;
+      colorbarSettings.y = posConfig.y;
+      colorbarSettings.yanchor = posConfig.yanchor;
+      colorbarSettings.titleside = posConfig.titleside;
+      colorbarSettings.orientation = posConfig.orientation;
+      
+      const traces = [];
+      
+      // 1. Create trace for non-table entities (colored gray) - draw first (bottom layer)
+      // Only do this when we're NOT removing non-table entries completely
+      if (!settings.removeNonTableEntries && nonTableIndices.length > 0) {
+        const nonTableTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: 'Not in table',
+          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: nonTableIndices,
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
+                        (settings.z ? `<br>z: %{z}` : '') + 
+                        `<extra></extra>`,
+          x: nonTableIndices.map(idx => filteredData.x.values[idx]),
+          y: nonTableIndices.map(idx => filteredData.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: 'rgba(180, 180, 180, 0.6)',
+          },
+          showlegend: true
+        };
+        
+        // Add z-axis values for 3D plots if applicable
+        if (settings.z && filteredData.z) {
+          nonTableTrace.z = nonTableIndices.map(idx => filteredData.z.values[idx]);
+        }
+        
+        traces.push(nonTableTrace);
       }
-    );
-    attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
+      
+      // 2. Create trace for table entities (colored normally) - draw second (top layer)
+      if (tableIndices.length > 0) {
+        const tableTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: settings.color.key || 'Value',
+          text: tableIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: tableIndices,
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
+                        (settings.z ? `<br>z: %{z}` : '') + 
+                        `<br>c: %{marker.color}<extra></extra>`,
+          x: tableIndices.map(idx => filteredData.x.values[idx]),
+          y: tableIndices.map(idx => filteredData.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: tableIndices.map(idx => filteredData.color[idx]),
+            colorscale: settings.colorScale,
+            reversescale: settings.colorReversed,
+            cmin: cmin,
+            cmax: cmax,
+            colorbar: colorbarSettings
+          },
+          showlegend: false
+        };
+        
+        // Add z-axis values for 3D plots if applicable
+        if (settings.z && filteredData.z) {
+          tableTrace.z = tableIndices.map(idx => filteredData.z.values[idx]);
+        }
+        
+        traces.push(tableTrace);
+      }
+      
+      Plotly.newPlot(
+        plotContainer,
+        traces,
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      
+      attachClickHandler(plotContainer, traces, filteredData, settings);
+    } 
+    // Standard numerical coloring (no table filtering or entries being removed)
+    else {
+      // Numerical coloring branch.
+      baseTrace.marker.color = filteredData.color;
+      baseTrace.marker.colorscale = settings.colorScale;
+      baseTrace.marker.reversescale = settings.colorReversed;
+      
+      // Update color sliders with the loaded data while preserving saved settings
+      updateColorSliderUI(container, filteredData, settings, id, isFirstLoad);
+      
+      let cmin = settings.colorMin;
+      let cmax = settings.colorMax;
+      
+      // If either setting is not defined (i.e. null or undefined), compute valid values and update only the missing one.
+      if (cmin == null || cmax == null) {
+        const validValues = filteredData.color.filter(v => !isNaN(v));
+      
+        if (cmin == null) {
+          cmin = Math.min(...validValues);
+        }
+        if (cmax == null) {
+          cmax = Math.max(...validValues);
+        }
+      }
+      
+      baseTrace.marker.cmin = cmin;
+      baseTrace.marker.cmax = cmax;
+      baseTrace.marker.colorbar = {
+        title: {
+          text:
+            `${settings.color.type}.${settings.color.key}` +
+            (settings.color.column ? `.${settings.color.column}` : ''),
+          side: 'right',
+          font: { 
+            size: settings.fontSize ? settings.fontSize + 2 : 14,
+            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+            color: settings.textColor || '#000000'
+          }
+        }
+      };
+  
+      // Use the centralized positioning function
+      const position = settings.legendPosition || 'right';
+      const posConfig = getPositioningByLocation(position);
+      
+      baseTrace.marker.colorbar.x = posConfig.x;
+      baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
+      baseTrace.marker.colorbar.y = posConfig.y;
+      baseTrace.marker.colorbar.yanchor = posConfig.yanchor;
+      baseTrace.marker.colorbar.titleside = posConfig.titleside;
+      baseTrace.marker.colorbar.orientation = posConfig.orientation;
+  
+      Plotly.newPlot(
+        plotContainer,
+        [baseTrace],
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
+    }
   } else if (filteredData.colorType === 'constant') {
-    // Constant coloring branch.
-    baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
-    delete baseTrace.marker.colorscale;
-    console.log('Using constant color for all points');
-    
-    Plotly.newPlot(
-      plotContainer,
-      [baseTrace],
-      layout,
-      window.plotlyDefaultConfig || {
-        responsive: true,
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+    // Check if table filtering is active but entries are not being removed
+    if (settings.tableFilter && settings.tableFilter !== 'none' && 
+        filteredData.tableEntities) {
+      
+      // For constant coloring with table filtering, we need to create two traces:
+      // 1. A trace for entities in the table (colored normally)
+      // 2. A trace for entities not in the table (colored lighter gray)
+      
+      const entityKey = filteredData.entities === 'cells' ? 'cells' : 'genes';
+      const tableEntities = filteredData.tableEntities;
+      
+      // Create arrays for table and non-table entities
+      const tableIndices = [];
+      const nonTableIndices = [];
+      
+      // Separate indices into table and non-table
+      filteredData[entityKey].forEach((entity, idx) => {
+        if (tableEntities.has(entity)) {
+          tableIndices.push(idx);
+        } else {
+          nonTableIndices.push(idx);
+        }
+      });
+      
+      const traces = [];
+      
+      // 1. Create trace for non-table entities (lighter gray) - draw first (bottom layer)
+      // Only do this when we're NOT removing non-table entries completely
+      if (!settings.removeNonTableEntries && nonTableIndices.length > 0) {
+        const nonTableTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: 'Not in table',
+          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: nonTableIndices,
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
+                        (settings.z ? `<br>z: %{z}` : '') + 
+                        `<extra></extra>`,
+          x: nonTableIndices.map(idx => filteredData.x.values[idx]),
+          y: nonTableIndices.map(idx => filteredData.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: 'rgba(180, 180, 180, 0.3)'
+          },
+          showlegend: true
+        };
+        
+        // Add z-axis values for 3D plots if applicable
+        if (settings.z && filteredData.z) {
+          nonTableTrace.z = nonTableIndices.map(idx => filteredData.z.values[idx]);
+        }
+        
+        traces.push(nonTableTrace);
       }
-    );
-    attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
+      
+      // 2. Create trace for table entities (normal constant color) - draw second (top layer)
+      if (tableIndices.length > 0) {
+        const tableTrace = {
+          type: settings.z ? 'scatter3d' : 'scattergl',
+          mode: 'markers',
+          name: 'Data points',
+          text: tableIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: tableIndices,
+          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
+                        (settings.z ? `<br>z: %{z}` : '') + 
+                        `<extra></extra>`,
+          x: tableIndices.map(idx => filteredData.x.values[idx]),
+          y: tableIndices.map(idx => filteredData.y.values[idx]),
+          marker: {
+            size: settings.pointSize,
+            opacity: settings.pointOpacity,
+            color: 'rgba(150, 150, 150, 0.7)'
+          },
+          showlegend: true
+        };
+        
+        // Add z-axis values for 3D plots if applicable
+        if (settings.z && filteredData.z) {
+          tableTrace.z = tableIndices.map(idx => filteredData.z.values[idx]);
+        }
+        
+        traces.push(tableTrace);
+      }
+      
+      Plotly.newPlot(
+        plotContainer,
+        traces,
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      
+      attachClickHandler(plotContainer, traces, filteredData, settings);
+    }
+    // Standard constant coloring (no table filtering or entries being removed)
+    else {
+      // Constant coloring branch.
+      baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
+      delete baseTrace.marker.colorscale;
+      console.log('Using constant color for all points');
+      
+      Plotly.newPlot(
+        plotContainer,
+        [baseTrace],
+        layout,
+        window.plotlyDefaultConfig || {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+        }
+      );
+      attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
+    }
   }
   if (settings[highlightKey]) {
     highlightFocusedEntity(plotContainer, filteredData, settings);

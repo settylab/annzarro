@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -126,6 +126,19 @@ export function createPanelStructure(container, id, settings) {
               <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-gene-${id}" style="display:none;">Highlight Focused Gene</button>
               <button class="btn btn-sm btn-outline-secondary me-2" id="refresh-plot-${id}">Refresh</button>
               <button class="btn btn-sm btn-outline-secondary me-2" id="aesthetics-menu-btn-${id}"><i class="fas fa-sliders-h"></i> Plot Options</button>
+            </div>
+            
+            <div class="table-filter-controls mb-2 mt-2">
+              <div class="d-flex align-items-center">
+                <label class="me-2 mb-0">Filter by Table:</label>
+                <select class="form-select form-select-sm table-filter-select" id="table-filter-${id}">
+                  <option value="none">None</option>
+                  <!-- Options populated by external logic -->
+                </select>
+                <button class="btn btn-sm btn-outline-secondary ms-2" id="remove-non-table-entries-${id}" title="Toggle between coloring non-table entries in gray or completely removing them">
+                  <i class="fas fa-eye-slash"></i>
+                </button>
+              </div>
             </div>
 
             <div class="point-controls">
@@ -483,6 +496,25 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   
   const $pointOpacitySlider = jQuery(`#point-opacity-${id}`);
   if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
+  
+  // Initialize table filter dropdown
+  updateTableFilterSelect(controlsContainer, id, plotType);
+  
+  // Initialize table filter settings if not present
+  settings.tableFilter = settings.tableFilter || 'none';
+  settings.removeNonTableEntries = settings.removeNonTableEntries || false;
+  
+  // Set up remove non-table entries button state
+  const $removeNonTableEntriesBtn = jQuery(`#remove-non-table-entries-${id}`);
+  if ($removeNonTableEntriesBtn.length) {
+    if (settings.removeNonTableEntries) {
+      $removeNonTableEntriesBtn.addClass('btn-primary').removeClass('btn-outline-secondary');
+      $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
+    } else {
+      $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
+      $removeNonTableEntriesBtn.attr('title', 'Gray out non-table entries (inactive)');
+    }
+  }
   
   // Color controls
   const $colorScaleSelect = jQuery(`#color-scale-${id}`);

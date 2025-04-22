@@ -1,5 +1,6 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
+import { updatePlotElements } from './plot-update.js';
 
 /**
  * Populates only the key selector for a given axis.
@@ -782,5 +783,95 @@ export function applyCentering(container, data, settings, id) {
     const step = absMaxComputed / 500;
     $colorMinSlider.attr('step', step);
     $colorMaxSlider.attr('step', step);
+  }
+}
+
+/**
+ * Updates the table filter select dropdown with available tables
+ * @param {HTMLElement} container - The container element that holds the select
+ * @param {string} id - The panel ID
+ * @param {string} entityType - 'cells' or 'genes'
+ */
+export function updateTableFilterSelect(container, id, entityType) {
+  const $container = jQuery(container);
+  
+  // The ID in the DOM may include a prefix like "cell-plot-" or "gene-plot-"
+  // First try looking for the table filter dropdown directly using the exact id
+  let $tableFilterSelect = $container.find(`#table-filter-${id}`);
+  
+  // If not found, try a more flexible selector that matches the class
+  if (!$tableFilterSelect.length) {
+    $tableFilterSelect = $container.find('.table-filter-select');
+  }
+  
+  // If still not found, try looking for any dropdown containing "table-filter"
+  if (!$tableFilterSelect.length) {
+    $tableFilterSelect = $container.find('select[id*="table-filter"]');
+  }
+  
+  // Log a warning but continue processing
+  if (!$tableFilterSelect.length) {
+    console.warn(`Table filter select not found for panel ${id} - searched in container:`, $container);
+  }
+  
+  // Get all table panels from PanelManager
+  const tableType = entityType === 'cells' ? 'cell-table' : 'gene-table';
+  const tablePanels = window.PanelManager ? window.PanelManager.getPanelsByType(tableType) : [];
+  
+  // Can't proceed if no dropdown and no table panels
+  if (!$tableFilterSelect.length && (!tablePanels || !tablePanels.length)) {
+    return;
+  }
+  
+  // Update the dropdown if found
+  if ($tableFilterSelect.length) {
+    // Get the current selection
+    const currentValue = $tableFilterSelect.val();
+    
+    // Clear all options except the first one (None)
+    $tableFilterSelect.find('option:not([value="none"])').remove();
+    
+    // Add options for each table panel
+    tablePanels.forEach(panel => {
+      const panelId = panel.getId();
+      const title = panel.getTitle();
+      const $option = jQuery('<option></option>')
+        .val(panelId)
+        .text(title);
+        
+      $tableFilterSelect.append($option);
+    });
+    
+    // If there was a previous selection and it's still available, restore it
+    if (currentValue && currentValue !== 'none' && 
+        $tableFilterSelect.find(`option[value="${currentValue}"]`).length) {
+      $tableFilterSelect.val(currentValue);
+    } else {
+      $tableFilterSelect.val('none');
+    }
+    
+    console.log(`Updated table filter dropdown for panel ${id} with ${tablePanels.length} table options`);
+  } else {
+    // If dropdown not found but we have panel data, try to update settings directly
+    const panel = window.PanelManager ? window.PanelManager.getPanel(id) : null;
+    if (panel) {
+      // Get the current settings
+      const settings = panel.getConfig ? panel.getConfig() : {};
+      if (settings) {
+        // Keep the current table filter if it's still available
+        const currentTableFilter = settings.tableFilter;
+        
+        // Check if the current filter is still valid
+        const isValidFilter = currentTableFilter && 
+                             currentTableFilter !== 'none' && 
+                             tablePanels.some(p => p.getId() === currentTableFilter);
+        
+        // If not valid, reset to 'none'
+        if (!isValidFilter) {
+          settings.tableFilter = 'none';
+          console.log(`Reset table filter for panel ${id} to 'none' (DOM element not found)`);
+        }
+      }
+    }
   }
 }

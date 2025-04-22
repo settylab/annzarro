@@ -239,6 +239,75 @@ export function setupPlotControlListeners(
     $refreshPlotButton.on('click', () => {
       loadDataAndCreatePlot();
     });
+    
+    // --- Table Filter Controls ---
+    // Add event listeners for table filter dropdown
+    // Try different selector strategies to find the table filter dropdown
+    let $tableFilterSelect = $controlsContainer.find(`#table-filter-${id}`);
+    
+    // If not found with the exact ID, try class selector
+    if (!$tableFilterSelect.length) {
+      $tableFilterSelect = $controlsContainer.find('.table-filter-select');
+    }
+    
+    // If still not found, try partial ID match
+    if (!$tableFilterSelect.length) {
+      $tableFilterSelect = $controlsContainer.find('select[id*="table-filter"]');
+    }
+    
+    if ($tableFilterSelect.length) {
+      $tableFilterSelect.on('change', () => {
+        const selectedTableId = $tableFilterSelect.val();
+        settings.tableFilter = selectedTableId;
+        
+        // Try to update with filter first, fall back to full reload if needed
+        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
+          filter: true, 
+          colors: true 
+        }).catch(error => {
+          console.error("Error updating plot with table filter:", error);
+          loadDataAndCreatePlot();
+        });
+      });
+    }
+    
+    // Add event listener for the remove non-table entries toggle button
+    // Try different selector strategies to find the toggle button
+    let $removeNonTableEntriesBtn = $controlsContainer.find(`#remove-non-table-entries-${id}`);
+    
+    // If not found with exact ID, try using title attribute
+    if (!$removeNonTableEntriesBtn.length) {
+      $removeNonTableEntriesBtn = $controlsContainer.find('button[title*="non-table entries"]');
+    }
+    
+    // If still not found, try partial ID match
+    if (!$removeNonTableEntriesBtn.length) {
+      $removeNonTableEntriesBtn = $controlsContainer.find('button[id*="remove-non-table-entries"]');
+    }
+    
+    if ($removeNonTableEntriesBtn.length) {
+      $removeNonTableEntriesBtn.on('click', () => {
+        settings.removeNonTableEntries = !settings.removeNonTableEntries;
+        
+        // Update button styling based on state
+        if (settings.removeNonTableEntries) {
+          $removeNonTableEntriesBtn.addClass('btn-primary').removeClass('btn-outline-secondary');
+          $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
+        } else {
+          $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
+          $removeNonTableEntriesBtn.attr('title', 'Gray out non-table entries (inactive)');
+        }
+        
+        // Try to update with filter first, fall back to full reload if needed
+        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
+          filter: true, 
+          colors: true 
+        }).catch(error => {
+          console.error("Error updating plot with table filter mode:", error);
+          loadDataAndCreatePlot();
+        });
+      });
+    }
   
     // --- Lock Range Button ---
     const $lockRangeButton = $controlsContainer.find(`#lock-range-${id}`);

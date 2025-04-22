@@ -292,6 +292,33 @@ const PanelManager = (function() {
             }
         }
         
+        // Update all table filter dropdowns in plot panels
+        try {
+            // Find all plot panels
+            const plotPanels = document.querySelectorAll('.plot-panel');
+            
+            // Import the utility to update table filter dropdowns
+            import('./panels/plot-utilities/panel-ui-update.js')
+                .then(({ updateTableFilterSelect }) => {
+                    plotPanels.forEach(plotPanel => {
+                        // Extract the id and get the appropriate entity type
+                        const plotId = plotPanel.closest('.tile')?.dataset.tileId;
+                        if (plotId) {
+                            // Find the controls container inside the plot panel
+                            const controlsContainer = plotPanel.querySelector('.plot-controls');
+                            if (controlsContainer) {
+                                const plotType = plotId.startsWith('cell-plot') ? 'cells' : 'genes';
+                                // Pass the full panel ID, not just the numeric part
+                                updateTableFilterSelect(controlsContainer, plotId, plotType);
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Error updating table filter dropdowns:', err));
+        } catch (error) {
+            console.error('Error updating table filter dropdowns:', error);
+        }
+        
         // Notify SessionManager about panel update to trigger autosave if enabled
         if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
             window.sessionManager.notifyPanelUpdate();

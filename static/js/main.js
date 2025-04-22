@@ -24,8 +24,9 @@ const App = (function() {
         
         try {
 
-            // Make SessionManager accessible globally
+            // Make SessionManager and PanelManager accessible globally
             window.sessionManager = SessionManager;
+            window.PanelManager = PanelManager;
             
             // Initialize Plotly with optimized canvas settings
             _initPlotly();
