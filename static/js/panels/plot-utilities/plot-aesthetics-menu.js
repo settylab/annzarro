@@ -1599,6 +1599,31 @@ async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
     const width  = settings.exportWidth  || 1200;
     const height = settings.exportHeight ||  800;
+    
+    // Get the button for positioning the popover
+    const copyBtn = document.getElementById(`copy-to-clipboard-${getPanelId(plotContainer)}`);
+    
+    // Helper function to show notification popover
+    const showNotification = (message, type = 'success') => {
+      // Remove any existing notification
+      const existingPopover = bootstrap.Popover.getInstance(copyBtn);
+      if (existingPopover) existingPopover.dispose();
+      
+      // Create new notification popover
+      const popover = new bootstrap.Popover(copyBtn, {
+        content: message,
+        placement: 'top',
+        customClass: `notification-popover ${type}-notification`,
+        trigger: 'manual',
+        delay: { hide: 1500 }
+      });
+      
+      // Show and auto-hide after 2 seconds
+      popover.show();
+      setTimeout(() => {
+        if (popover) popover.dispose();
+      }, 2000);
+    };
   
     try {
       // 1) Render plot to a data‐URL
@@ -1614,25 +1639,55 @@ async function copyPlotToClipboard(plotContainer, settings) {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob })
         ]);
-        alert('✔️ Plot image copied to clipboard!');
+        showNotification('✔️ Plot image copied to clipboard!', 'success');
       } else {
         throw new Error('Clipboard API not supported');
       }
     }
     catch (err) {
-      console.warn('Clipboard copy failed, downloading image instead:', err);
-  
-      // Fallback: force-download the PNG
-      const downloadLink = document.createElement('a');
-      downloadLink.href = URL.createObjectURL(
-        await fetch(Plotly.toImage(plotContainer, { format:'png', width, height })).then(r=>r.blob())
-      );
-      downloadLink.download = `plot_${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-  
-      alert('Plot exported as PNG.');  
+      console.warn('Clipboard copy failed, trying fallback:', err);
+      
+      try {
+        // Fallback: render to canvas, use canvas.toBlob() API
+        const imgUrl = await Plotly.toImage(plotContainer, { format:'png', width, height });
+        const img = new Image();
+        
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          
+          canvas.toBlob(async blob => {
+            try {
+              if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([
+                  new ClipboardItem({ 'image/png': blob })
+                ]);
+                showNotification('✔️ Plot image copied to clipboard!', 'success');
+              } else {
+                throw new Error('Clipboard API not supported');
+              }
+            } catch (err) {
+              console.error('All clipboard methods failed, downloading instead:', err);
+              const downloadLink = document.createElement('a');
+              downloadLink.href = URL.createObjectURL(blob);
+              downloadLink.download = `plot_${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
+              document.body.appendChild(downloadLink);
+              downloadLink.click();
+              document.body.removeChild(downloadLink);
+              
+              showNotification('Plot saved as PNG', 'info');
+            }
+          }, 'image/png');
+        };
+        
+        img.src = imgUrl;
+      } catch (finalErr) {
+        console.error('All copy methods failed:', finalErr);
+        showNotification('Could not copy image', 'error');
+      }
     }
   }
 
