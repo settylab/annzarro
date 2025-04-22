@@ -1398,7 +1398,17 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       const categoricalTraces = processCategories(settings, filteredData, catValues, customColors);
       
       layout.showlegend = true;
-      layout.legend = { ...(layout.legend || {}), title: { text: settings.color.key } };
+      layout.legend = { 
+        ...(layout.legend || {}), 
+        title: { 
+          text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
+          font: { 
+            size: settings.fontSize ? settings.fontSize + 2 : 14,
+            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+            color: settings.textColor || '#000000'
+          }
+        }
+      };
 
       const position = settings.legendPosition || 'right';
       const posConfig = getPositioningByLocation(position);
@@ -1479,7 +1489,11 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           `${settings.color.type}.${settings.color.key}` +
           (settings.color.column ? `.${settings.color.column}` : ''),
         side: 'right',
-        font: { size: 12 }
+        font: { 
+          size: settings.fontSize ? settings.fontSize + 2 : 14,
+          family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+          color: settings.textColor || '#000000'
+        }
       }
     };
 

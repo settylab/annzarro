@@ -458,7 +458,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         title: {
                             text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
                             side: 'right',
-                            font: { size: 12 }
+                            font: { 
+                                size: settings.fontSize ? settings.fontSize + 2 : 14,
+                                family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                                color: settings.textColor || '#000000'
+                            }
                         },
                         titleside: 'right'
                     };

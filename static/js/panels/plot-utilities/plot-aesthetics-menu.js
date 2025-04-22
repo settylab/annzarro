@@ -1376,12 +1376,22 @@ function updateFontSize(plotContainer, settings) {
     if (!plotContainer) return;
     
     const is3D = settings.z !== null;
+    
+    // Basic layout updates for axes
     const update = {
         'font.size': settings.fontSize,
         'xaxis.title.font.size': settings.fontSize + 2,
         'yaxis.title.font.size': settings.fontSize + 2,
         'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize
+        'yaxis.tickfont.size': settings.fontSize,
+        
+        // Legend font settings
+        'legend.title.font.size': settings.fontSize + 2,
+        'legend.font.size': settings.fontSize,
+        
+        // Global colorbar font settings (if any)
+        'coloraxis.colorbar.title.font.size': settings.fontSize + 2,
+        'coloraxis.colorbar.tickfont.size': settings.fontSize
     };
     
     // For 3D plots
@@ -1396,7 +1406,35 @@ function updateFontSize(plotContainer, settings) {
         });
     }
     
+    // Apply the layout updates
     Plotly.relayout(plotContainer, update);
+    
+    // Update trace-specific colorbar settings
+    if (plotContainer.data) {
+        plotContainer.data.forEach((trace, i) => {
+            // Skip focused entity trace
+            if (trace.name && trace.name.includes('Focused')) return;
+            
+            const traceUpdate = {};
+            
+            // Update marker.colorbar (for scatter plots with continuous color)
+            if (trace.marker && trace.marker.colorbar) {
+                traceUpdate['marker.colorbar.title.font.size'] = settings.fontSize + 2;
+                traceUpdate['marker.colorbar.tickfont.size'] = settings.fontSize;
+            }
+            
+            // Update colorbar directly (for heatmaps, contour plots)
+            if (trace.colorbar) {
+                traceUpdate['colorbar.title.font.size'] = settings.fontSize + 2;
+                traceUpdate['colorbar.tickfont.size'] = settings.fontSize;
+            }
+            
+            // Apply trace updates if we have any
+            if (Object.keys(traceUpdate).length > 0) {
+                Plotly.restyle(plotContainer, traceUpdate, [i]);
+            }
+        });
+    }
 }
 
 /**
