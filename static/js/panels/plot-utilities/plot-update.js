@@ -557,7 +557,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   // Capture current view state before making changes
   let currentLayout = null;
   if (plotContainer && plotContainer.layout) {
-    // Store current view state
+    // Store current view state as a deep copy
     currentLayout = JSON.parse(JSON.stringify(plotContainer.layout));
   }
 
@@ -679,44 +679,33 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
     trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
   
-  // Prepare layout update to preserve the current view state
-  const layoutUpdate = {};
-  if (currentLayout) {
-    if (is3D && currentLayout.scene) {
-      // For 3D plots, preserve camera settings
-      layoutUpdate.scene = {
-        camera: currentLayout.scene.camera
-      };
-    } else {
-      // For 2D plots, preserve axis ranges
-      if (currentLayout.xaxis && currentLayout.xaxis.range) {
-        layoutUpdate.xaxis = { range: currentLayout.xaxis.range };
-      }
-      if (currentLayout.yaxis && currentLayout.yaxis.range) {
-        layoutUpdate.yaxis = { range: currentLayout.yaxis.range };
-      }
-    }
-  }
-
-  // Update the plot with the highlight trace
+  // To avoid any layout disruption, use different approach based on whether highlight exists
   if (existingIdx >= 0) {
-    // Update existing highlight trace
-    Plotly.update(plotContainer, 
-      {
-        x: [highlightTrace.x],
-        y: [highlightTrace.y],
-        z: is3D ? [highlightTrace.z] : undefined,
-        type: highlightTrace.type
-      }, 
-      layoutUpdate,
-      [existingIdx]
-    );
+    // We have a highlight trace already - use a one-step update operation
+    // that updates JUST the trace data while preserving layout exactly
+    const update = {
+      // Trace data updates
+      'x': [highlightTrace.x],
+      'y': [highlightTrace.y]
+    };
+    
+    // For 3D plots, include z coordinates
+    if (is3D) {
+      update.z = [highlightTrace.z];
+    }
+    
+    // Only update the focused trace
+    const indices = [existingIdx];
+    
+    // Preserve the entire existing layout - don't modify anything
+    Plotly.update(plotContainer, update, currentLayout, indices);
   } else {
-    // Add new highlight trace and preserve layout
+    // No existing highlight trace - first add one, then restore layout completely
     Plotly.addTraces(plotContainer, highlightTrace)
       .then(() => {
-        if (Object.keys(layoutUpdate).length > 0) {
-          Plotly.relayout(plotContainer, layoutUpdate);
+        if (currentLayout) {
+          // Restore the ENTIRE layout to maintain all settings exactly as they were
+          Plotly.relayout(plotContainer, currentLayout);
         }
       });
   }
