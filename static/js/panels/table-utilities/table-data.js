@@ -2,7 +2,6 @@
  * Utilities for loading and processing table data
  */
 import { DataManager } from '../../data-manager.js';
-import { setupSearchBuilderCriteriaListener } from './listeners.js';
 
 /**
  * Load data for a table
@@ -368,15 +367,14 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         dom: '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
              '<"row"<"col-sm-12"tr>>' +
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
-        scrollY: '100%', // Use percentage to fill container
-        scrollCollapse: true,
-        scrollX: false, // No horizontal scrolling
-        fixedHeader: false, // Disable fixed header to avoid duplicate header issue
-        
-        // Use Bootstrap's built-in styling for striping
-        hover: true,
+        responsive: false, // Never use responsive mode
+        scrollX: true, // Always enable horizontal scrolling
+        scrolly: false,
+        scrollCollapse: false, // Always collapse scroll
+        fixedHeader: true, // this does not seem to work
+        hover: true, // this also dpes not work
         stripe: true,
-        autoWidth: true,
+        autoWidth: true, // esential for column name alignment with content
         // Configure buttons properly - include basic export functionality
         buttons: {
             buttons: [
@@ -393,10 +391,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-            preDefined: settings.searchBuilderConfig && 
-                      settings.searchBuilderConfig.criteria ? 
-                      settings.searchBuilderConfig : 
-                      undefined,
+            preDefined: settings.searchBuilderConfig && settings.searchBuilderConfig.criteria
+            ? settings.searchBuilderConfig
+            : undefined,
             display: 'block' // Always display
         },
         initComplete: function(dtsettings, json) {
@@ -415,14 +412,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 }
             });
             
-            // Make sure SearchBuilder is shown
-            try {
-                setupSearchBuilderCriteriaListener(api, settings)
-
-            } catch (error) {
-                console.error('Error initializing SearchBuilder:', error);
-            }
-            
         },
         drawCallback: function(settings) {
             // Update settings with filtered data
@@ -438,6 +427,14 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         'height': '24px',
         'max-height': '24px'
     });
+
+    Object.defineProperty(settings, 'searchBuilderConfig', {
+        configurable: true,
+        get() {
+          // this function will run each time someone does `settings.searchBuilderConfig`
+          return dataTable.searchBuilder.getDetails();
+        }
+      });
     
     // Return the DataTables instance
     return dataTable;

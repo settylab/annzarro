@@ -129,34 +129,6 @@ function setupCommonEventListeners({
 }
 
 /**
- * Set up listener for SearchBuilder criteria changes
- * @param {Object} dataTable - DataTable instance
- * @param {Object} settings - Panel settings
- */
-export function setupSearchBuilderCriteriaListener(dataTable, settings) {
-    // Initialize searchBuilderConfig if not present
-    if (!settings.searchBuilderConfig) {
-        settings.searchBuilderConfig = { criteria: [] };
-    }
-    
-    // Add event listener to DataTable for SearchBuilder changes
-    dataTable.on('searchBuilder.searchChanged', function(e, searchBuilder) {
-        try {
-            // Get the current criteria from SearchBuilder
-            const criteria = searchBuilder.getDetails();
-            
-            // Store criteria in panel settings
-            if (criteria) {
-                settings.searchBuilderConfig = criteria;
-                console.log('SearchBuilder criteria updated:', criteria);
-            }
-        } catch (error) {
-            console.error('Error updating SearchBuilder criteria:', error);
-        }
-    });
-}
-
-/**
  * Set up cell table specific event listeners
  * @param {Object} options - Options for setting up listeners
  * @param {string} options.id - Panel ID

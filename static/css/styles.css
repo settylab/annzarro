@@ -243,39 +243,13 @@ body {
     flex-direction: column;
     height: 100%;
     position: relative;
+    overflow-x: hidden;
 }
 
 .table-controls {
     padding: 0.5rem;
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
-}
-
-.table-container {
-    flex: 1;
-    overflow: visible; /* Let content overflow for pagination */
-    min-height: 0; /* Critical fix for allowing header to show in small panels */
-    padding: 0.5rem;
-    height: calc(100% - 50px); /* Leave space for pagination */
-    max-height: calc(100% - 50px); /* Ensure it doesn't exceed container */
-    position: relative;
-}
-
-/* Compact DataTables styling */
-.table-panel table.dataTable {
-    width: 100% !important;
-    margin: 0 !important;
-}
-
-.table-panel table.dataTable tbody td {
-    padding: 3px 8px !important;
-    font-size: 0.82rem !important;
-    vertical-align: middle !important;
-}
-
-/* Ensure dataTables wrapper doesn't overflow */
-.table-panel .dataTables_wrapper {
-    width: 100% !important;
 }
 
 
@@ -290,6 +264,66 @@ body {
     height: auto;
 }
 
+/* 1) Make your “panel” wrapper a flex‑column so its children can shrink/grow */
+.table-container {
+  display: flex;           /* ← you were missing this */
+  flex-direction: column;
+  height: 100%;            /* or whatever your splitter gives it */
+  min-height: 0;           /* ← allows it to actually shrink */
+}
+
+/* 2) Target the DT wrapper (it’ll be <div id="…_wrapper" class="dt-container…">) */
+.table-container > [id$="_wrapper"] {
+  display: flex;           /* ← turn *that* into a flex‑column as well */
+  flex-direction: column;
+  flex: 1 1 auto;          /* ← fill the .table‑container */
+  min-height: 0;           /* ← let it shrink below its contents */
+  width: 100%;
+}
+
+/* 3) Pin the first row (search/header) & last row (info/paging) to natural height */
+.table-container > [id$="_wrapper"] > .row:first-child,
+.table-container > [id$="_wrapper"] > .row:last-child {
+  flex: 0 0 auto;
+}
+
+/* 4) Let the *middle* row (the actual <table>) flex and get the scroll bar */
+.table-container > [id$="_wrapper"] > .row:nth-child(2) {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: auto;   /* show horizontal scroll only when content overflows */
+}
+
+/* 1) Turn .dt-scroll into a flex‐column that fills your panel */
+.table-container > [id$="_wrapper"] .dt-scroll {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important; /* hide any stray scrollbars here */
+  }
+  
+  /* 2) Pin the DT head at the top */
+  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-head {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 2 !important;
+  }
+  
+  /* 3) Pin the DT footer at the bottom */
+  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-foot {
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 2 !important;
+  }
+  
+  /* 4) Let *only* the body flex & scroll both ways */
+  .table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-body {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    overflow: auto !important;
+  }
+  
 /* Column Selector (Left Side) */
 .column-selector {
     flex: 1;
@@ -410,71 +444,6 @@ body {
     font-size: 0.7rem;
 }
 
-/* Table action buttons */
-.action-buttons {
-    display: flex;
-    gap: 0.25rem; /* Reduced gap */
-    margin-top: 0.5rem;
-    justify-content: space-between;
-    width: 100%;
-}
-
-.action-buttons .btn-group {
-    flex-wrap: nowrap;
-}
-
-.action-buttons button {
-    white-space: nowrap;
-    padding-left: 0.4rem; /* More compact padding */
-    padding-right: 0.4rem;
-    font-size: 0.8rem; /* Slightly smaller font */
-}
-
-
-/* Entity index styling - modern look */
-.entity-index-value {
-    color: #007bff;
-    cursor: pointer;
-    font-weight: 500;
-    text-decoration: none;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: all 0.15s ease;
-}
-
-.entity-index-value:hover {
-    text-decoration: none;
-    background-color: rgba(0, 123, 255, 0.1);
-}
-
-/* Search Builder styling */
-.dtsb-group {
-    margin-bottom: 1rem;
-}
-
-.dtsb-criteria {
-    display: flex;
-    flex-wrap: nowrap;
-}
-
-/* Make datatable buttons more prominent */
-.dt-buttons {
-    margin-bottom: 1rem;
-}
-
-.dt-button {
-    margin-right: 0.25rem;
-}
-
-/* Responsive datatable */
-table.dataTable.dtr-inline.collapsed>tbody>tr>td.dtr-control:before {
-    background-color: #007bff;
-}
-
-/* Fix scrolling issues in DataTables */
-.dataTables_scrollBody {
-    min-height: 0 !important; /* Allow table body to shrink in small panels */
-}
 
 /* Gene Set Panel Styles */
 .gene-set-panel {
@@ -548,33 +517,6 @@ table.dataTable.dtr-inline.collapsed>tbody>tr>td.dtr-control:before {
     overflow-y: auto;
 }
 
-/* Hover Status for Points */
-.hover-info {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 0.5rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-    z-index: 100;
-    font-size: 0.875rem;
-    max-width: 300px;
-    pointer-events: none;
-}
-
-/* DataTables customizations */
-div.dtsb-searchBuilder {
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-div.dtsb-group {
-    background-color: #f8f9fa;
-    padding: 0.5rem;
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-}
 
 /* Focused Items Highlighting */
 .focused-gene {
@@ -880,8 +822,6 @@ div.dtsb-group {
 }
 
 .session-card-preview i:hover {
-    background-color: #007bff;
-    color: white;
     transform: scale(1.1);
 }
 
