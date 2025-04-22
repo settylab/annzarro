@@ -360,6 +360,17 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 // Add new categorical traces
                 Plotly.addTraces(plotContainer, categoricalTraces);
                 
+                // Update the legend title for categorical data
+                Plotly.relayout(plotContainer, {
+                    'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
+                                        (settings.color.column ? `.${settings.color.column}` : ''),
+                    'legend.title.font': { 
+                        size: settings.fontSize ? settings.fontSize + 2 : 14,
+                        family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                        color: settings.textColor || '#000000'
+                    }
+                });
+                
                 // Re-highlight focused entity if needed
                 if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
                     highlightFocusedEntity(plotContainer, data, settings, entityType);
@@ -457,6 +468,17 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         'showlegend': false
                     };
                     Plotly.restyle(plotContainer, restyleUpdate, [0]);
+                } else if (data.colorType === 'categorical') {
+                    // Update the legend title for categorical data
+                    Plotly.relayout(plotContainer, {
+                        'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
+                                           (settings.color.column ? `.${settings.color.column}` : ''),
+                        'legend.title.font': { 
+                            size: settings.fontSize ? settings.fontSize + 2 : 14,
+                            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                            color: settings.textColor || '#000000'
+                        }
+                    });
                 } else if (settings.color.type === 'none' || data.colorType === 'constant') {
                     const restyleUpdate = {
                         'marker.showscale': false,
