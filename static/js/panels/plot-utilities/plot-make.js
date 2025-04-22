@@ -1347,6 +1347,33 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   // Always update the filter widget with statistics
   updateFilterWidget(plotContainer, filterStats);
 
+  // Apply additional aesthetic settings to the layout before plotting
+  // Update grid and zero line visibility based on settings
+  if (settings.z) { // 3D plot
+    layout.scene = layout.scene || {};
+    layout.scene.xaxis = layout.scene.xaxis || {};
+    layout.scene.yaxis = layout.scene.yaxis || {};
+    layout.scene.zaxis = layout.scene.zaxis || {};
+    
+    // Apply grid visibility
+    layout.scene.xaxis.showgrid = settings.showGrid;
+    layout.scene.yaxis.showgrid = settings.showGrid;
+    layout.scene.zaxis.showgrid = settings.showGrid;
+    
+    // Apply zero line visibility
+    layout.scene.xaxis.zeroline = settings.showZeroLines;
+    layout.scene.yaxis.zeroline = settings.showZeroLines;
+    layout.scene.zaxis.zeroline = settings.showZeroLines;
+  } else { // 2D plot
+    // Apply grid visibility
+    layout.xaxis.showgrid = settings.showGrid;
+    layout.yaxis.showgrid = settings.showGrid;
+    
+    // Apply zero line visibility
+    layout.xaxis.zeroline = settings.showZeroLines;
+    layout.yaxis.zeroline = settings.showZeroLines;
+  }
+
   // Branch for different color types
   if (filteredData.colorType === 'categorical') {
     // Remove colorscale if present
