@@ -37,11 +37,34 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   const onShown = () => {
     menuButton.classList.add('btn-aesthetics-active');
     menuButton.classList.remove('btn-outline-secondary');
+    
+    // Find the popover content element
+    const popoverEl = document.querySelector('.aesthetics-popover .aesthetics-menu-content');
+    if (popoverEl) {
+      // Get margin values from data attributes
+      const marginTop = popoverEl.getAttribute('data-margin-top');
+      const marginBottom = popoverEl.getAttribute('data-margin-bottom');
+      const marginLeft = popoverEl.getAttribute('data-margin-left');
+      const marginRight = popoverEl.getAttribute('data-margin-right');
+      
+      // Set the input values
+      const topInput = document.getElementById(`margin-top-${id}`);
+      const bottomInput = document.getElementById(`margin-bottom-${id}`);
+      const leftInput = document.getElementById(`margin-left-${id}`);
+      const rightInput = document.getElementById(`margin-right-${id}`);
+      
+      if (topInput && marginTop) topInput.value = marginTop;
+      if (bottomInput && marginBottom) bottomInput.value = marginBottom;
+      if (leftInput && marginLeft) leftInput.value = marginLeft;
+      if (rightInput && marginRight) rightInput.value = marginRight;
+    }
   };
+  
   const onHide = () => {
     menuButton.classList.remove('btn-aesthetics-active');
     menuButton.classList.add('btn-outline-secondary');
   };
+  
   menuButton.addEventListener('shown.bs.popover', onShown);
   menuButton.addEventListener('hide.bs.popover',  onHide);
 
@@ -84,8 +107,22 @@ export function createPopoverContent(id, settings) {
     // Ensure all required settings have defaults
     initializeAestheticsSettings(settings);
     
+    // Store the actual margin values in data attributes to prevent bootstrap.Popover 
+    // from caching the HTML and causing incorrect values
+    const marginTop = settings.margins?.t ?? 80;
+    const marginBottom = settings.margins?.b ?? 60;
+    const marginLeft = settings.margins?.l ?? 80;
+    const marginRight = settings.margins?.r ?? 80;
+    
+    // Create a custom ID to ensure we're getting fresh HTML each time
+    const uniqueId = `aesthetics-${id}-${Date.now()}`;
+    
     return `
-    <div class="aesthetics-menu-content">
+    <div id="${uniqueId}" class="aesthetics-menu-content" 
+         data-margin-top="${marginTop}" 
+         data-margin-bottom="${marginBottom}" 
+         data-margin-left="${marginLeft}"
+         data-margin-right="${marginRight}">
         <!-- Appearance Section -->
         <div class="aesthetics-section">
             <h6>Appearance</h6>
@@ -253,23 +290,23 @@ export function createPopoverContent(id, settings) {
             <div class="row g-2">
                 <div class="col-6">
                     <label class="form-label mb-1">Top</label>
-                    <input type="number" class="form-control form-control-sm" id="margin-top-${id}" 
-                        value="${settings.margins?.t || 80}" min="0" max="200">
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-top-${id}" 
+                        value="${marginTop}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Bottom</label>
-                    <input type="number" class="form-control form-control-sm" id="margin-bottom-${id}" 
-                        value="${settings.margins?.b || 60}" min="0" max="200">
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-bottom-${id}" 
+                        value="${marginBottom}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Left</label>
-                    <input type="number" class="form-control form-control-sm" id="margin-left-${id}" 
-                        value="${settings.margins?.l || 80}" min="0" max="200">
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-left-${id}" 
+                        value="${marginLeft}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Right</label>
-                    <input type="number" class="form-control form-control-sm" id="margin-right-${id}" 
-                        value="${settings.margins?.r || 80}" min="0" max="200">
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-right-${id}" 
+                        value="${marginRight}" min="0" max="200">
                 </div>
             </div>
             <button class="btn btn-sm btn-outline-secondary w-100 mt-2" id="reset-margins-${id}">Reset Margins</button>
