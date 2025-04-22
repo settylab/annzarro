@@ -142,10 +142,6 @@ const DataManager = (function() {
         try {
             _currentDataset = datasetPath;
             
-            // Store current focused items to check if they exist in new dataset
-            const previousFocusedCell = _focusedCell;
-            const previousFocusedGene = _focusedGene;
-            
             // Check for abort signal before each async operation
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
@@ -171,58 +167,8 @@ const DataManager = (function() {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
             
-            // Check if previously focused cell exists in new dataset
-            if (_cells && _cells.length > 0) {
-                if (previousFocusedCell && _cells.includes(previousFocusedCell)) {
-                    // Keep the same focused cell
-                    _focusedCell = previousFocusedCell;
-                } else {
-                    // Use first cell from new dataset
-                    _focusedCell = _cells[0];
-                }
-                
-                // Only trigger events if not in silent mode
-                if (!silent) {
-                    // Trigger event for components to update
-                    const cellEvent = new CustomEvent('focusedCellChanged', {
-                        detail: { 
-                            cell: _focusedCell,
-                            duringDatasetTransition: true  // Add flag to indicate this is part of dataset change
-                        }
-                    });
-                    document.dispatchEvent(cellEvent);
-                }
-            } else {
-                _focusedCell = null;
-            }
-            
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
-            }
-            
-            // Check if previously focused gene exists in new dataset
-            if (_genes && _genes.length > 0) {
-                if (previousFocusedGene && _genes.includes(previousFocusedGene)) {
-                    // Keep the same focused gene
-                    _focusedGene = previousFocusedGene;
-                } else {
-                    // Use first gene from new dataset
-                    _focusedGene = _genes[0];
-                }
-                
-                // Only trigger events if not in silent mode
-                if (!silent) {
-                    // Trigger event for components to update
-                    const geneEvent = new CustomEvent('focusedGeneChanged', {
-                        detail: { 
-                            gene: _focusedGene,
-                            duringDatasetTransition: true  // Add flag to indicate this is part of dataset change
-                        }
-                    });
-                    document.dispatchEvent(geneEvent);
-                }
-            } else {
-                _focusedGene = null;
             }
             
             if (signal && signal.aborted) {
@@ -235,7 +181,7 @@ const DataManager = (function() {
                     detail: { 
                         dataset: _currentDataset,
                         focusedCell: _focusedCell,
-                        focusedGene: _focusedGene
+                        focusedGene: _focusedGene,
                     }
                 });
                 document.dispatchEvent(datasetEvent);

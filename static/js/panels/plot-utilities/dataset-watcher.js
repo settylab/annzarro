@@ -17,6 +17,7 @@ export function setupDatasetWatcher(id, panel) {
         
         if (isLoaded && panel.onDatasetLoaded) {
             try {
+                // Pass all details to onDatasetLoaded so panels can be aware of preserved entities
                 await panel.onDatasetLoaded(e.detail.dataset);
             } catch (error) {
                 console.error(`Error handling dataset load in panel ${id}:`, error);

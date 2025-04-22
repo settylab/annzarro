@@ -695,15 +695,21 @@ const App = (function() {
                     });
                 }
                 
-                // Always set the first gene as selected (preselected by default)
+                // Use current focused gene if it exists in the new dataset
                 if (genes.length > 0) {
-                    // Only update if different from current focused gene
+                    // Get the current focused gene from DataManager
                     const currentFocused = DataManager.getFocusedGene();
-                    if (currentFocused !== genes[0]) {
+                    
+                    // Check if the current focused gene exists in the new dataset
+                    const geneExists = currentFocused && genes.includes(currentFocused);
+                    
+                    // Use the current focused gene if it exists, otherwise use the first gene
+                    focusedGeneSelect.value = geneExists ? currentFocused : genes[0];
+                    
+                    // If we're changing to a new gene, update DataManager
+                    if (!geneExists && currentFocused !== genes[0]) {
                         DataManager.setFocusedGene(genes[0]);
                     }
-                    
-                    focusedGeneSelect.value = genes[0];
                     
                     // Update select2 if it's active
                     if (window.$ && $.fn.select2) {
@@ -854,15 +860,21 @@ const App = (function() {
                     });
                 }
                 
-                // Always set the first cell as selected (preselected by default)
+                // Use current focused cell if it exists in the new dataset
                 if (cells.length > 0) {
-                    // Only update if different from current focused cell
+                    // Get the current focused cell from DataManager
                     const currentFocused = DataManager.getFocusedCell();
-                    if (currentFocused !== cells[0]) {
+                    
+                    // Check if the current focused cell exists in the new dataset
+                    const cellExists = currentFocused && cells.includes(currentFocused);
+                    
+                    // Use the current focused cell if it exists, otherwise use the first cell
+                    focusedCellSelect.value = cellExists ? currentFocused : cells[0];
+                    
+                    // If we're changing to a new cell, update DataManager
+                    if (!cellExists && currentFocused !== cells[0]) {
                         DataManager.setFocusedCell(cells[0]);
                     }
-                    
-                    focusedCellSelect.value = cells[0];
                     
                     // Update select2 if it's active
                     if (window.$ && $.fn.select2) {
