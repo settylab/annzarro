@@ -13,7 +13,6 @@ export class SelectionTile {
      * @param {object} options.layoutManager - Object with methods to create panels (and optionally close a pane).
      * @param {Function} options.createPanel - Function to create a panel.
      * @param {Map} options.panelsByType - Map grouping panels by type.
-     * @param {object} options.counters - Object holding counters for panel types.
      * @param {Function} options.generateUniqueName - Function to generate a unique panel title.
      * @param {object} options.sessionManager - Object with listSessions and loadSession methods.
      */
@@ -27,7 +26,6 @@ export class SelectionTile {
         layoutManager: null,
         createPanel: null,
         panelsByType: new Map(),
-        counters: {},
         generateUniqueName: null,
         sessionManager: null,
       }, options);
@@ -209,10 +207,10 @@ export class SelectionTile {
           if (cloneSection) cloneSection.style.display = 'block';
         }
       } else if (this.variant === "pane") {
-        const newId = `${panelType}-${++this.counters[panelType]}`;
+        const newId = `${panelType}-${Date.now()}`;
         const config = {
           id: newId,
-          title: `${this._formatPanelType(panelType)} ${this.counters[panelType]}`
+          title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
         };
         const parentPane = this.tileSelector.closest('.split-pane') || this.container;
         this.createPanel(panelType, config, parentPane);
@@ -288,7 +286,7 @@ export class SelectionTile {
         
         // For regular clicks on the panel, clone/duplicate the panel instead of reopening
         const config = JSON.parse(JSON.stringify(panel.getConfig()));
-        config.id = `${panelType}-${++this.counters[panelType]}`;
+        config.id = `${panelType}-${Date.now()}`;
         
         // Always ensure unique titles for duplicated panels
         config.title = this.generateUniqueName(panelTitle);

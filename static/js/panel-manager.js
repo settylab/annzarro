@@ -19,9 +19,6 @@ const PanelManager = (function() {
     const _activePanels = new Set(); // Currently open panels
     const _panelTypes = new Map(); // Panel types (constructors)
     
-    // Panel counters for generating unique IDs
-    const _counters = {};
-    
     // References to DOM elements
     let _container = null;
     let _welcomeSelectionTile = null;
@@ -40,10 +37,7 @@ const PanelManager = (function() {
             return;
         }
         
-        // Initialize counters from Config.PANEL_TYPES
-        Config.PANEL_TYPES.forEach(panelType => {
-            _counters[panelType.type] = 0;
-        });
+        // No longer need to initialize counters
         
         // Set up event listener for tableFiltered events to update relevant plots
         document.addEventListener('tableFiltered', (event) => {
@@ -73,7 +67,6 @@ const PanelManager = (function() {
                 layoutManager: LayoutManager,
                 createPanel: createPanel,
                 panelsByType: _panelsByType,
-                counters: _counters,
                 generateUniqueName: _generateUniqueName
             });
         });
@@ -89,7 +82,6 @@ const PanelManager = (function() {
                 layoutManager: LayoutManager,
                 createPanel: createPanel,
                 panelsByType: _panelsByType,
-                counters: _counters,
                 generateUniqueName: _generateUniqueName,
                 sessionManager: window.sessionManager
             });
@@ -116,7 +108,6 @@ const PanelManager = (function() {
                 layoutManager: LayoutManager,
                 createPanel: createPanel,
                 panelsByType: _panelsByType,
-                counters: _counters,
                 generateUniqueName: _generateUniqueName,
                 sessionManager: window.sessionManager
             });
@@ -132,10 +123,7 @@ const PanelManager = (function() {
         _panelTypes.set(type, constructor);
         _panelsByType.set(type, new Set());
         
-        // Initialize counter if not already set
-        if (!Object.prototype.hasOwnProperty.call(_counters, type)) {
-            _counters[type] = 0;
-        }
+        // No longer need to initialize counters
     }
     
     
@@ -149,7 +137,7 @@ const PanelManager = (function() {
      */
     function _generateUniqueName(baseName, type = null) {
         if (!baseName) {
-            baseName = (type ? `${_formatPanelType(type)} ${_counters[type]}` : 'Panel 1');
+            baseName = (type ? `${_formatPanelType(type)} 1` : 'Panel 1');
         }
         const existingNames = new Set();
         _panels.forEach(panel => {
@@ -161,13 +149,13 @@ const PanelManager = (function() {
             return baseName;
         }
         
-        // Check if the base name ends with " (number)"
-        const match = baseName.match(/^(.*)\s(\d+)$/);
+        // Check if the base name ends with a number
+        const match = baseName.match(/^(.*?)\s*(\d+)$/);
         let counter = 1;
         let cleanBaseName = baseName;
 
         if (match) {
-            cleanBaseName = match[1]; // Extract the base name without the number
+            cleanBaseName = match[1].trim(); // Extract the base name without the number and trim
             counter = parseInt(match[2], 10); // Use the extracted number as the starting counter
         }
         let newName = `${cleanBaseName} ${counter}`;
@@ -240,7 +228,7 @@ const PanelManager = (function() {
         const Constructor = _panelTypes.get(type);
         const panel = new Constructor(contentContainer, {
             id,
-            title: config.title || `${_formatPanelType(type)} ${_counters[type]}`,
+            title: config.title || _generateUniqueName(`${_formatPanelType(type)} 1`),
             ...config
         });
         
@@ -801,7 +789,7 @@ const PanelManager = (function() {
                     // Create new panel with saved config
                     panel = new Constructor(contentContainer, panelConfig);
                     
-                    // No need to update counter since we're using timestamp
+                    // Using timestamp-based IDs and automatic title generation
                     
                     // Store reference to the panel
                     _panels.set(id, panel);
@@ -968,13 +956,7 @@ const PanelManager = (function() {
         return getActivePanels ? getActivePanels() : Array.from(_panels.values());
     }
 
-    /**
-     * Get the panel types map
-     * @returns {Map} - Map of panel types
-     */
-    function getCounters() {
-        return _counters;
-    }
+    // Removed getCounters function as counters are no longer used
     
     // Public API
     return {
@@ -987,7 +969,6 @@ const PanelManager = (function() {
         getActivePanels,
         getAllPanels,
         getAllActivePanels,
-        getCounters,
         notifyPanels,
         resetPanels,
         saveLayout,
