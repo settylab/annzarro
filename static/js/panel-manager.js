@@ -197,17 +197,17 @@ const PanelManager = (function() {
         // Generate a unique ID for the panel
         // If config.id is provided:
         //   - If it's from a reopened panel, use it exactly as is to maintain references
-        //   - Otherwise, generate a new ID based on the counter
+        //   - Otherwise, generate a new ID based on current time
         let id;
         if (config.id) {
             // Check if this is a reopened panel (has the expected type prefix)
             if (config.id.startsWith(type)) {
                 id = config.id; // Keep the exact same ID for reopened panels
             } else {
-                id = `${type}-${++_counters[type]}`;
+                id = `${type}-${Date.now()}`;
             }
         } else {
-            id = `${type}-${++_counters[type]}`;
+            id = `${type}-${Date.now()}`;
         }
         
         // Create tile element
@@ -801,11 +801,7 @@ const PanelManager = (function() {
                     // Create new panel with saved config
                     panel = new Constructor(contentContainer, panelConfig);
                     
-                    // Update counter
-                    const numericId = parseInt(typeParts[typeParts.length - 1], 10);
-                    if (!isNaN(numericId) && numericId > _counters[type]) {
-                        _counters[type] = numericId;
-                    }
+                    // No need to update counter since we're using timestamp
                     
                     // Store reference to the panel
                     _panels.set(id, panel);
@@ -917,17 +913,22 @@ const PanelManager = (function() {
      * @param {string} [id] - Optional panel ID (will be generated if not provided)
      * @returns {Object} - The created panel instance
      */
-    function registerClosedPanel(type, config, id = null) {
+    function registerClosedPanel(type, config) {
         if (!_panelTypes.has(type)) {
             console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
-        // Keep exactly the same ID for reopening if provided and valid
-        if (id && id.startsWith(type)) {
-            config.id = id; // Keep the exact same ID to preserve references
+        // Make sure ID is unique but only update if really needed:
+        if (config.id) {
+            // Check if this ID already exists in panels
+            if (_panels.has(config.id)) {
+                // Only generate a new ID if there's a collision
+                config.id = `${type}-${Date.now()}`;
+            }
         } else {
-            config.id = id || `${type}-${++_counters[type]}`;
+            // No ID provided, generate one
+            config.id = `${type}-${Date.now()}`;
         }
         config.title = _generateUniqueName(config.title, type);
 

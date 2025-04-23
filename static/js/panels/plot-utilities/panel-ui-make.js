@@ -498,10 +498,10 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
   
   // Initialize table filter dropdown
-  updateTableFilterSelect(controlsContainer, id, plotType);
+  updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);
   
-  // Always initialize table filter to 'none' regardless of saved settings
-  settings.tableFilter = 'none';
+  // Initialize table filter settings if not present
+  settings.tableFilter = settings.tableFilter || 'none';
   settings.removeNonTableEntries = settings.removeNonTableEntries || false;
   
   // Set up remove non-table entries button state
@@ -512,7 +512,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
       $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
     } else {
       $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
-      $removeNonTableEntriesBtn.attr('title', 'Gray out non-table entries (inactive)');
+      $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (inactive)');
     }
   }
   

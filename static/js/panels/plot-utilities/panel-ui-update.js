@@ -791,8 +791,9 @@ export function applyCentering(container, data, settings, id) {
  * @param {HTMLElement} container - The container element that holds the select
  * @param {string} id - The panel ID
  * @param {string} entityType - 'cells' or 'genes'
+ * @param {string|null} value - Optional value to set the select to
  */
-export function updateTableFilterSelect(container, id, entityType) {
+export function updateTableFilterSelect(container, id, entityType, value = null) {
   const $container = jQuery(container);
   
   // The ID in the DOM may include a prefix like "cell-plot-" or "gene-plot-"
@@ -826,7 +827,7 @@ export function updateTableFilterSelect(container, id, entityType) {
   // Update the dropdown if found
   if ($tableFilterSelect.length) {
     // Get the current selection
-    const currentValue = $tableFilterSelect.val();
+    const currentValue = value || $tableFilterSelect.val();
     
     // Clear all options except the first one (None)
     $tableFilterSelect.find('option:not([value="none"])').remove();
