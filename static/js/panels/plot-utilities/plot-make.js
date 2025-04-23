@@ -796,7 +796,7 @@ export function createFilterMask(data, settings) {
     filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
   }
 
-  // Table filtering changed to use pre-populated tableEntities
+  // Table filtering uses pre-populated tableEntities and tableFilterMask
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
   const tableEntities = data.tableEntities;
   
@@ -815,20 +815,8 @@ export function createFilterMask(data, settings) {
     filterStats.tableFiltered = 0;
   }
   
-  // Build table filter mask if needed (only when removing non-table entries)
-  let tableFilterMask = data.tableFilterMask;
-  
-  if (hasTableFilter && tableEntities && settings.removeNonTableEntries) {
-    // Create mask that includes only entities present in the table
-    const entityType = data.entities; // 'cells' or 'genes'
-    tableFilterMask = data[entityType].map(entity => tableEntities.has(entity));
-  } else {
-    // No need for filtering mask when not removing non-table entries or no table filter active
-    tableFilterMask = null;
-  }
-  
-  // Store the mask for use by applyFilterMask
-  data.tableFilterMask = tableFilterMask;
+  // tableFilterMask is now created and managed in updateTableEntities function
+  const tableFilterMask = data.tableFilterMask;
 
   // 4. Build color masks & stats (for numerical coloring)
   let colorValidMask = null;
@@ -925,6 +913,7 @@ export function createFilterMask(data, settings) {
 
 /**
  * Updates the table entities Set in the data object based on the current table selection
+ * Also creates tableFilterMask for filtering operations
  * 
  * @param {Object} data - Data object to update with tableEntities
  * @param {Object} settings - Plot settings containing tableFilter
@@ -934,11 +923,11 @@ export async function updateTableEntities(data, settings) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
   
-  // If no table filter is active, remove any existing tableEntities
+  // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
-    if (data.tableEntities) {
+    if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
-      delete data.tableFilterMask; // Also clear any existing filter mask
+      delete data.tableFilterMask;
       return true; // Indicate that we changed the data
     }
     return false; // No change
@@ -964,10 +953,10 @@ export async function updateTableEntities(data, settings) {
   // Create a new Set of table entities
   const newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
+  const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
   
   // Get entity names based on indices in the table
   tableConfig.currentEntries.forEach(index => {
-    const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
     if (entities && index < entities.length) {
       const entityName = entities[index];
       if (entityName) {
@@ -981,6 +970,16 @@ export async function updateTableEntities(data, settings) {
   if (!currentTableEntities || tableSetsDiffer(currentTableEntities, newTableEntities)) {
     // Store the new Set in the data object
     data.tableEntities = newTableEntities;
+    
+    // Also create a tableFilterMask for filtering operations
+    const entities = data[entityType];
+    if (entities && entities.length > 0) {
+      // Create a boolean mask that includes only entities present in the table
+      data.tableFilterMask = entities.map(entity => newTableEntities.has(entity));
+    } else {
+      data.tableFilterMask = null;
+    }
+    
     changed = true;
   }
   

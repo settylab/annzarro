@@ -3,7 +3,6 @@ import {
   loadAxisData, 
   createFilterMask, 
   applyFilterMask, 
-  filterDataPoints,
   updateTableEntities 
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -172,15 +171,14 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
     }
     
     try {
-        if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-            removeHighlight(plotContainer);
-        }
+        removeHighlight(plotContainer); // One trace less to take care of
 
         const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
         const isNumerical = data.colorType === 'numerical';
         const isCategorical = data.colorType === 'categorical';
         const entityType = data.entities
+        const hasTableMask = data.tableFilterMask !== null && data.tableFilterMask?.length > 0;
 
         // Apply filtering using the shared functions from plot-make.js
         
@@ -198,21 +196,91 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             if (!entities) {
                 console.warn("Entities data is not present, skipping filtering updates.");
             } else {
-                const filteredData = applyFilterMask(data, indexMask);
-                
-                const update = {
-                    x: [filteredData.x.values],
-                    y: [filteredData.y.values],
-                    'marker.color': [filteredData.color],
-                    text: [filteredData[entityType]],
-                    customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
-                };
-                
-                if (shouldBe3D && filteredData.z) {
-                    update.z = [filteredData.z.values];
+                // When filter==true and tableFilterMask exists, use it to further subset data
+                // but only for the trace that is named "In table"
+                if (hasTableMask && plotContainer.data && plotContainer.data.length > 1) {
+                    // Find index of trace named "In table"
+                    const tableTraceIndex = plotContainer.data.findIndex(trace => trace && trace.name != "Not in table");
+                    
+                    if (tableTraceIndex >= 0) {
+                        // Apply both indexMask and tableFilterMask
+                        const combinedMask = indexMask.map((keep, i) => keep && data.tableFilterMask[i]);
+                        const filteredData = applyFilterMask(data, combinedMask);
+                        
+                        const update = {
+                            x: [filteredData.x.values],
+                            y: [filteredData.y.values],
+                            'marker.color': [filteredData.color],
+                            text: [filteredData[entityType]],
+                            customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                        };
+                        
+                        if (shouldBe3D && filteredData.z) {
+                            update.z = [filteredData.z.values];
+                        }
+                        
+                        // Only update the "In table" trace
+                        Plotly.restyle(plotContainer, update, [tableTraceIndex]);
+                    } else {
+                        // If no "In table" trace found, try to find any trace that's not "Not in table"
+                        const alternativeTraceIndex = plotContainer.data.findIndex(trace => trace && trace.name !== "Not in table");
+                        
+                        if (alternativeTraceIndex >= 0) {
+                            // Apply both indexMask and tableFilterMask
+                            const combinedMask = indexMask.map((keep, i) => keep && data.tableFilterMask[i]);
+                            const filteredData = applyFilterMask(data, combinedMask);
+                            
+                            const update = {
+                                x: [filteredData.x.values],
+                                y: [filteredData.y.values],
+                                'marker.color': [filteredData.color],
+                                text: [filteredData[entityType]],
+                                customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                            };
+                            
+                            if (shouldBe3D && filteredData.z) {
+                                update.z = [filteredData.z.values];
+                            }
+                            
+                            // Update the alternative trace
+                            Plotly.restyle(plotContainer, update, [alternativeTraceIndex]);
+                        } else {
+                            // If no suitable trace found, fall back to standard approach
+                            const filteredData = applyFilterMask(data, indexMask);
+                            
+                            const update = {
+                                x: [filteredData.x.values],
+                                y: [filteredData.y.values],
+                                'marker.color': [filteredData.color],
+                                text: [filteredData[entityType]],
+                                customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                            };
+                            
+                            if (shouldBe3D && filteredData.z) {
+                                update.z = [filteredData.z.values];
+                            }
+                            
+                            Plotly.restyle(plotContainer, update, [0]);
+                        }
+                    }
+                } else {
+                    // Standard approach without table filtering
+                    const filteredData = applyFilterMask(data, indexMask);
+                    
+                    const update = {
+                        x: [filteredData.x.values],
+                        y: [filteredData.y.values],
+                        'marker.color': [filteredData.color],
+                        text: [filteredData[entityType]],
+                        customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                    };
+                    
+                    if (shouldBe3D && filteredData.z) {
+                        update.z = [filteredData.z.values];
+                    }
+                    
+                    Plotly.restyle(plotContainer, update, [0]);
                 }
-                
-                Plotly.restyle(plotContainer, update, [0]);
             }
         }
 
@@ -261,8 +329,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     return;
                 }
                 
-                // Update the highlighted entity if needed
-                highlightFocusedEntity(plotContainer, data, settings, entityType);
             } else {
                 // Standard update for a single trace (numerical data).
                 const update = {};
@@ -279,8 +345,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 if (Object.keys(update).length > 0) {
                     console.log("Updating position data:", update);
                     Plotly.restyle(plotContainer, update, [0]);
-                    // Highlight the appropriate entity based on plot type
-                    highlightFocusedEntity(plotContainer, data, settings, entityType);
                 }
             }
         }
@@ -289,7 +353,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         if (updateOptions.colors && data.color) {
             
             // When switching from categorical (multiple traces) to numerical (single trace)
-            if (!isCategorical && hasMultipleTraces && !settings.removeNonTableEntries) {
+            if (!isCategorical && hasMultipleTraces && !hasTableMask) {
                 // Create a new single trace using the data object
                 const newTrace = {
                     type: settings.z ? 'scatter3d' : 'scattergl',
@@ -332,11 +396,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add the new trace
                 Plotly.addTraces(plotContainer, newTrace);
-                
-                // Re-highlight focused entity if needed
-                if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                    highlightFocusedEntity(plotContainer, data, settings, entityType);
-                }
                 applyAllAestheticSettings(plotContainer, settings);
                     
             } else if (isCategorical) {
@@ -385,10 +444,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     }
                 });
                 
-                // Re-highlight focused entity if needed
-                if (settings.highlightFocusedCell || settings.highlightFocusedGene) {
-                    highlightFocusedEntity(plotContainer, data, settings, entityType);
-                }
                 applyAllAestheticSettings(plotContainer, settings);
                   
             } else if (isNumerical) {
@@ -488,7 +543,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         color: 'rgba(180, 180, 180, 1.)',
                         showscale: false
                       },
-                      showlegend: true
+                      // For numerical coloring, don't show in legend
+                      showlegend: false
                     };
                     
                     // Add z-values for 3D plots
@@ -695,11 +751,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 }
             } else {
                 refreshPlot();
+                return;
             }
-            
-          // Re-add highlight for the focused entity if needed.
-          highlightFocusedEntity(plotContainer, data, settings, entityType);
         }
+
+        // bring back the focused entity if enabled
+        highlightFocusedEntity(plotContainer, data, settings, entityType);
         
         // STYLING UPDATES (e.g., point size and opacity)
         if (updateOptions.styling) {
@@ -1145,10 +1202,9 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   
   console.log("Table entities changed, updating plot");
   
-  // Use updatePlotElements for efficient updates without reloading all data
-  // The filter and colors options will trigger the relevant parts of updatePlotElements
+  // First only update color since this may resplit the trace"
   return updatePlotElements(plotContainer, data, settings, refreshPlot, { 
-    filter: settings.removeNonTableEntries, // Only apply filtering when entities should be removed  
-    colors: true   // Always update colors for table filtering (handles graying out)
+    filter: true, // Always apply filtering when table entities change 
+    colors: true  // Always update colors for table filtering (handles graying out)
   });
 }

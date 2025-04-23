@@ -1,5 +1,5 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
-import { loadAxisData } from './plot-make.js';
+import { loadAxisData, updateTableEntities } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
@@ -263,7 +263,6 @@ export function setupPlotControlListeners(
         // First update the table entities asynchronously
         try {
           // Import updateTableEntities dynamically to avoid circular dependencies
-          const { updateTableEntities } = await import('./plot-make.js');
           const entitiesChanged = await updateTableEntities(data, settings);
           
           // Then update the plot elements - only if table entities changed or filter was cleared

@@ -842,8 +842,25 @@ export function updateTableFilterSelect(container, id, entityType) {
       $tableFilterSelect.append($option);
     });
     
-    // Always default to "None" regardless of previous selection
-    $tableFilterSelect.val('none');
+    // Check if the current table filter is still available
+    const isCurrentTableAvailable = currentValue && 
+      currentValue !== 'none' && 
+      $tableFilterSelect.find(`option[value="${currentValue}"]`).length > 0;
+    
+    if (isCurrentTableAvailable) {
+      // Keep the same table selected if still available
+      $tableFilterSelect.val(currentValue);
+    } else {
+      // Default to None if previous table is no longer available
+      $tableFilterSelect.val('none');
+      
+      // Get panel to call onDataUpdate if needed
+      const panel = window.PanelManager ? window.PanelManager.getPanel(id) : null;
+      if (panel && panel.onDataUpdate && currentValue && currentValue !== 'none') {
+        // Call onDataUpdate with tableChanged event
+        panel.onDataUpdate('tableChanged');
+      }
+    }
     
     console.log(`Updated table filter dropdown for panel ${id} with ${tablePanels.length} table options`);
   } else {
@@ -853,12 +870,23 @@ export function updateTableFilterSelect(container, id, entityType) {
       // Get the current settings
       const settings = panel.getConfig ? panel.getConfig() : {};
       if (settings) {
-        // Keep the current table filter if it's still available
+        // Check if the current table filter is still available
         const currentTableFilter = settings.tableFilter;
+        const tableIds = tablePanels.map(panel => panel.getId());
+        const isCurrentTableAvailable = currentTableFilter && 
+          currentTableFilter !== 'none' && 
+          tableIds.includes(currentTableFilter);
         
-        // Always set to 'none' regardless of what was previously saved
-        settings.tableFilter = 'none';
-        console.log(`Reset table filter for panel ${id} to 'none'`);
+        if (!isCurrentTableAvailable && currentTableFilter && currentTableFilter !== 'none') {
+          // Reset to 'none' since the table is no longer available
+          settings.tableFilter = 'none';
+          console.log(`Reset table filter for panel ${id} to 'none'`);
+          
+          // Call onDataUpdate with tableChanged event if available
+          if (panel.onDataUpdate) {
+            panel.onDataUpdate('tableChanged');
+          }
+        }
       }
     }
   }
