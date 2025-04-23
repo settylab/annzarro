@@ -582,6 +582,16 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       })()
     );
 
+    // Add table filter
+    loadPromises.push(
+      (async () => {
+        if (signal && signal.aborted) {
+          throw new DOMException('Table entities data loading aborted', 'AbortError');
+        }
+        await updateTableEntities(data, settings);
+      })()
+    );
+
     try {
       // Wait until all data is loaded or one of them is aborted
       await Promise.all(loadPromises).catch(error => {
@@ -929,10 +939,8 @@ export async function updateTableEntities(data, settings) {
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
       delete data.tableFilterMask;
-      console.log("Clearing table entities - filter set to none");
       return true; // Indicate that we changed the data
     } else {
-      console.log("No existing table entities to clear");
       return true; // Still indicate a change to force visual update
     }
   }
@@ -1289,6 +1297,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   layout.yaxis.gridwidth = settings.gridLineWidth;
   layout.xaxis.zerolinewidth = settings.zeroLineWidth;
   layout.yaxis.zerolinewidth = settings.zeroLineWidth;
+  layout.xaxis.ticks = settings.showAxisLabels !== false ? 'outside' : 'none';
+  layout.yaxis.ticks = settings.showAxisLabels !== false ? 'outside' : 'none';
   
   // Apply text color to all axis title fonts and tick fonts
   if (settings.z) { // 3D plot

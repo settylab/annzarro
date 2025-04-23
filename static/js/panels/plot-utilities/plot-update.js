@@ -396,7 +396,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add the new trace
                 Plotly.addTraces(plotContainer, newTrace);
-                applyAllAestheticSettings(plotContainer, settings);
                     
             } else if (isCategorical) {
                 // Get unique category values and prepare color data
@@ -443,8 +442,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         color: settings.textColor || '#000000'
                     }
                 });
-                
-                applyAllAestheticSettings(plotContainer, settings);
                   
             } else if (isNumerical) {
               // Handle numerical coloring with table filtering
@@ -631,8 +628,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     Plotly.restyle(plotContainer, update, [0]);
                 }
               }
-              
-              applyAllAestheticSettings(plotContainer, settings);
             } else if (data.colorType === 'constant') {
                 // Handle constant color with table filtering
                 const isTableFilterActive = settings.tableFilter && settings.tableFilter !== 'none' && data.tableEntities;
@@ -828,15 +823,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     Plotly.restyle(plotContainer, restyleUpdate, [0]);
                 }
             }
-                        
-            // Use the imported applyAllAestheticSettings function
-            applyAllAestheticSettings(plotContainer, settings);
         }
-        
-        // If position data changed, update the highlighted cell.
-        if ((settings.highlightFocusedCell || settings.highlightFocusedGene) && (updateOptions.xAxis || updateOptions.yAxis || updateOptions.zAxis)) {
-            highlightFocusedEntity(plotContainer, data, settings, entityType)
-        }
+
+        applyAllAestheticSettings(plotContainer, settings);
         
     } catch (error) {
         console.error("Error updating plot:", error);

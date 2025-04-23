@@ -55,6 +55,9 @@ const CellPlotPanel = (function() {
         
         // Override with provided options, if any
         Object.assign(_settings, options);
+
+        // Do not try to restor tableFilter since its ID might have changed
+        _settings.tableFilter = "none"
         
         // Cached data
         let _data = {

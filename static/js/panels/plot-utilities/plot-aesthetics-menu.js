@@ -1026,9 +1026,14 @@ function updateAxisVisibility(plotContainer, settings) {
             update['scene.xaxis.showticklabels'] = settings.showAxisLabels;
             update['scene.yaxis.showticklabels'] = settings.showAxisLabels;
             update['scene.zaxis.showticklabels'] = settings.showAxisLabels;
+            update['scene.xaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
+            update['scene.yaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
+            update['scene.zaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
         } else {
             update['xaxis.showticklabels'] = settings.showAxisLabels;
             update['yaxis.showticklabels'] = settings.showAxisLabels;
+            update['xaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
+            update['yaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
         }
     }
     
@@ -1460,21 +1465,26 @@ function updateMargins(plotContainer, settings) {
 function updateLegendVisibility(plotDiv, settings) {
     if (!plotDiv || settings.showLegend === undefined) return;
     const show = settings.showLegend;
-  
-    // 1) Layout: overall legend on/off
-    Plotly.relayout(plotDiv, { showlegend: show });
+
   
     // 2) Layout: any shared coloraxes (coloraxis, coloraxis2, etc.)
+    let hasColoraxis = false;
     const layout = plotDiv.layout || {};
     Object.keys(layout)
       .filter(key => key.startsWith('coloraxis') && layout[key].showscale !== undefined)
       .forEach(ca => {
         Plotly.relayout(plotDiv, { [`${ca}.showscale`]: show });
+        hasColoraxis = true;
       });
   
+    if (hasColoraxis) {
+        Plotly.relayout(plotDiv, { showlegend: false, showscale: show });
+    } else {
+        Plotly.relayout(plotDiv, { showlegend: show, showscale: false });
+    }
     // 3) Per-trace toggles
     plotDiv.data.forEach((trace, i) => {
-        if (typeof trace.name === 'string' && trace.name.includes('Focused')) return;
+        if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
         const update = {};
         const hasMarkerCB = trace.marker && trace.marker.colorscale;
         const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);
@@ -1491,7 +1501,7 @@ function updateLegendVisibility(plotDiv, settings) {
         }
         else {
             // categorical / other traces: toggle legend, ensure no leftover colorbars
-            update.showlegend          = show;
+            update.showlegend          = hasColoraxis ? false : show;
             if (trace.marker) update['marker.showscale'] = false;
             if (trace.showscale !== undefined) update.showscale = false;
         }
@@ -1832,8 +1842,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.zerolinecolor': zeroLineColor,
         'xaxis.zerolinewidth': settings.zeroLineWidth || 1,
         'yaxis.zerolinewidth': settings.zeroLineWidth || 1,
-        'xaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
-        'yaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
+        'xaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
+        'yaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
         'xaxis.tickcolor': axisColor,
         'yaxis.tickcolor': axisColor,
         'xaxis.showticklabels': settings.showAxisLabels !== false,
@@ -1895,9 +1905,9 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.zerolinewidth': settings.zeroLineWidth || 1,
             'scene.yaxis.zerolinewidth': settings.zeroLineWidth || 1,
             'scene.zaxis.zerolinewidth': settings.zeroLineWidth || 1,
-            'scene.xaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
-            'scene.yaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
-            'scene.zaxis.ticks': settings.showAxisLabels !== false ? '' : 'none',
+            'scene.xaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
+            'scene.yaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
+            'scene.zaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
             'scene.xaxis.tickcolor': axisColor,
             'scene.yaxis.tickcolor': axisColor,
             'scene.zaxis.tickcolor': axisColor,
