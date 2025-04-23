@@ -842,13 +842,8 @@ export function updateTableFilterSelect(container, id, entityType) {
       $tableFilterSelect.append($option);
     });
     
-    // If there was a previous selection and it's still available, restore it
-    if (currentValue && currentValue !== 'none' && 
-        $tableFilterSelect.find(`option[value="${currentValue}"]`).length) {
-      $tableFilterSelect.val(currentValue);
-    } else {
-      $tableFilterSelect.val('none');
-    }
+    // Always default to "None" regardless of previous selection
+    $tableFilterSelect.val('none');
     
     console.log(`Updated table filter dropdown for panel ${id} with ${tablePanels.length} table options`);
   } else {
@@ -861,16 +856,9 @@ export function updateTableFilterSelect(container, id, entityType) {
         // Keep the current table filter if it's still available
         const currentTableFilter = settings.tableFilter;
         
-        // Check if the current filter is still valid
-        const isValidFilter = currentTableFilter && 
-                             currentTableFilter !== 'none' && 
-                             tablePanels.some(p => p.getId() === currentTableFilter);
-        
-        // If not valid, reset to 'none'
-        if (!isValidFilter) {
-          settings.tableFilter = 'none';
-          console.log(`Reset table filter for panel ${id} to 'none' (DOM element not found)`);
-        }
+        // Always set to 'none' regardless of what was previously saved
+        settings.tableFilter = 'none';
+        console.log(`Reset table filter for panel ${id} to 'none'`);
       }
     }
   }

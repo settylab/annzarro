@@ -500,8 +500,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType);
   
-  // Initialize table filter settings if not present
-  settings.tableFilter = settings.tableFilter || 'none';
+  // Always initialize table filter to 'none' regardless of saved settings
+  settings.tableFilter = 'none';
   settings.removeNonTableEntries = settings.removeNonTableEntries || false;
   
   // Set up remove non-table entries button state

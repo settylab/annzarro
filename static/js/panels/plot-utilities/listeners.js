@@ -256,18 +256,30 @@ export function setupPlotControlListeners(
     }
     
     if ($tableFilterSelect.length) {
-      $tableFilterSelect.on('change', () => {
+      $tableFilterSelect.on('change', async () => {
         const selectedTableId = $tableFilterSelect.val();
         settings.tableFilter = selectedTableId;
         
-        // Try to update with filter first, fall back to full reload if needed
-        updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
-          filter: true, 
-          colors: true 
-        }).catch(error => {
-          console.error("Error updating plot with table filter:", error);
+        // First update the table entities asynchronously
+        try {
+          // Import updateTableEntities dynamically to avoid circular dependencies
+          const { updateTableEntities } = await import('./plot-make.js');
+          const entitiesChanged = await updateTableEntities(data, settings);
+          
+          // Then update the plot elements - only if table entities changed or filter was cleared
+          if (entitiesChanged || !selectedTableId || selectedTableId === 'none') {
+            updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
+              filter: true, 
+              colors: true 
+            }).catch(error => {
+              console.error("Error updating plot with table filter:", error);
+              loadDataAndCreatePlot();
+            });
+          }
+        } catch (error) {
+          console.error("Error updating table entities:", error);
           loadDataAndCreatePlot();
-        });
+        }
       });
     }
     
@@ -295,10 +307,11 @@ export function setupPlotControlListeners(
           $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
         } else {
           $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
-          $removeNonTableEntriesBtn.attr('title', 'Gray out non-table entries (inactive)');
+          $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (inactive)');
         }
         
-        // Try to update with filter first, fall back to full reload if needed
+        // We don't need to rebuild the tableEntities set, just apply the new filter setting
+        // Now all filtering is separated - just update filter and colors
         updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
           filter: true, 
           colors: true 
@@ -456,11 +469,64 @@ export function setupColorControls(
 
     // --- Direct slider update helper ---
     function updateColorRangeDirect(minOrMax, value) {
-        if (!plotContainer || !plotContainer.data || !plotContainer.data[0] || !plotContainer.data[0].marker)
+        if (!plotContainer || !plotContainer.data || plotContainer.data.length === 0)
             return;
+        
         const update = {};
         update[`marker.c${minOrMax}`] = value;
-        Plotly.restyle(plotContainer, update, [0]);
+        
+        // Check if we have table filtering (multiple traces) with numerical color
+        const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+        const isNumericalColor = data.colorType === 'numerical';
+        
+        if (hasTableFilter && isNumericalColor && plotContainer.data.length > 1) {
+            // In table filter mode, find the colored trace by matching a specific trace name
+            // or by checking if it has a colorbar and numerical color values
+            let coloredTraceIndex = -1;
+            
+            // First try to find a trace that matches the color key name (most reliable)
+            for (let i = 0; i < plotContainer.data.length; i++) {
+                const trace = plotContainer.data[i];
+                
+                // Skip traces that are named 'Not in table' which is used for gray points
+                if (trace.name === 'Not in table') continue;
+                
+                // Check if this trace has a name matching the color key or if it has a colorbar
+                const hasMatchingName = trace.name === settings.color.key; 
+                const hasColorbar = trace.marker && trace.marker.colorbar;
+                
+                // Check if the trace has numerical coloring (not a constant color string)
+                const hasNumericalColoring = trace.marker && 
+                                           Array.isArray(trace.marker.color) && 
+                                           trace.marker.color.length > 0;
+                
+                // If this trace matches our criteria, it's the one we want to update
+                if (hasNumericalColoring && (hasMatchingName || hasColorbar)) {
+                    coloredTraceIndex = i;
+                    break;
+                }
+            }
+            
+            // If we found the colored trace, update it
+            if (coloredTraceIndex !== -1 && plotContainer.data[coloredTraceIndex]?.marker) {
+                Plotly.restyle(plotContainer, update, [coloredTraceIndex]);
+                return;
+            }
+        }
+        
+        // If no specific trace found or no table filtering, try to find any trace with a colorbar
+        for (let i = 0; i < plotContainer.data.length; i++) {
+            const trace = plotContainer.data[i];
+            if (trace.marker && trace.marker.colorbar && Array.isArray(trace.marker.color)) {
+                Plotly.restyle(plotContainer, update, [i]);
+                return;
+            }
+        }
+        
+        // Fallback: update the first trace if it has a marker
+        if (plotContainer.data[0]?.marker) {
+            Plotly.restyle(plotContainer, update, [0]);
+        }
     }
 
     // --- Hide outliers button ---
@@ -470,7 +536,7 @@ export function setupColorControls(
     $hideOutliersButton.on('click', () => {
         settings.hideOutliers = !settings.hideOutliers;
         $.updateButtonState($hideOutliersButton, settings.hideOutliers);
-        _updatePlotElements({ filter: true });
+        _updatePlotElements({ filter: true, colors: true });
     });
     
     // --- Hide NaN button ---
@@ -480,7 +546,7 @@ export function setupColorControls(
     $hideNanButton.on('click', () => {
         settings.hideNaN = !settings.hideNaN;
         $.updateButtonState($hideNanButton, settings.hideNaN);
-        _updatePlotElements({ filter: true });
+        _updatePlotElements({ filter: true, colors: true });
     });
 
     // --- Min slider --- use debounce for smoother performance
@@ -518,7 +584,7 @@ export function setupColorControls(
         $.updateButtonState($centerColormapButton, settings.centeringActive);
         setupCenteringSliderListeners();
         updateColorSliderUI(controlsContainer, data, settings, id);
-        _updatePlot(false);
+        _updatePlotElements({ colors: true, colorScale: true });
     });
 
     const $reverseColormapButton = $container.find(`#reverse-colormap-${id}`);
@@ -559,8 +625,65 @@ export function setupColorControls(
         $csColorMaxInput.val(maxValue.toFixed(2));
         $csColorMaxSlider.val(maxValue);
         
+        // Update the plot with the new range values
+        // Check if we have table filtering with numerical coloring
+        const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+        const isNumericalColor = data.colorType === 'numerical';
+        
+        if (hasTableFilter && isNumericalColor && plotContainer.data.length > 1) {
+            // In table filter mode, find the colored trace by matching criteria
+            let coloredTraceIndex = -1;
+            
+            // First try to find a trace that matches the color key name or has a colorbar
+            for (let i = 0; i < plotContainer.data.length; i++) {
+                const trace = plotContainer.data[i];
+                
+                // Skip traces that are named 'Not in table' which is used for gray points
+                if (trace.name === 'Not in table') continue;
+                
+                // Check if this trace has a name matching the color key or if it has a colorbar
+                const hasMatchingName = trace.name === settings.color.key;
+                const hasColorbar = trace.marker && trace.marker.colorbar;
+                
+                // Check if the trace has numerical coloring
+                const hasNumericalColoring = trace.marker && 
+                                            Array.isArray(trace.marker.color) && 
+                                            trace.marker.color.length > 0;
+                
+                if (hasNumericalColoring && (hasMatchingName || hasColorbar)) {
+                    coloredTraceIndex = i;
+                    break;
+                }
+            }
+            
+            // If we found the colored trace, update it
+            if (coloredTraceIndex !== -1 && plotContainer.data[coloredTraceIndex]?.marker) {
+                Plotly.restyle(plotContainer, { 
+                    'marker.cmin': minValue, 
+                    'marker.cmax': maxValue 
+                }, [coloredTraceIndex]);
+                return;
+            }
+        }
+        
+        // If no specific trace found or no table filtering, find any trace with a colorbar
+        for (let i = 0; i < plotContainer.data.length; i++) {
+            const trace = plotContainer.data[i];
+            if (trace.marker && trace.marker.colorbar && Array.isArray(trace.marker.color)) {
+                Plotly.restyle(plotContainer, { 
+                    'marker.cmin': minValue, 
+                    'marker.cmax': maxValue 
+                }, [i]);
+                return;
+            }
+        }
+        
+        // Fallback: update the first trace if it exists
         if (plotContainer && plotContainer.data && plotContainer.data[0] && plotContainer.data[0].marker) {
-            Plotly.restyle(plotContainer, { 'marker.cmin': minValue, 'marker.cmax': maxValue }, [0]);
+            Plotly.restyle(plotContainer, { 
+                'marker.cmin': minValue, 
+                'marker.cmax': maxValue 
+            }, [0]);
         }
     }
 
@@ -577,8 +700,65 @@ export function setupColorControls(
         $csColorMinInput.val(minValue.toFixed(2));
         $csColorMinSlider.val(minValue);
         
+        // Update the plot with the new range values
+        // Check if we have table filtering with numerical coloring
+        const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+        const isNumericalColor = data.colorType === 'numerical';
+        
+        if (hasTableFilter && isNumericalColor && plotContainer.data.length > 1) {
+            // In table filter mode, find the colored trace by matching criteria
+            let coloredTraceIndex = -1;
+            
+            // First try to find a trace that matches the color key name or has a colorbar
+            for (let i = 0; i < plotContainer.data.length; i++) {
+                const trace = plotContainer.data[i];
+                
+                // Skip traces that are named 'Not in table' which is used for gray points
+                if (trace.name === 'Not in table') continue;
+                
+                // Check if this trace has a name matching the color key or if it has a colorbar
+                const hasMatchingName = trace.name === settings.color.key;
+                const hasColorbar = trace.marker && trace.marker.colorbar;
+                
+                // Check if the trace has numerical coloring
+                const hasNumericalColoring = trace.marker && 
+                                            Array.isArray(trace.marker.color) && 
+                                            trace.marker.color.length > 0;
+                
+                if (hasNumericalColoring && (hasMatchingName || hasColorbar)) {
+                    coloredTraceIndex = i;
+                    break;
+                }
+            }
+            
+            // If we found the colored trace, update it
+            if (coloredTraceIndex !== -1 && plotContainer.data[coloredTraceIndex]?.marker) {
+                Plotly.restyle(plotContainer, { 
+                    'marker.cmin': minValue, 
+                    'marker.cmax': maxValue 
+                }, [coloredTraceIndex]);
+                return;
+            }
+        }
+        
+        // If no specific trace found or no table filtering, find any trace with a colorbar
+        for (let i = 0; i < plotContainer.data.length; i++) {
+            const trace = plotContainer.data[i];
+            if (trace.marker && trace.marker.colorbar && Array.isArray(trace.marker.color)) {
+                Plotly.restyle(plotContainer, { 
+                    'marker.cmin': minValue, 
+                    'marker.cmax': maxValue 
+                }, [i]);
+                return;
+            }
+        }
+        
+        // Fallback: update the first trace if it exists
         if (plotContainer && plotContainer.data && plotContainer.data[0] && plotContainer.data[0].marker) {
-            Plotly.restyle(plotContainer, { 'marker.cmin': minValue, 'marker.cmax': maxValue }, [0]);
+            Plotly.restyle(plotContainer, { 
+                'marker.cmin': minValue, 
+                'marker.cmax': maxValue 
+            }, [0]);
         }
     }
 

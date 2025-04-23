@@ -796,14 +796,70 @@ export function createFilterMask(data, settings) {
     filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
   }
 
-  // 2. Build color masks & stats (only if color data present and options enabled)
+  // Table filtering changed to use pre-populated tableEntities
+  const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  const tableEntities = data.tableEntities;
+  
+  // Calculate table filtering statistics
+  if (hasTableFilter && tableEntities) {
+    if (settings.removeNonTableEntries) {
+      const entityType = data.entities; // 'cells' or 'genes'
+      // Calculate how many entities are not in the table when we want to remove them
+      const nonTableCount = data[entityType].filter(entity => !tableEntities.has(entity)).length;
+      filterStats.tableFiltered = nonTableCount;
+    } else {
+      // Don't count as filtered since they're just grayed out, not removed
+      filterStats.tableFiltered = 0;
+    }
+  } else {
+    filterStats.tableFiltered = 0;
+  }
+  
+  // Build table filter mask if needed (only when removing non-table entries)
+  let tableFilterMask = data.tableFilterMask;
+  
+  if (hasTableFilter && tableEntities && settings.removeNonTableEntries) {
+    // Create mask that includes only entities present in the table
+    const entityType = data.entities; // 'cells' or 'genes'
+    tableFilterMask = data[entityType].map(entity => tableEntities.has(entity));
+  } else {
+    // No need for filtering mask when not removing non-table entries or no table filter active
+    tableFilterMask = null;
+  }
+  
+  // Store the mask for use by applyFilterMask
+  data.tableFilterMask = tableFilterMask;
+
+  // 4. Build color masks & stats (for numerical coloring)
   let colorValidMask = null;
   let colorRangeMask = null;
 
   if (data.colorType === 'numerical' && Array.isArray(data.color)) {
-    // a) "valid number" mask
-    colorValidMask = data.color.map(v => v != null && !isNaN(v));
-    filterStats.colorNaN = totalPts - colorValidMask.filter(Boolean).length;
+    // If table filtering is active, we only apply outlier filtering to table entities
+    const applyToAll = !hasTableFilter || !tableEntities;
+    
+    // a) "valid number" mask - count NaNs for statistics
+    if (settings.hideNaN) {
+      if (applyToAll) {
+        // Apply to all data points
+        colorValidMask = data.color.map(v => v != null && !isNaN(v));
+      } else {
+        // Apply only to table entities
+        colorValidMask = Array(totalPts).fill(true);
+        
+        // Mark NaN values within table entities as false
+        data[data.entities].forEach((entity, i) => {
+          if (tableEntities.has(entity)) {
+            if (data.color[i] == null || isNaN(data.color[i])) {
+              colorValidMask[i] = false;
+            }
+          }
+        });
+      }
+      
+      // Count all NaNs for statistics
+      filterStats.colorNaN = data.color.filter(v => v == null || isNaN(v)).length;
+    }
 
     // b) "in-range" mask for outliers
     if (settings.hideOutliers) {
@@ -811,72 +867,36 @@ export function createFilterMask(data, settings) {
       const cmin = settings.colorMin ?? Math.min(...numericVals);
       const cmax = settings.colorMax ?? Math.max(...numericVals);
 
-      colorRangeMask = data.color.map(v =>
-        v == null        // always keep null
-        || isNaN(v)      // always keep NaN
-        || (v >= cmin && v <= cmax)
-      );
-      // count only the *numeric* outliers
-      filterStats.colorOutliers = data.color.filter(v =>
+      if (applyToAll) {
+        // Apply to all data points
+        colorRangeMask = data.color.map(v =>
+          v == null        // always keep null
+          || isNaN(v)      // always keep NaN
+          || (v >= cmin && v <= cmax)
+        );
+      } else {
+        // Apply only to table entities
+        colorRangeMask = Array(totalPts).fill(true);
+        
+        // Mark outliers within table entities as false
+        data[data.entities].forEach((entity, i) => {
+          if (tableEntities.has(entity)) {
+            const v = data.color[i];
+            if (v != null && !isNaN(v) && (v < cmin || v > cmax)) {
+              colorRangeMask[i] = false;
+            }
+          }
+        });
+      }
+      
+      // Count all outliers for statistics
+      filterStats.colorOutliers = data.color.filter(v => 
         v != null && !isNaN(v) && (v < cmin || v > cmax)
       ).length;
     }
   }
 
-  // 3. Create table filter mask if a table is selected
-  let tableFilterMask = null;
-  if (settings.tableFilter && settings.tableFilter !== 'none') {
-    // Try to get the table panel from PanelManager
-    const tablePanel = window.PanelManager && window.PanelManager.getPanel(settings.tableFilter);
-    
-    if (tablePanel) {
-      // Get the table settings which contains currentEntries property
-      const tableConfig = tablePanel.getConfig && tablePanel.getConfig();
-      
-      if (tableConfig && Array.isArray(tableConfig.currentEntries)) {
-        // Create a Set of entities in the table for O(1) lookup
-        const tableEntities = new Set();
-        const entityType = data.entities; // 'cells' or 'genes'
-        
-        // Get the current entities based on their indices
-        tableConfig.currentEntries.forEach(index => {
-          // Get the actual entity name from the table data
-          const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-          if (entities && index < entities.length) {
-            const entityName = entities[index];
-            if (entityName) {
-              tableEntities.add(entityName);
-            }
-          }
-        });
-        
-        // Always store the table entities for visual differentiation
-        data.tableEntities = tableEntities;
-        
-        // Calculate how many entities are not in the table
-        const nonTableCount = data[entityType].filter(entity => !tableEntities.has(entity)).length;
-        
-        // If we want to completely remove non-table entries
-        if (settings.removeNonTableEntries) {
-          // Create mask that includes only entities present in the table
-          tableFilterMask = data[entityType].map(entity => tableEntities.has(entity));
-          
-          // Only count filtered entries in stats when they are actually removed
-          filterStats.tableFiltered = nonTableCount;
-        } 
-        // Otherwise we'll color them differently (gray), but not filter them out
-        else {
-          // No filtering mask when we're just coloring differently
-          tableFilterMask = null;
-          
-          // Don't count as filtered since they're just grayed out, not removed
-          filterStats.tableFiltered = 0;
-        }
-      }
-    }
-  }
-
-  // 4. Gather only the masks we need for explicit filtering
+  // 5. Gather only the masks we need for explicit filtering
   const masks = [xMask, yMask];
   if (zMask) masks.push(zMask);
   
@@ -885,7 +905,7 @@ export function createFilterMask(data, settings) {
   if (colorRangeMask && settings.hideOutliers) masks.push(colorRangeMask);
   if (tableFilterMask && settings.removeNonTableEntries) masks.push(tableFilterMask);
 
-  // 5. Build the final indexMask
+  // 6. Build the final indexMask
   let indexMask;
   if (masks.length > 0) {
     // If we have masks to apply, build a mask requiring all filters to pass
@@ -897,10 +917,90 @@ export function createFilterMask(data, settings) {
     indexMask = Array.from({ length: totalPts }, () => true);
   }
 
-  // 6. Compute filtered count
+  // 7. Compute filtered count
   filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
 
   return { indexMask, filterStats };
+}
+
+/**
+ * Updates the table entities Set in the data object based on the current table selection
+ * 
+ * @param {Object} data - Data object to update with tableEntities
+ * @param {Object} settings - Plot settings containing tableFilter
+ * @returns {Promise<boolean>} - Promise resolving to true if tableEntities changed, false otherwise
+ */
+export async function updateTableEntities(data, settings) {
+  // Check if table filtering is active
+  const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  
+  // If no table filter is active, remove any existing tableEntities
+  if (!hasTableFilter) {
+    if (data.tableEntities) {
+      delete data.tableEntities;
+      delete data.tableFilterMask; // Also clear any existing filter mask
+      return true; // Indicate that we changed the data
+    }
+    return false; // No change
+  }
+  
+  // Save current state for comparison
+  const currentTableEntities = data.tableEntities;
+  
+  // Try to get the table panel from PanelManager
+  const tablePanel = window.PanelManager && window.PanelManager.getPanel(settings.tableFilter);
+  if (!tablePanel) {
+    console.warn(`Table panel ${settings.tableFilter} not found`);
+    return false;
+  }
+  
+  // Get the table settings which contains currentEntries property
+  const tableConfig = tablePanel.getConfig && tablePanel.getConfig();
+  if (!tableConfig || !Array.isArray(tableConfig.currentEntries)) {
+    console.warn("Table has no current entries configuration");
+    return false;
+  }
+  
+  // Create a new Set of table entities
+  const newTableEntities = new Set();
+  const entityType = data.entities; // 'cells' or 'genes'
+  
+  // Get entity names based on indices in the table
+  tableConfig.currentEntries.forEach(index => {
+    const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
+    if (entities && index < entities.length) {
+      const entityName = entities[index];
+      if (entityName) {
+        newTableEntities.add(entityName);
+      }
+    }
+  });
+  
+  // Compare with existing tableEntities to see if they've changed
+  let changed = false;
+  if (!currentTableEntities || tableSetsDiffer(currentTableEntities, newTableEntities)) {
+    // Store the new Set in the data object
+    data.tableEntities = newTableEntities;
+    changed = true;
+  }
+  
+  return changed;
+}
+
+/**
+ * Helper function to compare two Sets
+ * @private
+ */
+function tableSetsDiffer(set1, set2) {
+  // Check if sizes differ first (quick check)
+  if (set1.size !== set2.size) return true;
+  
+  // Compare contents
+  for (const item of set1) {
+    if (!set2.has(item)) return true;
+  }
+  
+  return false;
 }
 
 /**
@@ -1626,9 +1726,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           marker: {
             size: settings.pointSize,
             opacity: settings.pointOpacity,
-            color: 'rgba(180, 180, 180, 0.6)',
+            color: 'rgba(180, 180, 180, 1.)',
           },
-          showlegend: true
+          showlegend: false
         };
         
         // Add z-axis values for 3D plots if applicable
@@ -1641,21 +1741,46 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       
       // 2. Create trace for table entities (colored normally) - draw second (top layer)
       if (tableIndices.length > 0) {
+        // For table entities, apply outlier and NaN filtering if enabled
+        const tableFilteredIndices = tableIndices.filter(idx => {
+          // Only apply outlier and NaN filtering to table entities
+          let keepPoint = true;
+          
+          // Apply color NaN filtering if enabled
+          if (settings.hideNaN && (filteredData.color[idx] === null || isNaN(filteredData.color[idx]))) {
+            keepPoint = false;
+          }
+          
+          // Apply outlier filtering if enabled
+          if (keepPoint && settings.hideOutliers) {
+            const colorVal = filteredData.color[idx];
+            if (colorVal !== null && !isNaN(colorVal)) {
+              const cmin = settings.colorMin ?? Math.min(...filteredData.color.filter(v => !isNaN(v)));
+              const cmax = settings.colorMax ?? Math.max(...filteredData.color.filter(v => !isNaN(v)));
+              if (colorVal < cmin || colorVal > cmax) {
+                keepPoint = false;
+              }
+            }
+          }
+          
+          return keepPoint;
+        });
+        
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: settings.color.key || 'Value',
-          text: tableIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: tableIndices,
+          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: tableFilteredIndices,
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<br>c: %{marker.color}<extra></extra>`,
-          x: tableIndices.map(idx => filteredData.x.values[idx]),
-          y: tableIndices.map(idx => filteredData.y.values[idx]),
+          x: tableFilteredIndices.map(idx => filteredData.x.values[idx]),
+          y: tableFilteredIndices.map(idx => filteredData.y.values[idx]),
           marker: {
             size: settings.pointSize,
             opacity: settings.pointOpacity,
-            color: tableIndices.map(idx => filteredData.color[idx]),
+            color: tableFilteredIndices.map(idx => filteredData.color[idx]),
             colorscale: settings.colorScale,
             reversescale: settings.colorReversed,
             cmin: cmin,
@@ -1667,7 +1792,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         
         // Add z-axis values for 3D plots if applicable
         if (settings.z && filteredData.z) {
-          tableTrace.z = tableIndices.map(idx => filteredData.z.values[idx]);
+          tableTrace.z = tableFilteredIndices.map(idx => filteredData.z.values[idx]);
         }
         
         traces.push(tableTrace);
@@ -1796,7 +1921,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           marker: {
             size: settings.pointSize,
             opacity: settings.pointOpacity,
-            color: 'rgba(180, 180, 180, 0.3)'
+            color: 'rgba(180, 180, 180, 1.)'
           },
           showlegend: true
         };
@@ -1811,28 +1936,44 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       
       // 2. Create trace for table entities (normal constant color) - draw second (top layer)
       if (tableIndices.length > 0) {
+        // For constant coloring, also apply outlier and NaN filtering if enabled
+        const tableFilteredIndices = tableIndices.filter(idx => {
+          // Only apply NaN filtering to table entities (outlier filtering doesn't apply to constant coloring)
+          let keepPoint = true;
+          
+          // Apply x/y NaN filtering if enabled
+          if (settings.hideNaN) {
+            if (filteredData.x.values[idx] === null || isNaN(filteredData.x.values[idx]) ||
+                filteredData.y.values[idx] === null || isNaN(filteredData.y.values[idx])) {
+              keepPoint = false;
+            }
+          }
+          
+          return keepPoint;
+        });
+        
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Data points',
-          text: tableIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: tableIndices,
+          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          customdata: tableFilteredIndices,
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<extra></extra>`,
-          x: tableIndices.map(idx => filteredData.x.values[idx]),
-          y: tableIndices.map(idx => filteredData.y.values[idx]),
+          x: tableFilteredIndices.map(idx => filteredData.x.values[idx]),
+          y: tableFilteredIndices.map(idx => filteredData.y.values[idx]),
           marker: {
             size: settings.pointSize,
             opacity: settings.pointOpacity,
-            color: 'rgba(150, 150, 150, 0.7)'
+            color: 'rgba(150, 150, 150, 1.)'
           },
           showlegend: true
         };
         
         // Add z-axis values for 3D plots if applicable
         if (settings.z && filteredData.z) {
-          tableTrace.z = tableIndices.map(idx => filteredData.z.values[idx]);
+          tableTrace.z = tableFilteredIndices.map(idx => filteredData.z.values[idx]);
         }
         
         traces.push(tableTrace);
@@ -1855,7 +1996,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     // Standard constant coloring (no table filtering or entries being removed)
     else {
       // Constant coloring branch.
-      baseTrace.marker.color = 'rgba(150, 150, 150, 0.7)';
+      baseTrace.marker.color = 'rgba(150, 150, 150, 1.)';
       delete baseTrace.marker.colorscale;
       console.log('Using constant color for all points');
       
