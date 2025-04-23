@@ -181,6 +181,10 @@ const CellTablePanel = (function() {
                 
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
+                    // deep copy linked searchBuilderConfig
+                    const sb_data = JSON.parse(JSON.stringify(_settings.searchBuilderConfig));
+                    delete _settings.searchBuilderConfig;
+                    _settings.searchBuilderConfig = sb_data;
                     _dataTable.destroy();
                     _dataTable = null;
                 }

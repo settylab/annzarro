@@ -577,6 +577,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Initialize previousEntries with a deep copy
     previousEntries = [...settings.currentEntries];
+
+    // Notify panels that table selection changed
+    window.PanelManager.notifyPanels('tableFiltered', { 
+        id: settings.id,
+        type: entityType 
+    });
     
     // Return the DataTables instance
     return dataTable;
