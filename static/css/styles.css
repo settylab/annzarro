@@ -331,7 +331,7 @@ table.dataTable tbody tr {
 }
   
 
-/* DataTables index clickable
+/* DataTables index clickable */
 /* Entity index styling - modern look */
 .entity-index-value {
     color: #007bff;
@@ -346,6 +346,60 @@ table.dataTable tbody tr {
 .entity-index-value:hover {
     text-decoration: none;
     background-color: rgba(0, 123, 255, 0.1);
+}
+
+/* DataTables search container, label, and options */
+.dt-search-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.dt-search-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #495057;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+/* DataTables search options */
+.dt-search-options {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.dt-search-option {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    color: #6c757d;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0;
+    line-height: 1;
+}
+
+.dt-search-option:hover {
+    background-color: #e9ecef;
+    opacity: 1;
+}
+
+.dt-search-option.active {
+    background-color: #e9f3ff;
+    color: #0d6efd;
+    border-color: #9ec5fe;
+    opacity: 1;
 }
 
 /* Column Selector (Left Side) */

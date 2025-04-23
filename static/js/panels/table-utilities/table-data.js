@@ -351,6 +351,11 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
     const table = tableContainer.querySelector('table');
+
+    // State‐holders for our toggles:
+    let useRegex          = false;
+    let useSmart          = true;
+    let useCaseInsensitive = true;
     
     // Configure DataTables options
     const tableOptions = {
@@ -363,6 +368,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthChange: false, // Hide default length selector as we have our own
         pageLength: settings.pageLength || 25,
         lengthMenu: [10, 25, 50, 100, 250],
+        // Default search options
+        search: {
+            regex:          useRegex,
+            smart:          useSmart,
+            caseInsensitive: useCaseInsensitive
+        },
         // Standard Bootstrap 5 DataTables layout with SearchBuilder and search box
         dom: '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
              '<"row"<"col-sm-12"tr>>' +
@@ -408,6 +419,84 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 }
             });
             
+            // Access the search container - find it relative to the table container
+            const tableContainer = this.api().table().container();
+            const $searchInput = $(tableContainer).find('.dt-search input');
+            
+            // If search input found, create a wrapper and add buttons
+            if ($searchInput.length) {
+                // Find the search container and element where we need to add the buttons
+                const $searchParent = $searchInput.parent();
+                
+                // Find the existing label element
+                const $existingLabel = $searchParent.find('label');
+                
+                // Create the search options container 
+                const $searchOptions = $('<div class="dt-search-options"></div>');
+                
+                // Generate unique IDs for buttons based on table ID or a random number
+                const tableId = this.api().table().node().id || Math.floor(Math.random() * 10000);
+                const btnRegexId = `btnRegex_${tableId}`;
+                const btnSmartId = `btnSmart_${tableId}`;
+                const btnCaseId = `btnCase_${tableId}`;
+                
+                // Add the search control buttons with tooltips - initial state matching our variables
+                // Using more intuitive symbols that match the functionality
+                $searchOptions.append(`
+                    <button id="${btnRegexId}" class="dt-search-option${useRegex ? ' active' : ''}" title="Regular Expression Search">
+                        .*
+                    </button>
+                    <button id="${btnSmartId}" class="dt-search-option${useSmart ? ' active' : ''}" title="Smart Search">
+                        <i class="fas fa-magic"></i>
+                    </button>
+                    <button id="${btnCaseId}" class="dt-search-option${!useCaseInsensitive ? ' active' : ''}" title="Case Sensitive">
+                        Aa
+                    </button>
+                `);
+                
+                // Apply our CSS class to the existing label
+                if ($existingLabel.length) {
+                    $existingLabel.addClass('dt-search-label');
+                    
+                    // Create a container to hold the label and buttons side by side
+                    const $container = $('<div class="dt-search-container"></div>');
+                    
+                    // Wrap the label and add our options
+                    $existingLabel.wrap($container);
+                    $searchOptions.insertAfter($existingLabel);
+                }
+                // If no label found, just add the options before the input
+                else {
+                    $searchOptions.insertBefore($searchInput);
+                }
+                
+                // 5) A small helper to re-draw with current flags
+                function applySearch() {
+                    const term = $searchInput.val();
+                    api.search(term, useRegex, useSmart, useCaseInsensitive).draw();
+                }
+    
+                // 6) Wire up clicks
+                $(`#${btnRegexId}`).on('click', function() {
+                    useRegex = !useRegex;
+                    $(this).toggleClass('active', useRegex);
+                    applySearch();
+                });
+                
+                $(`#${btnSmartId}`).on('click', function() {
+                    useSmart = !useSmart;
+                    $(this).toggleClass('active', useSmart);
+                    applySearch();
+                });
+                
+                $(`#${btnCaseId}`).on('click', function() {
+                    useCaseInsensitive = !useCaseInsensitive;
+                    // Treating button as "Case Sensitive" - active when useCaseInsensitive is false
+                    $(this).toggleClass('active', !useCaseInsensitive);
+                    applySearch();
+                });
+                
+            }
         }
     };
     
