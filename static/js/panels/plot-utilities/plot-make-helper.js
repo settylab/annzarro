@@ -285,7 +285,7 @@ export function attachViewportTracking(plotContainer, settings) {
         mode: 'markers',
         name: 'Not in table',
         text: allNonTableIndices.map(idx => data[entityKey][idx]),
-        customdata: allNonTableIndices, // for click handling
+        customdata: allNonTableIndices, // Store original indices for click handling
         hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
         x: allNonTableIndices.map(idx => data.x.values[idx]),
         y: allNonTableIndices.map(idx => data.y.values[idx]),
@@ -338,7 +338,7 @@ export function attachViewportTracking(plotContainer, settings) {
           mode: 'markers',
           name: category,
           text: tableIndices.map(idx => data[entityKey][idx]),
-          customdata: tableIndices, // for click handling
+          customdata: tableIndices, // Store original indices for click handling
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
           x: tableIndices.map(idx => data.x.values[idx]),
           y: tableIndices.map(idx => data.y.values[idx]),
@@ -365,7 +365,7 @@ export function attachViewportTracking(plotContainer, settings) {
           mode: 'markers',
           name: category,
           text: indices.map(idx => data[entityKey][idx]),
-          customdata: indices, // for click handling
+          customdata: indices, // Store original indices for click handling
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
           x: indices.map(idx => data.x.values[idx]),
           y: indices.map(idx => data.y.values[idx]),

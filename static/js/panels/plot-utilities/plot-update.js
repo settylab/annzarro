@@ -212,7 +212,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             y: [filteredData.y.values],
                             'marker.color': [filteredData.color],
                             text: [filteredData[entityType]],
-                            customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                            customdata: [filteredData.customdata]
                         };
                         
                         if (shouldBe3D && filteredData.z) {
@@ -235,7 +235,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
                                 text: [filteredData[entityType]],
-                                customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                                customdata: [filteredData.customdata]
                             };
                             
                             if (shouldBe3D && filteredData.z) {
@@ -253,7 +253,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
                                 text: [filteredData[entityType]],
-                                customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                                customdata: [filteredData.customdata]
                             };
                             
                             if (shouldBe3D && filteredData.z) {
@@ -272,7 +272,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         y: [filteredData.y.values],
                         'marker.color': [filteredData.color],
                         text: [filteredData[entityType]],
-                        customdata: [Array.from({length: filteredData[entityType].length}, (_, i) => i)]
+                        customdata: [filteredData.customdata]
                     };
                     
                     if (shouldBe3D && filteredData.z) {

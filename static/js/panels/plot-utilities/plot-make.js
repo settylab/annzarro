@@ -1040,6 +1040,13 @@ export function applyFilterMask(data, indexMask) {
   filteredData.color = data.color.filter((_, i) => indexMask[i]);
   filteredData[entityType] = entities.filter((_, i) => indexMask[i]);
   
+  // Generate proper customdata with original indices
+  // This preserves the mapping to the original dataset
+  filteredData.customdata = indexMask.reduce((acc, keep, i) => {
+    if (keep) acc.push(i);
+    return acc;
+  }, []);
+  
   // Keep track of the mask
   filteredData.indexMask = indexMask;
 
