@@ -45,6 +45,24 @@ const PanelManager = (function() {
             _counters[panelType.type] = 0;
         });
         
+        // Set up event listener for tableFiltered events to update relevant plots
+        document.addEventListener('tableFiltered', (event) => {
+            if (event.detail && event.detail.id) {
+                const tableId = event.detail.id;
+                
+                // Find all panels that use this table as a filter
+                _activePanels.forEach(panel => {
+                    const config = panel.getConfig && panel.getConfig();
+                    if (config && config.tableFilter === tableId) {
+                        // Call onDataUpdate with tableChanged event type
+                        if (panel.onDataUpdate) {
+                            panel.onDataUpdate('tableChanged');
+                        }
+                    }
+                });
+            }
+        });
+        
         // Initialize the LayoutManager with a callback to create selection tiles
         LayoutManager.init((parentElement) => {
             new SelectionTile({
@@ -177,7 +195,20 @@ const PanelManager = (function() {
         }
         
         // Generate a unique ID for the panel
-        const id = config.id || `${type}-${++_counters[type]}`;
+        // If config.id is provided:
+        //   - If it's from a reopened panel, use it exactly as is to maintain references
+        //   - Otherwise, generate a new ID based on the counter
+        let id;
+        if (config.id) {
+            // Check if this is a reopened panel (has the expected type prefix)
+            if (config.id.startsWith(type)) {
+                id = config.id; // Keep the exact same ID for reopened panels
+            } else {
+                id = `${type}-${++_counters[type]}`;
+            }
+        } else {
+            id = `${type}-${++_counters[type]}`;
+        }
         
         // Create tile element
         const tileElement = _createTileElement(id);
@@ -892,8 +923,12 @@ const PanelManager = (function() {
             return null;
         }
         
-        // Generate an ID if not provided using the same counter system for active and closed panels
-        config.id = id || `${type}-${++_counters[type]}`;
+        // Keep exactly the same ID for reopening if provided and valid
+        if (id && id.startsWith(type)) {
+            config.id = id; // Keep the exact same ID to preserve references
+        } else {
+            config.id = id || `${type}-${++_counters[type]}`;
+        }
         config.title = _generateUniqueName(config.title, type);
 
         // Create a "zombie" panel (stored but not active)

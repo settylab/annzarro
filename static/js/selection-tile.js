@@ -66,7 +66,7 @@ export class SelectionTile {
               </div>
               <div class="selection-section" id="clone-panel-section-${this.selectionId}" style="display: none;">
                 <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
-                  <h3 style="margin: 0; display: inline-block;">Reopen or Duplicate Panel</h3>
+                  <h3 style="margin: 0; display: inline-block;">Duplicate or Reopen Panel</h3>
                   <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
                     <i class="fas fa-trash-alt"></i> Clear closed panels
                   </button>
@@ -97,7 +97,7 @@ export class SelectionTile {
               </div>
               <div class="selection-section">
                 <div class="section-header" style="position: relative; text-align: center; margin-bottom: 10px;">
-                  <h3 style="margin: 0; display: inline-block;">Reopen or Duplicate Panel</h3>
+                  <h3 style="margin: 0; display: inline-block;">Duplicate or Reopen Panel</h3>
                   <button class="btn btn-sm btn-outline-danger clear-closed-panels-btn" id="clear-closed-panels-pane-${this.selectionId}" style="font-size: 0.8rem; padding: 2px 8px; position: absolute; right: 0; top: 0;">
                     <i class="fas fa-trash-alt"></i> Clear closed panels
                   </button>
@@ -253,33 +253,48 @@ export class SelectionTile {
         </div>
         <div class="tile-type-label">${panelTitle}</div>
         ${!this.activePanels.has(panel) ? `
-          <div class="panel-status">Closed</div>
+          <div class="panel-status panel-closed-btn" data-id="${id}" data-type="${panelType}">Closed</div>
           <button class="delete-panel-btn" data-id="${id}" title="Delete">×</button>
         ` : ''}
       `;
+      
+      // Add hover effect to change "Closed" to "Reopen" for closed panels
+      const statusBtn = option.querySelector('.panel-closed-btn');
+      if (statusBtn) {
+        statusBtn.addEventListener('mouseenter', function() {
+          this.innerText = 'Reopen';
+          this.classList.add('panel-reopen-btn');
+        });
+        
+        statusBtn.addEventListener('mouseleave', function() {
+          this.innerText = 'Closed';
+          this.classList.remove('panel-reopen-btn');
+        });
+        
+        statusBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); // Stop propagation to prevent the container click
+          const panelId = e.target.dataset.id;
+          const panelType = e.target.dataset.type;
+          this._reopenPanel(panelId, panelType, grid);
+        });
+      }
       option.addEventListener('click', (e) => {
         if (e.target.classList.contains('delete-panel-btn') ||
-            e.target.closest('.delete-panel-btn')) {
+            e.target.closest('.delete-panel-btn') || 
+            e.target.classList.contains('panel-closed-btn') ||
+            e.target.closest('.panel-closed-btn')) {
           return;
         }
+        
+        // For regular clicks on the panel, clone/duplicate the panel instead of reopening
         const config = JSON.parse(JSON.stringify(panel.getConfig()));
         config.id = `${panelType}-${++this.counters[panelType]}`;
-        config.title = panelTitle;
+        
+        // Always ensure unique titles for duplicated panels
+        config.title = this.generateUniqueName(panelTitle);
         config._closed = false;
-
-  
-        if (panelId && !this.activePanels.has(panel)) {
-          const panelInstance = this.panels.get(panelId);
-          if (panelInstance) {
-            const type = panelInstance.getType();
-            if (this.panelsByType.has(type)) {
-              this.panelsByType.get(type).delete(panelInstance);
-            }
-            this.panels.delete(panelId);
-          }
-        } else {
-          config.title = this.generateUniqueName(config.title);
-        }
+        
+        // For cloning, we don't delete the original panel
         this._populateSourcePanelGrid(grid);
         if (this.variant === "welcome") {
           const parentContainer = this.tileSelector.parentElement;
@@ -323,7 +338,14 @@ export class SelectionTile {
               }
               this.panels.delete(panelId);
             }
+            
+            // Update the current grid
             this._populateSourcePanelGrid(grid);
+            
+            // Update all selection tiles by finding PanelManager's updateSourcePanelSelection function
+            if (window.PanelManager && typeof window.PanelManager.updateSourcePanelSelection === 'function') {
+              window.PanelManager.updateSourcePanelSelection();
+            }
           }
         });
       });
@@ -441,6 +463,11 @@ export class SelectionTile {
         const grid = this.tileSelector.querySelector(`.source-selection-grid`);
         if (grid) {
           this._populateSourcePanelGrid(grid);
+        }
+        
+        // Update all selection tiles globally
+        if (window.PanelManager && typeof window.PanelManager.updateSourcePanelSelection === 'function') {
+          window.PanelManager.updateSourcePanelSelection();
         }
       }
     }
@@ -680,5 +707,87 @@ export class SelectionTile {
     remove() {
       delete this.tileSelector._selectionTileInstance;
       this.tileSelector.remove();
+    }
+
+    /**
+     * Reopen a closed panel with the same ID (instead of cloning)
+     * @param {string} panelId - ID of the panel to reopen
+     * @param {string} panelType - Type of the panel to reopen
+     * @param {HTMLElement} grid - The source panel grid element to update
+     * @private
+     */
+    _reopenPanel(panelId, panelType, grid) {
+      const panel = this.panels.get(panelId);
+      if (!panel) return;
+      
+      // Check if the panel is active (should not be)
+      if (this.activePanels.has(panel)) {
+        console.warn('Cannot reopen an already active panel:', panelId);
+        return;
+      }
+      
+      // Get the panel configuration
+      const config = JSON.parse(JSON.stringify(panel.getConfig()));
+      config._closed = false; // Mark as not closed
+      
+      // Keep the SAME ID to maintain references from other panels
+      config.id = panelId;
+      
+      // Create a backup of the panel to restore in case of failure
+      const backupPanel = panel;
+      
+      try {
+        // Remove the panel from panels map and type-specific collection
+        if (this.panelsByType.has(panelType)) {
+          this.panelsByType.get(panelType).delete(panel);
+        }
+        this.panels.delete(panelId);
+        
+        // Create the new panel using the same ID
+        let newPanel;
+        
+        if (this.variant === "welcome") {
+          const parentContainer = this.tileSelector.parentElement;
+          if (!parentContainer) {
+            newPanel = this.layoutManager.createPanelWithSelectionTile(
+              this.container,
+              this.tileSelector,
+              this.createPanel,
+              panelType,
+              config
+            );
+          } else {
+            newPanel = this.layoutManager.createPanelWithSelectionTile(
+              parentContainer,
+              this.tileSelector,
+              this.createPanel,
+              panelType,
+              config
+            );
+          }
+        } else if (this.variant === "pane") {
+          const parentPane = this.tileSelector.closest('.split-pane') || this.container;
+          newPanel = this.createPanel(panelType, config, parentPane);
+          this.remove();
+        }
+        
+        // If panel creation failed, restore the backup
+        if (!newPanel) {
+          console.error('Failed to reopen panel:', panelId);
+          if (this.panelsByType.has(panelType)) {
+            this.panelsByType.get(panelType).add(backupPanel);
+          }
+          this.panels.set(panelId, backupPanel);
+          this._populateSourcePanelGrid(grid);
+        }
+      } catch (error) {
+        console.error('Error reopening panel:', error);
+        // Restore the original panel on error
+        if (this.panelsByType.has(panelType)) {
+          this.panelsByType.get(panelType).add(backupPanel);
+        }
+        this.panels.set(panelId, backupPanel);
+        this._populateSourcePanelGrid(grid);
+      }
     }
   }

@@ -925,12 +925,16 @@ export async function updateTableEntities(data, settings) {
   
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
+    // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
       delete data.tableFilterMask;
+      console.log("Clearing table entities - filter set to none");
       return true; // Indicate that we changed the data
+    } else {
+      console.log("No existing table entities to clear");
+      return true; // Still indicate a change to force visual update
     }
-    return false; // No change
   }
   
   // Save current state for comparison

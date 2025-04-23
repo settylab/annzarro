@@ -1205,6 +1205,7 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   // First only update color since this may resplit the trace"
   return updatePlotElements(plotContainer, data, settings, refreshPlot, { 
     filter: true, // Always apply filtering when table entities change 
-    colors: true  // Always update colors for table filtering (handles graying out)
+    colors: true,  // Always update colors for table filtering (handles graying out)
+    colorRange: true, // Update color range if needed
   });
 }

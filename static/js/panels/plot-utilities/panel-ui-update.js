@@ -856,9 +856,11 @@ export function updateTableFilterSelect(container, id, entityType) {
       
       // Get panel to call onDataUpdate if needed
       const panel = window.PanelManager ? window.PanelManager.getPanel(id) : null;
-      if (panel && panel.onDataUpdate && currentValue && currentValue !== 'none') {
-        // Call onDataUpdate with tableChanged event
-        panel.onDataUpdate('tableChanged');
+      if (panel && panel.onDataUpdate && currentValue) {
+        // store new tableFilter in settings of the panel
+        panel.setConfig({ tableFilter: 'none' });
+        // Call onDataUpdate with tableChanged event, passing empty data to avoid issues with id property
+        panel.onDataUpdate('tableChanged', {});
       }
     }
     
@@ -884,7 +886,9 @@ export function updateTableFilterSelect(container, id, entityType) {
           
           // Call onDataUpdate with tableChanged event if available
           if (panel.onDataUpdate) {
-            panel.onDataUpdate('tableChanged');
+            panel.setConfig({ tableFilter: 'none' });
+            // Pass empty data object to avoid null reference issues
+            panel.onDataUpdate('tableChanged', {});
           }
         }
       }

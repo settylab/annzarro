@@ -514,16 +514,17 @@ const GenePlotPanel = (function() {
             }
             
             // Handle table updates for filtering
-            else if ((updateType === 'tableChanged' || updateType === 'tableFiltered') && 
-                     _settings.tableFilter && 
-                     _settings.tableFilter !== 'none') {
-                     
+            else if (updateType === 'tableChanged' || updateType === 'tableFiltered') {
                 // Check if the update is from the table we're using for filtering
-                const tableId = updateData.id || '';
+                // or if it's a direct tableChanged event without specific ID
+                const tableId = updateData?.id || '';
                 
-                if (tableId === _settings.tableFilter) {
+                // Handle both: 
+                // 1. Updates from specific table we're filtering by
+                // 2. Direct tableChanged events (e.g., when a table is no longer available)
+                if (tableId === '' || tableId === _settings.tableFilter) {
                     if (window.Config && window.Config.DEBUG_MODE) {
-                        console.log(`GenePlot ${_id}: Filtered table ${tableId} changed, updating plot`);
+                        console.log(`GenePlot ${_id}: Filtered table ${tableId || 'none'} changed, updating plot`);
                     }
                     
                     try {
@@ -544,6 +545,39 @@ const GenePlotPanel = (function() {
             return Promise.resolve();
         }
 
+        /**
+         * Set specific values of the config
+         * @param {Object} config - New configuration
+         */
+        function setConfig(config) {
+            if (!config) return;
+            
+            // Update settings with new configuration
+            Object.keys(config).forEach(key => {
+                _settings[key] = config[key];
+            });
+        }
+
+        /**
+         * Update panel configuration
+         * @param {Object} config - New configuration
+         */
+        function updateConfig(config) {
+            if (!config) return;
+            
+            // Update title if provided
+            if (config.title) {
+                _title = config.title;
+            }
+            
+            // Update other settings if needed
+            Object.keys(config).forEach(key => {
+                if (key !== 'title' && _settings[key] !== undefined) {
+                    _settings[key] = config[key];
+                }
+            });
+        }
+
         // Public API
         return {
             init,
@@ -555,6 +589,8 @@ const GenePlotPanel = (function() {
             setTitle,
             getType,
             getConfig,
+            setConfig,
+            updateConfig,
             onDataUpdate
         };
     }

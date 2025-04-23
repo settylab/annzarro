@@ -391,7 +391,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-                preDefined: settings.searchBuilderConfig,
+                preDefined: settings.searchBuilderConfig || {},
                 display: 'block' // Always display
             },
         initComplete: function(dtsettings, json) {

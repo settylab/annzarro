@@ -530,19 +530,20 @@ const CellPlotPanel = (function() {
             } 
             
             // Handle table updates for filtering
-            else if ((updateType === 'tableChanged' || updateType === 'tableFiltered') && 
-                     _settings.tableFilter && 
-                     _settings.tableFilter !== 'none') {
-                     
+            else if (updateType === 'tableChanged' || updateType === 'tableFiltered') {
                 // Check if the update is from the table we're using for filtering
-                const tableId = updateData.id || '';
+                // or if it's a direct tableChanged event without specific ID
+                const tableId = updateData?.id || '';
                 
-                if (tableId === _settings.tableFilter) {
+                // Handle both: 
+                // 1. Updates from specific table we're filtering by
+                // 2. Direct tableChanged events (e.g., when a table is no longer available)
+                if (tableId === '' || tableId === _settings.tableFilter) {
                     if (window.Config && window.Config.DEBUG_MODE) {
-                        console.log(`CellPlot ${_id}: Filtered table ${tableId} changed, updating plot`);
+                        console.log(`CellPlot ${_id}: Filtered table ${tableId || 'none'} changed, updating plot`);
                     }
                     
-                    try {                        
+                    try {
                         // Update the plot based on the table change
                         await updatePlotOnTableChange(_plotContainer, _data, _settings, refreshPlot);
                         
@@ -558,6 +559,19 @@ const CellPlotPanel = (function() {
             
             // Return a resolved promise to indicate completion
             return Promise.resolve();
+        }
+
+        /**
+         * Set specific values of the config
+         * @param {Object} config - New configuration
+         */
+        function setConfig(config) {
+            if (!config) return;
+            
+            // Update settings with new configuration
+            Object.keys(config).forEach(key => {
+                _settings[key] = config[key];
+            });
         }
 
         /**
@@ -591,6 +605,7 @@ const CellPlotPanel = (function() {
             setTitle,
             getType,
             getConfig,
+            setConfig,
             updateConfig,
             onDataUpdate
         };
