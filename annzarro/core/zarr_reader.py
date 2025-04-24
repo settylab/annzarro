@@ -2059,15 +2059,13 @@ class ZarrReader:
         # Stateless operation if dataset_path is provided
         if dataset_path is not None:
             try:
-                root, metadata = self.open_dataset_by_path(dataset_path)
+                root = self.open_dataset_by_path(dataset_path, metadata=False)
             except Exception as e:
                 logger.error(f"Error opening dataset from path {dataset_path}: {e}")
                 return np.array([])
         else:
             # Get the root for the specified dataset ID
             root = self._get_root(dataset_id)
-            # Also get metadata for dataframe detection
-            metadata = self.get_metadata(dataset_id) if dataset_id else {}
         
         if root is None or 'varm' not in root or varm_key not in root['varm']:
             return np.array([])
