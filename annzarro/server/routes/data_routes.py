@@ -32,60 +32,49 @@ def register_data_routes(app, api_version):
         Get information about a dataset.
         
         Query parameters:
-            dataset_id: Optional. ID of the dataset to get info for.
-            dataset_path: Optional. Path to the dataset.
-                         Only one of dataset_id or dataset_path should be provided.
+            dataset_path: Path to the dataset.
         
         Returns:
             JSON response with dataset information
         """
-        # Get dataset identification
-        dataset_id = request.args.get("dataset_id")
+        # Get dataset path
         dataset_path = request.args.get("dataset_path")
         
-        if dataset_path:
-            # Use the direct access approach for stateless operation
-            try:
-                _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
-                
-                # Format basic info
-                shape = metadata.get('shape', (0, 0))
-                info = {
-                    "path": dataset_path,
-                    "name": Path(dataset_path).stem.replace("_", " ").title(),
-                    "shape": shape,
-                    "n_obs": shape[0] if len(shape) > 0 else 0,
-                    "n_vars": shape[1] if len(shape) > 1 else 0,
-                    "has_obs": metadata.get("has_obs", False),
-                    "has_var": metadata.get("has_var", False),
-                    "has_obsm": metadata.get("has_obsm", False),
-                    "has_varm": metadata.get("has_varm", False),
-                    "has_layers": metadata.get("has_layers", False),
-                    "has_uns": metadata.get("has_uns", False),
-                    "obs_columns": metadata.get("obs_columns", []),
-                    "var_columns": metadata.get("var_columns", []),
-                    "layers": metadata.get("layers", {}),
-                    "embeddings": metadata.get("embeddings", [])
-                }
-                
-                # Generate a dataset ID from the path if needed
-                if not dataset_id:
-                    dataset_id = dataset_path
-                    info["dataset_id"] = dataset_id
-                    
-                return jsonify(info)
-            except Exception as e:
-                logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
-                return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
+        # Handle legacy dataset_id parameter
+        if not dataset_path:
+            dataset_path = request.args.get("dataset_id")
         
-        elif dataset_id:
-            # For backward compatibility, use legacy approach
-            info = data_manager.get_basic_info(dataset_id)
-            if not info:
-                return jsonify({"error": f"Dataset {dataset_id} not found"}), 404
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+            
+        # Use the direct access approach for stateless operation
+        try:
+            _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
+            
+            # Format basic info
+            shape = metadata.get('shape', (0, 0))
+            info = {
+                "path": dataset_path,
+                "name": Path(dataset_path).stem.replace("_", " ").title(),
+                "shape": shape,
+                "n_obs": shape[0] if len(shape) > 0 else 0,
+                "n_vars": shape[1] if len(shape) > 1 else 0,
+                "has_obs": metadata.get("has_obs", False),
+                "has_var": metadata.get("has_var", False),
+                "has_obsm": metadata.get("has_obsm", False),
+                "has_varm": metadata.get("has_varm", False),
+                "has_layers": metadata.get("has_layers", False),
+                "has_uns": metadata.get("has_uns", False),
+                "obs_columns": metadata.get("obs_columns", []),
+                "var_columns": metadata.get("var_columns", []),
+                "layers": metadata.get("layers", {}),
+                "embeddings": metadata.get("embeddings", [])
+            }
+                
             return jsonify(info)
-        else:
-            return jsonify({"error": "Either dataset_id or dataset_path parameter is required"}), 400
+        except Exception as e:
+            logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
+            return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
     def get_dataset_structure():
@@ -109,8 +98,8 @@ def register_data_routes(app, api_version):
     
         try:
             # Only wrap the risky operation of opening the dataset.
-            _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
-        except FileNotFoundError as fnfe:
+            metadata = zarr_reader.get_metadata(dataset_path)
+        except FileNotFoundError as e:
             logger.exception(f"Dataset not found: {dataset_path}")
             return jsonify({"error": "Dataset not found"}), 404
         except Exception as e:
@@ -175,7 +164,7 @@ def register_data_routes(app, api_version):
                 "embeddings": metadata.get("embeddings", [])
             }
             # Use pathlib for consistency when adding dataset_id.
-            dataset_structure["dataset_id"] = dataset_path
+            # Frontend uses path directly, so no need for dataset_id
     
             return jsonify(dataset_structure)
         except Exception as e:

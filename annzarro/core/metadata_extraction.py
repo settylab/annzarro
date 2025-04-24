@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 
 logger = logging.getLogger(__name__)
 
-def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
+def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = None, detail_level: str = 'full') -> Dict[str, Any]:
     """
     Extract metadata from a zarr store using visititems for efficient single-pass traversal
     without loading actual data.
@@ -34,8 +34,19 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
     """
     start_time = time.time()
     
-    # Open zarr store - very fast operation
-    zs = zarr.open(path)
+    if path is None and root is None:
+        raise ValueError("Either 'path' or 'root' must be provided.")
+    if path is not None and root is not None:
+        raise ValueError("Only one of 'path' or 'root' should be provided.")
+    if detail_level not in ['minimal', 'standard', 'full']:
+        raise ValueError("Invalid detail level. Choose from 'minimal', 'standard', or 'full'.")
+    
+    if root is not None:
+        # Use the provided root zarr group
+        zs = root
+    else:
+        # Open zarr store - very fast operation
+        zs = zarr.open_group(path)
     open_time = time.time()
     
     # Initialize metadata with basic structural components
@@ -395,8 +406,27 @@ def extract_metadata(path: str, detail_level: str = 'full') -> Dict[str, Any]:
                         if 'encoding-version' in attrs:
                             metadata['varm_dataframes'][df_name]['encoding_version'] = attrs['encoding-version']
     
-    # Traverse the zarr hierarchy in a single pass
-    zs.visititems(visitor_function)
+    # Use visititems if available, otherwise use key-based traversal
+    if hasattr(zs, 'visititems'):
+        # Use visititems if available (for backward compatibility)
+        zs.visititems(visitor_function)
+    else:
+        # Key-based traversal for zarr 3.0+
+        def fast_traverse(group, prefix=''):
+            # Process direct children (arrays and groups)
+            for key in group.keys():
+                item = group[key]
+                item_path = f"{prefix}/{key}" if prefix else key
+                
+                # Process the item
+                visitor_function(item_path, item)
+                
+                # If it's a group, recursively traverse
+                if isinstance(item, zarr.Group):
+                    fast_traverse(item, item_path)
+        
+        # Start traversal at the root
+        fast_traverse(zs)
     
     # Sort any lists for consistency
     for key in ['obs_columns', 'var_columns']:

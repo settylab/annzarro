@@ -22,13 +22,9 @@ import numpy as np
 import zarr
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable
 from pathlib import Path
-import json
-import uuid
-import warnings
-from collections import defaultdict
 
 from .metadata_extraction import extract_metadata
-from .metadata_extraction_legacy  import extract_metadata_legacy
+from .caching import DatasetCache, cached_method
 
 # Try to import optional dependencies
 try:
@@ -86,26 +82,15 @@ class ZarrReader:
             enable_caching: Whether to enable caching of data
             cache_limit: Maximum number of datasets to keep in memory
         """
-        # Multiple dataset support
-        self.dataset_stores = {}  # Dict of dataset_id -> zarr store
-        self.dataset_roots = {}   # Dict of dataset_id -> zarr root
-        self.dataset_metadata = {}  # Dict of dataset_id -> metadata
-        self.dataset_paths = {}  # Dict of dataset_id -> original path
-        self.active_dataset_id = None  # Current active dataset ID
+        # Initialize the cache manager
+        self.cache = DatasetCache(max_memory_mb=max_memory_mb, 
+                                 enable_caching=enable_caching, 
+                                 cache_limit=cache_limit)
         
-        # Memory and caching settings
+        # Keep reference to cache settings for backwards compatibility
         self.max_memory_mb = max_memory_mb
         self.enable_caching = enable_caching
         self.cache_limit = cache_limit
-        self.memory_usage_mb = 0  # Current memory usage estimate
-        
-        # Caches for different data types
-        self._matrix_cache = {}  # Cache for X, layers, obsm, varm matrices
-        self._dataframe_cache = {}  # Cache for obs, var dataframes
-        self._metadata_cache = {}  # Cache for metadata objects
-        
-        # Cache access timestamps for LRU eviction
-        self._cache_access_times = {}  # Dict of cache_key -> last access timestamp
         
         # Optional initialization of backends
         self._check_backends()
@@ -127,287 +112,52 @@ class ZarrReader:
         if not SCIPY_SPARSE_AVAILABLE:
             logger.warning("SciPy sparse matrix support is not available. Sparse matrices will be converted to dense.")
             
+    # Deprecated method - delegating to cache
     def _estimate_size_mb(self, obj):
-        """
-        Estimate the memory size of an object in MB.
-        
-        Args:
-            obj: The object to estimate size for
-            
-        Returns:
-            float: Estimated size in MB
-        """
-        import sys
-        
-        # For numpy arrays, we can get exact size
-        if hasattr(obj, 'nbytes'):
-            return obj.nbytes / (1024 * 1024)
-            
-        # For pandas DataFrames or Series
-        if hasattr(obj, 'memory_usage'):
-            try:
-                # Deep=True accounts for object dtypes
-                mem_usage = obj.memory_usage(deep=True)
-                if hasattr(mem_usage, 'sum'):
-                    return mem_usage.sum() / (1024 * 1024)
-                else:
-                    return mem_usage / (1024 * 1024)
-            except:
-                pass
-        
-        # For other objects, use sys.getsizeof as a rough estimate
-        # This is not accurate for nested objects but gives a baseline
-        try:
-            # For small objects, add a minimum size to prevent underestimation
-            min_size_mb = 0.1  # 100KB minimum
-            size_mb = sys.getsizeof(obj) / (1024 * 1024)
-            return max(size_mb, min_size_mb)
-        except:
-            # If we can't estimate, assume 1MB to be safe
-            return 1.0
+        """Estimate the memory size of an object in MB."""
+        return self.cache._estimate_memory_usage(obj)
     
+    # Deprecated method - delegating to cache
     def _manage_cache_size(self):
-        """
-        Manage cache size by removing least recently used items when limits are exceeded.
-        """
-        if not self.enable_caching:
-            return
-            
-        # Check if we're over memory limit
-        if self.memory_usage_mb > self.max_memory_mb:
-            logger.info(f"Cache memory usage ({self.memory_usage_mb:.2f}MB) exceeds limit ({self.max_memory_mb}MB), evicting items")
-            
-            # Get all cache keys with their access times
-            all_cache_items = []
-            
-            for key in self._matrix_cache:
-                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'matrix'))
-                
-            for key in self._dataframe_cache:
-                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'dataframe'))
-                
-            for key in self._metadata_cache:
-                all_cache_items.append((key, self._cache_access_times.get(key, 0), 'metadata'))
-            
-            # Sort by access time (oldest first)
-            all_cache_items.sort(key=lambda x: x[1])
-            
-            # Remove items until we're under the limit
-            for key, access_time, cache_type in all_cache_items:
-                if self.memory_usage_mb <= self.max_memory_mb * 0.8:  # Add 20% buffer
-                    break
-                    
-                # Remove from appropriate cache
-                if cache_type == 'matrix' and key in self._matrix_cache:
-                    # Estimate size
-                    size_mb = self._estimate_size_mb(self._matrix_cache[key])
-                    del self._matrix_cache[key]
-                    self.memory_usage_mb -= size_mb
-                    logger.debug(f"Removed matrix {key} from cache, freed {size_mb:.2f}MB")
-                    
-                elif cache_type == 'dataframe' and key in self._dataframe_cache:
-                    # Estimate size
-                    size_mb = self._estimate_size_mb(self._dataframe_cache[key])
-                    del self._dataframe_cache[key]
-                    self.memory_usage_mb -= size_mb
-                    logger.debug(f"Removed dataframe {key} from cache, freed {size_mb:.2f}MB")
-                    
-                elif cache_type == 'metadata' and key in self._metadata_cache:
-                    # Estimate size
-                    size_mb = self._estimate_size_mb(self._metadata_cache[key])
-                    del self._metadata_cache[key]
-                    self.memory_usage_mb -= size_mb
-                    logger.debug(f"Removed metadata {key} from cache, freed {size_mb:.2f}MB")
-                
-                # Remove from access times
-                if key in self._cache_access_times:
-                    del self._cache_access_times[key]
-        
-        # Check if we're over dataset limit
-        unique_datasets = set()
-        
-        # Collect all unique dataset IDs from caches
-        for key in list(self._matrix_cache.keys()) + list(self._dataframe_cache.keys()) + list(self._metadata_cache.keys()):
-            if ":" in key:
-                ds_id = key.split(":", 1)[0]
-                unique_datasets.add(ds_id)
-        
-        # If we have too many datasets, remove the least recently used ones
-        if len(unique_datasets) > self.cache_limit:
-            logger.info(f"Cache has {len(unique_datasets)} datasets, exceeding limit of {self.cache_limit}, evicting least used datasets")
-            
-            # Calculate last access time for each dataset
-            dataset_access_times = {}
-            for ds_id in unique_datasets:
-                # Find the most recent access for any item in this dataset
-                most_recent = 0
-                for key, access_time in self._cache_access_times.items():
-                    if key.startswith(f"{ds_id}:"):
-                        most_recent = max(most_recent, access_time)
-                dataset_access_times[ds_id] = most_recent
-            
-            # Sort datasets by access time
-            sorted_datasets = sorted(dataset_access_times.items(), key=lambda x: x[1])
-            
-            # Calculate how many to remove
-            num_to_remove = len(unique_datasets) - self.cache_limit
-            
-            # Remove the oldest datasets
-            for ds_id, _ in sorted_datasets[:num_to_remove]:
-                self._remove_dataset_from_cache(ds_id)
-                logger.info(f"Removed dataset {ds_id} from cache due to dataset limit")
+        """Manage cache size by removing least recently used items when limits are exceeded."""
+        self.cache._manage_cache_size()
     
-    def _remove_dataset_from_cache(self, dataset_id):
-        """
-        Remove all cached items for a specific dataset.
-        
-        Args:
-            dataset_id: The dataset ID to remove from cache
-        """
-        logger.info(f"_REMOVE_DATASET: Removing all cache entries for {dataset_id}")
-        
-        # Check if the dataset exists in our dataset structures first
-        in_dataset_roots = dataset_id in self.dataset_roots
-        in_dataset_paths = dataset_id in self.dataset_paths
-        in_dataset_metadata = dataset_id in self.dataset_metadata
-        
-        logger.info(f"_REMOVE_DATASET: In dataset_roots: {in_dataset_roots}")
-        logger.info(f"_REMOVE_DATASET: In dataset_paths: {in_dataset_paths}")
-        logger.info(f"_REMOVE_DATASET: In dataset_metadata: {in_dataset_metadata}")
-        
-        # Remove from our dataset tracking structures if present
-        if in_dataset_roots:
-            del self.dataset_roots[dataset_id]
-        if in_dataset_paths:
-            del self.dataset_paths[dataset_id]
-        if in_dataset_metadata:
-            del self.dataset_metadata[dataset_id]
-        
-        # Remove from matrix cache
-        keys_to_remove = []
-        for key in self._matrix_cache:
-            if key.startswith(f"{dataset_id}:"):
-                keys_to_remove.append(key)
-                # Update memory usage
-                size_mb = self._estimate_size_mb(self._matrix_cache[key])
-                self.memory_usage_mb -= size_mb
-        
-        logger.info(f"_REMOVE_DATASET: Found {len(keys_to_remove)} matrix keys to remove")
-                
-        for key in keys_to_remove:
-            del self._matrix_cache[key]
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
-        
-        # Remove from dataframe cache
-        keys_to_remove = []
-        for key in self._dataframe_cache:
-            if key.startswith(f"{dataset_id}:"):
-                keys_to_remove.append(key)
-                # Update memory usage
-                size_mb = self._estimate_size_mb(self._dataframe_cache[key])
-                self.memory_usage_mb -= size_mb
-                
-        for key in keys_to_remove:
-            del self._dataframe_cache[key]
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
-        
-        # Remove from metadata cache
-        keys_to_remove = []
-        for key in self._metadata_cache:
-            if key.startswith(f"{dataset_id}:"):
-                keys_to_remove.append(key)
-                # Update memory usage
-                size_mb = self._estimate_size_mb(self._metadata_cache[key])
-                self.memory_usage_mb -= size_mb
-                
-        for key in keys_to_remove:
-            del self._metadata_cache[key]
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
+    # Deprecated method - delegating to cache with dataset handling
+    def _remove_dataset_from_cache(self, dataset_path):
+        """Remove all cached items for a specific dataset."""
+        logger.info(f"_REMOVE_DATASET: Removing all cache entries for {dataset_path}")
+        # Use the cache manager to remove dataset from cache
+        self.cache._remove_dataset_from_cache(dataset_path)
     
+    # Deprecated method - delegating to cache
     def _add_to_cache(self, key, data, cache_type='matrix'):
-        """
-        Add an item to the appropriate cache with memory tracking.
-        
-        Args:
-            key: Cache key
-            data: Data to cache
-            cache_type: Type of cache ('matrix', 'dataframe', or 'metadata')
-        """
+        """Add an item to the appropriate cache with memory tracking."""
         # Log cache addition
         logger.info(f"_ADD_TO_CACHE: Adding to {cache_type} cache with key '{key}'")
         
-        if not self.enable_caching:
-            logger.info(f"_ADD_TO_CACHE: Caching disabled, not adding key '{key}'")
-            return
-        
-        # Estimate size
-        size_mb = self._estimate_size_mb(data)
-        
-        # Check if adding this item would exceed memory limit
-        if self.memory_usage_mb + size_mb > self.max_memory_mb:
-            # Try to free up space
-            self._manage_cache_size()
+        # Extract dataset_path from key if present
+        # We expect keys in the format "path:encoded_dataset_path:..." where dataset_path is URL-encoded
+        dataset_path = None
+        if key.startswith("path:"):
+            # Remove "path:" prefix and get the encoded dataset_path part
+            parts = key[5:].split(":", 1)
+            if len(parts) > 0:
+                encoded_path = parts[0]
+                # Decode the URL-encoded path
+                import urllib.parse
+                try:
+                    dataset_path = urllib.parse.unquote(encoded_path)
+                except Exception as e:
+                    logger.warning(f"Error decoding dataset path from cache key: {e}")
+                    dataset_path = encoded_path  # Use as-is as fallback
             
-            # Check again if we have room
-            if self.memory_usage_mb + size_mb > self.max_memory_mb:
-                logger.warning(f"Cannot cache {key}, size ({size_mb:.2f}MB) exceeds available space")
-                return
-        
-        # Add to appropriate cache
-        if cache_type == 'matrix':
-            self._matrix_cache[key] = data
-        elif cache_type == 'dataframe':
-            self._dataframe_cache[key] = data
-        elif cache_type == 'metadata':
-            self._metadata_cache[key] = data
-        else:
-            logger.warning(f"Unknown cache type: {cache_type}")
-            return
-        
-        # Update memory usage
-        self.memory_usage_mb += size_mb
-        
-        # Update access time
-        import time
-        self._cache_access_times[key] = time.time()
-        
-        # Check if we need to manage cache size
-        if (self.memory_usage_mb > self.max_memory_mb or 
-            len(set(k.split(':', 1)[0] for k in self._cache_access_times if ':' in k)) > self.cache_limit):
-            self._manage_cache_size()
+        # Use the cache manager to add item to cache
+        self.cache._add_to_cache(key, data, dataset_path=dataset_path, cache_type=cache_type)
     
+    # Deprecated method - delegating to cache
     def _get_from_cache(self, key, cache_type='matrix'):
-        """
-        Get an item from the appropriate cache and update access time.
-        
-        Args:
-            key: Cache key
-            cache_type: Type of cache ('matrix', 'dataframe', or 'metadata')
-            
-        Returns:
-            Cached data or None if not found
-        """
-        if not self.enable_caching:
-            return None
-        
-        # Check appropriate cache
-        if cache_type == 'matrix' and key in self._matrix_cache:
-            data = self._matrix_cache[key]
-        elif cache_type == 'dataframe' and key in self._dataframe_cache:
-            data = self._dataframe_cache[key]
-        elif cache_type == 'metadata' and key in self._metadata_cache:
-            data = self._metadata_cache[key]
-        else:
-            return None
-        
-        # Update access time
-        import time
-        self._cache_access_times[key] = time.time()
-        
-        return data
+        """Get an item from the appropriate cache and update access time."""
+        return self.cache._get_from_cache(key, cache_type=cache_type)
     
     def get_cache_info(self):
         """
@@ -416,591 +166,115 @@ class ZarrReader:
         Returns:
             dict: Information about the current cache
         """
-        # Debug: Log detailed info about what's in the cache
-        logger.info(f"GET CACHE INFO - Memory usage: {self.memory_usage_mb} MB")
-        logger.info(f"GET CACHE INFO - Matrix cache items: {len(self._matrix_cache)} - Keys: {list(self._matrix_cache.keys())}")
-        logger.info(f"GET CACHE INFO - Dataframe cache items: {len(self._dataframe_cache)} - Keys: {list(self._dataframe_cache.keys())}")
-        logger.info(f"GET CACHE INFO - Metadata cache items: {len(self._metadata_cache)} - Keys: {list(self._metadata_cache.keys())}")
-        logger.info(f"GET CACHE INFO - Dataset roots: {list(self.dataset_roots.keys())}")
-        logger.info(f"GET CACHE INFO - Dataset paths: {list(self.dataset_paths.keys())}")
-        logger.info(f"GET CACHE INFO - Dataset metadata: {list(self.dataset_metadata.keys())}")
+        # Get cache info from cache manager
+        cache_info = self.cache.get_cache_info()
         
-        # Count items per dataset
-        dataset_counts = {}
-        
-        # Analyze matrix cache
-        for key in self._matrix_cache:
-            if ":" in key:
-                ds_id = key.split(":", 1)[0]
-                if ds_id not in dataset_counts:
-                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
-                dataset_counts[ds_id]["matrices"] += 1
-        
-        # Analyze dataframe cache
-        for key in self._dataframe_cache:
-            if ":" in key:
-                ds_id = key.split(":", 1)[0]
-                if ds_id not in dataset_counts:
-                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
-                dataset_counts[ds_id]["dataframes"] += 1
-                
-        # Analyze metadata cache
-        for key in self._metadata_cache:
-            if ":" in key:
-                ds_id = key.split(":", 1)[0]
-                if ds_id not in dataset_counts:
-                    dataset_counts[ds_id] = {"matrices": 0, "dataframes": 0, "metadata": 0}
-                dataset_counts[ds_id]["metadata"] += 1
-        
-        # Get dataset access times
-        import time
-        current_time = time.time()
-        dataset_access_times = {}
-        
-        for key, access_time in self._cache_access_times.items():
-            if ":" in key:
-                ds_id = key.split(":", 1)[0]
-                if ds_id not in dataset_access_times or access_time > dataset_access_times[ds_id]:
-                    dataset_access_times[ds_id] = access_time
-        
-        # Add access time info to dataset counts
-        for ds_id, access_time in dataset_access_times.items():
-            if ds_id in dataset_counts:
-                dataset_counts[ds_id]["last_access"] = access_time
-                dataset_counts[ds_id]["last_access_seconds_ago"] = int(current_time - access_time)
-        
-        return {
-            "status": "success",
-            "cache_enabled": self.enable_caching,
-            "cache_memory_mb": self.max_memory_mb,
-            "cache_dataset_limit": self.cache_limit,
-            "current_memory_usage_mb": self.memory_usage_mb,
-            "matrix_cache_items": len(self._matrix_cache),
-            "dataframe_cache_items": len(self._dataframe_cache),
-            "metadata_cache_items": len(self._metadata_cache),
-            "total_cached_items": len(self._matrix_cache) + len(self._dataframe_cache) + len(self._metadata_cache),
-            "unique_datasets": len(set(k.split(':', 1)[0] for k in self._cache_access_times if ':' in k)),
-            "datasets": dataset_counts,
-            "active_dataset_id": self.active_dataset_id,
-            "loaded_dataset_ids": list(self.dataset_roots.keys()),
-            "matrix_cache_keys": list(self._matrix_cache.keys())[:10],  # Show first 10 keys max
-            "metadata_cache_keys": list(self._metadata_cache.keys())[:10]  # Show first 10 keys max
-        }
+        return cache_info
     
-    def clear_cache(self, dataset_id=None):
+    def clear_cache(self, dataset_path=None):
         """
         Clear the internal data cache.
         
         Args:
-            dataset_id: Optional dataset ID to clear from cache.
-                       If None, clears the entire cache.
+            dataset_path: Optional dataset path to clear from cache.
+                          If None, clears the entire cache.
                        
         Returns:
             dict: Information about the cleared cache
         """
-        logger.info(f"CLEAR_CACHE: Called with dataset_id={dataset_id}")
-        logger.info(f"CLEAR_CACHE: Current dataset roots: {list(self.dataset_roots.keys())}")
-        logger.info(f"CLEAR_CACHE: Current dataset paths: {list(self.dataset_paths.keys())}")
-        logger.info(f"CLEAR_CACHE: Current metadata cache keys: {list(self._metadata_cache.keys())}")
+        logger.info(f"CLEAR_CACHE: Called with dataset_path={dataset_path}")
         
-        result = {
-            "status": "success",
-            "cache_cleared": True,
-            "memory_before": self.memory_usage_mb,
-        }
-        
-        if dataset_id:
-            # Use the helper method to remove dataset from cache
-            cache_items_before = (
-                len(self._matrix_cache) + 
-                len(self._dataframe_cache) + 
-                len(self._metadata_cache)
-            )
-            
-            logger.info(f"CLEAR_CACHE: Removing dataset {dataset_id} from cache")
-            
-            # Check if dataset is in our stored datasets
-            if dataset_id in self.dataset_roots:
-                logger.info(f"CLEAR_CACHE: Found dataset {dataset_id} in dataset_roots")
-            else:
-                logger.info(f"CLEAR_CACHE: Dataset {dataset_id} NOT found in dataset_roots")
+        # Use the cache manager to clear cache
+        result = self.cache.clear_cache(dataset_path=dataset_path)
                 
-            # Use the internal method to handle all caches
-            self._remove_dataset_from_cache(dataset_id)
-            
-            cache_items_after = (
-                len(self._matrix_cache) + 
-                len(self._dataframe_cache) + 
-                len(self._metadata_cache)
-            )
-            
-            logger.info(f"CLEAR_CACHE: After removing: dataset_roots={list(self.dataset_roots.keys())}")
-            logger.info(f"CLEAR_CACHE: After removing: metadata_cache={list(self._metadata_cache.keys())}")
-            logger.info(f"CLEAR_CACHE: Cleared cache for dataset {dataset_id}, removed {cache_items_before - cache_items_after} items")
-            result["dataset_id"] = dataset_id
-            result["items_cleared"] = cache_items_before - cache_items_after
-        else:
-            # Clear all caches
-            matrix_count = len(self._matrix_cache)
-            df_count = len(self._dataframe_cache)
-            metadata_count = len(self._metadata_cache)
-            
-            self._matrix_cache.clear()
-            self._dataframe_cache.clear()
-            self._metadata_cache.clear()
-            self._cache_access_times.clear()
-            self.memory_usage_mb = 0  # Reset memory usage counter
-            
-            logger.info(f"Cleared entire cache: {matrix_count} matrices, {df_count} dataframes, and {metadata_count} metadata objects")
-            result["items_cleared"] = matrix_count + df_count + metadata_count
-            
-        # Update the result with new memory usage
-        result["memory_after"] = self.memory_usage_mb
-        result["memory_freed"] = result["memory_before"] - result["memory_after"]
-        
+        logger.info(f"CLEAR_CACHE: Cache cleared with result: {result}")
         return result
+        
     
-    def open_zarr(self, path: str, dataset_id: Optional[str] = None) -> str:
-        """
-        Open a zarr store from a path.
-        
-        Args:
-            path: Path to the zarr directory or file
-            dataset_id: Optional dataset ID. If None, a unique ID will be generated.
-            
-        Returns:
-            str: The dataset ID used
-        """
-        return self.load_zarr(path, dataset_id=dataset_id)
-        
-    def load_zarr(self, path: str, mode: str = 'r', dataset_id: Optional[str] = None) -> str:
-        """
-        Load a zarr store from a local path.
-        
-        Args:
-            path: Path to the zarr directory or file
-            mode: Access mode (default: read-only)
-            dataset_id: Optional dataset ID for multi-dataset support.
-                        If None, a unique ID will be generated.
-        
-        Returns:
-            str: The dataset ID used
-        """
-        try:
-            # Generate a dataset ID if not provided
-            if dataset_id is None:
-                # Use the base filename or directory name as the ID
-                dataset_id = os.path.basename(os.path.normpath(path))
-                # Ensure uniqueness
-                if dataset_id in self.dataset_stores:
-                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
-            
-            logger.info(f"Loading zarr from path: {path} with dataset ID: {dataset_id}")
-            
-            # Open the zarr store
-            store = zarr.open_group(path, mode=mode)
-            
-            # Store in the dataset dictionaries
-            self.dataset_stores[dataset_id] = store
-            self.dataset_roots[dataset_id] = store
-            self.dataset_paths[dataset_id] = path  # Track the original path
-            
-            # Extract metadata for this dataset
-            metadata = self._extract_metadata(store, dataset_id, disable_caching=False)
-            self.dataset_metadata[dataset_id] = metadata
-            
-            # Set as active dataset
-            self.active_dataset_id = dataset_id
-            
-            logger.info(f"Zarr loaded successfully from {path} with dataset ID: {dataset_id}")
-            return dataset_id
-        except Exception as e:
-            logger.error(f"Error loading zarr from {path}: {e}")
-            if dataset_id in self.dataset_stores:
-                del self.dataset_stores[dataset_id]
-            if dataset_id in self.dataset_roots:
-                del self.dataset_roots[dataset_id]
-            if dataset_id in self.dataset_metadata:
-                del self.dataset_metadata[dataset_id]
-            # Reset active dataset if this was the active one
-            if self.active_dataset_id == dataset_id:
-                self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
-            raise
-    
-    def open_zarr_url(self, url: str, dataset_id: Optional[str] = None) -> str:
-        """
-        Open a zarr store from a URL (compatible with older method name).
-        
-        This is designed to work with the test_with_url_store test, which mocks zarr.open_group.
-        
-        Args:
-            url: URL to the zarr directory
-            dataset_id: Optional dataset ID. If None, one will be generated.
-            
-        Returns:
-            bool: True for tests to make them pass
-        """
-        # For URL mocking tests, call the actual zarr.open_group to make the mock assertions work
-        if url.startswith("http://example.com") and "test" in url:
-            # This will be intercepted by the mock in the test
-            zarr.open_group(url, mode='r')
-            return True
-        
-        # For real URLs, call the actual implementation
-        return self.load_zarr_url(url, dataset_id)
-        
-    def load_zarr_url(self, url: str, dataset_id: Optional[str] = None) -> str:
-        """
-        Load a zarr store from a URL.
-        
-        Args:
-            url: URL to the zarr directory
-            dataset_id: Optional dataset ID. If None, one will be generated.
-            
-        Returns:
-            str: The dataset ID used
-        """
-        try:
-            logger.info(f"Loading zarr from URL: {url}")
-            
-            # Generate a dataset ID if not provided
-            if dataset_id is None:
-                # Use the URL's basename as the ID
-                from urllib.parse import urlparse
-                parsed_url = urlparse(url)
-                path = parsed_url.path.rstrip('/')
-                dataset_id = os.path.basename(path)
-                # Ensure uniqueness
-                if dataset_id in self.dataset_stores:
-                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
-            
-            # Handle special test URLs directly
-            if url.startswith("http://example.com") and "test" in url:
-                # Mock a simple store and root for testing
-                zarr_store = zarr.group()
-                self.dataset_stores[dataset_id] = zarr_store
-                self.dataset_roots[dataset_id] = zarr_store
-                self.dataset_paths[dataset_id] = url
-                metadata = {'shape': (100, 50), 'has_obs': True, 'has_var': True}
-                self.dataset_metadata[dataset_id] = metadata
-                self.active_dataset_id = dataset_id
-                return dataset_id
-            
-            # Use appropriate backend based on what's available
-            try:
-                if FSSPEC_AVAILABLE:
-                    # fsspec has better HTTP support
-                    store = fsspec.filesystem('http').get_mapper(url)
-                else:
-                    # Fall back to basic URL handling
-                    store = url
-            except ImportError:
-                # Fall back to direct URL if fsspec dependencies are missing
-                store = url
-            
-            # Open the zarr group
-            zarr_store = zarr.open_group(store, mode='r')
-            
-            # Store in the dataset dictionaries
-            self.dataset_stores[dataset_id] = zarr_store
-            self.dataset_roots[dataset_id] = zarr_store
-            self.dataset_paths[dataset_id] = url  # Track the original URL
-            
-            # Extract metadata for this dataset
-            metadata = self._extract_metadata(zarr_store, dataset_id, disable_caching=False)
-            self.dataset_metadata[dataset_id] = metadata
-            
-            # Set as active dataset
-            self.active_dataset_id = dataset_id
-            
-            logger.info(f"Zarr loaded successfully from URL: {url} with dataset ID: {dataset_id}")
-            return dataset_id
-        except Exception as e:
-            logger.error(f"Error loading zarr from URL {url}: {e}")
-            if dataset_id in self.dataset_stores:
-                del self.dataset_stores[dataset_id]
-            if dataset_id in self.dataset_roots:
-                del self.dataset_roots[dataset_id]
-            if dataset_id in self.dataset_metadata:
-                del self.dataset_metadata[dataset_id]
-            # Reset active dataset if this was the active one
-            if self.active_dataset_id == dataset_id:
-                self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
-            raise
-    
-    def load_zarr_s3(self, bucket: str, key: str, region: str = 'us-east-1', 
-                      anonymous: bool = True, dataset_id: Optional[str] = None, 
-                      **kwargs) -> str:
-        """
-        Load a zarr store from an S3 bucket.
-        
-        Args:
-            bucket: S3 bucket name
-            key: Path within the bucket to the zarr directory
-            region: AWS region (default: us-east-1)
-            anonymous: Whether to use anonymous access (default: True)
-            dataset_id: Optional dataset ID. If None, one will be generated.
-            **kwargs: Additional parameters for boto3 client
-            
-        Returns:
-            str: The dataset ID used
-        """
-        if not S3FS_AVAILABLE:
-            raise ImportError("s3fs package required for S3 access. Install with 'pip install s3fs'.")
-        
-        try:
-            logger.info(f"Loading zarr from S3: {bucket}/{key}")
-            
-            # Generate a dataset ID if not provided
-            if dataset_id is None:
-                # Use the key's basename as the ID
-                dataset_id = os.path.basename(key.rstrip('/'))
-                # Ensure uniqueness
-                if dataset_id in self.dataset_stores:
-                    dataset_id = f"{dataset_id}_{len(self.dataset_stores)}"
-            
-            # Configure S3 filesystem
-            s3_kwargs = {
-                'anon': anonymous,
-                'client_kwargs': {
-                    'region_name': region
-                }
-            }
-            
-            # Add credentials if provided
-            if not anonymous:
-                if 'aws_access_key_id' in kwargs and 'aws_secret_access_key' in kwargs:
-                    s3_kwargs['key'] = kwargs.get('aws_access_key_id')
-                    s3_kwargs['secret'] = kwargs.get('aws_secret_access_key')
-                # Otherwise, use default credentials
-            
-            # Create filesystem and map to zarr store
-            fs = s3fs.S3FileSystem(**s3_kwargs)
-            store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
-            
-            # Open the zarr group
-            zarr_store = zarr.open_group(store, mode='r')
-            
-            # Store in the dataset dictionaries
-            self.dataset_stores[dataset_id] = zarr_store
-            self.dataset_roots[dataset_id] = zarr_store
-            self.dataset_paths[dataset_id] = f"s3://{bucket}/{key}"  # Track the S3 path
-            
-            # Extract metadata for this dataset
-            metadata = self._extract_metadata(zarr_store, dataset_id, disable_caching=False)
-            self.dataset_metadata[dataset_id] = metadata
-            
-            # Set as active dataset
-            self.active_dataset_id = dataset_id
-            
-            logger.info(f"Zarr loaded successfully from S3: {bucket}/{key} with dataset ID: {dataset_id}")
-            return dataset_id
-        except Exception as e:
-            logger.error(f"Error loading zarr from S3 {bucket}/{key}: {e}")
-            if dataset_id in self.dataset_stores:
-                del self.dataset_stores[dataset_id]
-            if dataset_id in self.dataset_roots:
-                del self.dataset_roots[dataset_id]
-            if dataset_id in self.dataset_metadata:
-                del self.dataset_metadata[dataset_id]
-            # Reset active dataset if this was the active one
-            if self.active_dataset_id == dataset_id:
-                self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
-            raise
-    
-    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full', use_cache: bool=False) -> Tuple[zarr.Group, Dict[str, Any]]:
+    @cached_method
+    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full', use_cache: bool=True) -> Tuple[zarr.Group, Dict[str, Any]]:
         """
         Open a dataset by path.
 
         Args:
             path: Path to the zarr directory or file
-            metadata: If metadata should be returned (Default=True).
+            metadata: If metadata should be returned (Default=True)
             metadata_level: Level of metadata detail to extract:
                 'minimal' - Basic structure only (fastest)
                 'standard' - Column names and embeddings (faster)
                 'full' - Complete detailed metadata (default)
-            use_cache: Whether to cache the results (Default=False). When True,
-                       this will store the dataset in memory for faster future access.
+            use_cache: Whether to cache the results (Default=True)
 
         Returns:
             Tuple of (zarr root, metadata dict)
         """
-        # IMPORTANT DEBUG LOGGING
-        logger.info(f"OPEN_DATASET_BY_PATH: Called with path={path}, metadata={metadata}, use_cache={use_cache}")
+        logger.info(f"OPEN_DATASET_BY_PATH: Called with path={path}, metadata={metadata}, "
+                   f"metadata_level={metadata_level}, use_cache={use_cache}")
+        
+            
         try:
-            # Use appropriate method to open the store based on path format
-            if path.startswith("s3://"):
-                if not S3FS_AVAILABLE:
-                    raise ImportError("s3fs package required for S3 access. Install with 'pip install s3fs'.")
-
-                # Parse S3 path
-                parts = path.replace("s3://", "").split("/", 1)
-                bucket = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
-
-                # Create S3 filesystem
-                fs = s3fs.S3FileSystem(anon=True)
-                store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
-                root = zarr.open_group(store, mode='r')
-            elif path.startswith(("http://", "https://")):
-                if FSSPEC_AVAILABLE:
-                    store = fsspec.filesystem('http').get_mapper(path)
-                else:
-                    store = path
-                root = zarr.open_group(store, mode='r')
-            else:
-                # Local file access
-                root = zarr.open_group(path, mode='r')
-
+            # Get the root once
+            root = self._get_root(path)
             if not metadata:
-                return root
+                return root, {}
             
-            # Create a dataset_id based on the path - create a consistent ID
-            dataset_id = path
+            # Extract metadata with the appropriate caching behavior, passing the existing root
+            metadata_dict = self.get_metadata(
+                root=root,
+                detail_level=metadata_level,
+            )
             
-            # For stateless operation, use a temporary ID prefix
-            temp_id_prefix = "temp_" if not use_cache or not self.enable_caching else ""
-            temp_dataset_id = f"{temp_id_prefix}{dataset_id}"
-            
-            # If using cache, register the dataset in our internal stores
-            if use_cache and self.enable_caching:
-                logger.info(f"CACHE: use_cache=True, enable_caching={self.enable_caching}, path={path}")
-                # Check if it's already loaded
-                if dataset_id in self.dataset_roots:
-                    logger.info(f"CACHE: Dataset {dataset_id} already in cache, returning cached version")
-                    root = self.dataset_roots[dataset_id]
-                    metadata_dict = self.dataset_metadata[dataset_id]
-                    return root, metadata_dict
-                
-                # If not already loaded, we'll load it here (outside this block)
-                # and register it later after extracting metadata
-                logger.info(f"CACHE: Dataset {dataset_id} not in cache, loading and caching")
-            
-            # Extract metadata - don't pass dataset_id for caching inside these functions
-            # We'll cache at this higher level instead
-            if path:
-                # Extract metadata with the requested detail level - disable internal caching
-                # as we'll handle caching at this higher level for better consistency
-                metadata_dict = self._extract_metadata(root, dataset_id=temp_dataset_id, 
-                                                     detail_level=metadata_level, disable_caching=True)
-            else:
-                # Use legacy extraction method with caching disabled
-                metadata_dict = self._extract_metadata_legacy(root, dataset_id=temp_dataset_id, 
-                                                           disable_caching=True)
-            
-            # Now that we have metadata, register in cache if needed
-            if use_cache and self.enable_caching:
-                logger.info(f"CACHE: Storing dataset {dataset_id} in cache")
-                # Store dataset in all our tracking structures
-                self.dataset_roots[dataset_id] = root
-                self.dataset_paths[dataset_id] = path
-                self.dataset_metadata[dataset_id] = metadata_dict
-                
-                # If this is the first dataset, make it active
-                if not self.active_dataset_id:
-                    self.active_dataset_id = dataset_id
-                    logger.info(f"CACHE: Setting {dataset_id} as active dataset")
-                
-                # Also cache the metadata dictionary itself
-                metadata_cache_key = f"{dataset_id}:metadata"
-                logger.info(f"CACHE: Adding metadata to cache with key {metadata_cache_key}")
-                self._add_to_cache(metadata_cache_key, metadata_dict, cache_type='metadata')
-                
-                # Log what's in the cache now
-                logger.info(f"CACHE: Dataset roots after adding: {list(self.dataset_roots.keys())}")
-                logger.info(f"CACHE: Metadata cache keys: {list(self._metadata_cache.keys())}")
-                logger.info(f"CACHE: Dataset {dataset_id} cached for future use")
-                
             return root, metadata_dict
         except Exception as e:
             logger.error(f"Error opening dataset by path {path}: {e}")
+            import traceback
+            logger.error(traceback.print_exc())
             raise
     
-    def is_initialized(self, dataset_id: Optional[str] = None) -> bool:
-        """
-        Check if a zarr store is loaded.
-        
-        Args:
-            dataset_id: Optional dataset ID. If None, checks the active dataset.
-        
-        Returns:
-            bool: True if the dataset is loaded, False otherwise
-        """
-        if dataset_id is None:
-            # Check if there's an active dataset
-            return self.active_dataset_id is not None and self.active_dataset_id in self.dataset_stores
-        else:
-            # Check if the specified dataset is loaded
-            return dataset_id in self.dataset_stores
-    
-    def _get_root(self, dataset_id: Optional[str] = None) -> Optional[zarr.Group]:
+    def _get_root(self, dataset_path: str) -> Optional[zarr.Group]:
         """
         Get the root group for a dataset.
         
         Args:
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the zarr dataset
         
         Returns:
             zarr.Group: The zarr root group, or None if not found
         """
-        if dataset_id is None:
-            # Use active dataset
-            dataset_id = self.active_dataset_id
-            
-        if dataset_id is None or dataset_id not in self.dataset_roots:
+        if dataset_path is None:
+            logger.error("_get_root: No dataset_path provided")
             return None
             
-        return self.dataset_roots[dataset_id]
-    
-    def get_loaded_datasets(self) -> List[str]:
-        """
-        Get a list of all loaded dataset IDs.
+        logger.debug(f"_get_root: Loading root for path {dataset_path}")
         
-        Returns:
-            List[str]: List of dataset IDs
-        """
-        return list(self.dataset_stores.keys())
-    
-    def set_active_dataset(self, dataset_id: str) -> bool:
-        """
-        Set the active dataset.
+        # Look for the root using the path
+        try:
+            if dataset_path.startswith("s3://"):
+                if not S3FS_AVAILABLE:
+                    raise ImportError("s3fs package required for S3 access")
+                
+                parts = dataset_path.replace("s3://", "").split("/", 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ""
+                
+                fs = s3fs.S3FileSystem(anon=True)
+                store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
+                return zarr.open_group(store, mode='r')
+            
+            elif dataset_path.startswith(("http://", "https://")):
+                if FSSPEC_AVAILABLE:
+                    store = fsspec.filesystem('http').get_mapper(dataset_path)
+                else:
+                    store = dataset_path
+                return zarr.open_group(store, mode='r')
+            
+            else:
+                # Local file access
+                return zarr.open_group(dataset_path, mode='r')
         
-        Args:
-            dataset_id: ID of the dataset to set as active
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if dataset_id in self.dataset_stores:
-            self.active_dataset_id = dataset_id
-            return True
-        return False
-    
-    def unload_dataset(self, dataset_id: str) -> bool:
-        """
-        Unload a dataset from memory.
-        
-        Args:
-            dataset_id: ID of the dataset to unload
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if dataset_id not in self.dataset_stores:
-            return False
-            
-        # Remove from all dictionaries
-        del self.dataset_stores[dataset_id]
-        del self.dataset_roots[dataset_id]
-        del self.dataset_metadata[dataset_id]
-        if dataset_id in self.dataset_paths:
-            del self.dataset_paths[dataset_id]
-            
-        # Update active dataset if this was the active one
-        if self.active_dataset_id == dataset_id:
-            self.active_dataset_id = next(iter(self.dataset_stores)) if self.dataset_stores else None
-            
-        return True
+        except Exception as e:
+            logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+            return None
     
     def _get_dataset_shape(self, root: zarr.Group) -> Optional[Tuple[int, int]]:
         """
@@ -1256,159 +530,117 @@ class ZarrReader:
             logger.error(f"Error getting basic counts from {path}: {e}")
             raise
     
-    def _extract_metadata(self, root: zarr.Group, dataset_id: Optional[str] = None, 
-                      detail_level: Optional[str] = "full", disable_caching: bool = False) -> Dict[str, Any]:
+    @cached_method
+    def _extract_metadata(self, root: Optional[zarr.Group] = None, dataset_path: Optional[str] = None, 
+                      detail_level: str = "full") -> Dict[str, Any]:
       """
       Extract metadata from a zarr root.
 
       Args:
           root: Zarr root group
-          dataset_id: Optional dataset ID
+          dataset_path: Path to the zarr dataset (used for caching)
           detail_level: Level of detail to extract ('minimal', 'standard', or 'full')
-          disable_caching: If True, don't cache the metadata results even if caching is enabled
 
       Returns:
           Dict of metadata
       """
-      # Check if metadata is already cached (unless disabled)
-      if self.enable_caching and not disable_caching:
-          if dataset_id is not None:
-              # If dataset_id is provided, use it for cache key
-              cache_key = f"{dataset_id}:metadata:{detail_level}"
-              cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
-              if cached_metadata is not None:
-                  logger.debug(f"Using cached metadata (level={detail_level}) for dataset {dataset_id}")
-                  return cached_metadata
-          elif hasattr(root, 'store'):
-              # Try to create a cache key from the store path
-              if hasattr(root.store, 'path'):
-                  path_str = root.store.path
-                  cache_key = f"path:{path_str}:metadata:{detail_level}"
-                  cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
-                  if cached_metadata is not None:
-                      logger.debug(f"Using cached metadata (level={detail_level}) from path")
-                      return cached_metadata
-              elif hasattr(root.store, 'dir_path'):
-                  path_str = root.store.dir_path
-                  cache_key = f"path:{path_str}:metadata:{detail_level}"
-                  cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
-                  if cached_metadata is not None:
-                      logger.debug(f"Using cached metadata (level={detail_level}) from dir_path")
-                      return cached_metadata
+      # Use path-based extraction
+      try:
+          metadata = extract_metadata(dataset_path, root, detail_level=detail_level)
+          return metadata
+      except Exception as e:
+          logger.error(f"Error in path-based metadata extraction: {e}")
+          import traceback
+          logger.error(traceback.print_exc())
+          return {}
 
-      # If not cached, proceed with extraction
-      # Try to get the path for the store
-      path = None
-      if hasattr(root, 'store'):
-          if hasattr(root.store, 'path'):
-              path = root.store.path
-          elif hasattr(root.store, 'dir_path'):  # For some zarr storage backends
-              path = root.store.dir_path
-
-      if path:
-          # Use the efficient visititems-based implementation if path is available
-          metadata = extract_metadata(path, detail_level=detail_level)
-      else:
-          # Fallback to legacy implementation for non-standard stores
-          logger.debug(f"Using legacy extraction method for metadata (level={detail_level})")
-          if detail_level == 'minimal':
-              # For minimal, use simplified extraction
-              metadata = self._extract_metadata_minimal(root)
-          else:
-              # For standard and full, use legacy extraction with appropriate filtering
-              metadata = self._extract_metadata_legacy(root, dataset_id)
-
-              # If standard level, filter out detailed info not needed
-              if detail_level == 'standard':
-                  # Remove detailed dataframe info
-                  for key in ['obs_columns_info', 'var_columns_info', 'obsm_dataframes', 'varm_dataframes']:
-                      if key in metadata:
-                          del metadata[key]
-
-      # Cache the result if caching is enabled and not disabled
-      if self.enable_caching and not disable_caching:
-          if dataset_id is not None:
-              cache_key = f"{dataset_id}:metadata:{detail_level}"
-              self._add_to_cache(cache_key, metadata, cache_type='metadata')
-          elif path:
-              cache_key = f"path:{path}:metadata:{detail_level}"
-              self._add_to_cache(cache_key, metadata, cache_type='metadata')
-
-      return metadata
-
-    def _extract_metadata_legacy(self, root: zarr.Group, dataset_id: Optional[str] = None, 
-                            disable_caching: bool = False) -> Dict[str, Any]:
-        """
-        Legacy implementation of metadata extraction.
-        Used as fallback when path-based extraction is not possible.
-        
-        Args:
-            root: Zarr root group
-            dataset_id: Optional dataset ID
-            disable_caching: If True, don't cache the metadata results even if caching is enabled
-            
-        Returns:
-            Dict of metadata
-        """
-
-        # If dataset_id is provided, check if metadata is already cached (unless disabled)
-        if dataset_id is not None and self.enable_caching and not disable_caching:
-            cache_key = f"{dataset_id}:metadata_legacy"
-            cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
-            if cached_metadata is not None:
-                logger.debug(f"Using cached metadata for dataset {dataset_id}")
-                return cached_metadata
-        
-
-        metadata = extract_metadata_legacy(self, root, dataset_id=dataset_id)
-        
-        # Cache metadata if caching is enabled and dataset_id is provided and not disabled
-        if dataset_id is not None and self.enable_caching and not disable_caching:
-            cache_key = f"{dataset_id}:metadata_legacy"
-            self._add_to_cache(cache_key, metadata, cache_type='metadata')
-            logger.debug(f"Cached legacy metadata for dataset {dataset_id}")
-            
-        return metadata
     
-    def get_metadata(self, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+    @cached_method
+    def get_metadata(self, dataset_path: str, detail_level: str = "full", root: Optional[zarr.Group] = None) -> Dict[str, Any]:
         """
         Get metadata for a dataset.
         
         Args:
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the zarr dataset
+            detail_level: Level of detail to extract ('minimal', 'standard', or 'full')
+            root: Optional zarr root group, to avoid duplicate calls to _get_root
             
         Returns:
             Dict of metadata
         """
-        if dataset_id is None:
-            dataset_id = self.active_dataset_id
-            
-        if dataset_id is None:
-            return {}
+        logger.debug(f"GET_METADATA: Called with dataset_path={dataset_path}")
         
-        # Check cache first
-        if self.enable_caching:
-            cache_key = f"{dataset_id}:metadata"
-            cached_metadata = self._get_from_cache(cache_key, cache_type='metadata')
-            if cached_metadata is not None:
-                logger.debug(f"Using cached metadata for dataset {dataset_id}")
-                return cached_metadata
+        # Extract metadata now that we have a root
+        try:
+            # Extract metadata
+            if root is not None:
+                metadata = self._extract_metadata(root=root, detail_level=detail_level)
+            else:
+                metadata = self._extract_metadata(dataset_path=dataset_path, detail_level=detail_level)
             
-        # If not in cache, check instance variable
-        if dataset_id in self.dataset_metadata:
-            metadata = self.dataset_metadata[dataset_id]
-            
-            # Add to cache for future use
-            if self.enable_caching:
-                cache_key = f"{dataset_id}:metadata"
-                self._add_to_cache(cache_key, metadata, cache_type='metadata')
-                logger.debug(f"Cached metadata for dataset {dataset_id} from instance variable")
-                
             return metadata
             
-        # If we get here, metadata is not available
-        return {}
+        except Exception as e:
+            logger.error(f"GET_METADATA: Error extracting metadata: {e}")
+            import traceback
+            logger.info(traceback.print_exc())
+            return {}
             
+    def _get_shape_from_root(self, root) -> Tuple[int, int]:
+        """
+        Get the shape of a dataset from its root group.
+        
+        Args:
+            root: Zarr root group
+            
+        Returns:
+            Tuple of (n_obs, n_vars) representing the dataset shape
+        """
+        shape = None
+        
+        # Method 1: Get from X attributes (for sparse matrices)
+        if 'X' in root and hasattr(root['X'], 'attrs') and 'shape' in root['X'].attrs:
+            shape = tuple(root['X'].attrs['shape'])
+            logger.debug(f"Got shape from X.attrs: {shape}")
+        
+        # Method 2: Get from X shape directly (without loading data)
+        elif 'X' in root and hasattr(root['X'], 'shape'):
+            shape = root['X'].shape
+            logger.debug(f"Got shape from X.shape: {shape}")
+        
+        # Method 3: Infer from obs and var indices
+        elif 'obs' in root and 'var' in root:
+            # Check for _index attribute in obs group
+            obs_index_column = '_index'
+            if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
+                obs_index_column = root['obs'].attrs['_index']
+                
+            # Check for _index attribute in var group
+            var_index_column = '_index'
+            if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
+                var_index_column = root['var'].attrs['_index']
+                
+            # Use custom index columns if they exist
+            if obs_index_column in root['obs'] and var_index_column in root['var']:
+                n_obs = root['obs'][obs_index_column].shape[0]  # Just reads metadata
+                n_vars = root['var'][var_index_column].shape[0]  # Just reads metadata
+                shape = (n_obs, n_vars)
+                logger.debug(f"Inferred shape from obs/var indices: {shape}")
+        
+        # Method 4: Try from layers
+        elif 'layers' in root and list(root['layers'].keys()):
+            layer_name = list(root['layers'].keys())[0]
+            layer = root['layers'][layer_name]
+            
+            if hasattr(layer, 'attrs') and 'shape' in layer.attrs:
+                shape = tuple(layer.attrs['shape'])
+                logger.debug(f"Got shape from layer {layer_name} attrs: {shape}")
+            elif hasattr(layer, 'shape'):
+                shape = layer.shape
+                logger.debug(f"Got shape from layer {layer_name} shape: {shape}")
+        
+        return shape if shape is not None else (0, 0)
+        
     def _is_sparse_matrix(self, matrix) -> Tuple[bool, Optional[str]]:
         """
         Check if a zarr array is a sparse matrix.
@@ -1584,8 +816,9 @@ class ZarrReader:
             logger.error(f"Error getting dense array {path}: {e}")
             return np.array([])
     
+    @cached_method
     def get_X(self, dataset_path: Optional[str] = None, row_indices: Optional[List[int]] = None, 
-              col_indices: Optional[List[int]] = None, dataset_id: Optional[str] = None) -> np.ndarray:
+              col_indices: Optional[List[int]] = None, disable_caching: bool = False) -> np.ndarray:
         """
         Get the X matrix from a dataset.
         
@@ -1593,23 +826,12 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             row_indices: Optional list of row indices to select
             col_indices: Optional list of column indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
+            disable_caching: If True, don't use cache even if enabled
             
         Returns:
             numpy.ndarray: The X matrix data
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'X' not in root:
             return np.array([])
@@ -1625,9 +847,10 @@ class ZarrReader:
         # Handle as dense array
         return self._get_dense_array('X', root, row_indices, col_indices)
     
+    @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None, 
                  row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                 dataset_id: Optional[str] = None) -> np.ndarray:
+                 disable_caching: bool = False) -> np.ndarray:
         """
         Get a layer from a dataset.
         
@@ -1636,23 +859,12 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             row_indices: Optional list of row indices to select
             col_indices: Optional list of column indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
+            disable_caching: If True, don't use cache even if enabled
             
         Returns:
             numpy.ndarray: The layer data
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'layers' not in root or layer_name not in root['layers']:
             return np.array([])
@@ -1671,7 +883,7 @@ class ZarrReader:
         # Handle as dense array
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
     
-    def _get_categorical_values(self, group, indices=None):
+    def _get_categorical_values(self, group, indices=None, return_categories=False):
         """
         Get values from a categorical data structure in AnnData.
         
@@ -1682,9 +894,10 @@ class ZarrReader:
         Args:
             group: Zarr group containing categorical data
             indices: Optional list of row indices to select
+            return_categories: If True, return a tuple of (values, categories)
             
         Returns:
-            List of category values
+            List of category values or tuple of (values, categories) if return_categories is True
         """
         try:
             # Check if this is a categorical encoding
@@ -1700,22 +913,39 @@ class ZarrReader:
                 else:
                     codes = group['codes'][:]
                 
-                # Map codes to categories
-                values = [categories[code] if 0 <= code < len(categories) else None for code in codes]
+                # Map codes to categories using NumPy vectorization
+                # Create a mask for valid codes
+                valid_mask = (codes >= 0) & (codes < len(categories))
+                
+                # Initialize values array with None or empty
+                values = np.array([None] * len(codes), dtype=object)
+                
+                # Update only valid indices using vectorized indexing
+                values[valid_mask] = categories[codes[valid_mask]]
+                
+                # Return values and categories if requested
+                if return_categories:
+                    return values.tolist(), categories.tolist() if hasattr(categories, 'tolist') else list(categories)
                 return values
             
             # Not a categorical, just return the array directly
-            if indices is not None:
-                return group[indices]
-            else:
-                return group[:]
+            result = group[indices] if indices is not None else group[:]
+            
+            # For non-categorical data, return just the values
+            if return_categories:
+                return result, []
+            return result
         except Exception as e:
             logger.error(f"Error processing categorical data: {e}")
+            if return_categories:
+                return [], []
             return []
 
+    @cached_method
     def get_obs(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               dataset_id: Optional[str] = None, include_categories: bool = True) -> Union[Dict[str, Any], List]:
+               include_categories: bool = True, disable_caching: bool = False, 
+               root: Optional[zarr.Group] = None) -> Union[Dict[str, Any], List]:
         """
         Get observation annotations.
         
@@ -1724,26 +954,14 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             indices: Optional list of indices to select
             column_names: Optional list of column names to get
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             include_categories: Include category lists for categorical columns
+            root: Optional zarr root group, to avoid duplicate calls to _get_root
             
         Returns:
             Dict of column name -> list of values, or list of values for a specific column
         """
-        root = None
-        metadata = {}
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root, metadata = self.open_dataset_by_path(dataset_path)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return {} if column_name is None else []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
-            metadata = self.get_metadata(dataset_id) if dataset_id else {}
+        if root is None:
+            root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'obs' not in root:
             return {} if column_name is None else []
@@ -1757,20 +975,30 @@ class ZarrReader:
             try:
                 # Check if it's a categorical
                 col_data = root['obs'][column_name]
-                values = self._get_categorical_values(col_data, indices)
                 
-                # Convert to Python list for JSON serialization
-                data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                
-                # If it's categorical and include_categories is True, include category list
-                if include_categories and 'obs_columns_info' in metadata:
-                    if column_name in metadata['obs_columns_info'] and 'categories' in metadata['obs_columns_info'][column_name]:
+                if include_categories:
+                    # Get values and categories directly from the method
+                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
+                    
+                    # Convert to Python list for JSON serialization
+                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    
+                    # If categories were returned and include_categories is True, include them in the result
+                    if categories:
                         return {
                             'data': data,
-                            'categories': metadata['obs_columns_info'][column_name]['categories']
+                            'categories': categories
                         }
-                
-                return data
+                    
+                    return data
+                else:
+                    # Just get the values without categories
+                    values = self._get_categorical_values(col_data, indices)
+                    
+                    # Convert to Python list for JSON serialization
+                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    return data
+                    
             except Exception as e:
                 logger.error(f"Error getting obs column {column_name}: {e}")
                 return []
@@ -1806,15 +1034,23 @@ class ZarrReader:
             try:
                 # Check if it's a categorical
                 col_data = root['obs'][col]
-                values = self._get_categorical_values(col_data, indices)
                 
-                # Convert to Python list for JSON serialization
-                result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
-                
-                # Add categories info if available
-                if include_categories and 'obs_columns_info' in metadata:
-                    if col in metadata['obs_columns_info'] and 'categories' in metadata['obs_columns_info'][col]:
-                        categories_dict[col] = metadata['obs_columns_info'][col]['categories']
+                if include_categories:
+                    # Get values and categories directly from the method
+                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
+                    
+                    # Convert to Python list for JSON serialization
+                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    
+                    # Add categories info if available
+                    if categories:
+                        categories_dict[col] = categories
+                else:
+                    # Just get the values without categories
+                    values = self._get_categorical_values(col_data, indices)
+                    
+                    # Convert to Python list for JSON serialization
+                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
                 logger.error(f"Error getting obs column {col}: {e}")
                 result['data'][col] = []
@@ -1825,9 +1061,11 @@ class ZarrReader:
         
         return result
     
+    @cached_method
     def get_var(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               dataset_id: Optional[str] = None, include_categories: bool = True) -> Union[Dict[str, Any], List]:
+               include_categories: bool = True, disable_caching: bool = False,
+               root: Optional[zarr.Group] = None) -> Union[Dict[str, Any], List]:
         """
         Get variable annotations.
         
@@ -1836,26 +1074,15 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             indices: Optional list of indices to select
             column_names: Optional list of column names to get
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             include_categories: Include category lists for categorical columns
+            disable_caching: Whether to disable caching
+            root: Optional zarr root group, to avoid duplicate calls to _get_root
             
         Returns:
             Dict of column name -> list of values, or list of values for a specific column
         """
-        root = None
-        metadata = {}
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root, metadata = self.open_dataset_by_path(dataset_path)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return {} if column_name is None else []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
-            metadata = self.get_metadata(dataset_id) if dataset_id else {}
+        if root is None:
+            root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'var' not in root:
             return {} if column_name is None else []
@@ -1869,20 +1096,29 @@ class ZarrReader:
             try:
                 # Check if it's a categorical
                 col_data = root['var'][column_name]
-                values = self._get_categorical_values(col_data, indices)
                 
-                # Convert to Python list for JSON serialization
-                data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                
-                # If it's categorical and include_categories is True, include category list
-                if include_categories and 'var_columns_info' in metadata:
-                    if column_name in metadata['var_columns_info'] and 'categories' in metadata['var_columns_info'][column_name]:
+                if include_categories:
+                    # Get values and categories directly from the method
+                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
+                    
+                    # Convert to Python list for JSON serialization
+                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    
+                    # If categories were returned and include_categories is True, include them in the result
+                    if categories:
                         return {
                             'data': data,
-                            'categories': metadata['var_columns_info'][column_name]['categories']
+                            'categories': categories
                         }
-                
-                return data
+                    
+                    return data
+                else:
+                    # Just get the values without categories
+                    values = self._get_categorical_values(col_data, indices)
+                    
+                    # Convert to Python list for JSON serialization
+                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    return data
             except Exception as e:
                 logger.error(f"Error getting var column {column_name}: {e}")
                 return []
@@ -1918,15 +1154,23 @@ class ZarrReader:
             try:
                 # Check if it's a categorical
                 col_data = root['var'][col]
-                values = self._get_categorical_values(col_data, indices)
                 
-                # Convert to Python list for JSON serialization
-                result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
-                
-                # Add categories info if available
-                if include_categories and 'var_columns_info' in metadata:
-                    if col in metadata['var_columns_info'] and 'categories' in metadata['var_columns_info'][col]:
-                        categories_dict[col] = metadata['var_columns_info'][col]['categories']
+                if include_categories:
+                    # Get values and categories directly from the method
+                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
+                    
+                    # Convert to Python list for JSON serialization
+                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
+                    
+                    # Add categories info if available
+                    if categories:
+                        categories_dict[col] = categories
+                else:
+                    # Just get the values without categories
+                    values = self._get_categorical_values(col_data, indices)
+                    
+                    # Convert to Python list for JSON serialization
+                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
                 logger.error(f"Error getting var column {col}: {e}")
                 result['data'][col] = []
@@ -1980,9 +1224,10 @@ class ZarrReader:
             logger.error(f"Error getting dataframe column {column_name}: {e}")
             return np.array([])
     
+    @cached_method
     def get_obsm(self, obsm_key: str, dataset_path: Optional[str] = None,
                 indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                dataset_id: Optional[str] = None, column_name: Optional[str] = None) -> np.ndarray:
+                column_name: Optional[str] = None, disable_caching: bool = False) -> np.ndarray:
         """
         Get observation multi-dimensional annotations.
         
@@ -1991,26 +1236,12 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             indices: Optional list of row indices to select
             col_indices: Optional list of column indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             column_name: Optional column name for dataframe-encoded obsm
             
         Returns:
             numpy.ndarray: The obsm data
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root, metadata = self.open_dataset_by_path(dataset_path)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
-            # Also get metadata for dataframe detection
-            metadata = self.get_metadata(dataset_id) if dataset_id else {}
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'obsm' not in root or obsm_key not in root['obsm']:
             return np.array([])
@@ -2037,9 +1268,10 @@ class ZarrReader:
         # Get the obsm data as a regular array
         return self._get_dense_array(f'obsm/{obsm_key}', root, indices, col_indices)
     
+    @cached_method
     def get_varm(self, varm_key: str, dataset_path: Optional[str] = None,
                 indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                dataset_id: Optional[str] = None, column_name: Optional[str] = None) -> np.ndarray:
+                column_name: Optional[str] = None, disable_caching: bool = False) -> np.ndarray:
         """
         Get variable multi-dimensional annotations.
         
@@ -2048,24 +1280,12 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             indices: Optional list of row indices to select
             col_indices: Optional list of column indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             column_name: Optional column name for dataframe-encoded varm
             
         Returns:
             numpy.ndarray: The varm data
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'varm' not in root or varm_key not in root['varm']:
             return np.array([])
@@ -2092,11 +1312,12 @@ class ZarrReader:
         # Get the varm data as a regular array
         return self._get_dense_array(f'varm/{varm_key}', root, indices, col_indices)
     
+    @cached_method
     def get_obsp(self, obsp_key: str,
                  dataset_path: Optional[str] = None,
                  row_indices: Optional[List[int]] = None,
                  col_indices: Optional[List[int]] = None,
-                 dataset_id: Optional[str] = None) -> np.ndarray:
+                 disable_caching: bool = False) -> np.ndarray:
         """
         Get observation-observation matrices.
     
@@ -2105,23 +1326,11 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation).
             row_indices: Optional list of row indices to select.
             col_indices: Optional list of column indices to select.
-            dataset_id: Optional dataset ID (alternative to dataset_path).
     
         Returns:
             numpy.ndarray: The obsp data.
         """
-        root = None
-    
-        # Stateless operation if dataset_path is provided.
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID.
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
     
         if root is None or 'obsp' not in root or obsp_key not in root['obsp']:
             return np.array([])
@@ -2146,11 +1355,12 @@ class ZarrReader:
             logger.error(f"Error getting obsp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
             return np.array([])
     
+    @cached_method
     def get_varp(self, varp_key: str,
                  dataset_path: Optional[str] = None,
                  row_indices: Optional[List[int]] = None,
                  col_indices: Optional[List[int]] = None,
-                 dataset_id: Optional[str] = None) -> np.ndarray:
+                 disable_caching: bool = False) -> np.ndarray:
         """
         Get variable-variable matrices.
     
@@ -2159,23 +1369,11 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation).
             row_indices: Optional list of row indices to select.
             col_indices: Optional list of column indices to select.
-            dataset_id: Optional dataset ID (alternative to dataset_path).
     
         Returns:
             numpy.ndarray: The varp data.
         """
-        root = None
-    
-        # Stateless operation if dataset_path is provided.
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return np.array([])
-        else:
-            # Get the root for the specified dataset ID.
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
     
         if root is None or 'varp' not in root or varp_key not in root['varp']:
             return np.array([])
@@ -2199,20 +1397,20 @@ class ZarrReader:
             logger.error(f"Error getting varp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
             return np.array([])
     
-    def _downsample_array(self, path: str, max_size: int = 1000, dataset_id: Optional[str] = None) -> np.ndarray:
+    def _downsample_array(self, path: str, max_size: int = 1000, dataset_path: Optional[str] = None) -> np.ndarray:
         """
         Downsample a large array to a manageable size.
         
         Args:
             path: Path to the zarr array
             max_size: Maximum number of elements in each dimension
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the dataset
             
         Returns:
             numpy.ndarray: The downsampled data
         """
         # Get the root for the dataset
-        root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         if root is None or path not in root:
             return np.array([])
             
@@ -2242,12 +1440,12 @@ class ZarrReader:
             return array[row_indices[:, np.newaxis], col_indices]
             
         except Exception as e:
-            logger.error(f"Error downsampling array {path} in dataset {dataset_id}: {e}")
+            logger.error(f"Error downsampling array {path} in dataset {dataset_path}: {e}")
             return np.array([])
     
     def _load_chunked_data(self, path: str, row_indices: Optional[List[int]] = None, 
                           col_indices: Optional[List[int]] = None,
-                          dataset_id: Optional[str] = None) -> np.ndarray:
+                          dataset_path: Optional[str] = None) -> np.ndarray:
         """
         Load data using an optimized chunking strategy for large datasets.
         
@@ -2255,13 +1453,13 @@ class ZarrReader:
             path: Path to the zarr array
             row_indices: List of row indices to select
             col_indices: List of column indices to select
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the dataset
             
         Returns:
             numpy.ndarray: The chunked data
         """
         # Get the root for the dataset
-        root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         if root is None or path not in root:
             return np.array([])
             
@@ -2271,7 +1469,7 @@ class ZarrReader:
             
             # If chunks info is not available, fall back to regular loading
             if chunks is None:
-                logger.warning(f"Chunk information not available for {path} in dataset {dataset_id}, using standard loading")
+                logger.warning(f"Chunk information not available for {path} in dataset {dataset_path}, using standard loading")
                 if row_indices is not None and col_indices is not None:
                     return array[row_indices, :][:, col_indices]
                 elif row_indices is not None:
@@ -2346,12 +1544,12 @@ class ZarrReader:
                 return array[:]
                 
         except Exception as e:
-            logger.error(f"Error loading chunked data for {path} in dataset {dataset_id}: {e}")
+            logger.error(f"Error loading chunked data for {path} in dataset {dataset_path}: {e}")
             return np.array([])
             
     def load_progressively(self, path: str, chunk_size: int = 1000, 
                           callback: Optional[callable] = None,
-                          dataset_id: Optional[str] = None) -> np.ndarray:
+                          dataset_path: Optional[str] = None) -> np.ndarray:
         """
         Load data progressively with callback for progress updates.
         
@@ -2359,13 +1557,13 @@ class ZarrReader:
             path: Path to the zarr array
             chunk_size: Size of chunks to load at once
             callback: Callback function called with (chunk, progress)
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the dataset
             
         Returns:
             numpy.ndarray: The complete loaded data
         """
         # Get the root for the specified dataset
-        root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or path not in root:
             return np.array([])
@@ -2412,7 +1610,7 @@ class ZarrReader:
                 return data
                 
         except Exception as e:
-            logger.error(f"Error loading data progressively from {path} for dataset {dataset_id}: {e}")
+            logger.error(f"Error loading data progressively from {path} for dataset {dataset_path}: {e}")
             return np.array([])
             
     def _get_paginated_data(self, data: np.ndarray, page: int, page_size: int) -> Tuple[np.ndarray, Dict[str, int]]:
@@ -2552,8 +1750,7 @@ class ZarrReader:
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
     
-    def get_dataframe_column_names(self, component: str, key: str, dataset_path: Optional[str] = None,
-                                  dataset_id: Optional[str] = None) -> List[str]:
+    def get_dataframe_column_names(self, component: str, key: str, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get column names for a dataframe-encoded component.
         
@@ -2561,25 +1758,11 @@ class ZarrReader:
             component: Component name ('obsm' or 'varm')
             key: Key within the component
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             
         Returns:
             List of column names
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root, metadata = self.open_dataset_by_path(dataset_path)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
-            # Also get metadata for dataframe detection
-            metadata = self.get_metadata(dataset_id) if dataset_id else {}
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or component not in root or key not in root[component]:
             return []
@@ -2595,44 +1778,46 @@ class ZarrReader:
                 # Return numbered columns (0, 1, 2, ...)
                 return [str(i) for i in range(shape[1])]
         
-        # If we have metadata, try to get column names from there
-        if metadata:
-            if component == 'obsm' and 'obsm_dataframes' in metadata and key in metadata['obsm_dataframes']:
-                return metadata['obsm_dataframes'][key].get('columns', [])
-            elif component == 'varm' and 'varm_dataframes' in metadata and key in metadata['varm_dataframes']:
-                return metadata['varm_dataframes'][key].get('columns', [])
+        # Direct extraction of column names from data structure without using metadata
+        try:
+            if component in {'obsm', 'varm'} and key in root[component]:
+                # Try to check if there's a columns attribute directly on the array
+                if hasattr(root[component][key], 'attrs') and 'columns' in root[component][key].attrs:
+                    return list(root[component][key].attrs['columns'])
+                
+                # For regular 2D arrays, just return numbered columns as a fallback
+                if hasattr(root[component][key], 'shape') and len(root[component][key].shape) > 1:
+                    return [str(i) for i in range(root[component][key].shape[1])]
+        except Exception as e:
+            logger.error(f"Error extracting column names directly from structure: {e}")
         
         return []
     
-    def get_obsm_dataframe_columns(self, obsm_key: str, dataset_path: Optional[str] = None,
-                                  dataset_id: Optional[str] = None) -> List[str]:
+    def get_obsm_dataframe_columns(self, obsm_key: str, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get column names for a dataframe-encoded obsm key.
         
         Args:
             obsm_key: Key in obsm
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             
         Returns:
             List of column names
         """
-        return self.get_dataframe_column_names('obsm', obsm_key, dataset_path, dataset_id)
+        return self.get_dataframe_column_names('obsm', obsm_key, dataset_path)
     
-    def get_varm_dataframe_columns(self, varm_key: str, dataset_path: Optional[str] = None,
-                                  dataset_id: Optional[str] = None) -> List[str]:
+    def get_varm_dataframe_columns(self, varm_key: str, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get column names for a dataframe-encoded varm key.
         
         Args:
             varm_key: Key in varm
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             
         Returns:
             List of column names
         """
-        return self.get_dataframe_column_names('varm', varm_key, dataset_path, dataset_id)
+        return self.get_dataframe_column_names('varm', varm_key, dataset_path)
     
     def get_obsp_paginated(self, dataset_path: str, obsp_key: str, row_indices: Optional[List[int]] = None,
                          col_indices: Optional[List[int]] = None, page: int = 0, page_size: int = 100) -> Tuple[np.ndarray, Dict[str, int]]:
@@ -2678,31 +1863,18 @@ class ZarrReader:
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
         
-    def get_uns_keys(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> List[str]:
+    def get_uns_keys(self, dataset_path: Optional[str] = None, use_cache: Optional[bool] = True) -> List[str]:
         """
         Get the keys in the uns section.
         
         Args:
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
+            use_cache: Whether to use cached dataset if available
             
         Returns:
             List of keys in the uns section
         """
-        root = None
-        
-        # If dataset_path is provided, use open_dataset_by_path with caching if requested
-        if dataset_path is not None:
-            try:
-                logger.info(f"GET_CELL_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
-                root = self.open_dataset_by_path(dataset_path, metadata=False, use_cache=use_cache)
-                logger.info(f"GET_CELL_NAMES: Successfully opened dataset {dataset_path}")
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'uns' not in root:
             return []
@@ -2713,29 +1885,17 @@ class ZarrReader:
         
         return []
     
-    def get_uns_structure(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_uns_structure(self, dataset_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Get the structure of the uns section including keys and their encoding types.
         
         Args:
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             
         Returns:
             Dict with keys and their encoding types
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return {}
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'uns' not in root:
             return {}
@@ -2743,7 +1903,7 @@ class ZarrReader:
         # Get the structure of the uns section
         uns_structure = {}
         
-        for key in self.get_uns_keys(dataset_path, dataset_id):
+        for key in self.get_uns_keys(dataset_path):
             try:
                 # Check if it has encoding-type attribute
                 if hasattr(root['uns'][key], 'attrs') and 'encoding-type' in root['uns'][key].attrs:
@@ -2774,30 +1934,20 @@ class ZarrReader:
         
         return uns_structure
     
-    def get_uns(self, key: str, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None) -> Any:
+    @cached_method
+    def get_uns(self, key: str, dataset_path: Optional[str] = None, disable_caching: bool = False) -> Any:
         """
         Get data from the uns section.
         
         Args:
             key: Key in uns to get
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
+            disable_caching: If True, don't use cache even if enabled
             
         Returns:
             The data from the uns section. Could be a numpy array, dict, or other structure.
         """
-        root = None
-        
-        # Stateless operation if dataset_path is provided
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return None
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'uns' not in root or key not in root['uns']:
             return None
@@ -2837,31 +1987,19 @@ class ZarrReader:
             logger.error(f"Error getting uns data for {key}: {e}")
             return None
     
-    def get_gene_names(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None,
+    def get_gene_names(self, dataset_path: str,
                        use_cache: bool = False) -> List[str]:
         """
         Get list of gene names.
         
         Args:
             dataset_path: Path to the dataset (stateless operation)
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             use_cache: Whether to cache the dataset for future use
             
         Returns:
             List of gene names
         """
-        root = None
-        
-        # If dataset_path is provided, use open_dataset_by_path with caching if requested
-        if dataset_path is not None:
-            try:
-                root = self.open_dataset_by_path(dataset_path, metadata=False, use_cache=use_cache)
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        root = self._get_root(dataset_path=dataset_path)
         
         if root is None or 'var' not in root:
             return []
@@ -2885,38 +2023,36 @@ class ZarrReader:
             logger.error(f"Error getting gene names: {e}")
             return []
     
-    def get_obs_names(self, dataset_id: Optional[str] = None) -> List[str]:
+    def get_obs_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get observation names (alias for get_cell_names for backward compatibility).
         
         Args:
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the dataset
             
         Returns:
             List of observation names
         """
-        return self.get_cell_names(dataset_id=dataset_id)
+        return self.get_cell_names(dataset_path=dataset_path)
         
-    def get_var_names(self, dataset_id: Optional[str] = None) -> List[str]:
+    def get_var_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get variable names (alias for get_gene_names for backward compatibility).
         
         Args:
-            dataset_id: Optional dataset ID. If None, uses the active dataset.
+            dataset_path: Path to the dataset
             
         Returns:
             List of variable names
         """
-        return self.get_gene_names(dataset_id=dataset_id)
+        return self.get_gene_names(dataset_path=dataset_path)
     
-    def get_cell_names(self, dataset_path: Optional[str] = None, dataset_id: Optional[str] = None, 
-                      use_cache: bool = False) -> List[str]:
+    def get_cell_names(self, dataset_path: str, use_cache: bool = False) -> List[str]:
         """
         Get list of cell names.
         
         Args:
             dataset_path: Path to the dataset
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             use_cache: Whether to cache the dataset for future use
             
         Returns:
@@ -2924,18 +2060,12 @@ class ZarrReader:
         """
         root = None
         
-        # If dataset_path is provided, use open_dataset_by_path with caching if requested
-        if dataset_path is not None:
-            try:
-                logger.info(f"GET_CELL_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
-                root = self.open_dataset_by_path(dataset_path, metadata=False, use_cache=use_cache)
-                logger.info(f"GET_CELL_NAMES: Successfully opened dataset {dataset_path}")
-            except Exception as e:
-                logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-                return []
-        else:
-            # Get the root for the specified dataset ID
-            root = self._get_root(dataset_id)
+        try:
+            logger.info(f"GET_CELL_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
+            root = self._get_root(dataset_path=dataset_path)
+            logger.info(f"GET_CELL_NAMES: Successfully opened dataset {dataset_path}")
+        except Exception as e:
+            logger.error(f"Error opening dataset from path {dataset_path}: {e}")
         
         if root is None or 'obs' not in root:
             return []
@@ -2960,8 +2090,7 @@ class ZarrReader:
             return []
     
     def get_data_by_path(self, path: str, dataset_path: Optional[str] = None, 
-                    indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                    dataset_id: Optional[str] = None) -> np.ndarray:
+                    indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get data using a path notation like "varm/kompot_de_mean_lfc_Young_to_Old_groups/B cells".
         
@@ -2985,7 +2114,6 @@ class ZarrReader:
             dataset_path: Path to the dataset (stateless operation)
             indices: Optional list of row indices to select
             col_indices: Optional list of column indices to select
-            dataset_id: Optional dataset ID (alternative to dataset_path)
             
         Returns:
             numpy.ndarray: The requested data
@@ -3006,32 +2134,28 @@ class ZarrReader:
             
             if component == 'varm':
                 return self.get_varm(key, dataset_path=dataset_path, indices=indices, 
-                                  col_indices=col_indices, dataset_id=dataset_id, 
-                                  column_name=column_name)
+                                  col_indices=col_indices, column_name=column_name)
             elif component == 'obsm':
                 return self.get_obsm(key, dataset_path=dataset_path, indices=indices, 
-                                  col_indices=col_indices, dataset_id=dataset_id, 
-                                  column_name=column_name)
+                                  col_indices=col_indices, column_name=column_name)
         
         # Handle regular 2-part path
         if component == 'X':
             return self.get_X(dataset_path=dataset_path, row_indices=indices, 
-                           col_indices=col_indices, dataset_id=dataset_id)
+                           col_indices=col_indices)
         elif component == 'obsm':
             return self.get_obsm(key, dataset_path=dataset_path, indices=indices, 
-                              col_indices=col_indices, dataset_id=dataset_id)
+                              col_indices=col_indices)
         elif component == 'varm':
             return self.get_varm(key, dataset_path=dataset_path, indices=indices, 
-                              col_indices=col_indices, dataset_id=dataset_id)
+                              col_indices=col_indices)
         elif component == 'layers':
             return self.get_layer(key, dataset_path=dataset_path, row_indices=indices, 
-                               col_indices=col_indices, dataset_id=dataset_id)
+                               col_indices=col_indices)
         elif component == 'obsp':
-            return self.get_obsp(key, dataset_path=dataset_path, indices=indices, 
-                              dataset_id=dataset_id)
+            return self.get_obsp(key, dataset_path=dataset_path, indices=indices)
         elif component == 'varp':
-            return self.get_varp(key, dataset_path=dataset_path, indices=indices, 
-                              dataset_id=dataset_id)
+            return self.get_varp(key, dataset_path=dataset_path, indices=indices)
         else:
             logger.error(f"Unsupported component: {component} in path: {path}")
             return np.array([])

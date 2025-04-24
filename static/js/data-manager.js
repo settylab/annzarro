@@ -97,7 +97,7 @@ const DataManager = (function() {
         try {
             const params = {};
             if (datasetPath) {
-                params.dataset_id = datasetPath;
+                params.dataset_path = datasetPath;
             }
             
             const response = await fetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {

@@ -48,18 +48,18 @@ def register_zarr_routes(app, api_version):
         Reset the zarr reader cache.
         
         Query parameters:
-            dataset_id: Optional dataset ID to clear from cache.
+            dataset_path: Optional dataset path to clear from cache.
                        If not provided, clears the entire cache.
         
         Returns:
             JSON response with cache reset result
         """
         try:
-            # Get optional dataset_id query parameter
-            dataset_id = request.args.get('dataset_id', None)
+            # Get optional dataset_path query parameter
+            dataset_path = request.args.get('dataset_path', None)
             
             # Clear the cache
-            result = zarr_reader.clear_cache(dataset_id=dataset_id)
+            result = zarr_reader.clear_cache(dataset_path=dataset_path)
             
             # Add cache configuration to the response
             result["cache_config"] = {
@@ -94,13 +94,9 @@ def register_zarr_routes(app, api_version):
             # Use direct file access without maintaining state
             root, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
             
-            # Generate a dataset ID from the path if needed
-            dataset_id = os.path.basename(os.path.normpath(dataset_path))
-            
             # Format response with basic info
             shape = metadata.get('shape', (0, 0))
             info = {
-                "dataset_id": dataset_id,
                 "path": dataset_path,
                 "name": Path(dataset_path).stem.replace("_", " ").title(),
                 "shape": shape,
