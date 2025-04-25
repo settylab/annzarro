@@ -7,7 +7,6 @@ import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
 import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
-import { setupDatasetWatcher } from './table-utilities/dataset-watcher.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 
 const CellTablePanel = (function() {
@@ -25,7 +24,6 @@ const CellTablePanel = (function() {
         let _tableContainer = null;
         let _controlsContainer = null;
         let _dataTable = null;
-        let _datasetWatcherCleanup = null;
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
         
@@ -63,11 +61,7 @@ const CellTablePanel = (function() {
                 if (controlsContainer) {
                     controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
                 }
-                
-                // Set up dataset watching
-                _datasetWatcherCleanup = setupDatasetWatcher(_id, {
-                    onDatasetLoaded: onDatasetLoaded
-                });
+            
                 
                 // If a dataset is already loaded, initialize the panel
                 if (isDatasetLoaded) {
@@ -256,12 +250,6 @@ const CellTablePanel = (function() {
          * Destroy the panel and clean up resources
          */
         function destroy() {
-            // Clean up dataset watcher
-            if (_datasetWatcherCleanup) {
-                _datasetWatcherCleanup();
-                _datasetWatcherCleanup = null;
-            }
-            
             // Clean up table listeners
             if (_tableListenersCleanup) {
                 _tableListenersCleanup();

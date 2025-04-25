@@ -5,7 +5,6 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
-import { setupDatasetWatcher } from './plot-utilities/dataset-watcher.js';
 
 /**
  * Gene Plot Panel
@@ -26,7 +25,6 @@ const GenePlotPanel = (function() {
         let _plotContainer = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
-        let _datasetWatcherCleanup = null;
         let _isFirstLoad = true;
         
         // Initialize minimal settings, letting the initialization process set data-dependent values
@@ -81,11 +79,6 @@ const GenePlotPanel = (function() {
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
                     'controlsContainer=', _controlsContainer ? 'defined' : 'undefined',
                     'loadingScreen=', loadingScreen ? 'defined' : 'undefined');
-                
-                // Set up dataset watching
-                _datasetWatcherCleanup = setupDatasetWatcher(_id, {
-                    onDatasetLoaded: onDatasetLoaded
-                });
                 
                 // If a dataset is already loaded, initialize the panel
                 if (DataManager.isDatasetLoaded()) {
@@ -468,12 +461,6 @@ const GenePlotPanel = (function() {
                 console.log(`Disconnecting ResizeObserver for ${_id}`);
                 _resizeObserver.disconnect();
                 _resizeObserver = null;
-            }
-            
-            // Clean up dataset watcher
-            if (_datasetWatcherCleanup) {
-                _datasetWatcherCleanup();
-                _datasetWatcherCleanup = null;
             }
             
             // Call the standard cleanup
