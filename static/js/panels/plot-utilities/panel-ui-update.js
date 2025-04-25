@@ -239,6 +239,9 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       let focused;
       if (settings.column && settings.type === 'obsp' && settings.locked) {
         focused = settings.column;
+      } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+        settings.column = settings.history[type].columns[settings.key];
+        focused = settings.column;
       } else {
         focused = DataManager.getFocusedCell();
         settings.column = focused;
@@ -251,6 +254,9 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
     case 'varp': {
       let focused;
       if (settings.column && settings.type === 'varp' && settings.locked) {
+        focused = settings.column;
+      } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+        settings.column = settings.history[type].columns[settings.key];
         focused = settings.column;
       } else {
         focused = DataManager.getFocusedGene();
@@ -266,6 +272,9 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       if (plotType === 'cells') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
           focused = settings.column;
+        } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+          settings.column = settings.history[type].columns[settings.key];
+          focused = settings.column;
         } else {
           focused = DataManager.getFocusedGene();
           settings.column = focused;
@@ -275,6 +284,9 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
           [{ value: '', text: 'Select a focused gene first' }];
       } else if (plotType === 'genes') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
+          focused = settings.column;
+        } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+          settings.column = settings.history[type].columns[settings.key];
           focused = settings.column;
         } else {
           focused = DataManager.getFocusedCell();
@@ -296,17 +308,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   }).get();
   
   // First check if current column selection is valid
-  if (colValues.includes(settings.column)) {
-    // Current column is valid, keep it
-  }
-  // For obsm and varm types, try to restore from history if current is invalid
-  else if ((type === 'obsm' || type === 'varm') && 
-           settings.history[type]?.columns?.[settings.key] && 
-           colValues.includes(settings.history[type].columns[settings.key])) {
-    settings.column = settings.history[type].columns[settings.key];
-  }
-  // Last resort: use first available value
-  else {
+  if (!colValues.includes(settings.column)) {
     settings.column = $columnSelect.val() || '';
   }
   

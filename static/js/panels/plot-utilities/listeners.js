@@ -816,25 +816,6 @@ function setupAxisSelectorListeners(
     const oldKey = settings[axis].key;
     const oldColumn = settings[axis].column;
     
-    // Initialize history storage if needed
-    if (!settings[axis].history) {
-      settings[axis].history = {};
-    }
-    if (!settings[axis].history[oldType]) {
-      settings[axis].history[oldType] = { key: oldKey, columns: {} };
-    }
-    
-    // Store the current column for the current key
-    if (oldKey && (oldType === 'obsm' || oldType === 'varm')) {
-      if (!settings[axis].history[oldType].columns) {
-        settings[axis].history[oldType].columns = {};
-      }
-      settings[axis].history[oldType].columns[oldKey] = oldColumn;
-    }
-    
-    // Store the current key for the current type
-    settings[axis].history[oldType].key = oldKey;
-    
     // Now change the type
     settings[axis].type = newType;
     
@@ -849,6 +830,23 @@ function setupAxisSelectorListeners(
     }
     
     setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
+
+    // Initialize history storage if needed
+    if (!settings[axis].history) {
+      settings[axis].history = {};
+    }
+    if (!settings[axis].history[oldType]) {
+      settings[axis].history[oldType] = { key: oldKey, columns: {} };
+    }
+    
+    // Store the current column for the current key
+    if (!settings[axis].history[oldType].columns) {
+      settings[axis].history[oldType].columns = {};
+    }
+    settings[axis].history[oldType].columns[oldKey] = oldColumn;
+    
+    // Store the current key for the current type
+    settings[axis].history[oldType].key = oldKey;
     
     if (newType === 'none' && axis === 'color') {
       await loadColorDataAndUpdatePlot(
@@ -904,28 +902,8 @@ function setupAxisSelectorListeners(
     const oldKey = settings[axis].key;
     const oldColumn = settings[axis].column;
     
-    // Store the current column for the current key before changing
-    if (currentType === 'obsm' || currentType === 'varm') {
-      // Initialize history storage if needed
-      if (!settings[axis].history) {
-        settings[axis].history = {};
-      }
-      if (!settings[axis].history[currentType]) {
-        settings[axis].history[currentType] = { key: oldKey, columns: {} };
-      }
-      if (!settings[axis].history[currentType].columns) {
-        settings[axis].history[currentType].columns = {};
-      }
-      
-      // Store the old column for the old key
-      if (oldKey && oldColumn) {
-        settings[axis].history[currentType].columns[oldKey] = oldColumn;
-      }
-    }
-    
     // Now change the key and clear the column
     settings[axis].key = newKey;
-    settings[axis].column = undefined;
     
     // Show loading indicator for column select
     showDropdownLoading($columnSelect[0]);
@@ -938,27 +916,20 @@ function setupAxisSelectorListeners(
 
     setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
 
-    const cols = $.findAll('option', $columnSelect).map(o => o.value);
-    const current = settings[axis].column;
-    if (!cols.includes(current)) {
-      // Define reasonable defaults based on axis
-      const defaultIndex = { x: 0, y: 1, z: 2, color: 3 }[axis];
-      
-      // Only avoid _index for obs and var types
-      let fallback;
-      if (currentType === 'obs' || currentType === 'var') {
-        // For obs and var types, strongly avoid _index
-        const nonIndexValue = cols.find(c => c !== '_index');
-        fallback = nonIndexValue || cols[0] || '';
-      } else {
-        // For other types, use simple positional mapping  
-        fallback = cols[defaultIndex] || cols[0] || '';
-      }
-      
-      $.setSelectValue($columnSelect, fallback);
-      settings[axis].column = fallback;
-    } else {
-      $.setSelectValue($columnSelect, current);
+    // Initialize history storage if needed
+    if (!settings[axis].history) {
+      settings[axis].history = {};
+    }
+    if (!settings[axis].history[currentType]) {
+      settings[axis].history[currentType] = { key: oldKey, columns: {} };
+    }
+    if (!settings[axis].history[currentType].columns) {
+      settings[axis].history[currentType].columns = {};
+    }
+    
+    // Store the old column for the old key
+    if (oldKey) {
+      settings[axis].history[currentType].columns[oldKey] = oldColumn;
     }
 
     handleAxisUpdate(axis, plotType);
