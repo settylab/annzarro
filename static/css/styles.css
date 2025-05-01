@@ -492,6 +492,7 @@ table.dataTable tbody tr {
     flex-direction: column;
     flex: 1;
     min-height: 0;
+    min-width: 250px;
 }
 
 .selected-columns-list {
