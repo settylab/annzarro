@@ -222,108 +222,17 @@ def download_external_resources(repo_root, args):
     if success_count == total_resources:
         logger.info(f"Successfully downloaded all {total_resources} external resources")
         
-        # Now update the index.html template to use local resources
+        # Verify that the template directory exists
         template_dir = os.path.join(repo_root, "templates")
         index_path = os.path.join(template_dir, "index.html")
         
-        if os.path.exists(index_path):
-            try:
-                with open(index_path, 'r') as f:
-                    content = f.read()
-                
-                # Replace external CSS
-                for resource in [r for r in EXTERNAL_RESOURCES if r["type"] == "css"]:
-                    url = resource["url"]
-                    filename = url.split("/")[-1]
-                    content = content.replace(
-                        f'href="{url}"',
-                        f'href="{{ url_for(\'static\', filename=\'vendor/css/{filename}\') }}"'
-                    )
-                
-                # Replace external JS
-                for resource in [r for r in EXTERNAL_RESOURCES if r["type"] == "js"]:
-                    url = resource["url"]
-                    filename = url.split("/")[-1]
-                    content = content.replace(
-                        f'src="{url}"',
-                        f'src="{{ url_for(\'static\', filename=\'vendor/js/{filename}\') }}"'
-                    )
-                
-                # Special handling for FontAwesome CSS that references webfonts
-                if "all.min.css" in content:
-                    # Add a patch to fix the font paths in FontAwesome CSS
-                    font_fix_css = """
-    <!-- Fix for FontAwesome webfont paths -->
-    <style>
-        @font-face {
-            font-family: 'Font Awesome 6 Free';
-            font-style: normal;
-            font-weight: 900;
-            font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-solid-900.woff2') }}") format("woff2");
-        }
-        @font-face {
-            font-family: 'Font Awesome 6 Free';
-            font-style: normal;
-            font-weight: 400;
-            font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-regular-400.woff2') }}") format("woff2");
-        }
-        @font-face {
-            font-family: 'Font Awesome 6 Brands';
-            font-style: normal;
-            font-weight: 400;
-            font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-brands-400.woff2') }}") format("woff2");
-        }
-        @font-face {
-            font-family: 'Font Awesome 6 Free';
-            font-style: normal;
-            font-weight: 900;
-            font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-v4compatibility.woff2') }}") format("woff2");
-        }
-    </style>
-                    """
-                    # Add the font fix after the CSS include
-                    content = content.replace(
-                        'href="{{ url_for(\'static\', filename=\'vendor/css/all.min.css\') }}"',
-                        'href="{{ url_for(\'static\', filename=\'vendor/css/all.min.css\') }}"' + font_fix_css
-                    )
-                
-                # Write the updated content back
-                with open(index_path, 'w') as f:
-                    f.write(content)
-                
-                logger.info(f"Updated {index_path} to use local resources")
-                
-                # Also patch the CSS files to use local fonts
-                fa_css_path = os.path.join(css_dir, "all.min.css")
-                if os.path.exists(fa_css_path):
-                    try:
-                        with open(fa_css_path, 'r') as f:
-                            fa_css = f.read()
-                        
-                        # Replace remote webfont references with local ones
-                        fa_css = fa_css.replace(
-                            "../webfonts/", 
-                            "../webfonts/"
-                        )
-                        
-                        with open(fa_css_path, 'w') as f:
-                            f.write(fa_css)
-                        
-                        logger.info(f"Updated FontAwesome CSS to use local webfonts")
-                    except Exception as e:
-                        logger.error(f"Failed to patch FontAwesome CSS: {e}")
-                
-                return True
-            except Exception as e:
-                logger.error(f"Failed to update index.html template: {e}")
-                return False
-        else:
+        if not os.path.exists(index_path):
             logger.error(f"Index template not found: {index_path}")
             return False
+        
+        # All resources downloaded successfully and template exists
+        logger.info("All resources downloaded for offline use")
+        return True
     else:
         logger.error(f"Only downloaded {success_count}/{total_resources} resources")
         return False
@@ -434,10 +343,8 @@ def install_dependencies(args):
         requirements_file = os.path.join(repo_root, "annzarro", "server", "requirements.txt")
         extras_file = os.path.join(repo_root, "annzarro", "server", "requirements-extras.txt")
         
-        # Download external resources for Electron app (always by default unless disabled)
-        if not download_external_resources(repo_root, args):
-            logger.warning("Failed to download some external resources for Electron app")
-            # Continue with installation anyway - this isn't fatal
+        # We'll download external resources after setting up the environment to use proper Python
+        download_resources = not hasattr(args, 'no_electron_resources') or not args.no_electron_resources
         
         if not os.path.exists(requirements_file):
             logger.error(f"Requirements file not found: {requirements_file}")
@@ -719,6 +626,47 @@ s3fs>=2022.1.0        # S3 bucket access
             
             logger.info("Python dependencies installed successfully")
         
+        # Now download external resources using the proper environment if needed
+        if download_resources:
+            # Determine which Python executable to use
+            if use_venv:
+                if os.name == 'nt':  # Windows
+                    python_executable = os.path.join(venv_path, 'Scripts', 'python.exe')
+                else:  # Unix-like
+                    python_executable = os.path.join(venv_path, 'bin', 'python')
+                
+                if os.path.exists(python_executable):
+                    # Use the virtual environment's Python for downloading
+                    logger.info("Using virtual environment Python for external resource downloads")
+                    env = os.environ.copy()
+                    if os.name == 'nt':  # Windows
+                        env["VIRTUAL_ENV"] = os.path.abspath(venv_path)
+                        env["PATH"] = os.path.join(venv_path, "Scripts") + os.pathsep + env["PATH"]
+                    else:  # Unix-like
+                        env["VIRTUAL_ENV"] = os.path.abspath(venv_path)
+                        env["PATH"] = os.path.join(venv_path, "bin") + os.pathsep + env["PATH"]
+                    
+                    # Call the script itself with the proper Python
+                    script_path = os.path.abspath(__file__)
+                    download_cmd = [python_executable, script_path, "--download-only"]
+                    logger.info(f"Running: {' '.join(download_cmd)}")
+                    try:
+                        subprocess.check_call(download_cmd, env=env)
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Error downloading resources with venv Python: {e}")
+                        # Fall back to direct download
+                        if not download_external_resources(repo_root, args):
+                            logger.warning("Failed to download some external resources for Electron app")
+                else:
+                    logger.warning(f"Virtual environment Python not found at {python_executable}")
+                    # Fall back to direct download
+                    if not download_external_resources(repo_root, args):
+                        logger.warning("Failed to download some external resources for Electron app")
+            else:
+                # Fall back to direct download if not using venv
+                if not download_external_resources(repo_root, args):
+                    logger.warning("Failed to download some external resources for Electron app")
+        
         return 0
         
     except Exception as e:
@@ -755,6 +703,8 @@ def main():
                         help="Skip downloading external CSS/JS resources for offline use in Electron app")
     parser.add_argument('--all', action='store_true', 
                         help="Full installation including all extras")
+    parser.add_argument('--download-only', action='store_true',
+                        help="Only download external resources without installing dependencies")
     
     args = parser.parse_args()
     
@@ -763,7 +713,14 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
         
     try:
-        return install_dependencies(args)
+        # If download-only flag is set, just download resources
+        if args.download_only:
+            logger.info("Running in download-only mode")
+            repo_root = os.path.dirname(os.path.abspath(__file__))
+            success = download_external_resources(repo_root, args)
+            return 0 if success else 1
+        else:
+            return install_dependencies(args)
     except KeyboardInterrupt:
         logger.info("Operation cancelled by user")
         return 1
