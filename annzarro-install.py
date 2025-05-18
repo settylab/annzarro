@@ -209,6 +209,10 @@ def download_external_resources(repo_root, args):
         
         try:
             logger.info(f"Downloading [{i}/{total_resources}]: {filename}")
+            # Add User-Agent header to avoid 403 Forbidden errors
+            opener = urllib.request.build_opener()
+            opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')]
+            urllib.request.install_opener(opener)
             urllib.request.urlretrieve(url, target_path)
             logger.debug(f"Downloaded {url} to {target_path}")
             success_count += 1
