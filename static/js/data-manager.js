@@ -54,6 +54,25 @@ const DataManager = (function() {
             // Use the abort signal with the fetch request
             const response = await fetch(fullUrl, { signal });
             
+            // Check if the response is OK (status code in the range 200-299)
+            if (!response.ok) {
+                // Parse the error response to get the detailed error message
+                const text = await response.text();
+                let errorData;
+                try {
+                    errorData = _safeJSONParse(text);
+                } catch (e) {
+                    // If JSON parsing fails, use the raw text
+                    errorData = { error: "Unknown error", message: text };
+                }
+                
+                // Create a custom error with the error details from the server
+                const error = new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
+                error.status = response.status;
+                error.data = errorData;
+                throw error;
+            }
+            
             // Use the safer JSON parsing approach
             const text = await response.text();
             const data = _safeJSONParse(text);
@@ -68,6 +87,8 @@ const DataManager = (function() {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
                 console.error('Error fetching from', fullUrl, error);
+                // Note: We removed the dataFetchError event dispatch here
+                // since it was causing duplicate error notifications
             } else {
                 // Suppress this log in production
                 if (Config.DEBUG_MODE) {
@@ -136,10 +157,17 @@ const DataManager = (function() {
      * @param {string} datasetPath - Path to the dataset
      * @param {boolean} [silent=false] - If true, don't trigger events or UI updates
      * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
+     * @param {boolean} [keepCurrentOnError=true] - If true, don't clear the current dataset on error
      * @returns {Promise<Object>} - Dataset info
      */
-    async function setCurrentDataset(datasetPath, silent = false, signal = null) {
+    async function setCurrentDataset(datasetPath, silent = false, signal = null, keepCurrentOnError = true) {
+        // Store the previous dataset in case we need to revert
+        const previousDataset = _currentDataset;
+        const previousCells = _cells;
+        const previousGenes = _genes;
+        
         try {
+            // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
             _currentDataset = datasetPath;
             
             // Check for abort signal before each async operation
@@ -147,12 +175,16 @@ const DataManager = (function() {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
             
-            // Load dataset structure
+            // Load dataset structure 
             const _datasetStructure = await getDatasetStructure(datasetPath, signal);
             
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
+            
+            // Reset cells and genes before loading new ones
+            _cells = null;
+            _genes = null;
             
             // Load cells and genes
             _cells = await loadCells(datasetPath, signal);
@@ -167,14 +199,6 @@ const DataManager = (function() {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
             
-            if (signal && signal.aborted) {
-                throw new DOMException("Dataset loading aborted", "AbortError");
-            }
-            
-            if (signal && signal.aborted) {
-                throw new DOMException("Dataset loading aborted", "AbortError");
-            }
-            
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {
                 const datasetEvent = new CustomEvent('datasetChanged', {
@@ -182,6 +206,7 @@ const DataManager = (function() {
                         dataset: _currentDataset,
                         focusedCell: _focusedCell,
                         focusedGene: _focusedGene,
+                        structure: _datasetStructure
                     }
                 });
                 document.dispatchEvent(datasetEvent);
@@ -192,6 +217,42 @@ const DataManager = (function() {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
                 console.error('Error setting dataset:', error);
+                
+                // Revert to the previous dataset if keepCurrentOnError is true
+                if (keepCurrentOnError && previousDataset) {
+                    console.log('Reverting to previous dataset due to error');
+                    _currentDataset = previousDataset;
+                    _cells = previousCells;
+                    _genes = previousGenes;
+                    
+                    // Dispatch a datasetLoadError event with details
+                    const errorEvent = new CustomEvent('datasetLoadError', {
+                        detail: { 
+                            attemptedPath: datasetPath,
+                            currentPath: previousDataset,
+                            error: error.message || "Unknown error",
+                            status: error.status || 0,
+                            data: error.data || null
+                        }
+                    });
+                    document.dispatchEvent(errorEvent);
+                } else {
+                    // If we're not keeping the current dataset, clear everything
+                    _currentDataset = null;
+                    _cells = null;
+                    _genes = null;
+                    
+                    // Dispatch a datasetCleared event
+                    if (!silent) {
+                        const clearEvent = new CustomEvent('datasetCleared', {
+                            detail: { 
+                                error: error.message || "Unknown error",
+                                attemptedPath: datasetPath
+                            }
+                        });
+                        document.dispatchEvent(clearEvent);
+                    }
+                }
             } else if (Config.DEBUG_MODE) {
                 console.debug('Dataset loading aborted');
             }
@@ -240,6 +301,7 @@ const DataManager = (function() {
      * @param {string} datasetPath - Path to the dataset
      * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Array<string>>} - List of cell names
+     * @throws {Error} If there's an error loading the cells
      */
     async function loadCells(datasetPath, signal = null) {
         try {
@@ -249,7 +311,13 @@ const DataManager = (function() {
             }
             
             const data = await _fetchWithCache(Config.API.CELLS, { dataset_path: datasetPath }, signal);
-            return data.cells;
+            
+            // Check if response contains error information
+            if (data && data.status === 'error') {
+                throw new Error(data.message || data.error || 'Failed to load cells');
+            }
+            
+            return data.cells || [];
         } catch (error) {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
@@ -258,12 +326,8 @@ const DataManager = (function() {
                 console.debug('Cells loading aborted');
             }
             
-            // If this is an abort error, rethrow it
-            if (error && error.name === 'AbortError') {
-                throw error;
-            }
-            
-            return [];
+            // Rethrow the error to propagate it up
+            throw error;
         }
     }
     
@@ -272,6 +336,7 @@ const DataManager = (function() {
      * @param {string} datasetPath - Path to the dataset
      * @param {AbortSignal} [signal=null] - Optional AbortSignal to allow cancellation
      * @returns {Promise<Array<string>>} - List of gene names
+     * @throws {Error} If there's an error loading the genes
      */
     async function loadGenes(datasetPath, signal = null) {
         try {
@@ -281,7 +346,13 @@ const DataManager = (function() {
             }
             
             const data = await _fetchWithCache(Config.API.GENES, { dataset_path: datasetPath }, signal);
-            return data.genes;
+            
+            // Check if response contains error information
+            if (data && data.status === 'error') {
+                throw new Error(data.message || data.error || 'Failed to load genes');
+            }
+            
+            return data.genes || [];
         } catch (error) {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
@@ -290,12 +361,8 @@ const DataManager = (function() {
                 console.debug('Genes loading aborted');
             }
             
-            // If this is an abort error, rethrow it
-            if (error && error.name === 'AbortError') {
-                throw error;
-            }
-            
-            return [];
+            // Rethrow the error to propagate it up
+            throw error;
         }
     }
     

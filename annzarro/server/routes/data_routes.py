@@ -101,10 +101,28 @@ def register_data_routes(app, api_version):
             metadata = zarr_reader.get_metadata(dataset_path)
         except FileNotFoundError as e:
             logger.exception(f"Dataset not found: {dataset_path}")
-            return jsonify({"error": "Dataset not found"}), 404
+            return jsonify({
+                "status": "error",
+                "error": "Dataset not found", 
+                "message": f"The dataset path '{dataset_path}' does not exist."
+            }), 404
+        except ValueError as e:
+            # Handle validation errors with a 400 Bad Request
+            error_message = str(e)
+            logger.warning(f"Invalid dataset path: {dataset_path}: {error_message}")
+            return jsonify({
+                "status": "error",
+                "error": "Invalid dataset path", 
+                "message": error_message, 
+                "path": dataset_path
+            }), 400
         except Exception as e:
             logger.exception(f"Error opening dataset at {dataset_path}")
-            return jsonify({"error": f"Failed to open dataset: {str(e)}"}), 500
+            return jsonify({
+                "status": "error",
+                "error": "Failed to open dataset", 
+                "message": str(e)
+            }), 500
     
         try:
             # Format basic dataset information.
@@ -924,15 +942,47 @@ def register_data_routes(app, api_version):
         
         try:
             # Use direct zarr access for stateless operation
+            logger.info(f"API GENES: Loading gene names for {dataset_path} with use_cache=True")
             genes = zarr_reader.get_gene_names(dataset_path, use_cache=True)
+            logger.info(f"API GENES: Successfully loaded {len(genes)} genes")
             
             return jsonify({
                 "genes": genes,
                 "dataset_path": dataset_path
             })
+        except ValueError as e:
+            # Handle validation errors with a 400 Bad Request
+            error_message = str(e)
+            logger.warning(f"Invalid dataset path for genes: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Invalid dataset path", 
+                "message": error_message, 
+                "path": dataset_path,
+                "status": "error",
+                "genes": []
+            }), 400
+        except RuntimeError as e:
+            # Handle operational errors with a 500 Internal Server Error
+            error_message = str(e)
+            logger.error(f"Error processing dataset for genes: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Failed to process dataset",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error",
+                "genes": []
+            }), 500
         except Exception as e:
-            logger.error(f"Error getting gene names for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get gene names: {str(e)}"}), 500
+            # Handle unexpected errors
+            error_message = str(e)
+            logger.error(f"Unexpected error getting gene names for {dataset_path}: {e}")
+            return jsonify({
+                "error": "Failed to get gene names",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error",
+                "genes": []
+            }), 500
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
     def get_cells():
@@ -961,9 +1011,39 @@ def register_data_routes(app, api_version):
                 "cells": cells,
                 "dataset_path": dataset_path
             })
+        except ValueError as e:
+            # Handle validation errors with a 400 Bad Request
+            error_message = str(e)
+            logger.warning(f"Invalid dataset path for cells: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Invalid dataset path", 
+                "message": error_message, 
+                "path": dataset_path,
+                "status": "error",
+                "cells": []
+            }), 400
+        except RuntimeError as e:
+            # Handle operational errors with a 500 Internal Server Error
+            error_message = str(e)
+            logger.error(f"Error processing dataset for cells: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Failed to process dataset",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error",
+                "cells": []
+            }), 500
         except Exception as e:
-            logger.error(f"Error getting cell names for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get cell names: {str(e)}"}), 500
+            # Handle unexpected errors
+            error_message = str(e)
+            logger.error(f"Unexpected error getting cell names for {dataset_path}: {e}")
+            return jsonify({
+                "error": "Failed to get cell names",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error",
+                "cells": []
+            }), 500
     
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
     def get_statistics():

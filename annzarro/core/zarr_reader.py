@@ -207,16 +207,37 @@ class ZarrReader:
 
         Returns:
             Tuple of (zarr root, metadata dict)
+            
+        Raises:
+            ValueError: For invalid paths or dataset formats
+            RuntimeError: For other operational errors
         """
         logger.info(f"OPEN_DATASET_BY_PATH: Called with path={path}, metadata={metadata}, "
                    f"metadata_level={metadata_level}, use_cache={use_cache}")
         
-            
         try:
             # Get the root once
             root = self._get_root(path)
+            
+            # Check if we got a valid root
+            if root is None:
+                raise ValueError(f"Unable to open zarr dataset at path: {path}")
+            
             if not metadata:
                 return root, {}
+            
+            # Check basic AnnData structure
+            basic_structure = []
+            if 'X' not in root:
+                basic_structure.append("X matrix")
+            if 'obs' not in root:
+                basic_structure.append("obs annotations")
+            if 'var' not in root:
+                basic_structure.append("var annotations")
+                
+            if basic_structure:
+                missing = ", ".join(basic_structure)
+                logger.warning(f"Dataset at {path} is missing key AnnData components: {missing}")
             
             # Extract metadata with the appropriate caching behavior, passing the existing root
             metadata_dict = self.get_metadata(
@@ -225,11 +246,17 @@ class ZarrReader:
             )
             
             return root, metadata_dict
+            
+        except ValueError as e:
+            # For invalid paths, propagate the error with the detailed message
+            logger.error(f"Invalid dataset path or format: {path}: {e}")
+            raise
         except Exception as e:
+            # Log details for unexpected errors
             logger.error(f"Error opening dataset by path {path}: {e}")
             import traceback
-            logger.error(traceback.print_exc())
-            raise
+            logger.error(traceback.format_exc())
+            raise RuntimeError(f"Failed to open dataset: {str(e)}")
     
     def _get_root(self, dataset_path: str) -> Optional[zarr.Group]:
         """
@@ -240,10 +267,14 @@ class ZarrReader:
         
         Returns:
             zarr.Group: The zarr root group, or None if not found
+            
+        Raises:
+            ValueError: If the dataset_path is invalid or the dataset cannot be found
+            RuntimeError: If there's an error opening the dataset
         """
         if dataset_path is None:
             logger.error("_get_root: No dataset_path provided")
-            return None
+            raise ValueError("No dataset path provided")
             
         logger.debug(f"_get_root: Loading root for path {dataset_path}")
         
@@ -269,12 +300,59 @@ class ZarrReader:
                 return zarr.open_group(store, mode='r')
             
             else:
-                # Local file access
-                return zarr.open_group(dataset_path, mode='r')
+                # Local file access - do more thorough validation
+                path_obj = Path(dataset_path)
+                
+                # Check if path exists
+                if not path_obj.exists():
+                    raise ValueError(f"Path does not exist: {dataset_path}")
+                
+                # Check if it's a directory
+                if not path_obj.is_dir():
+                    # Check if it's a zarr file
+                    if not dataset_path.endswith(('.zarr', '.zr')):
+                        raise ValueError(f"Path is not a directory or zarr file: {dataset_path}")
+                
+                # For directories, check if it appears to be a zarr directory
+                # by looking for .zarray or .zgroup files
+                if path_obj.is_dir() and not any((path_obj / file).exists() 
+                                              for file in ['.zarray', '.zgroup']):
+                    raise ValueError(f"Directory does not appear to be a zarr dataset: {dataset_path}")
+                
+                try:
+                    # Use a store to prevent zarr from creating directories for non-existent paths
+                    store = zarr.DirectoryStore(path_obj)
+                    return zarr.open_group(store, mode='r')
+                except Exception as e:
+                    # Check the error message to identify specific error types
+                    if "path not found" in str(e).lower():
+                        raise ValueError(f"Not a valid zarr dataset: {dataset_path}")
+                    else:
+                        raise ValueError(f"Failed to open zarr dataset: {dataset_path}, error: {e}")
         
         except Exception as e:
-            logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-            return None
+            # Identify specific zarr errors by their message content
+            error_msg = str(e).lower()
+            if "path not found" in error_msg:
+                err_msg = f"Path not found or is not a valid zarr dataset: {dataset_path}"
+                logger.error(err_msg)
+                raise ValueError(err_msg) from e
+            elif "contains an array" in error_msg:
+                err_msg = f"Path contains an array instead of a group: {dataset_path}"
+                logger.error(err_msg)
+                raise ValueError(err_msg) from e
+            elif "contains a group" in error_msg:
+                err_msg = f"Path contains a group instead of an array: {dataset_path}"
+                logger.error(err_msg)
+                raise ValueError(err_msg) from e
+        except (ValueError, ImportError) as e:
+            # Re-raise ValueErrors and ImportErrors directly
+            logger.error(f"Error with dataset path {dataset_path}: {e}")
+            raise
+        except Exception as e:
+            error_msg = f"Error opening dataset from path {dataset_path}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def _get_dataset_shape(self, root: zarr.Group) -> Optional[Tuple[int, int]]:
         """
@@ -1998,10 +2076,31 @@ class ZarrReader:
             
         Returns:
             List of gene names
+            
+        Raises:
+            ValueError: If the dataset path is invalid
+            RuntimeError: If there's an error opening or processing the dataset
         """
-        root = self._get_root(dataset_path=dataset_path)
+        try:
+            logger.info(f"GET_GENE_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
+            root = self._get_root(dataset_path=dataset_path)
+            logger.info(f"GET_GENE_NAMES: Successfully opened dataset {dataset_path}")
+        except (ValueError, RuntimeError) as e:
+            # Re-raise these specific exceptions to be handled by the route
+            logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+            raise
+        except Exception as e:
+            # Wrap other exceptions in a RuntimeError with a descriptive message
+            error_msg = f"Unexpected error opening dataset {dataset_path}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
         
-        if root is None or 'var' not in root:
+        if root is None:
+            raise ValueError(f"Unable to access dataset at path: {dataset_path}")
+        
+        if 'var' not in root:
+            # Return empty list for dataset without variables
+            logger.warning(f"Dataset at {dataset_path} has no 'var' data")
             return []
             
         # Check for _index attribute in var group
@@ -2020,8 +2119,9 @@ class ZarrReader:
             gene_names = root['var'][index_column][:]
             return gene_names.tolist() if hasattr(gene_names, 'tolist') else list(gene_names)
         except Exception as e:
-            logger.error(f"Error getting gene names: {e}")
-            return []
+            error_msg = f"Error getting gene names from dataset {dataset_path}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def get_obs_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
@@ -2057,6 +2157,10 @@ class ZarrReader:
             
         Returns:
             List of cell names
+            
+        Raises:
+            ValueError: If the dataset path is invalid
+            RuntimeError: If there's an error opening or processing the dataset
         """
         root = None
         
@@ -2064,10 +2168,22 @@ class ZarrReader:
             logger.info(f"GET_CELL_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
             root = self._get_root(dataset_path=dataset_path)
             logger.info(f"GET_CELL_NAMES: Successfully opened dataset {dataset_path}")
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
+            # Re-raise these specific exceptions to be handled by the route
             logger.error(f"Error opening dataset from path {dataset_path}: {e}")
+            raise
+        except Exception as e:
+            # Wrap other exceptions in a RuntimeError with a descriptive message
+            error_msg = f"Unexpected error opening dataset {dataset_path}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
         
-        if root is None or 'obs' not in root:
+        if root is None:
+            raise ValueError(f"Unable to access dataset at path: {dataset_path}")
+            
+        if 'obs' not in root:
+            # Return empty list for dataset without observations
+            logger.warning(f"Dataset at {dataset_path} has no 'obs' data")
             return []
             
         # Check for _index attribute in obs group
@@ -2086,8 +2202,9 @@ class ZarrReader:
             cell_names = root['obs'][index_column][:]
             return cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
         except Exception as e:
-            logger.error(f"Error getting cell names: {e}")
-            return []
+            error_msg = f"Error getting cell names from dataset {dataset_path}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def get_data_by_path(self, path: str, dataset_path: Optional[str] = None, 
                     indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:

@@ -34,6 +34,9 @@ const App = (function() {
             // Initialize UI components
             _initUI();
             
+            // Setup custom event listeners for error handling
+            _setupErrorHandlers();
+            
             // Check for autosave session before initializing panel manager
             const autosave = SessionManager.getAutosaveSession();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE;
@@ -69,7 +72,7 @@ const App = (function() {
             _isInitialized = true;
         } catch (error) {
             console.error('Error initializing application:', error);
-            _showError('Initialization failed', error.message);
+            _showNotification('Initialization failed', error.message, 'error');
         }
     }
     
@@ -192,7 +195,7 @@ const App = (function() {
                     }
                 } catch (error) {
                     console.error('Error selecting directory:', error);
-                    _showError('Failed to select directory', error.message);
+                    _showNotification('Failed to select directory', error.message, 'error');
                 }
             });
         }
@@ -553,7 +556,36 @@ const App = (function() {
                 }
             } else {
                 console.error('Error loading dataset:', error);
-                _showError('Failed to load dataset', error.message);
+                
+                // Get the current dataset information to determine how to handle the error
+                const currentDataset = DataManager.getCurrentDataset();
+                
+                if (currentDataset) {
+                    // We have a current dataset loaded, so show a non-blocking notification
+                    _showNotification(
+                        'Dataset Loading Error', 
+                        `Failed to load dataset "${datasetPath}": ${error.message || 'Unknown error'}. Previous dataset still loaded.`, 
+                        'error'
+                    );
+                    
+                    // Update UI elements to reflect we're still on the previous dataset
+                    const cells = DataManager.getCells() || [];
+                    const genes = DataManager.getGenes() || [];
+                    
+                    document.getElementById('cell-count').textContent = 
+                        `${cells.length.toLocaleString()} cells`;
+                    document.getElementById('gene-count').textContent = 
+                        `${genes.length.toLocaleString()} genes`;
+                    document.getElementById('dataset-path').textContent = currentDataset;
+                } else {
+                    // No current dataset, so show an error notification
+                    _showNotification('Failed to load dataset', error.message || 'Unknown error', 'error');
+                    
+                    // Reset UI elements
+                    document.getElementById('cell-count').textContent = 'No dataset loaded';
+                    document.getElementById('gene-count').textContent = 'No dataset loaded';
+                    document.getElementById('dataset-path').textContent = '';
+                }
             }
             
             // Reset loading flag on error
@@ -1334,7 +1366,7 @@ const App = (function() {
                                         `;
                                     }
                                 } else {
-                                    _showError('Failed to delete panel set', result.message);
+                                    _showNotification('Failed to delete panel set', result.message, 'error');
                                 }
                             }
                         }
@@ -1365,7 +1397,7 @@ const App = (function() {
                             _sessionModal.hide();
                             _showSuccess('Autosave Restored', 'Your autosaved panel configuration has been restored');
                         } else {
-                            _showError('Failed to restore autosave', result.message);
+                            _showNotification('Failed to restore autosave', result.message, 'error');
                         }
                     });
                 });
@@ -1584,7 +1616,7 @@ const App = (function() {
                 _sessionModal.hide();
                 //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
-                _showError('Failed to save panel set', result.message);
+                _showNotification('Failed to save panel set', result.message, 'error');
             }
         } else if (modalType === 'load') {
             // Check if we're in file upload mode
@@ -1614,13 +1646,13 @@ const App = (function() {
                             _sessionModal.hide();
                             _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
                         } else {
-                            _showError('Failed to load imported panel set', loadResult.message);
+                            _showNotification('Failed to load imported panel set', loadResult.message, 'error');
                         }
                     } else {
-                        _showError('Failed to import panel set', result.message);
+                        _showNotification('Failed to import panel set', result.message, 'error');
                     }
                 } catch (error) {
-                    _showError('Error', error.message);
+                    _showNotification('Error', error.message, 'error');
                 } finally {
                     // Restore button
                     confirmBtn.innerHTML = originalText;
@@ -1642,7 +1674,7 @@ const App = (function() {
                 if (result.status === 'success') {
                     _sessionModal.hide();
                 } else {
-                    _showError('Failed to load panel set', result.message);
+                    _showNotification('Failed to load panel set', result.message, 'error');
                 }
             }
         }
@@ -1655,9 +1687,9 @@ const App = (function() {
      * @private
      */
     function _showSuccess(title, message) {
-        // In a real application, this would show a toast or notification
+        // Use the notification system instead of alert
         console.log(`Success: ${title} - ${message}`);
-        alert(`${title}: ${message}`);
+        _showNotification(title, message, 'success');
     }
     
     /**
@@ -1667,9 +1699,154 @@ const App = (function() {
      * @private
      */
     function _showError(title, message) {
-        // In a real application, this would show a toast or notification
+        // Use the notification system instead of alert
         console.error(`Error: ${title} - ${message}`);
-        alert(`${title}: ${message}`);
+        _showNotification(title, message, 'error');
+    }
+    
+    // Map to track active notification timers by ID
+    const _notificationTimers = new Map();
+    
+    // Counter for generating unique notification IDs
+    let _notificationCounter = 0;
+    
+    /**
+     * Show a notification message (toast) that doesn't block UI interaction
+     * @param {string} title - Notification title
+     * @param {string} message - Notification message
+     * @param {string} type - Notification type ('error', 'warning', 'info', 'success')
+     * @param {number} [duration=5000] - How long to show the notification (ms)
+     * @private
+     */
+    function _showNotification(title, message, type = 'info', duration = 10000) {
+        console.log(`Notification (${type}): ${title} - ${message}`);
+        
+        // Generate a unique ID for this notification
+        const notificationId = `notification-${Date.now()}-${_notificationCounter++}`;
+        
+        // Create container if it doesn't exist (thread-safe)
+        let container = document.getElementById('notification-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notification-container';
+            document.body.appendChild(container);
+        }
+        
+        // Create the notification element
+        const notification = document.createElement('div');
+        notification.id = notificationId;
+        notification.className = `notification notification-${type}`;
+        
+        // Add close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.className = 'notification-close';
+        closeBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _removeNotification(notificationId);
+        };
+        
+        // Add title and message
+        const titleEl = document.createElement('div');
+        titleEl.textContent = title;
+        titleEl.className = 'notification-title';
+        
+        const messageEl = document.createElement('div');
+        messageEl.textContent = message;
+        messageEl.className = 'notification-message';
+        
+        // Assemble the notification
+        notification.appendChild(closeBtn);
+        notification.appendChild(titleEl);
+        notification.appendChild(messageEl);
+        
+        // Add to container
+        container.appendChild(notification);
+        
+        // Fade in - use requestAnimationFrame for better performance
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                notification.style.opacity = '1';
+            });
+        });
+        
+        // Clear any existing timer for this notification (shouldn't happen, but just to be safe)
+        if (_notificationTimers.has(notificationId)) {
+            clearTimeout(_notificationTimers.get(notificationId));
+        }
+        
+        // Set timeout to remove and track it
+        const timer = setTimeout(() => {
+            _removeNotification(notificationId);
+        }, duration);
+        
+        // Store the timer reference
+        _notificationTimers.set(notificationId, timer);
+        
+        return notificationId;
+    }
+    
+    /**
+     * Removes a notification with proper animation and cleanup
+     * @param {string} notificationId - The ID of the notification to remove 
+     * @private
+     */
+    function _removeNotification(notificationId) {
+        const notification = document.getElementById(notificationId);
+        if (!notification) return;
+        
+        // Clear any existing timer
+        if (_notificationTimers.has(notificationId)) {
+            clearTimeout(_notificationTimers.get(notificationId));
+            _notificationTimers.delete(notificationId);
+        }
+        
+        // Start the fade out
+        notification.style.opacity = '0';
+        
+        // Remove after animation completes
+        const removeTimer = setTimeout(() => {
+            try {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            } catch (e) {
+                // Already removed, ignore
+            }
+        }, 300);
+        
+        // Store the remove timer
+        _notificationTimers.set(`${notificationId}-remove`, removeTimer);
+    }
+    
+    // Track if error handlers have been set up
+    let _errorHandlersInitialized = false;
+    
+    /**
+     * Setup custom event handlers for error management
+     * Ensures handlers are only registered once to prevent duplicates
+     * @private
+     */
+    function _setupErrorHandlers() {
+        // Prevent adding duplicate event listeners
+        if (_errorHandlersInitialized) return;
+        
+        // Listen for dataset load errors
+        document.addEventListener('datasetLoadError', (e) => {
+            // Show non-blocking notification about the error
+            _showNotification(
+                'Dataset Loading Error',
+                `Failed to load dataset "${e.detail.attemptedPath}": ${e.detail.error}. Previous dataset is still loaded.`,
+                'error'
+            );
+        });
+        
+        // Note: We removed the dataFetchError listener to avoid duplicate error messages
+        // since errors are already handled in the _loadDataset function
+        
+        // Mark as initialized to prevent duplicate registrations
+        _errorHandlersInitialized = true;
     }
     
     /**

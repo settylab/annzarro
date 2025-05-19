@@ -197,9 +197,36 @@ def register_zarr_routes(app, api_version):
                 info["var_names_sample"] = [str(x) for x in var_names]
             
             return jsonify(info)
+        except ValueError as e:
+            # Handle validation errors with a 400 Bad Request
+            error_message = str(e)
+            logger.warning(f"Invalid dataset path: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Invalid dataset path", 
+                "message": error_message, 
+                "path": dataset_path,
+                "status": "error"
+            }), 400
+        except RuntimeError as e:
+            # Handle operational errors with a 500 Internal Server Error
+            error_message = str(e)
+            logger.error(f"Error processing dataset: {dataset_path}: {error_message}")
+            return jsonify({
+                "error": "Failed to process dataset",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error"
+            }), 500
         except Exception as e:
-            logger.error(f"Error getting dataset metadata for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get dataset metadata: {str(e)}"}), 500
+            # Handle unexpected errors
+            error_message = str(e)
+            logger.error(f"Unexpected error getting dataset metadata for {dataset_path}: {e}")
+            return jsonify({
+                "error": "Failed to get dataset metadata",
+                "message": error_message,
+                "path": dataset_path,
+                "status": "error"
+            }), 500
     
     @app.route(f"/api/{api_version}/zarr/to_anndata", methods=["GET"])
     def get_anndata_structure():
