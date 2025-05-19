@@ -940,6 +940,18 @@ def register_data_routes(app, api_version):
         if not dataset_path:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
+        # Check if the path exists before attempting to read it (for local paths)
+        if not dataset_path.startswith(("http://", "https://", "s3://")):
+            import os
+            if not os.path.exists(dataset_path):
+                logger.warning(f"Path does not exist: {dataset_path}")
+                return jsonify({
+                    "status": "error",
+                    "error": "Dataset not found",
+                    "message": f"The dataset path '{dataset_path}' does not exist.",
+                    "genes": []
+                }), 404
+                
         try:
             # Use direct zarr access for stateless operation
             logger.info(f"API GENES: Loading gene names for {dataset_path} with use_cache=True")
@@ -1000,6 +1012,18 @@ def register_data_routes(app, api_version):
         
         if not dataset_path:
             return jsonify({"error": "dataset_path parameter is required"}), 400
+
+        # Check if the path exists before attempting to read it (for local paths)
+        if not dataset_path.startswith(("http://", "https://", "s3://")):
+            import os
+            if not os.path.exists(dataset_path):
+                logger.warning(f"Path does not exist: {dataset_path}")
+                return jsonify({
+                    "status": "error",
+                    "error": "Dataset not found",
+                    "message": f"The dataset path '{dataset_path}' does not exist.",
+                    "cells": []
+                }), 404
         
         try:
             # Use direct zarr access WITH CACHING ENABLED

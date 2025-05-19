@@ -225,17 +225,9 @@ const DataManager = (function() {
                     _cells = previousCells;
                     _genes = previousGenes;
                     
-                    // Dispatch a datasetLoadError event with details
-                    const errorEvent = new CustomEvent('datasetLoadError', {
-                        detail: { 
-                            attemptedPath: datasetPath,
-                            currentPath: previousDataset,
-                            error: error.message || "Unknown error",
-                            status: error.status || 0,
-                            data: error.data || null
-                        }
-                    });
-                    document.dispatchEvent(errorEvent);
+                    // We're not dispatching datasetLoadError event here anymore
+                    // since the error is already handled in _loadDataset function in main.js.
+                    // This prevents duplicate error notifications.
                 } else {
                     // If we're not keeping the current dataset, clear everything
                     _currentDataset = null;

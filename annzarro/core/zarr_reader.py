@@ -320,9 +320,8 @@ class ZarrReader:
                     raise ValueError(f"Directory does not appear to be a zarr dataset: {dataset_path}")
                 
                 try:
-                    # Use a store to prevent zarr from creating directories for non-existent paths
-                    store = zarr.DirectoryStore(path_obj)
-                    return zarr.open_group(store, mode='r')
+                    # Use regular open_group for existing paths, which works better with various zarr formats
+                    return zarr.open_group(dataset_path, mode='r')
                 except Exception as e:
                     # Check the error message to identify specific error types
                     if "path not found" in str(e).lower():

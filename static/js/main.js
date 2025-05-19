@@ -1832,15 +1832,8 @@ const App = (function() {
         // Prevent adding duplicate event listeners
         if (_errorHandlersInitialized) return;
         
-        // Listen for dataset load errors
-        document.addEventListener('datasetLoadError', (e) => {
-            // Show non-blocking notification about the error
-            _showNotification(
-                'Dataset Loading Error',
-                `Failed to load dataset "${e.detail.attemptedPath}": ${e.detail.error}. Previous dataset is still loaded.`,
-                'error'
-            );
-        });
+        // We've removed the datasetLoadError event listener since errors are now
+        // handled directly in the _loadDataset function
         
         // Note: We removed the dataFetchError listener to avoid duplicate error messages
         // since errors are already handled in the _loadDataset function

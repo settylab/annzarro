@@ -45,8 +45,8 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
         # Use the provided root zarr group
         zs = root
     else:
-        # Open zarr store - very fast operation
-        zs = zarr.open_group(path)
+        # Open zarr store in read-only mode to avoid creating new directories
+        zs = zarr.open_group(path, mode='r')
     open_time = time.time()
     
     # Initialize metadata with basic structural components
