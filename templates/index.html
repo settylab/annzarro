@@ -13,8 +13,12 @@
     <!-- External Dependencies (local for offline use) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
     
-    <!-- DataTables Bundle CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/DataTables/datatables.min.css') }}">
+    <!-- DataTables CSS Files (Bootstrap 5 styling) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/buttons.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/searchBuilder.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/select.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/fixedHeader.bootstrap5.min.css') }}">
     
     <!-- Font Awesome and Select2 -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/all.min.css') }}">
@@ -230,8 +234,19 @@
     <!-- Plotly -->
     <script src="{{ url_for('static', filename='vendor/js/plotly-2.20.0.min.js') }}"></script>
     
-    <!-- DataTables Bundle - includes all required DataTables components -->
-    <script src="{{ url_for('static', filename='vendor/DataTables/datatables.min.js') }}"></script>
+    <!-- DataTables Core and Extensions with Bootstrap 5 Integration -->
+    <script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/dataTables.buttons.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/buttons.bootstrap5.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/buttons.html5.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/dataTables.searchBuilder.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/searchBuilder.bootstrap5.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/dataTables.select.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/dataTables.fixedHeader.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/jszip.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/pdfmake.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/js/vfs_fonts.js') }}"></script>
     
     <!-- DataTables initialization verification -->
     <script>
@@ -241,6 +256,21 @@
                 console.error("ERROR: DataTables not available! Check installation.");
             } else {
                 console.log("DataTables successfully loaded and available");
+            }
+            
+            // Check if DataTables extensions are loaded
+            const extensions = ['buttons', 'searchBuilder'];
+            let allExtensionsLoaded = true;
+            
+            for (const ext of extensions) {
+                if (!$.fn.DataTable[ext]) {
+                    console.error(`ERROR: DataTables ${ext} extension not available!`);
+                    allExtensionsLoaded = false;
+                }
+            }
+            
+            if (allExtensionsLoaded) {
+                console.log("All DataTables extensions successfully loaded");
             }
         });
     </script>
@@ -275,7 +305,13 @@
                 { name: 'jQuery', test: function() { return typeof $ !== 'undefined'; } },
                 { name: 'Bootstrap', test: function() { return typeof bootstrap !== 'undefined'; } },
                 { name: 'Plotly', test: function() { return typeof Plotly !== 'undefined'; } },
-                { name: 'DataTables', test: function() { return typeof $.fn.DataTable !== 'undefined'; } }
+                { name: 'DataTables', test: function() { return typeof $.fn.DataTable !== 'undefined'; } },
+                { name: 'DataTables.Buttons', test: function() { return typeof $.fn.DataTable.Buttons !== 'undefined'; } },
+                { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.DataTable.SearchBuilder !== 'undefined'; } },
+                { name: 'DataTables.Select', test: function() { return typeof $.fn.DataTable.select !== 'undefined'; } },
+                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.DataTable.FixedHeader !== 'undefined'; } },
+                { name: 'JSZip', test: function() { return typeof JSZip !== 'undefined'; } },
+                { name: 'pdfMake', test: function() { return typeof pdfMake !== 'undefined'; } }
             ];
             
             let allLoaded = true;

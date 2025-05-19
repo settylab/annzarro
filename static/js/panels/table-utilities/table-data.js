@@ -380,12 +380,26 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
-        scrolly: false,
+        scrollY: false,
         scrollCollapse: false, // Always collapse scroll
-        fixedHeader: true, // this does not seem to work
-        hover: true, // this also dpes not work
+        fixedHeader: {
+            header: true,
+            headerOffset: $('.app-header').outerHeight() // Account for fixed header
+        },
+        select: true, // Enable row selection
+        hover: true,
         stripe: true,
-        autoWidth: true, // esential for column name alignment with content
+        autoWidth: true, // essential for column name alignment with content
+        // Use Bootstrap 5 styling
+        language: {
+            searchBuilder: {
+                button: {
+                    0: '<i class="fas fa-filter"></i> Filter',
+                    1: '<i class="fas fa-filter"></i> Filters: 1',
+                    _: '<i class="fas fa-filter"></i> Filters: %d'
+                }
+            }
+        },
         // Configure buttons properly - include basic export functionality
         buttons: {
             buttons: [
@@ -403,7 +417,32 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         },
         searchBuilder: {
                 preDefined: settings.searchBuilderConfig || {},
-                display: 'block' // Always display
+                display: 'block', // Always display
+                depthLimit: 2, // Limit depth to prevent overly complex queries
+                layout: 'columns-2', // Modern layout with columns
+                filterChanged: true, // Update table in real-time with changes
+                greyscale: false, // Use full colors for better visibility
+                i18n: {
+                    add: 'Add Condition',
+                    button: {
+                        0: '<i class="fas fa-filter"></i> Filter',
+                        _: '<i class="fas fa-filter"></i> Filters (%d)'
+                    },
+                    clearAll: 'Clear All',
+                    condition: 'Condition',
+                    data: 'Column',
+                    "delete": 'Delete',
+                    deleteTitle: 'Delete filtering rule',
+                    left: '<i class="fas fa-angle-left"></i>',
+                    logicAnd: 'AND',
+                    logicOr: 'OR',
+                    right: '<i class="fas fa-angle-right"></i>',
+                    title: {
+                        0: 'Advanced Search',
+                        _: 'Advanced Search (%d)'
+                    },
+                    value: 'Value'
+                }
             },
         initComplete: function(dtsettings, json) {
             // The DataTable instance is available as 'this' in the callback
@@ -421,15 +460,15 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             
             // Access the search container - find it relative to the table container
             const tableContainer = this.api().table().container();
-            const $searchInput = $(tableContainer).find('.dt-search input');
+            // For Bootstrap 5 integration, the search input is in a different location
+            const $searchInput = $(tableContainer).find('div.dataTables_filter input');
             
             // If search input found, create a wrapper and add buttons
             if ($searchInput.length) {
-                // Find the search container and element where we need to add the buttons
-                const $searchParent = $searchInput.parent();
+                console.log('Found search input for custom buttons');
                 
-                // Find the existing label element
-                const $existingLabel = $searchParent.find('label');
+                // Find the search container in Bootstrap 5 integration
+                const $searchParent = $(tableContainer).find('div.dataTables_filter');
                 
                 // Create the search options container 
                 const $searchOptions = $('<div class="dt-search-options"></div>');
@@ -443,31 +482,68 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // Add the search control buttons with tooltips - initial state matching our variables
                 // Using more intuitive symbols that match the functionality
                 $searchOptions.append(`
-                    <button id="${btnRegexId}" class="dt-search-option${useRegex ? ' active' : ''}" title="Regular Expression Search">
+                    <button id="${btnRegexId}" class="dt-search-option btn btn-sm${useRegex ? ' active' : ''}" 
+                            title="Regular Expression Mode">
                         .*
                     </button>
-                    <button id="${btnSmartId}" class="dt-search-option${useSmart ? ' active' : ''}" title="Smart Search">
+                    <button id="${btnSmartId}" class="dt-search-option btn btn-sm${useSmart ? ' active' : ''}" 
+                            title="Smart Search (default)">
                         <i class="fas fa-magic"></i>
                     </button>
-                    <button id="${btnCaseId}" class="dt-search-option${!useCaseInsensitive ? ' active' : ''}" title="Case Sensitive">
+                    <button id="${btnCaseId}" class="dt-search-option btn btn-sm${!useCaseInsensitive ? ' active' : ''}" 
+                            title="Case Sensitive">
                         Aa
                     </button>
                 `);
                 
-                // Apply our CSS class to the existing label
-                if ($existingLabel.length) {
-                    $existingLabel.addClass('dt-search-label');
+                // For Bootstrap 5 integration, we need to create a container
+                // that works with the Bootstrap layout
+                const $container = $('<div class="dt-search-container d-flex align-items-center mb-2"></div>');
+                
+                // In Bootstrap 5 integration, we need to restructure the search area
+                const $label = $searchParent.find('label');
+                
+                if ($label.length) {
+                    // Save the label text
+                    const labelText = $label.text();
                     
-                    // Create a container to hold the label and buttons side by side
-                    const $container = $('<div class="dt-search-container"></div>');
+                    // Create a new label with proper Bootstrap 5 styling
+                    const $newLabel = $(`<label class="form-label me-2 dt-search-label">${labelText}</label>`);
                     
-                    // Wrap the label and add our options
-                    $existingLabel.wrap($container);
-                    $searchOptions.insertAfter($existingLabel);
-                }
-                // If no label found, just add the options before the input
-                else {
-                    $searchOptions.insertBefore($searchInput);
+                    // Clear the parent and build our new structure
+                    $searchParent.empty();
+                    
+                    // Create a container with flex column direction to stack elements
+                    $container.removeClass('d-flex align-items-center').addClass('d-flex flex-column');
+                    
+                    // Create a row for the label and search input
+                    const $searchRow = $('<div class="d-flex align-items-center w-100 mb-2"></div>');
+                    $searchRow.append($newLabel);
+                    
+                    // Create an input group to hold the search input
+                    const $inputGroup = $('<div class="input-group input-group-sm flex-grow-1"></div>');
+                    $inputGroup.append($searchInput);
+                    $searchRow.append($inputGroup);
+                    
+                    // Add the search row to the container
+                    $container.append($searchRow);
+                    
+                    // Create a row for search options with proper styling
+                    const $optionsRow = $('<div class="d-flex justify-content-end align-items-center w-100"></div>');
+                    
+                    // Add a descriptive label for the search options
+                    const $optionsLabel = $('<small class="text-muted me-2">Search options:</small>');
+                    $optionsRow.append($optionsLabel);
+                    $optionsRow.append($searchOptions);
+                    
+                    // Add the options row below the search input
+                    $container.append($optionsRow);
+                    
+                    // Add the container to the search parent
+                    $searchParent.append($container);
+                } else {
+                    // Just append the search options after the input
+                    $searchOptions.insertAfter($searchInput);
                 }
                 
                 // 5) A small helper to re-draw with current flags
@@ -500,10 +576,57 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         }
     };
     
-    // Initialize the DataTable
+    // Initialize the DataTable with Bootstrap 5 styling
     let dataTable;
     try {
+        // Add Bootstrap 5 specific classes and styling
+        tableOptions.classes = {
+            sTable: 'table table-striped table-hover',
+            sWrapper: 'dataTables_wrapper dt-bootstrap5',
+            sFilterInput: 'form-control form-control-sm',
+            sLengthSelect: 'form-select form-select-sm',
+            sProcessing: 'dataTables_processing card'
+        };
+        
+        // Bootstrap 5 pagination styling
+        tableOptions.language = {
+            ...tableOptions.language,
+            paginate: {
+                first: '<i class="fas fa-angle-double-left"></i>',
+                previous: '<i class="fas fa-angle-left"></i>',
+                next: '<i class="fas fa-angle-right"></i>',
+                last: '<i class="fas fa-angle-double-right"></i>'
+            }
+        };
+        
+        // Ensure DOM includes SearchBuilder (Q) before filter (f)
+        if (!tableOptions.dom.includes('Q')) {
+            tableOptions.dom = '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
+                               '<"row"<"col-sm-12"tr>>' +
+                               '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>';
+        }
+        
+        // Initialize with SearchBuilder extension explicitly
         dataTable = $(table).DataTable(tableOptions);
+        
+        // Make sure SearchBuilder is visible
+        setTimeout(() => {
+            // Force the SearchBuilder to refresh and show properly
+            if (dataTable.searchBuilder && typeof dataTable.searchBuilder.rebuild === 'function') {
+                dataTable.searchBuilder.rebuild(settings.searchBuilderConfig || {});
+            }
+            
+            // Make logic buttons more visible by adding custom classes
+            $(tableContainer).find('.dtsb-logicButton').each(function() {
+                const $button = $(this);
+                if ($button.text().trim() === 'AND') {
+                    $button.addClass('dtsb-logic-and');
+                } else if ($button.text().trim() === 'OR') {
+                    $button.addClass('dtsb-logic-or');
+                }
+            });
+        }, 100);
+        
     } catch (error) {
         console.error('Error initializing DataTable with SearchBuilder criteria:', error);
         dataTable = $(table).DataTable();

@@ -49,8 +49,24 @@ EXTERNAL_RESOURCES = [
     {"url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js", "type": "js"},
     {"url": "https://cdn.plot.ly/plotly-2.20.0.min.js", "type": "js"},
     
-    # DataTables bundled package with all required extensions
-    {"url": "https://datatables.net/download/builder?bs5/jszip-3.10.1/pdfmake-0.2.7/dt-2.2.2/b-3.2.2/b-colvis-3.2.2/b-html5-3.2.2/b-print-3.2.2/cr-2.0.4/fc-5.0.4/fh-4.0.1/r-3.0.4/sc-2.4.3/sb-1.8.2/sp-2.3.3", "type": "datatables_bundle"},
+    # DataTables core and extensions (replacing the builder URL with direct CDN links)
+    {"url": "https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap5.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/dataTables.searchBuilder.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/searchBuilder.bootstrap5.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.bootstrap5.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/select/1.6.2/js/dataTables.select.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css", "type": "css"},
+    {"url": "https://cdn.datatables.net/fixedheader/3.3.2/js/dataTables.fixedHeader.min.js", "type": "js"},
+    {"url": "https://cdn.datatables.net/fixedheader/3.3.2/css/fixedHeader.bootstrap5.min.css", "type": "css"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js", "type": "js"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js", "type": "js"},
+    {"url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js", "type": "js"},
     
     # Other libraries
     {"url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js", "type": "js"},
@@ -84,59 +100,10 @@ def download_external_resources(repo_root, args):
     
     logger.info("Downloading external resources for offline use in Electron app")
     
-    # Special handling for DataTables bundle
-    try:
-        import requests
-        import zipfile
-        import io
-        import tempfile
-        import shutil
-        
-        logger.info("Setting up DataTables bundle download...")
-        
-        # DataTables bundle URL from the download builder
-        datatables_url = next((r['url'] for r in EXTERNAL_RESOURCES if r['type'] == 'datatables_bundle'), None)
-        
-        if datatables_url:
-            logger.info(f"Downloading DataTables bundle from: {datatables_url}")
-            
-            # Create DataTables directory in vendor
-            datatables_dir = os.path.join(repo_root, "static", "vendor", "DataTables")
-            os.makedirs(datatables_dir, exist_ok=True)
-            
-            # Create a temporary directory to extract the ZIP
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                # Fetch the DataTables bundle
-                try:
-                    response = requests.get(datatables_url)
-                    if response.status_code == 200 and response.headers.get('content-type') == 'application/zip':
-                        # Save the zip file to the temp directory
-                        zip_path = os.path.join(tmpdirname, 'datatables.zip')
-                        with open(zip_path, 'wb') as f:
-                            f.write(response.content)
-                            
-                        # Extract the zip file
-                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                            zip_ref.extractall(tmpdirname)
-                        
-                        # Find and copy the datatables.min.js and datatables.min.css files
-                        for root, dirs, files in os.walk(tmpdirname):
-                            for file in files:
-                                if file == 'datatables.min.js' or file == 'datatables.min.css':
-                                    src_path = os.path.join(root, file)
-                                    dst_path = os.path.join(datatables_dir, file)
-                                    logger.info(f"Copying {file} to {dst_path}")
-                                    shutil.copy2(src_path, dst_path)
-                        
-                        logger.info("DataTables bundle successfully installed")
-                    else:
-                        logger.error(f"Failed to download DataTables bundle: HTTP {response.status_code}")
-                        # Return True anyway to continue with other downloads
-                except Exception as e:
-                    logger.error(f"Error downloading DataTables bundle: {e}")
-    except ImportError:
-        logger.error("Could not import required modules for DataTables bundle download. Need requests module.")
-        logger.info("Will continue with other downloads...")
+    # Ensure DataTables directory exists in vendor
+    datatables_dir = os.path.join(repo_root, "static", "vendor", "DataTables")
+    os.makedirs(datatables_dir, exist_ok=True)
+    logger.info(f"Created DataTables directory: {datatables_dir}")
     
     # Create static directory structure for all assets
     static_dir = os.path.join(repo_root, "static")
@@ -205,7 +172,19 @@ def download_external_resources(repo_root, args):
         else:
             target_dir = vendor_dir
         
-        target_path = os.path.join(target_dir, filename)
+        # Check if a custom destination path is specified
+        if "dest" in resource:
+            # Use the custom destination path
+            dest_parts = resource["dest"].split("/")
+            if len(dest_parts) > 1:
+                # If the dest has a directory, create it if needed
+                dest_dir = os.path.join(vendor_dir, *dest_parts[:-1])
+                os.makedirs(dest_dir, exist_ok=True)
+                target_path = os.path.join(vendor_dir, resource["dest"])
+            else:
+                target_path = os.path.join(target_dir, resource["dest"])
+        else:
+            target_path = os.path.join(target_dir, filename)
         
         try:
             logger.info(f"Downloading [{i}/{total_resources}]: {filename}")
