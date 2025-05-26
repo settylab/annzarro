@@ -307,17 +307,19 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     // Update each trace independently for categorical data.
                     plotContainer.data.forEach((trace, i) => {
                         if (trace.mode !== 'markers') return;
-                        const indices = trace.customdata;
-                        if (!indices || !indices.length) return;
+                        const entityNames = trace.customdata;
+                        if (!entityNames || !entityNames.length) return;
+
+                        // Map entity names back to indices for accessing coordinate data
+                        const indices = entityNames.map(name => entities.indexOf(name)).filter(idx => idx !== -1);
+                        if (!indices.length) return;
 
                         const update = {};
                         if (updateOptions.xAxis && data.x?.values) update.x = [indices.map(idx => data.x.values[idx])];
                         if (updateOptions.yAxis && data.y?.values) update.y = [indices.map(idx => data.y.values[idx])];
                         if (updateOptions.zAxis && data.z?.values && shouldBe3D) update.z = [indices.map(idx => data.z.values[idx])];
-                        if (entities && entities.length) {
-                            update.text = [indices.map(idx => entities[idx])];
-                            update.customdata = [indices];
-                        }
+                        update.text = [entityNames];
+                        update.customdata = [entityNames];
 
                         if (Object.keys(update).length > 0) {
                             Plotly.restyle(plotContainer, update, [i]);
@@ -361,7 +363,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     x: data.x.values,
                     y: data.y.values,
                     text: data[entityType],
-                    customdata: Array.from({ length: data[entityType].length }, (_, i) => i),
+                    customdata: data[entityType],
                     hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
                         (settings.z ? `<br>z: %{z}` : '') +
                         `<br>c: %{marker.color}<extra></extra>`,
@@ -528,7 +530,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       mode: 'markers',
                       name: 'Not in table',
                       text: nonTableIndices.map(i => entities[i]),
-                      customdata: nonTableIndices,
+                      customdata: nonTableIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
                                     `<extra></extra>`,
@@ -559,7 +561,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       mode: 'markers',
                       name: 'In table',
                       text: tableFilteredIndices.map(i => entities[i]),
-                      customdata: tableFilteredIndices,
+                      customdata: tableFilteredIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
                                     `<br>c: %{marker.color}<extra></extra>`,
@@ -671,7 +673,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 mode: 'markers',
                                 name: 'Not in table',
                                 text: nonTableIndices.map(i => entities[i]),
-                                customdata: nonTableIndices,
+                                customdata: nonTableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
                                             `<extra></extra>`,
@@ -702,7 +704,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 mode: 'markers',
                                 name: 'In table',
                                 text: tableIndices.map(i => entities[i]),
-                                customdata: tableIndices,
+                                customdata: tableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
                                             `<extra></extra>`,

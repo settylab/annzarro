@@ -1040,10 +1040,10 @@ export function applyFilterMask(data, indexMask) {
   filteredData.color = data.color.filter((_, i) => indexMask[i]);
   filteredData[entityType] = entities.filter((_, i) => indexMask[i]);
   
-  // Generate proper customdata with original indices
-  // This preserves the mapping to the original dataset
+  // Generate proper customdata with entity names
+  // This provides direct access to the entity names for click handlers
   filteredData.customdata = indexMask.reduce((acc, keep, i) => {
-    if (keep) acc.push(i);
+    if (keep) acc.push(entities[i]);
     return acc;
   }, []);
   
@@ -1262,7 +1262,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     x: filteredData.x.values,
     y: filteredData.y.values,
     text: filteredData[entityKey],
-    customdata: Array.from({ length: filteredData[entityKey].length }, (_, i) => i),
+    customdata: filteredData[entityKey],
     showlegend: false,
     hovertemplate:
       `%{text}<br>x: %{x}<br>y: %{y}` +
@@ -1737,7 +1737,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           mode: 'markers',
           name: 'Not in table',
           text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: nonTableIndices,
+          customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<extra></extra>`,
@@ -1791,7 +1791,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           mode: 'markers',
           name: settings.color.key || 'Value',
           text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: tableFilteredIndices,
+          customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<br>c: %{marker.color}<extra></extra>`,
@@ -1932,7 +1932,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           mode: 'markers',
           name: 'Not in table',
           text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: nonTableIndices,
+          customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<extra></extra>`,
@@ -1977,7 +1977,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           mode: 'markers',
           name: 'Data points',
           text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
-          customdata: tableFilteredIndices,
+          customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
                         `<extra></extra>`,

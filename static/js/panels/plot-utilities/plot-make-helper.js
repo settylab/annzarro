@@ -112,16 +112,15 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
       
       // Determine if this is a gene plot or cell plot
       const isGenePlot = data.genes !== undefined;
-      const entityKey = isGenePlot ? 'genes' : 'cells';
       let entityName;
   
-      if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
+      // Since customdata now stores entity names directly, use it as the primary source
+      if (point.customdata !== undefined) {
+        entityName = point.customdata;
+      } 
+      // Fallback to trace text if customdata is not available
+      else if (traces[traceIndex] && traces[traceIndex].text && pointIndex < traces[traceIndex].text.length) {
         entityName = traces[traceIndex].text[pointIndex];
-      } else if (point.customdata !== undefined) {
-        const entityIndex = point.customdata;
-        if (data[entityKey] && entityIndex < data[entityKey].length) {
-          entityName = data[entityKey][entityIndex];
-        }
       }
       
       if (!entityName) {
@@ -285,7 +284,7 @@ export function attachViewportTracking(plotContainer, settings) {
         mode: 'markers',
         name: 'Not in table',
         text: allNonTableIndices.map(idx => data[entityKey][idx]),
-        customdata: allNonTableIndices, // Store original indices for click handling
+        customdata: allNonTableIndices.map(idx => data[entityKey][idx]), // Store entity names for click handling
         hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
         x: allNonTableIndices.map(idx => data.x.values[idx]),
         y: allNonTableIndices.map(idx => data.y.values[idx]),
@@ -338,7 +337,7 @@ export function attachViewportTracking(plotContainer, settings) {
           mode: 'markers',
           name: category,
           text: tableIndices.map(idx => data[entityKey][idx]),
-          customdata: tableIndices, // Store original indices for click handling
+          customdata: tableIndices.map(idx => data[entityKey][idx]), // Store entity names for click handling
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
           x: tableIndices.map(idx => data.x.values[idx]),
           y: tableIndices.map(idx => data.y.values[idx]),
@@ -365,7 +364,7 @@ export function attachViewportTracking(plotContainer, settings) {
           mode: 'markers',
           name: category,
           text: indices.map(idx => data[entityKey][idx]),
-          customdata: indices, // Store original indices for click handling
+          customdata: indices.map(idx => data[entityKey][idx]), // Store entity names for click handling
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
           x: indices.map(idx => data.x.values[idx]),
           y: indices.map(idx => data.y.values[idx]),
