@@ -9,7 +9,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BIN_DIR="${ROOT_DIR}/desktop/electron/bin"
 
 # Versions and URLs
-UV_VERSION="0.1.41"
+UV_VERSION="0.8.13"
 UV_MACOS_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-apple-darwin.tar.gz"
 UV_MACOS_ARM_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-apple-darwin.tar.gz"
 UV_LINUX_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"

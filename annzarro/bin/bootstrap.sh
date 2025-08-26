@@ -137,18 +137,24 @@ if $CLEAN_VENV && [ -d "$VENV_PATH" ]; then
     echo "Virtual environment removed."
 fi
 
-# Step 2: Use UV to create a virtual environment with Python
-echo "Creating Python virtual environment with UV"
+# Step 2: Use UV to install Python and create virtual environment
+echo "Installing Python and creating virtual environment with UV"
 
-# Check if a custom Python was specified in the arguments
+# Check if a specific Python version was requested
+PYTHON_VERSION="3.12"  # Default version
 CUSTOM_PYTHON=""
 PYTHON_ENV_VARS=()
 
 for ((i=0; i<${#ALL_ARGS[@]}; i++)); do
-    if [[ "${ALL_ARGS[$i]}" == "--python" ]]; then
+    if [[ "${ALL_ARGS[$i]}" == "--python-version" ]]; then
+        if [[ $((i+1)) -lt ${#ALL_ARGS[@]} ]]; then
+            PYTHON_VERSION="${ALL_ARGS[$((i+1))]}"
+            echo "Using specified Python version: $PYTHON_VERSION"
+        fi
+    elif [[ "${ALL_ARGS[$i]}" == "--python" ]]; then
         if [[ $((i+1)) -lt ${#ALL_ARGS[@]} ]]; then
             CUSTOM_PYTHON="${ALL_ARGS[$((i+1))]}"
-            echo "Using custom Python for virtual environment: $CUSTOM_PYTHON"
+            echo "Using custom Python executable: $CUSTOM_PYTHON"
         fi
     elif [[ "${ALL_ARGS[$i]}" == "--python-env" ]]; then
         if [[ $((i+1)) -lt ${#ALL_ARGS[@]} ]]; then
@@ -160,18 +166,21 @@ done
 
 # Create virtual environment with UV
 if [[ -n "$CUSTOM_PYTHON" ]]; then
-    echo "Using custom Python: $CUSTOM_PYTHON"
+    echo "Using custom Python executable: $CUSTOM_PYTHON"
     if [[ ${#PYTHON_ENV_VARS[@]} -gt 0 ]]; then
         env "${PYTHON_ENV_VARS[@]}" "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
     else
         "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
     fi
 else
-    # Don't specify Python version - let UV find the best available version
+    echo "Installing Python $PYTHON_VERSION and creating virtual environment"
+    # First ensure Python is available
+    "$UV_CMD" python install "$PYTHON_VERSION"
+    # Then create venv with that Python version
     if [[ ${#PYTHON_ENV_VARS[@]} -gt 0 ]]; then
-        env "${PYTHON_ENV_VARS[@]}" "$UV_CMD" venv "$VENV_PATH"
+        env "${PYTHON_ENV_VARS[@]}" "$UV_CMD" venv "$VENV_PATH" --python "$PYTHON_VERSION"
     else
-        "$UV_CMD" venv "$VENV_PATH"
+        "$UV_CMD" venv "$VENV_PATH" --python "$PYTHON_VERSION"
     fi
 fi
 
