@@ -139,8 +139,41 @@ fi
 
 # Step 2: Use UV to create a virtual environment with Python
 echo "Creating Python virtual environment with UV"
-# Don't specify Python version - let UV find the best available version
-"$UV_CMD" venv "$VENV_PATH"
+
+# Check if a custom Python was specified in the arguments
+CUSTOM_PYTHON=""
+PYTHON_ENV_VARS=()
+
+for ((i=0; i<${#ALL_ARGS[@]}; i++)); do
+    if [[ "${ALL_ARGS[$i]}" == "--python" ]]; then
+        if [[ $((i+1)) -lt ${#ALL_ARGS[@]} ]]; then
+            CUSTOM_PYTHON="${ALL_ARGS[$((i+1))]}"
+            echo "Using custom Python for virtual environment: $CUSTOM_PYTHON"
+        fi
+    elif [[ "${ALL_ARGS[$i]}" == "--python-env" ]]; then
+        if [[ $((i+1)) -lt ${#ALL_ARGS[@]} ]]; then
+            PYTHON_ENV_VARS+=("${ALL_ARGS[$((i+1))]}")
+            echo "Adding Python environment variable: ${ALL_ARGS[$((i+1))]}"
+        fi
+    fi
+done
+
+# Create virtual environment with UV
+if [[ -n "$CUSTOM_PYTHON" ]]; then
+    echo "Using custom Python: $CUSTOM_PYTHON"
+    if [[ ${#PYTHON_ENV_VARS[@]} -gt 0 ]]; then
+        env "${PYTHON_ENV_VARS[@]}" "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
+    else
+        "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
+    fi
+else
+    # Don't specify Python version - let UV find the best available version
+    if [[ ${#PYTHON_ENV_VARS[@]} -gt 0 ]]; then
+        env "${PYTHON_ENV_VARS[@]}" "$UV_CMD" venv "$VENV_PATH"
+    else
+        "$UV_CMD" venv "$VENV_PATH"
+    fi
+fi
 
 # Step 3: Set up environment for the next steps
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then

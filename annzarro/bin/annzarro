@@ -179,33 +179,100 @@ if [ -d "$VENV_PATH" ]; then
             fi
         fi
         
-        # Find the Python executable (try python3 first, then python)
-        PYTHON_CMD="python3"
-        if ! command -v $PYTHON_CMD &> /dev/null; then
-            PYTHON_CMD="python"
-            if ! command -v $PYTHON_CMD &> /dev/null; then
-                echo "Error: Neither python3 nor python commands were found on your system."
-                echo "Please install Python 3.7 or later and try again."
-                exit 1
-            fi
-        fi
-        
         # Always download external resources for electron app by default
         echo "Will download external resources for Electron app (included by default)"
         # Use the correct flag that matches the installer script
         ARGS+=("--all")
         
-        # If UV was found, add --use-uv flag and pass path to installer
+        # If UV was found, create venv first with custom Python if specified, then use venv Python to run installer
         if [ -n "$UV_CMD" ]; then
             ARGS+=("--use-uv")
             ARGS+=("--uv-path" "$UV_CMD")
-            echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]} (with UV support)\n"
+            
+            # Check if --python and --python-env are specified in arguments
+            CUSTOM_PYTHON=""
+            PYTHON_ENV_VARS=()
+            
+            for ((i=0; i<${#ARGS[@]}; i++)); do
+                if [[ "${ARGS[$i]}" == "--python" ]]; then
+                    if [[ $((i+1)) -lt ${#ARGS[@]} ]]; then
+                        CUSTOM_PYTHON="${ARGS[$((i+1))]}"
+                        echo "Using custom Python for virtual environment: $CUSTOM_PYTHON"
+                    fi
+                elif [[ "${ARGS[$i]}" == "--python-env" ]]; then
+                    if [[ $((i+1)) -lt ${#ARGS[@]} ]]; then
+                        PYTHON_ENV_VARS+=("${ARGS[$((i+1))]}")
+                        echo "Adding Python environment variable: ${ARGS[$((i+1))]}"
+                    fi
+                fi
+            done
+            
+            # Set up environment variables for UV command
+            UV_ENV=()
+            if [[ ${#PYTHON_ENV_VARS[@]} -gt 0 ]]; then
+                for env_var in "${PYTHON_ENV_VARS[@]}"; do
+                    UV_ENV+=("$env_var")
+                done
+            fi
+            
+            # Create virtual environment with UV first
+            echo "Creating virtual environment with UV..."
+            if [[ -n "$CUSTOM_PYTHON" ]]; then
+                echo "Using custom Python: $CUSTOM_PYTHON"
+                if [[ ${#UV_ENV[@]} -gt 0 ]]; then
+                    env "${UV_ENV[@]}" "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
+                else
+                    "$UV_CMD" venv "$VENV_PATH" --python "$CUSTOM_PYTHON"
+                fi
+            else
+                if [[ ${#UV_ENV[@]} -gt 0 ]]; then
+                    env "${UV_ENV[@]}" "$UV_CMD" venv "$VENV_PATH"
+                else
+                    "$UV_CMD" venv "$VENV_PATH"
+                fi
+            fi
+            
+            # Check if venv creation was successful
+            if [ $? -ne 0 ]; then
+                echo "Failed to create virtual environment with UV"
+                exit 1
+            fi
+            
+            # Now use Python from the virtual environment to run the installer
+            if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+                VENV_PYTHON="$VENV_PATH/Scripts/python.exe"
+            else
+                VENV_PYTHON="$VENV_PATH/bin/python"
+            fi
+            
+            if [ ! -f "$VENV_PYTHON" ]; then
+                echo "Error: Python executable not found in virtual environment: $VENV_PYTHON"
+                exit 1
+            fi
+            
+            echo -e "\nExecuting: $VENV_PYTHON $INSTALLER_SCRIPT ${ARGS[@]} (with UV support)\n"
+            if [[ ${#UV_ENV[@]} -gt 0 ]]; then
+                env "${UV_ENV[@]}" "$VENV_PYTHON" "$INSTALLER_SCRIPT" "${ARGS[@]}"
+            else
+                "$VENV_PYTHON" "$INSTALLER_SCRIPT" "${ARGS[@]}"
+            fi
+            exit $?
         else
+            # Fallback: Find the Python executable (try python3 first, then python)
+            PYTHON_CMD="python3"
+            if ! command -v $PYTHON_CMD &> /dev/null; then
+                PYTHON_CMD="python"
+                if ! command -v $PYTHON_CMD &> /dev/null; then
+                    echo "Error: Neither python3 nor python commands were found on your system."
+                    echo "Please install Python 3.7 or later and try again."
+                    exit 1
+                fi
+            fi
+            
             echo -e "\nExecuting: $PYTHON_CMD $INSTALLER_SCRIPT ${ARGS[@]}\n"
+            "$PYTHON_CMD" "$INSTALLER_SCRIPT" "${ARGS[@]}"
+            exit $?
         fi
-        
-        $PYTHON_CMD "$INSTALLER_SCRIPT" "${ARGS[@]}"
-        exit $?
     fi
     
     # For all other commands, directly use the Python from the virtual environment
