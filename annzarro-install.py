@@ -216,6 +216,58 @@ def download_external_resources(repo_root, args):
         logger.error(f"Only downloaded {success_count}/{total_resources} resources")
         return False
 
+def validate_python_executable(python_path, env_vars=None):
+    """
+    Validate that the specified Python executable works
+    
+    Args:
+        python_path: Path to Python executable
+        env_vars: List of environment variables in KEY=VALUE format
+    
+    Returns:
+        (success, env_dict, error_message)
+    """
+    if not python_path:
+        return True, {}, None
+    
+    if not os.path.exists(python_path):
+        return False, {}, f"Python executable not found: {python_path}"
+    
+    # Parse environment variables
+    env_dict = os.environ.copy()
+    if env_vars:
+        for env_var in env_vars:
+            if '=' not in env_var:
+                return False, {}, f"Invalid environment variable format: {env_var}. Use KEY=VALUE format."
+            key, value = env_var.split('=', 1)
+            env_dict[key] = value
+            logger.info(f"Setting environment variable: {key}={value}")
+    
+    # Test the Python executable
+    try:
+        logger.info(f"Validating Python executable: {python_path}")
+        result = subprocess.run(
+            [python_path, '-c', 'import sys; print(sys.version)'],
+            env=env_dict,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            version_info = result.stdout.strip()
+            logger.info(f"Python validation successful: {version_info}")
+            return True, env_dict, None
+        else:
+            error_msg = f"Python executable failed to run:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+            logger.error(error_msg)
+            return False, {}, error_msg
+            
+    except subprocess.TimeoutExpired:
+        return False, {}, f"Python executable timed out: {python_path}"
+    except Exception as e:
+        return False, {}, f"Error testing Python executable: {e}"
+
 def find_uv_executable():
     """
     Find the uv executable on the system
@@ -355,6 +407,19 @@ s3fs>=2022.1.0        # S3 bucket access
         # Include extras unless specifically excluded
         include_extras = not args.no_extras
         
+        # Validate Python executable if specified
+        python_env_dict = {}
+        if hasattr(args, 'python') and args.python:
+            python_env_vars = getattr(args, 'python_env', None)
+            success, python_env_dict, error_msg = validate_python_executable(args.python, python_env_vars)
+            if not success:
+                logger.error(f"Python validation failed: {error_msg}")
+                if 'libpython' in error_msg or 'shared libraries' in error_msg:
+                    logger.info("Tip: This error often occurs when Python needs additional library paths.")
+                    logger.info("Try using --python-env to set LD_LIBRARY_PATH, for example:")
+                    logger.info(f"  --python-env LD_LIBRARY_PATH=/path/to/python/lib")
+                return 1
+
         # Try to find uv executable if requested
         uv_executable = None
         
@@ -403,7 +468,13 @@ s3fs>=2022.1.0        # S3 bucket access
                 if use_uv:
                     logger.info("Creating virtual environment with UV")
                     try:
-                        subprocess.check_call([uv_executable, 'venv', venv_path])
+                        uv_cmd = [uv_executable, 'venv', venv_path]
+                        if hasattr(args, 'python') and args.python:
+                            uv_cmd.extend(['--python', args.python])
+                            logger.info(f"Using specified Python executable: {args.python}")
+                        # Use the validated environment for UV
+                        uv_env = python_env_dict if python_env_dict else os.environ.copy()
+                        subprocess.check_call(uv_cmd, env=uv_env)
                         return True
                     except subprocess.CalledProcessError as e:
                         logger.error(f"Failed to create virtual environment with UV: {e}")
@@ -488,12 +559,18 @@ s3fs>=2022.1.0        # S3 bucket access
                         if use_uv:
                             logger.info("Installing dependencies with UV in virtual environment")
                             pip_cmd = [uv_executable, 'pip', 'install', '-r', requirements_file]
+                            if hasattr(args, 'python') and args.python:
+                                pip_cmd.extend(['--python', args.python])
                             if include_extras and os.path.exists(extras_file):
                                 logger.info("Including optional dependencies")
                                 pip_cmd.extend(['-r', extras_file])
                             if upgrade:
                                 pip_cmd.append('--upgrade')
-                            subprocess.check_call(pip_cmd, env=env)
+                            # Merge the validated Python environment with the venv environment
+                            combined_env = env.copy()
+                            if python_env_dict:
+                                combined_env.update(python_env_dict)
+                            subprocess.check_call(pip_cmd, env=combined_env)
                         else:
                             # First check if pip is working
                             try:
@@ -522,7 +599,14 @@ s3fs>=2022.1.0        # S3 bucket access
                             # Install annzarro in development mode
                             logger.info("Installing AnnZarro in development mode in virtual environment")
                             if use_uv:
-                                subprocess.check_call([uv_executable, 'pip', 'install', '-e', repo_root], env=env)
+                                uv_install_cmd = [uv_executable, 'pip', 'install', '-e', repo_root]
+                                if hasattr(args, 'python') and args.python:
+                                    uv_install_cmd.extend(['--python', args.python])
+                                # Merge the validated Python environment with the venv environment
+                                combined_env = env.copy()
+                                if python_env_dict:
+                                    combined_env.update(python_env_dict)
+                                subprocess.check_call(uv_install_cmd, env=combined_env)
                             else:
                                 subprocess.check_call([python_executable, '-m', 'pip', 'install', '-e', repo_root])
                                 
@@ -576,12 +660,16 @@ s3fs>=2022.1.0        # S3 bucket access
             if use_uv:
                 # Install with UV
                 pip_cmd = [uv_executable, 'pip', 'install', '-r', requirements_file]
+                if hasattr(args, 'python') and args.python:
+                    pip_cmd.extend(['--python', args.python])
                 if include_extras and os.path.exists(extras_file):
                     logger.info("Including optional dependencies")
                     pip_cmd.extend(['-r', extras_file])
                 if upgrade:
                     pip_cmd.append('--upgrade')
-                subprocess.check_call(pip_cmd)
+                # Use the validated Python environment
+                uv_env = python_env_dict if python_env_dict else os.environ.copy()
+                subprocess.check_call(pip_cmd, env=uv_env)
             else:
                 # Install with pip
                 pip_cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
@@ -595,7 +683,12 @@ s3fs>=2022.1.0        # S3 bucket access
             # Install annzarro in development mode
             logger.info("Installing AnnZarro in development mode")
             if use_uv:
-                subprocess.check_call([uv_executable, 'pip', 'install', '-e', repo_root])
+                uv_install_cmd = [uv_executable, 'pip', 'install', '-e', repo_root]
+                if hasattr(args, 'python') and args.python:
+                    uv_install_cmd.extend(['--python', args.python])
+                # Use the validated Python environment
+                uv_env = python_env_dict if python_env_dict else os.environ.copy()
+                subprocess.check_call(uv_install_cmd, env=uv_env)
             else:
                 subprocess.check_call([sys.executable, "-m", "pip", "install", '-e', repo_root])
                 
@@ -673,6 +766,8 @@ def main():
     parser.add_argument('--no-uv', action='store_true', help="Disable UV and use pip instead")
     parser.add_argument('--use-uv', action='store_true', help="Force enable UV")
     parser.add_argument('--uv-path', type=str, help="Path to UV executable")
+    parser.add_argument('--python', type=str, help="Path to Python executable (passed to uv --python flag)")
+    parser.add_argument('--python-env', type=str, action='append', help="Environment variables for Python (format: KEY=VALUE). Can be used multiple times.")
     parser.add_argument('--no-extras', action='store_true', help="Skip installing optional dependencies")
     parser.add_argument('--upgrade', action='store_true', help="Upgrade existing packages")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
