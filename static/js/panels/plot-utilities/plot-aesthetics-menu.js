@@ -1476,7 +1476,7 @@ function updateLegendVisibility(plotDiv, settings) {
         Plotly.relayout(plotDiv, { [`${ca}.showscale`]: show });
         hasColoraxis = true;
       });
-  
+   
     if (hasColoraxis) {
         Plotly.relayout(plotDiv, { showlegend: false, showscale: show });
     } else {
@@ -1532,7 +1532,7 @@ export function getPositioningByLocation(position) {
       left: {
         legendOrientation: 'v', legendX: -0.05, legendY: 0.5,
         legendXanchor: 'right', legendYanchor: 'middle',
-        x: -0.02, xanchor: 'right', y: 0.5, yanchor: 'middle',
+        x: -0.1, xanchor: 'right', y: 0.5, yanchor: 'middle',
         orientation: 'v', titleside: 'right'
       },
       top: {
@@ -1569,21 +1569,23 @@ export function getPositioningByLocation(position) {
       'legend.yanchor':     posConfig.legendYanchor
     });
   
+
     // 2) Shared coloraxis: hide → update → show
     // ------------------------------------------------
     // hide any existing shared bar
-    Plotly.relayout(plotContainer, { 'coloraxis.showscale': false });
     // update its geometry
-    Plotly.relayout(plotContainer, {
-      'coloraxis.colorbar.x':         posConfig.x,
-      'coloraxis.colorbar.y':         posConfig.y,
-      'coloraxis.colorbar.xanchor':   posConfig.xanchor,
-      'coloraxis.colorbar.yanchor':   posConfig.yanchor,
-      'coloraxis.colorbar.orientation': posConfig.orientation,
-      'coloraxis.colorbar.titleside':   posConfig.titleside
-    });
-    // re‑show it
-    Plotly.relayout(plotContainer, { 'coloraxis.showscale': true });
+    const coloraxisVisible = plotContainer.layout.coloraxis?.showscale ?? false;
+    if (coloraxisVisible) {
+        Plotly.relayout(plotContainer, {
+        'coloraxis.colorbar.x':         posConfig.x,
+        'coloraxis.colorbar.y':         posConfig.y,
+        'coloraxis.colorbar.xanchor':   posConfig.xanchor,
+        'coloraxis.colorbar.yanchor':   posConfig.yanchor,
+        'coloraxis.colorbar.orientation': posConfig.orientation,
+        'coloraxis.colorbar.titleside':   posConfig.titleside,
+        'coloraxis.showscale': coloraxisVisible
+        });
+    }
   
     // 3) Per‑trace bars: hide → update → show
     // ------------------------------------------------
@@ -1594,6 +1596,8 @@ export function getPositioningByLocation(position) {
       const isScatter = trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale;
       // heatmap/contour/surface traces
       const isHeat   = trace.type && ['heatmap','contour','surface'].includes(trace.type) && trace.colorbar;
+
+      const currentVisible = isScatter ? (trace.marker.showscale ?? true) : (trace.showscale ?? true);
   
       if (isScatter) {
         // 3a) Hide old colorbar
@@ -1606,7 +1610,7 @@ export function getPositioningByLocation(position) {
           'marker.colorbar.yanchor':    posConfig.yanchor,
           'marker.colorbar.orientation': posConfig.orientation,
           'marker.colorbar.titleside':   posConfig.titleside,
-          'marker.showscale':           true
+          'marker.showscale':           currentVisible
         }, [i]);
       }
       else if (isHeat) {
@@ -1618,7 +1622,7 @@ export function getPositioningByLocation(position) {
           'colorbar.yanchor':    posConfig.yanchor,
           'colorbar.orientation': posConfig.orientation,
           'colorbar.titleside':   posConfig.titleside,
-          showscale:             true
+          showscale:             currentVisible
         }, [i]);
       }
     });
