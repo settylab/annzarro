@@ -317,7 +317,7 @@ export function getFixedGenes() {
  * @returns {Array<Object>} - Array of obsp items for column selection
  */
 export function getObspColumnsForCellTable(datasetStructure) {
-    if (!datasetStructure?.obsp?.matrices) return [];
+    if (!datasetStructure?.obsp?.matrices && !datasetStructure?.obsp?.keys) return [];
     
     const items = [];
     const fixedCells = getFixedCells();
@@ -325,31 +325,60 @@ export function getObspColumnsForCellTable(datasetStructure) {
     // Add the focused cell entry for each obsp matrix
     const focusedCell = fixedCells.find(fc => fc.source === 'focused');
     if (focusedCell) {
-        for (const key of Object.keys(datasetStructure.obsp.matrices)) {
-            items.push({
-                type: 'obsp',
-                key,
-                column: 'focused_cell',
-                label: `${key}: Focused Cell (${focusedCell.cell})`,
-                source: 'focused'
-            });
+        if (datasetStructure?.obsp?.matrices) {
+            for (const key of Object.keys(datasetStructure.obsp.matrices)) {
+                items.push({
+                    type: 'obsp',
+                    key,
+                    column: 'focused_cell',
+                    label: `${key}: Focused Cell (${focusedCell.cell})`,
+                    source: 'focused'
+                });
+            }
         }
+        else {
+            for (const key of datasetStructure.obsp.keys) {
+                items.push({
+                    type: 'obsp',
+                    key,
+                    column: 'focused_cell',
+                    label: `${key}: Focused Cell (${focusedCell.cell})`,
+                    source: 'focused'
+                });
+            }
+        }
+        
     }
     
     // Add fixed cells from other panels
     for (const fixedCell of fixedCells) {
         if (fixedCell.source === 'focused') continue; // Skip focused cell, already added
         
-        for (const key of Object.keys(datasetStructure.obsp.matrices)) {
-            items.push({
-                type: 'obsp',
-                key,
-                column: fixedCell.cell,
-                label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
-                source: fixedCell.source,
-                panelId: fixedCell.panelId
-            });
+        if (datasetStructure?.obsp?.matrices) {
+            for (const key of Object.keys(datasetStructure.obsp.matrices)) {
+                items.push({
+                    type: 'obsp',
+                    key,
+                    column: fixedCell.cell,
+                    label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
+                    source: fixedCell.source,
+                    panelId: fixedCell.panelId
+                });
+            }
         }
+        else {
+            for (const key of datasetStructure.obsp.keys) {
+                items.push({
+                    type: 'obsp',
+                    key,
+                    column: fixedCell.cell,
+                    label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
+                    source: fixedCell.source,
+                    panelId: fixedCell.panelId
+                });
+            }
+        }
+        
     }
     
     return items;
@@ -361,7 +390,7 @@ export function getObspColumnsForCellTable(datasetStructure) {
  * @returns {Array<Object>} - Array of varp items for column selection
  */
 export function getVarpColumnsForGeneTable(datasetStructure) {
-    if (!datasetStructure?.varp?.matrices) return [];
+    if (!datasetStructure?.varp?.matrices && !datasetStructure?.varp?.keys) return [];
     
     const items = [];
     const fixedGenes = getFixedGenes();
@@ -369,30 +398,58 @@ export function getVarpColumnsForGeneTable(datasetStructure) {
     // Add the focused gene entry for each varp matrix
     const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
     if (focusedGene) {
-        for (const key of Object.keys(datasetStructure.varp.matrices)) {
-            items.push({
-                type: 'varp',
-                key,
-                column: 'focused_gene',
-                label: `${key}: Focused Gene (${focusedGene.gene})`,
-                source: 'focused'
-            });
+        if (datasetStructure?.varp?.matrices) {
+            for (const key of Object.keys(datasetStructure.varp.matrices)) {
+                items.push({
+                    type: 'varp',
+                    key,
+                    column: 'focused_gene',
+                    label: `${key}: Focused Gene (${focusedGene.gene})`,
+                    source: 'focused'
+                });
+            }
         }
+        else {
+            for (const key of datasetStructure.varp.keys) {
+                items.push({
+                    type: 'varp',
+                    key,
+                    column: 'focused_gene',
+                    label: `${key}: Focused Gene (${focusedGene.gene})`,
+                    source: 'focused'
+                });
+            }
+        }
+        
     }
     
     // Add fixed genes from other panels
     for (const fixedGene of fixedGenes) {
         if (fixedGene.source === 'focused') continue; // Skip focused gene, already added
         
-        for (const key of Object.keys(datasetStructure.varp.matrices)) {
-            items.push({
-                type: 'varp',
-                key,
-                column: fixedGene.gene,
-                label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
-                source: fixedGene.source,
-                panelId: fixedGene.panelId
-            });
+        if (datasetStructure?.varp?.matrices) {
+            for (const key of Object.keys(datasetStructure.varp.matrices)) {
+                items.push({
+                    type: 'varp',
+                    key,
+                    column: fixedGene.gene,
+                    label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
+                    source: fixedGene.source,
+                    panelId: fixedGene.panelId
+                });
+            }
+        }
+        else {
+            for (const key of datasetStructure.varp.keys) {
+                items.push({
+                    type: 'varp',
+                    key,
+                    column: fixedGene.gene,
+                    label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
+                    source: fixedGene.source,
+                    panelId: fixedGene.panelId
+                });
+            }
         }
     }
     
@@ -411,21 +468,22 @@ export function getLayerColumnsForCellTable(datasetStructure) {
     const fixedGenes = getFixedGenes();
     
     // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers) ? 
-        datasetStructure.layers : 
-        (typeof datasetStructure.layers === 'object' ? 
-            Object.keys(datasetStructure.layers) : 
+    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
+        datasetStructure.layers.keys : 
+        (typeof datasetStructure.layers.keys === 'object' ? 
+            Object.keys(datasetStructure.layers.keys) : 
             []);
     
     // Add the focused gene entry for each layer
     const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
     if (focusedGene) {
         for (const layer of layersArray) {
+            //May delete the focused gene part.
             items.push({
                 type: 'layer',
                 key: layer,
                 column: 'focused_gene',
-                label: `${layer}: Focused Gene (${focusedGene.gene})`,
+                label: `${layer}: Focused Gene`,
                 source: 'focused'
             });
         }
@@ -462,10 +520,10 @@ export function getLayerColumnsForGeneTable(datasetStructure) {
     const fixedCells = getFixedCells();
     
     // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers) ? 
-        datasetStructure.layers : 
-        (typeof datasetStructure.layers === 'object' ? 
-            Object.keys(datasetStructure.layers) : 
+    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
+        datasetStructure.layers.keys : 
+        (typeof datasetStructure.layers.keys === 'object' ? 
+            Object.keys(datasetStructure.layers.keys) : 
             []);
     
     // Add the focused cell entry for each layer
@@ -476,7 +534,7 @@ export function getLayerColumnsForGeneTable(datasetStructure) {
                 type: 'layer',
                 key: layer,
                 column: 'focused_cell',
-                label: `${layer}: Focused Cell (${focusedCell.cell})`,
+                label: `${layer}: Focused Cell`,
                 source: 'focused'
             });
         }

@@ -313,15 +313,17 @@ export function getColumnKey(column) {
  * @returns {string} - The display name
  */
 export function getColumnDisplayName(column) {
+    const focusedCell = DataManager.getFocusedCell();
+    const focusedGene = DataManager.getFocusedGene();
     if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
     } else if (column.type === 'obsp' || column.type === 'varp') {
         if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: Focused Cell`;
+            return `${column.key}: ${focusedCell}`;
         } else if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: Focused Gene`;
+            return `${column.key}: ${focusedGene}`;
         } else if (column.column) {
             return `${column.key}: ${column.column}`;
         } else {
@@ -329,9 +331,9 @@ export function getColumnDisplayName(column) {
         }
     } else if (column.type === 'layer') {
         if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: Focused Gene`;
+            return `${column.key}: ${focusedGene}`;
         } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: Focused Cell`;
+            return `${column.key}: ${focusedCell}`;
         } else {
             return `${column.key}: ${column.column}`;
         }

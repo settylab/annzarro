@@ -208,7 +208,7 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
                     });
                 }
             }
-        } else if (source.id === 'obsp' && datasetStructure.obsp?.matrices) {
+        } else if (source.id === 'obsp' && datasetStructure.obsp?.keys) {
             // Get fixed cell items from panel tracker
             items = getObspColumnsForCellTable(datasetStructure);
         } else if (source.id === 'layer' && datasetStructure.layers) {
@@ -268,7 +268,7 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
                     });
                 }
             }
-        } else if (source.id === 'varp' && datasetStructure.varp?.matrices) {
+        } else if (source.id === 'varp' && datasetStructure.varp?.keys) {
             // Get fixed gene items from panel tracker
             items = getVarpColumnsForGeneTable(datasetStructure);
         } else if (source.id === 'layer' && datasetStructure.layers) {

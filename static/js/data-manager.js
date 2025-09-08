@@ -631,7 +631,7 @@ const DataManager = (function() {
             const focusedCell = focusedCellIndex >= 0 && _cells ? _cells[focusedCellIndex] : null;
             
             console.log(`Loading obsp data: ${obspKey}, cell: ${focusedCell}, index: ${focusedCellIndex}`);
-            console.log(`Obsp request params: dataset_path=${datasetPath}, rows=${params.rows}`);
+            console.log(`Obsp request params: dataset_path=${params.dataset_path}, rows=${params.rows}`);
             
             const url = `${Config.API.OBSP}/${obspKey}`;
             const data = await _fetchWithCache(url, params);
@@ -737,59 +737,111 @@ const DataManager = (function() {
         try {
             const focusedGene = cols && cols.length === 1 ? _genes[cols[0]] : null;
             const focusedGeneIndex = focusedGene ? cols[0] : -1;
-            
-            console.log(`Loading layer data: ${layerName}, gene: ${focusedGene}, index: ${focusedGeneIndex}`);
-            console.log(`Layer request params: dataset_path=${datasetPath}, rows=${params.rows}, cols=${params.cols}`);
-            
-            const url = `${Config.API.LAYER}/${layerName}`;
-            const data = await _fetchWithCache(url, params);
-            
-            // Log and debug the data structure
-            console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
-                        data && data.data ? `Array of ${data.data.length} items` : 'No data');
-            
-            // Process the data to ensure consistent format
-            if (data && data.data) {
-                // Check if we need to extract a single column from a 2D array
-                if (cols && cols.length === 1 && data.data.length > 0) {
-                    // Check if the data is already a 1D array
-                    if (!Array.isArray(data.data[0])) {
-                        console.log(`Layer data already in 1D format with ${data.data.length} elements`);
-                        // It's already a 1D array, nothing to do
-                        return data;
-                    } else {
-                        // We have a 2D array, need to extract the first column
-                        console.log(`Converting 2D array to 1D for focused gene: ${data.data.length} rows`);
-                        
-                        try {
-                            // Create a new array by extracting the first column from each row
-                            const processedData = data.data.map(row => {
-                                // Handle edge cases and ensure we always get a number (or NaN)
-                                if (Array.isArray(row)) {
-                                    return row[0] === undefined ? NaN : row[0];
-                                } else {
-                                    return row === undefined ? NaN : row;
-                                }
-                            });
-                            
-                            console.log(`Processed layer data to 1D array with ${processedData.length} elements`);
-                            console.log(`Sample values:`, processedData.slice(0, 5));
-                            
-                            // Return processed data
-                            return {
-                                ...data,
-                                data: processedData
-                            };
-                        } catch (e) {
-                            console.error(`Error processing layer data:`, e);
-                            // Return original data if processing fails
+            const focusedCell = rows && rows.length === 1 ? _cells[rows[0]] : null;
+            const focusedCellIndex = focusedCell ? rows[0] : -1;
+
+            if (focusedGene) {
+                console.log(`Loading layer data: ${layerName}, gene: ${focusedGene}, index: ${focusedGeneIndex}`);
+                console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
+                
+                const url = `${Config.API.LAYER}/${layerName}`;
+                const data = await _fetchWithCache(url, params);
+                
+                // Log and debug the data structure
+                console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
+                            data && data.data ? `Array of ${data.data.length} items` : 'No data');
+                
+                // Process the data to ensure consistent format
+                if (data && data.data) {
+                    // Check if we need to extract a single column from a 2D array
+                    if (cols && cols.length === 1 && data.data.length > 0) {
+                        // Check if the data is already a 1D array
+                        if (!Array.isArray(data.data[0])) {
+                            console.log(`Layer data already in 1D format with ${data.data.length} elements`);
+                            // It's already a 1D array, nothing to do
                             return data;
+                        } else {
+                            // We have a 2D array, need to extract the first column
+                            console.log(`Converting 2D array to 1D for focused gene: ${data.data.length} rows`);
+                            
+                            try {
+                                // Create a new array by extracting the first column from each row
+                                const processedData = data.data.map(row => {
+                                    // Handle edge cases and ensure we always get a number (or NaN)
+                                    if (Array.isArray(row)) {
+                                        return row[0] === undefined ? NaN : row[0];
+                                    } else {
+                                        return row === undefined ? NaN : row;
+                                    }
+                                });
+                                
+                                console.log(`Processed layer data to 1D array with ${processedData.length} elements`);
+                                console.log(`Sample values:`, processedData.slice(0, 5));
+                                
+                                // Return processed data
+                                return {
+                                    ...data,
+                                    data: processedData
+                                };
+                            } catch (e) {
+                                console.error(`Error processing layer data:`, e);
+                                // Return original data if processing fails
+                                return data;
+                            }
                         }
                     }
                 }
+                
+                return data;
             }
-            
-            return data;
+            else {
+                console.log(`Loading layer data: ${layerName}, cell: ${focusedCell}, index: ${focusedCellIndex}`);
+                console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
+                
+                const url = `${Config.API.LAYER}/${layerName}`;
+                const data = await _fetchWithCache(url, params);
+                
+                // Log and debug the data structure
+                console.log(`Layer data format for ${layerName} (gene: ${focusedCell}, index: ${focusedCellIndex}):`, 
+                            data && data.data ? `Array of ${data.data.length} items` : 'No data');
+                
+                // Process the data to ensure consistent format
+                if (data && data.data) {
+                    // Check if we need to extract a single column from a 2D array
+                    if (rows && rows.length === 1 && data.data.length > 0) {
+                        // Check if the data is already a 1D array
+                        if (!Array.isArray(data.data[0])) {
+                            console.log(`Layer data already in 1D format with ${data.data.length} elements`);
+                            // It's already a 1D array, nothing to do
+                            return data;
+                        } else {
+                            // We have a 2D array, need to extract the first column
+                            console.log(`Converting 2D array to 1D for focused gene: ${data.data.length} rows`);
+                            
+                            try {
+                                // Create a new array by extracting the first column from each row
+                                //data.data[0] is a single list containing the data - unlike the cell table where it is a list of lists,
+                                const processedData = data.data[0];
+                                
+                                console.log(`Processed layer data to 1D array with ${processedData.length} elements`);
+                                console.log(`Sample values:`, processedData.slice(0, 5));
+                                
+                                // Return processed data
+                                return {
+                                    ...data,
+                                    data: processedData
+                                };
+                            } catch (e) {
+                                console.error(`Error processing layer data:`, e);
+                                // Return original data if processing fails
+                                return data;
+                            }
+                        }
+                    }
+                }
+                
+                return data;
+            }
         } catch (error) {
             console.error(`Error loading layer.${layerName} data:`, error);
             throw error;
