@@ -910,6 +910,8 @@ export async function loadColorDataAndUpdatePlot(
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
   // Capture current view state before making changes
   let currentLayout = null;
+  let newXTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
+  let newYTitle = `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`;
   if (plotContainer && plotContainer.layout) {
     // Store current view state as a deep copy
     currentLayout = JSON.parse(JSON.stringify(plotContainer.layout));
@@ -1059,6 +1061,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       .then(() => {
         if (currentLayout) {
           // Restore the ENTIRE layout to maintain all settings exactly as they were
+          currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
+          currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
           Plotly.relayout(plotContainer, currentLayout);
         }
       });
