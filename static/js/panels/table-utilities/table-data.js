@@ -418,7 +418,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-                preDefined: settings.searchBuilderConfig || {},
+                preDefined: { criteria: settings.searchBuilderConfig?.criteria || [] },
                 display: 'block', // Always display
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
@@ -571,6 +571,10 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     useCaseInsensitive = !useCaseInsensitive;
                     // Treating button as "Case Sensitive" - active when useCaseInsensitive is false
                     $(this).toggleClass('active', !useCaseInsensitive);
+                    applySearch();
+                });
+
+                $searchInput.on('input', function() {
                     applySearch();
                 });
                 
