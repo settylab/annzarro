@@ -382,12 +382,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
-        scrollY: false,
-        scrollCollapse: false, // Always collapse scroll
-        fixedHeader: {
-            header: true,
-            headerOffset: $('.app-header').outerHeight() // Account for fixed header
-        },
+        scrollY: '400px',
+        scrollCollapse: true, // Always collapse scroll
+        fixedHeader: false,
         select: true, // Enable row selection
         hover: true,
         stripe: true,
@@ -747,6 +744,8 @@ export function updateTableOnFocusChange(dataTable, entity, entityType) {
         return usesFocusedEntity || usesEntitySpecificColumns;
     });
     
+    //Refresh the main panel as well. 
+
     if (needsUpdate) {
         // Reload the table data
         document.dispatchEvent(new CustomEvent('refreshTable', {

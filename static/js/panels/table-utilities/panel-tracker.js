@@ -325,60 +325,33 @@ export function getObspColumnsForCellTable(datasetStructure) {
     // Add the focused cell entry for each obsp matrix
     const focusedCell = fixedCells.find(fc => fc.source === 'focused');
     if (focusedCell) {
-        if (datasetStructure?.obsp?.matrices) {
-            for (const key of Object.keys(datasetStructure.obsp.matrices)) {
-                items.push({
-                    type: 'obsp',
-                    key,
-                    column: 'focused_cell',
-                    label: `${key}: Focused Cell (${focusedCell.cell})`,
-                    source: 'focused'
-                });
-            }
+        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
+        for (const key of keys) {
+            items.push({
+                type: 'obsp',
+                key,
+                column: 'focused_cell',
+                label: `${key}: Focused Cell (${focusedCell.cell})`,
+                source: 'focused'
+            });
         }
-        else {
-            for (const key of datasetStructure.obsp.keys) {
-                items.push({
-                    type: 'obsp',
-                    key,
-                    column: 'focused_cell',
-                    label: `${key}: Focused Cell (${focusedCell.cell})`,
-                    source: 'focused'
-                });
-            }
-        }
-        
     }
     
     // Add fixed cells from other panels
     for (const fixedCell of fixedCells) {
         if (fixedCell.source === 'focused') continue; // Skip focused cell, already added
-        
-        if (datasetStructure?.obsp?.matrices) {
-            for (const key of Object.keys(datasetStructure.obsp.matrices)) {
-                items.push({
-                    type: 'obsp',
-                    key,
-                    column: fixedCell.cell,
-                    label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
-                    source: fixedCell.source,
-                    panelId: fixedCell.panelId
-                });
-            }
+
+        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
+        for (const key of keys) {
+            items.push({
+                type: 'obsp',
+                key,
+                column: fixedCell.cell,
+                label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
+                source: fixedCell.source,
+                panelId: fixedCell.panelId
+            });
         }
-        else {
-            for (const key of datasetStructure.obsp.keys) {
-                items.push({
-                    type: 'obsp',
-                    key,
-                    column: fixedCell.cell,
-                    label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
-                    source: fixedCell.source,
-                    panelId: fixedCell.panelId
-                });
-            }
-        }
-        
     }
     
     return items;
@@ -398,58 +371,32 @@ export function getVarpColumnsForGeneTable(datasetStructure) {
     // Add the focused gene entry for each varp matrix
     const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
     if (focusedGene) {
-        if (datasetStructure?.varp?.matrices) {
-            for (const key of Object.keys(datasetStructure.varp.matrices)) {
-                items.push({
-                    type: 'varp',
-                    key,
-                    column: 'focused_gene',
-                    label: `${key}: Focused Gene (${focusedGene.gene})`,
-                    source: 'focused'
-                });
-            }
+        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
+        for (const key of Object.keys(keys)) {
+            items.push({
+                type: 'varp',
+                key,
+                column: 'focused_gene',
+                label: `${key}: Focused Gene (${focusedGene.gene})`,
+                source: 'focused'
+            });
         }
-        else {
-            for (const key of datasetStructure.varp.keys) {
-                items.push({
-                    type: 'varp',
-                    key,
-                    column: 'focused_gene',
-                    label: `${key}: Focused Gene (${focusedGene.gene})`,
-                    source: 'focused'
-                });
-            }
-        }
-        
     }
     
     // Add fixed genes from other panels
     for (const fixedGene of fixedGenes) {
         if (fixedGene.source === 'focused') continue; // Skip focused gene, already added
         
-        if (datasetStructure?.varp?.matrices) {
-            for (const key of Object.keys(datasetStructure.varp.matrices)) {
-                items.push({
-                    type: 'varp',
-                    key,
-                    column: fixedGene.gene,
-                    label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
-                    source: fixedGene.source,
-                    panelId: fixedGene.panelId
-                });
-            }
-        }
-        else {
-            for (const key of datasetStructure.varp.keys) {
-                items.push({
-                    type: 'varp',
-                    key,
-                    column: fixedGene.gene,
-                    label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
-                    source: fixedGene.source,
-                    panelId: fixedGene.panelId
-                });
-            }
+        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
+        for (const key of Object.keys(keys)) {
+            items.push({
+                type: 'varp',
+                key,
+                column: fixedGene.gene,
+                label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
+                source: fixedGene.source,
+                panelId: fixedGene.panelId
+            });
         }
     }
     

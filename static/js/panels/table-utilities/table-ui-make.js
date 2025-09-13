@@ -181,7 +181,7 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
         { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
     ];
     
-    createDataTabs(tabsContainer, tabContent, dataSources, id);
+    createDataTabs(tabsContainer, tabContent, dataSources, id, datasetStructure);
     
     // Populate each tab with available columns
     for (const source of dataSources) {
@@ -197,17 +197,26 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
                 column: ''
             }));
         } else if (source.id === 'obsm' && datasetStructure.obsm?.dataframes) {
+            let dataframeObj = datasetStructure.obsm?.dataframes;
+            createAccordion(source, contentContainer, id, dataframeObj);
             for (const [key, df] of Object.entries(datasetStructure.obsm.dataframes)) {
+                const accordionContainer = document.getElementById(`${source.id}-${key}-accordion-content-${id}`);
+                if (!accordionContainer) continue;
+
+                let obsm_items = []
+
                 if (df.columns && df.columns.length > 0) {
                     df.columns.forEach((column, idx) => {
-                        items.push({
+                        obsm_items.push({
                             type: 'obsm',
                             key: key,
                             column: column || idx.toString()
                         });
                     });
                 }
+                createCheckboxList(accordionContainer, obsm_items, id, settings);
             }
+            continue;
         } else if (source.id === 'obsp' && datasetStructure.obsp?.keys) {
             // Get fixed cell items from panel tracker
             items = getObspColumnsForCellTable(datasetStructure);
@@ -257,17 +266,27 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
                 column: ''
             }));
         } else if (source.id === 'varm' && datasetStructure.varm?.dataframes) {
+            let dataframeObj = datasetStructure.varm?.dataframes;
+            createAccordion(source, contentContainer, id, dataframeObj);
+
             for (const [key, df] of Object.entries(datasetStructure.varm.dataframes)) {
+                const accordionContainer = document.getElementById(`${source.id}-${key}-accordion-content-${id}`);
+                if (!accordionContainer) continue;
+
+                let varm_items = []
+
                 if (df.columns && df.columns.length > 0) {
                     df.columns.forEach((column, idx) => {
-                        items.push({
+                        varm_items.push({
                             type: 'varm',
                             key: key,
                             column: column || idx.toString()
                         });
                     });
                 }
+                createCheckboxList(accordionContainer, varm_items, id, settings);
             }
+            continue;
         } else if (source.id === 'varp' && datasetStructure.varp?.keys) {
             // Get fixed gene items from panel tracker
             items = getVarpColumnsForGeneTable(datasetStructure);
@@ -284,40 +303,147 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
     if (firstTab) firstTab.click();
 }
 
+function createAccordionHeader(sourceId, panelId, label, index) {
+    const accordionHeader = document.createElement('h6');
+    accordionHeader.className = 'accordion-header';
+    accordionHeader.id = `${sourceId}-accordion-${panelId}`;
+    
+    const accordionButton = document.createElement('button');
+    accordionButton.className = `accordion-button`;
+    if (index !== 0) {
+        accordionButton.classList.add('collapsed');
+    }
+    accordionButton.setAttribute('data-bs-toggle', 'collapse');
+    accordionButton.setAttribute('data-bs-target', `#${sourceId}-accordion-content-${panelId}`);
+    accordionButton.type = 'button';
+    accordionButton.setAttribute('aria-controls', `${sourceId}-accordion-content-${panelId}`);
+    accordionButton.setAttribute('aria-expanded', index === 0 ? 'true' : 'false');
+    accordionButton.style.padding = '0.25rem 0.5rem';
+    accordionButton.style.fontSize = '0.875rem';
+    accordionButton.textContent = label;
+
+    accordionHeader.appendChild(accordionButton);
+    return accordionHeader;
+}
+
+function createAccordionContent(source, sourceId, panelId, index) {
+    const contentContainer = document.createElement('div');
+    contentContainer.className = `accordion-collapse collapse ${index === 0 ? 'show' : ''}`;
+    contentContainer.id = `${sourceId}-accordion-content-${panelId}`;
+    contentContainer.setAttribute('aria-labelledby', `${sourceId}-accordion-${panelId}`);
+    contentContainer.setAttribute('data-bs-parent', `#${source.id}-accordion-${panelId}`);
+
+    const content = document.createElement('div');
+    content.className = 'accordion-body';
+    content.style.padding = '0.25rem 0.5rem';
+    content.style.fontSize = '0.875rem';
+
+
+     // Add checkbox list container
+    const checkboxList = document.createElement('div');
+    checkboxList.className = 'checkbox-list';
+    content.appendChild(checkboxList);
+
+    contentContainer.appendChild(content);
+    return contentContainer;
+}
+
+
+function createAccordion(source, content, panelId, dataframeObj) {
+    const accordionContainer = document.createElement('div');
+    accordionContainer.className = "accordion";
+    accordionContainer.id = `${source.id}-accordion-${panelId}`
+
+    Object.keys(dataframeObj).forEach((key, index) => {
+        const accordionItem = document.createElement('div');
+        accordionItem.className = "accordion-item";
+
+        const sourceId = source.id + "-" + key;
+        const accordionHeader = createAccordionHeader(sourceId, panelId, key, index);
+        accordionItem.appendChild(accordionHeader)
+
+        const accordionContent = createAccordionContent(source, sourceId, panelId, index);
+        accordionItem.appendChild(accordionContent);
+
+        accordionContainer.appendChild(accordionItem);
+    })
+
+    content.appendChild(accordionContainer);
+}
+
+
+function createContentWithSubtabs(source, content, panelId, dataframeObj) {
+    if (Object.keys(dataframeObj).length == 0) {
+        return;
+    }
+    const subTabsContainer = document.createElement('ul');
+    subTabsContainer.className = 'nav nav-tabs mt-2';
+    
+    const subTabContent = document.createElement('div');
+    subTabContent.className = 'tab-content';
+    
+    Object.keys(dataframeObj).forEach((tabKey, index) => {
+        const sourceId = source.id + "-" + tabKey;
+        const subTabItem = createTab(sourceId, panelId, tabKey, index);
+        subTabsContainer.appendChild(subTabItem);
+
+        const subContent = createContent(sourceId, panelId, index);
+        
+        const checkboxList = document.createElement('div');
+        checkboxList.className = 'checkbox-list';
+        subContent.appendChild(checkboxList);
+        
+        subTabContent.appendChild(subContent);
+    });
+    
+    content.appendChild(subTabsContainer);
+    content.appendChild(subTabContent);
+}
+
+function createContent(sourceId, panelId, index) {
+    const content = document.createElement('div');
+    content.className = `tab-pane fade ${index === 0 ? 'show active' : ''}`;
+    content.id = `${sourceId}-content-${panelId}`;
+    content.role = 'tabpanel';
+    content.setAttribute('aria-labelledby', `${sourceId}-tab-${panelId}`);
+    return content;
+}
+
+function createTab(sourceId, panelId, label, index) {
+    const tabItem = document.createElement('li');
+    tabItem.className = 'nav-item';
+    tabItem.role = 'presentation';
+    
+    const tabButton = document.createElement('button');
+    tabButton.className = `nav-link ${index === 0 ? 'active' : ''}`;
+    tabButton.id = `${sourceId}-tab-${panelId}`;
+    tabButton.setAttribute('data-bs-toggle', 'tab');
+    tabButton.setAttribute('data-bs-target', `#${sourceId}-content-${panelId}`);
+    tabButton.type = 'button';
+    tabButton.role = 'tab';
+    tabButton.setAttribute('aria-controls', `#${sourceId}-content-${panelId}`);
+    tabButton.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+    tabButton.textContent = label;
+
+    tabItem.appendChild(tabButton);
+    return tabItem;
+}
+
 /**
  * Create tabs for data sources
  * @param {HTMLElement} tabsContainer - The tabs container
  * @param {HTMLElement} tabContent - The tab content container
  * @param {Array} dataSources - The data sources
- * @param {string} id - The panel ID
+ * @param {string} panelId - The panel ID
  */
-function createDataTabs(tabsContainer, tabContent, dataSources, id) {
+function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
     dataSources.forEach((source, index) => {
         // Create tab
-        const tabItem = document.createElement('li');
-        tabItem.className = 'nav-item';
-        tabItem.role = 'presentation';
-        
-        const tabButton = document.createElement('button');
-        tabButton.className = `nav-link ${index === 0 ? 'active' : ''}`;
-        tabButton.id = `${source.id}-tab-${id}`;
-        tabButton.setAttribute('data-bs-toggle', 'tab');
-        tabButton.setAttribute('data-bs-target', `#${source.id}-content-${id}`);
-        tabButton.type = 'button';
-        tabButton.role = 'tab';
-        tabButton.setAttribute('aria-controls', `${source.id}-content-${id}`);
-        tabButton.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
-        tabButton.textContent = source.label;
-        
-        tabItem.appendChild(tabButton);
+        const tabItem = createTab(source.id, panelId, source.label, index);
         tabsContainer.appendChild(tabItem);
-        
-        // Create content
-        const content = document.createElement('div');
-        content.className = `tab-pane fade ${index === 0 ? 'show active' : ''}`;
-        content.id = `${source.id}-content-${id}`;
-        content.role = 'tabpanel';
-        content.setAttribute('aria-labelledby', `${source.id}-tab-${id}`);
+
+        //Create Content
+        const content = createContent(source.id, panelId, index);
         
         // Add search input
         const searchContainer = document.createElement('div');
@@ -336,7 +462,7 @@ function createDataTabs(tabsContainer, tabContent, dataSources, id) {
         searchContainer.appendChild(searchIcon);
         searchContainer.appendChild(searchInput);
         content.appendChild(searchContainer);
-        
+
         // Add checkbox list container
         const checkboxList = document.createElement('div');
         checkboxList.className = 'checkbox-list';
