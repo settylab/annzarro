@@ -430,7 +430,7 @@ export function getLayerColumnsForCellTable(datasetStructure) {
                 type: 'layer',
                 key: layer,
                 column: 'focused_gene',
-                label: `${layer}: Focused Gene`,
+                label: `${layer}: ${focusedGene.gene}`,
                 source: 'focused'
             });
         }
@@ -481,7 +481,7 @@ export function getLayerColumnsForGeneTable(datasetStructure) {
                 type: 'layer',
                 key: layer,
                 column: 'focused_cell',
-                label: `${layer}: Focused Cell`,
+                label: `${layer}: ${focusedCell.cell}`,
                 source: 'focused'
             });
         }

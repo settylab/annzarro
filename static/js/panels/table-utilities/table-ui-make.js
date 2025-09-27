@@ -164,26 +164,7 @@ export async function initializeTableUIState(id, settings, datasetStructure, ent
     restoreSelectedColumns(id, settings);
 }
 
-/**
- * Set up tabs for cell table
- * @param {HTMLElement} tabsContainer - The tabs container
- * @param {HTMLElement} tabContent - The tab content container
- * @param {Object} datasetStructure - The dataset structure
- * @param {string} id - The panel ID
- * @param {Object} settings - The panel settings
- */
-async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
-    // Add tabs for obs, obsm, obsp, layer
-    const dataSources = [
-        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
-        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
-        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ];
-    
-    createDataTabs(tabsContainer, tabContent, dataSources, id, datasetStructure);
-    
-    // Populate each tab with available columns
+export function populateColumnsCellTable(dataSources, datasetStructure, id, settings) {
     for (const source of dataSources) {
         const contentContainer = document.getElementById(`${source.id}-content-${id}`);
         if (!contentContainer) continue;
@@ -227,32 +208,9 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
         
         createCheckboxList(contentContainer, items, id, settings);
     }
-    
-    // Activate the first tab
-    const firstTab = tabsContainer.querySelector('button');
-    if (firstTab) firstTab.click();
 }
 
-/**
- * Set up tabs for gene table
- * @param {HTMLElement} tabsContainer - The tabs container
- * @param {HTMLElement} tabContent - The tab content container
- * @param {Object} datasetStructure - The dataset structure
- * @param {string} id - The panel ID
- * @param {Object} settings - The panel settings
- */
-async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
-    // Add tabs for var, varm, varp, layer
-    const dataSources = [
-        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
-        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
-        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ];
-    
-    createDataTabs(tabsContainer, tabContent, dataSources, id);
-    
-    // Populate each tab with available columns
+export function populateColumnsGeneTable(dataSources, datasetStructure, id, settings) {
     for (const source of dataSources) {
         const contentContainer = document.getElementById(`${source.id}-content-${id}`);
         if (!contentContainer) continue;
@@ -297,6 +255,56 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
         
         createCheckboxList(contentContainer, items, id, settings);
     }
+}
+
+/**
+ * Set up tabs for cell table
+ * @param {HTMLElement} tabsContainer - The tabs container
+ * @param {HTMLElement} tabContent - The tab content container
+ * @param {Object} datasetStructure - The dataset structure
+ * @param {string} id - The panel ID
+ * @param {Object} settings - The panel settings
+ */
+async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
+    // Add tabs for obs, obsm, obsp, layer
+    const dataSources = [
+        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
+        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
+        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+    ];
+    
+    createDataTabs(tabsContainer, tabContent, dataSources, id, datasetStructure);
+    
+    // Populate each tab with available columns
+    populateColumnsCellTable(dataSources, datasetStructure, id, settings);
+    
+    // Activate the first tab
+    const firstTab = tabsContainer.querySelector('button');
+    if (firstTab) firstTab.click();
+}
+
+/**
+ * Set up tabs for gene table
+ * @param {HTMLElement} tabsContainer - The tabs container
+ * @param {HTMLElement} tabContent - The tab content container
+ * @param {Object} datasetStructure - The dataset structure
+ * @param {string} id - The panel ID
+ * @param {Object} settings - The panel settings
+ */
+async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
+    // Add tabs for var, varm, varp, layer
+    const dataSources = [
+        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
+        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
+        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+    ];
+    
+    createDataTabs(tabsContainer, tabContent, dataSources, id);
+    
+    // Populate each tab with available columns
+    populateColumnsGeneTable(dataSources, datasetStructure, id, settings);
     
     // Activate the first tab
     const firstTab = tabsContainer.querySelector('button');
@@ -571,13 +579,15 @@ function createCheckboxList(container, items, id, settings) {
  * @returns {string} - The display name
  */
 function getColumnDisplayName(column) {
+    const focusedCell = DataManager.getFocusedCell();
+    const focusedGene = DataManager.getFocusedGene();
     if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
     } else if (column.type === 'obsp') {
         if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: Focused Cell`;
+            return `${column.key}: ${focusedCell}`;
         } else if (column.column) {
             return `${column.key}: ${column.column}`;
         } else {
@@ -585,7 +595,7 @@ function getColumnDisplayName(column) {
         }
     } else if (column.type === 'varp') {
         if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: Focused Gene`;
+            return `${column.key}: ${focusedGene}`;
         } else if (column.column) {
             return `${column.key}: ${column.column}`;
         } else {
@@ -593,9 +603,9 @@ function getColumnDisplayName(column) {
         }
     } else if (column.type === 'layer') {
         if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: Focused Gene`;
+            return `${column.key}: ${focusedGene}`;
         } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: Focused Cell`;
+            return `${column.key}: ${focusedGene}`;
         } else {
             return `${column.key}: ${column.column}`;
         }
@@ -609,7 +619,7 @@ function getColumnDisplayName(column) {
  * @param {Object} settings - The panel settings
  * @param {string} entityType - Type of entities ('cells' or 'genes')
  */
-function setupColumnSelectionEvents(id, settings, entityType) {
+export function setupColumnSelectionEvents(id, settings, entityType) {
     // Find container more safely
     const tablePanel = document.getElementById(`table-container-${id}`)?.closest('.table-panel');
     if (!tablePanel) return;

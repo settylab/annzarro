@@ -2,6 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { DataManager } from '../../data-manager.js';
+import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 
 /**
  * Load data for a table
@@ -382,7 +383,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
-        scrollY: '400px',
+        scrollY: '350px',
         scrollCollapse: true, // Always collapse scroll
         fixedHeader: false,
         select: true, // Enable row selection
@@ -720,10 +721,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
  * @param {string} entity - The focused entity
  * @param {string} entityType - Type of entities ('cells' or 'genes')
  */
-export function updateTableOnFocusChange(dataTable, entity, entityType) {
+export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     // Update any layer or relation columns
     const dtSettings = dataTable.settings()[0];
     const panelSettings = dtSettings._panelSettings;
+    const datasetPath = DataManager.getCurrentDataset()
+    const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
     
     if (!panelSettings || !panelSettings.columns) {
         return;
@@ -744,14 +747,68 @@ export function updateTableOnFocusChange(dataTable, entity, entityType) {
         return usesFocusedEntity || usesEntitySpecificColumns;
     });
     
-    //Refresh the main panel as well. 
-
     if (needsUpdate) {
         // Reload the table data
         document.dispatchEvent(new CustomEvent('refreshTable', {
             detail: { id: panelSettings.id }
         }));
     }
+    
+    //Refresh the main panel as well. 
+    const sources = entityType === 'genes' ? [
+        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
+        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
+        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+    ] : [
+        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
+        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
+        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+    ];
+
+    //Make everything blank to start fresh
+    for (const source of sources) {
+        const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);6
+        if (contentContainer == null) {
+            console.log("Container is null");
+            return;
+        }
+        contentContainer.innerHTML = '';
+
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'input-group input-group-sm mb-2';
+        
+        const searchIcon = document.createElement('span');
+        searchIcon.className = 'input-group-text';
+        searchIcon.innerHTML = '<i class="fas fa-search"></i>';
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'form-control column-search';
+        searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
+        searchInput.setAttribute('data-tab', source.id);
+        
+        searchContainer.appendChild(searchIcon);
+        searchContainer.appendChild(searchInput);
+        contentContainer.appendChild(searchContainer);
+
+        //Add back the checkboxList element
+        const checkboxList = document.createElement('div');
+        checkboxList.className = 'checkbox-list';
+        contentContainer.appendChild(checkboxList);
+    }
+
+    //Add them back
+    if (entityType === 'genes') {
+        populateColumnsCellTable(sources, datasetStructure, panelSettings.id, panelSettings);
+    }
+    else {
+        populateColumnsGeneTable(sources, datasetStructure, panelSettings.id, panelSettings);
+    }
+
+    // Set up event listeners for column selection
+    setupColumnSelectionEvents(panelSettings.id, panelSettings, entityType);
 }
 
 /**
