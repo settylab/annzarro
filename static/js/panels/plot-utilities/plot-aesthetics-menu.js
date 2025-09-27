@@ -336,20 +336,17 @@ export function createPopoverContent(id, settings) {
         <div class="aesthetics-section">
             <h6>Export</h6>
             <div class="d-flex flex-wrap gap-2 mb-2">
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="jpeg" data-id="${id}">
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="jpeg" id = "download-jpeg-${id}" data-id="${id}">
                     <i class="fas fa-file-image"></i> JPEG
                 </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="svg" data-id="${id}">
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="svg" id = "download-svg-${id}" data-id="${id}">
                     <i class="fas fa-file-image"></i> SVG
                 </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="webp" data-id="${id}">
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="webp" id = "download-webp-${id}" data-id="${id}">
                     <i class="fas fa-file-image"></i> WEBP
                 </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="png" data-id="${id}">
+                <button class="btn btn-sm btn-outline-primary export-btn" data-format="png"id = "download-png-${id}" data-id="${id}">
                     <i class="fas fa-file-image"></i> PNG
-                </button>
-                <button class="btn btn-sm btn-outline-secondary" id="copy-to-clipboard-${id}">
-                    <i class="fas fa-clipboard"></i> Copy
                 </button>
             </div>
             
@@ -1658,10 +1655,11 @@ export async function exportPlot(plotContainer, format, settings) {
     console.warn('Export already in progress – please wait.');
     return;
   }
+  const downloadButton = document.getElementById(`download-${format}-${getPanelId(plotContainer)}`);
   _exportInProgress = true;
 
   const width  = settings.exportWidth  || 1200;
-  const height = settings.exportHeight ||  800;
+  const height = settings.exportHeight ||  800;0
   const scale  = settings.scaleExport ? 2 : 1;
   const filename = 'plot_' + new Date()
     .toISOString()
@@ -1669,6 +1667,32 @@ export async function exportPlot(plotContainer, format, settings) {
 
   const config = { format, width, height, scale, filename };
 
+  const showNotification = (message, autoHide = true, type = 'success') => {
+      // Remove any existing notification
+      const existingPopover = bootstrap.Popover.getInstance(downloadButton);
+      if (existingPopover) existingPopover.dispose();
+      
+      // Create new notification popover
+      const popover = new bootstrap.Popover(downloadButton, {
+        content: message,
+        placement: 'top',
+        customClass: `notification-popover ${type}-notification`,
+        trigger: 'manual',
+        delay: { hide: 1500 }
+      });
+      
+      // Show and auto-hide after 2 seconds
+      popover.show();
+      if (autoHide) {
+        setTimeout(() => {
+            if (popover) popover.dispose();
+        }, 2000);
+      }
+      return popover;
+      
+    };
+
+  const popoverContainer = showNotification("Preparing Image", false);
   try {
     await Plotly.downloadImage(plotContainer, config);
   } catch (err) {
@@ -1676,6 +1700,8 @@ export async function exportPlot(plotContainer, format, settings) {
     alert('Failed to export plot. Please try again.');
   } finally {
     _exportInProgress = false;
+    popoverContainer.dispose();
+    console.log("Download Completed")
   }
 }
 
