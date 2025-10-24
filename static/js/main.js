@@ -623,6 +623,25 @@ const App = (function() {
                 
                 // Setup select2 for searching (if available)
                 if (window.$ && $.fn.select2) {
+
+                    const defaultMatcher = $.fn.select2.defaults.defaults.matcher;
+
+                    function filterByRegex(params, data) {
+                        const regexMode = window.regexMode;
+
+                        if (!regexMode) {
+                            return defaultMatcher(params, data);
+                        }
+                        
+                        try {
+                            const regex = new RegExp(params.term, 'i');
+                            return regex.test(data.text) ? data : null;
+                        } catch (e) {
+                            return null; // invalid regex
+                        }
+
+                    }
+                    
                     $(focusedGeneSelect).select2({
                         placeholder: 'Start typing to search for a gene...',
                         allowClear: false, // Don't allow clearing the selection
@@ -634,7 +653,8 @@ const App = (function() {
                         selectOnClose: false, // Don't select on close to preserve current selection
                         openOnEnter: false,
                         searchInputPlaceholder: 'Type to filter...',
-                        closeOnSelect: false // Keep dropdown open after selecting
+                        closeOnSelect: false, // Keep dropdown open after selecting
+                        matcher: filterByRegex
                     });
                     
                     // Enable immediate search when dropdown is opened
@@ -642,6 +662,8 @@ const App = (function() {
                         setTimeout(function() {
                             // Explicitly focus the search input field inside the dropdown
                             const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                            createButton(searchField);
+
                             if (searchField) {
                                 searchField.focus();
                                 
@@ -706,6 +728,7 @@ const App = (function() {
                     $(focusedGeneSelect).on('select2:closing', function(e) {
                         // Store the current value to ensure it's preserved
                         const currentVal = $(focusedGeneSelect).val();
+                        deleteButton();
                         
                         // After dropdown closes, make sure the value is still set
                         setTimeout(() => {
@@ -790,6 +813,28 @@ const App = (function() {
                 
                 // Setup select2 for searching (if available)
                 if (window.$ && $.fn.select2) {
+
+                    // Default matcher for select2 on alphabetical ordering
+                    const defaultMatcher = $.fn.select2.defaults.defaults.matcher;
+
+                    // Method to filter by regex to be passed into select2
+                    function filterByRegex(params, data) {
+                        const regexMode = window.regexMode;
+
+                        if (!regexMode) {
+                            return defaultMatcher(params, data);
+                        }
+                        
+                        try {
+                            const regex = new RegExp(params.term, 'i');
+                            return regex.test(data.text) ? data : null;
+                        } catch (e) {
+                            return null; // invalid regex
+                        }
+
+                    }
+
+
                     $(focusedCellSelect).select2({
                         placeholder: 'Start typing to search for a cell...',
                         allowClear: false, // Don't allow clearing the selection
@@ -801,7 +846,8 @@ const App = (function() {
                         selectOnClose: false, // Don't select on close to preserve current selection
                         openOnEnter: false,
                         searchInputPlaceholder: 'Type to filter...',
-                        closeOnSelect: false // Keep dropdown open after selecting
+                        closeOnSelect: false, // Keep dropdown open after selecting
+                        matcher: filterByRegex
                     });
                     
                     // Enable immediate search when dropdown is opened
@@ -809,9 +855,11 @@ const App = (function() {
                         setTimeout(function() {
                             // Explicitly focus the search input field inside the dropdown
                             const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                            createButton(searchField);
+                            
                             if (searchField) {
                                 searchField.focus();
-                                
+
                                 // Add keyboard event listener for dropdown control
                                 searchField.addEventListener('keydown', function(e) {
                                     // Escape key: close dropdown
@@ -871,6 +919,7 @@ const App = (function() {
                     $(focusedCellSelect).on('select2:closing', function(e) {
                         // Store the current value to ensure it's preserved
                         const currentVal = $(focusedCellSelect).val();
+                        deleteButton();
                         
                         // After dropdown closes, make sure the value is still set
                         setTimeout(() => {
@@ -923,6 +972,69 @@ const App = (function() {
         }
     }
     
+
+    function createButton(searchField) {
+        if (searchField && !searchField.querySelector('.regex-toggle-btn dt-search-option btn btn-sm active')) {
+
+            // Create a wrapper
+            const optionsWrapper = document.createElement('div');
+            optionsWrapper.style.display = 'inline-flex';   // ensures same line
+            optionsWrapper.style.alignItems = 'center';     // vertically align text and button
+            optionsWrapper.style.gap = '5px';               // space between h6 and button
+            optionsWrapper.id = 'regex-button-container';
+
+            // Create h6
+            const optionsText = document.createElement('h6');
+            optionsText.textContent = 'Options: ';
+            optionsText.id = 'options-header';
+            optionsText.style.margin = 0; // remove default h6 margins
+
+            // Create button
+            const regexToggle = document.createElement('button');
+            regexToggle.textContent = 'Regex Mode';
+            regexToggle.className = 'regex-toggle-btn dt-search-option btn btn-sm active';
+            regexToggle.id = 'regex-button';
+            regexToggle.style.backgroundColor = '#6c757d';
+            regexToggle.style.color = '#fff';
+            regexToggle.style.border = 'none';
+            regexToggle.style.cursor = 'pointer';
+
+
+
+            window.regexMode = false;
+
+            regexToggle.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.regexMode = !(window.regexMode);
+
+                // Update button text & styling
+                if (regexMode) {
+                    regexToggle.style.backgroundColor = '#0d6efd';
+                }
+                else {
+                    regexToggle.style.backgroundColor = '#6c757d';
+                }
+
+                // Trigger filtering refresh
+                //searchField.dispatchEvent(new Event('input'));
+            })
+
+            // Append in correct order
+            optionsWrapper.appendChild(optionsText);
+            optionsWrapper.appendChild(regexToggle);
+
+            // Insert after search field
+            searchField.after(optionsWrapper);
+        }
+    }
+
+    function deleteButton() {
+        const btn = document.getElementById('regex-button-container');
+        if (btn) {
+            btn.remove();  // deletes it from the DOM
+        }
+    }
+
     /**
      * Show save session modal
      * @private
