@@ -71,7 +71,12 @@ if [ -d "$VENV_PATH" ]; then
         if [[ " ${ARGS[@]} " =~ " --clean " ]]; then
             echo "Cleaning up existing virtual environment..."
             rm -rf "$VENV_PATH"
-            echo "Virtual environment removed."
+
+            # Also clean UV binaries to force re-download
+            echo "Cleaning UV binaries..."
+            rm -rf "$DIR/annzarro/desktop/electron/bin"
+
+            echo "Virtual environment and UV removed."
             
             # After cleaning, redirect to bootstrap script since no venv exists
             echo "Redirecting to bootstrap script for fresh installation..."
