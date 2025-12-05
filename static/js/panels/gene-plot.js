@@ -485,6 +485,11 @@ const GenePlotPanel = (function() {
                 
                 // For dataset changes, fully reinitialize the plot with abort signal
                 try {
+                    const datasetPath = updateData["dataset"];
+                    const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
+
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+
                     await refreshPlot(signal);
                     
                     // If we get here, the operation completed successfully

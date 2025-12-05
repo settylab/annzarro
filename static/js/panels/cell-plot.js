@@ -5,6 +5,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
+import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
 
 /**
  * Cell Plot Panel
@@ -502,6 +503,12 @@ const CellPlotPanel = (function() {
                 
                 // For dataset changes, fully reinitialize the plot with abort signal
                 try {
+                    //setupAxisSelector(_controlsContainer, 'x', );
+                    const datasetPath = updateData["dataset"];
+                    const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
+
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+
                     await refreshPlot(signal);
                     
                     // If we get here, the operation completed successfully
