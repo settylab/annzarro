@@ -18,9 +18,8 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
-from .data.manager import data_manager
-from .server import run_server
-from .utils.config_manager import config_manager
+from annzarro.server import run_server
+from annzarro.utils.config_manager import config_manager
 
 # Configure logging
 logging.basicConfig(
