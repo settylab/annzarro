@@ -20,7 +20,7 @@ import os
 import logging
 import numpy as np
 import zarr
-from typing import Dict, List, Tuple, Optional, Union, Any, Callable
+from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
 from pathlib import Path
 
 from .metadata_extraction import extract_metadata
@@ -2063,9 +2063,8 @@ class ZarrReader:
         except Exception as e:
             logger.error(f"Error getting uns data for {key}: {e}")
             return None
-    
-    def get_gene_names(self, dataset_path: str,
-                       use_cache: bool = False) -> List[str]:
+
+    def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:
         """
         Get list of gene names.
         
@@ -2081,9 +2080,9 @@ class ZarrReader:
             RuntimeError: If there's an error opening or processing the dataset
         """
         try:
-            logger.info(f"GET_GENE_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
+            logger.info(f"GET_{'GENE' if entity == 'genes' else 'CELL'}_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
             root = self._get_root(dataset_path=dataset_path)
-            logger.info(f"GET_GENE_NAMES: Successfully opened dataset {dataset_path}")
+            logger.info(f"GET_{'GENE' if entity == 'genes' else 'CELL'}_NAMES: Successfully opened dataset {dataset_path}")
         except (ValueError, RuntimeError) as e:
             # Re-raise these specific exceptions to be handled by the route
             logger.error(f"Error opening dataset from path {dataset_path}: {e}")
@@ -2097,28 +2096,29 @@ class ZarrReader:
         if root is None:
             raise ValueError(f"Unable to access dataset at path: {dataset_path}")
         
-        if 'var' not in root:
+        obj = 'var' if entity == 'genes' else 'obs'
+        if obj not in root:
             # Return empty list for dataset without variables
-            logger.warning(f"Dataset at {dataset_path} has no 'var' data")
+            logger.warning(f"Dataset at {dataset_path} has no '{obj}' data")
             return []
             
         # Check for _index attribute in var group
         index_column = '_index'
-        if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
-            index_column = root['var'].attrs['_index']
-            logger.debug(f"Using custom index column '{index_column}' for var group from _index attribute")
+        if hasattr(root[obj], 'attrs') and '_index' in root[obj].attrs:
+            index_column = root[obj].attrs['_index']
+            logger.debug(f"Using custom index column '{index_column}' for {obj} group from _index attribute")
         
         # Check if the index column exists
-        if index_column not in root['var']:
-            logger.warning(f"Index column '{index_column}' not found in var group")
+        if index_column not in root[obj]:
+            logger.warning(f"Index column '{index_column}' not found in {obj} group")
             return []
         
         # Get gene names
         try:
-            gene_names = root['var'][index_column][:]
-            return gene_names.tolist() if hasattr(gene_names, 'tolist') else list(gene_names)
+            names = root[obj][index_column][:]
+            return names.tolist() if hasattr(names, 'tolist') else list(names)
         except Exception as e:
-            error_msg = f"Error getting gene names from dataset {dataset_path}: {e}"
+            error_msg = f"Error getting {'gene' if obj == 'var' else 'cell'} names from dataset {dataset_path}: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
     
@@ -2132,8 +2132,8 @@ class ZarrReader:
         Returns:
             List of observation names
         """
-        return self.get_cell_names(dataset_path=dataset_path)
-        
+        return self.get_cell_gene_names(dataset_path=dataset_path, entity="cells")
+
     def get_var_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get variable names (alias for get_gene_names for backward compatibility).
@@ -2144,66 +2144,7 @@ class ZarrReader:
         Returns:
             List of variable names
         """
-        return self.get_gene_names(dataset_path=dataset_path)
-    
-    def get_cell_names(self, dataset_path: str, use_cache: bool = False) -> List[str]:
-        """
-        Get list of cell names.
-        
-        Args:
-            dataset_path: Path to the dataset
-            use_cache: Whether to cache the dataset for future use
-            
-        Returns:
-            List of cell names
-            
-        Raises:
-            ValueError: If the dataset path is invalid
-            RuntimeError: If there's an error opening or processing the dataset
-        """
-        root = None
-        
-        try:
-            logger.info(f"GET_CELL_NAMES: Opening dataset {dataset_path} with use_cache={use_cache}")
-            root = self._get_root(dataset_path=dataset_path)
-            logger.info(f"GET_CELL_NAMES: Successfully opened dataset {dataset_path}")
-        except (ValueError, RuntimeError) as e:
-            # Re-raise these specific exceptions to be handled by the route
-            logger.error(f"Error opening dataset from path {dataset_path}: {e}")
-            raise
-        except Exception as e:
-            # Wrap other exceptions in a RuntimeError with a descriptive message
-            error_msg = f"Unexpected error opening dataset {dataset_path}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
-        
-        if root is None:
-            raise ValueError(f"Unable to access dataset at path: {dataset_path}")
-            
-        if 'obs' not in root:
-            # Return empty list for dataset without observations
-            logger.warning(f"Dataset at {dataset_path} has no 'obs' data")
-            return []
-            
-        # Check for _index attribute in obs group
-        index_column = '_index'
-        if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
-            index_column = root['obs'].attrs['_index']
-            logger.debug(f"Using custom index column '{index_column}' for obs group from _index attribute")
-        
-        # Check if the index column exists
-        if index_column not in root['obs']:
-            logger.warning(f"Index column '{index_column}' not found in obs group")
-            return []
-        
-        # Get cell names
-        try:
-            cell_names = root['obs'][index_column][:]
-            return cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
-        except Exception as e:
-            error_msg = f"Error getting cell names from dataset {dataset_path}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+        return self.get_cell_gene_names(dataset_path=dataset_path, entity="genes")
     
     def get_data_by_path(self, path: str, dataset_path: Optional[str] = None, 
                     indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:

@@ -14,6 +14,8 @@ import json
 
 from ...core import zarr_reader
 from ...core import process_zarr
+from ...core import process_file
+from ...core import h5ad_reader_obj
 from ...data.manager import data_manager
 
 logger = logging.getLogger(__name__)
@@ -99,7 +101,9 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
         if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_metadata(dataset_path_str)
+            return process_file.extract_metadata(dataset_path_str, zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_metadata(dataset_path_str, h5ad_reader_obj)
         else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -724,7 +728,9 @@ def register_data_routes(app, api_version):
         
         dataset_path = Path(dataset_path_str)
         if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_cells_genes(dataset_path_str, "genes")
+            return process_file.extract_cells_genes(dataset_path_str, "genes", zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_cells_genes(dataset_path_str, "genes", h5ad_reader_obj)
         else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -759,7 +765,9 @@ def register_data_routes(app, api_version):
         
         dataset_path = Path(dataset_path_str)
         if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_cells_genes(dataset_path_str, "cells")
+            return process_file.extract_cells_genes(dataset_path_str, "cells", zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_cells_genes(dataset_path_str, "cells", h5ad_reader_obj)
         else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
