@@ -16,7 +16,6 @@ from ...core import zarr_reader
 from ...core import process_zarr
 from ...core import process_file
 from ...core import h5ad_reader_obj
-from ...data.manager import data_manager
 
 logger = logging.getLogger(__name__)
 

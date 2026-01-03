@@ -192,7 +192,7 @@ class ZarrReader:
         
     
     @cached_method
-    def open_dataset_by_path(self, path: str, metadata: bool=True, metadata_level: str='full', use_cache: bool=True) -> Tuple[zarr.Group, Dict[str, Any]]:
+    def open_dataset_by_path(self, dataset_path: str, metadata: bool=True, metadata_level: str='full', use_cache: bool=True) -> Tuple[zarr.Group, Dict[str, Any]]:
         """
         Open a dataset by path.
 
@@ -212,16 +212,16 @@ class ZarrReader:
             ValueError: For invalid paths or dataset formats
             RuntimeError: For other operational errors
         """
-        logger.info(f"OPEN_DATASET_BY_PATH: Called with path={path}, metadata={metadata}, "
+        logger.info(f"OPEN_DATASET_BY_PATH: Called with path={dataset_path}, metadata={metadata}, "
                    f"metadata_level={metadata_level}, use_cache={use_cache}")
         
         try:
             # Get the root once
-            root = self._get_root(path)
+            root = self._get_root(dataset_path)
             
             # Check if we got a valid root
             if root is None:
-                raise ValueError(f"Unable to open zarr dataset at path: {path}")
+                raise ValueError(f"Unable to open zarr dataset at path: {dataset_path}")
             
             if not metadata:
                 return root, {}
@@ -237,23 +237,24 @@ class ZarrReader:
                 
             if basic_structure:
                 missing = ", ".join(basic_structure)
-                logger.warning(f"Dataset at {path} is missing key AnnData components: {missing}")
+                logger.warning(f"Dataset at {dataset_path} is missing key AnnData components: {missing}")
             
             # Extract metadata with the appropriate caching behavior, passing the existing root
             metadata_dict = self.get_metadata(
                 root=root,
                 detail_level=metadata_level,
+                dataset_path = dataset_path
             )
             
             return root, metadata_dict
             
         except ValueError as e:
             # For invalid paths, propagate the error with the detailed message
-            logger.error(f"Invalid dataset path or format: {path}: {e}")
+            logger.error(f"Invalid dataset path or format: {dataset_path}: {e}")
             raise
         except Exception as e:
             # Log details for unexpected errors
-            logger.error(f"Error opening dataset by path {path}: {e}")
+            logger.error(f"Error opening dataset by path {dataset_path}: {e}")
             import traceback
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to open dataset: {str(e)}")

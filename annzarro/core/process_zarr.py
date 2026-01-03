@@ -6,7 +6,7 @@ from typing import Literal
 
 logger = logging.getLogger("data_routes")
 
-def extract_zarr_obs_var(dataset_path: str, indices, column_names, include_categories, type: Literal["cells", "genes"]):
+def extract_zarr_obs_var(dataset_path: str, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"]):
     try:
         if type == "cells":
             result = zarr_reader.get_obs(
@@ -23,7 +23,7 @@ def extract_zarr_obs_var(dataset_path: str, indices, column_names, include_categ
                 include_categories=include_categories
             )
     
-    # Add dataset path to the response
+        # Add dataset path to the response
         response = {"dataset_path": dataset_path}
         
         # Handle both dict and array results
