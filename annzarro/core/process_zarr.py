@@ -8,20 +8,13 @@ logger = logging.getLogger("data_routes")
 
 def extract_zarr_obs_var(dataset_path: str, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"]):
     try:
-        if type == "cells":
-            result = zarr_reader.get_obs(
-                dataset_path=dataset_path, 
-                indices=indices, 
-                column_names=column_names, 
-                include_categories=include_categories
-            )
-        else:
-            result = zarr_reader.get_var(
-                dataset_path=dataset_path, 
-                indices=indices, 
-                column_names=column_names, 
-                include_categories=include_categories
-            )
+        result = zarr_reader.get_obs_var(
+            dataset_path=dataset_path, 
+            entity = type,
+            indices=indices, 
+            column_names=column_names, 
+            include_categories=include_categories
+        )
     
         # Add dataset path to the response
         response = {"dataset_path": dataset_path}
@@ -46,14 +39,9 @@ def extract_zarr_obs_var(dataset_path: str, indices: list[int], column_names: li
 def extract_zarr_obsm_varm(dataset_path: str, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"]):
     try:
         # Use direct zarr access for stateless operation
-        if entity_type == "cells":
-            data = zarr_reader.get_obsm(obsm_key=key, dataset_path=dataset_path, 
-                                    indices=indices, col_indices=column_indices,
-                                    column_name=column_name)
-        else:
-            data = zarr_reader.get_varm(varm_key=key, dataset_path=dataset_path, 
-                                    indices=indices, col_indices=column_indices,
-                                    column_name=column_name)
+        data = zarr_reader.get_obsm_varm(key=key, entity = entity_type, dataset_path=dataset_path, 
+                                indices=indices, col_indices=column_indices,
+                                column_name=column_name)
         
         # Convert NumPy arrays to Python lists for JSON serialization
         if hasattr(data, 'tolist'):
@@ -87,10 +75,9 @@ def extract_zarr_obsm_varm(dataset_path: str, key, indices, column_indices, colu
 def extract_zarr_obsp_varp(dataset_path: str, key: str, row_indices, col_indices, entity_type: Literal["cells", "genes"]):
     try:
     # Use direct zarr access for stateless operation
-        if entity_type == "cells":
-            data = zarr_reader.get_obsp(key, dataset_path, row_indices, col_indices)
-        else:
-            data = zarr_reader.get_varp(key, dataset_path, row_indices, col_indices)
+        data = zarr_reader.get_obsp_varp(key = key, entity = entity_type, 
+                                        dataset_path=dataset_path, row_indices=row_indices, 
+                                        col_indices = col_indices)
         
         # Convert NumPy arrays to Python lists for JSON serialization
         if hasattr(data, 'tolist'):

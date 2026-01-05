@@ -428,63 +428,91 @@ class TestZarrReader(unittest.TestCase):
         """Test getting observation annotations."""
         
         # Test getting all columns
-        obs = self.reader.get_obs(dataset_path=self.zarr_path)
+        obs = self.reader.get_obs_var(dataset_path=self.zarr_path, entity = "cells")
         self.assertIn('_index', obs['data'])
         self.assertIn('cell_type', obs['data'])
         self.assertEqual(len(obs['data']['_index']), 100)
         
         # Test getting a specific column
-        cell_types = self.reader.get_obs('cell_type', dataset_path=self.zarr_path)
+        cols = ['cell_type']
+        cell_types_dict = self.reader.get_obs_var(column_names = cols, entity = "cells", dataset_path=self.zarr_path)
+        self.assertIn('cell_type', cell_types_dict['data'])
+        cell_types = cell_types_dict['data']['cell_type']
         self.assertEqual(len(cell_types), 100)
         self.assertEqual(cell_types[0], 'type_A')
         self.assertEqual(cell_types[50], 'type_B')
         
         # Test getting a subset of rows
         indices = [0, 1, 2]
-        cell_types_subset = self.reader.get_obs('cell_type', indices=indices, dataset_path=self.zarr_path)
-        self.assertEqual(len(cell_types_subset), 3)
+        cell_types_subset_dict = self.reader.get_obs_var(column_names = cols, entity = "cells", indices=indices, dataset_path=self.zarr_path)
+        self.assertIn('cell_type', cell_types_subset_dict['data'])
+        self.assertEqual(len(cell_types_subset_dict['data']['cell_type']), 3)
         
         # Test getting a non-existent column
-        nonexistent = self.reader.get_obs('nonexistent', dataset_path=self.zarr_path)
-        self.assertEqual(len(nonexistent), 0)
+        cols_not_exist = ['nonexistent']
+        nonexistent = self.reader.get_obs_var(column_names = cols_not_exist, entity = "cells", dataset_path=self.zarr_path)
+        self.assertIn("data", nonexistent)
+        self.assertEqual(len(nonexistent["data"]), 0)
 
     def test_get_var(self):
         """Test getting variable annotations."""
         
         # Test getting all columns
-        var = self.reader.get_var(dataset_path=self.zarr_path)
+        var = self.reader.get_obs_var(dataset_path=self.zarr_path, entity = "genes")
         self.assertIn('_index', var['data'])
         self.assertIn('gene_name', var['data'])
         self.assertEqual(len(var['data']['_index']), 50)
         
         # Test getting a specific column
-        gene_names = self.reader.get_var('gene_name', dataset_path=self.zarr_path)
+        cols = ['gene_name']
+        gene_names_dict = self.reader.get_obs_var(column_names= cols, entity = "genes", dataset_path=self.zarr_path)
+        self.assertIn('gene_name', gene_names_dict['data'])
+        gene_names = gene_names_dict['data']['gene_name']
         self.assertEqual(len(gene_names), 50)
         self.assertEqual(gene_names[0], 'GENE_0')
         
         # Test getting a subset of rows
         indices = [0, 1, 2]
-        gene_names_subset = self.reader.get_var('gene_name', indices=indices, dataset_path=self.zarr_path)
-        self.assertEqual(len(gene_names_subset), 3)
+        gene_names_subset_dict = self.reader.get_obs_var(column_names = cols, entity = "genes", indices=indices, dataset_path=self.zarr_path)
+        self.assertIn('gene_name', gene_names_subset_dict['data'])
+        self.assertEqual(len(gene_names_subset_dict['data']['gene_name']), 3)
         
         # Test getting a non-existent column
-        nonexistent = self.reader.get_var('nonexistent', dataset_path=self.zarr_path)
-        self.assertEqual(len(nonexistent), 0)
+        cols_not_exist = ['nonexistent']
+        nonexistent = self.reader.get_obs_var(column_names = cols_not_exist, entity = "genes", dataset_path=self.zarr_path)
+        self.assertIn("data", nonexistent)
+        self.assertEqual(len(nonexistent["data"]), 0)
 
     def test_get_obsm(self):
         """Test getting obsm data."""
         
         # Test getting a valid obsm key
-        umap = self.reader.get_obsm('X_umap', dataset_path=self.zarr_path)
+        umap = self.reader.get_obsm_varm(key = 'X_umap', entity = "cells", dataset_path=self.zarr_path)
         self.assertEqual(umap.shape, (100, 2))
         
         # Test getting a subset of rows
         indices = [0, 1, 2]
-        umap_subset = self.reader.get_obsm('X_umap', indices=indices, dataset_path=self.zarr_path)
+        umap_subset = self.reader.get_obsm_varm(key = 'X_umap', entity = "cells", indices=indices, dataset_path=self.zarr_path)
         self.assertEqual(umap_subset.shape, (3, 2))
         
         # Test getting a non-existent key
-        nonexistent = self.reader.get_obsm('nonexistent', dataset_path=self.zarr_path)
+        nonexistent = self.reader.get_obsm_varm(key = 'nonexistent', entity = "cells", dataset_path=self.zarr_path)
+        self.assertEqual(len(nonexistent), 0)
+    
+    def test_get_varm(self):
+        """Test getting varm data."""
+        
+        # Test getting a valid varm key (standard matrix)
+        pcs = self.reader.get_obsm_varm(key="PCs", entity="genes", dataset_path=self.zarr_path)
+        self.assertEqual(pcs.shape, (50, 10))
+        
+        # Test getting a subset of rows
+        indices = [0, 1, 2]
+        pcs_subset = self.reader.get_obsm_varm(key="PCs", entity="genes", indices=indices, dataset_path=self.zarr_path)
+        self.assertEqual(pcs_subset.shape, (3, 10))
+        
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsm_varm(key="nonexistent", entity="genes", dataset_path=self.zarr_path)
         self.assertEqual(len(nonexistent), 0)
         
     def test_load_chunked_data(self):
@@ -563,26 +591,26 @@ class TestZarrReader(unittest.TestCase):
         """Test getting observation-observation matrices (obsp)."""
         
         # Test getting a valid obsp key
-        connectivities = self.reader.get_obsp('connectivities', dataset_path=self.zarr_path)
+        connectivities = self.reader.get_obsp_varp('connectivities', entity = "cells", dataset_path=self.zarr_path)
         self.assertEqual(connectivities.shape, (100, 100))
         
         # Test getting a subset using row_indices and col_indices
         indices = [0, 1, 2]
-        conn_subset = self.reader.get_obsp('connectivities', dataset_path=self.zarr_path, row_indices=indices, col_indices=indices)
+        conn_subset = self.reader.get_obsp_varp('connectivities',  entity = "cells", dataset_path=self.zarr_path, row_indices=indices, col_indices=indices)
         self.assertEqual(conn_subset.shape, (3, 3))
         
         # Verify diagonal values of connectivities (should be 1.0)
         np.testing.assert_almost_equal(np.diag(connectivities), np.ones(100))
         
         # Test getting distances matrix
-        distances = self.reader.get_obsp('distances', dataset_path=self.zarr_path)
+        distances = self.reader.get_obsp_varp('distances',  entity = "cells", dataset_path=self.zarr_path)
         self.assertEqual(distances.shape, (100, 100))
         
         # Verify diagonal values of distances (should be 0.0)
         np.testing.assert_almost_equal(np.diag(distances), np.zeros(100))
         
         # Test getting a non-existent key
-        nonexistent = self.reader.get_obsp('nonexistent', dataset_path=self.zarr_path)
+        nonexistent = self.reader.get_obsp_varp('nonexistent', entity = "cells", dataset_path=self.zarr_path)
         self.assertEqual(len(nonexistent), 0)
         
         
@@ -590,19 +618,19 @@ class TestZarrReader(unittest.TestCase):
         """Test getting variable-variable matrices (varp)."""
         
         # Test getting a valid varp key
-        correlation = self.reader.get_varp('correlation', dataset_path=self.zarr_path)
+        correlation = self.reader.get_obsp_varp('correlation', entity = "genes", dataset_path=self.zarr_path)
         self.assertEqual(correlation.shape, (50, 50))
         
         # Test getting a subset using row_indices and col_indices 
         indices = [0, 1, 2]
-        corr_subset = self.reader.get_varp('correlation',dataset_path=self.zarr_path, row_indices=indices, col_indices=indices)
+        corr_subset = self.reader.get_obsp_varp('correlation',entity = "genes", dataset_path=self.zarr_path, row_indices=indices, col_indices=indices)
         self.assertEqual(corr_subset.shape, (3, 3))
         
         # Verify diagonal values of correlation (should be 1.0)
         np.testing.assert_almost_equal(np.diag(correlation), np.ones(50))
         
         # Test getting a non-existent key
-        nonexistent = self.reader.get_varp('nonexistent', dataset_path=self.zarr_path)
+        nonexistent = self.reader.get_obsp_varp('nonexistent', entity = "genes", dataset_path=self.zarr_path)
         self.assertEqual(len(nonexistent), 0)
         
         
@@ -840,11 +868,11 @@ class TestZarrReader(unittest.TestCase):
         
         # Test getting specific dataframe column
         # For obsm
-        obsm_col_data = self.reader.get_obsm('cell_markers', column_name='CD4', dataset_path=self.zarr_path)
+        obsm_col_data = self.reader.get_obsm_varm(key = 'cell_markers', entity = "cells", column_name='CD4', dataset_path=self.zarr_path)
         self.assertEqual(obsm_col_data.shape, (100,))  # Should be a 1D array of length 100
         
         # For varm
-        varm_col_data = self.reader.get_varm('differential_expression', column_name='cell type A', dataset_path=self.zarr_path)
+        varm_col_data = self.reader.get_obsm_varm(key = 'differential_expression', entity = "genes", column_name='cell type A', dataset_path=self.zarr_path)
         self.assertEqual(varm_col_data.shape, (50,))  # Should be a 1D array of length 50
         
         # Test path-based access
@@ -856,10 +884,10 @@ class TestZarrReader(unittest.TestCase):
         
         # Test with indices
         indices = [0, 1, 2]
-        obsm_subset = self.reader.get_obsm('cell_markers', column_name='CD4', indices=indices, dataset_path=self.zarr_path)
+        obsm_subset = self.reader.get_obsm_varm(key = 'cell_markers', entity = "cells", column_name='CD4', indices=indices, dataset_path=self.zarr_path)
         self.assertEqual(obsm_subset.shape, (3,))
         
-        varm_subset = self.reader.get_varm('differential_expression', column_name='cell type A', 
+        varm_subset = self.reader.get_obsm_varm(key = 'differential_expression', entity ="genes", column_name='cell type A', 
                                         indices=indices, dataset_path=self.zarr_path)
         self.assertEqual(varm_subset.shape, (3,))
         

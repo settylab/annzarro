@@ -1020,10 +1020,9 @@ class ZarrReader:
             return []
 
     @cached_method
-    def get_obs(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
+    def get_obs_var(self, entity = Literal["cells", "genes"], dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               include_categories: bool = True, disable_caching: bool = False, 
-               root: Optional[zarr.Group] = None) -> Union[Dict[str, Any], List]:
+               include_categories: bool = True) -> Dict[str, Any]:
         """
         Get observation annotations.
         
@@ -1038,48 +1037,11 @@ class ZarrReader:
         Returns:
             Dict of column name -> list of values, or list of values for a specific column
         """
-        if root is None:
-            root = self._get_root(dataset_path=dataset_path)
+        root = self._get_root(dataset_path=dataset_path)
+        obj = "obs" if entity == "cells" else "var"
         
-        if root is None or 'obs' not in root:
-            return {} if column_name is None else []
-        
-        # Get a specific column
-        if column_name is not None:
-            if column_name not in root['obs']:
-                return []
-            
-            # Handle subsetting
-            try:
-                # Check if it's a categorical
-                col_data = root['obs'][column_name]
-                
-                if include_categories:
-                    # Get values and categories directly from the method
-                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
-                    
-                    # Convert to Python list for JSON serialization
-                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                    
-                    # If categories were returned and include_categories is True, include them in the result
-                    if categories:
-                        return {
-                            'data': data,
-                            'categories': categories
-                        }
-                    
-                    return data
-                else:
-                    # Just get the values without categories
-                    values = self._get_categorical_values(col_data, indices)
-                    
-                    # Convert to Python list for JSON serialization
-                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                    return data
-                    
-            except Exception as e:
-                logger.error(f"Error getting obs column {column_name}: {e}")
-                return []
+        if root is None or obj not in root:
+            return {}
         
         # Get multiple columns
         result = {'data': {}}
@@ -1087,21 +1049,21 @@ class ZarrReader:
         
         # Determine which columns to get
         if column_names is not None:
-            columns_to_get = [col for col in column_names if col in root['obs']]
+            columns_to_get = [col for col in column_names if col in root[obj]]
         else:
             # Get the index column name from attributes or default to '_index'
             obs_index_column = '_index'
-            if hasattr(root['obs'], 'attrs') and '_index' in root['obs'].attrs:
-                obs_index_column = root['obs'].attrs['_index']
+            if hasattr(root[obj], 'attrs') and '_index' in root[obj].attrs:
+                obs_index_column = root[obj].attrs['_index']
                 
             # Filter out the index column as it's a special key
-            columns_to_get = [col for col in root['obs'].keys() if col != obs_index_column]
+            columns_to_get = [col for col in root[obj].keys() if col != obs_index_column]
             
             # Add _index as a column for backwards compatibility with tests
-            if obs_index_column in root['obs']:
+            if obs_index_column in root[obj]:
                 try:
                     # Get cell names
-                    cell_names = root['obs'][obs_index_column][:]
+                    cell_names = root[obj][obs_index_column][:]
                     result['data']['_index'] = cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
                 except Exception as e:
                     logger.error(f"Error getting cell names: {e}")
@@ -1111,7 +1073,7 @@ class ZarrReader:
         for col in columns_to_get:
             try:
                 # Check if it's a categorical
-                col_data = root['obs'][col]
+                col_data = root[obj][col]
                 
                 if include_categories:
                     # Get values and categories directly from the method
@@ -1131,126 +1093,6 @@ class ZarrReader:
                     result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
                 logger.error(f"Error getting obs column {col}: {e}")
-                result['data'][col] = []
-        
-        # Add categories if any were found
-        if categories_dict and include_categories:
-            result['categories'] = categories_dict
-        
-        return result
-    
-    @cached_method
-    def get_var(self, column_name: Optional[str] = None, dataset_path: Optional[str] = None,
-               indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
-               include_categories: bool = True, disable_caching: bool = False,
-               root: Optional[zarr.Group] = None) -> Union[Dict[str, Any], List]:
-        """
-        Get variable annotations.
-        
-        Args:
-            column_name: Optional specific column to get
-            dataset_path: Path to the dataset (stateless operation)
-            indices: Optional list of indices to select
-            column_names: Optional list of column names to get
-            include_categories: Include category lists for categorical columns
-            disable_caching: Whether to disable caching
-            root: Optional zarr root group, to avoid duplicate calls to _get_root
-            
-        Returns:
-            Dict of column name -> list of values, or list of values for a specific column
-        """
-        if root is None:
-            root = self._get_root(dataset_path=dataset_path)
-        
-        if root is None or 'var' not in root:
-            return {} if column_name is None else []
-        
-        # Get a specific column
-        if column_name is not None:
-            if column_name not in root['var']:
-                return []
-            
-            # Handle subsetting
-            try:
-                # Check if it's a categorical
-                col_data = root['var'][column_name]
-                
-                if include_categories:
-                    # Get values and categories directly from the method
-                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
-                    
-                    # Convert to Python list for JSON serialization
-                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                    
-                    # If categories were returned and include_categories is True, include them in the result
-                    if categories:
-                        return {
-                            'data': data,
-                            'categories': categories
-                        }
-                    
-                    return data
-                else:
-                    # Just get the values without categories
-                    values = self._get_categorical_values(col_data, indices)
-                    
-                    # Convert to Python list for JSON serialization
-                    data = values.tolist() if hasattr(values, 'tolist') else list(values)
-                    return data
-            except Exception as e:
-                logger.error(f"Error getting var column {column_name}: {e}")
-                return []
-        
-        # Get multiple columns
-        result = {'data': {}}
-        categories_dict = {}
-        
-        # Determine which columns to get
-        if column_names is not None:
-            columns_to_get = [col for col in column_names if col in root['var']]
-        else:
-            # Get the index column name from attributes or default to '_index'
-            var_index_column = '_index'
-            if hasattr(root['var'], 'attrs') and '_index' in root['var'].attrs:
-                var_index_column = root['var'].attrs['_index']
-                
-            # Filter out the index column as it's a special key
-            columns_to_get = [col for col in root['var'].keys() if col != var_index_column]
-            
-            # Add _index as a column for backwards compatibility with tests
-            if var_index_column in root['var']:
-                try:
-                    # Get gene names
-                    gene_names = root['var'][var_index_column][:]
-                    result['data']['_index'] = gene_names.tolist() if hasattr(gene_names, 'tolist') else list(gene_names)
-                except Exception as e:
-                    logger.error(f"Error getting gene names: {e}")
-                    result['data']['_index'] = []
-        
-        # Get each column
-        for col in columns_to_get:
-            try:
-                # Check if it's a categorical
-                col_data = root['var'][col]
-                
-                if include_categories:
-                    # Get values and categories directly from the method
-                    values, categories = self._get_categorical_values(col_data, indices, return_categories=True)
-                    
-                    # Convert to Python list for JSON serialization
-                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
-                    
-                    # Add categories info if available
-                    if categories:
-                        categories_dict[col] = categories
-                else:
-                    # Just get the values without categories
-                    values = self._get_categorical_values(col_data, indices)
-                    
-                    # Convert to Python list for JSON serialization
-                    result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
-            except Exception as e:
-                logger.error(f"Error getting var column {col}: {e}")
                 result['data'][col] = []
         
         # Add categories if any were found
@@ -1303,9 +1145,9 @@ class ZarrReader:
             return np.array([])
     
     @cached_method
-    def get_obsm(self, obsm_key: str, dataset_path: Optional[str] = None,
+    def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
                 indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                column_name: Optional[str] = None, disable_caching: bool = False) -> np.ndarray:
+                column_name: Optional[str] = None) -> np.ndarray:
         """
         Get observation multi-dimensional annotations.
         
@@ -1320,82 +1162,38 @@ class ZarrReader:
             numpy.ndarray: The obsm data
         """
         root = self._get_root(dataset_path=dataset_path)
+        obj = "obsm" if entity == "cells" else "varm"
         
-        if root is None or 'obsm' not in root or obsm_key not in root['obsm']:
+        if root is None or obj not in root or key not in root[obj]:
             return np.array([])
         
         # Check if this is a dataframe and column_name is specified
-        is_dataframe = self._is_dataframe(root['obsm'][obsm_key])
+        is_dataframe = self._is_dataframe(root[obj][key])
         
         if is_dataframe and column_name is not None:
             # Get specific column from dataframe
-            return self._get_dataframe_column(root['obsm'][obsm_key], column_name, indices)
+            return self._get_dataframe_column(root[obj][key], column_name, indices)
         
         # Check if we're dealing with a regular array but requested a specific column
-        if not is_dataframe and column_name is not None and hasattr(root['obsm'][obsm_key], 'shape'):
+        if not is_dataframe and column_name is not None and hasattr(root[obj][key], 'shape'):
             # Try to interpret column_name as an integer index
             try:
                 col_idx = int(column_name)
-                arr = self._get_dense_array(f'obsm/{obsm_key}', root, indices, None)
+                arr = self._get_dense_array(f'{obj}/{key}', root, indices, None)
                 if len(arr.shape) > 1 and col_idx < arr.shape[1]:
                     # Return specific column from the array
                     return arr[:, col_idx]
             except (ValueError, IndexError) as e:
-                logger.error(f"Error extracting column {column_name} from array obsm/{obsm_key}: {e}")
+                logger.error(f"Error extracting column {column_name} from array {obj}/{key}: {e}")
         
         # Get the obsm data as a regular array
-        return self._get_dense_array(f'obsm/{obsm_key}', root, indices, col_indices)
+        return self._get_dense_array(f'{obj}/{key}', root, indices, col_indices)
     
     @cached_method
-    def get_varm(self, varm_key: str, dataset_path: Optional[str] = None,
-                indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                column_name: Optional[str] = None, disable_caching: bool = False) -> np.ndarray:
-        """
-        Get variable multi-dimensional annotations.
-        
-        Args:
-            varm_key: Key in varm to get
-            dataset_path: Path to the dataset (stateless operation)
-            indices: Optional list of row indices to select
-            col_indices: Optional list of column indices to select
-            column_name: Optional column name for dataframe-encoded varm
-            
-        Returns:
-            numpy.ndarray: The varm data
-        """
-        root = self._get_root(dataset_path=dataset_path)
-        
-        if root is None or 'varm' not in root or varm_key not in root['varm']:
-            return np.array([])
-        
-        # Check if this is a dataframe and column_name is specified
-        is_dataframe = self._is_dataframe(root['varm'][varm_key])
-        
-        if is_dataframe and column_name is not None:
-            # Get specific column from dataframe
-            return self._get_dataframe_column(root['varm'][varm_key], column_name, indices)
-        
-        # Check if we're dealing with a regular array but requested a specific column
-        if not is_dataframe and column_name is not None and hasattr(root['varm'][varm_key], 'shape'):
-            # Try to interpret column_name as an integer index
-            try:
-                col_idx = int(column_name)
-                arr = self._get_dense_array(f'varm/{varm_key}', root, indices, None)
-                if len(arr.shape) > 1 and col_idx < arr.shape[1]:
-                    # Return specific column from the array
-                    return arr[:, col_idx]
-            except (ValueError, IndexError) as e:
-                logger.error(f"Error extracting column {column_name} from array varm/{varm_key}: {e}")
-        
-        # Get the varm data as a regular array
-        return self._get_dense_array(f'varm/{varm_key}', root, indices, col_indices)
-    
-    @cached_method
-    def get_obsp(self, obsp_key: str,
+    def get_obsp_varp(self, key: str, entity: Literal["cells", "genes"],
                  dataset_path: Optional[str] = None,
                  row_indices: Optional[List[int]] = None,
-                 col_indices: Optional[List[int]] = None,
-                 disable_caching: bool = False) -> np.ndarray:
+                 col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get observation-observation matrices.
     
@@ -1409,16 +1207,17 @@ class ZarrReader:
             numpy.ndarray: The obsp data.
         """
         root = self._get_root(dataset_path=dataset_path)
+        layer_to_get = "obsp" if entity == "cells" else "varp"
     
-        if root is None or 'obsp' not in root or obsp_key not in root['obsp']:
+        if root is None or layer_to_get not in root or key not in root[layer_to_get]:
             return np.array([])
     
-        obsp = root['obsp'][obsp_key]
-        is_sparse, _ = self._is_sparse_matrix(obsp)
+        obj = root[layer_to_get][key]
+        is_sparse, _ = self._is_sparse_matrix(obj)
     
         if is_sparse:
             # For sparse matrices, pass distinct row and column indices.
-            sparse_matrix = self._load_sparse_matrix(obsp, row_indices, col_indices)
+            sparse_matrix = self._load_sparse_matrix(obj, row_indices, col_indices)
             if sparse_matrix is not None:
                 return sparse_matrix.toarray()
     
@@ -1427,52 +1226,10 @@ class ZarrReader:
             # Use provided indices, or default to full slice if None.
             row_sel = row_indices if row_indices is not None else slice(None)
             col_sel = col_indices if col_indices is not None else slice(None)
-            data = root['obsp'][obsp_key][row_sel, :][:, col_sel]
+            data = root[layer_to_get][key][row_sel, :][:, col_sel]
             return np.asarray(data)
         except Exception as e:
             logger.error(f"Error getting obsp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
-            return np.array([])
-    
-    @cached_method
-    def get_varp(self, varp_key: str,
-                 dataset_path: Optional[str] = None,
-                 row_indices: Optional[List[int]] = None,
-                 col_indices: Optional[List[int]] = None,
-                 disable_caching: bool = False) -> np.ndarray:
-        """
-        Get variable-variable matrices.
-    
-        Args:
-            varp_key: Key in varp to get.
-            dataset_path: Path to the dataset (stateless operation).
-            row_indices: Optional list of row indices to select.
-            col_indices: Optional list of column indices to select.
-    
-        Returns:
-            numpy.ndarray: The varp data.
-        """
-        root = self._get_root(dataset_path=dataset_path)
-    
-        if root is None or 'varp' not in root or varp_key not in root['varp']:
-            return np.array([])
-    
-        varp = root['varp'][varp_key]
-        is_sparse, _ = self._is_sparse_matrix(varp)
-    
-        if is_sparse:
-            # For sparse matrices, pass distinct row and column indices.
-            sparse_matrix = self._load_sparse_matrix(varp, row_indices, col_indices)
-            if sparse_matrix is not None:
-                return sparse_matrix.toarray()
-    
-        try:
-            # Use provided indices or default to full slice if None.
-            row_sel = row_indices if row_indices is not None else slice(None)
-            col_sel = col_indices if col_indices is not None else slice(None)
-            data = root['varp'][varp_key][row_sel, :][:, col_sel]
-            return np.asarray(data)
-        except Exception as e:
-            logger.error(f"Error getting varp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
             return np.array([])
     
     def _downsample_array(self, path: str, max_size: int = 1000, dataset_path: Optional[str] = None) -> np.ndarray:
@@ -1797,7 +1554,7 @@ class ZarrReader:
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_obsm(obsm_key, dataset_path=dataset_path, indices=row_indices, 
+        data = self.get_obsm_varm(key = obsm_key, entity = "cells", dataset_path=dataset_path, indices=row_indices, 
                            col_indices=col_indices, column_name=column_name)
         
         # Apply pagination
@@ -1822,7 +1579,7 @@ class ZarrReader:
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_varm(varm_key, dataset_path=dataset_path, indices=row_indices, 
+        data = self.get_obsm_varm(key = varm_key, entity = "genes", dataset_path=dataset_path, indices=row_indices, 
                            col_indices=col_indices, column_name=column_name)
         
         # Apply pagination
@@ -1914,7 +1671,7 @@ class ZarrReader:
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_obsp(obsp_key, dataset_path=dataset_path, indices=row_indices)
+        data = self.get_obsp_varp(key = obsp_key, entity = "cells", dataset_path=dataset_path, indices=row_indices)
         
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
@@ -1936,7 +1693,7 @@ class ZarrReader:
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_varp(varp_key, dataset_path=dataset_path, indices=row_indices)
+        data = self.get_obsp_varp(key = varp_key, entity = "genes", dataset_path=dataset_path, indices=row_indices)
         
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
@@ -2191,10 +1948,10 @@ class ZarrReader:
             column_name = parts[2]  # e.g., "B cells"
             
             if component == 'varm':
-                return self.get_varm(key, dataset_path=dataset_path, indices=indices, 
+                return self.get_obsm_varm(key = key, entity= "genes", dataset_path=dataset_path, indices=indices, 
                                   col_indices=col_indices, column_name=column_name)
             elif component == 'obsm':
-                return self.get_obsm(key, dataset_path=dataset_path, indices=indices, 
+                return self.get_obsm_varm(key = key, entity = "cells", dataset_path=dataset_path, indices=indices, 
                                   col_indices=col_indices, column_name=column_name)
         
         # Handle regular 2-part path
@@ -2202,18 +1959,18 @@ class ZarrReader:
             return self.get_X(dataset_path=dataset_path, row_indices=indices, 
                            col_indices=col_indices)
         elif component == 'obsm':
-            return self.get_obsm(key, dataset_path=dataset_path, indices=indices, 
+            return self.get_obsm_varm(key = key, entity = "cells", dataset_path=dataset_path, indices=indices, 
                               col_indices=col_indices)
         elif component == 'varm':
-            return self.get_varm(key, dataset_path=dataset_path, indices=indices, 
+            return self.get_obsm_varm(key = key, entity = "genes", dataset_path=dataset_path, indices=indices, 
                               col_indices=col_indices)
         elif component == 'layers':
             return self.get_layer(key, dataset_path=dataset_path, row_indices=indices, 
                                col_indices=col_indices)
         elif component == 'obsp':
-            return self.get_obsp(key, dataset_path=dataset_path, indices=indices)
+            return self.get_obsp_varp(key = key, entity = "cells", dataset_path=dataset_path, indices=indices)
         elif component == 'varp':
-            return self.get_varp(key, dataset_path=dataset_path, indices=indices)
+            return self.get_obsp_varp(key= key, entity = "genes", dataset_path=dataset_path, indices=indices)
         else:
             logger.error(f"Unsupported component: {component} in path: {path}")
             return np.array([])
