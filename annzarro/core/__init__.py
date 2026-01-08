@@ -2,10 +2,12 @@
 
 # Import zarr reader class
 from .zarr_reader import ZarrReader
+from .h5ad_reader import h5adReader
 
 # Create a reader instance with default settings
 # This will be configured later by the server settings
 zarr_reader = ZarrReader()
+h5ad_reader_obj = h5adReader()
 
 # Function to configure the reader based on settings
 def configure_zarr_reader(config):

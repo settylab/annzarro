@@ -13,7 +13,9 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
-from ...data.manager import data_manager
+from ...core import process_zarr
+from ...core import process_file
+from ...core import h5ad_reader_obj
 
 logger = logging.getLogger(__name__)
 
@@ -88,106 +90,21 @@ def register_data_routes(app, api_version):
             JSON response with complete dataset structure.
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
-        if not dataset_path:
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
-    
-        # Helper: Extract keys from metadata for a given field.
-        def get_keys(metadata, field):
-            return list(metadata.get(field, {"keys": []}).get("keys", []))
-    
+        
         try:
-            # Only wrap the risky operation of opening the dataset.
-            metadata = zarr_reader.get_metadata(dataset_path)
-        except FileNotFoundError as e:
-            logger.exception(f"Dataset not found: {dataset_path}")
-            return jsonify({
-                "status": "error",
-                "error": "Dataset not found", 
-                "message": f"The dataset path '{dataset_path}' does not exist."
-            }), 404
-        except ValueError as e:
-            # Handle validation errors with a 400 Bad Request
-            error_message = str(e)
-            logger.warning(f"Invalid dataset path: {dataset_path}: {error_message}")
-            return jsonify({
-                "status": "error",
-                "error": "Invalid dataset path", 
-                "message": error_message, 
-                "path": dataset_path
-            }), 400
-        except Exception as e:
-            logger.exception(f"Error opening dataset at {dataset_path}")
-            return jsonify({
-                "status": "error",
-                "error": "Failed to open dataset", 
-                "message": str(e)
-            }), 500
-    
-        try:
-            # Format basic dataset information.
-            shape = metadata.get("shape", (0, 0))
-            dataset_structure = {
-                "path": dataset_path,
-                "name": Path(dataset_path).stem.replace("_", " ").title(),
-                "shape": shape,
-                "n_obs": shape[0] if len(shape) > 0 else 0,
-                "n_vars": shape[1] if len(shape) > 1 else 0,
-                "obs": {
-                    "available": metadata.get("has_obs", False),
-                    "columns": metadata.get("obs_columns", []),
-                    "columns_info": metadata.get("obs_columns_info", {})
-                },
-                "var": {
-                    "available": metadata.get("has_var", False),
-                    "columns": metadata.get("var_columns", []),
-                    "columns_info": metadata.get("var_columns_info", {})
-                },
-                "X": {
-                    "available": True,
-                    "shape": shape
-                },
-                "layers": {
-                    "available": metadata.get("has_layers", False),
-                    "keys": get_keys(metadata, "layers"),
-                    "details": metadata.get("layers", {}),
-                    "info": metadata.get("layers_info", {})
-                },
-                "obsm": {
-                    "available": metadata.get("has_obsm", False),
-                    "keys": get_keys(metadata, "obsm"),
-                    "dataframes": metadata.get("obsm_dataframes", {}),
-                    "matrices": metadata.get("obsm_matrices", {}),
-                    "info": metadata.get("obsm_info", {})
-                },
-                "varm": {
-                    "available": metadata.get("has_varm", False),
-                    "keys": get_keys(metadata, "varm"),
-                    "dataframes": metadata.get("varm_dataframes", {}),
-                    "matrices": metadata.get("varm_matrices", {}),
-                    "info": metadata.get("varm_info", {})
-                },
-                "obsp": {
-                    "available": metadata.get("has_obsp", False),
-                    "keys": get_keys(metadata, "obsp")
-                },
-                "varp": {
-                    "available": metadata.get("has_varp", False),
-                    "keys": get_keys(metadata, "varp")
-                },
-                "uns": {
-                    "available": metadata.get("has_uns", False),
-                    "keys": get_keys(metadata, "uns")
-                },
-                "embeddings": metadata.get("embeddings", [])
-            }
-            # Use pathlib for consistency when adding dataset_id.
-            # Frontend uses path directly, so no need for dataset_id
-    
-            return jsonify(dataset_structure)
-        except Exception as e:
-            logger.exception(f"Error building dataset structure for path {dataset_path}")
-            return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_file.extract_metadata(dataset_path_str, zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_metadata(dataset_path_str, h5ad_reader_obj)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
     def get_data_X():
@@ -204,9 +121,9 @@ def register_data_routes(app, api_version):
             JSON response with X matrix data
         """
         # Get dataset identification 
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -222,39 +139,23 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
+
+        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+            return jsonify({
+                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
+                        f"Maximum allowed is {max_cells}. "
+                        "Please reduce the number of rows or columns."
+            }), 400
         
         try:
-            # Check for too many cells
-            if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-                return jsonify({
-                    "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                             f"Maximum allowed is {max_cells}. "
-                             "Please reduce the number of rows or columns."
-                }), 400
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_X(dataset_path, row_indices, col_indices)
-            
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded X data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            return jsonify({
-                "data": serialized_data,
-                "dataset_path": dataset_path
-            })
-        except Exception as e:
-            logger.error(f"Error getting X data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_X(dataset_path_str, row_indices, col_indices)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
     def get_layer(layer_name: str):
@@ -274,9 +175,9 @@ def register_data_routes(app, api_version):
             JSON response with layer data
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -292,40 +193,23 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
+
+        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+            return jsonify({
+                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
+                            f"Maximum allowed is {max_cells}. "
+                            "Please reduce the number of rows or columns."
+            }), 400
         
         try:
-            # Check for too many cells
-            if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-                return jsonify({
-                    "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                             f"Maximum allowed is {max_cells}. "
-                             "Please reduce the number of rows or columns."
-                }), 400
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_layer(layer_name, dataset_path, row_indices, col_indices)
-
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded layer/{layer_name} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            return jsonify({
-                "data": serialized_data,
-                "layer_name": layer_name,
-                "dataset_path": dataset_path
-            })
-        except Exception as e:
-            logger.error(f"Error getting layer {layer_name} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_layer(dataset_path_str, layer_name, row_indices, col_indices)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
     def get_obs():
@@ -342,9 +226,9 @@ def register_data_routes(app, api_version):
             JSON response with observation annotations
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row indices and column names
@@ -361,38 +245,26 @@ def register_data_routes(app, api_version):
         row_indices = _parse_indices(rows)
         column_names = _parse_strings(columns)
         
-        try:
-            # Check for too many cells
-            if row_indices and len(row_indices) > max_cells:
-                return jsonify({
-                    "error": f"Too many cells requested: {len(row_indices)}. "
-                             f"Maximum allowed is {max_cells}. "
-                             "Please reduce the number of rows."
-                }), 400
+        # Check for too many cells
+        if row_indices and len(row_indices) > max_cells:
+            return jsonify({
+                "error": f"Too many cells requested: {len(row_indices)}. "
+                            f"Maximum allowed is {max_cells}. "
+                            "Please reduce the number of rows."
+            }), 400
 
-            # Use direct zarr access for stateless operation
-            include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
-            result = zarr_reader.get_obs(dataset_path=dataset_path, indices=row_indices, column_names=column_names, include_categories=include_categories)
-            
-            # Add dataset path to the response
-            response = {"dataset_path": dataset_path}
-            
-            # Handle both dict and array results
-            if isinstance(result, dict):
-                if 'data' in result:
-                    # New format with data and potentially categories
-                    response.update(result)
-                else:
-                    # Old format where result is just data dict
-                    response["data"] = result
-            else:
-                # Single column result
-                response["data"] = result
-                
-            return jsonify(response)
-        except Exception as e:
-            logger.error(f"Error getting obs data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get obs data: {str(e)}"}), 500
+        # Use direct zarr access for stateless operation
+        include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
+
+        try:
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obs_var(dataset_path_str, row_indices, column_names, include_categories, "cells")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
     def get_var():
@@ -409,9 +281,9 @@ def register_data_routes(app, api_version):
             JSON response with variable annotations
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse column indices and column names
@@ -427,39 +299,26 @@ def register_data_routes(app, api_version):
         # Convert cols to integer list and columns to string list
         col_indices = _parse_indices(cols)
         column_names = _parse_strings(columns)
-        
-        try:
-            # Check for too many genes
-            if col_indices and len(col_indices) > max_genes:
-                return jsonify({
-                    "error": f"Too many genes requested: {len(col_indices)}. "
-                             f"Maximum allowed is {max_genes}. "
-                             "Please reduce the number of columns."
-                }), 400
 
-            # Use direct zarr access for stateless operation
-            include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
-            result = zarr_reader.get_var(dataset_path=dataset_path, indices=col_indices, column_names=column_names, include_categories=include_categories)
-            
-            # Add dataset path to the response
-            response = {"dataset_path": dataset_path}
-            
-            # Handle both dict and array results
-            if isinstance(result, dict):
-                if 'data' in result:
-                    # New format with data and potentially categories
-                    response.update(result)
-                else:
-                    # Old format where result is just data dict
-                    response["data"] = result
-            else:
-                # Single column result
-                response["data"] = result
-                
-            return jsonify(response)
-        except Exception as e:
-            logger.error(f"Error getting var data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get var data: {str(e)}"}), 500
+        if col_indices and len(col_indices) > max_genes:
+            return jsonify({
+                "error": f"Too many genes requested: {len(col_indices)}. "
+                            f"Maximum allowed is {max_genes}. "
+                            "Please reduce the number of columns."
+            }), 400
+
+        # Use direct zarr access for stateless operation
+        include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
+
+        try:
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obs_var(dataset_path_str, col_indices, column_names, include_categories, "genes")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
     def get_obsm(obsm_key: str):
@@ -480,9 +339,9 @@ def register_data_routes(app, api_version):
             JSON response with obsm data
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -501,48 +360,25 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
+
+        # Check for too many genes
+        if row_indices and len(row_indices) > max_cells:
+            return jsonify({
+                "error": f"Too many cells requested: {len(row_indices)}. "
+                            f"Maximum allowed is {max_cells}. "
+                            "Please reduce the number of rows."
+            }), 400
         
         try:
-            # Check for too many cells
-            if row_indices and len(row_indices) > max_cells:
-                return jsonify({
-                    "error": f"Too many cells requested: {len(row_indices)}. "
-                             f"Maximum allowed is {max_cells}. "
-                             "Please reduce the number of rows."
-                }), 400
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_obsm(obsm_key=obsm_key, dataset_path=dataset_path, 
-                                     indices=row_indices, col_indices=col_indices,
-                                     column_name=column_name)
-            
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded obsm/{obsm_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            response_data = {
-                "data": serialized_data,
-                "obsm_key": obsm_key,
-                "dataset_path": dataset_path
-            }
-            
-            # Include column name in response if provided
-            if column_name:
-                response_data["column_name"] = column_name
-            
-            return jsonify(response_data)
-        except Exception as e:
-            logger.error(f"Error getting obsm/{obsm_key} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get obsm data: {str(e)}"}), 500
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, obsm_key, row_indices, col_indices, column_name, "cells")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
+        
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
     def get_varm(varm_key: str):
@@ -563,9 +399,9 @@ def register_data_routes(app, api_version):
             JSON response with varm data
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -584,48 +420,24 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
-        
-        try:
-            # Check for too many genes
-            if row_indices and len(row_indices) > max_genes:
-                return jsonify({
-                    "error": f"Too many genes requested: {len(row_indices)}. "
-                             f"Maximum allowed is {max_genes}. "
-                             "Please reduce the number of rows."
-                }), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_varm(varm_key=varm_key, dataset_path=dataset_path, 
-                                     indices=row_indices, col_indices=col_indices,
-                                     column_name=column_name)
-            
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded varm/{varm_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            response_data = {
-                "data": serialized_data,
-                "varm_key": varm_key,
-                "dataset_path": dataset_path
-            }
-            
-            # Include column name in response if provided
-            if column_name:
-                response_data["column_name"] = column_name
-            
-            return jsonify(response_data)
-        except Exception as e:
-            logger.error(f"Error getting varm/{varm_key} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get varm data: {str(e)}"}), 500
+        # Check for too many genes
+        if row_indices and len(row_indices) > max_genes:
+            return jsonify({
+                "error": f"Too many genes requested: {len(row_indices)}. "
+                            f"Maximum allowed is {max_genes}. "
+                            "Please reduce the number of rows."
+            }), 400
+
+        try:
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, varm_key, row_indices, col_indices, column_name, "genes")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
     def get_obsp(obsp_key: str):
@@ -645,9 +457,9 @@ def register_data_routes(app, api_version):
             JSON response with obsp data
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -663,40 +475,23 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
+
+        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+            return jsonify({
+                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
+                            f"Maximum allowed is {max_cells}. "
+                            "Please reduce the number of rows or columns."
+            }), 400
         
         try:
-            # Check for too many cells
-            if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-                return jsonify({
-                    "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                             f"Maximum allowed is {max_cells}. "
-                             "Please reduce the number of rows or columns."
-                }), 400
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_obsp(obsp_key, dataset_path, row_indices, col_indices)
-            
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded obsp/{obsp_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            return jsonify({
-                "data": serialized_data,
-                "obsp_key": obsp_key,
-                "dataset_path": dataset_path
-            })
-        except Exception as e:
-            logger.error(f"Error getting obsp/{obsp_key} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get obsp data: {str(e)}"}), 500
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
     def get_varp(varp_key: str):
@@ -716,9 +511,9 @@ def register_data_routes(app, api_version):
             JSON response with varp data
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
@@ -734,40 +529,23 @@ def register_data_routes(app, api_version):
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
-        
-        try:
-            # Check for too many genes
-            if row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
-                return jsonify({
-                    "error": f"Too many genes requested: {len(row_indices) * len(col_indices)}. "
-                             f"Maximum allowed is {max_genes}. "
-                             "Please reduce the number of rows or columns."
-                }), 400
 
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_varp(varp_key, dataset_path, row_indices, col_indices)
-            
-            # Convert NumPy arrays to Python lists for JSON serialization
-            if hasattr(data, 'tolist'):
-                # Direct conversion for simple ndarray
-                serialized_data = data.tolist()
-            elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-                # Handle list of ndarrays case
-                serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-            else:
-                # Already serializable or empty
-                serialized_data = data
-                
-            logger.info(f"Successfully loaded varp/{varp_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
+        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
             return jsonify({
-                "data": serialized_data,
-                "varp_key": varp_key,
-                "dataset_path": dataset_path
-            })
-        except Exception as e:
-            logger.error(f"Error getting varp/{varp_key} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get varp data: {str(e)}"}), 500
+                "error": f"Too many genes requested: {len(row_indices) * len(col_indices)}. "
+                            f"Maximum allowed is {max_genes}. "
+                            "Please reduce the number of rows or columns."
+            }), 400
+
+        try:
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes")
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
     def get_uns(uns_key: str):
@@ -784,25 +562,20 @@ def register_data_routes(app, api_version):
             JSON response with unstructured annotations
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            # Use direct zarr access for stateless operation
-            data = zarr_reader.get_uns(uns_key, dataset_path)
-            
-            logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-            
-            return jsonify({
-                "data": data,
-                "uns_key": uns_key,
-                "dataset_path": dataset_path
-            })
-        except Exception as e:
-            logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
-            return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
+            dataset_path = Path(dataset_path_str)
+        except:
+            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
+
+        if dataset_path.suffix == ".zarr":
+            return process_zarr.extract_zarr_uns(uns_key, dataset_path_str)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
         
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
     def get_paginated_data():
@@ -935,66 +708,30 @@ def register_data_routes(app, api_version):
             JSON response with gene names
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Check if the path exists before attempting to read it (for local paths)
-        if not dataset_path.startswith(("http://", "https://", "s3://")):
+        if not dataset_path_str.startswith(("http://", "https://", "s3://")):
             import os
-            if not os.path.exists(dataset_path):
-                logger.warning(f"Path does not exist: {dataset_path}")
+            if not os.path.exists(dataset_path_str):
+                logger.warning(f"Path does not exist: {dataset_path_str}")
                 return jsonify({
                     "status": "error",
                     "error": "Dataset not found",
-                    "message": f"The dataset path '{dataset_path}' does not exist.",
+                    "message": f"The dataset path '{dataset_path_str}' does not exist.",
                     "genes": []
                 }), 404
-                
-        try:
-            # Use direct zarr access for stateless operation
-            logger.info(f"API GENES: Loading gene names for {dataset_path} with use_cache=True")
-            genes = zarr_reader.get_gene_names(dataset_path, use_cache=True)
-            logger.info(f"API GENES: Successfully loaded {len(genes)} genes")
-            
-            return jsonify({
-                "genes": genes,
-                "dataset_path": dataset_path
-            })
-        except ValueError as e:
-            # Handle validation errors with a 400 Bad Request
-            error_message = str(e)
-            logger.warning(f"Invalid dataset path for genes: {dataset_path}: {error_message}")
-            return jsonify({
-                "error": "Invalid dataset path", 
-                "message": error_message, 
-                "path": dataset_path,
-                "status": "error",
-                "genes": []
-            }), 400
-        except RuntimeError as e:
-            # Handle operational errors with a 500 Internal Server Error
-            error_message = str(e)
-            logger.error(f"Error processing dataset for genes: {dataset_path}: {error_message}")
-            return jsonify({
-                "error": "Failed to process dataset",
-                "message": error_message,
-                "path": dataset_path,
-                "status": "error",
-                "genes": []
-            }), 500
-        except Exception as e:
-            # Handle unexpected errors
-            error_message = str(e)
-            logger.error(f"Unexpected error getting gene names for {dataset_path}: {e}")
-            return jsonify({
-                "error": "Failed to get gene names",
-                "message": error_message,
-                "path": dataset_path,
-                "status": "error",
-                "genes": []
-            }), 500
+        
+        dataset_path = Path(dataset_path_str)
+        if dataset_path.suffix == ".zarr":
+            return process_file.extract_cells_genes(dataset_path_str, "genes", zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_cells_genes(dataset_path_str, "genes", h5ad_reader_obj)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
     def get_cells():
@@ -1008,66 +745,30 @@ def register_data_routes(app, api_version):
             JSON response with cell names
         """
         # Get dataset identification
-        dataset_path = request.args.get("dataset_path")
+        dataset_path_str = request.args.get("dataset_path")
         
-        if not dataset_path:
+        if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
 
         # Check if the path exists before attempting to read it (for local paths)
-        if not dataset_path.startswith(("http://", "https://", "s3://")):
+        if not dataset_path_str.startswith(("http://", "https://", "s3://")):
             import os
-            if not os.path.exists(dataset_path):
-                logger.warning(f"Path does not exist: {dataset_path}")
+            if not os.path.exists(dataset_path_str):
+                logger.warning(f"Path does not exist: {dataset_path_str}")
                 return jsonify({
                     "status": "error",
                     "error": "Dataset not found",
-                    "message": f"The dataset path '{dataset_path}' does not exist.",
+                    "message": f"The dataset path '{dataset_path_str}' does not exist.",
                     "cells": []
                 }), 404
         
-        try:
-            # Use direct zarr access WITH CACHING ENABLED
-            logger.info(f"API CELLS: Loading cell names for {dataset_path} with use_cache=True")
-            cells = zarr_reader.get_cell_names(dataset_path, use_cache=True)
-            logger.info(f"API CELLS: Successfully loaded {len(cells)} cells")
-            
-            return jsonify({
-                "cells": cells,
-                "dataset_path": dataset_path
-            })
-        except ValueError as e:
-            # Handle validation errors with a 400 Bad Request
-            error_message = str(e)
-            logger.warning(f"Invalid dataset path for cells: {dataset_path}: {error_message}")
-            return jsonify({
-                "error": "Invalid dataset path", 
-                "message": error_message, 
-                "path": dataset_path,
-                "status": "error",
-                "cells": []
-            }), 400
-        except RuntimeError as e:
-            # Handle operational errors with a 500 Internal Server Error
-            error_message = str(e)
-            logger.error(f"Error processing dataset for cells: {dataset_path}: {error_message}")
-            return jsonify({
-                "error": "Failed to process dataset",
-                "message": error_message,
-                "path": dataset_path,
-                "status": "error",
-                "cells": []
-            }), 500
-        except Exception as e:
-            # Handle unexpected errors
-            error_message = str(e)
-            logger.error(f"Unexpected error getting cell names for {dataset_path}: {e}")
-            return jsonify({
-                "error": "Failed to get cell names",
-                "message": error_message,
-                "path": dataset_path,
-                "status": "error",
-                "cells": []
-            }), 500
+        dataset_path = Path(dataset_path_str)
+        if dataset_path.suffix == ".zarr":
+            return process_file.extract_cells_genes(dataset_path_str, "cells", zarr_reader)
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_cells_genes(dataset_path_str, "cells", h5ad_reader_obj)
+        else:
+            return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
     def get_statistics():

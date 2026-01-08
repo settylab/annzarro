@@ -457,43 +457,44 @@ def cached_method(func):
             
             cache_key = f"path:{encoded_path}:layer:{layer_name}:{row_key}:{col_key}"
         
-        elif method_name in ['get_obs', 'get_var']:
-            column_name = args[0] if args else kwargs.get('column_name')
+        elif method_name == 'get_obs_var':
             indices = kwargs.get('indices', None)
             column_names = kwargs.get('column_names', None)
             include_categories = kwargs.get('include_categories', True)
+            entity = kwargs.get('entity', None)
             
             # Create key components
-            col_key = 'all' if column_name is None else column_name
             indices_key = 'all' if indices is None else f"indices:{','.join(map(str, indices))}"
             columns_key = 'all' if column_names is None else f"columns:{','.join(column_names)}"
             cat_key = 'withCat' if include_categories else 'noCat'
             
-            cache_key = f"path:{encoded_path}:{method_name}:{col_key}:{indices_key}:{columns_key}:{cat_key}"
+            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{indices_key}:{columns_key}:{cat_key}"
         
-        elif method_name in ['get_obsm', 'get_varm']:
-            matrix_key = args[0] if args else kwargs.get('obsm_key' if method_name == 'get_obsm' else 'varm_key')
+        elif method_name == 'get_obsm_varm':
+            matrix_key = args[0] if args else kwargs.get('key')
             indices = kwargs.get('indices', None)
             col_indices = kwargs.get('col_indices', None)
             column_name = kwargs.get('column_name', None)
+            entity = kwargs.get('entity', None)
             
             # Create key components
             indices_key = 'all' if indices is None else f"indices:{','.join(map(str, indices))}"
             col_key = 'all' if col_indices is None else f"cols:{','.join(map(str, col_indices))}"
             column_name_key = 'all' if column_name is None else column_name
             
-            cache_key = f"path:{encoded_path}:{method_name}:{matrix_key}:{indices_key}:{col_key}:{column_name_key}"
+            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{matrix_key}:{indices_key}:{col_key}:{column_name_key}"
         
-        elif method_name in ['get_obsp', 'get_varp']:
-            matrix_key = args[0] if args else kwargs.get('obsp_key' if method_name == 'get_obsp' else 'varp_key')
+        elif method_name == 'get_obsp_varp':
+            matrix_key = args[0] if args else kwargs.get('key')
             row_indices = kwargs.get('row_indices', None)
             col_indices = kwargs.get('col_indices', None)
+            entity = kwargs.get('entity', None)
             
             # Create key components
             row_key = 'all' if row_indices is None else f"rows:{','.join(map(str, row_indices))}"
             col_key = 'all' if col_indices is None else f"cols:{','.join(map(str, col_indices))}"
             
-            cache_key = f"path:{encoded_path}:{method_name}:{matrix_key}:{row_key}:{col_key}"
+            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{matrix_key}:{row_key}:{col_key}"
         
         elif method_name == 'get_uns':
             uns_key = args[0] if args else kwargs.get('key')
@@ -535,7 +536,7 @@ def cached_method(func):
         
         # Determine cache type
         cache_type = 'matrix'  # Default for most data types
-        if method_name in ['get_obs', 'get_var']:
+        if method_name == 'get_obs_var':
             cache_type = 'dataframe'
         elif method_name in ['_extract_metadata', '_extract_metadata_legacy', 'get_metadata']:
             cache_type = 'metadata'
