@@ -149,3 +149,33 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
             "status": "error",
             type: []
         }), 500
+    
+def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"]):
+    try:
+        result = reader.get_obs_var(
+            dataset_path=dataset_path, 
+            entity = type,
+            indices=indices, 
+            column_names=column_names, 
+            include_categories=include_categories
+        )
+    
+        # Add dataset path to the response
+        response = {"dataset_path": dataset_path}
+        
+        # Handle both dict and array results
+        if isinstance(result, dict):
+            if 'data' in result:
+                # New format with data and potentially categories
+                response.update(result)
+            else:
+                # Old format where result is just data dict
+                response["data"] = result
+        else:
+            # Single column result
+            response["data"] = result
+            
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error getting {'obs' if type == 'cells' else 'var'} data for {dataset_path}: {e}")
+        return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}"}), 500

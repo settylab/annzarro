@@ -1,6 +1,6 @@
 import h5py
 import logging
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +98,17 @@ class h5adReader:
             # If group, check for dataframe-like structure
             if isinstance(obj, h5py.Group):
                 attrs = obj.attrs
-                columns = [c for c in obj.keys()]
+                columns = [c for c in obj.keys() if c != "_index"]
                 columns_info = {}
                 for column in columns:
                     col_obj = obj[column]
-                    columns_info[column] = {"type": str(col_obj.dtype)}
+                    if isinstance(col_obj, h5py.Group):
+                        # Get the first dataset in the group (common pattern in dataframe-encoded obsm/varm)
+                        ds_name = list(col_obj.keys())[0]
+                        ds = col_obj[ds_name]
+                        columns_info[column] = {"type": str(ds.dtype)}
+                    elif isinstance(col_obj, h5py.Dataset):
+                        columns_info[column] = {"type": str(col_obj.dtype)}
                 
                 info[key] = {"type": "dataframe", "columns": columns}
                 dataframes[key] = {"columns": columns, "columns_info": columns_info}
@@ -170,6 +176,86 @@ class h5adReader:
                 names = []
                 
         return names
+    
+    def _get_obs_var_numerical_data(self, obj: h5py.Dataset, indices: list[int] = None) -> list:
+        col_data_raw = obj[...] if indices is None else obj[indices]
+        # Decode bytes if needed
+        col_data = []
+        for num in col_data_raw:
+            if isinstance(num, bytes):
+                x = num.decode("utf-8")
+            elif hasattr(num, "item"):
+                x = num.item()
+            else:
+                x = num
+
+            col_data.append(x)
+        return col_data
+
+    def _get_obs_var_categorical_data(self, obj: h5py.Group, indices: list[int] = None):
+        encoding_type = obj.attrs.get("encoding-type", None)
+        category_names = None
+        categories_exist = False
+        if encoding_type in (b"categorical", "categorical"):
+            # Retrieve all possible categories
+            categories_exist = True
+            if "categories" in obj.attrs:
+                categories_raw = obj.attrs["categories"]
+            else:
+                categories_raw = obj.get("categories", [])
+            category_names = [val.decode("utf-8") if isinstance(val, bytes) else val for val in categories_raw]
+        
+        if 'codes' in obj:
+            values_ds = obj['codes']
+            if indices is None:
+                col_data_raw = values_ds[:]
+            else:
+                col_data_raw = values_ds[indices]
+            col_data = [int(x.decode("utf-8")) if isinstance(x, bytes) else int(x) for x in col_data_raw]
+            if category_names is not None:
+                # map integer codes to category strings
+                col_data = [category_names[i] if (i >= 0 and i < len(category_names)) else None for i in col_data]
+        
+        return col_data, category_names, categories_exist
+
+
+    def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None, 
+                    column_names: Optional[List[str]] = None, indices: Optional[List[int]] = None, 
+                    include_categories: bool = True) -> Dict[str, Any]:
+        with h5py.File(dataset_path, "r") as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f:
+                raise ValueError(f"The H5AD file does not contain '{layer}' group.")
+
+            result = {}
+            data = {}
+            categories = {}
+            categories_exist = False
+
+            if column_names is not None:
+                columns_to_get = [col for col in column_names]
+            else:
+                columns_to_get = [col for col in f[layer].keys()]
+
+            for col_name in columns_to_get:
+                if col_name not in f[layer]:
+                    continue
+                obj = f[layer][col_name]
+                
+                #Numerical data
+                if isinstance(obj, h5py.Dataset):
+                    data[col_name] = self._get_obs_var_numerical_data(obj, indices)
+                #Possibly categorical data
+                elif isinstance(obj,h5py.Group):
+                    #Get the categories
+                    data[col_name], categories[col_name], categories_exist = self._get_obs_var_categorical_data(obj, indices)
+                else:
+                    raise ValueError("This column is not a Group nor a Dataset - it is therefore not supported")
+                
+            result["data"] = data
+            if include_categories and categories_exist:
+                result["categories"] = categories
+        return result
 
 
 
