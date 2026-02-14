@@ -379,7 +379,9 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
         if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, obsm_key, row_indices, col_indices, column_name, "cells")
+            return process_file.extract_zarr_obsm_varm(dataset_path_str, zarr_reader, obsm_key, row_indices, col_indices, column_name, "cells")
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_zarr_obsm_varm(dataset_path_str, h5ad_reader_obj, obsm_key, row_indices, col_indices, column_name, "cells")
         else:
             return jsonify({"error": "Cannot handle this file type"}), 400
         
@@ -439,7 +441,9 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
         if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, varm_key, row_indices, col_indices, column_name, "genes")
+            return process_file.extract_zarr_obsm_varm(dataset_path_str, zarr_reader, varm_key, row_indices, col_indices, column_name, "genes")
+        elif dataset_path.suffix == ".h5ad":
+            return process_file.extract_zarr_obsm_varm(dataset_path_str, h5ad_reader_obj, varm_key, row_indices, col_indices, column_name, "genes")
         else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     

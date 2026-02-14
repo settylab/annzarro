@@ -1,6 +1,7 @@
 import h5py
 import logging
 from typing import Literal, Tuple, Dict, Any, List, Optional
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class h5adReader:
             # If group, check for dataframe-like structure
             if isinstance(obj, h5py.Group):
                 attrs = obj.attrs
-                columns = [c for c in obj.keys() if c != "_index"]
+                columns = [c for c in obj.keys()]
                 columns_info = {}
                 for column in columns:
                     col_obj = obj[column]
@@ -256,6 +257,165 @@ class h5adReader:
             if include_categories and categories_exist:
                 result["categories"] = categories
         return result
+    
+    def _is_dataframe(self, obj: h5py.Group) -> bool:
+        """Check if an h5py object is encoded as a dataframe."""
+        if not isinstance(obj, h5py.Group):
+            return False
+
+        encoding_type = obj.attrs.get('encoding-type', None)
+        if encoding_type in (b'dataframe', 'dataframe'):
+            return True
+
+        # Alternative: check for dataframe structure markers
+        if 'column-order' in obj.attrs or '_index' in obj:
+            return True
+
+        return False
+
+
+    def _get_dataframe_column(self, obj: h5py.Group, column_name: str, indices: Optional[List[int]] = None) -> np.ndarray:
+        """Get a specific column from a dataframe-encoded h5py Group."""
+        if column_name not in obj:
+            raise ValueError(f"Column '{column_name}' not found in dataframe")
+
+        col_obj = obj[column_name]
+
+        # Handle categorical data
+        if isinstance(col_obj, h5py.Group) and 'codes' in col_obj:
+            codes_ds = col_obj['codes']
+            if indices is None:
+                codes = codes_ds[:]
+            else:
+                codes = codes_ds[indices]
+
+            # Get categories if they exist
+            if 'categories' in col_obj:
+                categories = col_obj['categories'][:]
+                categories = np.array([cat.decode('utf-8') if isinstance(cat, bytes) else cat for cat in categories])
+                return np.array([categories[int(code)] if 0 <= int(code) < len(categories) else None for code in codes])
+            return codes
+
+        # Handle array-encoded columns (Group with '0' dataset)
+        elif isinstance(col_obj, h5py.Group) and '0' in col_obj:
+            data_ds = col_obj['0']
+            if indices is None:
+                data = data_ds[:]
+            else:
+                data = data_ds[indices]
+
+            # Decode bytes if needed
+            if data.dtype.kind == 'S' or data.dtype.kind == 'O':
+                data = np.array([val.decode('utf-8') if isinstance(val, bytes) else val for val in data])
+
+            return data
+
+        # Regular dataset
+        elif isinstance(col_obj, h5py.Dataset):
+            if indices is None:
+                data = col_obj[:]
+            else:
+                data = col_obj[indices]
+
+            # Decode bytes if needed
+            if data.dtype.kind == 'S' or data.dtype.kind == 'O':
+                data = np.array([val.decode('utf-8') if isinstance(val, bytes) else val for val in data])
+
+            return data
+
+        raise ValueError(f"Unsupported column type for '{column_name}'")
+
+
+    def _get_dense_array(self, obj: h5py.Dataset, indices: Optional[List[int]] = None,
+                        col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """Get dense array data with optional row and column subsetting."""
+        # Handle different cases for efficient h5py slicing
+        if indices is None and col_indices is None:
+            # Load entire array
+            data = obj[:]
+        elif indices is None and col_indices is not None:
+            # Load all rows, specific columns
+            if len(col_indices) == 1:
+                # Single column - use integer indexing to get 1D array
+                data = obj[:, col_indices[0]]
+            else:
+                # Multiple columns - use list indexing to get 2D array
+                data = obj[:, col_indices]
+        elif indices is not None and col_indices is None:
+            # Load specific rows, all columns
+            data = obj[indices]
+        else:
+            # Load specific rows and columns
+            # h5py doesn't support np.ix_ directly, so we do it in two steps
+            if len(col_indices) == 1:
+                # Single column - use integer indexing to get 1D array
+                data = obj[indices, col_indices[0]]
+            else:
+                # Multiple columns - first get rows, then columns
+                data = obj[indices, :][:, col_indices]
+
+        return data
+
+
+    def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
+                    indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
+                    column_name: Optional[str] = None) -> np.ndarray:
+        """
+        Get observation/variable multi-dimensional annotations from h5ad file.
+
+        Args:
+            entity: Either "cells" (for obsm) or "genes" (for varm)
+            key: Key in obsm/varm to get (e.g., "X_pca", "X_umap")
+            dataset_path: Path to the h5ad file
+            indices: Optional list of row indices to select
+            col_indices: Optional list of column indices to select
+            column_name: Optional column name for dataframe-encoded obsm/varm,
+                        or integer string for array column index
+
+        Returns:
+            numpy.ndarray: The obsm/varm data, or empty array if not found
+        """
+        with h5py.File(dataset_path, "r") as root:
+            obj = "obsm" if entity == "cells" else "varm"
+
+            # Check if the layer and key exist
+            if obj not in root or key not in root[obj]:
+                return np.array([])
+
+            obsm_varm_obj = root[obj][key]
+
+            # Check if this is a dataframe and column_name is specified
+            is_dataframe = self._is_dataframe(obsm_varm_obj)
+
+            if is_dataframe and column_name is not None:
+                # Get specific column from dataframe
+                try:
+                    return self._get_dataframe_column(obsm_varm_obj, column_name, indices)
+                except ValueError:
+                    # Column not found, return empty array
+                    return np.array([])
+
+            # Check if we're dealing with a regular array but requested a specific column
+            if not is_dataframe and column_name is not None:
+                if isinstance(obsm_varm_obj, h5py.Dataset):
+                    # Try to interpret column_name as an integer index
+                    if col_indices is not None:
+                        return self._get_dense_array(obsm_varm_obj, indices, col_indices)
+                    try:
+                        col_idx = int(column_name)
+                        if col_idx < obsm_varm_obj.shape[1]:
+                            # Extract single column efficiently at h5py level
+                            return self._get_dense_array(obsm_varm_obj, indices, [col_idx])
+                    except (ValueError, IndexError) as e:
+                        logger.error(f"Error extracting column {column_name} from array {obj}/{key}: {e}")
+
+            # Get the obsm/varm data as a regular array
+            if isinstance(obsm_varm_obj, h5py.Dataset):
+                return self._get_dense_array(obsm_varm_obj, indices, col_indices)
+            else:
+                # If it's a Group but not a dataframe, try to handle it
+                logger.warning(f"{obj}/{key} is a Group but not recognized as a dataframe")
+                return np.array([])
 
 
 

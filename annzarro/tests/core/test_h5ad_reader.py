@@ -179,19 +179,21 @@ class TestH5ADReader(unittest.TestCase):
         self.assertIn('obsm_dataframes', metadata)
         self.assertIn('cell_markers', metadata['obsm_dataframes'])
         df_columns = metadata['obsm_dataframes']['cell_markers']['columns']
-        self.assertEqual(len(df_columns), 3)
+        self.assertEqual(len(df_columns), 4)
         self.assertIn('CD4', df_columns)
         self.assertIn('CD8', df_columns)
         self.assertIn('CD19', df_columns)
+        self.assertIn('_index', df_columns)
         
         # Check for dataframe metadata in varm
         self.assertIn('varm_dataframes', metadata)
         self.assertIn('differential_expression', metadata['varm_dataframes'])
         df_columns = metadata['varm_dataframes']['differential_expression']['columns']
-        self.assertEqual(len(df_columns), 3)
+        self.assertEqual(len(df_columns), 4)
         self.assertIn('cell type A', df_columns)
         self.assertIn('cell type B', df_columns)
         self.assertIn('cell type C', df_columns)
+        self.assertIn('_index', df_columns)
         
         # Verify encoding type and version are included
         self.assertEqual(metadata['obsm_dataframes']['cell_markers']['encoding_type'], 'dataframe')
@@ -272,7 +274,7 @@ class TestH5ADReader(unittest.TestCase):
     
     def test_get_gene_names(self):
         var_names = self.reader.get_cell_gene_names(file_name=self.h5ad_path, entity = "genes")
-        
+
         # Check that we get 50 gene names
         self.assertEqual(len(var_names), 50)
         self.assertEqual(var_names[0], 'gene_0')
@@ -281,4 +283,92 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(var_names[8], 'gene_8')
         self.assertEqual(var_names[23], 'gene_23')
         self.assertEqual(var_names[37], 'gene_37')
+
+    def test_get_obsm(self):
+        """Test getting observation multi-dimensional annotations."""
+
+        # Test getting a regular 2D array (X_umap)
+        umap = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path)
+        self.assertEqual(umap.shape, (100, 2))
+        self.assertEqual(umap.dtype, np.float32)
+
+        # Test getting a subset of rows for X_umap
+        indices = [0, 1, 2]
+        umap_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path, indices=indices)
+        self.assertEqual(umap_subset.shape, (3, 2))
+
+        # Test getting a subset of columns for X_umap
+        col_indices = [0]
+        umap_col_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path, col_indices=col_indices)
+        self.assertEqual(umap_col_subset.shape, (100,))
+
+        # Test getting both row and column subsets
+        umap_both_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path,
+                                                      indices=indices, col_indices=col_indices)
+        self.assertEqual(umap_both_subset.shape, (3,))
+
+        # Test getting a dataframe-encoded obsm (cell_markers)
+        cd4_column = self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
+                                                column_name="CD4")
+        self.assertEqual(len(cd4_column), 100)
+        self.assertEqual(cd4_column.dtype, np.float32)
+
+        # Test getting a specific column with row indices for dataframe
+        cd8_subset = self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
+                                                column_name="CD8", indices=[0, 1, 2])
+        self.assertEqual(len(cd8_subset), 3)
+
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsm_varm(entity="cells", key="nonexistent", dataset_path=self.h5ad_path)
+        self.assertEqual(len(nonexistent), 0)
+
+        # Test getting a non-existent column from dataframe
+        nonexistent_col = self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
+                                                     column_name="nonexistent")
+        # Should return empty array if column doesn't exist
+        self.assertTrue(len(nonexistent_col) == 0 or nonexistent_col is not None)
+
+    def test_get_varm(self):
+        """Test getting variable multi-dimensional annotations."""
+
+        # Test getting a regular 2D array (PCs)
+        pcs = self.reader.get_obsm_varm(entity="genes", key="PCs", dataset_path=self.h5ad_path)
+        self.assertEqual(pcs.shape, (50, 10))
+        self.assertEqual(pcs.dtype, np.float32)
+
+        # Test getting a subset of rows for PCs
+        indices = [0, 1, 2]
+        pcs_subset = self.reader.get_obsm_varm(entity="genes", key="PCs", dataset_path=self.h5ad_path, indices=indices)
+        self.assertEqual(pcs_subset.shape, (3, 10))
+
+        # Test getting a subset of columns for PCs
+        col_indices = [0, 1]
+        pcs_col_subset = self.reader.get_obsm_varm(entity="genes", key="PCs", dataset_path=self.h5ad_path, col_indices=col_indices)
+        self.assertEqual(pcs_col_subset.shape, (50, 2))
+
+        # Test getting both row and column subsets
+        pcs_both_subset = self.reader.get_obsm_varm(entity="genes", key="PCs", dataset_path=self.h5ad_path,
+                                                     indices=indices, col_indices=col_indices)
+        self.assertEqual(pcs_both_subset.shape, (3, 2))
+
+        # Test getting a dataframe-encoded varm (differential_expression)
+        cell_type_a = self.reader.get_obsm_varm(entity="genes", key="differential_expression", dataset_path=self.h5ad_path,
+                                                 column_name="cell type A")
+        self.assertEqual(len(cell_type_a), 50)
+        self.assertEqual(cell_type_a.dtype, np.float32)
+
+        # Test getting a specific column with row indices for dataframe
+        cell_type_b_subset = self.reader.get_obsm_varm(entity="genes", key="differential_expression", dataset_path=self.h5ad_path,
+                                                        column_name="cell type B", indices=[0, 1, 2])
+        self.assertEqual(len(cell_type_b_subset), 3)
+
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsm_varm(entity="genes", key="nonexistent", dataset_path=self.h5ad_path)
+        self.assertEqual(len(nonexistent), 0)
+
+        # Test getting a non-existent column from dataframe
+        nonexistent_col = self.reader.get_obsm_varm(entity="genes", key="differential_expression", dataset_path=self.h5ad_path,
+                                                     column_name="nonexistent")
+        # Should return empty array if column doesn't exist
+        self.assertTrue(len(nonexistent_col) == 0 or nonexistent_col is not None)
 

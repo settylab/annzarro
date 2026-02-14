@@ -1,4 +1,5 @@
 from typing import Protocol, Literal, Optional, List, Dict, Any
+import numpy as np
 
 class Reader(Protocol):
     def get_metadata(self) -> str:
@@ -10,4 +11,8 @@ class Reader(Protocol):
     def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                indices: Optional[List[int]] = None, column_names: Optional[List[str]] = None,
                include_categories: bool = True) -> Dict[str, Any]:
+        pass
+    def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
+                    indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
+                    column_name: Optional[str] = None) -> np.ndarray:
         pass
