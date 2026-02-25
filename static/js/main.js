@@ -488,10 +488,10 @@ const App = (function() {
             _lastLoadedDatasetPath = datasetPath;
             console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
-            // Show loading indicators
+            // Show loading indicators — don't update dataset-path yet,
+            // it should only reflect a *successfully loaded* dataset
             document.getElementById('cell-count').textContent = 'Loading...';
             document.getElementById('gene-count').textContent = 'Loading...';
-            document.getElementById('dataset-path').textContent = datasetPath;
             
             // Check for abort before proceeding with each major step
             if (signal.aborted) {
@@ -556,38 +556,56 @@ const App = (function() {
                 }
             } else {
                 console.error('Error loading dataset:', error);
-                
+
+                // Strip implementation details from error for user display:
+                // Backend errors like "Error reading cell names from dataset /path: ValueError: actual cause"
+                // should show just the actionable part to the user.
+                const rawMsg = error.message || 'Unknown error';
+                const userMsg = rawMsg
+                    // Remove "Error reading cell/gene names from dataset /path: " prefix
+                    .replace(/^Error reading (?:cell|gene) names from dataset\s+\S+:\s*/i, '')
+                    // Remove Python exception type prefixes like "ValueError: ", "RuntimeError: "
+                    .replace(/^[A-Za-z]+Error:\s*/i, '')
+                    || rawMsg; // fall back to original if stripping removed everything
+
                 // Get the current dataset information to determine how to handle the error
                 const currentDataset = DataManager.getCurrentDataset();
-                
+
                 if (currentDataset) {
-                    // We have a current dataset loaded, so show a non-blocking notification
                     _showNotification(
-                        'Dataset Loading Error', 
-                        `Failed to load dataset "${datasetPath}": ${error.message || 'Unknown error'}. Previous dataset still loaded.`, 
+                        'Dataset Loading Error',
+                        `Could not load dataset:\n${datasetPath}\n\n${userMsg}\n\nThe previous dataset is still loaded.`,
                         'error'
                     );
-                    
-                    // Update UI elements to reflect we're still on the previous dataset
+
+                    // Restore UI to reflect the previous (still-loaded) dataset
                     const cells = DataManager.getCells() || [];
                     const genes = DataManager.getGenes() || [];
-                    
-                    document.getElementById('cell-count').textContent = 
+
+                    document.getElementById('cell-count').textContent =
                         `${cells.length.toLocaleString()} cells`;
-                    document.getElementById('gene-count').textContent = 
+                    document.getElementById('gene-count').textContent =
                         `${genes.length.toLocaleString()} genes`;
                     document.getElementById('dataset-path').textContent = currentDataset;
                 } else {
-                    // No current dataset, so show an error notification
-                    _showNotification('Failed to load dataset', error.message || 'Unknown error', 'error');
-                    
-                    // Reset UI elements
+                    _showNotification(
+                        'Dataset Loading Error',
+                        `Could not load dataset:\n${datasetPath}\n\n${userMsg}`,
+                        'error'
+                    );
+
+                    // No dataset loaded — clear UI
                     document.getElementById('cell-count').textContent = 'No dataset loaded';
                     document.getElementById('gene-count').textContent = 'No dataset loaded';
-                    document.getElementById('dataset-path').textContent = '';
+                    document.getElementById('dataset-path').textContent = 'No dataset loaded';
                 }
             }
             
+            // Revert _lastLoadedDatasetPath so the user can retry the same dataset
+            if (!(error && error.name === 'AbortError')) {
+                _lastLoadedDatasetPath = DataManager.getCurrentDataset() || null;
+            }
+
             // Reset loading flag on error
             _isLoadingDataset = false;
             _currentLoadingAbortController = null;
