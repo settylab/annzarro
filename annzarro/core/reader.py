@@ -22,3 +22,7 @@ class Reader(Protocol):
 
     def get_X(dataset_path: str, row_indices, col_indices):
         pass
+
+    def get_layer(self, layer_name: str, dataset_path: Optional[str] = None,
+              row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None):
+        pass

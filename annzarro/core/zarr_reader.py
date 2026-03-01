@@ -927,8 +927,7 @@ class ZarrReader:
     
     @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None, 
-                 row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                 disable_caching: bool = False) -> np.ndarray:
+                 row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get a layer from a dataset.
         

@@ -447,6 +447,47 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(X_subset.shape, (3, 3))
         np.testing.assert_array_equal(X_subset, X[row_indices, :][:, col_indices])
 
+    def test_get_layer(self):
+        """Test getting layer data."""
+
+        # Test getting the entire dense layer
+        raw = self.reader.get_layer('raw', dataset_path=self.h5ad_path)
+        self.assertEqual(raw.shape, (100, 50))
+
+        # Test getting a subset of rows from dense layer
+        row_indices = [0, 1, 2]
+        raw_rows = self.reader.get_layer('raw', row_indices=row_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(raw_rows.shape, (3, 50))
+
+        # Test getting a subset of columns from dense layer
+        col_indices = [0, 1, 2]
+        raw_cols = self.reader.get_layer('raw', col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(raw_cols.shape, (100, 3))
+
+        # Test getting a subset of both rows and columns from dense layer
+        raw_subset = self.reader.get_layer('raw', row_indices=row_indices, col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(raw_subset.shape, (3, 3))
+
+        # Test getting a non-existent layer
+        nonexistent = self.reader.get_layer('nonexistent', dataset_path=self.h5ad_path)
+        self.assertEqual(len(nonexistent), 0)
+
+        # Test getting the entire CSR sparse layer
+        logged_counts = self.reader.get_layer('logged_counts', dataset_path=self.h5ad_path)
+        self.assertEqual(logged_counts.shape, (100, 50))
+
+        # Test getting a subset of rows from CSR sparse layer
+        logged_rows = self.reader.get_layer('logged_counts', row_indices=row_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(logged_rows.shape, (3, 50))
+
+        # Test getting a subset of columns from CSR sparse layer
+        logged_cols = self.reader.get_layer('logged_counts', col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(logged_cols.shape, (100, 3))
+
+        # Test getting a subset of both rows and columns from CSR sparse layer
+        logged_subset = self.reader.get_layer('logged_counts', row_indices=row_indices, col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(logged_subset.shape, (3, 3))
+
 if __name__ == '__main__':
     unittest.main()
 

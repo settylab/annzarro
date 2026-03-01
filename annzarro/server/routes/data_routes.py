@@ -190,13 +190,8 @@ def register_data_routes(app, api_version):
             }), 400
         
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_layer(dataset_path_str, layer_name, row_indices, col_indices)
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])

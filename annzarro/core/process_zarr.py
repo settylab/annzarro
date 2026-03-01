@@ -34,30 +34,3 @@ def extract_zarr_obsp_varp(dataset_path: str, key: str, row_indices, col_indices
     except Exception as e:
         logger.error(f"Error getting {'obsp' if entity_type == 'cells' else 'varp'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsp' if entity_type == 'cells' else 'varp'} data: {str(e)}"}), 500
-
-def extract_zarr_layer(dataset_path: str, layer_name: str, row_indices, col_indices):
-    try:
-        # Use direct zarr access for stateless operation
-        data = zarr_reader.get_layer(layer_name, dataset_path, row_indices, col_indices)
-
-        # Convert NumPy arrays to Python lists for JSON serialization
-        if hasattr(data, 'tolist'):
-            # Direct conversion for simple ndarray
-            serialized_data = data.tolist()
-        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-            # Handle list of ndarrays case
-            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-        else:
-            # Already serializable or empty
-            serialized_data = data
-            
-        logger.info(f"Successfully loaded layer/{layer_name} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-        
-        return jsonify({
-            "data": serialized_data,
-            "layer_name": layer_name,
-            "dataset_path": dataset_path
-        })
-    except Exception as e:
-        logger.error(f"Error getting layer {layer_name} data for {dataset_path}: {e}")
-        return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500

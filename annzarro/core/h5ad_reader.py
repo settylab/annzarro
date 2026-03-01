@@ -581,6 +581,51 @@ class h5adReader:
 
                 return result
             return None
+    
+    def get_layer(self, layer_name: str, dataset_path: Optional[str] = None,
+              row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get a specific layer from h5ad file.
+
+        Args:
+            layer_name: Name of the layer to retrieve (e.g., "counts", "normalized")
+            dataset_path: Path to the h5ad file
+            row_indices: Optional list of row indices to select (cells)
+            col_indices: Optional list of column indices to select (genes)
+
+        Returns:
+            numpy.ndarray: The layer data, or empty array if layer doesn't exist
+        """
+        with h5py.File(dataset_path, "r") as root:
+            if "layers" not in root:
+                return np.array([])
+
+            if layer_name not in root["layers"]:
+                return np.array([])
+
+            layer_obj = root["layers"][layer_name]
+
+            # Handle dense layer (Dataset)
+            if isinstance(layer_obj, h5py.Dataset):
+                return self._get_dense_array(layer_obj, row_indices, col_indices)
+
+            # Handle sparse layer (Group with CSR/CSC format)
+            elif isinstance(layer_obj, h5py.Group):
+                sparse_matrix = self._load_sparse_matrix(layer_obj, row_indices, col_indices)
+
+                if sparse_matrix is None:
+                    return np.array([])
+
+                # Convert to dense array
+                dense = sparse_matrix.toarray()
+
+                # Handle single column case to return 1D array
+                if col_indices is not None and len(col_indices) == 1:
+                    dense = dense.ravel()
+
+                return dense
+
+            return np.array([])
 
 
 
