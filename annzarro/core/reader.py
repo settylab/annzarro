@@ -17,6 +17,10 @@ class Reader(Protocol):
                     column_name: Optional[str] = None) -> np.ndarray:
         pass
 
+    def get_obsp_varp(self, key: str, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                  row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
+        pass
+
     def get_uns(self, key: str, dataset_path: Optional[str] = None):
         pass
 

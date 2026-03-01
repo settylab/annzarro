@@ -13,7 +13,6 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
-from ...core import process_zarr
 from ...core import process_file
 from ...core import get_reader
 
@@ -445,15 +444,10 @@ def register_data_routes(app, api_version):
                             f"Maximum allowed is {max_cells}. "
                             "Please reduce the number of rows or columns."
             }), 400
-        
-        try:
-            dataset_path = Path(dataset_path_str)
-        except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells")
-        else:
+        try:
+            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
@@ -501,13 +495,8 @@ def register_data_routes(app, api_version):
             }), 400
 
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])

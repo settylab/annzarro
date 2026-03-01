@@ -276,7 +276,7 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(len(nonexistent["data"]), 0)
     
     def test_get_cell_names(self):
-        obs_names = self.reader.get_cell_gene_names(file_name=self.h5ad_path, entity= "cells")
+        obs_names = self.reader.get_cell_gene_names(dataset_path=self.h5ad_path, entity= "cells")
         
         # Check that we get 100 cell names
         self.assertEqual(len(obs_names), 100)
@@ -288,7 +288,7 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(obs_names[67], 'cell_67')
     
     def test_get_gene_names(self):
-        var_names = self.reader.get_cell_gene_names(file_name=self.h5ad_path, entity = "genes")
+        var_names = self.reader.get_cell_gene_names(dataset_path=self.h5ad_path, entity = "genes")
 
         # Check that we get 50 gene names
         self.assertEqual(len(var_names), 50)
@@ -487,6 +487,53 @@ class TestH5ADReader(unittest.TestCase):
         # Test getting a subset of both rows and columns from CSR sparse layer
         logged_subset = self.reader.get_layer('logged_counts', row_indices=row_indices, col_indices=col_indices, dataset_path=self.h5ad_path)
         self.assertEqual(logged_subset.shape, (3, 3))
+
+    def test_get_obsp(self):
+        """Test getting observation-observation matrices (obsp)."""
+
+        # Test getting a valid obsp key
+        connectivities = self.reader.get_obsp_varp('connectivities', entity="cells", dataset_path=self.h5ad_path)
+        self.assertEqual(connectivities.shape, (100, 100))
+
+        # Test getting a subset using row_indices and col_indices
+        indices = [0, 1, 2]
+        conn_subset = self.reader.get_obsp_varp('connectivities', entity="cells", dataset_path=self.h5ad_path,
+                                                 row_indices=indices, col_indices=indices)
+        self.assertEqual(conn_subset.shape, (3, 3))
+
+        # Verify diagonal values of connectivities (should be 1.0)
+        np.testing.assert_almost_equal(np.diag(connectivities), np.ones(100))
+
+        # Test getting distances matrix
+        distances = self.reader.get_obsp_varp('distances', entity="cells", dataset_path=self.h5ad_path)
+        self.assertEqual(distances.shape, (100, 100))
+
+        # Verify diagonal values of distances (should be 0.0)
+        np.testing.assert_almost_equal(np.diag(distances), np.zeros(100))
+
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsp_varp('nonexistent', entity="cells", dataset_path=self.h5ad_path)
+        self.assertEqual(len(nonexistent), 0)
+
+    def test_get_varp(self):
+        """Test getting variable-variable matrices (varp)."""
+
+        # Test getting a valid varp key
+        correlation = self.reader.get_obsp_varp('correlation', entity="genes", dataset_path=self.h5ad_path)
+        self.assertEqual(correlation.shape, (50, 50))
+
+        # Test getting a subset using row_indices and col_indices
+        indices = [0, 1, 2]
+        corr_subset = self.reader.get_obsp_varp('correlation', entity="genes", dataset_path=self.h5ad_path,
+                                                 row_indices=indices, col_indices=indices)
+        self.assertEqual(corr_subset.shape, (3, 3))
+
+        # Verify diagonal values of correlation (should be 1.0)
+        np.testing.assert_almost_equal(np.diag(correlation), np.ones(50))
+
+        # Test getting a non-existent key
+        nonexistent = self.reader.get_obsp_varp('nonexistent', entity="genes", dataset_path=self.h5ad_path)
+        self.assertEqual(len(nonexistent), 0)
 
 if __name__ == '__main__':
     unittest.main()

@@ -165,9 +165,9 @@ class h5adReader:
 
         return metadata
 
-    def get_cell_gene_names(self, file_name: str, entity: Literal["cells", "genes"], use_cache: bool = True) -> list[str]:
+    def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = True) -> list[str]:
         obj_name = "obs" if entity == "cells" else "var"
-        with h5py.File(file_name, "r") as f:
+        with h5py.File(dataset_path, "r") as f:
             if obj_name not in f:
                 raise ValueError(f"The H5AD file does not contain '{obj_name}' group.")
 
@@ -229,7 +229,7 @@ class h5adReader:
             if layer not in f:
                 raise ValueError(f"The H5AD file does not contain '{layer}' group.")
 
-            result = {}
+            result = {'data': {}}
             data = {}
             categories = {}
             categories_exist = False
@@ -627,5 +627,43 @@ class h5adReader:
 
             return np.array([])
 
+    def get_obsp_varp(self, key: str, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                  row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get pairwise annotations (obsp for cells, varp for genes) from h5ad file.
 
+        Args:
+            key: Key in obsp/varp to get (e.g., "distances", "connectivities")
+            entity: Either "cells" (for obsp) or "genes" (for varp)
+            dataset_path: Path to the h5ad file
+            row_indices: Optional list of row indices to select
+            col_indices: Optional list of column indices to select
+
+        Returns:
+            numpy.ndarray: The obsp/varp data, or empty array if not found
+        """
+        with h5py.File(dataset_path, "r") as root:
+            obj = "obsp" if entity == "cells" else "varp"
+
+            # Check if the layer and key exist
+            if obj not in root or key not in root[obj]:
+                return np.array([])
+
+            obsp_varp_obj = root[obj][key]
+
+            # Handle dense matrix (Dataset)
+            if isinstance(obsp_varp_obj, h5py.Dataset):
+                return self._get_dense_array(obsp_varp_obj, row_indices, col_indices)
+
+            # Handle sparse matrix (Group with CSR/CSC format)
+            elif isinstance(obsp_varp_obj, h5py.Group):
+                sparse_matrix = self._load_sparse_matrix(obsp_varp_obj, row_indices, col_indices)
+
+                if sparse_matrix is None:
+                    return np.array([])
+
+                # Convert to dense array
+                return sparse_matrix.toarray()
+
+            return np.array([])
 
