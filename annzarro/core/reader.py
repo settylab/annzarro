@@ -19,3 +19,6 @@ class Reader(Protocol):
 
     def get_uns(self, key: str, dataset_path: Optional[str] = None):
         pass
+
+    def get_X(dataset_path: str, row_indices, col_indices):
+        pass

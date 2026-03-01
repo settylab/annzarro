@@ -423,3 +423,30 @@ class TestH5ADReader(unittest.TestCase):
         metadata = self.reader.get_metadata(file_path=self.h5ad_path)
         self.assertTrue(metadata.get('has_uns', False))
 
+    def test_get_X(self):
+        """Test getting X matrix."""
+
+        # Test getting the entire matrix
+        X = self.reader.get_X(dataset_path=self.h5ad_path)
+        self.assertEqual(X.shape, (100, 50))
+
+        # Test getting a subset of rows
+        row_indices = [0, 1, 2]
+        X_rows = self.reader.get_X(row_indices=row_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(X_rows.shape, (3, 50))
+        np.testing.assert_array_equal(X_rows, X[row_indices, :])
+
+        # Test getting a subset of columns
+        col_indices = [0, 1, 2]
+        X_cols = self.reader.get_X(col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(X_cols.shape, (100, 3))
+        np.testing.assert_array_equal(X_cols, X[:, col_indices])
+
+        # Test getting a subset of both rows and columns
+        X_subset = self.reader.get_X(row_indices=row_indices, col_indices=col_indices, dataset_path=self.h5ad_path)
+        self.assertEqual(X_subset.shape, (3, 3))
+        np.testing.assert_array_equal(X_subset, X[row_indices, :][:, col_indices])
+
+if __name__ == '__main__':
+    unittest.main()
+

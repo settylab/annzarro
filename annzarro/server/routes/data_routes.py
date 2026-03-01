@@ -139,15 +139,10 @@ def register_data_routes(app, api_version):
                         f"Maximum allowed is {max_cells}. "
                         "Please reduce the number of rows or columns."
             }), 400
-        
-        try:
-            dataset_path = Path(dataset_path_str)
-        except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_X(dataset_path_str, row_indices, col_indices)
-        else:
+        try:
+            return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])

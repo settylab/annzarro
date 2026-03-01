@@ -237,3 +237,29 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
     except Exception as e:
         logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
+    
+def extract_X(dataset_path: str, row_indices, col_indices, reader: Reader):
+    try:
+        # Use direct zarr access for stateless operation
+        data = reader.get_X(dataset_path, row_indices, col_indices)
+        
+        # Convert NumPy arrays to Python lists for JSON serialization
+        if hasattr(data, 'tolist'):
+            # Direct conversion for simple ndarray
+            serialized_data = data.tolist()
+        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
+            # Handle list of ndarrays case
+            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
+        else:
+            # Already serializable or empty
+            serialized_data = data
+            
+        logger.info(f"Successfully loaded X data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+        
+        return jsonify({
+            "data": serialized_data,
+            "dataset_path": dataset_path
+        })
+    except Exception as e:
+        logger.error(f"Error getting X data for {dataset_path}: {e}")
+        return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500

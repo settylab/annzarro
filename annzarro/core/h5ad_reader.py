@@ -2,6 +2,7 @@ import h5py
 import logging
 from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
+from scipy.sparse import csr_matrix, csc_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -326,37 +327,6 @@ class h5adReader:
         raise ValueError(f"Unsupported column type for '{column_name}'")
 
 
-    def _get_dense_array(self, obj: h5py.Dataset, indices: Optional[List[int]] = None,
-                        col_indices: Optional[List[int]] = None) -> np.ndarray:
-        """Get dense array data with optional row and column subsetting."""
-        # Handle different cases for efficient h5py slicing
-        if indices is None and col_indices is None:
-            # Load entire array
-            data = obj[:]
-        elif indices is None and col_indices is not None:
-            # Load all rows, specific columns
-            if len(col_indices) == 1:
-                # Single column - use integer indexing to get 1D array
-                data = obj[:, col_indices[0]]
-            else:
-                # Multiple columns - use list indexing to get 2D array
-                data = obj[:, col_indices]
-        elif indices is not None and col_indices is None:
-            # Load specific rows, all columns
-            data = obj[indices]
-        else:
-            # Load specific rows and columns
-            # h5py doesn't support np.ix_ directly, so we do it in two steps
-            if len(col_indices) == 1:
-                # Single column - use integer indexing to get 1D array
-                data = obj[indices, col_indices[0]]
-            else:
-                # Multiple columns - first get rows, then columns
-                data = obj[indices, :][:, col_indices]
-
-        return data
-
-
     def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
                     indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
                     column_name: Optional[str] = None) -> np.ndarray:
@@ -416,6 +386,134 @@ class h5adReader:
                 # If it's a Group but not a dataframe, try to handle it
                 logger.warning(f"{obj}/{key} is a Group but not recognized as a dataframe")
                 return np.array([])
+    
+    def _get_dense_array(self, obj: h5py.Dataset, row_indices: Optional[List[int]] = None,
+                    col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get a dense array from an h5py Dataset, with optional subsetting.
+
+        Args:
+            obj: h5py Dataset
+            row_indices: Optional list of row indices to select
+            col_indices: Optional list of column indices to select
+
+        Returns:
+            numpy.ndarray: The requested data
+        """
+        # Efficient h5py-level slicing
+        if row_indices is None and col_indices is None:
+            data = obj[:]
+        elif row_indices is None and col_indices is not None:
+            if len(col_indices) == 1:
+                data = obj[:, col_indices[0]]  # 1D array
+            else:
+                data = obj[:, col_indices]
+        elif row_indices is not None and col_indices is None:
+            data = obj[row_indices]
+        else:
+            if len(col_indices) == 1:
+                data = obj[row_indices, col_indices[0]]  # 1D array
+            else:
+                # h5py doesn't support np.ix_, use two-step indexing
+                data = obj[row_indices, :][:, col_indices]
+
+        return data
+
+
+    def _load_sparse_matrix(self, X_obj: h5py.Group, row_indices: Optional[List[int]] = None,
+                        col_indices: Optional[List[int]] = None):
+        """
+        Load a sparse matrix from an h5py group.
+
+        Args:
+            X_obj: h5py Group containing sparse matrix components
+            row_indices: Optional list of row indices to select
+            col_indices: Optional list of column indices to select
+
+        Returns:
+            scipy.sparse matrix or None if loading fails
+        """
+        # Check for required sparse matrix components
+        has_data = "data" in X_obj
+        has_indices = "indices" in X_obj
+        has_indptr = "indptr" in X_obj
+        has_shape = "shape" in X_obj or "shape" in X_obj.attrs
+
+        if not (has_data and has_indices and has_indptr and has_shape):
+            return None
+
+        # Get sparse matrix components
+        sp_data = X_obj["data"][:]
+        sp_indices = X_obj["indices"][:]
+        sp_indptr = X_obj["indptr"][:]
+
+        # Get shape from either dataset or attribute
+        if "shape" in X_obj:
+            sp_shape = tuple(X_obj["shape"][:])
+        else:
+            sp_shape = tuple(X_obj.attrs["shape"])
+
+        # Check encoding type
+        encoding_type = X_obj.attrs.get("encoding-type", b"csr_matrix")
+        if isinstance(encoding_type, bytes):
+            encoding_type = encoding_type.decode("utf-8")
+
+        # Construct sparse matrix
+        if encoding_type == "csr_matrix":
+            sparse_matrix = csr_matrix((sp_data, sp_indices, sp_indptr), shape=sp_shape)
+        elif encoding_type == "csc_matrix":
+            sparse_matrix = csc_matrix((sp_data, sp_indices, sp_indptr), shape=sp_shape)
+        else:
+            return None
+
+        # Apply subsetting
+        if row_indices is not None:
+            sparse_matrix = sparse_matrix[row_indices, :]
+        if col_indices is not None:
+            sparse_matrix = sparse_matrix[:, col_indices]
+
+        return sparse_matrix
+
+
+    def get_X(self, dataset_path: Optional[str] = None, row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Get the main expression matrix (X layer) from h5ad file.
+
+        Args:
+            dataset_path: Path to the h5ad file
+            row_indices: Optional list of row indices to select (cells)
+            col_indices: Optional list of column indices to select (genes)
+
+        Returns:
+            numpy.ndarray: The expression matrix data, or empty array if X doesn't exist
+        """
+        with h5py.File(dataset_path, "r") as root:
+            if "X" not in root:
+                return np.array([])
+
+            X_obj = root["X"]
+
+            # Handle dense matrix (Dataset)
+            if isinstance(X_obj, h5py.Dataset):
+                return self._get_dense_array(X_obj, row_indices, col_indices)
+
+            # Handle sparse matrix (Group with CSR/CSC format)
+            elif isinstance(X_obj, h5py.Group):
+                sparse_matrix = self._load_sparse_matrix(X_obj, row_indices, col_indices)
+
+                if sparse_matrix is None:
+                    return np.array([])
+
+                # Convert to dense array
+                dense = sparse_matrix.toarray()
+
+                # Handle single column case to return 1D array
+                if col_indices is not None and len(col_indices) == 1:
+                    dense = dense.ravel()
+
+                return dense
+
+            return np.array([])
     
 
     def get_uns(self, key: str, dataset_path: Optional[str] = None):
