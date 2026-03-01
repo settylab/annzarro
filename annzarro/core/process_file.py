@@ -181,7 +181,7 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
         return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}"}), 500
     
 
-def extract_zarr_obsm_varm(dataset_path: str,reader: Reader, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"]):
+def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"]):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_obsm_varm(key=key, 
@@ -220,3 +220,20 @@ def extract_zarr_obsm_varm(dataset_path: str,reader: Reader, key, indices, colum
     except Exception as e:
         logger.error(f"Error getting {'obsm' if entity_type == 'cells' else 'varm'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsm' if entity_type == 'cells' else 'varm'} data: {str(e)}"}), 500
+
+
+def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
+    try:
+        # Use direct zarr access for stateless operation
+        data = reader.get_uns(uns_key, dataset_path)
+        
+        logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
+        
+        return jsonify({
+            "data": data,
+            "uns_key": uns_key,
+            "dataset_path": dataset_path
+        })
+    except Exception as e:
+        logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
+        return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

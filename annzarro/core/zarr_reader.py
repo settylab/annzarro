@@ -1770,7 +1770,7 @@ class ZarrReader:
         return uns_structure
     
     @cached_method
-    def get_uns(self, key: str, dataset_path: Optional[str] = None, disable_caching: bool = False) -> Any:
+    def get_uns(self, key: str, dataset_path: Optional[str] = None) -> Any:
         """
         Get data from the uns section.
         

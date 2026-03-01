@@ -16,3 +16,6 @@ class Reader(Protocol):
                     indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
                     column_name: Optional[str] = None) -> np.ndarray:
         pass
+
+    def get_uns(self, key: str, dataset_path: Optional[str] = None):
+        pass

@@ -416,6 +416,73 @@ class h5adReader:
                 # If it's a Group but not a dataframe, try to handle it
                 logger.warning(f"{obj}/{key} is a Group but not recognized as a dataframe")
                 return np.array([])
+    
+
+    def get_uns(self, key: str, dataset_path: Optional[str] = None):
+        with h5py.File(dataset_path, "r") as root:
+            obj = "uns"
+            if obj not in root or key not in root[obj]:
+                return None
+
+            uns_obj = root[obj][key]
+
+            # Handle Dataset (arrays, scalars)
+            if isinstance(uns_obj, h5py.Dataset):
+                data = uns_obj[()]
+
+                # Decode bytes to strings if needed
+                if isinstance(data, bytes):
+                    return data.decode('utf-8')
+                elif isinstance(data, np.ndarray):
+                    # Handle array of bytes
+                    if data.dtype.kind in ('S', 'O'):
+                        if data.ndim == 0:
+                            # Scalar
+                            return data.item().decode('utf-8') if isinstance(data.item(), bytes) else data.item()
+                        else:
+                            # Array - decode and convert to Python list of strings
+                            decoded = np.array([val.decode('utf-8') if isinstance(val, bytes) else val for val in data.flat]).reshape(data.shape)
+                            return decoded.tolist()
+                    return data
+                else:
+                    return data
+
+            # Handle Group (dictionaries, dataframes, nested structures)
+            elif isinstance(uns_obj, h5py.Group):
+                # Try to convert to dictionary recursively
+                result = {}
+                for subkey in uns_obj.keys():
+                    # Recursively get nested data
+                    subobj = uns_obj[subkey]
+                    if isinstance(subobj, h5py.Dataset):
+                        subdata = subobj[()]
+                        if isinstance(subdata, bytes):
+                            result[subkey] = subdata.decode('utf-8')
+                        elif isinstance(subdata, np.ndarray) and subdata.dtype.kind in ('S', 'O'):
+                            if subdata.ndim == 0:
+                                result[subkey] = subdata.item().decode('utf-8') if isinstance(subdata.item(), bytes) else subdata.item()
+                            else:
+                                decoded = np.array([val.decode('utf-8') if isinstance(val, bytes) else val for val in subdata.flat]).reshape(subdata.shape)
+                                result[subkey] = decoded.tolist()
+                        else:
+                            result[subkey] = subdata
+                    elif isinstance(subobj, h5py.Group):
+                        # Nested group - return as-is or could recursively process
+                        result[subkey] = dict(subobj.attrs) if len(subobj.keys()) == 0 else f"<HDF5 Group: {subkey}>"
+                    else:
+                        result[subkey] = None
+
+                # Also include attributes if any
+                if len(uns_obj.attrs) > 0:
+                    for attr_key, attr_val in uns_obj.attrs.items():
+                        if attr_key not in result:
+                            if isinstance(attr_val, bytes):
+                                result[attr_key] = attr_val.decode('utf-8')
+                            else:
+                                result[attr_key] = attr_val
+
+                return result
+            return None
 
 
 

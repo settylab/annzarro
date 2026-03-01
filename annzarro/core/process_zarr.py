@@ -87,19 +87,3 @@ def extract_zarr_X(dataset_path: str, row_indices, col_indices):
     except Exception as e:
         logger.error(f"Error getting X data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500
-
-def extract_zarr_uns(uns_key: str, dataset_path: str):
-    try:
-        # Use direct zarr access for stateless operation
-        data = zarr_reader.get_uns(uns_key, dataset_path)
-        
-        logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
-        
-        return jsonify({
-            "data": data,
-            "uns_key": uns_key,
-            "dataset_path": dataset_path
-        })
-    except Exception as e:
-        logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
-        return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

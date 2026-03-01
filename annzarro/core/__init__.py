@@ -1,5 +1,7 @@
 """Core functionality for Annzarro."""
 
+from pathlib import Path
+
 # Import zarr reader class
 from .zarr_reader import ZarrReader
 from .h5ad_reader import h5adReader
@@ -8,6 +10,22 @@ from .h5ad_reader import h5adReader
 # This will be configured later by the server settings
 zarr_reader = ZarrReader()
 h5ad_reader_obj = h5adReader()
+
+def get_reader(path):
+    dataset_path = Path(path)
+
+    # Check if path exists
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset path does not exist: {path}")
+
+    suffix = dataset_path.suffix
+
+    if suffix == ".zarr":
+        return zarr_reader
+    elif suffix == ".h5ad":
+        return h5ad_reader_obj
+    else:
+        raise ValueError(f"Unknown file type '{suffix}'. Must be .zarr or .h5ad")
 
 # Function to configure the reader based on settings
 def configure_zarr_reader(config):
