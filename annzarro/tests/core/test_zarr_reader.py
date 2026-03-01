@@ -202,6 +202,21 @@ class TestZarrReader(unittest.TestCase):
         coo_group.attrs['encoding-version'] = '0.1.0'
         coo_group.attrs['shape'] = [100, 50]
 
+        # Create uns (unstructured annotations)
+        uns_group = root.create_group('uns')
+
+        # Add various types of unstructured data
+        # 1. String array (not scalar to work with [:] indexing)
+        uns_group.create_dataset('description', data=np.array(['Test dataset for unit testing']))
+
+        # 2. Numeric array
+        uns_group.create_dataset('analysis_params', data=np.array([0.1, 0.5, 1.0]))
+
+        # 3. Nested group with datasets
+        analysis_group = uns_group.create_group('analysis')
+        analysis_group.create_dataset('explained_variance', data=np.random.rand(10).astype('float32'))
+        analysis_group.create_dataset('method', data=np.array(['pca']))
+
     def test_get_metadata(self):
         """Test getting metadata."""
         metadata = self.reader.get_metadata(dataset_path=self.zarr_path)
@@ -933,6 +948,42 @@ class TestZarrReader(unittest.TestCase):
         self.assertEqual(tuple(root['layers']['logged_counts'].attrs['shape']), (100, 50))
         self.assertEqual(tuple(root['layers']['csc_matrix'].attrs['shape']), (100, 50))
         self.assertEqual(tuple(root['layers']['coo_matrix'].attrs['shape']), (100, 50))
+
+    def test_get_uns(self):
+        """Test getting unstructured annotations using the get_uns method."""
+
+        # Test getting string array dataset
+        description = self.reader.get_uns('description', dataset_path=self.zarr_path)
+        self.assertIsNotNone(description)
+        # Should be a list after conversion
+        if isinstance(description, list):
+            self.assertEqual(len(description), 1)
+            desc_str = description[0]
+            if isinstance(desc_str, bytes):
+                desc_str = desc_str.decode('utf-8')
+            self.assertEqual(desc_str, 'Test dataset for unit testing')
+
+        # Test getting numeric array
+        params = self.reader.get_uns('analysis_params', dataset_path=self.zarr_path)
+        self.assertIsNotNone(params)
+        self.assertEqual(len(params), 3)
+        np.testing.assert_array_almost_equal(params, [0.1, 0.5, 1.0])
+
+        # Test getting nested group (returns dict with subkeys)
+        analysis = self.reader.get_uns('analysis', dataset_path=self.zarr_path)
+        self.assertIsNotNone(analysis)
+        self.assertIsInstance(analysis, dict)
+        self.assertIn('explained_variance', analysis)
+        self.assertIn('method', analysis)
+        self.assertEqual(len(analysis['explained_variance']), 10)
+
+        # Test getting non-existent key
+        nonexistent = self.reader.get_uns('nonexistent', dataset_path=self.zarr_path)
+        self.assertIsNone(nonexistent)
+
+        # Verify metadata includes uns
+        metadata = self.reader.get_metadata(dataset_path=self.zarr_path)
+        self.assertTrue(metadata.get('has_uns', False))
 
 if __name__ == '__main__':
     unittest.main()

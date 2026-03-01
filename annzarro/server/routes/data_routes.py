@@ -13,9 +13,8 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
-from ...core import process_zarr
 from ...core import process_file
-from ...core import h5ad_reader_obj
+from ...core import get_reader
 
 logger = logging.getLogger(__name__)
 
@@ -95,15 +94,8 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_metadata(dataset_path_str, get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_file.extract_metadata(dataset_path_str, zarr_reader)
-        elif dataset_path.suffix == ".h5ad":
-            return process_file.extract_metadata(dataset_path_str, h5ad_reader_obj)
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
@@ -146,15 +138,10 @@ def register_data_routes(app, api_version):
                         f"Maximum allowed is {max_cells}. "
                         "Please reduce the number of rows or columns."
             }), 400
-        
-        try:
-            dataset_path = Path(dataset_path_str)
-        except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_X(dataset_path_str, row_indices, col_indices)
-        else:
+        try:
+            return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
@@ -202,13 +189,8 @@ def register_data_routes(app, api_version):
             }), 400
         
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_layer(dataset_path_str, layer_name, row_indices, col_indices)
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
@@ -257,13 +239,8 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells")
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obs_var(dataset_path_str, row_indices, column_names, include_categories, "cells")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
@@ -311,13 +288,8 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes")
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obs_var(dataset_path_str, col_indices, column_names, include_categories, "genes")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
@@ -370,13 +342,8 @@ def register_data_routes(app, api_version):
             }), 400
         
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells")
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, obsm_key, row_indices, col_indices, column_name, "cells")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
         
     
@@ -430,13 +397,8 @@ def register_data_routes(app, api_version):
             }), 400
 
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes")
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsm_varm(dataset_path_str, varm_key, row_indices, col_indices, column_name, "genes")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
@@ -482,15 +444,10 @@ def register_data_routes(app, api_version):
                             f"Maximum allowed is {max_cells}. "
                             "Please reduce the number of rows or columns."
             }), 400
-        
-        try:
-            dataset_path = Path(dataset_path_str)
-        except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
 
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells")
-        else:
+        try:
+            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
@@ -538,13 +495,8 @@ def register_data_routes(app, api_version):
             }), 400
 
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes")
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
@@ -568,13 +520,8 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            dataset_path = Path(dataset_path_str)
+            return process_file.extract_uns(uns_key, dataset_path_str, get_reader(dataset_path_str))
         except:
-            return jsonify({"error": "dataset_path parameter is not a valid file path"}), 400
-
-        if dataset_path.suffix == ".zarr":
-            return process_zarr.extract_zarr_uns(uns_key, dataset_path_str)
-        else:
             return jsonify({"error": "Cannot handle this file type"}), 400
         
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
@@ -713,24 +660,9 @@ def register_data_routes(app, api_version):
         if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
-        # Check if the path exists before attempting to read it (for local paths)
-        if not dataset_path_str.startswith(("http://", "https://", "s3://")):
-            import os
-            if not os.path.exists(dataset_path_str):
-                logger.warning(f"Path does not exist: {dataset_path_str}")
-                return jsonify({
-                    "status": "error",
-                    "error": "Dataset not found",
-                    "message": f"The dataset path '{dataset_path_str}' does not exist.",
-                    "genes": []
-                }), 404
-        
-        dataset_path = Path(dataset_path_str)
-        if dataset_path.suffix == ".zarr":
-            return process_file.extract_cells_genes(dataset_path_str, "genes", zarr_reader)
-        elif dataset_path.suffix == ".h5ad":
-            return process_file.extract_cells_genes(dataset_path_str, "genes", h5ad_reader_obj)
-        else:
+        try:
+            return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
@@ -749,25 +681,10 @@ def register_data_routes(app, api_version):
         
         if not dataset_path_str:
             return jsonify({"error": "dataset_path parameter is required"}), 400
-
-        # Check if the path exists before attempting to read it (for local paths)
-        if not dataset_path_str.startswith(("http://", "https://", "s3://")):
-            import os
-            if not os.path.exists(dataset_path_str):
-                logger.warning(f"Path does not exist: {dataset_path_str}")
-                return jsonify({
-                    "status": "error",
-                    "error": "Dataset not found",
-                    "message": f"The dataset path '{dataset_path_str}' does not exist.",
-                    "cells": []
-                }), 404
         
-        dataset_path = Path(dataset_path_str)
-        if dataset_path.suffix == ".zarr":
-            return process_file.extract_cells_genes(dataset_path_str, "cells", zarr_reader)
-        elif dataset_path.suffix == ".h5ad":
-            return process_file.extract_cells_genes(dataset_path_str, "cells", h5ad_reader_obj)
-        else:
+        try:
+            return process_file.extract_cells_genes(dataset_path_str, "cells", get_reader(dataset_path_str))
+        except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])

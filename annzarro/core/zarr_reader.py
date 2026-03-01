@@ -927,8 +927,7 @@ class ZarrReader:
     
     @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None, 
-                 row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
-                 disable_caching: bool = False) -> np.ndarray:
+                 row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get a layer from a dataset.
         
@@ -1770,7 +1769,7 @@ class ZarrReader:
         return uns_structure
     
     @cached_method
-    def get_uns(self, key: str, dataset_path: Optional[str] = None, disable_caching: bool = False) -> Any:
+    def get_uns(self, key: str, dataset_path: Optional[str] = None) -> Any:
         """
         Get data from the uns section.
         
