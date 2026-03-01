@@ -130,7 +130,22 @@ class TestH5ADReader(unittest.TestCase):
             csr_grp.attrs['encoding-type'] = 'csr_matrix'
             csr_grp.attrs['encoding-version'] = '0.1.0'
             csr_grp.attrs['shape'] = [n_cells, n_genes]
-    
+
+            # uns (unstructured annotations)
+            uns_grp = f.create_group('uns')
+
+            # Add various types of unstructured data
+            # 1. String array dataset
+            uns_grp.create_dataset('description', data=np.array([b'Test dataset for unit testing']))
+
+            # 2. Numeric array
+            uns_grp.create_dataset('analysis_params', data=np.array([0.1, 0.5, 1.0]))
+
+            # 3. Nested group with datasets
+            analysis_grp = uns_grp.create_group('analysis')
+            analysis_grp.create_dataset('explained_variance', data=np.random.rand(10).astype('float32'))
+            analysis_grp.create_dataset('method', data=np.array([b'pca']))
+
     def test_get_metadata(self):
         metadata = self.reader.get_metadata(file_path = self.h5ad_path)
 
@@ -371,4 +386,40 @@ class TestH5ADReader(unittest.TestCase):
                                                      column_name="nonexistent")
         # Should return empty array if column doesn't exist
         self.assertTrue(len(nonexistent_col) == 0 or nonexistent_col is not None)
+
+    def test_get_uns(self):
+        """Test getting unstructured annotations using the get_uns method."""
+
+        # Test getting string array dataset
+        description = self.reader.get_uns('description', dataset_path=self.h5ad_path)
+        self.assertIsNotNone(description)
+        # h5py returns arrays, check the content
+        if isinstance(description, np.ndarray):
+            self.assertEqual(len(description), 1)
+            desc_str = description[0]
+            if isinstance(desc_str, bytes):
+                desc_str = desc_str.decode('utf-8')
+            self.assertEqual(desc_str, 'Test dataset for unit testing')
+
+        # Test getting numeric array
+        params = self.reader.get_uns('analysis_params', dataset_path=self.h5ad_path)
+        self.assertIsNotNone(params)
+        self.assertEqual(len(params), 3)
+        np.testing.assert_array_almost_equal(params, [0.1, 0.5, 1.0])
+
+        # Test getting nested group (returns dict with subkeys)
+        analysis = self.reader.get_uns('analysis', dataset_path=self.h5ad_path)
+        self.assertIsNotNone(analysis)
+        self.assertIsInstance(analysis, dict)
+        self.assertIn('explained_variance', analysis)
+        self.assertIn('method', analysis)
+        self.assertEqual(len(analysis['explained_variance']), 10)
+
+        # Test getting non-existent key
+        nonexistent = self.reader.get_uns('nonexistent', dataset_path=self.h5ad_path)
+        self.assertIsNone(nonexistent)
+
+        # Verify metadata includes uns
+        metadata = self.reader.get_metadata(file_path=self.h5ad_path)
+        self.assertTrue(metadata.get('has_uns', False))
 
