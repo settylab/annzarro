@@ -95,6 +95,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_metadata(dataset_path_str, get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -141,6 +143,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -190,6 +194,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -240,6 +246,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells")
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -289,6 +297,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes")
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -343,6 +353,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells")
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
         
@@ -398,6 +410,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes")
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -447,6 +461,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -496,6 +512,8 @@ def register_data_routes(app, api_version):
 
         try:
             return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
              
@@ -521,6 +539,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_uns(uns_key, dataset_path_str, get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
         
@@ -662,6 +682,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
@@ -684,6 +706,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_cells_genes(dataset_path_str, "cells", get_reader(dataset_path_str))
+        except FileNotFoundError as e:
+            return jsonify({"error": str(e)}), 404
         except:
             return jsonify({"error": "Cannot handle this file type"}), 400
     
