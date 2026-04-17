@@ -108,89 +108,65 @@ def test_cache_info(h5ad_reader, h5ad_test_dataset):
     assert os.path.exists(h5ad_test_dataset)
     assert os.path.isfile(h5ad_test_dataset)
 
-    try:
-        # Load metadata which should populate the cache
-        metadata = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+    # Load metadata which should populate the cache
+    metadata = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
 
-        # Metadata should be cached now
-        cache_info = h5ad_reader.get_cache_info()
+    # Metadata should be cached now
+    cache_info = h5ad_reader.get_cache_info()
 
-        # If caching is working, we should have metadata cached
-        if cache_info["item_counts"]["metadata"] > 0:
-            assert h5ad_test_dataset in cache_info["datasets"]
-            assert cache_info["datasets"][h5ad_test_dataset] > 0
+    # If caching is working, we should have metadata cached
+    if cache_info["item_counts"]["metadata"] > 0:
+        assert h5ad_test_dataset in cache_info["datasets"]
+        assert cache_info["datasets"][h5ad_test_dataset] > 0
 
-        # Read some data to populate the cache
-        try:
-            _ = h5ad_reader.get_X(dataset_path=h5ad_test_dataset)
-            _ = h5ad_reader.get_obs_var(entity="cells", dataset_path=h5ad_test_dataset)
+    # Read some data to populate the cache
+    _ = h5ad_reader.get_X(dataset_path=h5ad_test_dataset)
+    _ = h5ad_reader.get_obs_var(entity="cells", dataset_path=h5ad_test_dataset)
 
-            # Check cache info after loading
-            cache_info = h5ad_reader.get_cache_info()
+    # Check cache info after loading
+    cache_info = h5ad_reader.get_cache_info()
 
-            # Some data should be cached now (either matrix or dataframe)
-            assert cache_info["item_counts"]["matrix"] > 0 or cache_info["item_counts"]["dataframe"] > 0
-            assert h5ad_test_dataset in cache_info["datasets"]
+    # Some data should be cached now (either matrix or dataframe)
+    assert cache_info["item_counts"]["matrix"] > 0 or cache_info["item_counts"]["dataframe"] > 0
+    assert h5ad_test_dataset in cache_info["datasets"]
 
-            # Verify dataset is tracked
-            assert cache_info["datasets"][h5ad_test_dataset] > 0
-        except Exception as e:
-            pytest.skip(f"Could not read data from h5ad dataset: {e}")
-    except Exception as e:
-        pytest.skip(f"Error in test_cache_info: {e}")
+    # Verify dataset is tracked
+    assert cache_info["datasets"][h5ad_test_dataset] > 0
 
 
 def test_clear_cache_all(h5ad_reader, h5ad_test_dataset):
     """Test clearing the entire cache."""
-    try:
-        # Load metadata and data to populate cache
-        metadata = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+    # Load metadata and data to populate cache
+    _ = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+    _ = h5ad_reader.get_X(dataset_path=h5ad_test_dataset)
+    _ = h5ad_reader.get_obs_var(entity="cells", dataset_path=h5ad_test_dataset)
 
-        try:
-            _ = h5ad_reader.get_X(dataset_path=h5ad_test_dataset)
-            _ = h5ad_reader.get_obs_var(entity="cells", dataset_path=h5ad_test_dataset)
-        except Exception as e:
-            # If we can't get data, just continue - we'll still test the caching
-            # mechanism even if data extraction fails
-            pass
+    # Verify cache has at least something in it
+    has_cache_items = (
+        len(h5ad_reader.cache._matrix_cache) > 0 or
+        len(h5ad_reader.cache._dataframe_cache) > 0 or
+        len(h5ad_reader.cache._metadata_cache) > 0
+    )
+    assert has_cache_items, "Cache was not populated"
 
-        # Artificially add something to cache if nothing was cached so far
-        if (len(h5ad_reader.cache._matrix_cache) == 0 and
-            len(h5ad_reader.cache._metadata_cache) == 0):
-            import numpy as np
-            h5ad_reader.cache._add_to_cache(f"{h5ad_test_dataset}:test_data",
-                                           np.random.rand(10, 10), 'matrix')
+    # Clear the cache
+    result = h5ad_reader.clear_cache()
 
-        # Verify cache has at least something in it
-        has_cache_items = (
-            len(h5ad_reader.cache._matrix_cache) > 0 or
-            len(h5ad_reader.cache._dataframe_cache) > 0 or
-            len(h5ad_reader.cache._metadata_cache) > 0
-        )
-        if not has_cache_items:
-            pytest.skip("Cache was not populated, cannot test clearing it")
-            return
+    # Verify cache is cleared
+    assert len(h5ad_reader.cache._matrix_cache) == 0
+    assert len(h5ad_reader.cache._dataframe_cache) == 0
+    assert len(h5ad_reader.cache._metadata_cache) == 0
+    assert len(h5ad_reader.cache._cache_access_times) == 0
+    assert result["status"] == "success"
+    assert result["cleared_all"] is True
+    total_items = (result["cache_types_cleared"]["matrix"] +
+                  result["cache_types_cleared"]["dataframe"] +
+                  result["cache_types_cleared"]["metadata"])
+    assert total_items > 0
 
-        # Clear the cache
-        result = h5ad_reader.clear_cache()
-
-        # Verify cache is cleared
-        assert len(h5ad_reader.cache._matrix_cache) == 0
-        assert len(h5ad_reader.cache._dataframe_cache) == 0
-        assert len(h5ad_reader.cache._metadata_cache) == 0
-        assert len(h5ad_reader.cache._cache_access_times) == 0
-        assert result["status"] == "success"
-        assert result["cleared_all"] is True
-        total_items = (result["cache_types_cleared"]["matrix"] +
-                      result["cache_types_cleared"]["dataframe"] +
-                      result["cache_types_cleared"]["metadata"])
-        assert total_items > 0
-
-        # Verify memory is cleared
-        cache_info = h5ad_reader.get_cache_info()
-        assert cache_info["memory_usage_mb"] == 0
-    except Exception as e:
-        pytest.skip(f"Error in test_clear_cache_all: {e}")
+    # Verify memory is cleared
+    cache_info = h5ad_reader.get_cache_info()
+    assert cache_info["memory_usage_mb"] == 0
 
 
 def test_clear_cache_dataset(h5ad_reader, h5ad_test_dataset):
@@ -244,66 +220,56 @@ def test_clear_cache_dataset(h5ad_reader, h5ad_test_dataset):
 
 def test_metadata_caching(h5ad_reader, h5ad_test_dataset):
     """Test that metadata is properly cached and reused."""
+    # Get metadata which should cache it
+    metadata_1 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+
+    # Check the metadata cache
+    cache_info = h5ad_reader.get_cache_info()
+
+    # Verify metadata is being cached
+    assert cache_info["item_counts"]["metadata"] > 0, "Metadata is not being cached"
+    assert h5ad_test_dataset in cache_info["datasets"], "Dataset not in cache"
+    assert cache_info["datasets"][h5ad_test_dataset] > 0, "Dataset has no cached items"
+
+    # Count how many times the file is opened
+    original_file_init = h5py.File.__init__
+    file_open_count = [0]
+
+    def counting_file_init(self, *args, **kwargs):
+        file_open_count[0] += 1
+        return original_file_init(self, *args, **kwargs)
+
     try:
-        # Get metadata which should cache it
-        metadata_1 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+        # Replace h5py.File.__init__ with our counting version
+        h5py.File.__init__ = counting_file_init
 
-        # Check the metadata cache
-        cache_info = h5ad_reader.get_cache_info()
+        # Initial count
+        initial_count = file_open_count[0]
 
-        # If metadata is being cached, we should see entries in the metadata cache
-        metadata_is_cached = (
-            cache_info["item_counts"]["metadata"] > 0 and
-            h5ad_test_dataset in cache_info["datasets"] and
-            cache_info["datasets"][h5ad_test_dataset] > 0
-        )
+        # Get metadata again - should use cache and not open the file
+        metadata_2 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
 
-        # Only proceed with the test if metadata caching is working
-        if not metadata_is_cached:
-            pytest.skip("Metadata is not being cached - cannot test metadata caching behavior")
-            return
+        # If caching works, file open count should not increase
+        assert file_open_count[0] == initial_count
 
-        # Count how many times the file is opened
-        original_file_init = h5py.File.__init__
-        file_open_count = [0]
+        # Both metadata instances should be identical
+        assert metadata_1 == metadata_2
 
-        def counting_file_init(self, *args, **kwargs):
-            file_open_count[0] += 1
-            return original_file_init(self, *args, **kwargs)
+        # Clear the cache
+        h5ad_reader.clear_cache()
 
-        try:
-            # Replace h5py.File.__init__ with our counting version
-            h5py.File.__init__ = counting_file_init
+        # Get metadata again after clearing cache
+        metadata_3 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
 
-            # Initial count
-            initial_count = file_open_count[0]
+        # After clearing cache, file should be opened again
+        assert file_open_count[0] > initial_count
 
-            # Get metadata again - should use cache and not open the file
-            metadata_2 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
+        # But metadata should still match
+        assert metadata_1 == metadata_3
 
-            # If caching works, file open count should not increase
-            assert file_open_count[0] == initial_count
-
-            # Both metadata instances should be identical
-            assert metadata_1 == metadata_2
-
-            # Clear the cache
-            h5ad_reader.clear_cache()
-
-            # Get metadata again after clearing cache
-            metadata_3 = h5ad_reader.get_metadata(dataset_path=h5ad_test_dataset)
-
-            # After clearing cache, file should be opened again
-            assert file_open_count[0] > initial_count
-
-            # But metadata should still match
-            assert metadata_1 == metadata_3
-
-        finally:
-            # Restore the original method
-            h5py.File.__init__ = original_file_init
-    except Exception as e:
-        pytest.skip(f"Error in test_metadata_caching: {e}")
+    finally:
+        # Restore the original method
+        h5py.File.__init__ = original_file_init
 
 
 def test_cache_size_management(h5ad_reader):
