@@ -13,6 +13,7 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
+from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
 
@@ -1014,11 +1015,35 @@ def register_data_routes(app, api_version):
                     # Skip hidden files and directories
                     if entry.startswith('.'):
                         continue
-                    
+
+                    # H5AD files are served directly by the h5ad reader (no zarr
+                    # conversion needed); list them alongside zarr stores so
+                    # plain .h5ad datasets are browsable. isfile() follows
+                    # symlinks, so symlinked .h5ad entries are picked up too.
+                    if entry.endswith(".h5ad") and os.path.isfile(entry_path):
+                        try:
+                            # get_metadata reads only the file's structure (not
+                            # the matrices), so this is a cheap shape probe.
+                            shape = h5ad_reader_obj.get_metadata(entry_path).get("shape", (0, 0))
+                            cells, genes = int(shape[0]), int(shape[1])
+                        except Exception:
+                            # Not a readable AnnData h5ad — skip it.
+                            continue
+
+                        zarr_stores.append({
+                            "name": entry,
+                            "path": entry_path,
+                            "is_link": os.path.islink(entry_path),
+                            "cells": cells,
+                            "genes": genes,
+                            "rel_path": os.path.relpath(entry_path, data_dir)
+                        })
+                        continue
+
                     # Skip if not a directory
                     if not os.path.isdir(entry_path):
                         continue
-                    
+
                     # Enhanced zarr store detection
                     is_zarr = False
                     

@@ -50,9 +50,15 @@ const App = (function() {
             // Load available sessions
             await _loadSessions();
             
-            // Set default dataset if available
+            // Set default dataset if available.
+            // A deep-link (?dataset_path=...&view=...) takes precedence over both
+            // the autosave session and the default-first-dataset boot, so a shared
+            // URL always opens its intended dataset + view.
             const datasets = await DataManager.loadDatasets();
-            if (datasets && datasets.length > 0 && !hasAutosave) {
+            const deepLink = _parseDeepLink();
+            if (deepLink) {
+                await _applyDeepLink(deepLink);
+            } else if (datasets && datasets.length > 0 && !hasAutosave) {
                 await _loadDataset(datasets[0].path);
             } else if (hasAutosave) {
                 await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
@@ -75,7 +81,108 @@ const App = (function() {
             _showNotification('Initialization failed', error.message, 'error');
         }
     }
-    
+
+    /**
+     * Decode a base64url-encoded string (RFC 4648 §5: '-'/'_' instead of
+     * '+'/'/', no padding) into UTF-8 text.
+     * @param {string} b64url
+     * @returns {string}
+     * @private
+     */
+    function _b64urlDecode(b64url) {
+        let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+        // Restore '=' padding to a multiple of 4.
+        while (b64.length % 4) b64 += '=';
+        // atob → binary string; round-trip through escape/decodeURIComponent so
+        // multi-byte UTF-8 (e.g. gene symbols with non-ASCII) survives.
+        return decodeURIComponent(escape(window.atob(b64)));
+    }
+
+    /**
+     * Parse the deep-link grammar from the current URL:
+     *   ?dataset_path=<path>&view=<base64url(JSON)>
+     * `view` is optional — a bare ?dataset_path just opens the dataset with no
+     * preset panels. Returns null when no dataset_path is present (normal boot).
+     * @returns {{datasetPath: string, view: Object|null}|null}
+     * @private
+     */
+    function _parseDeepLink() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const datasetPath = params.get('dataset_path');
+            if (!datasetPath) return null;
+
+            let view = null;
+            const rawView = params.get('view');
+            if (rawView) {
+                view = JSON.parse(_b64urlDecode(rawView));
+            }
+            return { datasetPath, view };
+        } catch (error) {
+            console.error('Failed to parse deep-link parameters:', error);
+            _showNotification('Invalid deep-link', 'The view= parameter could not be decoded.', 'error');
+            return null;
+        }
+    }
+
+    /**
+     * Apply a parsed deep-link: load the dataset, restore the focused gene, and
+     * materialize each preset panel. Reuses the standard _loadDataset path and
+     * PanelManager.createPanel (the same machinery a session restore uses), so a
+     * deep-linked view behaves identically to a hand-built one.
+     * @param {{datasetPath: string, view: Object|null}} deepLink
+     * @private
+     */
+    async function _applyDeepLink(deepLink) {
+        const { datasetPath, view } = deepLink;
+
+        // 1. Load the dataset through the normal (non-silent) path so selectors
+        //    and dataset info populate exactly as a manual selection would.
+        await _loadDataset(datasetPath);
+
+        // Reflect the selection in the dataset dropdown if the option exists.
+        const datasetSelector = document.getElementById('dataset-selector');
+        if (datasetSelector) {
+            datasetSelector.value = datasetPath;
+            if (window.$ && $.fn.select2) {
+                $(datasetSelector).trigger('change.select2');
+            }
+        }
+
+        if (view) {
+            // 2. Restore the focused gene (drives highlighting + the gene selector).
+            const constants = view.constants || {};
+            if (constants.focusedGene) {
+                DataManager.setFocusedGene(constants.focusedGene);
+                const focusedGeneSelect = document.getElementById('focused-gene');
+                if (focusedGeneSelect) focusedGeneSelect.value = constants.focusedGene;
+            }
+            if (constants.focusedCell) DataManager.setFocusedCell(constants.focusedCell);
+            if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
+
+            // 3. Materialize each preset panel. Panel `type` is normalized so the
+            //    documented 'cell_plot' form and the internal 'cell-plot' id both
+            //    resolve to the registered panel type.
+            const panels = Array.isArray(view.panels) ? view.panels : [];
+            panels.forEach(panel => {
+                const type = (panel.type || '').replace(/_/g, '-');
+                const config = { ...(panel.config || {}) };
+                if (panel.title && !config.title) config.title = panel.title;
+                PanelManager.createPanel(type, config);
+            });
+        }
+
+        // 4. Rewrite the URL to a clean form so the opened view is itself
+        //    re-shareable and a refresh re-applies it (state currently lives only
+        //    in localStorage otherwise).
+        try {
+            history.replaceState(null, '', window.location.href);
+        } catch (e) {
+            // replaceState can throw in sandboxed iframes — non-fatal.
+            console.debug('history.replaceState skipped:', e);
+        }
+    }
+
     /**
      * Initialize Plotly.js with optimized canvas settings
      * @private

@@ -11,28 +11,51 @@ class h5adReader:
     def __init__(self):
         pass
 
+    def _sparse_group_shape(self, group: h5py.Group):
+        """Extract (n_obs, n_vars) from a sparse-matrix group.
+
+        Standard AnnData (>=0.7) stores the shape as an attribute on the group
+        (``encoding-type`` csr/csc_matrix, ``shape`` attr); much older stores
+        wrote it as a child dataset. Handle both, returning None if neither.
+        """
+        if "shape" in group.attrs:
+            return tuple(int(v) for v in group.attrs["shape"][...])
+        if "shape" in group.keys():
+            return tuple(int(v) for v in group["shape"][...])
+        return None
+
     def _extract_h5ad_shape(self, file: h5py.File, has_fields: dict) -> Tuple[int, int]:
         #Check if we can extract the shape from X
         if has_fields['has_X']:
             #X is a dense array
             if isinstance(file['X'], h5py.Dataset):
                 return file['X'].shape
-            #X is a sparse array
+            #X is a sparse array (shape in group attrs for standard AnnData)
             elif isinstance(file['X'], h5py.Group):
-                required_keys = {"data", "indices", "indptr", "shape"}
-                if required_keys.issubset(file["X"].keys()):
-                    #Extract the shape
-                    return tuple(file['X']['shape'][...])
-                #Else we need to try a different approach
+                shape = self._sparse_group_shape(file['X'])
+                if shape is not None:
+                    return shape
         #See if we can extract shape from layers
         if has_fields['has_layers']:
             first_layer = list(file["layers"].keys())[0]
-            return file["layers"][first_layer].shape
-        #See if we can extract shape from obs/var
+            layer = file["layers"][first_layer]
+            if isinstance(layer, h5py.Dataset):
+                return layer.shape
+            elif isinstance(layer, h5py.Group):
+                shape = self._sparse_group_shape(layer)
+                if shape is not None:
+                    return shape
+        #Fall back to the lengths of the obs/var index datasets (n_obs, n_vars)
         if has_fields['has_obs'] and has_fields['has_var']:
-            n_obs = len(file["obs"]) if "obs" in file else 0
-            n_vars = len(file["var"]) if "var" in file else 0
-            return (n_obs, n_vars)
+            def _index_len(group_name):
+                if group_name not in file:
+                    return 0
+                group = file[group_name]
+                idx_key = "_index"
+                if isinstance(group, h5py.Group) and idx_key in group:
+                    return int(group[idx_key].shape[0])
+                return 0
+            return (_index_len("obs"), _index_len("var"))
         else:
             return (0, 0)
 
