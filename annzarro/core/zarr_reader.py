@@ -741,6 +741,57 @@ class ZarrReader:
                 
         return False, None
     
+    def _lazy_sparse_slice(self, matrix, shape, indices, axis):
+        """
+        Extract a few major-axis slices from a CSC (columns) or CSR (rows)
+        sparse zarr group without materializing the full matrix.
+
+        For the major axis of a compressed-sparse layout, slice k occupies the
+        contiguous range data[indptr[k]:indptr[k+1]]; reading only those ranges
+        decompresses just the overlapping zarr chunks. The result is assembled
+        as a sparse matrix in the SAME orientation/order as the equivalent
+        ``M[:, indices]`` / ``M[indices, :]`` full-load slice, so callers see no
+        behavioural difference.
+
+        Args:
+            matrix: zarr group with 'data'/'indices'/'indptr'.
+            shape: (n_rows, n_cols) of the full matrix.
+            indices: list of major-axis indices to extract (columns for CSC,
+                rows for CSR).
+            axis: 'col' (CSC) or 'row' (CSR).
+
+        Returns:
+            scipy.sparse matrix of shape (n_rows, len(indices)) for axis='col'
+            or (len(indices), n_cols) for axis='row'.
+        """
+        indptr_full = matrix['indptr'][:]
+        data_z = matrix['data']
+        idx_z = matrix['indices']
+        n_rows, n_cols = int(shape[0]), int(shape[1])
+
+        data_parts = []
+        ind_parts = []
+        new_indptr = np.empty(len(indices) + 1, dtype=np.int64)
+        new_indptr[0] = 0
+        for n, k in enumerate(indices):
+            k = int(k)
+            s, e = int(indptr_full[k]), int(indptr_full[k + 1])
+            if e > s:
+                data_parts.append(data_z[s:e])
+                ind_parts.append(idx_z[s:e])
+            new_indptr[n + 1] = new_indptr[n] + (e - s)
+
+        data = (np.concatenate(data_parts) if data_parts
+                else np.array([], dtype=data_z.dtype))
+        inner = (np.concatenate(ind_parts) if ind_parts
+                 else np.array([], dtype=np.int64))
+
+        if axis == 'col':
+            return sp.csc_matrix((data, inner, new_indptr),
+                                 shape=(n_rows, len(indices)))
+        return sp.csr_matrix((data, inner, new_indptr),
+                             shape=(len(indices), n_cols))
+
     def _load_sparse_matrix(self, matrix, row_indices=None, col_indices=None) -> Optional[np.ndarray]:
         """
         Load a sparse matrix from a zarr group.
@@ -768,8 +819,28 @@ class ZarrReader:
             return None
             
         shape = tuple(matrix.attrs['shape'])
-        
+
         try:
+            # ---- Fast lazy paths: avoid materializing the whole matrix ----
+            # The hot path for a UMAP colored by one gene is "all cells, one
+            # column". For CSC, column j is stored contiguously at
+            # data[indptr[j]:indptr[j+1]], so we read only that slice and let
+            # zarr decompress just the overlapping chunks -- O(nnz in the
+            # selected columns) instead of O(nnz total). Symmetrically, CSR
+            # gives cheap row (single-cell) extraction. These two cases cover
+            # the interactive coloring requests; everything else falls through
+            # to the correct (if heavier) full-load path below.
+            if (sparse_format == 'csc_matrix' and col_indices is not None
+                    and row_indices is None
+                    and all(k in matrix for k in ['data', 'indices', 'indptr'])):
+                return self._lazy_sparse_slice(
+                    matrix, shape, col_indices, axis='col')
+            if (sparse_format == 'csr_matrix' and row_indices is not None
+                    and col_indices is None
+                    and all(k in matrix for k in ['data', 'indices', 'indptr'])):
+                return self._lazy_sparse_slice(
+                    matrix, shape, row_indices, axis='row')
+
             # Handle CSR format
             if sparse_format == 'csr_matrix':
                 if not all(k in matrix for k in ['data', 'indices', 'indptr']):
