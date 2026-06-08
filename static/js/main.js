@@ -163,12 +163,18 @@ const App = (function() {
             // 3. Materialize each preset panel. Panel `type` is normalized so the
             //    documented 'cell_plot' form and the internal 'cell-plot' id both
             //    resolve to the registered panel type.
+            //
+            //    Use createPanelInLayout (NOT createPanel) so each panel goes
+            //    through the same wrapper + resize-handle wiring an interactively
+            //    created panel gets. A bare createPanel() appends a height-less
+            //    tile that renders with its own scrollbar, no resize handle, and
+            //    a distorted plot.
             const panels = Array.isArray(view.panels) ? view.panels : [];
             panels.forEach(panel => {
                 const type = (panel.type || '').replace(/_/g, '-');
                 const config = { ...(panel.config || {}) };
                 if (panel.title && !config.title) config.title = panel.title;
-                PanelManager.createPanel(type, config);
+                PanelManager.createPanelInLayout(type, config);
             });
         }
 

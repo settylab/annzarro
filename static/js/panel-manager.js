@@ -285,7 +285,54 @@ const PanelManager = (function() {
         return panel;
     }
 
-   
+    /**
+     * Materialize a panel directly into the layout, identical to an
+     * interactively-created one.
+     *
+     * The interactive "add panel" flow (the welcome selection tile) routes
+     * through LayoutManager.createPanelWithSelectionTile, which wraps the tile in
+     * a sized `.panel-wrapper` (fixed height) plus a horizontal `.split-handle`
+     * wired for vertical resizing. Callers that create panels programmatically
+     * (e.g. deep-link `view=` materialization) MUST use this so the panel gets
+     * the same wrapper, resize handle, and a sized parent — the plot's
+     * ResizeObserver relies on that parent to autosize Plotly correctly.
+     *
+     * Calling createPanel() directly (no targetContainer) instead appends a
+     * bare, height-less `.tile` straight into the flex-column container, which
+     * yields an inner scrollbar, no resize handle, and a distorted plot.
+     *
+     * Falls back to createPanel() if no welcome selection tile is present.
+     *
+     * @param {string} type - Panel type identifier
+     * @param {Object} [config] - Panel configuration
+     * @returns {Object|null} - The created panel instance, or null on unknown type
+     */
+    function createPanelInLayout(type, config = {}) {
+        if (!_panelTypes.has(type)) {
+            console.error(`Unknown panel type: ${type}`);
+            return null;
+        }
+
+        const selectionTile = _welcomeSelectionTile && _welcomeSelectionTile.tileSelector;
+        // The welcome tile lives in _container; mirror createPanelFromType and use
+        // the tile's actual parent so the wrapper is inserted in the right place.
+        const container = (selectionTile && selectionTile.parentElement) || _container;
+
+        if (selectionTile && container) {
+            return LayoutManager.createPanelWithSelectionTile(
+                container,
+                selectionTile,
+                createPanel,
+                type,
+                config
+            );
+        }
+
+        // No welcome selection tile available — fall back to a direct create so
+        // the panel still appears (will lack the wrapper/resize wiring).
+        return createPanel(type, config);
+    }
+
     /**
      * Update all selection tiles when panels are added, removed, or modified
      */
@@ -963,6 +1010,7 @@ const PanelManager = (function() {
         init,
         registerPanelType,
         createPanel,
+        createPanelInLayout,
         closePanel,
         getPanel,
         getPanelsByType,
