@@ -1,13 +1,14 @@
-# Runtime data — the served zarr stores (symlinks to processed_zarr/) and
-# per-user sessions are NOT committed; they are large/host-specific runtime
-# artifacts. The coverage manifest + its build/check scripts ARE committed:
-# they are the source of truth for what coverage *should* be.
+# Runtime data served by AnnZarro — NOT committed.
+#
+# AnnZarro discovers datasets by scanning a directory at runtime: point the
+# server's `data_dir` config at this `served-data/` directory (or symlink it
+# into the instance data dir), drop one `.zarr` store per dataset under
+# `datasets/`, and the `/api/<v>/datasets` endpoint lists them automatically
+# (annzarro/server/routes/data_routes.py:list_all_datasets — directory scan,
+# no hardcoded dataset list). Per-user sessions land under `sessions/`.
+#
+# These are large, host-specific runtime artifacts, so they stay out of git.
+# Deployment-specific dataset content (which studies are served, how they were
+# harmonized) is owned by the deployment, not by AnnZarro core.
 datasets/
 sessions/
-
-# but keep the manifest + tooling tracked
-!build_manifest.py
-!check_coverage.sh
-!SERVED_DATASETS.tsv
-!SERVED_DATASETS.md
-!.gitignore
