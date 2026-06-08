@@ -689,6 +689,29 @@ export class SelectionTile {
       const header = this.tileSelector.querySelector('.tile-selection-header');
       if (header) header.style.display = 'none';
     }
+
+    /**
+     * Restore the welcome header to its default content and make it visible.
+     *
+     * Used as a fallback when a restore or deep-link opened no panels: the header
+     * may have been replaced with a "restoring previous panel set..." spinner, so
+     * we put the standard "Welcome to AnnZarro / Get started by choosing a panel
+     * type" prompt back. The "Create New Panel" grid is always present in the
+     * welcome variant, so the user can immediately open a panel.
+     */
+    showWelcomeHeader() {
+      const header = this.tileSelector.querySelector('.tile-selection-header');
+      if (!header) return;
+      header.style.display = '';
+      if (this.variant === "welcome") {
+        // Mirror the default welcome header (the close button is hidden for
+        // welcome tiles, so we omit it rather than ship a dead control).
+        header.innerHTML = `
+              <h2>Welcome to AnnZarro</h2>
+              <p>Get started by choosing a panel type</p>
+        `;
+      }
+    }
   
     /**
      * Refresh the sessions list manually (only applicable for welcome variant).

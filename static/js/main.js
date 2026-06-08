@@ -37,31 +37,53 @@ const App = (function() {
             // Setup custom event listeners for error handling
             _setupErrorHandlers();
             
-            // Check for autosave session before initializing panel manager
+            // Check for autosave session before initializing panel manager.
+            //
+            // Parse the deep-link up front: a deep-link (?dataset_path=...&view=...)
+            // takes precedence over the autosave session, so when one is present we
+            // must NOT show the "restoring previous panel set" spinner. That spinner
+            // is only ever cleared as a side effect of a panel being created, so a
+            // bare ?dataset_path (no view) — or a view that fails to materialize —
+            // would otherwise pin it forever. With the spinner suppressed, a
+            // deep-link boots into the normal Welcome tile, which is the correct
+            // fallback whenever nothing opens.
             const autosave = SessionManager.getAutosaveSession();
-            const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE;
-            
+            const deepLink = _parseDeepLink();
+            const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
+
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
-            
+
             // Load available datasets
             await _loadDatasets();
-            
+
             // Load available sessions
             await _loadSessions();
-            
+
             // Set default dataset if available.
-            // A deep-link (?dataset_path=...&view=...) takes precedence over both
-            // the autosave session and the default-first-dataset boot, so a shared
-            // URL always opens its intended dataset + view.
             const datasets = await DataManager.loadDatasets();
-            const deepLink = _parseDeepLink();
             if (deepLink) {
-                await _applyDeepLink(deepLink);
+                // Materialize the shared view. Guard against a throwing or empty
+                // apply: on ANY failure, or a deep-link that opens no panels, fall
+                // back to the Welcome screen rather than leaving a spinner up.
+                try {
+                    await _applyDeepLink(deepLink);
+                } catch (error) {
+                    console.error('Deep-link application failed:', error);
+                    _showNotification('Deep-link failed', error.message || 'Could not open the shared view.', 'error');
+                }
+                PanelManager.ensureWelcomeFallback();
             } else if (datasets && datasets.length > 0 && !hasAutosave) {
                 await _loadDataset(datasets[0].path);
             } else if (hasAutosave) {
-                await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
+                // Genuine autosave restore. If it throws or restores zero panels,
+                // don't hang on the spinner — drop back to the Welcome screen.
+                try {
+                    await SessionManager.loadSession(Config.AUTOSAVE.SESSION_NAME);
+                } catch (error) {
+                    console.error('Autosave restore failed:', error);
+                }
+                PanelManager.ensureWelcomeFallback();
             }
 
             
@@ -163,12 +185,18 @@ const App = (function() {
             // 3. Materialize each preset panel. Panel `type` is normalized so the
             //    documented 'cell_plot' form and the internal 'cell-plot' id both
             //    resolve to the registered panel type.
+            //
+            //    Use createPanelInLayout (NOT createPanel) so each panel goes
+            //    through the same wrapper + resize-handle wiring an interactively
+            //    created panel gets. A bare createPanel() appends a height-less
+            //    tile that renders with its own scrollbar, no resize handle, and
+            //    a distorted plot.
             const panels = Array.isArray(view.panels) ? view.panels : [];
             panels.forEach(panel => {
                 const type = (panel.type || '').replace(/_/g, '-');
                 const config = { ...(panel.config || {}) };
                 if (panel.title && !config.title) config.title = panel.title;
-                PanelManager.createPanel(type, config);
+                PanelManager.createPanelInLayout(type, config);
             });
         }
 
