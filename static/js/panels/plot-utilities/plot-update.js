@@ -8,6 +8,7 @@ import {
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
+import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 
 
 
@@ -373,8 +374,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         color: data.color,
                         colorscale: settings.colorScale,
                         reversescale: settings.colorReversed,
-                        cmin: settings.colorMin !== null ? settings.colorMin : Math.min(...data.color.filter(v => !isNaN(v))),
-                        cmax: settings.colorMax !== null ? settings.colorMax : Math.max(...data.color.filter(v => !isNaN(v))),
+                        cmin: settings.colorMin !== null ? settings.colorMin : arrayMin(data.color.filter(v => !isNaN(v))),
+                        cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
                         colorbar: {
                             title: {
                                 text: `${settings.color.type}.${settings.color.key}` + 
@@ -512,8 +513,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     if (keepPoint && settings.hideOutliers) {
                       const colorVal = data.color[idx];
                       if (colorVal !== null && !isNaN(colorVal)) {
-                        const cmin = settings.colorMin ?? Math.min(...data.color.filter(v => !isNaN(v)));
-                        const cmax = settings.colorMax ?? Math.max(...data.color.filter(v => !isNaN(v)));
+                        const cmin = settings.colorMin ?? arrayMin(data.color.filter(v => !isNaN(v)));
+                        const cmax = settings.colorMax ?? arrayMax(data.color.filter(v => !isNaN(v)));
                         if (colorVal < cmin || colorVal > cmax) {
                           keepPoint = false;
                         }
