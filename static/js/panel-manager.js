@@ -22,6 +22,12 @@ const PanelManager = (function() {
     // References to DOM elements
     let _container = null;
     let _welcomeSelectionTile = null;
+
+    // How long the autosave "restoring previous panel set" spinner may stay up
+    // before we give up and fall back to the Welcome screen (ms). Generous enough
+    // for a legitimate large-session restore, short enough that a stalled restore
+    // doesn't strand the user on an infinite spinner.
+    const _RESTORE_FALLBACK_MS = 20000;
     
     /**
      * Initialize the panel manager
@@ -96,6 +102,13 @@ const PanelManager = (function() {
                     </div> Your previous panel set is being restored...</p>
                 `;
             }
+
+            // Safety net: a restore that never resolves (stalled fetch, a swallowed
+            // error, or a corrupt autosave that opens nothing) must not pin this
+            // spinner forever. After a generous window, fall back to the Welcome
+            // screen if still nothing has opened. ensureWelcomeFallback is a no-op
+            // once any panel exists, so a normal restore is unaffected.
+            setTimeout(() => ensureWelcomeFallback(), _RESTORE_FALLBACK_MS);
         }
         // Otherwise show the standard welcome tile
         else {
@@ -285,7 +298,75 @@ const PanelManager = (function() {
         return panel;
     }
 
-   
+    /**
+     * Materialize a panel directly into the layout, identical to an
+     * interactively-created one.
+     *
+     * The interactive "add panel" flow (the welcome selection tile) routes
+     * through LayoutManager.createPanelWithSelectionTile, which wraps the tile in
+     * a sized `.panel-wrapper` (fixed height) plus a horizontal `.split-handle`
+     * wired for vertical resizing. Callers that create panels programmatically
+     * (e.g. deep-link `view=` materialization) MUST use this so the panel gets
+     * the same wrapper, resize handle, and a sized parent — the plot's
+     * ResizeObserver relies on that parent to autosize Plotly correctly.
+     *
+     * Calling createPanel() directly (no targetContainer) instead appends a
+     * bare, height-less `.tile` straight into the flex-column container, which
+     * yields an inner scrollbar, no resize handle, and a distorted plot.
+     *
+     * Falls back to createPanel() if no welcome selection tile is present.
+     *
+     * @param {string} type - Panel type identifier
+     * @param {Object} [config] - Panel configuration
+     * @returns {Object|null} - The created panel instance, or null on unknown type
+     */
+    function createPanelInLayout(type, config = {}) {
+        if (!_panelTypes.has(type)) {
+            console.error(`Unknown panel type: ${type}`);
+            return null;
+        }
+
+        const selectionTile = _welcomeSelectionTile && _welcomeSelectionTile.tileSelector;
+        // The welcome tile lives in _container; mirror createPanelFromType and use
+        // the tile's actual parent so the wrapper is inserted in the right place.
+        const container = (selectionTile && selectionTile.parentElement) || _container;
+
+        if (selectionTile && container) {
+            return LayoutManager.createPanelWithSelectionTile(
+                container,
+                selectionTile,
+                createPanel,
+                type,
+                config
+            );
+        }
+
+        // No welcome selection tile available — fall back to a direct create so
+        // the panel still appears (will lack the wrapper/resize wiring).
+        return createPanel(type, config);
+    }
+
+    /**
+     * Guarantee the UI never stays stuck on a "restoring previous panel set"
+     * spinner. If no panels materialized — a deep-link with no view, an empty or
+     * corrupt autosave, or a restore that threw — reset the welcome tile to its
+     * default "Welcome to AnnZarro / Get started by choosing a panel type" state
+     * so the user always has a usable fallback instead of an infinite spinner.
+     *
+     * No-op once any panel exists: in that case the welcome tile has already been
+     * consumed/hidden by the panel-creation path, so a normal restore or a
+     * successful deep-link is unaffected.
+     */
+    function ensureWelcomeFallback() {
+        if (_panels.size > 0) return;
+        if (_welcomeSelectionTile && typeof _welcomeSelectionTile.showWelcomeHeader === 'function') {
+            _welcomeSelectionTile.showWelcomeHeader();
+            if (typeof _welcomeSelectionTile.toggleSessions === 'function') {
+                _welcomeSelectionTile.toggleSessions(true);
+            }
+        }
+    }
+
     /**
      * Update all selection tiles when panels are added, removed, or modified
      */
@@ -963,6 +1044,8 @@ const PanelManager = (function() {
         init,
         registerPanelType,
         createPanel,
+        createPanelInLayout,
+        ensureWelcomeFallback,
         closePanel,
         getPanel,
         getPanelsByType,

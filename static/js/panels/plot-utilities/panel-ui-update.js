@@ -1,6 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
+import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 
 /**
  * Populates only the key selector for a given axis.
@@ -622,8 +623,8 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
     if ($colorMinSlider.length && $colorMaxSlider.length && data && data.color && Array.isArray(data.color)) {
       const validValues = data.color.filter(v => !isNaN(v));
       if (validValues.length > 0) {
-        const dataMin = Math.min(...validValues);
-        const dataMax = Math.max(...validValues);
+        const dataMin = arrayMin(validValues);
+        const dataMax = arrayMax(validValues);
 
         // Now, if the color range is not locked, update the actual slider/input values.
         // During first load, respect provided values even when range is not locked
@@ -716,8 +717,8 @@ export function applyCentering(container, data, settings, id) {
 
   // Compute the absolute maximum value from both ends
   const absMaxComputed = Math.max(
-    Math.abs(Math.min(...validValues)),
-    Math.abs(Math.max(...validValues))
+    Math.abs(arrayMin(validValues)),
+    Math.abs(arrayMax(validValues))
   );
 
   // If not locked, update settings with the computed symmetric range
@@ -744,8 +745,8 @@ export function applyCentering(container, data, settings, id) {
   const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
   
   if ($colorMinSlider.length && $colorMaxSlider.length) {
-    const dataMin = Math.min(...validValues);
-    const dataMax = Math.max(...validValues);
+    const dataMin = arrayMin(validValues);
+    const dataMax = arrayMax(validValues);
 
     if (!settings.lockColorRange) {
       // Set sliders for a perfectly centered range

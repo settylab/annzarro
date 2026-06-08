@@ -10,6 +10,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
+import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -428,8 +429,8 @@ export function setupColorControls(
 
         if (updateSliders && data && data.color && Array.isArray(data.color)) {
             const validValues = data.color.filter((v) => !isNaN(v));
-            const dataMin = Math.min(...validValues);
-            const dataMax = Math.max(...validValues);
+            const dataMin = arrayMin(validValues);
+            const dataMax = arrayMax(validValues);
             $colorMinSlider.val(settings.colorMin !== null ? settings.colorMin : dataMin);
             $colorMaxSlider.val(settings.colorMax !== null ? settings.colorMax : dataMax);
         }

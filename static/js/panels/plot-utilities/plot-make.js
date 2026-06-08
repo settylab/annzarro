@@ -3,6 +3,7 @@ import { createLayout, processCategories, attachClickHandler } from './plot-make
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
+import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -862,8 +863,8 @@ export function createFilterMask(data, settings) {
     // b) "in-range" mask for outliers
     if (settings.hideOutliers) {
       const numericVals = data.color.filter(v => !isNaN(v));
-      const cmin = settings.colorMin ?? Math.min(...numericVals);
-      const cmax = settings.colorMax ?? Math.max(...numericVals);
+      const cmin = settings.colorMin ?? arrayMin(numericVals);
+      const cmax = settings.colorMax ?? arrayMax(numericVals);
 
       if (applyToAll) {
         // Apply to all data points
@@ -1695,10 +1696,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const validValues = filteredData.color.filter(v => !isNaN(v));
       
         if (cmin == null) {
-          cmin = Math.min(...validValues);
+          cmin = arrayMin(validValues);
         }
         if (cmax == null) {
-          cmax = Math.max(...validValues);
+          cmax = arrayMax(validValues);
         }
       }
       
@@ -1775,8 +1776,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           if (keepPoint && settings.hideOutliers) {
             const colorVal = filteredData.color[idx];
             if (colorVal !== null && !isNaN(colorVal)) {
-              const cmin = settings.colorMin ?? Math.min(...filteredData.color.filter(v => !isNaN(v)));
-              const cmax = settings.colorMax ?? Math.max(...filteredData.color.filter(v => !isNaN(v)));
+              const cmin = settings.colorMin ?? arrayMin(filteredData.color.filter(v => !isNaN(v)));
+              const cmax = settings.colorMax ?? arrayMax(filteredData.color.filter(v => !isNaN(v)));
               if (colorVal < cmin || colorVal > cmax) {
                 keepPoint = false;
               }
@@ -1850,10 +1851,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const validValues = filteredData.color.filter(v => !isNaN(v));
       
         if (cmin == null) {
-          cmin = Math.min(...validValues);
+          cmin = arrayMin(validValues);
         }
         if (cmax == null) {
-          cmax = Math.max(...validValues);
+          cmax = arrayMax(validValues);
         }
       }
       

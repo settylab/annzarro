@@ -1,0 +1,13 @@
+# Runtime data — the served zarr stores (symlinks to processed_zarr/) and
+# per-user sessions are NOT committed; they are large/host-specific runtime
+# artifacts. The coverage manifest + its build/check scripts ARE committed:
+# they are the source of truth for what coverage *should* be.
+datasets/
+sessions/
+
+# but keep the manifest + tooling tracked
+!build_manifest.py
+!check_coverage.sh
+!SERVED_DATASETS.tsv
+!SERVED_DATASETS.md
+!.gitignore
