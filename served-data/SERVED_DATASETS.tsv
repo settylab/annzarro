@@ -1,0 +1,21 @@
+entity_id	accession	title	served_zarr	status	n_cells	layers	celltype	umap	updated
+A1	GSE178318	Che 2021 CRLM atlas — paired CRC + liver met + blood	GSE178318_harmonized.zarr	served	126314	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+A2	GSE164522	Liu 2022 CRLM immune atlas — CD45+ 5' scRNA + scTCR, 6-site	GSE164522_harmonized.zarr	served	257843	logcounts	cell_type	yes	2026-06-07
+A3	GSE225857	Wang 2023 CRLM scRNA + matched Visium (spatial keystone)	GSE225857_harmonized.zarr	served	222728	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+A3	GSE225857	Wang 2023 CRLM Visium (cell2location mapped)	GSE225857_spatial_mapped_harmonized.zarr	variant	21739	counts	-	no	2026-06-07
+A4	GSE146409	Massalha 2020 LCM mini-bulk, cross-disease zonation	GSE146409_spatial_lcm_harmonized.zarr	served-spatial	63	counts,lognorm	-	no	2026-06-07
+A5	GSE206552	Garbarino 2023 CRLM Visium (independent replicate)	GSE206552_spatial_mapped_harmonized.zarr	served-spatial	9712	counts	-	no	2026-06-07
+B1	GSE115469	MacParland 2018 healthy-liver reference	GSE115469_harmonized.zarr	served	8444	logcounts,normalized_counts	cell_type	yes	2026-06-07
+B2	GSE192741	Guilliams 2022 Liver Cell Atlas	GSE192741_harmonized.zarr	served	159141	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+B3	GSE136103	Ramachandran 2019 cirrhotic-liver reference	GSE136103_harmonized.zarr	served	85942	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+B4	GSE124395	Aizarani 2019 epithelial/progenitor reference	GSE124395_harmonized.zarr	served	11947	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+C1	GSE125449	Ma 2019 primary liver cancer (HCC + iCCA)	GSE125449_harmonized.zarr	served	8966	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+C2	GSE149614	Lu 2022 multi-site HCC ecosystem	GSE149614_harmonized.zarr	served	68175	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+C3	GSE138709	Zhang 2020 iCCA architecture	GSE138709_harmonized.zarr	served	31195	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+C4	GSE140228	Zhang 2019 HCC CD45+ immune landscape	GSE140228_harmonized.zarr	served	62765	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+D1	GSE197177	Zhou 2023 PDAC primary <-> hepatic metastasis	GSE197177_harmonized.zarr	served	57747	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+D2	GSE263733	Kim 2024 PDAC primary <-> liver met, clonal evolution	GSE263733_harmonized.zarr	served	65537	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+D3	scPLM(DOI:10.34133/research.1208)	Tong/Wang 2024 pan-cancer liver-met atlas (validation backbone)	scPLM_harmonized.zarr	served	460337	logcounts	cell_type	yes	2026-06-07
+F1	GSE235863	Guo 2025 anti-PD-1+lenvatinib HBV+ HCC, CD45+ immune	GSE235863_harmonized.zarr	served	181770	counts,logcounts,normalized_counts	cell_type	yes	2026-06-07
+integrated-meta-atlas	integrated_scvi	Integrated cross-dataset liver meta-atlas (scVI embedding, 1.17M cells)	integrated_scvi.zarr	served	1165934	counts,lognorm	cell_type	yes	2026-06-07
+integrated-meta-atlas	integrated_raw	Integrated meta-atlas (raw, no joint embedding)	integrated_raw.zarr	variant	1165934	counts,lognorm	cell_type	no	2026-06-07
