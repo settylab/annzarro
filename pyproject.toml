@@ -69,11 +69,11 @@ annzarro-tests = "run_tests:main"
 package-dir = {"" = "."}
 include-package-data = true
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["annzarro/tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-python_classes = "Test*"
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
 filterwarnings = [
     "ignore::DeprecationWarning:pkg_resources.*",
     "ignore::DeprecationWarning:werkzeug.*",
