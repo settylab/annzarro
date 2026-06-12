@@ -1,0 +1,5 @@
+{
+  "type": "module",
+  "private": true,
+  "//": "Marks every .js under static/js/ as an ES module for Node's loader. The browser already loads these via <script type=\"module\"> and ignores this file; Node (used by tests/js/*.test.mjs and the array-stats guard) otherwise resolves a bare .js as CommonJS and chokes on `export`. Co-locating this here lets shared util modules be authored once and run in both the browser and Node with no per-file .mjs rename. No build step is implied or added."
+}

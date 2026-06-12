@@ -5,6 +5,7 @@ import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
+import { encodeView, decodeView, normalizeView } from './utils/deeplink.js';
 
 const App = (function() {
     // Private variables
@@ -105,26 +106,14 @@ const App = (function() {
     }
 
     /**
-     * Decode a base64url-encoded string (RFC 4648 §5: '-'/'_' instead of
-     * '+'/'/', no padding) into UTF-8 text.
-     * @param {string} b64url
-     * @returns {string}
-     * @private
-     */
-    function _b64urlDecode(b64url) {
-        let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-        // Restore '=' padding to a multiple of 4.
-        while (b64.length % 4) b64 += '=';
-        // atob → binary string; round-trip through escape/decodeURIComponent so
-        // multi-byte UTF-8 (e.g. gene symbols with non-ASCII) survives.
-        return decodeURIComponent(escape(window.atob(b64)));
-    }
-
-    /**
      * Parse the deep-link grammar from the current URL:
      *   ?dataset_path=<path>&view=<base64url(JSON)>
      * `view` is optional — a bare ?dataset_path just opens the dataset with no
      * preset panels. Returns null when no dataset_path is present (normal boot).
+     *
+     * Decoding + normalization live in ./utils/deeplink.js, the single source of
+     * truth shared with the Node guard and the share-link encoder, so a link this
+     * parses and a link _buildShareView produces are governed by one schema.
      * @returns {{datasetPath: string, view: Object|null}|null}
      * @private
      */
@@ -137,7 +126,7 @@ const App = (function() {
             let view = null;
             const rawView = params.get('view');
             if (rawView) {
-                view = JSON.parse(_b64urlDecode(rawView));
+                view = normalizeView(decodeView(rawView));
             }
             return { datasetPath, view };
         } catch (error) {
@@ -145,6 +134,32 @@ const App = (function() {
             _showNotification('Invalid deep-link', 'The view= parameter could not be decoded.', 'error');
             return null;
         }
+    }
+
+    /**
+     * Build a shareable deep-link URL for the CURRENT app state — the encode
+     * mirror of _parseDeepLink. Captures the live focus constants plus the live
+     * layout tree (via the same PanelManager.saveLayout serialization that
+     * restoreLayout consumes), so the produced link reconstructs exactly this
+     * view when opened. This is the "save current layout → shareable link" half
+     * of the unified serialization.
+     * @param {string} datasetPath - dataset to encode (defaults to the loaded one)
+     * @returns {string} absolute URL with ?dataset_path=&view=
+     */
+    function _buildShareView(datasetPath) {
+        const path = datasetPath || _lastLoadedDatasetPath || '';
+        const view = {
+            constants: {
+                focusedGene: DataManager.getFocusedGene(),
+                focusedCell: DataManager.getFocusedCell(),
+                taxonomyId: DataManager.getTaxonomyId()
+            },
+            layout: PanelManager.saveLayout()
+        };
+        const url = new URL(window.location.origin + window.location.pathname);
+        url.searchParams.set('dataset_path', path);
+        url.searchParams.set('view', encodeView(view));
+        return url.toString();
     }
 
     /**
@@ -182,22 +197,37 @@ const App = (function() {
             if (constants.focusedCell) DataManager.setFocusedCell(constants.focusedCell);
             if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
 
-            // 3. Materialize each preset panel. Panel `type` is normalized so the
-            //    documented 'cell_plot' form and the internal 'cell-plot' id both
-            //    resolve to the registered panel type.
+            // 3. Materialize the panels. Two shapes, one preferred:
             //
-            //    Use createPanelInLayout (NOT createPanel) so each panel goes
-            //    through the same wrapper + resize-handle wiring an interactively
-            //    created panel gets. A bare createPanel() appends a height-less
-            //    tile that renders with its own scrollbar, no resize handle, and
-            //    a distorted plot.
-            const panels = Array.isArray(view.panels) ? view.panels : [];
-            panels.forEach(panel => {
-                const type = (panel.type || '').replace(/_/g, '-');
-                const config = { ...(panel.config || {}) };
-                if (panel.title && !config.title) config.title = panel.title;
-                PanelManager.createPanelInLayout(type, config);
-            });
+            //    (a) view.layout — a full split/size/panel hierarchy tree (the
+            //        same object PanelManager.saveLayout() emits). Reconstruct it
+            //        through PanelManager.restoreLayout, the EXACT path a session
+            //        restore uses, so a deep-linked layout and a hand-built one
+            //        are byte-for-byte the same machinery. This is the
+            //        future-proof path: any arrangement of horizontal/vertical
+            //        splits with explicit size percentages auto-opens on load.
+            //
+            //    (b) view.panels — the legacy flat list (no split/size control).
+            //        Kept as a simple shorthand. Panel `type` is normalized so the
+            //        documented 'cell_plot' form and the internal 'cell-plot' id
+            //        both resolve. createPanelInLayout (NOT createPanel) routes
+            //        each panel through the wrapper + resize-handle wiring an
+            //        interactively-created panel gets; a bare createPanel() appends
+            //        a height-less tile that renders distorted with no handle.
+            //
+            //    normalizeView (utils/deeplink.js) guarantees at most one of these
+            //    is set, with layout winning when both were supplied.
+            if (view.layout) {
+                await PanelManager.restoreLayout(view.layout);
+            } else {
+                const panels = Array.isArray(view.panels) ? view.panels : [];
+                panels.forEach(panel => {
+                    const type = (panel.type || '').replace(/_/g, '-');
+                    const config = { ...(panel.config || {}) };
+                    if (panel.title && !config.title) config.title = panel.title;
+                    PanelManager.createPanelInLayout(type, config);
+                });
+            }
         }
 
         // 4. Rewrite the URL to a clean form so the opened view is itself
@@ -2494,7 +2524,11 @@ const App = (function() {
     
     // Public API
     return {
-        init
+        init,
+        // Encode the current focus + layout into a shareable deep-link URL — the
+        // round-trip partner of the deep-link boot path. Exposed for a "copy
+        // shareable link" affordance and for end-to-end serialization tests.
+        buildShareView: _buildShareView
     };
 })();
 
