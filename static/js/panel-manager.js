@@ -11,6 +11,7 @@
 import { LayoutManager } from './layout-manager.js';
 import { SelectionTile } from './selection-tile.js';
 import { Config } from './config.js';
+import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds } from './utils/deeplink.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -696,6 +697,14 @@ const PanelManager = (function() {
         
         // Control panel visibility is part of the layout visual state (not panel config)
         const controlState = {};
+        // Per-panel config keyed by tile id. restoreLayout already reads
+        // `layout.panelConfigs[id]` when re-instantiating a panel; emitting it
+        // here completes the saveLayout↔restoreLayout round-trip so a serialized
+        // layout (e.g. a shareable deep link) reopens with each panel's actual
+        // settings, not defaults. The value is the constructor-ready config
+        // (getConfig() output + its id), matching what restoreLayout passes to
+        // `new Constructor(container, panelConfig)`.
+        const panelConfigs = {};
         _panels.forEach((panel, id) => {
             const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
             if (tileElement) {
@@ -703,18 +712,27 @@ const PanelManager = (function() {
                 const plotControls = contentContainer?.querySelector('.plot-controls');
                 const tableControls = contentContainer?.querySelector('.table-controls');
                 const controlsElement = plotControls || tableControls;
-                
+
                 if (controlsElement) {
                     controlState[id] = controlsElement.style.display !== 'none';
                 }
             }
+            try {
+                const cfg = (panel.getConfig && panel.getConfig()) || {};
+                panelConfigs[id] = { id, ...cfg };
+            } catch (err) {
+                console.warn(`saveLayout: could not serialize config for ${id}:`, err);
+                panelConfigs[id] = { id };
+            }
         });
-        
+
         const layout = {
+            v: VIEW_SCHEMA_VERSION,
             hierarchy: layoutHierarchy,
-            controlState: controlState
+            controlState: controlState,
+            panelConfigs: panelConfigs
         };
-        
+
         console.log('Layout saved:', layout);
         return layout;
     }
@@ -743,21 +761,12 @@ const PanelManager = (function() {
             _container.innerHTML = '';
         }
         
-        // Function to extract panel IDs from hierarchy nodes
-        function collectPanelIds(node) {
-            if (!node) return;
-            
-            if (node.type === 'tile' && node.id) {
-                panelIdsInLayout.add(node.id);
-            } else if (node.type === 'split' && node.children) {
-                node.children.forEach(child => collectPanelIds(child));
-            }
-        }
-        
         // Handle new hierarchical format
         if (layout.hierarchy) {
-            // Collect all panel IDs in the layout
-            layout.hierarchy.forEach(node => collectPanelIds(node));
+            // Collect all panel IDs in the layout. collectTileIds (utils/deeplink.js)
+            // is the shared walk, so the deep-link encoder and this restore agree
+            // on exactly which tiles a hierarchy opens.
+            collectTileIds(layout.hierarchy).forEach(id => panelIdsInLayout.add(id));
             
             // First pass: Build the DOM layout structure without initializing panels
             const rebuiltNodes = layout.hierarchy.map(node => 
@@ -792,9 +801,9 @@ const PanelManager = (function() {
                 const contentContainer = tileElement.querySelector('.tile-content');
                 if (!contentContainer) continue;
                 
-                // Extract panel type from ID
-                const typeParts = id.split('-');
-                const type = typeParts.slice(0, -1).join('-'); // everything before the last dash
+                // Extract panel type from ID (everything before the last dash).
+                // Shared with the deep-link encoder via panelTypeFromTileId.
+                const type = panelTypeFromTileId(id);
                 
                 // Set up event handlers first
                 _setupTileEventHandlers(tileElement, id);
