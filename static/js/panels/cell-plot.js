@@ -6,6 +6,8 @@ import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
 import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
+import { Coverage, GAP } from '../utils/coverage.js';
+import { drawPlaceholder } from '../utils/panel-surface.js';
 
 /**
  * Cell Plot Panel
@@ -92,7 +94,9 @@ const CellPlotPanel = (function() {
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
                 if (_plotContainer) {
-                    _plotContainer.innerHTML = `<div class="alert alert-danger">Error initializing panel: ${error.message}</div>`;
+                    drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                        error.message || 'unknown error',
+                        { source: 'initializing panel', unit: 'cells' }), 'cells');
                 } else {
                     console.error('Cannot show error - plotContainer is undefined');
                 }
@@ -124,7 +128,9 @@ const CellPlotPanel = (function() {
             } catch (error) {
                 console.error(`Error loading dataset for panel ${_id}:`, error);
                 if (_plotContainer) {
-                    _plotContainer.innerHTML = `<div class="alert alert-danger">Error loading dataset: ${error.message}</div>`;
+                    drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                        error.message || 'unknown error',
+                        { source: 'loading dataset', unit: 'cells' }), 'cells');
                 }
                 _isFirstLoad = false;
             }

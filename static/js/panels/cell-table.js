@@ -7,6 +7,8 @@ import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
 import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { Coverage, GAP } from '../utils/coverage.js';
+import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 
 const CellTablePanel = (function() {
@@ -72,7 +74,9 @@ const CellTablePanel = (function() {
             } catch (error) {
                 console.error('Error initializing cell table panel:', error);
                 if (_tableContainer) {
-                    _tableContainer.innerHTML = `<div class="alert alert-danger">Error initializing table: ${error.message}</div>`;
+                    drawPlaceholder(_tableContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                        error.message || 'unknown error',
+                        { source: 'initializing table', unit: 'cells' }), 'cells');
                 }
             }
         }
@@ -102,7 +106,9 @@ const CellTablePanel = (function() {
             } catch (error) {
                 console.error(`Error loading dataset for cell table panel ${_id}:`, error);
                 if (_tableContainer) {
-                    _tableContainer.innerHTML = `<div class="alert alert-danger">Error loading dataset: ${error.message}</div>`;
+                    drawPlaceholder(_tableContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                        error.message || 'unknown error',
+                        { source: 'loading dataset', unit: 'cells' }), 'cells');
                 }
                 _isFirstLoad = false;
             }
@@ -186,6 +192,10 @@ const CellTablePanel = (function() {
                 // Initialize DataTable
                 if (tableData.data.length > 0) {
                     _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    // State what the table is NOT showing, and why. A table that
+                    // silently drops an unreadable column looks identical to one
+                    // whose column genuinely holds nothing.
+                    renderCoverageNotice(_tableContainer, tableData.coverage, 'cells');
                     
                     // Store panel settings in DataTables settings
                     _dataTable.settings()[0]._panelSettings = _settings;
@@ -193,11 +203,13 @@ const CellTablePanel = (function() {
                     // Set up event listeners after DataTable is initialized
                     _setupEventListeners();
                 } else {
-                    _tableContainer.innerHTML = `
-                        <div class="alert alert-info">
-                            No data available. Please select columns from the control panel.
-                        </div>
-                    `;
+                    drawPlaceholder(_tableContainer,
+                        (tableData.coverage && !tableData.coverage.isComplete)
+                            ? tableData.coverage
+                            : Coverage.missing(GAP.EMPTY,
+                                'no columns are selected -- pick some in the control panel',
+                                { source: 'table columns', unit: 'cells' }),
+                        'cells');
                 }
                 
                 // Clear the abort controller reference on successful completion
@@ -220,11 +232,11 @@ const CellTablePanel = (function() {
                 } else {
                     // For actual errors, show error message
                     console.error('Error refreshing cell table:', error);
-                    _tableContainer.innerHTML = `
-                        <div class="alert alert-danger">
-                            Error loading table data: ${error.message}
-                        </div>
-                    `;
+                    drawPlaceholder(_tableContainer,
+                        error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'table data', unit: 'cells' }),
+                        'cells');
                 }
                 
                 // Rethrow abort errors to signal upstream that operation was cancelled

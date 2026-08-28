@@ -3,6 +3,7 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
+import { Coverage, GAP, classifyError } from '../../utils/coverage.js';
 
 /**
  * Load data for a table
@@ -24,8 +25,16 @@ export async function loadTableData(settings, entityType, signal = null) {
             : DataManager.getGenes();
         
         if (!entityIndex || entityIndex.length === 0) {
-            throw new Error(`No ${entityType} found in dataset`);
+            const err = new Error(`No ${entityType} found in dataset`);
+            err.coverage = Coverage.missing(GAP.UNAVAILABLE,
+                `this dataset supplied no ${entityType} names`,
+                { source: `${entityType} names`, unit: entityType });
+            throw err;
         }
+        // One entry per requested column. A column that never lands in this
+        // list has not been classified, and Coverage.merge turns that into a
+        // visible UNREPORTED rather than an absence nobody notices.
+        const columnCoverages = [];
         
         // Check if aborted after fetching entity index
         if (signal && signal.aborted) {
@@ -59,7 +68,9 @@ export async function loadTableData(settings, entityType, signal = null) {
                 }
                 
                 // Load data based on column type
-                const columnData = await loadColumnData(column, entityType, signal);
+                const loaded = await loadColumnData(column, entityType, signal);
+                const columnData = loaded.values;
+                columnCoverages.push(loaded.coverage);
                 
                 // Check if aborted after loading column data
                 if (signal && signal.aborted) {
@@ -94,7 +105,14 @@ export async function loadTableData(settings, entityType, signal = null) {
                         }
                     });
                 } else {
+                    // The column is DROPPED from the table here. That used to be
+                    // console-only: the user saw a table simply missing a column
+                    // they had asked for, with no indication why.
                     console.error(`Column data length (${columnData?.length}) doesn't match entity count (${entityIndex.length}) for ${columnKey}`);
+                    columnCoverages.push(Coverage.missing(GAP.FAILED,
+                        `returned ${columnData ? columnData.length : 0} values for ${entityIndex.length} ${entityType}, `
+                        + 'so the column was left out of the table',
+                        { source: columnKey, unit: entityType, total: entityIndex.length }));
                 }
             }
         }
@@ -105,6 +123,10 @@ export async function loadTableData(settings, entityType, signal = null) {
         }
         
         return {
+            coverage: Coverage.merge(
+                columnCoverages.length ? columnCoverages : [Coverage.complete(entityIndex.length, entityType)],
+                entityType
+            ),
             data: data,
             columns: columnDefinitions,
             entityIndex: entityIndex
@@ -132,7 +154,65 @@ export async function loadTableData(settings, entityType, signal = null) {
  */
 async function loadColumnData(column, entityType, signal = null) {
     const { type, key, column: columnName } = column;
-    
+    const source = `${type}.${key}` + (columnName ? `.${columnName}` : '');
+    const expected = entityType === 'cells'
+        ? (DataManager.getCells() || []).length
+        : (DataManager.getGenes() || []).length;
+
+    /**
+     * The single verdict point for a table column. Every return path of
+     * `_loadColumnValues` passes through here, so a branch added later cannot
+     * hand back values without a classification.
+     */
+    const classify = (values) => {
+        const n = Array.isArray(values) ? values.length : 0;
+        if (n === 0) {
+            return expected > 0
+                ? Coverage.missing(GAP.FAILED,
+                    `the column returned no values although this dataset has ${expected} ${entityType}`,
+                    { source, unit: entityType, total: expected })
+                : Coverage.missing(GAP.EMPTY, 'the column has no values',
+                    { source, unit: entityType, total: expected });
+        }
+        // An all-blank column renders as a wall of "N/A" and reads exactly like
+        // real data that happens to be missing. Full scan, not a sample: a
+        // sampled verdict here would be a confident guess.
+        if (values.every(v => v === null || v === undefined)) {
+            return Coverage.missing(GAP.EMPTY,
+                'every entry in this column is blank (nothing was available to fill it)',
+                { source, unit: entityType, total: expected });
+        }
+        if (expected > 0 && n < expected) {
+            return Coverage.partial(n, expected, GAP.FAILED,
+                'the read returned fewer values than this dataset has entities',
+                { source, unit: entityType });
+        }
+        return Coverage.complete(expected || n, entityType);
+    };
+
+    try {
+        const values = await _loadColumnValues(column, entityType, signal);
+        return { values, coverage: classify(values) };
+    } catch (error) {
+        if (error && error.name === 'AbortError') throw error;
+        console.error(`Error loading column data for ${source}:`, error);
+        // The all-null fallback is kept -- the table still renders -- but the
+        // reason now travels with it instead of being logged and dropped.
+        return {
+            values: Array(expected).fill(null),
+            coverage: error.coverage
+                || classifyError(error, { unit: entityType, source, total: expected })
+        };
+    }
+}
+
+/**
+ * Fetch one table column's raw values. Returns an array; throws on failure.
+ * Callers must go through `loadColumnData`, which attaches the Coverage.
+ */
+async function _loadColumnValues(column, entityType, signal = null) {
+    const { type, key, column: columnName } = column;
+
     try {
         // Check if already aborted before any data loading
         if (signal && signal.aborted) {
@@ -284,17 +364,12 @@ async function loadColumnData(column, entityType, signal = null) {
         
         return [];
     } catch (error) {
-        // If it's an abort error, propagate it upwards
-        if (error && error.name === 'AbortError') {
-            throw error;
-        }
-        
-        // Otherwise log the error and return null values
+        // Rethrow -- including aborts. The all-null fallback and the reason for
+        // it now live together in loadColumnData's catch. Swallowing here is
+        // what turned a read failure into a column of "N/A" that looked exactly
+        // like data which is legitimately absent.
         console.error(`Error loading column data for ${type}.${key}.${columnName}:`, error);
-        // Return null values instead of failing completely
-        return entityType === 'cells' 
-            ? Array(DataManager.getCells().length).fill(null)
-            : Array(DataManager.getGenes().length).fill(null);
+        throw error;
     }
 }
 

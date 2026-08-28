@@ -2439,3 +2439,136 @@ button.dtsb-button.dtsb-clear:hover {
     font-weight: 600;
     color: #495057;
 }
+/* ------------------------------------------------------------------------- */
+/* Coverage notice -- "what is missing from this plot, and why"               */
+/*                                                                            */
+/* Rendered by static/js/utils/panel-surface.js above a panel's plot or table */
+/* whenever the panel is showing less than the user asked for. A panel that is */
+/* complete renders none of this, so the notice is never decorative noise.     */
+/*                                                                            */
+/* The --unreported variant is deliberately the loudest: it does not report a  */
+/* gap in the DATA, it reports that our own code failed to say anything, and   */
+/* it must not be mistakable for a normal data condition.                      */
+/* ------------------------------------------------------------------------- */
+
+.coverage-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 0 0 auto;
+    margin: 0 0 4px 0;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    border-left-width: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.coverage-notice__icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 11px;
+    color: #fff;
+}
+
+.coverage-notice__body { min-width: 0; }
+
+.coverage-notice__headline {
+    font-weight: 600;
+}
+
+.coverage-notice__reasons {
+    margin: 2px 0 0 0;
+    padding-left: 16px;
+    list-style: disc;
+}
+
+.coverage-notice__reasons li {
+    margin: 1px 0;
+    overflow-wrap: anywhere;
+}
+
+.coverage-notice--notice {
+    background: #e7f3f8;
+    border-color: #bce8f1;
+    border-left-color: #31708f;
+    color: #245269;
+}
+.coverage-notice--notice .coverage-notice__icon { background: #31708f; }
+
+.coverage-notice--warning {
+    background: #fcf8e3;
+    border-color: #faebcc;
+    border-left-color: #8a6d3b;
+    color: #7a5f34;
+}
+.coverage-notice--warning .coverage-notice__icon { background: #8a6d3b; }
+
+.coverage-notice--error {
+    background: #f2dede;
+    border-color: #ebccd1;
+    border-left-color: #a94442;
+    color: #8b3a38;
+}
+.coverage-notice--error .coverage-notice__icon { background: #a94442; }
+
+/* Our own defect, not the data's. Loud on purpose -- see coverage.js. */
+.coverage-notice--unreported {
+    background: #fbe8fb;
+    border: 1px dashed #8b1d8b;
+    border-left: 4px solid #8b1d8b;
+    color: #6d176d;
+    font-weight: 600;
+}
+.coverage-notice--unreported .coverage-notice__icon { background: #8b1d8b; }
+
+/* Full-panel variant, used when there is nothing at all to draw. */
+.coverage-placeholder {
+    margin: 12px;
+    padding: 12px 14px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    border-left-width: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.coverage-placeholder__headline {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.coverage-placeholder__reasons {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+}
+
+.coverage-placeholder__reasons li { margin: 2px 0; overflow-wrap: anywhere; }
+
+.coverage-placeholder--notice {
+    background: #e7f3f8; border-color: #bce8f1; border-left-color: #31708f; color: #245269;
+}
+.coverage-placeholder--warning {
+    background: #fcf8e3; border-color: #faebcc; border-left-color: #8a6d3b; color: #7a5f34;
+}
+.coverage-placeholder--error {
+    background: #f2dede; border-color: #ebccd1; border-left-color: #a94442; color: #8b3a38;
+}
+.coverage-placeholder--unreported {
+    background: #fbe8fb; border: 1px dashed #8b1d8b; border-left: 4px solid #8b1d8b;
+    color: #6d176d; font-weight: 600;
+}
+
+.coverage-placeholder__hints {
+    margin: 0 12px 12px 12px;
+    font-size: 12px;
+}

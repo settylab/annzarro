@@ -19,6 +19,57 @@ from ...core import get_reader
 
 logger = logging.getLogger(__name__)
 
+
+def _reader_error_response(exc, dataset_path):
+    """Turn a reader-construction failure into a response that names the CAUSE.
+
+    Every data route used to answer a bare catch-all handler with
+    ``{"error": "Cannot handle this file type"}, 400`` -- one sentence that was
+    wrong for most of the exceptions reaching it. A dataset path that does not
+    exist is not a file-type problem, and reporting it as one sends whoever
+    reads that message to the wrong question. Measured live 2026-08-28:
+    ``/api/v1/data/obs?dataset_path=/nope/nothing.zarr`` answered
+    ``400 Cannot handle this file type``.
+
+    ``reason`` is a machine-readable code the front end maps onto a coverage
+    state (``static/js/utils/coverage.js``); ``error`` stays the human sentence.
+    Both are additive, so a client reading only ``error`` is unaffected.
+    """
+    if isinstance(exc, FileNotFoundError):
+        return jsonify({
+            "error": f"Dataset not found: {dataset_path}",
+            "reason": "not_found",
+            "exception": type(exc).__name__,
+        }), 404
+    if isinstance(exc, ValueError):
+        return jsonify({
+            "error": f"Unsupported dataset type for {dataset_path}: {exc}",
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
+    logger.exception("Unhandled error serving %s", dataset_path)
+    return jsonify({
+        "error": f"Failed to read {dataset_path}: {exc}",
+        "reason": "read_failed",
+        "exception": type(exc).__name__,
+    }), 500
+
+
+def _cap_error_response(requested, limit, unit, axis_hint):
+    """A cap rejection that says it IS a cap, in a field a client can branch on.
+
+    The wording is unchanged so existing clients keep working; ``reason`` lets
+    the UI render "truncated by a cap" instead of a generic read failure.
+    """
+    return jsonify({
+        "error": f"Too many {unit} requested: {requested}. "
+                 f"Maximum allowed is {limit}. {axis_hint}",
+        "reason": "cap_exceeded",
+        "requested": requested,
+        "limit": limit,
+        "unit": unit,
+    }), 400
+
 def register_data_routes(app, api_version):
     """
     Register data access routes with the Flask app.
@@ -96,8 +147,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_metadata(dataset_path_str, get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
     def get_data_X():
@@ -134,16 +185,15 @@ def register_data_routes(app, api_version):
         col_indices = _parse_indices(cols)
 
         if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-            return jsonify({
-                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                        f"Maximum allowed is {max_cells}. "
-                        "Please reduce the number of rows or columns."
-            }), 400
+            return _cap_error_response(
+                len(row_indices) * len(col_indices), max_cells, "cells",
+                "Please reduce the number of rows or columns."
+            )
 
         try:
             return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
     def get_layer(layer_name: str):
@@ -183,16 +233,15 @@ def register_data_routes(app, api_version):
         col_indices = _parse_indices(cols)
 
         if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-            return jsonify({
-                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                            f"Maximum allowed is {max_cells}. "
-                            "Please reduce the number of rows or columns."
-            }), 400
+            return _cap_error_response(
+                len(row_indices) * len(col_indices), max_cells, "cells",
+                "Please reduce the number of rows or columns."
+            )
         
         try:
             return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
     def get_obs():
@@ -230,19 +279,18 @@ def register_data_routes(app, api_version):
         
         # Check for too many cells
         if row_indices and len(row_indices) > max_cells:
-            return jsonify({
-                "error": f"Too many cells requested: {len(row_indices)}. "
-                            f"Maximum allowed is {max_cells}. "
-                            "Please reduce the number of rows."
-            }), 400
+            return _cap_error_response(
+                len(row_indices), max_cells, "cells",
+                "Please reduce the number of rows."
+            )
 
         # Use direct zarr access for stateless operation
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
             return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells")
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
     def get_var():
@@ -279,19 +327,18 @@ def register_data_routes(app, api_version):
         column_names = _parse_strings(columns)
 
         if col_indices and len(col_indices) > max_genes:
-            return jsonify({
-                "error": f"Too many genes requested: {len(col_indices)}. "
-                            f"Maximum allowed is {max_genes}. "
-                            "Please reduce the number of columns."
-            }), 400
+            return _cap_error_response(
+                len(col_indices), max_genes, "genes",
+                "Please reduce the number of columns."
+            )
 
         # Use direct zarr access for stateless operation
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
             return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes")
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
     def get_obsm(obsm_key: str):
@@ -336,16 +383,15 @@ def register_data_routes(app, api_version):
 
         # Check for too many genes
         if row_indices and len(row_indices) > max_cells:
-            return jsonify({
-                "error": f"Too many cells requested: {len(row_indices)}. "
-                            f"Maximum allowed is {max_cells}. "
-                            "Please reduce the number of rows."
-            }), 400
+            return _cap_error_response(
+                len(row_indices), max_cells, "cells",
+                "Please reduce the number of rows."
+            )
         
         try:
             return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells")
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
         
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
@@ -391,16 +437,15 @@ def register_data_routes(app, api_version):
 
         # Check for too many genes
         if row_indices and len(row_indices) > max_genes:
-            return jsonify({
-                "error": f"Too many genes requested: {len(row_indices)}. "
-                            f"Maximum allowed is {max_genes}. "
-                            "Please reduce the number of rows."
-            }), 400
+            return _cap_error_response(
+                len(row_indices), max_genes, "genes",
+                "Please reduce the number of rows."
+            )
 
         try:
             return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes")
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
     def get_obsp(obsp_key: str):
@@ -440,16 +485,15 @@ def register_data_routes(app, api_version):
         col_indices = _parse_indices(cols)
 
         if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
-            return jsonify({
-                "error": f"Too many cells requested: {len(row_indices) * len(col_indices)}. "
-                            f"Maximum allowed is {max_cells}. "
-                            "Please reduce the number of rows or columns."
-            }), 400
+            return _cap_error_response(
+                len(row_indices) * len(col_indices), max_cells, "cells",
+                "Please reduce the number of rows or columns."
+            )
 
         try:
             return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
     def get_varp(varp_key: str):
@@ -489,16 +533,15 @@ def register_data_routes(app, api_version):
         col_indices = _parse_indices(cols)
 
         if row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
-            return jsonify({
-                "error": f"Too many genes requested: {len(row_indices) * len(col_indices)}. "
-                            f"Maximum allowed is {max_genes}. "
-                            "Please reduce the number of rows or columns."
-            }), 400
+            return _cap_error_response(
+                len(row_indices) * len(col_indices), max_genes, "genes",
+                "Please reduce the number of rows or columns."
+            )
 
         try:
             return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
     def get_uns(uns_key: str):
@@ -522,8 +565,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_uns(uns_key, dataset_path_str, get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
         
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
     def get_paginated_data():
@@ -663,8 +706,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
     def get_cells():
@@ -685,8 +728,8 @@ def register_data_routes(app, api_version):
         
         try:
             return process_file.extract_cells_genes(dataset_path_str, "cells", get_reader(dataset_path_str))
-        except:
-            return jsonify({"error": "Cannot handle this file type"}), 400
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
     def get_statistics():
@@ -1732,7 +1775,7 @@ def _parse_indices(indices_str):
         # Handle case where the input might be JSON-encoded
         try:
             return json.loads(indices_str)
-        except:
+        except (ValueError, TypeError):
             return None
 
 def _parse_strings(strings_str):
@@ -1753,7 +1796,7 @@ def _parse_strings(strings_str):
         parsed = json.loads(strings_str)
         if isinstance(parsed, list):
             return parsed
-    except:
+    except (ValueError, TypeError):
         pass
     
     # Default to simple comma splitting

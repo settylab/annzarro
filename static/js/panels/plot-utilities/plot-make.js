@@ -4,6 +4,10 @@ import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import {
+  Coverage, GAP, classifyColumn, classifyError, classifyFilterStats
+} from '../../utils/coverage.js';
+import { drawPlot, drawPlaceholder } from '../../utils/panel-surface.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -194,6 +198,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     let data, values, dataType;
     let categories = null;
+    // Every return from this function carries a Coverage. `null` here would be
+    // laundered into "nothing to say"; leaving it null until a branch sets it
+    // means an unclassified branch surfaces as UNREPORTED rather than silence.
+    let coverage = null;
+    const unit = plotType === 'genes' ? 'genes' : 'cells';
+    const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+    const expected = Array.isArray(entities) ? entities.length : null;
+    const source = `${settings.type}.${settings.key}`
+      + (settings.column ? `.${settings.column}` : '');
 
     // --- Helper Functions ---
     // Returns at most maxSample elements of an array.
@@ -255,7 +268,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         values = Array(cellCount).fill(1);
       }
       dataType = 'constant';
-      return { values, type: dataType, categories };
+      // A constant series is synthesised, not read: it covers every entity.
+      return { values, type: dataType, categories, coverage: Coverage.complete(values.length, unit) };
     }
 
     // Common pattern for most data types.
@@ -264,9 +278,18 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'var': {
         const loadMethod = type === 'obs' ? DataManager.loadObs : DataManager.loadVar;
         data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr });
-        if (!data.data || !data.data[key]) {
-          console.warn(`No data found for ${type}.${key}`);
-          throw new Error(`No data found for column '${key}' in ${type} table`);
+        // classifyColumn encodes the server's measured semantics: key ABSENT
+        // means the column is not in this dataset; key present but empty on a
+        // non-empty dataset means the read FAILED. Those two look identical in
+        // the response body and need opposite responses from the user.
+        coverage = classifyColumn({
+          column: key, response: data, expected, unit, source
+        });
+        if (!data.data || !data.data[key] || data.data[key].length === 0) {
+          console.warn(`No data found for ${type}.${key} (${coverage.worstReason})`);
+          const err = new Error(coverage.lines()[0] || `No data found for column '${key}' in ${type} table`);
+          err.coverage = coverage;
+          throw err;
         }
         values = data.data[key];
         if (data.categories && data.categories[key]) {
@@ -290,8 +313,17 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           rows: rowsArr
         });
         if (!data.data || data.data.length === 0) {
+          // Measured live: a missing obsm/varm key returns 200 with "data": [].
+          // On a dataset with entities that cannot be a legitimate empty read.
           console.warn(`No data points received for ${type}.${key}.${column}`);
-          throw new Error(`No data points found for ${key}.${column}`);
+          coverage = (typeof expected === 'number' && expected > 0)
+            ? Coverage.missing(GAP.UNAVAILABLE,
+                `"${key}" returned no values for this dataset -- the key is either absent or unreadable`,
+                { source, unit, total: expected })
+            : Coverage.missing(GAP.EMPTY, 'this key has no values', { source, unit, total: expected });
+          const err = new Error(coverage.lines()[0] || `No data points found for ${key}.${column}`);
+          err.coverage = coverage;
+          throw err;
         }
         values = data.data;
         dataType = 'numerical';
@@ -314,6 +346,9 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         } else {
           console.warn(`Invalid or empty ${type} data received`);
           values = [];
+          coverage = Coverage.missing(GAP.FAILED,
+            `${type}.${key} returned nothing for the focused ${type === 'obsp' ? 'cell' : 'gene'}`,
+            { source, unit, total: expected });
         }
         // Preserve length: map nulls/undefined to NaN.
         values = values.map(v => (v === null || v === undefined) ? NaN : v);
@@ -343,6 +378,9 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           } else {
             console.warn('Empty or invalid layer data received for gene plot');
             values = [];
+            coverage = Coverage.missing(GAP.FAILED,
+              `layer "${key}" returned nothing for the focused cell`,
+              { source, unit, total: expected });
           }
           dataType = 'numerical';
         } else {
@@ -369,10 +407,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             } else {
               console.warn('Empty layer data array received');
               values = [];
+              coverage = Coverage.missing(GAP.FAILED,
+                `layer "${key}" returned no rows`, { source, unit, total: expected });
             }
           } else {
             console.warn(`Unexpected data format received: ${typeof data.data}`);
             values = [];
+            coverage = Coverage.missing(GAP.FAILED,
+              `layer "${key}" returned an unexpected format (${typeof data.data})`,
+              { source, unit, total: expected });
           }
           if (values.length > 0) {
             const sample = sampleArray(values);
@@ -394,10 +437,32 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         throw new Error(`Unknown data type: ${type}`);
     }
 
-    return { values, type: dataType, categories };
+    // Reconcile length against the entity count even on the success path: a
+    // short series is a partial read, and saying so is the point of the module.
+    if (!coverage) {
+      const n = Array.isArray(values) ? values.length : 0;
+      if (typeof expected === 'number' && expected > 0 && n > 0 && n < expected) {
+        coverage = Coverage.partial(n, expected, GAP.FAILED,
+          'the read returned fewer values than this dataset has entities',
+          { source, unit });
+      } else if (n === 0) {
+        coverage = Coverage.missing(GAP.EMPTY, 'this series has no values',
+          { source, unit, total: expected });
+      } else {
+        coverage = Coverage.complete(typeof expected === 'number' ? expected : n, unit);
+      }
+    }
+    return { values, type: dataType, categories, coverage };
   } catch (error) {
     console.error('Error loading data for settings', settings, 'error:', error);
-    throw new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
+    const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
+    // Carry the classification with the error so the panel can state a REASON
+    // rather than only a symptom. An error raised before any classification
+    // was made is classified here from the HTTP status / server reason code.
+    wrapped.coverage = error.coverage
+      || coverage
+      || classifyError(error, { unit, source, total: expected });
+    throw wrapped;
   } finally {
     // Hide loading indicator if container was provided
     if (plotContainer) {
@@ -435,14 +500,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       // Validate that genes exist for gene plots
       const genes = DataManager.getGenes();
       if (!genes || !genes.length) {
-        plotContainer.innerHTML = '<div class="alert alert-warning">No genes available</div>';
+        drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE,
+          'this dataset reported no gene names, so there is nothing to plot against',
+          { source: 'var names', unit: 'genes' }), 'genes');
         return;
       }
     } else {
       // Validate that cells exist for cell plots
       const cells = DataManager.getCells();
       if (!cells || !cells.length) {
-        plotContainer.innerHTML = '<div class="alert alert-warning">No cells available</div>';
+        drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE,
+          'this dataset reported no cell names, so there is nothing to plot against',
+          { source: 'obs names', unit: 'cells' }), 'cells');
         return;
       }
     }
@@ -464,18 +533,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         throw new Error(`No settings found for ${axis} axis`);
       }
       if (!axisSettings.type) {
-        plotContainer.innerHTML = `<div class="alert alert-warning">
-          Missing type for ${axis}-axis
-        </div>`;
+        drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE,
+          `no data source is selected for the ${axis}-axis`,
+          { source: `${axis}-axis`, unit: data.entities || 'values' }));
         return;
       }
       
       // For 'obsm'/'varm' type, ensure key and column are provided.
       if (axisSettings.type === 'obsm' || axisSettings.type === 'varm') {
         if (!axisSettings.key || axisSettings.key === '') {
-          plotContainer.innerHTML = `<div class="alert alert-warning">
-            Please select an ${axisSettings.type} key for the ${axis}-axis
-          </div>`;
+          drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE,
+            `no ${axisSettings.type} key is selected for the ${axis}-axis`,
+            { source: `${axis}-axis`, unit: data.entities || 'values' }));
           return;
         }
         if (axisSettings.column === undefined || axisSettings.column === null || axisSettings.column === '') {
@@ -518,7 +587,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         z: null,
         color: null,
         genes: genes,
-        entities: "genes"
+        entities: "genes",
+        coverage: null
       });
     } else {
       const cells = DataManager.getCells();
@@ -528,7 +598,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         z: null,
         color: null,
         cells: cells,
-        entities: "cells"
+        entities: "cells",
+        coverage: null
       });
     }
 
@@ -574,10 +645,38 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           if (signal && signal.aborted) {
             throw new DOMException('Color data loading aborted', 'AbortError');
           }
-          const colorData = await loadAxisData(settings.color, plotType, plotContainer);
+          // A colour column that cannot be read must not destroy an otherwise
+          // usable plot. Before this, any failing axis rejected Promise.all and
+          // the whole panel became an error box -- so a broken colour column
+          // hid the perfectly good x/y scatter behind it. Draw the points, fall
+          // back to a constant colour, and STATE that the colour is missing.
+          let colorData;
+          try {
+            colorData = await loadAxisData(settings.color, plotType, plotContainer);
+          } catch (colorError) {
+            if (colorError && colorError.name === 'AbortError') throw colorError;
+            console.warn('Colour data unavailable; plotting uncoloured:', colorError);
+            const n = (DataManager[isGenePlot ? 'getGenes' : 'getCells']() || []).length;
+            colorData = {
+              values: Array(n).fill(1),
+              type: 'constant',
+              categories: null,
+              // NOTE the shape: every point is still drawn, so this is a
+              // COMPLETE coverage carrying a gap -- not a `missing`. A
+              // `missing` here would drag the panel's merged `shown` to zero
+              // and the notice would claim no cells are on screen, which is
+              // the same class of lie in the opposite direction.
+              coverage: Coverage.complete(n, isGenePlot ? 'genes' : 'cells').withGap(
+                GAP.FAILED,
+                (colorError.coverage ? colorError.coverage.lines()[0] : null)
+                  || colorError.message || 'unknown error',
+                'colour')
+            };
+          }
           data.color = colorData.values;
           data.colorType = colorData.type;
           data.colorCategories = colorData.categories;
+          data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);
       })()
@@ -629,6 +728,21 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
+    // Combine every series' coverage into the panel's. A series whose loader
+    // returned no coverage becomes UNREPORTED here rather than disappearing --
+    // that is what stops a new axis type from silently reintroducing the gap.
+    const unit = isGenePlot ? 'genes' : 'cells';
+    const axisCoverages = ['x', 'y', 'z'].map(axis => {
+      if (axis === 'z' && !settings.z) return null;
+      const series = data[axis];
+      if (!series) return null;
+      return series.coverage || Coverage.unreported(unit);
+    }).filter(Boolean);
+    if (settings.color && settings.color.type && settings.color.type !== 'none') {
+      axisCoverages.push(data.colorCoverage || Coverage.unreported(unit));
+    }
+    data.coverage = Coverage.merge(axisCoverages, unit);
+
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
@@ -637,11 +751,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
       console.error('Insufficient data for plotting');
-      plotContainer.innerHTML = `<div class="alert alert-warning">
-        Insufficient data for plotting. X axis has 
-        ${data.x && data.x.values ? data.x.values.length : 0} points, 
-        Y axis has ${data.y && data.y.values ? data.y.values.length : 0} points.
-      </div>`;
+      const nx = data.x && data.x.values ? data.x.values.length : 0;
+      const ny = data.y && data.y.values ? data.y.values.length : 0;
+      // Say WHICH axis is empty and WHY, not just that the plot is empty.
+      let cov = data.coverage;
+      if (nx === 0) cov = cov.withGap(GAP.EMPTY, 'the x-axis series has no values', 'x-axis');
+      if (ny === 0) cov = cov.withGap(GAP.EMPTY, 'the y-axis series has no values', 'y-axis');
+      drawPlaceholder(plotContainer, cov, unit);
     }
   } catch (error) {
     // Skip error display for abort errors - they're expected during cancellation
@@ -711,14 +827,22 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
       }
       
-      // Only update the UI for actual errors, not abort errors
-      plotContainer.innerHTML = `
-        <div class="alert alert-danger">
-          <h5>Error loading data</h5>
-          <p>${error.message}</p>
-          ${errorDetails}
-        </div>
-        ${suggestedActions}`;
+      // Only update the UI for actual errors, not abort errors.
+      // The classification carried on the error says WHY; the existing
+      // troubleshooting hints are kept underneath it as the "what to do next".
+      const unit = data && data.entities === 'genes' ? 'genes' : 'cells';
+      drawPlaceholder(
+        plotContainer,
+        error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
+          { source: 'plot data', unit }),
+        unit
+      );
+      if (errorDetails || suggestedActions) {
+        const extra = document.createElement('div');
+        extra.className = 'coverage-placeholder__hints';
+        extra.innerHTML = `${errorDetails}${suggestedActions}`;
+        plotContainer.appendChild(extra);
+      }
     }
   } finally {
     // Always hide the loading indicator in the finally block to ensure it happens
@@ -1226,29 +1350,51 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   const entities = data[entityKey];
   const highlightKey = isGenePlot ? 'highlightFocusedGene' : 'highlightFocusedCell';
 
+  const unit = isGenePlot ? 'genes' : 'cells';
+  // The panel's coverage starts from whatever the loaders reported. An absent
+  // one is UNREPORTED, not "fine" -- see static/js/utils/coverage.js.
+  let loadCoverage = (data.coverage instanceof Coverage)
+    ? data.coverage : Coverage.unreported(unit);
+
   // Validate required data
   if (!data.x || !data.y) {
-    plotContainer.innerHTML =
-      '<div class="alert alert-warning">Insufficient data for plotting</div>';
+    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.EMPTY,
+      'the x or y series was never loaded', 'axes'), unit);
     return;
   }
   if (!entities || entities.length === 0) {
-    console.error(`${isGenePlot ? 'Gene' : 'Cell'} names missing - cannot create plot`);
-    plotContainer.innerHTML =
-      `<div class="alert alert-danger">Error: ${isGenePlot ? 'Gene' : 'Cell'} names missing or unavailable</div>`;
+    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.UNAVAILABLE,
+      `this dataset supplied no ${unit} names, so points cannot be identified`,
+      `${unit} names`), unit);
     return;
   }
   if (entities.length !== data.x.values.length) {
     console.warn(
       `${isGenePlot ? 'Gene' : 'Cell'} names count (${entities.length}) doesn't match data points count (${data.x.values.length})`
     );
+    // This truncation used to be console-only. It changes what is on screen,
+    // so it is a gap and the user is told.
     if (entities.length > data.x.values.length) {
       data[entityKey] = entities.slice(0, data.x.values.length);
+      loadCoverage = loadCoverage.withGap(GAP.FAILED,
+        `${unit} names (${entities.length}) and data points (${data.x.values.length}) disagree; `
+        + 'the surplus names were dropped', `${unit} names`,
+        entities.length - data.x.values.length);
+    } else {
+      loadCoverage = loadCoverage.withGap(GAP.FAILED,
+        `only ${entities.length} ${unit} names are available for ${data.x.values.length} data points`,
+        `${unit} names`, data.x.values.length - entities.length);
     }
   }
 
   // Create filter mask to gather statistics and handle filtering
   const { indexMask, filterStats } = createFilterMask(data, settings);
+
+  // What the loaders could not supply, plus what the filters removed. This is
+  // the single value every draw call below is required to carry.
+  const panelCoverage = Coverage.merge(
+    [loadCoverage, classifyFilterStats(filterStats, unit)], unit
+  );
   
   // Apply the filter mask only if explicit filtering is enabled
   let filteredData = data;
@@ -1618,7 +1764,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.yanchor = posConfig.legendYanchor;
       
       // Create the plot with categorical traces
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         categoricalTraces,
         layout,
@@ -1627,7 +1773,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       
       // Attach click handler and highlight focused entity if needed
@@ -1642,7 +1790,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       // Fallback: process without custom colors
       const categoricalTraces = processCategories(settings, filteredData, catValues);
       
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         categoricalTraces,
         layout,
@@ -1651,7 +1799,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       
       attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);
@@ -1819,7 +1969,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         traces.push(tableTrace);
       }
       
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         traces,
         layout,
@@ -1828,7 +1978,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       
       attachClickHandler(plotContainer, traces, filteredData, settings);
@@ -1885,7 +2037,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.colorbar.titleside = posConfig.titleside;
       baseTrace.marker.colorbar.orientation = posConfig.orientation;
   
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         [baseTrace],
         layout,
@@ -1894,7 +2046,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
     }
@@ -2000,7 +2154,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         traces.push(tableTrace);
       }
       
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         traces,
         layout,
@@ -2009,7 +2163,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       
       attachClickHandler(plotContainer, traces, filteredData, settings);
@@ -2021,7 +2177,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       delete baseTrace.marker.colorscale;
       console.log('Using constant color for all points');
       
-      Plotly.newPlot(
+      drawPlot(
         plotContainer,
         [baseTrace],
         layout,
@@ -2030,7 +2186,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           displayModeBar: true,
           displaylogo: false,
           modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
-        }
+        },
+        panelCoverage,
+        unit
       );
       attachClickHandler(plotContainer, [baseTrace], filteredData, settings);
     }
