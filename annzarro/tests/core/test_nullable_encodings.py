@@ -448,3 +448,57 @@ def test_structural_fallback_detects_unattributed_group(tmp_path):
     assert ZarrReader()._is_nullable_group(member) is True, (
         f"zarr {zarr.__version__}: a values/mask group with no encoding-type "
         "was not recognised; the structural fallback is unreachable")
+
+
+def test_unattributed_group_reads_back_with_mask_applied(tmp_path):
+    """The structural route must deliver DATA, not merely be recognised.
+
+    The arm above pins the predicate; this pins the composition of
+    `_is_nullable_group` with `_read_member`. They can fail independently:
+    a predicate that fires correctly still returns wrong data if the mask is
+    dropped, and that is the exact defect removed from #11's inline branch.
+
+    At `dedebe9` under zarr 2.18.7 this yields `[]` -- the guard rejects the
+    group, `_read_member` falls through to `member[:]`, zarr 2's
+    `Group.__getitem__` raises KeyError, and the enclosing `except Exception`
+    converts it to an empty column at HTTP 200.
+
+    Authored by annzpr13-sk, which derived the defect independently; taken
+    rather than rewritten, because a witness written by a party with no stake
+    in this PR is worth more than one written for it.
+    """
+    root = _open_root(tmp_path / "structural_read.zarr")
+    _nullable(root, "flag", [10, 20, 30], [False, True, False], None,
+              lambda g, n, v: _numarr(g, n, v, dtype=np.int64))
+
+    member = _open_root(tmp_path / "structural_read.zarr", mode="r")["flag"]
+    out = list(np.asarray(ZarrReader()._read_member(member), dtype=object))
+
+    assert out == [10, None, 30], (
+        f"got {out!r} under zarr {zarr.__version__}; the structural fallback "
+        "either did not fire or dropped the mask")
+
+
+def test_unattributed_column_survives_the_public_api(tmp_path):
+    """End-to-end, at the level a user actually experiences the defect.
+
+    Every other arm for this shape stops at a private method. This one goes
+    through `get_obs_var`, which is what the HTTP layer calls -- and it is the
+    only one that would have caught the bug as a REPORT rather than as a
+    diagnosis, because the failure mode is a well-formed 200 response with an
+    empty column rather than an error.
+    """
+    p = tmp_path / "structural_api.zarr"
+    _, obs, _ = _skeleton(p)
+    _strarr(obs, "_index", CELLS)
+    _nullable(obs, "flag", [10, 20, 30, 40, 50, 60],
+              [False, True, False, False, False, False], None,
+              lambda g, n, v: _numarr(g, n, v, dtype=np.int64))
+    obs.attrs["column-order"] = ["flag"]
+
+    column = _reader().get_obs_var("cells", dataset_path=str(p))["data"]["flag"]
+
+    assert column != [], (
+        f"empty column under zarr {zarr.__version__} -- the silent-empty class "
+        "#26 exists to eliminate, reached through the structural fallback")
+    assert column == [10, None, 30, 40, 50, 60]
