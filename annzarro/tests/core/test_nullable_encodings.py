@@ -194,7 +194,6 @@ def _index_store(tmp_path, name, kind, with_x):
     return p, expected_names
 
 
-@pytest.mark.xfail(strict=True, reason="index members stored as a group are not yet read: fixed by PR #11. strict=True so this turns RED the moment #11 lands, forcing the marker off rather than letting the coverage quietly lapse.")
 @pytest.mark.parametrize("kind", ["nullable", "categorical"])
 def test_group_encoded_index_yields_names(tmp_path, kind):
     p, expected = _index_store(tmp_path, f"index_{kind}.zarr", kind, with_x=True)
@@ -203,7 +202,6 @@ def test_group_encoded_index_yields_names(tmp_path, kind):
     assert _reader().get_obs_var("cells", dataset_path=str(p))["data"]["_index"] == expected
 
 
-@pytest.mark.xfail(strict=True, reason="index members stored as a group are not yet read: fixed by PR #11. strict=True so this turns RED the moment #11 lands, forcing the marker off rather than letting the coverage quietly lapse.")
 @pytest.mark.parametrize("kind", ["nullable", "categorical"])
 def test_group_encoded_index_yields_counts_without_x(tmp_path, kind):
     """With no `X` to fall back on, the counts must come from the index itself.
@@ -352,3 +350,61 @@ def test_plain_array_is_rejected_without_touching_elements():
         f"predicate read {array.accesses} element(s) from a plain array; zarr's "
         "Array has no __contains__, so a membership test here is one chunk "
         "decode per element -- 108.88s on a 75000-row column")
+
+
+class _CountingArrayWithShape(_CountingArray):
+    """As above, but carrying ``shape`` -- i.e. shaped like a REAL zarr Array.
+
+    ``_CountingArray`` deliberately omits ``shape``, which is right for
+    ``_is_nullable_group`` but hides the fast path in ``_get_encoded_length``:
+    that function answers from ``shape`` before it can reach any structural
+    test, and a stand-in without ``shape`` never exercises it.
+    """
+
+    def __init__(self, n=75000):
+        super().__init__()
+        self.shape = (n,)
+
+
+def test_encoded_length_of_plain_array_touches_no_elements():
+    """`_get_encoded_length` must answer from metadata, never from content.
+
+    It is reached once per obs/var index read, so a membership test here costs
+    the same chunk-decode-per-element as the one `_is_nullable_group` was
+    guarded against -- and nothing else covers this function.
+    """
+    array = _CountingArrayWithShape(n=75000)
+
+    assert ZarrReader()._get_encoded_length(array) == 75000
+    assert array.accesses == 0, (
+        f"read {array.accesses} element(s) to answer a question about length")
+
+
+def test_group_predicate_holds_on_the_installed_zarr(tmp_path):
+    """`_is_group` must recognise a Group under whichever zarr is installed.
+
+    This is a cross-VERSION regression, and it is invisible to any test that
+    exercises only one major. ``hasattr(member, 'members')`` is O(1) and
+    correct on zarr 3, and answers False for EVERY zarr 2 Group, because
+    ``members`` arrived in zarr 3. Under that predicate the structural
+    fallback in `_is_nullable_group` and the whole of `_get_encoded_length`
+    silently took the not-a-group arm on zarr 2: `get_basic_counts` answered
+    ``{cell_count: 0, gene_count: 0}`` with no error and no log line.
+
+    Measured on the same tree with zarr as the only variable: 4 of 4
+    group-encoded-index arms passed under 3.1.6, 2 of 4 under 2.18.7.
+
+    The predicate must therefore be checked against real zarr objects rather
+    than against a stand-in, since a stand-in encodes the author's belief
+    about the class rather than the class.
+    """
+    root = _open_root(tmp_path / "predicate.zarr")
+    group = root.create_group("a_group")
+    array = _numarr(root, "an_array", np.arange(4, dtype=np.int32))
+
+    assert ZarrReader._is_group(group) is True, (
+        f"zarr {zarr.__version__}: Group not recognised; "
+        "every structural encoding check silently degrades")
+    assert ZarrReader._is_group(array) is False, (
+        f"zarr {zarr.__version__}: Array misread as a Group; membership tests "
+        "against it decode one chunk per element")
