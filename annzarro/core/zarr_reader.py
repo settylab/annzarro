@@ -1048,11 +1048,16 @@ class ZarrReader:
         """
         Whether a zarr member is a Group, under BOTH zarr 2 and zarr 3.
 
-        This has to be answered without a membership test: a zarr Array
-        defines no ``__contains__``, so ``'values' in member`` falls back to
-        the legacy sequence protocol and decodes one chunk per element --
-        O(n) per call, and the cause of the 837 s full-obs read that
-        9f3d65b fixed.
+        This has to be answered without a membership test, and the reason
+        differs by major -- so the O(n) hazard is real on both, but not for
+        the same reason. Neither Array defines ``__contains__``. zarr 3's
+        defines no ``__iter__`` either, so ``'values' in member`` falls back
+        to the LEGACY SEQUENCE protocol: measured 20,001 integer-index
+        ``__getitem__`` calls at n=20000, and the cause of the 837 s
+        full-obs read 9f3d65b fixed. zarr 2's Array DOES define
+        ``__iter__``, so the same expression iterates instead -- 20
+        chunk-slice calls, cheap enough that a wall-clock budget cannot see
+        it there at all.
 
         ``hasattr(member, 'members')`` is NOT the right predicate even though
         it is O(1): ``members`` exists only on zarr 3's Group, so under zarr

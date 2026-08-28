@@ -93,8 +93,17 @@ def test_subset_index_matches_subset_columns(store):
 def test_full_read_is_unchanged(store):
     """Control. The no-``indices`` path must still return every row.
 
-    Without this, a fix that simply truncated the index would pass the test
-    above while breaking the far more common full read.
+    It does NOT catch a truncating fix, and an earlier revision of this
+    docstring claimed it did. Measured, with `cell_names` truncated to
+    ``[:len(indices)]``: this test PASSES and the value assertion in the test
+    above is what kills the mutant. The module docstring had it right --
+    "the value check is what distinguishes subset from truncated" -- so the
+    file contradicted itself, and the claim was the wrong half.
+
+    What this arm actually guards is the opposite mutant: a fix that subsets
+    correctly but breaks the full read -- slicing unconditionally, or
+    returning ``[]`` when ``indices`` is None. That path carries almost all
+    the traffic, so it is worth an arm; it is just not the truncation guard.
     """
     data = ZarrReader(enable_caching=False).get_obs_var(
         "cells", dataset_path=str(store))["data"]
