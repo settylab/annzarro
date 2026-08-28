@@ -238,18 +238,15 @@ class DataManager:
         Returns:
             Dictionary with dataset information
         """
-        # First try to open the dataset
-        success = zarr_reader.open_zarr(dataset_path)
-        if not success:
-            return {"error": "Failed to open dataset"}
-        
-        # Make sure metadata is initialized
-        if hasattr(zarr_reader, '_initialize_metadata'):
-            zarr_reader._initialize_metadata()
-            
-        # Get basic information
-        metadata = zarr_reader.get_metadata()
-        
+        # First try to open the dataset. ZarrReader is stateless: opening
+        # returns (root, metadata) and raises on failure rather than
+        # reporting success as a bool.
+        try:
+            _root, metadata = zarr_reader.open_dataset_by_path(dataset_path)
+        except (ValueError, RuntimeError) as e:
+            logger.error(f"Failed to open dataset {dataset_path}: {e}")
+            return {"error": "Failed to open dataset", "message": str(e)}
+
         # Add human-readable information
         info = {
             "path": dataset_path,
@@ -265,8 +262,8 @@ class DataManager:
         }
         
         # Sample obs and var names for verification
-        obs_names = zarr_reader.get_obs_names()[:10] if metadata.get("has_obs", False) else []
-        var_names = zarr_reader.get_var_names()[:10] if metadata.get("has_var", False) else []
+        obs_names = zarr_reader.get_obs_names(dataset_path)[:10] if metadata.get("has_obs", False) else []
+        var_names = zarr_reader.get_var_names(dataset_path)[:10] if metadata.get("has_var", False) else []
         
         info["obs_names_sample"] = obs_names
         info["var_names_sample"] = var_names
