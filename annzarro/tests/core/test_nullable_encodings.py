@@ -21,6 +21,8 @@ control at the end is the discriminator: if it ever fails, the fixtures are
 broken rather than the reader.
 """
 
+import contextlib
+
 import numpy as np
 import pytest
 import zarr
@@ -257,51 +259,77 @@ def test_plain_encodings_control(tmp_path):
 # D. plain columns must not be probed element-by-element
 # --------------------------------------------------------------------------
 
-def test_plain_columns_are_not_scanned_elementwise(tmp_path):
-    """A plain array must never be fed to the `in` operator.
+@contextlib.contextmanager
+def count_array_traversals():
+    """Count element-wise reads of a zarr Array, on either zarr major.
 
-    A zarr Array defines ``__getitem__`` but neither ``__contains__`` nor
-    ``__iter__``, so ``'values' in arr`` silently falls back to the legacy
-    sequence protocol and decodes EVERY element to answer a question about
-    structure.  Measured here at 0.9 ms/element under zarr 3.1.6, i.e. ~68 s
-    for one 75000-row obs column -- and `get_obs_var` routes every column
-    through this check, so the cost lands on datasets that have no nullable
-    member at all.
+    Both routes are counted because the two majors take different ones to the
+    same defect: zarr 3's ``Array`` has neither ``__contains__`` nor
+    ``__iter__``, so ``in`` degrades to an integer ``__getitem__`` per element;
+    zarr 2's ``Array`` defines ``__iter__``, so ``in`` iterates.  A structural
+    check on a member must do neither.
 
-    The budget is calibrated against this machine rather than hard-coded: a
-    correct implementation costs a handful of whole-array reads, a regressed
-    one costs a per-element read for every row.  The two differ by three
-    orders of magnitude, so the factor below is loose on purpose and the test
-    is a defect detector, not a benchmark.
+    ``__iter__`` is read from ``__dict__`` rather than via ``getattr`` so an
+    INHERITED ``__iter__`` is not picked up and then "restored" onto the class,
+    which would leave the patch permanently installed.
     """
-    import time
+    arr = zarr.Array
+    counts = {"n": 0}
+    orig_get = arr.__getitem__
+    orig_iter = arr.__dict__.get("__iter__")
 
+    def counting_get(self, key):
+        if isinstance(key, (int, np.integer)):
+            counts["n"] += 1
+        return orig_get(self, key)
+
+    arr.__getitem__ = counting_get
+    if orig_iter is not None:
+        def counting_iter(self):
+            counts["n"] += 1
+            return orig_iter(self)
+        arr.__iter__ = counting_iter
+    try:
+        yield counts
+    finally:
+        arr.__getitem__ = orig_get
+        if orig_iter is not None:
+            arr.__iter__ = orig_iter
+
+
+def test_plain_columns_are_not_scanned_elementwise(tmp_path):
+    """A plain array must never be fed to the ``in`` operator, on the served path.
+
+    Answering a question about a member's STRUCTURE must not read its DATA, so
+    ZERO is the only correct answer and it is the same answer on both zarr
+    majors.  This replaces a calibrated wall-clock budget which was VACUOUS
+    under zarr 2: ``in`` iterates there rather than degrading to the
+    per-element legacy sequence protocol, so an UNGUARDED tree finished fast
+    enough to pass.  A clock also cannot work across both majors even in
+    principle -- the regressed reader sits 30x INSIDE that budget on zarr 2
+    while costing 40s on zarr 3.
+
+    Complements the predicate-level access count below rather than repeating
+    it: that one pins ``_is_nullable_group`` at zero reads against a stand-in
+    and is instant; this one bounds the whole ``get_obs_var`` call against REAL
+    zarr objects, so it still fires where the stand-in cannot reach and cannot
+    inherit a wrong belief about the real class.
+    """
     n = 20000
     p = tmp_path / "wide.zarr"
-    root, obs, _ = _skeleton(p, with_x=False)
-    _strarr(obs, "_index", [f"c{i}" for i in range(n)])
-    _numarr(obs, "x_centroid", np.arange(n, dtype=np.float32))
-    _numarr(obs, "y_centroid", np.arange(n, dtype=np.float32))
-    obs.attrs["column-order"] = ["x_centroid", "y_centroid"]
+    _, obs_grp, _ = _skeleton(p, with_x=False)
+    _strarr(obs_grp, "_index", [f"c{i}" for i in range(n)])
+    _numarr(obs_grp, "x_centroid", np.arange(n, dtype=np.float32))
+    _numarr(obs_grp, "y_centroid", np.arange(n, dtype=np.float32))
+    obs_grp.attrs["column-order"] = ["x_centroid", "y_centroid"]
 
-    column = zarr.open_group(str(p), mode="r")["obs"]["x_centroid"]
-
-    start = time.perf_counter()
-    for _ in range(5):
-        np.asarray(column[:])
-    bulk = (time.perf_counter() - start) / 5
-
-    start = time.perf_counter()
-    result = _reader().get_obs_var("cells", dataset_path=str(p))
-    elapsed = time.perf_counter() - start
+    with count_array_traversals() as counts:
+        result = _reader().get_obs_var("cells", dataset_path=str(p))
 
     assert len(result["data"]["x_centroid"]) == n, "column did not read back"
-
-    budget = max(2.0, 200 * bulk)
-    assert elapsed < budget, (
-        f"reading {n} rows took {elapsed:.2f}s against a budget of {budget:.2f}s "
-        f"({bulk * 1e3:.2f} ms per bulk read of the same column) -- a plain array "
-        f"is being probed element-by-element"
+    assert counts["n"] == 0, (
+        f"{counts['n']} element-wise reads of a zarr Array while answering a "
+        "STRUCTURAL question -- a plain array is being probed element by element"
     )
 
 
@@ -330,17 +358,18 @@ class _CountingArray:
 def test_plain_array_is_rejected_without_touching_elements():
     """Second, independent witness for the O(n) regression above.
 
-    `test_plain_columns_are_not_scanned_elementwise` is the end-to-end guard and
-    it is calibrated in-run, but it is still a WALL-CLOCK assertion on a shared
-    node.  This one needs no calibration, cannot flake under load, uses no zarr
-    at all, and fails in milliseconds: a correct predicate reads ZERO elements,
-    a regressed one reads at least the first.
+    `test_plain_columns_are_not_scanned_elementwise` is the end-to-end arm: it
+    counts traversals of REAL zarr Arrays across a whole `get_obs_var` call, so
+    it catches a per-element read introduced at any call site.  This one pins
+    the PREDICATE alone, uses no zarr at all, and fails in milliseconds.
 
-    The two are complementary rather than redundant.  Removing the Group guard
-    from `_is_nullable_group` was measured to kill BOTH; a per-element read
-    introduced at some other call site would be caught only by the end-to-end
-    budget, and a machine slow enough to make the budget flaky would leave this
-    one unaffected.
+    The two are complementary rather than redundant, and each covers the
+    other's weakness.  Removing the Group guard from `_is_nullable_group` was
+    measured to kill BOTH, on both zarr majors.  But a stand-in encodes the
+    author's BELIEF about the real class -- and that belief has been wrong here
+    before, which is why the end-to-end arm must not also be a stand-in.
+    Conversely the end-to-end arm needs a real store and a real reader, so it
+    cannot isolate the predicate the way this one does.
 
     Carried over from commit b3cd304, which was otherwise superseded by this
     module; it is the one assertion there that had no counterpart here.
