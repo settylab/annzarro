@@ -147,7 +147,7 @@ class TestH5ADReader(unittest.TestCase):
             analysis_grp.create_dataset('method', data=np.array([b'pca']))
 
     def test_get_metadata(self):
-        metadata = self.reader.get_metadata(file_path = self.h5ad_path)
+        metadata = self.reader.get_metadata(dataset_path = self.h5ad_path)
 
          # Check that metadata contains expected fields
         self.assertEqual(metadata['shape'], (100, 50))
@@ -420,7 +420,7 @@ class TestH5ADReader(unittest.TestCase):
         self.assertIsNone(nonexistent)
 
         # Verify metadata includes uns
-        metadata = self.reader.get_metadata(file_path=self.h5ad_path)
+        metadata = self.reader.get_metadata(dataset_path=self.h5ad_path)
         self.assertTrue(metadata.get('has_uns', False))
 
     def test_get_X(self):

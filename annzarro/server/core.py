@@ -139,9 +139,15 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     setup_logging(app.config)
     
     # Initialize zarr reader with cache settings from config
-    from annzarro.core import configure_zarr_reader
+    from annzarro.core import configure_zarr_reader, configure_h5ad_reader
     configure_zarr_reader(app.config)
     logger.info(f"Zarr reader configured with: cache_memory_mb={app.config.get('cache_memory_mb')}, "
+               f"cache_enabled={app.config.get('cache_enabled')}, "
+               f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
+
+    # Initialize h5ad reader with cache settings from config
+    configure_h5ad_reader(app.config)
+    logger.info(f"H5AD reader configured with: cache_memory_mb={app.config.get('cache_memory_mb')}, "
                f"cache_enabled={app.config.get('cache_enabled')}, "
                f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
     

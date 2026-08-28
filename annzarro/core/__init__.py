@@ -31,22 +31,45 @@ def get_reader(path):
 def configure_zarr_reader(config):
     """
     Configure the zarr reader singleton with the provided config
-    
+
     Args:
         config: Configuration dictionary with cache settings
     """
     global zarr_reader
-    
+
     # Get cache settings from config
     max_memory_mb = config.get('cache_memory_mb', 1000)
     enable_caching = config.get('cache_enabled', True)
     cache_limit = config.get('cache_dataset_limit', 10)
-    
+
     # Create a new reader with the configured settings
     zarr_reader = ZarrReader(
         max_memory_mb=max_memory_mb,
         enable_caching=enable_caching,
         cache_limit=cache_limit
     )
-    
+
     return zarr_reader
+
+def configure_h5ad_reader(config):
+    """
+    Configure the h5ad reader singleton with the provided config
+
+    Args:
+        config: Configuration dictionary with cache settings
+    """
+    global h5ad_reader_obj
+
+    # Get cache settings from config
+    max_memory_mb = config.get('cache_memory_mb', 1000)
+    enable_caching = config.get('cache_enabled', True)
+    cache_limit = config.get('cache_dataset_limit', 10)
+
+    # Create a new reader with the configured settings
+    h5ad_reader_obj = h5adReader(
+        max_memory_mb=max_memory_mb,
+        enable_caching=enable_caching,
+        cache_limit=cache_limit
+    )
+
+    return h5ad_reader_obj
