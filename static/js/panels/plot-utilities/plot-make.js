@@ -5,7 +5,8 @@ import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-u
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import {
-  Coverage, GAP, classifyColumn, classifyValues, classifyError, classifyFilterStats
+  Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
+  classifyError, classifyFilterStats, missingEntity
 } from '../../utils/coverage.js';
 import { drawPlot, drawPlaceholder } from '../../utils/panel-surface.js';
 
@@ -167,8 +168,19 @@ class LoadingIndicator {
 // Create a singleton instance
 const loadingIndicator = new LoadingIndicator();
 
-// Make loadingIndicator globally available for cleanup
-window.loadingIndicator = loadingIndicator;
+// Make loadingIndicator globally available for cleanup.
+//
+// Guarded because an UNGUARDED touch here is why nothing in this repo has ever
+// executed `loadAxisData`. This is the only module-scope global reference in
+// the file, so without the guard the whole module throws on import under
+// `node --test`, and a test cannot reach the function no matter how it is
+// written. That is not a testing inconvenience -- it is the structural reason a
+// `ReferenceError` in this file's catch block survived four commits and two
+// review rounds while every suite stayed green. See
+// `annzarro/tests/js/axis-coverage.test.mjs`, which imports this module.
+if (typeof window !== 'undefined') {
+  window.loadingIndicator = loadingIndicator;
+}
 
 /**
  * Loads data for a specific axis from an anndata-derived source.
@@ -191,6 +203,42 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     loadingIndicator.show(plotContainer, 'axis-data');
   }
 
+  // DECLARED OUTSIDE THE `try` ON PURPOSE. The catch block below reads all four
+  // of these. `let`/`const` are block-scoped, so while they lived inside the
+  // `try` the catch could not see them and threw
+  // `ReferenceError: coverage is not defined` -- and `error.coverage ||`
+  // short-circuits, so it fired on exactly the paths that carry NO
+  // classification, i.e. every path `classifyError` exists for. Measured 5 of 5
+  // (HTTP 500, cap_exceeded, not_found, network drop, unknown axis type): the
+  // user was shown "plot data: failed to read -- coverage is not defined".
+  //
+  // It also silently killed a feature: the axis-specific troubleshooting hints
+  // below key on the message containing "Failed to load data for", which the
+  // ReferenceError replaced.
+  //
+  // `node --check` passes on the broken form; the repo's own `.eslintrc.js`
+  // catches it (`no-undef`) and nothing runs ESLint. Keep these here.
+  let coverage = null;
+  const unit = plotType === 'genes' ? 'genes' : 'cells';
+  const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+  const expected = Array.isArray(entities) ? entities.length : null;
+  const source = `${settings.type}.${settings.key}`
+    + (settings.column ? `.${settings.column}` : '');
+
+  /**
+   * A column naming a cell or gene this dataset does not have. These four sites
+   * used to `throw new Error('Focused cell not found in dataset')` -- an error
+   * carrying NO coverage, which is precisely the input the catch block then
+   * crashed on, and which the table meanwhile reported correctly as
+   * "not in this dataset". Same sentence as the table now, from one function.
+   */
+  const namedEntityMissing = (kind, name) => {
+    const cov = missingEntity(kind, name, { source, unit, total: expected });
+    const err = new Error(cov.lines()[0]);
+    err.coverage = cov;
+    return err;
+  };
+
   try {
     const { type, key, column } = settings;
     const datasetPath = DataManager.getCurrentDataset();
@@ -198,15 +246,6 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     let data, values, dataType;
     let categories = null;
-    // Every return from this function carries a Coverage. `null` here would be
-    // laundered into "nothing to say"; leaving it null until a branch sets it
-    // means an unclassified branch surfaces as UNREPORTED rather than silence.
-    let coverage = null;
-    const unit = plotType === 'genes' ? 'genes' : 'cells';
-    const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
-    const expected = Array.isArray(entities) ? entities.length : null;
-    const source = `${settings.type}.${settings.key}`
-      + (settings.column ? `.${settings.column}` : '');
 
     // --- Helper Functions ---
     // Returns at most maxSample elements of an array.
@@ -315,12 +354,13 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         if (!data.data || data.data.length === 0) {
           // Measured live: a missing obsm/varm key returns 200 with "data": [].
           // On a dataset with entities that cannot be a legitimate empty read.
+          // The rule lives in `classifyMatrixColumn` rather than here, because
+          // the TABLE reads this identical body and used to call it a failed
+          // read -- `unavailable` (warning) beside `failed` (error) on one page.
           console.warn(`No data points received for ${type}.${key}.${column}`);
-          coverage = (typeof expected === 'number' && expected > 0)
-            ? Coverage.missing(GAP.UNAVAILABLE,
-                `"${key}" returned no values for this dataset -- the key is either absent or unreadable`,
-                { source, unit, total: expected })
-            : Coverage.missing(GAP.EMPTY, 'this key has no values', { source, unit, total: expected });
+          coverage = classifyMatrixColumn({
+            values: data.data, expected, unit, source, key
+          });
           const err = new Error(coverage.lines()[0] || `No data points found for ${key}.${column}`);
           err.coverage = coverage;
           throw err;
@@ -333,11 +373,11 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'varp': {
         if (type === 'obsp') {
           const cellIndex = DataManager.getCellIndex(column);
-          if (cellIndex === -1) throw new Error('Focused cell not found in dataset');
+          if (cellIndex === -1) throw namedEntityMissing('cell', column);
           data = await DataManager.loadObsp({ datasetPath, obspKey: key, rows: [cellIndex] });
         } else {
           const geneIndex = DataManager.getGeneIndex(column);
-          if (geneIndex === -1) throw new Error('Focused gene not found in dataset');
+          if (geneIndex === -1) throw namedEntityMissing('gene', column);
           data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [geneIndex] });
         }
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
@@ -366,7 +406,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'layer': {
         if (plotType === 'genes') {
           const cellIndex = DataManager.getCellIndex(column);
-          if (cellIndex === -1) throw new Error('Focused cell not found in dataset');
+          if (cellIndex === -1) throw namedEntityMissing('cell', column);
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
@@ -385,7 +425,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           dataType = 'numerical';
         } else {
           const geneIndex = DataManager.getGeneIndex(column);
-          if (geneIndex === -1) throw new Error('Focused gene not found in dataset');
+          if (geneIndex === -1) throw namedEntityMissing('gene', column);
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,

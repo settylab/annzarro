@@ -25,6 +25,14 @@ SUITES = {
     "table-coverage.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "table-data.js"
     ),
+    # Executes the PLOT's real loader. table-coverage compares the table's code
+    # path against the plot's CLASSIFIER, which is not the same as the plot's
+    # code path -- it was fully green while the two surfaces gave opposite
+    # reasons at opposite severities for obsm/obsp/layer, and while
+    # `loadAxisData`'s catch block could not execute at all.
+    "axis-coverage.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make.js"
+    ),
 }
 
 

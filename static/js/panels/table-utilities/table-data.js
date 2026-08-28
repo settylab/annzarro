@@ -3,7 +3,10 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
-import { Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyError } from '../../utils/coverage.js';
+import {
+    Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
+    classifyError, missingEntity
+} from '../../utils/coverage.js';
 
 /**
  * Load data for a table
@@ -201,10 +204,25 @@ async function loadColumnData(column, entityType, signal = null) {
         // could not find; everything else goes through the same value
         // classifier the plot uses.
         if (loaded.unavailable) {
+            // One sentence, shared with the plot -- see missingEntity().
             return {
                 values: loaded.values,
-                coverage: Coverage.missing(GAP.UNAVAILABLE, loaded.unavailable,
+                coverage: missingEntity(
+                    loaded.unavailable.kind, loaded.unavailable.name,
                     { ...opts, total: expected })
+            };
+        }
+        if (loaded.matrixKey !== undefined) {
+            // obsm/varm/obsp/varp/layer answer `200 {"data": []}` when the KEY
+            // is absent, where obs/var omit the key entirely. That rule was the
+            // plot's alone, and reading this identical body without it is what
+            // made the table say "failed to read" (error) beside the plot's
+            // "not in this dataset" (warning), on one page.
+            return {
+                values: loaded.values,
+                coverage: classifyMatrixColumn({
+                    values: loaded.values, expected, key: loaded.matrixKey, ...opts
+                })
             };
         }
         if (loaded.unsupported) {
@@ -247,9 +265,12 @@ async function loadColumnData(column, entityType, signal = null) {
  *     this dataset" (key ABSENT) and "the read failed" (key present, empty)
  *     into one indistinguishable `undefined`, which is precisely how the table
  *     came to contradict the plot about the same server response.
- *   - `unavailable` -- the reason a named cell/gene could not be located in
- *     THIS dataset. It used to return a full-length array of nulls, which the
- *     classifier could only read as "legitimately blank".
+ *   - `unavailable` -- `{kind, name}` for a cell/gene that is not in THIS
+ *     dataset. It used to return a full-length array of nulls, which the
+ *     classifier could only read as "legitimately blank"; the sentence is now
+ *     built by `missingEntity`, shared with the plot.
+ *   - `matrixKey` -- this came from an obsm/varm/obsp/varp/layer member, whose
+ *     "empty array means the KEY is absent" contract differs from obs/var's.
  *   - `unsupported` -- an unrecognised column type; a defect in this function.
  *
  * Callers must go through `loadColumnData`, which attaches the Coverage.
@@ -277,7 +298,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     obsmKey: key,
                     columnName: columnName
                 });
-                return { values: obsmData.data };
+                return { values: obsmData.data, matrixKey: key };
             } else if (type === 'obsp') {
                 // Check if using focused cell or specific cell
                 if (columnName === 'focused_cell' || columnName === '_focused_cell') {
@@ -290,13 +311,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: obspData.data[0] };
+                        return { values: obspData.data[0], matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: focusedCell
-                            ? `the focused cell "${focusedCell}" is not in this dataset`
-                            : 'no cell is focused, so this column has nothing to measure against'
+                        unavailable: { kind: 'cell', name: focusedCell }
                     };
                 } else {
                     // For fixed cell in obsp
@@ -307,11 +326,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: obspData.data[0] };
+                        return { values: obspData.data[0], matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: `the cell "${columnName}" is not in this dataset`
+                        unavailable: { kind: 'cell', name: columnName }
                     };
                 }
             } else if (type === 'layer') {
@@ -326,13 +345,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data };
+                        return { values: layerData.data, matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: focusedGene
-                            ? `the focused gene "${focusedGene}" is not in this dataset`
-                            : 'no gene is focused, so this column has nothing to read'
+                        unavailable: { kind: 'gene', name: focusedGene }
                     };
                 } else {
                     // For fixed gene in layer
@@ -343,11 +360,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data };
+                        return { values: layerData.data, matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: `the gene "${columnName}" is not in this dataset`
+                        unavailable: { kind: 'gene', name: columnName }
                     };
                 }
             }
@@ -364,7 +381,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     varmKey: key,
                     columnName: columnName
                 });
-                return { values: varmData.data };
+                return { values: varmData.data, matrixKey: key };
             } else if (type === 'varp') {
                 // Check if using focused gene or specific gene
                 if (columnName === 'focused_gene' || columnName === '_focused_gene') {
@@ -377,13 +394,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: varpData.data[0] };
+                        return { values: varpData.data[0], matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: focusedGene
-                            ? `the focused gene "${focusedGene}" is not in this dataset`
-                            : 'no gene is focused, so this column has nothing to measure against'
+                        unavailable: { kind: 'gene', name: focusedGene }
                     };
                 } else {
                     // For fixed gene in varp
@@ -394,11 +409,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: varpData.data[0] };
+                        return { values: varpData.data[0], matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: `the gene "${columnName}" is not in this dataset`
+                        unavailable: { kind: 'gene', name: columnName }
                     };
                 }
             } else if (type === 'layer') {
@@ -413,13 +428,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data };
+                        return { values: layerData.data, matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: focusedCell
-                            ? `the focused cell "${focusedCell}" is not in this dataset`
-                            : 'no cell is focused, so this column has nothing to read'
+                        unavailable: { kind: 'cell', name: focusedCell }
                     };
                 } else {
                     // For fixed cell in layer
@@ -430,11 +443,11 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data };
+                        return { values: layerData.data, matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: `the cell "${columnName}" is not in this dataset`
+                        unavailable: { kind: 'cell', name: columnName }
                     };
                 }
             }

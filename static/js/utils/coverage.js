@@ -145,6 +145,11 @@ function isReason(value) {
     return Object.values(GAP).includes(value);
 }
 
+/** A value that occupies a slot but carries nothing. See `classifyValues`. */
+function isBlank(v) {
+    return v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v));
+}
+
 /**
  * One reason a slice of the requested data is not on screen.
  *
@@ -445,9 +450,17 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
     // An all-blank column draws a wall of "N/A" (table) or an uncoloured
     // scatter (plot) and reads exactly like real data. Full scan, not a
     // sample: a sampled verdict here would be a confident guess. `.every`
-    // short-circuits on the first non-null, so the healthy case costs one
+    // short-circuits on the first real value, so the healthy case costs one
     // comparison.
-    if (values.every(v => v === null || v === undefined)) {
+    //
+    // NaN counts as blank, and that is not defensive coding. The plot's
+    // obsp/varp/layer arms normalise null -> NaN to preserve array length
+    // BEFORE classification (`plot-make.js`), so a check for null/undefined
+    // alone is defeated by the caller's own preprocessing: the table saw
+    // "every entry in this column is blank" and the plot, from the same data,
+    // rendered an empty scatter and said NOTHING. That is the 2026-08-28
+    // symptom surviving inside the fix for it.
+    if (values.every(isBlank)) {
         return Coverage.missing(
             GAP.EMPTY,
             'every entry in this column is blank (nothing was available to fill it)',
@@ -514,6 +527,64 @@ export function classifyColumn({ column, response, expected = null, unit = 'valu
     return classifyValues({
         values: data[column], expected, unit, source: label, role
     });
+}
+
+/**
+ * The column names a specific cell or gene, and THIS dataset does not have it.
+ *
+ * Both surfaces reach this state -- an `obsp`/`varp` column keyed on a cell, a
+ * `layer` column keyed on a gene -- and both used to describe it differently:
+ * the table filled the column with nulls and reported "every entry is blank"
+ * (legitimately absent data), while the plot threw a bare Error carrying no
+ * classification at all. Same condition, two wrong answers, neither of them
+ * "the thing you named is not here". One sentence, one reason, both surfaces.
+ *
+ * @param {string} kind  'cell' | 'gene'.
+ * @param {string} name  The entity named by the column, if any.
+ * @param {Object} [opts] `{ source, unit, total, role }`
+ * @returns {Coverage}
+ */
+export function missingEntity(kind, name, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = {}) {
+    return Coverage.missing(
+        GAP.UNAVAILABLE,
+        name
+            ? `the ${kind} "${name}" is not in this dataset`
+            : `no ${kind} is focused, so this column has nothing to read`,
+        { source, unit, total, role }
+    );
+}
+
+/**
+ * Classify a column read from a MATRIX-shaped member: `obsm`, `varm`, `obsp`,
+ * `varp`, `layer`.
+ *
+ * These do not share `obs`/`var`'s contract. There is no key-presence signal in
+ * the body to inspect -- `classifyColumn`'s discriminator does not apply -- and
+ * the server's measured semantics differ: a missing `obsm`/`varm` key answers
+ * `200` with `"data": []` rather than by omitting the key. On a dataset with
+ * entities that cannot be a legitimate empty read, so an empty array here means
+ * the key is NOT IN THIS DATASET, where the same empty array from `obs` means a
+ * failed read.
+ *
+ * That rule lived only in `plot-make.js`, so the table read the identical body
+ * in the opposite direction: `unavailable` (warning) on the plot,
+ * `failed` (error) on the table, side by side on one page. It is here so both
+ * surfaces consult it, which is the only thing that makes them agree.
+ *
+ * @param {Object} spec  As `classifyValues`, plus `key` for the message.
+ * @returns {Coverage}
+ */
+export function classifyMatrixColumn({ values, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS, key = '' } = {}) {
+    const empty = !Array.isArray(values) || values.length === 0;
+    if (empty && typeof expected === 'number' && expected > 0) {
+        return Coverage.missing(
+            GAP.UNAVAILABLE,
+            `"${key || source}" returned no values for this dataset -- the key is `
+            + 'either absent or unreadable',
+            { source, unit, total: expected, role }
+        );
+    }
+    return classifyValues({ values, expected, unit, source, role });
 }
 
 /**
