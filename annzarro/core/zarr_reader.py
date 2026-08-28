@@ -1044,6 +1044,28 @@ class ZarrReader:
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
     
     @staticmethod
+    def _is_group(member) -> bool:
+        """
+        Whether a zarr member is a Group, under BOTH zarr 2 and zarr 3.
+
+        This has to be answered without a membership test: a zarr Array
+        defines no ``__contains__``, so ``'values' in member`` falls back to
+        the legacy sequence protocol and decodes one chunk per element --
+        O(n) per call, and the cause of the 837 s full-obs read that
+        9f3d65b fixed.
+
+        ``hasattr(member, 'members')`` is NOT the right predicate even though
+        it is O(1): ``members`` exists only on zarr 3's Group, so under zarr
+        2.18.7 it answers False for every group and silently disables the
+        structural fallback below. ``isinstance`` against ``zarr.Group``
+        holds in both majors (zarr 2 aliases ``zarr.hierarchy.Group``); the
+        duck-typed clause is a backstop for a store class that is neither.
+        """
+        if isinstance(member, zarr.Group):
+            return True
+        return hasattr(member, 'keys') and not hasattr(member, 'shape')
+
+    @staticmethod
     def _is_nullable_group(member) -> bool:
         """
         Check whether a zarr member uses an AnnData nullable encoding.
@@ -1066,11 +1088,9 @@ class ZarrReader:
             return True
 
         # Fall back to structure for writers that omit the attribute, but
-        # only for groups. A zarr Array defines no __contains__, so `in`
-        # falls back to the legacy sequence protocol and decodes one chunk
-        # per element -- O(n) per call, ~109s on a 75000-row column. Only
-        # Group has `members`.
-        if not hasattr(member, 'members'):
+        # only for groups -- see _is_group for why the membership test below
+        # must never be reached with a zarr Array.
+        if not ZarrReader._is_group(member):
             return False
 
         return 'values' in member and 'mask' in member
@@ -1127,10 +1147,8 @@ class ZarrReader:
 
         # Only a Group can carry an AnnData encoding -- a zarr Array has
         # .shape and returned above. Guard on Group before ANY membership
-        # test: a zarr Array defines no __contains__, so `x in member` falls
-        # back to the sequence protocol and decodes one chunk per element,
-        # which is O(n) per call.
-        if not hasattr(member, 'members'):
+        # test; see _is_group.
+        if not self._is_group(member):
             return 0
 
         if self._is_nullable_group(member) and 'values' in member:
@@ -1196,7 +1214,7 @@ class ZarrReader:
             # Not a categorical. A nullable encoding is also a group, and
             # _read_member reads it through its 'values'/'mask' children,
             # applying the mask; a plain array it slices directly.
-            if hasattr(group, 'members') and not self._is_nullable_group(group):
+            if self._is_group(group) and not self._is_nullable_group(group):
                 # A group that is neither categorical nor nullable cannot be
                 # sliced. Name the encoding instead of returning silence.
                 encoding = group.attrs.get('encoding-type', 'unknown') if hasattr(group, 'attrs') else 'unknown'
