@@ -1031,6 +1031,63 @@ class ZarrReader:
         # Handle as dense array
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
     
+    @staticmethod
+    def _is_nullable_group(member) -> bool:
+        """
+        Check whether a zarr member uses an AnnData nullable encoding.
+
+        AnnData writes nullable dtypes ('nullable-string-array',
+        'nullable-integer', 'nullable-boolean') as a *group* holding two
+        arrays, 'values' and 'mask', rather than as a plain array.
+
+        Args:
+            member: Zarr array or group
+
+        Returns:
+            True if member is a nullable-encoded group
+        """
+        if not hasattr(member, 'attrs'):
+            return False
+
+        encoding = member.attrs.get('encoding-type', '')
+        if isinstance(encoding, str) and encoding.startswith('nullable-'):
+            return True
+
+        # Fall back to structure for writers that omit the attribute.
+        return 'values' in member and 'mask' in member
+
+    def _read_member(self, member, indices=None) -> np.ndarray:
+        """
+        Read a zarr member that may be a plain array or a nullable group.
+
+        Slicing a zarr group raises TypeError, so a nullable-encoded member
+        must be read through its 'values'/'mask' children instead. Masked
+        (missing) entries are returned as None.
+
+        Args:
+            member: Zarr array or nullable-encoded group
+            indices: Optional list of row indices to select
+
+        Returns:
+            numpy.ndarray of values, with None in missing positions
+        """
+        if not self._is_nullable_group(member):
+            return member[indices] if indices is not None else member[:]
+
+        values = member['values']
+        mask = member['mask']
+
+        data = values[indices] if indices is not None else values[:]
+        mask_data = mask[indices] if indices is not None else mask[:]
+
+        # mask=True marks a missing value, per the AnnData nullable encoding.
+        mask_data = np.asarray(mask_data, dtype=bool)
+        if mask_data.any():
+            data = np.asarray(data, dtype=object)
+            data[mask_data] = None
+
+        return data
+
     def _get_categorical_values(self, group, indices=None, return_categories=False):
         """
         Get values from a categorical data structure in AnnData.
@@ -1055,7 +1112,7 @@ class ZarrReader:
                 'codes' in group and 'categories' in group):
                 
                 # Get codes and categories
-                categories = group['categories'][:]
+                categories = self._read_member(group['categories'])
                 if indices is not None:
                     codes = group['codes'][indices]
                 else:
@@ -1077,7 +1134,7 @@ class ZarrReader:
                 return values
             
             # Not a categorical, just return the array directly
-            result = group[indices] if indices is not None else group[:]
+            result = self._read_member(group, indices)
             
             # For non-categorical data, return just the values
             if return_categories:
@@ -1205,11 +1262,10 @@ class ZarrReader:
                 else:
                     return data_array[:]
             else:
-                # Fallback to direct access if '0' is not found
-                if indices is not None:
-                    return column[indices]
-                else:
-                    return column[:]
+                # Fallback to direct access if '0' is not found. The column
+                # may use a nullable encoding, which is a group rather than
+                # an array and cannot be sliced directly.
+                return self._read_member(column, indices)
         except Exception as e:
             logger.error(f"Error getting dataframe column {column_name}: {e}")
             return np.array([])
