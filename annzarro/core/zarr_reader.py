@@ -1053,7 +1053,14 @@ class ZarrReader:
         if isinstance(encoding, str) and encoding.startswith('nullable-'):
             return True
 
-        # Fall back to structure for writers that omit the attribute.
+        # Fall back to structure for writers that omit the attribute, but
+        # only for groups. A zarr Array defines no __contains__, so `in`
+        # falls back to the legacy sequence protocol and decodes one chunk
+        # per element -- O(n) per call, ~109s on a 75000-row column. Only
+        # Group has `members`.
+        if not hasattr(member, 'members'):
+            return False
+
         return 'values' in member and 'mask' in member
 
     def _read_member(self, member, indices=None) -> np.ndarray:
