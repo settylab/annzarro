@@ -414,13 +414,23 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
     const opts = { source, unit, total: expected, role };
 
     if (n === 0) {
-        // Present but empty. If the dataset has entities, a healthy column the
-        // reader CAN read has exactly that many values -- every obs column is
-        // aligned to `n_obs` by AnnData's definition -- so this is a failed
-        // read, NOT a legitimately empty column. (An AnnData nullable dtype is
-        // stored as a `{values, mask}` group and does come back zero-length
-        // while the column is healthy; the reader genuinely cannot read it, so
-        // "the server could not read it" is still the right sentence.)
+        // Present but empty. Every obs column is aligned to `n_obs` by
+        // AnnData's definition, so on a dataset with entities a healthy column
+        // the reader CAN read has exactly that many values: this is a failed
+        // read, NOT a legitimately empty column.
+        //
+        // "the reader CAN read" is load-bearing rather than a hedge. An AnnData
+        // nullable dtype (`nullable-integer`, `nullable-boolean`,
+        // `nullable-string-array`) is stored as a `{values, mask}` GROUP, and a
+        // reader that slices it as an array gets nothing -- a healthy column
+        // arriving zero-length, which would make this inference false. That is
+        // repaired upstream of here: `zarr_reader._read_member` reads such a
+        // group through its two children (settylab/annzarro#26), and
+        // `annzarro/tests/core/test_nullable_encodings.py::
+        // test_masked_entries_become_none` measures a nullable column reading
+        // back at full length with masked entries as null. So the premise holds
+        // for the encodings that exist, and if a future one does not read, the
+        // right fix is in the reader -- not a softer sentence here.
         if (typeof expected === 'number' && expected > 0) {
             return Coverage.missing(
                 GAP.FAILED,
