@@ -319,6 +319,21 @@ class _CountingArray:
     ``members``.  Like a real zarr Array it defines no ``__contains__``, so a
     membership test against it falls back to the sequence protocol and shows up
     here as ``accesses``.
+
+    Measured, because the sentence above is true of both majors while its
+    CONSEQUENCE is not: ``Array.__contains__`` is absent on zarr 2.18.7 and
+    3.1.6 alike, but ``Array.__iter__`` is present on 2.18.7 and absent on
+    3.1.6.  So a real zarr 2 Array intercepts ``in`` with the ITERATOR
+    protocol (20 chunk-slice reads at n=20000) and only zarr 3 falls all the
+    way to the legacy SEQUENCE protocol (20,001 integer-index reads).  This
+    stand-in models the zarr 3 path, which is the expensive one; on zarr 2 it
+    is stricter than reality rather than laxer, so a pass here is still
+    meaningful and a failure is still a real defect.
+
+    Stated explicitly because the same true-premise/false-consequence shape,
+    written as an unqualified comment one layer down in ``zarr_reader.py``,
+    is what made the zarr-2 guard defect invisible to three readers: the
+    comment told each of them what they would find.
     """
 
     def __init__(self):
