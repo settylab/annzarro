@@ -73,9 +73,14 @@ def _numarr(group, name, values, dtype=None):
 
 
 def _nullable(parent, name, values, mask, encoding, writer):
+    # encoding=None writes the values/mask PAIR with no `encoding-type`, which
+    # is the shape only the STRUCTURAL fallback in `_is_nullable_group` can
+    # recognise. Some writers omit the attribute; the attributed path must not
+    # be the only one that works.
     grp = parent.create_group(name)
-    grp.attrs["encoding-type"] = encoding
-    grp.attrs["encoding-version"] = "0.1.0"
+    if encoding is not None:
+        grp.attrs["encoding-type"] = encoding
+        grp.attrs["encoding-version"] = "0.1.0"
     writer(grp, "values", values)
     _numarr(grp, "mask", mask, dtype=bool)
     return grp
@@ -408,3 +413,38 @@ def test_group_predicate_holds_on_the_installed_zarr(tmp_path):
     assert ZarrReader._is_group(array) is False, (
         f"zarr {zarr.__version__}: Array misread as a Group; membership tests "
         "against it decode one chunk per element")
+
+
+def test_structural_fallback_detects_unattributed_group(tmp_path):
+    """The structural fallback must ACCEPT what it is meant to accept.
+
+    Every other direct assertion on `_is_nullable_group` in this module is
+    NEGATIVE -- "reject a plain array", "read no elements". A suite whose
+    predicate assertions are all rejections is satisfied in full by a
+    predicate that rejects EVERYTHING, so an over-broad guard is structurally
+    invisible to it. That is precisely how the zarr-2 `members` defect
+    survived a five-mutant pass and a two-major run.
+
+    `test_group_predicate_holds_on_the_installed_zarr` closes it at the
+    PREDICATE level. This closes it at the COMPOSITION level: nothing else
+    asserts that `_is_nullable_group` reaches True by the structural route,
+    so a future change to how it consumes `_is_group` would be uncovered
+    again.
+
+    Fails at `dedebe9` under zarr 2.18.7; passes here under both majors.
+
+    Credit: @annzpr13, who found the all-negative-assertions gap.
+    """
+    root = _open_root(tmp_path / "noattr.zarr")
+    categorical = _categorical(
+        root, "c", np.array([0, 1, 0, 1], dtype=np.int8),
+        lambda g: _nullable(g, "categories", ["p", "q"], [False, False],
+                            None, _strarr))
+
+    member = categorical["categories"]
+    assert "encoding-type" not in dict(member.attrs), (
+        "fixture is wrong: the attribute is present, so this exercises the "
+        "attributed path and says nothing about the structural fallback")
+    assert ZarrReader()._is_nullable_group(member) is True, (
+        f"zarr {zarr.__version__}: a values/mask group with no encoding-type "
+        "was not recognised; the structural fallback is unreachable")
