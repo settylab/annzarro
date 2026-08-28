@@ -5,7 +5,7 @@ import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-u
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import {
-  Coverage, GAP, classifyColumn, classifyError, classifyFilterStats
+  Coverage, GAP, classifyColumn, classifyValues, classifyError, classifyFilterStats
 } from '../../utils/coverage.js';
 import { drawPlot, drawPlaceholder } from '../../utils/panel-surface.js';
 
@@ -439,18 +439,11 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     // Reconcile length against the entity count even on the success path: a
     // short series is a partial read, and saying so is the point of the module.
+    // Through `classifyValues`, so an obsm/obsp/layer axis reaches the same
+    // verdict as the same values would in a table -- including the all-blank
+    // case, which used to draw a panel with nothing in it and say nothing.
     if (!coverage) {
-      const n = Array.isArray(values) ? values.length : 0;
-      if (typeof expected === 'number' && expected > 0 && n > 0 && n < expected) {
-        coverage = Coverage.partial(n, expected, GAP.FAILED,
-          'the read returned fewer values than this dataset has entities',
-          { source, unit });
-      } else if (n === 0) {
-        coverage = Coverage.missing(GAP.EMPTY, 'this series has no values',
-          { source, unit, total: expected });
-      } else {
-        coverage = Coverage.complete(typeof expected === 'number' ? expected : n, unit);
-      }
+      coverage = classifyValues({ values, expected, unit, source });
     }
     return { values, type: dataType, categories, coverage };
   } catch (error) {
@@ -657,20 +650,23 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
             if (colorError && colorError.name === 'AbortError') throw colorError;
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
             const n = (DataManager[isGenePlot ? 'getGenes' : 'getCells']() || []).length;
+            // Every point is still drawn in the fallback colour, so this
+            // coverage must not drag the panel's merged `shown` to zero and
+            // claim no cells are on screen -- the same class of lie in the
+            // opposite direction. That is what `ROLE.DESCRIBES` says, and
+            // saying it lets the loader's REAL reason survive: a colour column
+            // absent from the dataset now reads "not in this dataset" here
+            // exactly as it does on the table, instead of being flattened to a
+            // generic read failure by a hand-built substitute.
             colorData = {
               values: Array(n).fill(1),
               type: 'constant',
               categories: null,
-              // NOTE the shape: every point is still drawn, so this is a
-              // COMPLETE coverage carrying a gap -- not a `missing`. A
-              // `missing` here would drag the panel's merged `shown` to zero
-              // and the notice would claim no cells are on screen, which is
-              // the same class of lie in the opposite direction.
-              coverage: Coverage.complete(n, isGenePlot ? 'genes' : 'cells').withGap(
-                GAP.FAILED,
-                (colorError.coverage ? colorError.coverage.lines()[0] : null)
-                  || colorError.message || 'unknown error',
-                'colour')
+              coverage: (colorError.coverage
+                || classifyError(colorError, {
+                     unit: isGenePlot ? 'genes' : 'cells',
+                     source: 'colour', total: n
+                   })).asDescribing()
             };
           }
           data.color = colorData.values;
@@ -739,7 +735,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       return series.coverage || Coverage.unreported(unit);
     }).filter(Boolean);
     if (settings.color && settings.color.type && settings.color.type !== 'none') {
-      axisCoverages.push(data.colorCoverage || Coverage.unreported(unit));
+      // Colour DESCRIBES the points; it does not decide which of them Plotly
+      // draws. A short or failed colour array drops no points, so its `shown`
+      // must not enter the panel's minimum. See ROLE in utils/coverage.js.
+      axisCoverages.push((data.colorCoverage || Coverage.unreported(unit)).asDescribing());
     }
     data.coverage = Coverage.merge(axisCoverages, unit);
 

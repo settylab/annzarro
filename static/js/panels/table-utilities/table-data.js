@@ -3,7 +3,7 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
-import { Coverage, GAP, classifyError } from '../../utils/coverage.js';
+import { Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyError } from '../../utils/coverage.js';
 
 /**
  * Load data for a table
@@ -26,6 +26,8 @@ export async function loadTableData(settings, entityType, signal = null) {
         
         if (!entityIndex || entityIndex.length === 0) {
             const err = new Error(`No ${entityType} found in dataset`);
+            // This one genuinely RESTRICTS: with no entity names there are no
+            // rows at all, so "nothing shown" is the truth rather than a lie.
             err.coverage = Coverage.missing(GAP.UNAVAILABLE,
                 `this dataset supplied no ${entityType} names`,
                 { source: `${entityType} names`, unit: entityType });
@@ -70,16 +72,19 @@ export async function loadTableData(settings, entityType, signal = null) {
                 // Load data based on column type
                 const loaded = await loadColumnData(column, entityType, signal);
                 const columnData = loaded.values;
-                columnCoverages.push(loaded.coverage);
                 
                 // Check if aborted after loading column data
                 if (signal && signal.aborted) {
                     throw new DOMException(`Table data loading aborted after loading column ${getColumnKey(column)}`, 'AbortError');
                 }
                 
-                // Add column data to the data object
+                // Add column data to the data object. EXACTLY ONE coverage is
+                // pushed per requested column: pushing the loader's verdict here
+                // and a second one below would count one bad column twice in the
+                // notice.
                 const columnKey = getColumnKey(column);
-                if (columnData && columnData.length === entityIndex.length) {
+                if (Array.isArray(columnData) && columnData.length === entityIndex.length) {
+                    columnCoverages.push(loaded.coverage);
                     data.forEach((row, i) => {
                         row[columnKey] = columnData[i];
                     });
@@ -109,10 +114,18 @@ export async function loadTableData(settings, entityType, signal = null) {
                     // console-only: the user saw a table simply missing a column
                     // they had asked for, with no indication why.
                     console.error(`Column data length (${columnData?.length}) doesn't match entity count (${entityIndex.length}) for ${columnKey}`);
-                    columnCoverages.push(Coverage.missing(GAP.FAILED,
-                        `returned ${columnData ? columnData.length : 0} values for ${entityIndex.length} ${entityType}, `
-                        + 'so the column was left out of the table',
-                        { source: columnKey, unit: entityType, total: entityIndex.length }));
+                    // When the loader already said WHY -- absent from the
+                    // dataset, failed read, unfindable cell -- that reason is
+                    // the news and stands as the column's one coverage. Only a
+                    // length mismatch the loader thought was fine needs its own.
+                    columnCoverages.push(
+                        loaded.coverage.isComplete
+                            ? Coverage.missing(GAP.FAILED,
+                                `returned ${Array.isArray(columnData) ? columnData.length : 0} values for ${entityIndex.length} ${entityType}, `
+                                + 'so the column was left out of the table',
+                                { source: columnKey, unit: entityType, total: entityIndex.length,
+                                  role: ROLE.DESCRIBES })
+                            : loaded.coverage);
                 }
             }
         }
@@ -159,40 +172,57 @@ async function loadColumnData(column, entityType, signal = null) {
         ? (DataManager.getCells() || []).length
         : (DataManager.getGenes() || []).length;
 
-    /**
-     * The single verdict point for a table column. Every return path of
-     * `_loadColumnValues` passes through here, so a branch added later cannot
-     * hand back values without a classification.
-     */
-    const classify = (values) => {
-        const n = Array.isArray(values) ? values.length : 0;
-        if (n === 0) {
-            return expected > 0
-                ? Coverage.missing(GAP.FAILED,
-                    `the column returned no values although this dataset has ${expected} ${entityType}`,
-                    { source, unit: entityType, total: expected })
-                : Coverage.missing(GAP.EMPTY, 'the column has no values',
-                    { source, unit: entityType, total: expected });
-        }
-        // An all-blank column renders as a wall of "N/A" and reads exactly like
-        // real data that happens to be missing. Full scan, not a sample: a
-        // sampled verdict here would be a confident guess.
-        if (values.every(v => v === null || v === undefined)) {
-            return Coverage.missing(GAP.EMPTY,
-                'every entry in this column is blank (nothing was available to fill it)',
-                { source, unit: entityType, total: expected });
-        }
-        if (expected > 0 && n < expected) {
-            return Coverage.partial(n, expected, GAP.FAILED,
-                'the read returned fewer values than this dataset has entities',
-                { source, unit: entityType });
-        }
-        return Coverage.complete(expected || n, entityType);
-    };
+    // A table column DESCRIBES rows that are on screen regardless of whether it
+    // could be read: 75,000 rows do not vanish because one column is missing.
+    // Without this the panel's merged `shown` fell to 0 and the notice read
+    // "No cells shown (of 75,000)" above a fully populated table.
+    const opts = { unit: entityType, source, role: ROLE.DESCRIBES };
 
     try {
-        const values = await _loadColumnValues(column, entityType, signal);
-        return { values, coverage: classify(values) };
+        const loaded = await _loadColumnValues(column, entityType, signal);
+
+        // A response body, when there is one, is classified as a body -- NOT as
+        // the array extracted from it. `response.data[key]` is `undefined` both
+        // when the column is absent from the dataset and when the read failed,
+        // so extracting first destroys the one discriminator the server gives
+        // us. This is the whole reason the plot and the table used to give
+        // opposite answers for one response.
+        if (loaded.response) {
+            return {
+                values: loaded.values,
+                coverage: classifyColumn({
+                    column: loaded.column, response: loaded.response,
+                    expected, ...opts
+                })
+            };
+        }
+
+        // Paths with no response body to inspect say for themselves what they
+        // could not find; everything else goes through the same value
+        // classifier the plot uses.
+        if (loaded.unavailable) {
+            return {
+                values: loaded.values,
+                coverage: Coverage.missing(GAP.UNAVAILABLE, loaded.unavailable,
+                    { ...opts, total: expected })
+            };
+        }
+        if (loaded.unsupported) {
+            // Nobody taught the table to load this column type. That is a
+            // defect in our code, and UNREPORTED is what says so out loud
+            // rather than dressing it up as missing data.
+            return {
+                values: loaded.values,
+                coverage: Coverage.missing(GAP.UNREPORTED,
+                    `the table does not know how to load a "${type}" column`,
+                    { ...opts, total: expected })
+            };
+        }
+
+        return {
+            values: loaded.values,
+            coverage: classifyValues({ values: loaded.values, expected, ...opts })
+        };
     } catch (error) {
         if (error && error.name === 'AbortError') throw error;
         console.error(`Error loading column data for ${source}:`, error);
@@ -200,14 +230,28 @@ async function loadColumnData(column, entityType, signal = null) {
         // reason now travels with it instead of being logged and dropped.
         return {
             values: Array(expected).fill(null),
-            coverage: error.coverage
-                || classifyError(error, { unit: entityType, source, total: expected })
+            coverage: (error.coverage ? error.coverage.asDescribing() : null)
+                || classifyError(error, { ...opts, total: expected })
         };
     }
 }
 
 /**
- * Fetch one table column's raw values. Returns an array; throws on failure.
+ * Fetch one table column's raw values, together with the PROVENANCE its caller
+ * needs to classify them. Throws on failure.
+ *
+ * Returns `{ values, response?, column?, unavailable?, unsupported? }`:
+ *
+ *   - `response` + `column` -- an obs/var body, to be classified as a body.
+ *     Returning `response.data[key]` alone would collapse "the column is not in
+ *     this dataset" (key ABSENT) and "the read failed" (key present, empty)
+ *     into one indistinguishable `undefined`, which is precisely how the table
+ *     came to contradict the plot about the same server response.
+ *   - `unavailable` -- the reason a named cell/gene could not be located in
+ *     THIS dataset. It used to return a full-length array of nulls, which the
+ *     classifier could only read as "legitimately blank".
+ *   - `unsupported` -- an unrecognised column type; a defect in this function.
+ *
  * Callers must go through `loadColumnData`, which attaches the Coverage.
  */
 async function _loadColumnValues(column, entityType, signal = null) {
@@ -226,13 +270,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const obsData = await DataManager.loadObs({
                     columns: [key]
                 });
-                return obsData.data[key];
+                return { values: obsData.data ? obsData.data[key] : undefined,
+                         response: obsData, column: key };
             } else if (type === 'obsm') {
                 const obsmData = await DataManager.loadObsm({
                     obsmKey: key,
                     columnName: columnName
                 });
-                return obsmData.data;
+                return { values: obsmData.data };
             } else if (type === 'obsp') {
                 // Check if using focused cell or specific cell
                 if (columnName === 'focused_cell' || columnName === '_focused_cell') {
@@ -245,9 +290,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return obspData.data[0];
+                        return { values: obspData.data[0] };
                     }
-                    return Array(DataManager.getCells().length).fill(null);
+                    return {
+                        values: Array(DataManager.getCells().length).fill(null),
+                        unavailable: focusedCell
+                            ? `the focused cell "${focusedCell}" is not in this dataset`
+                            : 'no cell is focused, so this column has nothing to measure against'
+                    };
                 } else {
                     // For fixed cell in obsp
                     const cellIndex = DataManager.getCellIndex(columnName);
@@ -257,9 +307,12 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return obspData.data[0];
+                        return { values: obspData.data[0] };
                     }
-                    return Array(DataManager.getCells().length).fill(null);
+                    return {
+                        values: Array(DataManager.getCells().length).fill(null),
+                        unavailable: `the cell "${columnName}" is not in this dataset`
+                    };
                 }
             } else if (type === 'layer') {
                 // Check if using focused gene or specific gene
@@ -273,9 +326,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return layerData.data;
+                        return { values: layerData.data };
                     }
-                    return Array(DataManager.getCells().length).fill(null);
+                    return {
+                        values: Array(DataManager.getCells().length).fill(null),
+                        unavailable: focusedGene
+                            ? `the focused gene "${focusedGene}" is not in this dataset`
+                            : 'no gene is focused, so this column has nothing to read'
+                    };
                 } else {
                     // For fixed gene in layer
                     const geneIndex = DataManager.getGeneIndex(columnName);
@@ -285,9 +343,12 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return layerData.data;
+                        return { values: layerData.data };
                     }
-                    return Array(DataManager.getCells().length).fill(null);
+                    return {
+                        values: Array(DataManager.getCells().length).fill(null),
+                        unavailable: `the gene "${columnName}" is not in this dataset`
+                    };
                 }
             }
         } else {
@@ -296,13 +357,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const varData = await DataManager.loadVar({
                     columns: [key]
                 });
-                return varData.data[key];
+                return { values: varData.data ? varData.data[key] : undefined,
+                         response: varData, column: key };
             } else if (type === 'varm') {
                 const varmData = await DataManager.loadVarm({
                     varmKey: key,
                     columnName: columnName
                 });
-                return varmData.data;
+                return { values: varmData.data };
             } else if (type === 'varp') {
                 // Check if using focused gene or specific gene
                 if (columnName === 'focused_gene' || columnName === '_focused_gene') {
@@ -315,9 +377,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return varpData.data[0];
+                        return { values: varpData.data[0] };
                     }
-                    return Array(DataManager.getGenes().length).fill(null);
+                    return {
+                        values: Array(DataManager.getGenes().length).fill(null),
+                        unavailable: focusedGene
+                            ? `the focused gene "${focusedGene}" is not in this dataset`
+                            : 'no gene is focused, so this column has nothing to measure against'
+                    };
                 } else {
                     // For fixed gene in varp
                     const geneIndex = DataManager.getGeneIndex(columnName);
@@ -327,9 +394,12 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return varpData.data[0];
+                        return { values: varpData.data[0] };
                     }
-                    return Array(DataManager.getGenes().length).fill(null);
+                    return {
+                        values: Array(DataManager.getGenes().length).fill(null),
+                        unavailable: `the gene "${columnName}" is not in this dataset`
+                    };
                 }
             } else if (type === 'layer') {
                 // Check if using focused cell or specific cell
@@ -343,9 +413,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return layerData.data;
+                        return { values: layerData.data };
                     }
-                    return Array(DataManager.getGenes().length).fill(null);
+                    return {
+                        values: Array(DataManager.getGenes().length).fill(null),
+                        unavailable: focusedCell
+                            ? `the focused cell "${focusedCell}" is not in this dataset`
+                            : 'no cell is focused, so this column has nothing to read'
+                    };
                 } else {
                     // For fixed cell in layer
                     const cellIndex = DataManager.getCellIndex(columnName);
@@ -355,14 +430,17 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return layerData.data;
+                        return { values: layerData.data };
                     }
-                    return Array(DataManager.getGenes().length).fill(null);
+                    return {
+                        values: Array(DataManager.getGenes().length).fill(null),
+                        unavailable: `the cell "${columnName}" is not in this dataset`
+                    };
                 }
             }
         }
         
-        return [];
+        return { values: [], unsupported: true };
     } catch (error) {
         // Rethrow -- including aborts. The all-null fallback and the reason for
         // it now live together in loadColumnData's catch. Swallowing here is

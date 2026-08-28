@@ -59,6 +59,35 @@ export const GAP = Object.freeze({
 });
 
 /**
+ * What a Coverage says about the ENTITIES on screen, as opposed to what it says
+ * about the DATA describing them. `Coverage.merge` needs this distinction and
+ * cannot infer it.
+ *
+ * A contributor that RESTRICTS decides which entities appear at all: an x/y/z
+ * coordinate series (no coordinate, no point), a filter mask, a server cap. The
+ * panel can only show a point where every restricting contributor has one, so
+ * merging them takes the MINIMUM `shown`.
+ *
+ * A contributor that DESCRIBES is a property OF entities that appear anyway: a
+ * colour column over a scatter Plotly draws regardless, a table column whose
+ * 75,000 rows are on screen whether or not that one column could be read.
+ * Taking its `shown` into the minimum states that nothing is on screen while
+ * the user is looking at a full table -- the same class of lie, in the opposite
+ * direction, as the silence this module exists to end.
+ *
+ * The default is RESTRICTS because a contributor nobody classified is more
+ * safely assumed to gate the entities than to be incidental to them: that
+ * errs toward saying too little is shown, which is visible and checkable,
+ * rather than toward claiming a full panel over data that is not there.
+ */
+export const ROLE = Object.freeze({
+    /** Decides which entities appear. Merged by MINIMUM `shown`. */
+    RESTRICTS: 'restricts',
+    /** Describes entities that appear regardless. Its `shown` is not a bound. */
+    DESCRIBES: 'describes'
+});
+
+/**
  * Headline used when every entity IS on screen but something about them is
  * missing -- a failed colour column over a complete scatter, say. Saying
  * "75,000 of 75,000 shown" there is true and useless; the reason is the news.
@@ -139,11 +168,13 @@ export class Coverage {
      * @param {number|null} spec.total  Entities the user asked for.
      * @param {string} spec.unit  'cells' | 'genes' | 'values' ...
      * @param {Gap[]} spec.gaps
+     * @param {string} spec.role  One of `ROLE.*`; see the enum's docstring.
      */
-    constructor({ shown = null, total = null, unit = 'values', gaps = [] } = {}) {
+    constructor({ shown = null, total = null, unit = 'values', gaps = [], role = ROLE.RESTRICTS } = {}) {
         this.shown = shown;
         this.total = total;
         this.unit = unit;
+        this.role = (role === ROLE.DESCRIBES) ? ROLE.DESCRIBES : ROLE.RESTRICTS;
         this.gaps = Object.freeze(
             gaps.map(g => Object.freeze({
                 reason: isReason(g.reason) ? g.reason : GAP.UNREPORTED,
@@ -156,8 +187,8 @@ export class Coverage {
     }
 
     /** Everything the user asked for is on screen. Renders no notice. */
-    static complete(total, unit = 'values') {
-        return new Coverage({ shown: total, total, unit, gaps: [] });
+    static complete(total, unit = 'values', role = ROLE.RESTRICTS) {
+        return new Coverage({ shown: total, total, unit, gaps: [], role });
     }
 
     /**
@@ -183,9 +214,9 @@ export class Coverage {
      * @param {string} detail  Why, in the user's terms.
      * @param {Object} [opts]  `{ source, unit, total }`.
      */
-    static missing(reason, detail, { source = '', unit = 'values', total = null } = {}) {
+    static missing(reason, detail, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = {}) {
         return new Coverage({
-            shown: 0, total, unit,
+            shown: 0, total, unit, role,
             gaps: [{ reason, detail, source, count: total }]
         });
     }
@@ -193,9 +224,9 @@ export class Coverage {
     /**
      * A surface showing `shown` of `total`, for a stated reason.
      */
-    static partial(shown, total, reason, detail, { source = '', unit = 'values' } = {}) {
+    static partial(shown, total, reason, detail, { source = '', unit = 'values', role = ROLE.RESTRICTS } = {}) {
         return new Coverage({
-            shown, total, unit,
+            shown, total, unit, role,
             gaps: [{
                 reason, detail, source,
                 count: (typeof total === 'number' && typeof shown === 'number')
@@ -207,31 +238,64 @@ export class Coverage {
     /** Returns a new Coverage with one more gap. */
     withGap(reason, detail, source = '', count = null) {
         return new Coverage({
-            shown: this.shown, total: this.total, unit: this.unit,
+            shown: this.shown, total: this.total, unit: this.unit, role: this.role,
             gaps: [...this.gaps, { reason, detail, source, count }]
         });
     }
+
+    /** Returns a new Coverage with the given role; see the `ROLE` docstring. */
+    withRole(role) {
+        if (this.role === role) return this;
+        return new Coverage({
+            shown: this.shown, total: this.total, unit: this.unit,
+            gaps: this.gaps, role
+        });
+    }
+
+    /**
+     * This coverage describes a PROPERTY of entities that are on screen anyway
+     * -- a colour column, a table column -- so its `shown` must not bound the
+     * panel's. The reason it carries still surfaces; only the count changes.
+     */
+    asDescribing() { return this.withRole(ROLE.DESCRIBES); }
 
     /**
      * Combine the coverage of several series into the coverage of the panel
      * that draws them.
      *
-     * `shown` is the MINIMUM across inputs, because a plot can only show a
-     * point where every series has a value: if x covers 75,000 cells and the
-     * colour column covers 3,412, the plot is honest at 3,412. `total` is the
-     * MAXIMUM, because that is what the user asked for.
+     * `shown` is the MINIMUM across the contributors that RESTRICT which
+     * entities appear, because a plot can only show a point where every such
+     * series has a value: if x covers 75,000 cells and a y-axis cap covers
+     * 10,000, the plot is honest at 10,000. Contributors that merely DESCRIBE
+     * those entities do not enter the minimum -- see the `ROLE` docstring for
+     * why taking them into it produced "No cells shown (of 75,000)" over a
+     * fully populated table. `total` is the MAXIMUM across all of them,
+     * because that is what the user asked for.
+     *
+     * When NOTHING restricts -- a table, whose columns all merely describe its
+     * rows -- every entity is on screen, so `shown` is the total. The gaps
+     * still travel, so the reason is stated; only the false count is gone.
      *
      * `UNREPORTED` survives merging (it is a gap like any other), so combining
      * a described series with an undescribed one does not launder the latter.
+     *
+     * The merged value RESTRICTS: its `shown` is a real entity count, so a
+     * panel coverage re-merged with a filter mask bounds correctly.
      */
     static merge(coverages, unit = null) {
         const list = coverages.filter(Boolean);
         if (list.length === 0) return Coverage.unreported(unit || 'values');
 
-        const shownVals = list.map(c => c.shown).filter(v => typeof v === 'number');
+        const restricting = list.filter(c => c.role !== ROLE.DESCRIBES);
+        const shownVals = restricting.map(c => c.shown).filter(v => typeof v === 'number');
         const totalVals = list.map(c => c.total).filter(v => typeof v === 'number');
         const gaps = [];
-        for (const c of list) gaps.push(...c.gaps);
+        // Element-by-element, not `push(...c.gaps)`: spreading an identifier
+        // into a call is the stack-overflow idiom this repo guards against
+        // (annzarro/tests/static/test_no_unsafe_array_spread.py), and writing
+        // it seven lines above the comment congratulating this module for
+        // avoiding it would be the same generalisation failure it describes.
+        for (const c of list) for (const g of c.gaps) gaps.push(g);
 
         // reduce(), not a spread into Math.min/Math.max: spreading an
         // identifier there is the stack-overflow idiom this repo already guards
@@ -239,11 +303,13 @@ export class Coverage {
         // These arrays are short today, but writing the banned shape in the
         // module that exists to stop a defect class recurring is precisely the
         // mistake worth not making.
+        const total = totalVals.length ? totalVals.reduce((a, b) => (b > a ? b : a)) : null;
         return new Coverage({
-            shown: shownVals.length ? shownVals.reduce((a, b) => (b < a ? b : a)) : null,
-            total: totalVals.length ? totalVals.reduce((a, b) => (b > a ? b : a)) : null,
+            shown: shownVals.length ? shownVals.reduce((a, b) => (b < a ? b : a)) : total,
+            total,
             unit: unit || list[0].unit,
-            gaps
+            gaps,
+            role: ROLE.RESTRICTS
         });
     }
 
@@ -316,8 +382,78 @@ export class Coverage {
 
     /** Compact form for logs, deep links and tests. */
     toJSON() {
-        return { shown: this.shown, total: this.total, unit: this.unit, gaps: this.gaps };
+        return {
+            shown: this.shown, total: this.total, unit: this.unit,
+            role: this.role, gaps: this.gaps
+        };
     }
+}
+
+/**
+ * Classify an array of values already in hand, given how many were expected.
+ *
+ * Both surfaces that show a column -- the plot and the cell/gene table -- must
+ * reach the SAME verdict from the SAME values, or the two panels on one page
+ * contradict each other about one server response. That happened: the table
+ * carried its own transcription of this logic, which is how a column absent
+ * from the dataset came to be reported as a failed read on one panel and as
+ * "not in this dataset" on the other. This is the single implementation;
+ * `classifyColumn` calls it after deciding presence, and the table calls it
+ * directly for the paths that have no response body to inspect.
+ *
+ * @param {Object} spec
+ * @param {Array} spec.values
+ * @param {number|null} spec.expected  Known entity count (cells or genes).
+ * @param {string} spec.unit  'cells' | 'genes'.
+ * @param {string} spec.source  Label for the notice, e.g. `obs.celltype`.
+ * @param {string} spec.role  One of `ROLE.*`; see the enum's docstring.
+ * @returns {Coverage}
+ */
+export function classifyValues({ values, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS } = {}) {
+    const n = Array.isArray(values) ? values.length : 0;
+    const opts = { source, unit, total: expected, role };
+
+    if (n === 0) {
+        // Present but empty. If the dataset has entities, a healthy column the
+        // reader CAN read has exactly that many values -- every obs column is
+        // aligned to `n_obs` by AnnData's definition -- so this is a failed
+        // read, NOT a legitimately empty column. (An AnnData nullable dtype is
+        // stored as a `{values, mask}` group and does come back zero-length
+        // while the column is healthy; the reader genuinely cannot read it, so
+        // "the server could not read it" is still the right sentence.)
+        if (typeof expected === 'number' && expected > 0) {
+            return Coverage.missing(
+                GAP.FAILED,
+                'the column is listed by this dataset but returned no values; '
+                + 'the server could not read it',
+                opts
+            );
+        }
+        return Coverage.missing(GAP.EMPTY, 'the column exists and has no values', opts);
+    }
+
+    // An all-blank column draws a wall of "N/A" (table) or an uncoloured
+    // scatter (plot) and reads exactly like real data. Full scan, not a
+    // sample: a sampled verdict here would be a confident guess. `.every`
+    // short-circuits on the first non-null, so the healthy case costs one
+    // comparison.
+    if (values.every(v => v === null || v === undefined)) {
+        return Coverage.missing(
+            GAP.EMPTY,
+            'every entry in this column is blank (nothing was available to fill it)',
+            opts
+        );
+    }
+
+    if (typeof expected === 'number' && expected > 0 && n < expected) {
+        return Coverage.partial(
+            n, expected, GAP.FAILED,
+            `only ${fmt(n)} of ${fmt(expected)} values came back; the read was incomplete`,
+            { source, unit, role }
+        );
+    }
+
+    return Coverage.complete(typeof expected === 'number' ? expected : n, unit, role);
 }
 
 /**
@@ -335,9 +471,13 @@ export class Coverage {
  *
  * So key-absent vs key-present-but-short is the discriminator between
  * "not in this dataset" and "failed to read", and it needs no reader change.
- * A zero-length obs column on a dataset with cells is structurally impossible
- * for a healthy column -- every obs column is aligned to `n_obs` by AnnData's
- * definition -- which is what makes the inference sound rather than a guess.
+ * Everything past that presence test is `classifyValues`, so the table -- which
+ * once carried its own copy of it -- cannot drift from the plot again.
+ *
+ * The response body is REQUIRED, not the extracted array: extracting
+ * `response.data[column]` first collapses key-absent and key-present-empty into
+ * the same `undefined`, destroying the discriminator before it can be applied.
+ * That is exactly what the table used to do.
  *
  * @param {Object} spec
  * @param {string} spec.column  The column name that was requested.
@@ -345,9 +485,10 @@ export class Coverage {
  * @param {number|null} spec.expected  Known entity count (cells or genes).
  * @param {string} spec.unit  'cells' | 'genes'.
  * @param {string} spec.source  Label for the notice, e.g. `obs.celltype`.
+ * @param {string} spec.role  One of `ROLE.*`; see the enum's docstring.
  * @returns {Coverage}
  */
-export function classifyColumn({ column, response, expected = null, unit = 'values', source = '' }) {
+export function classifyColumn({ column, response, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS }) {
     const label = source || column;
     const data = (response && response.data) || {};
     const present = Object.prototype.hasOwnProperty.call(data, column);
@@ -356,41 +497,13 @@ export function classifyColumn({ column, response, expected = null, unit = 'valu
         return Coverage.missing(
             GAP.UNAVAILABLE,
             `the column "${column}" does not exist in this dataset`,
-            { source: label, unit, total: expected }
+            { source: label, unit, total: expected, role }
         );
     }
 
-    const values = data[column];
-    const n = Array.isArray(values) ? values.length : 0;
-
-    if (n === 0) {
-        // Present but empty. If the dataset has entities, a healthy column
-        // would have exactly that many values, so this is a failed read --
-        // NOT a legitimately empty column.
-        if (typeof expected === 'number' && expected > 0) {
-            return Coverage.missing(
-                GAP.FAILED,
-                'the column is listed by this dataset but returned no values; '
-                + 'the server could not read it',
-                { source: label, unit, total: expected }
-            );
-        }
-        return Coverage.missing(
-            GAP.EMPTY,
-            'the column exists and has no values',
-            { source: label, unit, total: expected }
-        );
-    }
-
-    if (typeof expected === 'number' && expected > 0 && n < expected) {
-        return Coverage.partial(
-            n, expected, GAP.FAILED,
-            `only ${fmt(n)} of ${fmt(expected)} values came back; the read was incomplete`,
-            { source: label, unit }
-        );
-    }
-
-    return Coverage.complete(typeof expected === 'number' ? expected : n, unit);
+    return classifyValues({
+        values: data[column], expected, unit, source: label, role
+    });
 }
 
 /**
@@ -405,24 +518,24 @@ export function classifyColumn({ column, response, expected = null, unit = 'valu
  * @param {Object} [opts] `{ unit, source, total }`
  * @returns {Coverage}
  */
-export function classifyError(error, { unit = 'values', source = '', total = null } = {}) {
+export function classifyError(error, { unit = 'values', source = '', total = null, role = ROLE.RESTRICTS } = {}) {
     const body = (error && error.data) || {};
     const serverReason = body.reason;
     const message = (error && error.message) || 'unknown error';
 
     if (serverReason === 'cap_exceeded') {
-        return Coverage.missing(GAP.CAPPED, message, { source, unit, total });
+        return Coverage.missing(GAP.CAPPED, message, { source, unit, total, role });
     }
     if (serverReason === 'not_found') {
-        return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total });
+        return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });
     }
     // A cap rejection from a server that predates the `reason` field still has
     // to be classified, so recognise its wording too rather than mislabelling
     // it a read failure.
     if (/too many (?:cells|genes) requested/i.test(message)) {
-        return Coverage.missing(GAP.CAPPED, message, { source, unit, total });
+        return Coverage.missing(GAP.CAPPED, message, { source, unit, total, role });
     }
-    return Coverage.missing(GAP.FAILED, message, { source, unit, total });
+    return Coverage.missing(GAP.FAILED, message, { source, unit, total, role });
 }
 
 /**

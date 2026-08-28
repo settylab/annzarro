@@ -13,7 +13,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    GAP, Coverage, classifyColumn, classifyError, classifyFilterStats
+    GAP, ROLE, Coverage, classifyColumn, classifyValues, classifyError,
+    classifyFilterStats
 } from '../../../static/js/utils/coverage.js';
 
 test('complete coverage says nothing', () => {
@@ -51,10 +52,12 @@ test('a Coverage is immutable; withGap returns a new one', () => {
     assert.throws(() => { b.gaps.push({}); });
 });
 
-test('merge takes the minimum shown -- a plot is honest at its scarcest series', () => {
+test('merge takes the minimum shown across contributors that RESTRICT', () => {
+    // Two series that each decide which points exist: the panel is honest at
+    // the scarcer of them.
     const x = Coverage.complete(75000, 'cells');
-    const color = Coverage.partial(3412, 75000, GAP.FAILED, 'read failed', { source: 'colour' });
-    const m = Coverage.merge([x, color], 'cells');
+    const y = Coverage.partial(3412, 75000, GAP.FAILED, 'read failed', { source: 'y-axis' });
+    const m = Coverage.merge([x, y], 'cells');
     assert.equal(m.shown, 3412);
     assert.equal(m.total, 75000);
     assert.equal(m.worstReason, GAP.FAILED);
@@ -257,4 +260,150 @@ test('classifyFilterStats: inactive toggles do not invent gaps', () => {
 
 test('classifyFilterStats: absent stats are unreported, not complete', () => {
     assert.equal(classifyFilterStats(null, 'cells').worstReason, GAP.UNREPORTED);
+});
+
+
+/* ================================================================== *
+ * ROLE -- whether a contributor decides which entities appear, or     *
+ * merely describes entities that appear anyway.                       *
+ *                                                                     *
+ * Taking a DESCRIBING contributor into the minimum is what captioned  *
+ * a table holding 75,000 rows "No cells shown (of 75,000)". The tests *
+ * below are the rule; annzarro/tests/js/table-coverage.test.mjs is    *
+ * the same rule observed through the real table module.               *
+ * ================================================================== */
+
+test('the default role is RESTRICTS -- an unclassified contributor bounds the panel', () => {
+    assert.equal(Coverage.complete(10, 'cells').role, ROLE.RESTRICTS);
+    assert.equal(Coverage.missing(GAP.FAILED, 'x').role, ROLE.RESTRICTS);
+    assert.equal(Coverage.partial(1, 10, GAP.FAILED, 'x').role, ROLE.RESTRICTS);
+    assert.equal(Coverage.unreported('cells').role, ROLE.RESTRICTS);
+});
+
+test('a DESCRIBING contributor does not bound the panel it describes', () => {
+    // Plotly draws every point whether or not marker.color is short: a colour
+    // column that covers 3,412 of 75,000 removes NO points from the scatter.
+    const x = Coverage.complete(75000, 'cells');
+    const colour = Coverage.partial(3412, 75000, GAP.FAILED, 'read failed',
+        { source: 'colour' }).asDescribing();
+    const m = Coverage.merge([x, colour], 'cells');
+    assert.equal(m.shown, 75000, 'the points are all on screen');
+    assert.equal(m.total, 75000);
+    assert.equal(m.worstReason, GAP.FAILED, 'and the reason is still stated');
+    assert.match(m.headline(), /could not be read/i);
+    assert.doesNotMatch(m.headline(), /^No cells shown/);
+});
+
+test('a DESCRIBING contributor showing nothing still does not empty the panel', () => {
+    // The exact shape of the table defect: a column absent from the dataset is
+    // `missing`, i.e. shown = 0, but the rows are on screen regardless.
+    const good = Coverage.complete(75000, 'cells').asDescribing();
+    const absent = Coverage.missing(GAP.UNAVAILABLE, 'not in this dataset',
+        { source: 'obs.celltype', unit: 'cells', total: 75000 }).asDescribing();
+    const m = Coverage.merge([good, absent], 'cells');
+    assert.equal(m.shown, 75000);
+    assert.doesNotMatch(m.headline(), /^No cells shown/);
+    assert.match(m.lines()[0], /not in this dataset/);
+});
+
+test('when NOTHING restricts, shown is the total -- every entity is on screen', () => {
+    const m = Coverage.merge([
+        Coverage.missing(GAP.FAILED, 'a', { total: 500, unit: 'cells' }).asDescribing(),
+        Coverage.missing(GAP.FAILED, 'b', { total: 500, unit: 'cells' }).asDescribing()
+    ], 'cells');
+    assert.equal(m.shown, 500);
+    assert.equal(m.total, 500);
+    assert.equal(m.gaps.length, 2, 'both reasons still travel');
+});
+
+test('one restricting contributor still bounds a panel full of describing ones', () => {
+    // The opposite direction: DESCRIBES must not become a way to launder a
+    // real restriction. A capped axis among colour columns still wins.
+    const m = Coverage.merge([
+        Coverage.complete(75000, 'cells').asDescribing(),
+        Coverage.partial(10000, 75000, GAP.CAPPED, 'server limit', { source: 'y-axis' })
+    ], 'cells');
+    assert.equal(m.shown, 10000);
+    assert.equal(m.worstReason, GAP.CAPPED);
+});
+
+test('a merged coverage RESTRICTS, so re-merging it with a filter bounds correctly', () => {
+    const panel = Coverage.merge([
+        Coverage.complete(75000, 'cells'),
+        Coverage.missing(GAP.FAILED, 'colour failed', { total: 75000 }).asDescribing()
+    ], 'cells');
+    assert.equal(panel.role, ROLE.RESTRICTS);
+    const withFilter = Coverage.merge([
+        panel,
+        classifyFilterStats({ xNaN: 71588, total: 75000, filtered: 71588 }, 'cells')
+    ], 'cells');
+    assert.equal(withFilter.shown, 3412, 'the filter mask still bounds the panel');
+});
+
+test('withRole and asDescribing are non-mutating', () => {
+    const a = Coverage.complete(10, 'cells');
+    const b = a.asDescribing();
+    assert.equal(a.role, ROLE.RESTRICTS);
+    assert.equal(b.role, ROLE.DESCRIBES);
+    assert.equal(a.asDescribing().asDescribing().role, ROLE.DESCRIBES);
+    assert.equal(b.withRole(ROLE.RESTRICTS).role, ROLE.RESTRICTS);
+});
+
+test('withGap preserves the role', () => {
+    const c = Coverage.complete(10, 'cells').asDescribing()
+        .withGap(GAP.FAILED, 'something', 'colour');
+    assert.equal(c.role, ROLE.DESCRIBES);
+});
+
+test('an unknown role falls back to RESTRICTS, not to silence', () => {
+    assert.equal(new Coverage({ shown: 1, total: 1, role: 'nonsense' }).role, ROLE.RESTRICTS);
+    assert.equal(new Coverage({ shown: 1, total: 1, role: undefined }).role, ROLE.RESTRICTS);
+});
+
+/* ================================================================== *
+ * classifyValues -- the ONE implementation both surfaces share.       *
+ * ================================================================== */
+
+test('classifyColumn delegates to classifyValues once presence is settled', () => {
+    // Same values, reached two ways: through a response body and directly.
+    // If these ever disagree, the plot and the table can disagree again.
+    for (const values of [[], Array(5).fill(null), Array(2).fill(1), Array(5).fill(1)]) {
+        const viaColumn = classifyColumn({
+            column: 'c', response: { data: { c: values } },
+            expected: 5, unit: 'cells', source: 'obs.c'
+        });
+        const viaValues = classifyValues({
+            values, expected: 5, unit: 'cells', source: 'obs.c'
+        });
+        assert.deepEqual(viaColumn.toJSON(), viaValues.toJSON(),
+            `divergent verdict for a ${values.length}-value column`);
+    }
+});
+
+test('classifyValues: an all-blank column is EMPTY, not complete', () => {
+    // The plot used to draw a panel in which nothing was coloured and say
+    // nothing at all, because a full-length array of nulls passed the length
+    // check. The table said "every entry in this column is blank". Same data,
+    // two answers.
+    const c = classifyValues({
+        values: Array(5).fill(null), expected: 5, unit: 'cells', source: 'obs.celltype'
+    });
+    assert.equal(c.worstReason, GAP.EMPTY);
+    assert.match(c.lines()[0], /blank/);
+});
+
+test('classifyValues: a column with one real value among nulls is not blank', () => {
+    const values = Array(5).fill(null);
+    values[4] = 'T cell';
+    assert.equal(classifyValues({ values, expected: 5, unit: 'cells' }).isComplete, true);
+});
+
+test('classifyValues carries the role through every branch', () => {
+    for (const values of [[], Array(3).fill(null), Array(1).fill(1), Array(3).fill(1)]) {
+        const c = classifyValues({
+            values, expected: 3, unit: 'cells', source: 's', role: ROLE.DESCRIBES
+        });
+        assert.equal(c.role, ROLE.DESCRIBES,
+            `role lost for a ${values.length}-value column`);
+    }
 });

@@ -18,6 +18,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(JS_TEST_DIR)))
 SUITES = {
     "coverage.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "coverage.js"),
     "panel-surface.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "panel-surface.js"),
+    # Drives the REAL table loader against real response bodies and asserts its
+    # verdict equals the plot's. A suite that only re-implemented the table's
+    # logic would have stayed green while the two implementations drifted --
+    # which is exactly what happened.
+    "table-coverage.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "table-utilities", "table-data.js"
+    ),
 }
 
 
