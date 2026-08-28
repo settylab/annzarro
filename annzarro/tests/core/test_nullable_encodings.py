@@ -303,3 +303,52 @@ def test_plain_columns_are_not_scanned_elementwise(tmp_path):
         f"({bulk * 1e3:.2f} ms per bulk read of the same column) -- a plain array "
         f"is being probed element-by-element"
     )
+
+
+# --------------------------------------------------------------------------
+# D2. the same cost guard, stated as a COUNT rather than a duration
+# --------------------------------------------------------------------------
+
+class _CountingArray:
+    """A zarr-Array-shaped stand-in that records element access.
+
+    Mimics the two properties that matter: it carries ``attrs`` and it has no
+    ``members``.  Like a real zarr Array it defines no ``__contains__``, so a
+    membership test against it falls back to the sequence protocol and shows up
+    here as ``accesses``.
+    """
+
+    def __init__(self):
+        self.attrs = {"encoding-type": "array"}
+        self.accesses = 0
+
+    def __getitem__(self, index):
+        self.accesses += 1
+        raise IndexError(index)
+
+
+def test_plain_array_is_rejected_without_touching_elements():
+    """Second, independent witness for the O(n) regression above.
+
+    `test_plain_columns_are_not_scanned_elementwise` is the end-to-end guard and
+    it is calibrated in-run, but it is still a WALL-CLOCK assertion on a shared
+    node.  This one needs no calibration, cannot flake under load, uses no zarr
+    at all, and fails in milliseconds: a correct predicate reads ZERO elements,
+    a regressed one reads at least the first.
+
+    The two are complementary rather than redundant.  Removing the Group guard
+    from `_is_nullable_group` was measured to kill BOTH; a per-element read
+    introduced at some other call site would be caught only by the end-to-end
+    budget, and a machine slow enough to make the budget flaky would leave this
+    one unaffected.
+
+    Carried over from commit b3cd304, which was otherwise superseded by this
+    module; it is the one assertion there that had no counterpart here.
+    """
+    array = _CountingArray()
+
+    assert ZarrReader()._is_nullable_group(array) is False
+    assert array.accesses == 0, (
+        f"predicate read {array.accesses} element(s) from a plain array; zarr's "
+        "Array has no __contains__, so a membership test here is one chunk "
+        "decode per element -- 108.88s on a 75000-row column")
