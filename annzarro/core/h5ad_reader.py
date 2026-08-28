@@ -3,13 +3,61 @@ import logging
 from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
+from .caching import DatasetCache, cached_method
 
 logger = logging.getLogger(__name__)
 
 class h5adReader:
 
-    def __init__(self):
-        pass
+    def __init__(self, max_memory_mb=1000, enable_caching=True, cache_limit=10):
+        """
+        Initialize the h5adReader.
+
+        Args:
+            max_memory_mb: Maximum memory usage in MB for internal caching
+            enable_caching: Whether to enable caching of data
+            cache_limit: Maximum number of datasets to keep in memory
+        """
+        # Initialize the cache manager
+        self.cache = DatasetCache(max_memory_mb=max_memory_mb,
+                                 enable_caching=enable_caching,
+                                 cache_limit=cache_limit)
+
+        # Keep reference to cache settings for backwards compatibility
+        self.max_memory_mb = max_memory_mb
+        self.enable_caching = enable_caching
+        self.cache_limit = cache_limit
+
+    def get_cache_info(self):
+        """
+        Get information about the current cache state.
+
+        Returns:
+            dict: Information about the current cache
+        """
+        # Get cache info from cache manager
+        cache_info = self.cache.get_cache_info()
+
+        return cache_info
+
+    def clear_cache(self, dataset_path=None):
+        """
+        Clear the internal data cache.
+
+        Args:
+            dataset_path: Optional dataset path to clear from cache.
+                          If None, clears the entire cache.
+
+        Returns:
+            dict: Information about the cleared cache
+        """
+        logger.info(f"CLEAR_CACHE: Called with dataset_path={dataset_path}")
+
+        # Use the cache manager to clear cache
+        result = self.cache.clear_cache(dataset_path=dataset_path)
+
+        logger.info(f"CLEAR_CACHE: Cache cleared with result: {result}")
+        return result
 
     def _sparse_group_shape(self, group: h5py.Group):
         """Extract (n_obs, n_vars) from a sparse-matrix group.
@@ -158,10 +206,11 @@ class h5adReader:
 
         return info, dataframes
 
-    def get_metadata(self, file_path: str) -> dict:
+    @cached_method
+    def get_metadata(self, dataset_path: str) -> dict:
         metadata = {}
         try:
-            with h5py.File(file_path, "r") as file:
+            with h5py.File(dataset_path, "r") as file:
                 anndata_keys = ['X', 'obs', 'var', 'obsm', 'varm', 'obsp', 'varp', 'layers', 'uns']
 
                 for key in anndata_keys:
@@ -244,8 +293,9 @@ class h5adReader:
         return col_data, category_names, categories_exist
 
 
-    def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None, 
-                    column_names: Optional[List[str]] = None, indices: Optional[List[int]] = None, 
+    @cached_method
+    def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                    column_names: Optional[List[str]] = None, indices: Optional[List[int]] = None,
                     include_categories: bool = True) -> Dict[str, Any]:
         with h5py.File(dataset_path, "r") as f:
             layer = "obs" if entity == "cells" else "var"
@@ -350,6 +400,7 @@ class h5adReader:
         raise ValueError(f"Unsupported column type for '{column_name}'")
 
 
+    @cached_method
     def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
                     indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None,
                     column_name: Optional[str] = None) -> np.ndarray:
@@ -498,6 +549,7 @@ class h5adReader:
         return sparse_matrix
 
 
+    @cached_method
     def get_X(self, dataset_path: Optional[str] = None, row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get the main expression matrix (X layer) from h5ad file.
@@ -537,8 +589,9 @@ class h5adReader:
                 return dense
 
             return np.array([])
-    
 
+
+    @cached_method
     def get_uns(self, key: str, dataset_path: Optional[str] = None):
         with h5py.File(dataset_path, "r") as root:
             obj = "uns"
@@ -604,7 +657,8 @@ class h5adReader:
 
                 return result
             return None
-    
+
+    @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None,
               row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
@@ -650,6 +704,7 @@ class h5adReader:
 
             return np.array([])
 
+    @cached_method
     def get_obsp_varp(self, key: str, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                   row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
         """
