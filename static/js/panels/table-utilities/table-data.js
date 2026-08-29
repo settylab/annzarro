@@ -278,6 +278,17 @@ async function loadColumnData(column, entityType, signal = null) {
 async function _loadColumnValues(column, entityType, signal = null) {
     const { type, key, column: columnName } = column;
 
+    // obsp/varp answer with a LIST OF ROWS. Reaching straight for `data[0]`
+    // turns an empty body -- `{"data": []}`, the server's measured shape for an
+    // absent key -- into `undefined`, which is indistinguishable from a
+    // malformed row and classifies as a read failure. That is B1's
+    // extract-before-classify shape one level down, and it made the table say
+    // "failed to read" where the plot said "not in this dataset" for the same
+    // body. An empty body stays an empty ARRAY so `classifyMatrixColumn` can
+    // recognise it.
+    const firstRow = (body) =>
+        (Array.isArray(body) && body.length > 0) ? body[0] : [];
+
     try {
         // Check if already aborted before any data loading
         if (signal && signal.aborted) {
@@ -311,7 +322,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: obspData.data[0], matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -326,7 +337,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: obspData.data[0], matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -394,7 +405,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: varpData.data[0], matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -409,7 +420,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: varpData.data[0], matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),

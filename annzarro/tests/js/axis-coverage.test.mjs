@@ -45,7 +45,7 @@ globalThis.document = globalThis.document || {
     body: { appendChild() {} }
 };
 
-const { GAP } = await import('../../../static/js/utils/coverage.js');
+const { GAP, Coverage, classifyMatrixColumn } = await import('../../../static/js/utils/coverage.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
 const { loadAxisData } = await import(
     '../../../static/js/panels/plot-utilities/plot-make.js');
@@ -243,5 +243,221 @@ test('a healthy axis still reports complete', async () => {
         const cov = (await loadAxisData({ type: 'obs', key: 'celltype' }, 'cells', null)).coverage;
         assert.equal(cov.isComplete, true);
         assert.deepEqual(cov.lines(), []);
+    } finally { restore(); }
+});
+
+/* ------------------------------------------------------------------ *
+ * A missing FOCUS must not fail the plot load.                        *
+ *                                                                     *
+ * An obsp/varp/layer column is measured relative to a focused cell or  *
+ * gene. When that entity is unavailable, the data for the column       *
+ * itself is fine -- only the reference is missing. It used to `throw`, *
+ * which failed the whole panel and rendered a red "Error loading data" *
+ * box with troubleshooting hints, for a known and expected condition.  *
+ * Reported from the field on obsp.context_fn_ls1.                      *
+ * ------------------------------------------------------------------ */
+
+const FOCUS_CASES = [
+    {
+        name: 'obsp, a cell name left over from another dataset',
+        settings: { type: 'obsp', key: 'context_fn_ls1', column: 'cell_from_old_dataset' },
+        patch: { loadObsp: async () => ({ data: [Array(N).fill(0.5)] }) },
+        reason: GAP.UNAVAILABLE, severity: 'warning', match: /not in this dataset/
+    },
+    {
+        name: 'obsp, nothing focused at all',
+        settings: { type: 'obsp', key: 'context_fn_ls1' },
+        patch: { loadObsp: async () => ({ data: [Array(N).fill(0.5)] }) },
+        reason: GAP.UNFOCUSED, severity: 'notice', match: /none is focused yet/
+    },
+    {
+        name: 'varp, nothing focused at all',
+        settings: { type: 'varp', key: 'gene_graph' },
+        patch: { loadVarp: async () => ({ data: [Array(N).fill(0.5)] }) },
+        reason: GAP.UNFOCUSED, severity: 'notice', match: /none is focused yet/
+    },
+    {
+        name: 'layer keyed on a gene this dataset does not have',
+        settings: { type: 'layer', key: 'X', column: 'GENE_NOT_HERE' },
+        patch: { loadLayer: async () => ({ data: Array(N).fill(1) }) },
+        reason: GAP.UNAVAILABLE, severity: 'warning', match: /not in this dataset/
+    }
+];
+
+for (const c of FOCUS_CASES) {
+    test(`a missing focus renders the plot rather than failing it -- ${c.name}`, async () => {
+        const restore = stubDataManager({ entityIndex: -1 });
+        try {
+            Object.assign(DataManager, c.patch);
+            // The load RESOLVES. If this throws, the panel is a red error box.
+            const series = await loadAxisData(c.settings, 'cells', null);
+
+            assert.equal(series.values.length, N,
+                'the series keeps full length so downstream length invariants hold');
+            assert.ok(series.values.every(v => typeof v === 'number' && Number.isNaN(v)),
+                'and is blank, so nothing is drawn for it');
+            assert.equal(series.coverage.worstReason, c.reason);
+            assert.equal(series.coverage.describe().severity, c.severity,
+                'visible, but not alarming: this is not a read failure');
+            assert.match(series.coverage.lines()[0], c.match);
+        } finally { restore(); }
+    });
+}
+
+test('"nothing focused" and "focused thing is absent" are different reasons', async () => {
+    // `cellIndex === -1` collapses them; they are not the same condition and
+    // do not have the same consequence for the reader. Folding the second into
+    // UNAVAILABLE produced the sentence "not in this dataset -- no cell is
+    // focused", which is incoherent.
+    const restore = stubDataManager({ entityIndex: -1 });
+    try {
+        DataManager.loadObsp = async () => ({ data: [Array(N).fill(1)] });
+        const stale = (await loadAxisData(
+            { type: 'obsp', key: 'k', column: 'c_from_old' }, 'cells', null)).coverage;
+        const none = (await loadAxisData(
+            { type: 'obsp', key: 'k' }, 'cells', null)).coverage;
+        assert.notEqual(stale.worstReason, none.worstReason);
+        assert.equal(stale.worstReason, GAP.UNAVAILABLE);
+        assert.equal(none.worstReason, GAP.UNFOCUSED);
+        assert.doesNotMatch(none.lines()[0], /not in this dataset/,
+            'the label must not contradict the detail');
+    } finally { restore(); }
+});
+
+test('a missing focus in the COLOUR slot leaves every point on screen', async () => {
+    // The slot decides the role, not the condition: colour DESCRIBES points
+    // Plotly draws anyway, so the panel is complete and merely uncoloured.
+    // As an x/y/z contributor the same series RESTRICTS and "no cells shown"
+    // is then the truth. Both are checked here because getting one right and
+    // the other wrong is exactly the B1 shape.
+    const restore = stubDataManager({ entityIndex: -1 });
+    try {
+        DataManager.loadObsp = async () => ({ data: [Array(N).fill(1)] });
+        const cov = (await loadAxisData(
+            { type: 'obsp', key: 'k', column: 'c_from_old' }, 'cells', null)).coverage;
+
+        const asColour = Coverage.merge(
+            [Coverage.complete(N, 'cells'), Coverage.complete(N, 'cells'), cov.asDescribing()],
+            'cells');
+        assert.equal(asColour.shown, N, 'every point is still drawn');
+        assert.doesNotMatch(asColour.headline(), /^No cells shown/);
+        assert.match(asColour.lines()[0], /not in this dataset/, 'and the reason is still stated');
+
+        const asAxis = Coverage.merge([cov, Coverage.complete(N, 'cells')], 'cells');
+        assert.equal(asAxis.shown, 0);
+        assert.match(asAxis.headline(), /^No cells shown/);
+    } finally { restore(); }
+});
+
+test('a focus that IS present still loads normally', async () => {
+    const restore = stubDataManager({ entityIndex: 3 });
+    try {
+        DataManager.loadObsp = async () => ({ data: [Array(N).fill(0.25)] });
+        const series = await loadAxisData(
+            { type: 'obsp', key: 'k', column: 'c3' }, 'cells', null);
+        assert.equal(series.coverage.isComplete, true);
+        assert.equal(series.values.length, N);
+        assert.ok(series.values.every(v => v === 0.25));
+    } finally { restore(); }
+});
+
+/* ------------------------------------------------------------------ *
+ * The VALID-INDEX / EMPTY-BODY family.                                *
+ *                                                                     *
+ * The previous round routed obsm through the shared matrix rule and    *
+ * left the plot's four other hand-built sites alone, so the boundary   *
+ * MOVED rather than closed: the conditions the fix reached agreed and  *
+ * the ones immediately past it did not. A condition matrix built from  *
+ * a reviewer's list inherits that list's boundary, so these rows are   *
+ * deliberately the ones just outside the six above -- the named entity *
+ * RESOLVES, and it is the matrix key that does not.                    *
+ *                                                                     *
+ * Measured read-only against the live service: a missing obsp, varp,   *
+ * layer, varm or obsm key all answer `200 {"data": []}` -- the same    *
+ * body. So one rule has to cover all of them.                          *
+ * ------------------------------------------------------------------ */
+
+const RESIDUE = [
+    {
+        name: 'obsp, valid cell index, empty body',
+        settings: { type: 'obsp', key: 'conn', column: 'c0' },
+        tableColumn: { type: 'obsp', key: 'conn', column: 'c0' },
+        patch: { loadObsp: async () => ({ data: [] }) },
+        entityIndex: 0, reason: GAP.UNAVAILABLE
+    },
+    {
+        name: 'obsp, valid cell index, a single EMPTY row',
+        settings: { type: 'obsp', key: 'conn', column: 'c0' },
+        tableColumn: { type: 'obsp', key: 'conn', column: 'c0' },
+        patch: { loadObsp: async () => ({ data: [[]] }) },
+        entityIndex: 0, reason: GAP.UNAVAILABLE
+    },
+    {
+        name: 'layer, valid gene, empty body',
+        settings: { type: 'layer', key: 'X', column: 'g0' },
+        tableColumn: { type: 'layer', key: 'X', column: 'g0' },
+        patch: { loadLayer: async () => ({ data: [] }) },
+        entityIndex: 0, reason: GAP.UNAVAILABLE
+    },
+    {
+        name: 'layer, a body that is not an array at all (malformed, NOT key-absent)',
+        settings: { type: 'layer', key: 'X', column: 'g0' },
+        tableColumn: { type: 'layer', key: 'X', column: 'g0' },
+        patch: { loadLayer: async () => ({ data: { nope: true } }) },
+        entityIndex: 0, reason: GAP.FAILED
+    },
+    {
+        name: 'obsm, a short read',
+        settings: { type: 'obsm', key: 'X_umap', column: 0 },
+        tableColumn: { type: 'obsm', key: 'X_umap', column: 0 },
+        patch: { loadObsm: async () => ({ data: Array(10).fill(1) }) },
+        reason: GAP.FAILED
+    }
+];
+
+for (const c of RESIDUE) {
+    test(`plot and table agree -- ${c.name}`, async () => {
+        const { plot, table } = await bothSurfaces(c);
+        assert.equal(plot.worstReason, c.reason, `plot said "${plot.worstReason}"`);
+        assert.equal(table.worstReason, c.reason,
+            `table said "${table.worstReason}" where the plot said "${plot.worstReason}"`);
+        assert.equal(plot.describe().severity, table.describe().severity);
+        assert.deepEqual(plot.lines(), table.lines(),
+            'the two surfaces must give the user the same sentence');
+    });
+}
+
+test('an empty ARRAY means key-absent; a non-array body means malformed', () => {
+    // These are different claims about the server's answer and must not be
+    // collapsed: `{"data": []}` is the measured shape for an absent key, while
+    // a non-array body says nothing of the kind. Collapsing them had
+    // classifyMatrixColumn assert "the key is absent" about a response that
+    // never said so.
+    const opts = { expected: 100, unit: 'cells', source: 's', key: 'k' };
+    assert.equal(classifyMatrixColumn({ ...opts, values: [] }).worstReason, GAP.UNAVAILABLE);
+    assert.equal(classifyMatrixColumn({ ...opts, values: { nope: 1 } }).worstReason, GAP.FAILED);
+    assert.equal(classifyMatrixColumn({ ...opts, values: undefined }).worstReason, GAP.FAILED);
+    // and a healthy one is still complete
+    assert.equal(classifyMatrixColumn({ ...opts, values: Array(100).fill(1) }).isComplete, true);
+});
+
+test('nothing outside the try can throw unclassified', async () => {
+    // Fixing the scope bug by hoisting widened the region that sits outside
+    // BOTH the catch and the finally from 3 lines to 39, and put two
+    // DataManager calls in it. Anything raised there escapes with no coverage,
+    // without the "Failed to load data for" wrapper, and with the loading
+    // indicator still up.
+    const restore = stubDataManager();
+    try {
+        DataManager.getCells = () => { throw new Error('entity index exploded'); };
+        await assert.rejects(
+            () => loadAxisData({ type: 'obs', key: 'celltype' }, 'cells', null),
+            (err) => {
+                assert.ok(err.coverage,
+                    'an error from the entity lookup must still carry a classification');
+                assert.match(err.message, /Failed to load data for/);
+                return true;
+            }
+        );
     } finally { restore(); }
 });

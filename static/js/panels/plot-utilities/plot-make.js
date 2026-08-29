@@ -198,11 +198,6 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     throw new Error(`loadAxisData: settings is undefined`);
   }
 
-  // Show loading indicator if container is provided
-  if (plotContainer) {
-    loadingIndicator.show(plotContainer, 'axis-data');
-  }
-
   // DECLARED OUTSIDE THE `try` ON PURPOSE. The catch block below reads all four
   // of these. `let`/`const` are block-scoped, so while they lived inside the
   // `try` the catch could not see them and threw
@@ -218,28 +213,58 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
   //
   // `node --check` passes on the broken form; the repo's own `.eslintrc.js`
   // catches it (`no-undef`) and nothing runs ESLint. Keep these here.
+  //
+  // Only work that CANNOT throw belongs here, though: this region is outside
+  // both the `catch` and the `finally`, so anything raised in it escapes
+  // unclassified, unwrapped, and with the loading indicator still up. Fixing
+  // the scope bug by hoisting widened that region from 3 lines to 39 and put
+  // two `DataManager` calls inside it. So `expected` is DECLARED here and
+  // ASSIGNED inside the `try`, and `loadingIndicator.show()` has moved in there
+  // too. `unit` and `source` read only the arguments.
   let coverage = null;
+  let expected = null;
   const unit = plotType === 'genes' ? 'genes' : 'cells';
-  const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
-  const expected = Array.isArray(entities) ? entities.length : null;
   const source = `${settings.type}.${settings.key}`
     + (settings.column ? `.${settings.column}` : '');
 
   /**
-   * A column naming a cell or gene this dataset does not have. These four sites
-   * used to `throw new Error('Focused cell not found in dataset')` -- an error
-   * carrying NO coverage, which is precisely the input the catch block then
-   * crashed on, and which the table meanwhile reported correctly as
-   * "not in this dataset". Same sentence as the table now, from one function.
+   * A column measured RELATIVE to a focused cell or gene, where that entity is
+   * not available -- either the dataset does not have it (the common case after
+   * switching dataset with a panel still pointing at the old focus) or nothing
+   * is focused yet.
+   *
+   * This DOES NOT THROW, and that is the point. It used to
+   * `throw new Error('Focused cell not found in dataset')`, which failed the
+   * whole plot load and rendered a red "Error loading data" box with
+   * troubleshooting hints -- for a known, named, expected condition on a panel
+   * whose actual data loaded fine. That is the same category error as the table
+   * reporting "failed to read" for a column that is simply absent: a missing
+   * SELECTION is not a read failure.
+   *
+   * Instead it yields a full-length blank series and the reason. The series
+   * keeps `expected` length so every downstream length invariant holds, and its
+   * values are NaN so nothing is drawn for it -- the plot renders, the
+   * highlight is simply absent, and the notice says why. Which severity the
+   * panel ends up at is decided by `Coverage.merge` from the SLOT this series
+   * fills, not here: as a colour contributor it DESCRIBES points that are drawn
+   * anyway, so the plot is complete and merely uncoloured; as an x/y/z
+   * contributor it RESTRICTS, and "no cells shown" is then the truth.
    */
-  const namedEntityMissing = (kind, name) => {
-    const cov = missingEntity(kind, name, { source, unit, total: expected });
-    const err = new Error(cov.lines()[0]);
-    err.coverage = cov;
-    return err;
-  };
+  const blankFocusSeries = (kind, name) => ({
+    values: Array(typeof expected === 'number' ? expected : 0).fill(NaN),
+    coverage: missingEntity(kind, name, { source, unit, total: expected }),
+    dataType: 'numerical'
+  });
 
   try {
+    // Inside the try: everything below can throw, and must be classified when
+    // it does. The `finally` hides the indicator whether or not it was shown.
+    if (plotContainer) {
+      loadingIndicator.show(plotContainer, 'axis-data');
+    }
+    const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+    expected = Array.isArray(entities) ? entities.length : null;
+
     const { type, key, column } = settings;
     const datasetPath = DataManager.getCurrentDataset();
     const rowsArr = null; // Filtering no longer applies
@@ -371,24 +396,34 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       }
       case 'obsp':
       case 'varp': {
-        if (type === 'obsp') {
-          const cellIndex = DataManager.getCellIndex(column);
-          if (cellIndex === -1) throw namedEntityMissing('cell', column);
-          data = await DataManager.loadObsp({ datasetPath, obspKey: key, rows: [cellIndex] });
-        } else {
-          const geneIndex = DataManager.getGeneIndex(column);
-          if (geneIndex === -1) throw namedEntityMissing('gene', column);
-          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [geneIndex] });
+        const focusKind = type === 'obsp' ? 'cell' : 'gene';
+        const focusIndex = type === 'obsp'
+          ? DataManager.getCellIndex(column)
+          : DataManager.getGeneIndex(column);
+        if (focusIndex === -1) {
+          // Render the plot without the highlight; do not fail the load.
+          ({ values, coverage, dataType } = blankFocusSeries(focusKind, column));
+          break;
         }
+        data = type === 'obsp'
+          ? await DataManager.loadObsp({ datasetPath, obspKey: key, rows: [focusIndex] })
+          : await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex] });
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
           values = Array.isArray(firstRow) ? firstRow : ((firstRow !== undefined && firstRow !== null) ? [firstRow] : []);
         } else {
+          // Through the SHARED rule, not a hand-built verdict. The server
+          // answers `200 {"data": []}` for an absent obsp/varp/layer key
+          // exactly as it does for obsm -- measured against the live service --
+          // so "returned nothing for the focused cell" at `error` severity
+          // asserted a read failure of an existing key that the response body
+          // cannot distinguish, while the table called the same body
+          // "not in this dataset" at `warning`. That is B1's shape.
           console.warn(`Invalid or empty ${type} data received`);
           values = [];
-          coverage = Coverage.missing(GAP.FAILED,
-            `${type}.${key} returned nothing for the focused ${type === 'obsp' ? 'cell' : 'gene'}`,
-            { source, unit, total: expected });
+          coverage = classifyMatrixColumn({
+            values: data.data, expected, unit, source, key
+          });
         }
         // Preserve length: map nulls/undefined to NaN.
         values = values.map(v => (v === null || v === undefined) ? NaN : v);
@@ -406,7 +441,10 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'layer': {
         if (plotType === 'genes') {
           const cellIndex = DataManager.getCellIndex(column);
-          if (cellIndex === -1) throw namedEntityMissing('cell', column);
+          if (cellIndex === -1) {
+            ({ values, coverage, dataType } = blankFocusSeries('cell', column));
+            break;
+          }
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
@@ -418,14 +456,17 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           } else {
             console.warn('Empty or invalid layer data received for gene plot');
             values = [];
-            coverage = Coverage.missing(GAP.FAILED,
-              `layer "${key}" returned nothing for the focused cell`,
-              { source, unit, total: expected });
+            coverage = classifyMatrixColumn({
+              values: data.data, expected, unit, source, key
+            });
           }
           dataType = 'numerical';
         } else {
           const geneIndex = DataManager.getGeneIndex(column);
-          if (geneIndex === -1) throw namedEntityMissing('gene', column);
+          if (geneIndex === -1) {
+            ({ values, coverage, dataType } = blankFocusSeries('gene', column));
+            break;
+          }
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
@@ -447,15 +488,23 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             } else {
               console.warn('Empty layer data array received');
               values = [];
-              coverage = Coverage.missing(GAP.FAILED,
-                `layer "${key}" returned no rows`, { source, unit, total: expected });
+              coverage = classifyMatrixColumn({
+                values: data.data, expected, unit, source, key
+              });
             }
           } else {
+            // Through the shared rule like every other matrix verdict. This
+            // was the last hand-built one, and it was the last divergence:
+            // both surfaces already agreed that a non-array body is FAILED,
+            // but only the plot said WHICH format arrived. Agreement on the
+            // verdict with disagreement on the sentence is still a divergence,
+            // so the better sentence moved into the rule rather than the
+            // weaker one being matched.
             console.warn(`Unexpected data format received: ${typeof data.data}`);
             values = [];
-            coverage = Coverage.missing(GAP.FAILED,
-              `layer "${key}" returned an unexpected format (${typeof data.data})`,
-              { source, unit, total: expected });
+            coverage = classifyMatrixColumn({
+              values: data.data, expected, unit, source, key
+            });
           }
           if (values.length > 0) {
             const sample = sampleArray(values);
@@ -479,11 +528,18 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     // Reconcile length against the entity count even on the success path: a
     // short series is a partial read, and saying so is the point of the module.
-    // Through `classifyValues`, so an obsm/obsp/layer axis reaches the same
-    // verdict as the same values would in a table -- including the all-blank
-    // case, which used to draw a panel with nothing in it and say nothing.
+    //
+    // The classifier is chosen by MEMBER KIND, mirroring the table, which tags
+    // every matrix-shaped path with `matrixKey`. An empty series extracted from
+    // an obsp/varp/layer row means the same thing there as it does here, and
+    // routing only SOME of these paths through the shared rule is how the
+    // boundary moved rather than closed last time: the sites the fix reached
+    // agreed and the ones just past it did not.
     if (!coverage) {
-      coverage = classifyValues({ values, expected, unit, source });
+      const MATRIX = ['obsm', 'varm', 'obsp', 'varp', 'layer'];
+      coverage = MATRIX.includes(settings.type)
+        ? classifyMatrixColumn({ values, expected, unit, source, key: settings.key })
+        : classifyValues({ values, expected, unit, source });
     }
     return { values, type: dataType, categories, coverage };
   } catch (error) {
@@ -811,8 +867,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       plotContainer.data = [];
       
       // Create a more detailed error message
+      // `suggestedActions` used to live here too. Its only writer was the
+      // focused-cell arm below, which no longer exists, so it was left always
+      // empty and still concatenated into the hint markup -- an inert branch in
+      // a change whose whole subject is inert branches.
       let errorDetails = '';
-      let suggestedActions = '';
       
       // Check if the error is related to a specific axis
       if (error.message && error.message.includes('Failed to load data for')) {
@@ -838,25 +897,17 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               errorDetails += '<li>Check if the embedding or reduction exists</li>';
               errorDetails += '<li>Verify that the column index or name is valid</li>';
             } else if (type === 'obsp' || type === 'varp') {
-              errorDetails += '<li>Check if the connectivity matrix exists</li>';
-              errorDetails += '<li>Ensure a cell/gene is focused before using this data type</li>';
-              
-              // For focused cell/gene not found errors, add specific advice
-              if (error.message.includes('Focused cell not found') || 
-                  error.message.includes('Focused gene not found')) {
-                suggestedActions = `
-                  <div class="alert alert-info mt-3">
-                    <strong>This is a common issue when opening a saved panel with a new dataset.</strong>
-                    <p>The previously focused cell/gene doesn't exist in the current dataset.</p>
-                    <p><strong>Suggested actions:</strong></p>
-                    <ol>
-                      <li>Select a new cell/gene in this dataset</li>
-                      <li>Consider duplicating this panel before changing if you want to preserve the current configuration</li>
-                      <li>Change the axis type to something that doesn't require a focused cell/gene</li>
-                    </ol>
-                  </div>
-                `;
-              }
+              // Reaching here now means the MATRIX itself could not be read.
+              // An absent or unfocused cell/gene no longer arrives as an error
+              // at all -- it renders the plot and states itself in the coverage
+              // notice -- so the advice that used to live here ("ensure a
+              // cell/gene is focused", plus a block keyed on the message
+              // "Focused cell not found") described a failure this code no
+              // longer produces, and pointed at a matrix that had loaded fine.
+              // Stale advice on a real failure is worse than none: it sends the
+              // reader to the wrong question.
+              errorDetails += '<li>Check if the connectivity matrix exists in this dataset</li>';
+              errorDetails += '<li>Check the server log for a read error on this key</li>';
             } else if (type === 'obs' || type === 'var') {
               errorDetails += '<li>Check if the column name exists in the obs/var table</li>';
             }
@@ -876,10 +927,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           { source: 'plot data', unit }),
         unit
       );
-      if (errorDetails || suggestedActions) {
+      if (errorDetails) {
         const extra = document.createElement('div');
         extra.className = 'coverage-placeholder__hints';
-        extra.innerHTML = `${errorDetails}${suggestedActions}`;
+        extra.innerHTML = errorDetails;
         plotContainer.appendChild(extra);
       }
     }

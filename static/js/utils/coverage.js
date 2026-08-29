@@ -52,6 +52,20 @@ export const GAP = Object.freeze({
     FILTERED: 'filtered',
     /** The column/key does not exist for this dataset at all. */
     UNAVAILABLE: 'unavailable',
+    /**
+     * The view needs a selection the user has not made yet -- an obsp/varp or
+     * layer column is defined RELATIVE to a focused cell or gene, and none is
+     * focused.
+     *
+     * This is its own reason rather than a flavour of UNAVAILABLE because the
+     * two differ in every way that matters to a reader: nothing is missing from
+     * the dataset, nothing failed, and the fix is one click rather than a data
+     * problem. Folding it into UNAVAILABLE produced the literal sentence
+     * "not in this dataset -- no cell is focused", which is incoherent. It is
+     * the lowest severity for the same reason: it is benign and
+     * self-correcting.
+     */
+    UNFOCUSED: 'unfocused',
     /** The request hit a server-side cap (max_cells/max_genes per request). */
     CAPPED: 'capped',
     /** Nobody described this surface's coverage. A defect, rendered as one. */
@@ -97,6 +111,7 @@ const REASON_HEADLINE = Object.freeze({
     [GAP.FAILED]: 'Some data could not be read',
     [GAP.FILTERED]: 'Some points are hidden',
     [GAP.UNAVAILABLE]: 'Some data is not available for this dataset',
+    [GAP.UNFOCUSED]: 'Nothing is focused yet',
     [GAP.CAPPED]: 'The request hit a server limit',
     [GAP.UNREPORTED]: 'Coverage not reported'
 });
@@ -107,6 +122,7 @@ const GAP_LABEL = Object.freeze({
     [GAP.FAILED]: 'failed to read',
     [GAP.FILTERED]: 'filtered out',
     [GAP.UNAVAILABLE]: 'not in this dataset',
+    [GAP.UNFOCUSED]: 'needs a focused selection',
     [GAP.CAPPED]: 'server limit reached',
     [GAP.UNREPORTED]: 'not reported'
 });
@@ -120,6 +136,7 @@ const GAP_LABEL = Object.freeze({
 const SEVERITY_RANK = Object.freeze({
     ok: 0,
     [GAP.FILTERED]: 1,
+    [GAP.UNFOCUSED]: 1,
     [GAP.EMPTY]: 2,
     [GAP.UNAVAILABLE]: 2,
     [GAP.CAPPED]: 3,
@@ -130,6 +147,7 @@ const SEVERITY_RANK = Object.freeze({
 /** Severity bucket used for styling; see `.coverage-notice--*` in styles.css. */
 const SEVERITY_CLASS = Object.freeze({
     [GAP.FILTERED]: 'notice',
+    [GAP.UNFOCUSED]: 'notice',
     [GAP.EMPTY]: 'warning',
     [GAP.UNAVAILABLE]: 'warning',
     [GAP.CAPPED]: 'warning',
@@ -545,11 +563,23 @@ export function classifyColumn({ column, response, expected = null, unit = 'valu
  * @returns {Coverage}
  */
 export function missingEntity(kind, name, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = {}) {
+    // TWO conditions, not one. `cellIndex === -1` collapses them, and they have
+    // different consequences for the reader: a stale name is a dataset
+    // mismatch (the common case after switching dataset -- benign and
+    // self-correcting, but it IS about this dataset), whereas no name at all
+    // means the user has simply not picked a reference entity yet, which is not
+    // a statement about the data at all.
+    if (!name) {
+        return Coverage.missing(
+            GAP.UNFOCUSED,
+            `this column is measured relative to a focused ${kind}, and none is `
+            + `focused yet -- pick a ${kind} to fill it in`,
+            { source, unit, total, role }
+        );
+    }
     return Coverage.missing(
         GAP.UNAVAILABLE,
-        name
-            ? `the ${kind} "${name}" is not in this dataset`
-            : `no ${kind} is focused, so this column has nothing to read`,
+        `the ${kind} "${name}" is not in this dataset`,
         { source, unit, total, role }
     );
 }
@@ -575,8 +605,26 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
  * @returns {Coverage}
  */
 export function classifyMatrixColumn({ values, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS, key = '' } = {}) {
-    const empty = !Array.isArray(values) || values.length === 0;
-    if (empty && typeof expected === 'number' && expected > 0) {
+    // An EMPTY ARRAY specifically -- not merely a falsy or non-array body. The
+    // measured server shape for an absent key is `{"data": []}`; a body that is
+    // not an array at all is MALFORMED, which is a different claim and belongs
+    // to `classifyValues` as a read failure. Treating the two alike would have
+    // this function assert "the key is absent" about a response that says no
+    // such thing.
+    if (!Array.isArray(values)) {
+        // Malformed, and worth saying so specifically: naming the shape the
+        // server actually sent points the reader at the right question, where
+        // the generic "returned no values" sentence does not. This lived only
+        // in the plot, so the two surfaces reached the same REASON by different
+        // sentences -- agreement on the verdict and disagreement on the words
+        // is still a divergence, and the better sentence is the one to share.
+        return Coverage.missing(
+            GAP.FAILED,
+            `"${key || source}" returned an unexpected format (${typeof values})`,
+            { source, unit, total: expected, role }
+        );
+    }
+    if (values.length === 0 && typeof expected === 'number' && expected > 0) {
         return Coverage.missing(
             GAP.UNAVAILABLE,
             `"${key || source}" returned no values for this dataset -- the key is `
