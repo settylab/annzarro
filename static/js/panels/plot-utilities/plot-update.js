@@ -9,6 +9,8 @@ import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-u
 import { processCategories } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
+import { renderCoverageNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
 
 
 
@@ -188,6 +190,24 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         
         // Update the filter widget with statistics
         updateFilterWidget(plotContainer, filterStats);
+
+        // Restate the panel's coverage. An incremental update changes what is
+        // on screen, so a notice left over from the previous render would be
+        // stale -- and a stale "all shown" is the same lie as no notice at all.
+        const coverageUnit = entityType === 'genes' ? 'genes' : 'cells';
+        const liveCoverage = Coverage.merge([
+            (data.coverage instanceof Coverage) ? data.coverage : Coverage.unreported(coverageUnit),
+            classifyFilterStats(filterStats, coverageUnit)
+        ], coverageUnit);
+        renderCoverageNotice(plotContainer, liveCoverage, coverageUnit);
+        try {
+            const relaid = withCoverageAnnotation(
+                (plotContainer.layout || {}), liveCoverage
+            );
+            Plotly.relayout(plotContainer, { annotations: relaid.annotations });
+        } catch (e) {
+            console.warn('Could not restate coverage annotation on the plot:', e);
+        }
 
         // FILTER-ONLY MODE: apply filtering updates only.
         if (updateOptions.filter) {
