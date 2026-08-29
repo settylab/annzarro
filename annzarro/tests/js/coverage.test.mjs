@@ -407,3 +407,226 @@ test('classifyValues carries the role through every branch', () => {
             `role lost for a ${values.length}-value column`);
     }
 });
+
+
+/* ================================================================== *
+ * One condition, ONE reason line.                                     *
+ *                                                                     *
+ * An axis that is entirely absent gets described twice: once by the    *
+ * series that loaded it, once by the filter mask counting the same     *
+ * NaNs. The arithmetic was always right -- merge minimises, so nothing *
+ * is double-subtracted -- but the second line frames a not-yet-made    *
+ * selection as a filter.                                               *
+ * ================================================================== */
+
+test('a fully-absent axis is not also reported as filtered', () => {
+    const xLoaded = Coverage.missing(GAP.UNFOCUSED,
+        'this column is measured relative to a focused cell, and none is focused yet',
+        { source: 'obsp.conn', unit: 'cells', total: 200 });
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    const panel = Coverage.merge([xLoaded, filters], 'cells');
+
+    assert.equal(panel.lines().length, 1, `got: ${JSON.stringify(panel.lines())}`);
+    assert.match(panel.lines()[0], /focused/);
+    assert.equal(panel.shown, 0, 'and the count is unchanged');
+    assert.equal(panel.total, 200);
+});
+
+test('suppressing the sentence does not restore the points', () => {
+    // `Coverage.complete(total)` reports `shown = total`. Returning it once the
+    // last gap was suppressed would hand the panel a full count over an empty
+    // plot -- the opposite-direction lie, and the one a duplicate reason line
+    // was never worth risking.
+    const xLoaded = Coverage.missing(GAP.UNFOCUSED, 'none is focused yet',
+        { source: 'obsp.conn', unit: 'cells', total: 200 });
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 0, 'the duplicate sentence is gone');
+    assert.equal(filters.shown, 0, 'but the 200 filtered points are still gone');
+    assert.equal(filters.total, 200);
+});
+
+test('a PARTIALLY absent axis is still reported as filtered', () => {
+    // The suppression must not swallow a genuine filter. Only an axis missing
+    // EVERY entity is a duplicate of its series-level reason.
+    const xLoaded = Coverage.partial(150, 200, GAP.FAILED, 'short read',
+        { source: 'obs.x', unit: 'cells' });
+    const filters = classifyFilterStats(
+        { xNaN: 50, yNaN: 0, zNaN: 0, total: 200, filtered: 50 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /x-axis/);
+});
+
+test('a fully-NaN axis IS reported when the loaders reported nothing', () => {
+    // Without a series-level explanation the filter line is the only reason
+    // the user gets, so suppressing it would restore silence.
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: Coverage.complete(200, 'cells') } });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /x-axis/);
+    // and with no argument at all
+    assert.equal(classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 }, 'cells').gaps.length, 1);
+});
+
+test('colour NaN is never suppressed', () => {
+    // With hide-NaN on, an unreadable colour column REMOVES points -- a real
+    // consequence its own DESCRIBES coverage does not account for. Dropping
+    // that line would hide a fact, not a duplicate.
+    const xLoaded = Coverage.missing(GAP.UNAVAILABLE, 'not here',
+        { source: 'obs.ct', unit: 'cells', total: 200 });
+    const filters = classifyFilterStats(
+        { xNaN: 0, yNaN: 0, zNaN: 0, colorNaN: 200, total: 200, filtered: 200,
+          hideNaNActive: true },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /colour/);
+});
+
+
+/* ================================================================== *
+ * ...and ONLY when it is the same fact.                               *
+ *                                                                     *
+ * The three ways a panel-wide "something is already missing" test      *
+ * removes the only reason a user was going to get. Each is a real      *
+ * value one of the two call sites passes today.                        *
+ * ================================================================== */
+
+test('UNREPORTED does not explain a fully-absent axis', () => {
+    // Both call sites fall back to `Coverage.unreported()` when the loaders
+    // left nothing behind -- `plot-update.js` on every incremental render.
+    // "Nobody said why" is the absence of a reason, not one.
+    const nobodySaid = Coverage.unreported('cells');
+    const stats = { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 };
+    const filters = classifyFilterStats(stats, 'cells',
+        { axisCoverage: { x: nobodySaid } });
+    assert.equal(filters.gaps.length, 1, 'the filter line is the only reason there is');
+    assert.match(filters.lines()[0], /x-axis/);
+
+    const panel = Coverage.merge([nobodySaid, filters], 'cells');
+    assert.equal(panel.shown, 0, 'and the panel still says nothing is shown');
+    assert.equal(panel.headline(), 'No cells shown (of 200)');
+});
+
+test('a gap belonging to ANOTHER contributor does not explain this axis', () => {
+    // A colour column awaiting a focused selection DESCRIBES: by this module's
+    // own doctrine it accounts for no entities at all. It must not license
+    // deleting the x-axis line, which is about entities that are gone.
+    const xLoaded = Coverage.complete(200, 'cells');
+    const colour = Coverage.missing(GAP.UNFOCUSED, 'none is focused yet',
+        { source: 'obsp.conn', unit: 'cells', total: 200 }).asDescribing();
+    const load = Coverage.merge([xLoaded, Coverage.complete(200, 'cells'), colour], 'cells');
+    assert.equal(load.isComplete, false, 'the panel coverage IS incomplete...');
+    assert.equal(load.shown, 200, '...while every entity is still accounted for');
+
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1, 'so the x-axis line must survive');
+    assert.match(filters.lines()[0], /x-axis/);
+    assert.equal(Coverage.merge([load, filters], 'cells').shown, 0);
+});
+
+test('an axis its own loader called COMPLETE is still reported as filtered', () => {
+    // `classifyValues` calls a column blank on null/NaN; `createFilterMask`
+    // calls a point missing on `isNaN(v)`, which is also true of every string.
+    // A categorical axis is therefore COMPLETE to its loader and entirely
+    // absent to the mask, and the mask's line is the only one there is.
+    const xLoaded = Coverage.complete(200, 'cells');
+    const namesDisagree = Coverage.complete(200, 'cells')
+        .withGap(GAP.FAILED, 'cell names and data points disagree', 'cells names', 3);
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /x-axis/);
+    assert.equal(Coverage.merge([namesDisagree, filters], 'cells').shown, 0);
+});
+
+test('an axis that accounts for FEWER entities than the mask counts still reports', () => {
+    // `shown === 0` is a proxy; "accounts for at least `count`" is the condition.
+    // They come apart when the axis's own total disagrees with the mask's: a
+    // series covering 150 entities, none shown, explains 150 -- not the 200 the
+    // mask is about to call filtered.
+    const xLoaded = Coverage.missing(GAP.EMPTY, 'every entry blank',
+        { source: 'obs.x', unit: 'cells', total: 150 });
+    assert.equal(xLoaded.shown, 0, 'shown IS 0, so the proxy would suppress');
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1, 'but it only accounts for 150 of 200');
+    assert.match(filters.lines()[0], /x-axis/);
+});
+
+test('a coverage whose ONLY gap is UNREPORTED explains nothing, counts or not', () => {
+    // `Coverage.unreported()` carries no counts, so the accounts-for clause
+    // already rejects it -- verified by mutation: removing the UNREPORTED
+    // clause kills no test that uses that value. This asserts the clause
+    // against the value that clause is actually for: one that DOES carry
+    // counts and still says only "nobody described this surface". Neither
+    // call site can produce it today; the clause is defence in depth, and
+    // this is the test that measures it rather than assuming it.
+    const nobodySaid = new Coverage({
+        shown: 0, total: 200, unit: 'cells',
+        gaps: [{ reason: GAP.UNREPORTED, detail: 'nobody described this surface' }]
+    });
+    assert.equal(nobodySaid.total - nobodySaid.shown, 200,
+        'it accounts for all 200 arithmetically...');
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: nobodySaid } });
+    assert.equal(filters.gaps.length, 1, '...but names no reason, so it explains nothing');
+    assert.match(filters.lines()[0], /x-axis/);
+});
+
+test('SWEEP: across the rule\'s whole input domain, the panel never overstates what is drawn', () => {
+    // Hand-picked fixtures drawn from the conditions a rule was written for
+    // cannot fail where that rule is wrong -- which is how the panel-wide
+    // version of this suppression passed every test it had. So sweep the
+    // domain instead and assert two invariants over all of it.
+    const T = 200;
+    const covs = {
+        'undefined': undefined,
+        'null': null,
+        'non-Coverage object': { shown: 0, total: T, gaps: [{ reason: 'failed' }] },
+        'unreported()': Coverage.unreported('cells'),
+        'complete(200)': Coverage.complete(T, 'cells'),
+        'missing UNFOCUSED': Coverage.missing(GAP.UNFOCUSED, 'd', { unit: 'cells', total: T }),
+        'missing EMPTY': Coverage.missing(GAP.EMPTY, 'd', { unit: 'cells', total: T }),
+        'missing FAILED total=150': Coverage.missing(GAP.FAILED, 'd', { unit: 'cells', total: 150 }),
+        'partial 0/200': Coverage.partial(0, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'partial 50/200': Coverage.partial(50, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'partial 150/200': Coverage.partial(150, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'unreported gap WITH counts': new Coverage({
+            shown: 0, total: T, unit: 'cells',
+            gaps: [{ reason: GAP.UNREPORTED, detail: 'nobody said' }] }),
+    };
+    const violations = [];
+    for (const [name, cov] of Object.entries(covs)) {
+        for (const xNaN of [0, 1, 50, 199, 200]) {
+            if (xNaN === 0) continue;
+            const filters = classifyFilterStats(
+                { xNaN, yNaN: 0, zNaN: 0, total: T, filtered: xNaN },
+                'cells', { axisCoverage: { x: cov } });
+            const load = (cov instanceof Coverage) ? cov : Coverage.unreported('cells');
+            const panel = Coverage.merge([load, filters], 'cells');
+
+            // (1) entities are missing, so SOME reason must reach the user.
+            if (panel.lines().length === 0) violations.push(`${name} xNaN=${xNaN}: no reason named`);
+            // (2) the panel must never claim more shown than are actually drawn.
+            const drawn = T - xNaN;
+            if (typeof panel.shown === 'number' && panel.shown > drawn) {
+                violations.push(`${name} xNaN=${xNaN}: claims shown=${panel.shown}, only ${drawn} drawn`);
+            }
+        }
+    }
+    assert.deepEqual(violations, [], violations.join('\n'));
+    // The panel-wide predicate violates (2) on three of these: `unreported()`,
+    // `partial 50/200` and `partial 150/200`, each at xNaN=200 -- the last two
+    // are cases no hand-written fixture in this file had named.
+});

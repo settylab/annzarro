@@ -3,7 +3,8 @@ import {
   loadAxisData, 
   createFilterMask, 
   applyFilterMask, 
-  updateTableEntities 
+  updateTableEntities,
+  panelLoadCoverage 
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -195,9 +196,22 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         // on screen, so a notice left over from the previous render would be
         // stale -- and a stale "all shown" is the same lie as no notice at all.
         const coverageUnit = entityType === 'genes' ? 'genes' : 'cells';
+        // RECOMPUTED from the series now in `data`, not read from
+        // `data.coverage` -- which is written only by the full render, so on
+        // this path it described the PREVIOUS axis. Reading it here licensed a
+        // suppression from the fresh axis while the sentence came from the
+        // stale panel, and the user got a headline with no reason at all.
+        const loaded = panelLoadCoverage(data, settings, coverageUnit);
+        data.coverage = loaded;
+        // Per AXIS, not per panel: only the series that loaded x can explain x.
         const liveCoverage = Coverage.merge([
-            (data.coverage instanceof Coverage) ? data.coverage : Coverage.unreported(coverageUnit),
-            classifyFilterStats(filterStats, coverageUnit)
+            loaded,
+            classifyFilterStats(filterStats, coverageUnit, {
+                axisCoverage: {
+                    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
+                    z: data.z && data.z.coverage
+                }
+            })
         ], coverageUnit);
         renderCoverageNotice(plotContainer, liveCoverage, coverageUnit);
         try {

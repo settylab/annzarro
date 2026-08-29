@@ -824,19 +824,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // returned no coverage becomes UNREPORTED here rather than disappearing --
     // that is what stops a new axis type from silently reintroducing the gap.
     const unit = isGenePlot ? 'genes' : 'cells';
-    const axisCoverages = ['x', 'y', 'z'].map(axis => {
-      if (axis === 'z' && !settings.z) return null;
-      const series = data[axis];
-      if (!series) return null;
-      return series.coverage || Coverage.unreported(unit);
-    }).filter(Boolean);
-    if (settings.color && settings.color.type && settings.color.type !== 'none') {
-      // Colour DESCRIBES the points; it does not decide which of them Plotly
-      // draws. A short or failed colour array drops no points, so its `shown`
-      // must not enter the panel's minimum. See ROLE in utils/coverage.js.
-      axisCoverages.push((data.colorCoverage || Coverage.unreported(unit)).asDescribing());
-    }
-    data.coverage = Coverage.merge(axisCoverages, unit);
+    data.coverage = panelLoadCoverage(data, settings, unit);
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
@@ -989,6 +977,59 @@ function ensureFilterWidget(plotContainer) {
  * @param {Object} settings - Plot settings
  * @returns {Object} - Object containing indexMask and filter statistics
  */
+/**
+ * The panel's LOAD coverage, assembled from the series CURRENTLY IN `data`.
+ *
+ * This is a function, and exported, for one reason: `data.coverage` used to be
+ * written at exactly one place -- the full render -- while `data[axis]` is
+ * replaced without it on the incremental paths (`plot-update.js`'s
+ * `refocusAxisOnEntity`, `listeners.js`'s axis dropdown). So on every
+ * incremental render `data.coverage` described the PREVIOUS x while `data.x`
+ * held the new one, and anything reading the two together was comparing a
+ * series against a statement about a different series.
+ *
+ * That was not hypothetical. It made the suppression in `classifyFilterStats`
+ * delete a filter line on the strength of the FRESH axis while the sentence
+ * that was supposed to replace it came from the STALE panel value, which did
+ * not carry it -- so picking an unfocused `obsp` column on x produced the
+ * headline "No cells shown (of 200)" and NO reason at all, while the loader
+ * had produced a perfectly good one. Silence, which is the defect this whole
+ * module exists to end.
+ *
+ * Both paths now call this for x/y/z, so those cannot drift again.
+ *
+ * `colorCoverage` is NOT yet migrated and still has the shape this function
+ * exists to repair: one writer (the full render) and two readers.
+ * `loadColorDataAndUpdatePlot` replaces `data.color`, `colorType` and
+ * `colorCategories` without touching `colorCoverage`, so after switching to a
+ * healthy colour column the panel still announces the OLD column's failure.
+ * That is unchanged from before this function existed -- the same stale value
+ * previously travelled via `data.coverage` -- and it over-reports rather than
+ * falling silent, which is the safe direction. It is stated here rather than
+ * claimed fixed: settylab/annzarro#40.
+ *
+ * @param {Object} data  The panel's data object; reads `x`/`y`/`z`.coverage
+ *   and `colorCoverage`.
+ * @param {Object} settings  Reads `z` (present or not) and `color.type`.
+ * @param {string} unit  'cells' | 'genes'.
+ * @returns {Coverage}
+ */
+export function panelLoadCoverage(data, settings, unit) {
+  const axisCoverages = ['x', 'y', 'z'].map(axis => {
+    if (axis === 'z' && !settings.z) return null;
+    const series = data[axis];
+    if (!series) return null;
+    return series.coverage || Coverage.unreported(unit);
+  }).filter(Boolean);
+  if (settings.color && settings.color.type && settings.color.type !== 'none') {
+    // Colour DESCRIBES the points; it does not decide which of them Plotly
+    // draws. A short or failed colour array drops no points, so its `shown`
+    // must not enter the panel's minimum. See ROLE in utils/coverage.js.
+    axisCoverages.push((data.colorCoverage || Coverage.unreported(unit)).asDescribing());
+  }
+  return Coverage.merge(axisCoverages, unit);
+}
+
 export function createFilterMask(data, settings) {
   // Initialize filter statistics
   const filterStats = {
@@ -1482,8 +1523,14 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
+  // Per AXIS, not per panel: only the series that loaded x can explain x.
+  const axisCoverage = {
+    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
+    z: data.z && data.z.coverage
+  };
   const panelCoverage = Coverage.merge(
-    [loadCoverage, classifyFilterStats(filterStats, unit)], unit
+    [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
+    unit
   );
   
   // Apply the filter mask only if explicit filtering is enabled

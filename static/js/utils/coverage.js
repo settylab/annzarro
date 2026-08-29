@@ -677,9 +677,17 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
  *
  * @param {Object} filterStats  As produced by `createFilterMask`.
  * @param {string} unit  'cells' | 'genes'.
+ * @param {Object} [opts]
+ * @param {Object} [opts.axisCoverage]  `{ x, y, z }` -- the coverage reported by
+ *   the series that loaded each COORDINATE AXIS. When an axis is entirely
+ *   absent, the series that loaded it has already said why -- "needs a focused
+ *   selection", "not in this dataset" -- and the filter mask, counting the same
+ *   entities independently, adds a second line saying they were "filtered out".
+ *   Both are true; they are the same fact twice, and the second frames a
+ *   not-yet-made selection as a filter.
  * @returns {Coverage}
  */
-export function classifyFilterStats(filterStats, unit = 'values') {
+export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage = null } = {}) {
     if (!filterStats) return Coverage.unreported(unit);
 
     const total = typeof filterStats.total === 'number' ? filterStats.total : null;
@@ -688,9 +696,55 @@ export function classifyFilterStats(filterStats, unit = 'values') {
         if (count > 0) gaps.push({ reason: GAP.FILTERED, detail, source, count });
     };
 
-    add(filterStats.xNaN, 'x-axis', 'points with no x value');
-    add(filterStats.yNaN, 'y-axis', 'points with no y value');
-    add(filterStats.zNaN, 'z-axis', 'points with no z value');
+    // A series-level reason and a filter line are the SAME FACT only when the
+    // series that loaded THAT AXIS has already accounted for every entity the
+    // mask is about to count again. Suppression is a rule that DELETES a reason,
+    // so each condition below is a route by which it would otherwise remove the
+    // only reason a user was going to get:
+    //
+    //  - it must be that AXIS's OWN coverage, not the panel's. The merged panel
+    //    coverage says only that SOMETHING is missing: a colour column awaiting
+    //    a focused selection (which DESCRIBES, and by this module's own doctrine
+    //    accounts for no entities at all), or an entity-name/point-count
+    //    mismatch, each make it incomplete while saying nothing about x.
+    //  - it must NAME a reason. `UNREPORTED` is the ABSENCE of one, and reading
+    //    "nobody said" as "already said" is precisely the silence this module
+    //    exists to end. Both call sites pass `Coverage.unreported()` when a
+    //    loader reported nothing, so this arm is load-bearing, not defensive.
+    //  - it must account for EVERY entity (`shown === 0`). A series that loaded
+    //    150 of 200 does not explain 200 missing points.
+    //
+    // A partially-NaN axis is a genuine filter and still says so, and colour is
+    // never suppressed -- with hide-NaN on it removes points that the colour
+    // series' own DESCRIBES coverage does not account for, so dropping that line
+    // would hide a real consequence rather than a duplicate one.
+    // `shown === 0` would be a PROXY for the condition that actually matters.
+    // The question is whether that axis's own coverage ALREADY ACCOUNTS FOR at
+    // least the `count` entities the mask is about to count again, so ask that:
+    // `total - shown`, against the axis's own total where it has one. The two
+    // coincide whenever the axis agrees with the mask about how many entities
+    // exist, and come apart when it does not -- a series whose coverage counts
+    // 150 while the mask counts 200 explains 150 of them, not 200.
+    let suppressed = false;
+    const accountedFor = (cov) => {
+        const t = (typeof cov.total === 'number') ? cov.total : total;
+        return (typeof cov.shown === 'number' && typeof t === 'number')
+            ? t - cov.shown : null;
+    };
+    const explains = (cov, count) => {
+        if (!(cov instanceof Coverage) || total === null || count !== total) return false;
+        if (!cov.gaps.some(g => g.reason !== GAP.UNREPORTED)) return false;
+        const accounted = accountedFor(cov);
+        return accounted !== null && accounted >= count;
+    };
+    const addAxis = (count, source, detail, cov) => {
+        if (explains(cov, count)) { suppressed = true; return; }
+        add(count, source, detail);
+    };
+
+    addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
+    addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
+    addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
     if (filterStats.hideNaNActive) {
         add(filterStats.colorNaN, 'colour', 'points with no colour value (hide-NaN is on)');
     }
@@ -704,6 +758,11 @@ export function classifyFilterStats(filterStats, unit = 'values') {
     const hidden = typeof filterStats.filtered === 'number' ? filterStats.filtered : null;
     const shown = (total !== null && hidden !== null) ? Math.max(0, total - hidden) : total;
 
-    if (gaps.length === 0) return Coverage.complete(total, unit);
+    // `Coverage.complete(total)` reports `shown = total`, DISCARDING
+    // `filterStats.filtered`. That is right for a panel nothing filtered; it is
+    // a lie for one where the only gap was suppressed as a duplicate, because
+    // those points really are off the screen. Keep the count and drop only the
+    // sentence -- the series-level reason supplies the sentence.
+    if (gaps.length === 0 && !suppressed) return Coverage.complete(total, unit);
     return new Coverage({ shown, total, unit, gaps });
 }
