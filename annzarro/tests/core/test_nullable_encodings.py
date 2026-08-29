@@ -73,9 +73,14 @@ def _numarr(group, name, values, dtype=None):
 
 
 def _nullable(parent, name, values, mask, encoding, writer):
+    # encoding=None writes the values/mask PAIR with no `encoding-type`, which
+    # is the shape only the STRUCTURAL fallback in `_is_nullable_group` can
+    # recognise. Some writers omit the attribute; the attributed path must not
+    # be the only one that works.
     grp = parent.create_group(name)
-    grp.attrs["encoding-type"] = encoding
-    grp.attrs["encoding-version"] = "0.1.0"
+    if encoding is not None:
+        grp.attrs["encoding-type"] = encoding
+        grp.attrs["encoding-version"] = "0.1.0"
     writer(grp, "values", values)
     _numarr(grp, "mask", mask, dtype=bool)
     return grp
@@ -194,7 +199,6 @@ def _index_store(tmp_path, name, kind, with_x):
     return p, expected_names
 
 
-@pytest.mark.xfail(strict=True, reason="index members stored as a group are not yet read: fixed by PR #11. strict=True so this turns RED the moment #11 lands, forcing the marker off rather than letting the coverage quietly lapse.")
 @pytest.mark.parametrize("kind", ["nullable", "categorical"])
 def test_group_encoded_index_yields_names(tmp_path, kind):
     p, expected = _index_store(tmp_path, f"index_{kind}.zarr", kind, with_x=True)
@@ -203,7 +207,6 @@ def test_group_encoded_index_yields_names(tmp_path, kind):
     assert _reader().get_obs_var("cells", dataset_path=str(p))["data"]["_index"] == expected
 
 
-@pytest.mark.xfail(strict=True, reason="index members stored as a group are not yet read: fixed by PR #11. strict=True so this turns RED the moment #11 lands, forcing the marker off rather than letting the coverage quietly lapse.")
 @pytest.mark.parametrize("kind", ["nullable", "categorical"])
 def test_group_encoded_index_yields_counts_without_x(tmp_path, kind):
     """With no `X` to fall back on, the counts must come from the index itself.
@@ -316,6 +319,21 @@ class _CountingArray:
     ``members``.  Like a real zarr Array it defines no ``__contains__``, so a
     membership test against it falls back to the sequence protocol and shows up
     here as ``accesses``.
+
+    Measured, because the sentence above is true of both majors while its
+    CONSEQUENCE is not: ``Array.__contains__`` is absent on zarr 2.18.7 and
+    3.1.6 alike, but ``Array.__iter__`` is present on 2.18.7 and absent on
+    3.1.6.  So a real zarr 2 Array intercepts ``in`` with the ITERATOR
+    protocol (20 chunk-slice reads at n=20000) and only zarr 3 falls all the
+    way to the legacy SEQUENCE protocol (20,001 integer-index reads).  This
+    stand-in models the zarr 3 path, which is the expensive one; on zarr 2 it
+    is stricter than reality rather than laxer, so a pass here is still
+    meaningful and a failure is still a real defect.
+
+    Stated explicitly because the same true-premise/false-consequence shape,
+    written as an unqualified comment one layer down in ``zarr_reader.py``,
+    is what made the zarr-2 guard defect invisible to three readers: the
+    comment told each of them what they would find.
     """
 
     def __init__(self):
@@ -352,3 +370,150 @@ def test_plain_array_is_rejected_without_touching_elements():
         f"predicate read {array.accesses} element(s) from a plain array; zarr's "
         "Array has no __contains__, so a membership test here is one chunk "
         "decode per element -- 108.88s on a 75000-row column")
+
+
+class _CountingArrayWithShape(_CountingArray):
+    """As above, but carrying ``shape`` -- i.e. shaped like a REAL zarr Array.
+
+    ``_CountingArray`` deliberately omits ``shape``, which is right for
+    ``_is_nullable_group`` but hides the fast path in ``_get_encoded_length``:
+    that function answers from ``shape`` before it can reach any structural
+    test, and a stand-in without ``shape`` never exercises it.
+    """
+
+    def __init__(self, n=75000):
+        super().__init__()
+        self.shape = (n,)
+
+
+def test_encoded_length_of_plain_array_touches_no_elements():
+    """`_get_encoded_length` must answer from metadata, never from content.
+
+    It is reached once per obs/var index read, so a membership test here costs
+    the same chunk-decode-per-element as the one `_is_nullable_group` was
+    guarded against -- and nothing else covers this function.
+    """
+    array = _CountingArrayWithShape(n=75000)
+
+    assert ZarrReader()._get_encoded_length(array) == 75000
+    assert array.accesses == 0, (
+        f"read {array.accesses} element(s) to answer a question about length")
+
+
+def test_group_predicate_holds_on_the_installed_zarr(tmp_path):
+    """`_is_group` must recognise a Group under whichever zarr is installed.
+
+    This is a cross-VERSION regression, and it is invisible to any test that
+    exercises only one major. ``hasattr(member, 'members')`` is O(1) and
+    correct on zarr 3, and answers False for EVERY zarr 2 Group, because
+    ``members`` arrived in zarr 3. Under that predicate the structural
+    fallback in `_is_nullable_group` and the whole of `_get_encoded_length`
+    silently took the not-a-group arm on zarr 2: `get_basic_counts` answered
+    ``{cell_count: 0, gene_count: 0}`` with no error and no log line.
+
+    Measured on the same tree with zarr as the only variable: 4 of 4
+    group-encoded-index arms passed under 3.1.6, 2 of 4 under 2.18.7.
+
+    The predicate must therefore be checked against real zarr objects rather
+    than against a stand-in, since a stand-in encodes the author's belief
+    about the class rather than the class.
+    """
+    root = _open_root(tmp_path / "predicate.zarr")
+    group = root.create_group("a_group")
+    array = _numarr(root, "an_array", np.arange(4, dtype=np.int32))
+
+    assert ZarrReader._is_group(group) is True, (
+        f"zarr {zarr.__version__}: Group not recognised; "
+        "every structural encoding check silently degrades")
+    assert ZarrReader._is_group(array) is False, (
+        f"zarr {zarr.__version__}: Array misread as a Group; membership tests "
+        "against it decode one chunk per element")
+
+
+def test_structural_fallback_detects_unattributed_group(tmp_path):
+    """The structural fallback must ACCEPT what it is meant to accept.
+
+    Every other direct assertion on `_is_nullable_group` in this module is
+    NEGATIVE -- "reject a plain array", "read no elements". A suite whose
+    predicate assertions are all rejections is satisfied in full by a
+    predicate that rejects EVERYTHING, so an over-broad guard is structurally
+    invisible to it. That is precisely how the zarr-2 `members` defect
+    survived a five-mutant pass and a two-major run.
+
+    `test_group_predicate_holds_on_the_installed_zarr` closes it at the
+    PREDICATE level. This closes it at the COMPOSITION level: nothing else
+    asserts that `_is_nullable_group` reaches True by the structural route,
+    so a future change to how it consumes `_is_group` would be uncovered
+    again.
+
+    Fails at `dedebe9` under zarr 2.18.7; passes here under both majors.
+
+    Credit: @annzpr13, who found the all-negative-assertions gap.
+    """
+    root = _open_root(tmp_path / "noattr.zarr")
+    categorical = _categorical(
+        root, "c", np.array([0, 1, 0, 1], dtype=np.int8),
+        lambda g: _nullable(g, "categories", ["p", "q"], [False, False],
+                            None, _strarr))
+
+    member = categorical["categories"]
+    assert "encoding-type" not in dict(member.attrs), (
+        "fixture is wrong: the attribute is present, so this exercises the "
+        "attributed path and says nothing about the structural fallback")
+    assert ZarrReader()._is_nullable_group(member) is True, (
+        f"zarr {zarr.__version__}: a values/mask group with no encoding-type "
+        "was not recognised; the structural fallback is unreachable")
+
+
+def test_unattributed_group_reads_back_with_mask_applied(tmp_path):
+    """The structural route must deliver DATA, not merely be recognised.
+
+    The arm above pins the predicate; this pins the composition of
+    `_is_nullable_group` with `_read_member`. They can fail independently:
+    a predicate that fires correctly still returns wrong data if the mask is
+    dropped, and that is the exact defect removed from #11's inline branch.
+
+    At `dedebe9` under zarr 2.18.7 this yields `[]` -- the guard rejects the
+    group, `_read_member` falls through to `member[:]`, zarr 2's
+    `Group.__getitem__` raises KeyError, and the enclosing `except Exception`
+    converts it to an empty column at HTTP 200.
+
+    Authored by annzpr13-sk, which derived the defect independently; taken
+    rather than rewritten, because a witness written by a party with no stake
+    in this PR is worth more than one written for it.
+    """
+    root = _open_root(tmp_path / "structural_read.zarr")
+    _nullable(root, "flag", [10, 20, 30], [False, True, False], None,
+              lambda g, n, v: _numarr(g, n, v, dtype=np.int64))
+
+    member = _open_root(tmp_path / "structural_read.zarr", mode="r")["flag"]
+    out = list(np.asarray(ZarrReader()._read_member(member), dtype=object))
+
+    assert out == [10, None, 30], (
+        f"got {out!r} under zarr {zarr.__version__}; the structural fallback "
+        "either did not fire or dropped the mask")
+
+
+def test_unattributed_column_survives_the_public_api(tmp_path):
+    """End-to-end, at the level a user actually experiences the defect.
+
+    Every other arm for this shape stops at a private method. This one goes
+    through `get_obs_var`, which is what the HTTP layer calls -- and it is the
+    only one that would have caught the bug as a REPORT rather than as a
+    diagnosis, because the failure mode is a well-formed 200 response with an
+    empty column rather than an error.
+    """
+    p = tmp_path / "structural_api.zarr"
+    _, obs, _ = _skeleton(p)
+    _strarr(obs, "_index", CELLS)
+    _nullable(obs, "flag", [10, 20, 30, 40, 50, 60],
+              [False, True, False, False, False, False], None,
+              lambda g, n, v: _numarr(g, n, v, dtype=np.int64))
+    obs.attrs["column-order"] = ["flag"]
+
+    column = _reader().get_obs_var("cells", dataset_path=str(p))["data"]["flag"]
+
+    assert column != [], (
+        f"empty column under zarr {zarr.__version__} -- the silent-empty class "
+        "#26 exists to eliminate, reached through the structural fallback")
+    assert column == [10, None, 30, 40, 50, 60]

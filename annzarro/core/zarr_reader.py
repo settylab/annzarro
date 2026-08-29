@@ -54,6 +54,18 @@ except ImportError:
 # Set up logging
 logger = logging.getLogger(__name__)
 
+
+class UnsupportedEncodingError(ValueError):
+    """
+    Raised when a zarr member uses an AnnData encoding this reader cannot read.
+
+    Subclasses ValueError so existing callers that catch ValueError keep
+    working, while giving the reader a type narrow enough to re-raise past the
+    broad ``except Exception`` fallbacks without also promoting unrelated
+    ValueErrors (numpy shape errors, bad casts) into user-visible failures.
+    """
+
+
 class ZarrReader:
     """
     Class for reading AnnData objects from zarr sources with lazy loading.
@@ -386,8 +398,8 @@ class ZarrReader:
         
         # Method 3: Infer from obs and var lengths
         try:
-            n_obs = len(root['obs']['_index']) if 'obs' in root and '_index' in root['obs'] else 0
-            n_vars = len(root['var']['_index']) if 'var' in root and '_index' in root['var'] else 0
+            n_obs = self._get_encoded_length(root['obs']['_index']) if 'obs' in root and '_index' in root['obs'] else 0
+            n_vars = self._get_encoded_length(root['var']['_index']) if 'var' in root and '_index' in root['var'] else 0
             if n_obs > 0 and n_vars > 0:
                 shape = (n_obs, n_vars)
                 logger.info(f"Inferred shape from obs and var: {shape}")
@@ -573,9 +585,9 @@ class ZarrReader:
                     index_column = root['obs'].attrs['_index']
                     logger.debug(f"Using custom index column '{index_column}' for obs group from _index attribute")
                 
-                # Get cell count from index column shape
-                if index_column in root['obs'] and hasattr(root['obs'][index_column], 'shape'):
-                    cell_count = root['obs'][index_column].shape[0]
+                # Get cell count from index column
+                if index_column in root['obs']:
+                    cell_count = self._get_encoded_length(root['obs'][index_column])
             
             # Check if var group exists
             if 'var' in root:
@@ -585,9 +597,9 @@ class ZarrReader:
                     index_column = root['var'].attrs['_index']
                     logger.debug(f"Using custom index column '{index_column}' for var group from _index attribute")
                 
-                # Get gene count from index column shape
-                if index_column in root['var'] and hasattr(root['var'][index_column], 'shape'):
-                    gene_count = root['var'][index_column].shape[0]
+                # Get gene count from index column
+                if index_column in root['var']:
+                    gene_count = self._get_encoded_length(root['var'][index_column])
             
             # If counts are not found, try to get them from X shape if available
             if (cell_count == 0 or gene_count == 0) and 'X' in root and hasattr(root['X'], 'shape'):
@@ -700,8 +712,8 @@ class ZarrReader:
                 
             # Use custom index columns if they exist
             if obs_index_column in root['obs'] and var_index_column in root['var']:
-                n_obs = root['obs'][obs_index_column].shape[0]  # Just reads metadata
-                n_vars = root['var'][var_index_column].shape[0]  # Just reads metadata
+                n_obs = self._get_encoded_length(root['obs'][obs_index_column])
+                n_vars = self._get_encoded_length(root['var'][var_index_column])
                 shape = (n_obs, n_vars)
                 logger.debug(f"Inferred shape from obs/var indices: {shape}")
         
@@ -1032,6 +1044,33 @@ class ZarrReader:
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
     
     @staticmethod
+    def _is_group(member) -> bool:
+        """
+        Whether a zarr member is a Group, under BOTH zarr 2 and zarr 3.
+
+        This has to be answered without a membership test, and the reason
+        differs by major -- so the O(n) hazard is real on both, but not for
+        the same reason. Neither Array defines ``__contains__``. zarr 3's
+        defines no ``__iter__`` either, so ``'values' in member`` falls back
+        to the LEGACY SEQUENCE protocol: measured 20,001 integer-index
+        ``__getitem__`` calls at n=20000, and the cause of the 837 s
+        full-obs read 9f3d65b fixed. zarr 2's Array DOES define
+        ``__iter__``, so the same expression iterates instead -- 20
+        chunk-slice calls, cheap enough that a wall-clock budget cannot see
+        it there at all.
+
+        ``hasattr(member, 'members')`` is NOT the right predicate even though
+        it is O(1): ``members`` exists only on zarr 3's Group, so under zarr
+        2.18.7 it answers False for every group and silently disables the
+        structural fallback below. ``isinstance`` against ``zarr.Group``
+        holds in both majors (zarr 2 aliases ``zarr.hierarchy.Group``); the
+        duck-typed clause is a backstop for a store class that is neither.
+        """
+        if isinstance(member, zarr.Group):
+            return True
+        return hasattr(member, 'keys') and not hasattr(member, 'shape')
+
+    @staticmethod
     def _is_nullable_group(member) -> bool:
         """
         Check whether a zarr member uses an AnnData nullable encoding.
@@ -1054,11 +1093,9 @@ class ZarrReader:
             return True
 
         # Fall back to structure for writers that omit the attribute, but
-        # only for groups. A zarr Array defines no __contains__, so `in`
-        # falls back to the legacy sequence protocol and decodes one chunk
-        # per element -- O(n) per call, ~109s on a 75000-row column. Only
-        # Group has `members`.
-        if not hasattr(member, 'members'):
+        # only for groups -- see _is_group for why the membership test below
+        # must never be reached with a zarr Array.
+        if not ZarrReader._is_group(member):
             return False
 
         return 'values' in member and 'mask' in member
@@ -1094,6 +1131,45 @@ class ZarrReader:
             data[mask_data] = None
 
         return data
+
+    def _get_encoded_length(self, member) -> int:
+        """
+        Length of a zarr member that may be a plain array or an encoded group.
+
+        AnnData stores nullable and categorical columns as *groups*, which have
+        no ``.shape``; their length lives on a child array ('values' or
+        'codes'). Reading it that way keeps shape/count inference working for
+        an index stored under either encoding.
+
+        Args:
+            member: Zarr array or encoded group
+
+        Returns:
+            Length along the first axis, or 0 if it cannot be determined.
+        """
+        if hasattr(member, 'shape'):
+            return member.shape[0]
+
+        # Only a Group can carry an AnnData encoding -- a zarr Array has
+        # .shape and returned above. Guard on Group before ANY membership
+        # test; see _is_group.
+        if not self._is_group(member):
+            return 0
+
+        if self._is_nullable_group(member) and 'values' in member:
+            return member['values'].shape[0]
+
+        encoding = member.attrs.get('encoding-type', '') if hasattr(member, 'attrs') else ''
+        if encoding == 'categorical' and 'codes' in member:
+            return member['codes'].shape[0]
+
+        if encoding:
+            logger.warning(
+                f"Cannot determine length for unsupported encoding '{encoding}' "
+                f"(children: {list(member.keys()) if hasattr(member, 'keys') else []}). "
+                f"Dataset may use a newer AnnData format."
+            )
+        return 0
 
     def _get_categorical_values(self, group, indices=None, return_categories=False):
         """
@@ -1140,15 +1216,31 @@ class ZarrReader:
                     return values.tolist(), categories.tolist() if hasattr(categories, 'tolist') else list(categories)
                 return values
             
-            # Not a categorical, just return the array directly
+            # Not a categorical. A nullable encoding is also a group, and
+            # _read_member reads it through its 'values'/'mask' children,
+            # applying the mask; a plain array it slices directly.
+            if self._is_group(group) and not self._is_nullable_group(group):
+                # A group that is neither categorical nor nullable cannot be
+                # sliced. Name the encoding instead of returning silence.
+                encoding = group.attrs.get('encoding-type', 'unknown') if hasattr(group, 'attrs') else 'unknown'
+                children = list(group.keys()) if hasattr(group, 'keys') else []
+                raise UnsupportedEncodingError(
+                    f"Unsupported AnnData encoding '{encoding}' "
+                    f"(children: {children}). "
+                    f"This dataset may have been created with a newer version of AnnData. "
+                    f"Try updating annzarro or re-exporting the dataset."
+                )
+
             result = self._read_member(group, indices)
-            
+
             # For non-categorical data, return just the values
             if return_categories:
                 return result, []
             return result
+        except UnsupportedEncodingError:
+            raise
         except Exception as e:
-            logger.error(f"Error processing categorical data: {e}")
+            logger.error(f"Error processing encoded data: {e}")
             if return_categories:
                 return [], []
             return []
@@ -1196,8 +1288,8 @@ class ZarrReader:
             # Add _index as a column for backwards compatibility with tests
             if obs_index_column in root[obj]:
                 try:
-                    # Get cell names
-                    cell_names = root[obj][obs_index_column][:]
+                    # Get cell names (handles categorical/nullable encodings)
+                    cell_names = self._get_categorical_values(root[obj][obs_index_column], indices)
                     result['data']['_index'] = cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
                 except Exception as e:
                     logger.error(f"Error getting cell names: {e}")
@@ -2004,14 +2096,13 @@ class ZarrReader:
             logger.warning(f"Index column '{index_column}' not found in {obj} group")
             return []
         
-        # Get gene names
+        # Get names (handles categorical/nullable encodings)
         try:
-            names = root[obj][index_column][:]
+            names = self._get_categorical_values(root[obj][index_column])
             return names.tolist() if hasattr(names, 'tolist') else list(names)
         except Exception as e:
-            error_msg = f"Error getting {'gene' if obj == 'var' else 'cell'} names from dataset {dataset_path}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
+            raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
     
     def get_obs_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
@@ -2204,7 +2295,8 @@ class ZarrReader:
             
             if var_index_column in root['var']:
                 try:
-                    var_names = root['var'][var_index_column][:10]  # Get first 10 for preview
+                    preview_count = min(10, self._get_encoded_length(root['var'][var_index_column]))
+                    var_names = self._get_categorical_values(root['var'][var_index_column], indices=list(range(preview_count)))
                     result["var_names"] = var_names.tolist() if hasattr(var_names, 'tolist') else list(var_names)
                 except Exception as e:
                     logger.error(f"Error getting var names: {e}")
@@ -2219,7 +2311,8 @@ class ZarrReader:
             
             if obs_index_column in root['obs']:
                 try:
-                    obs_names = root['obs'][obs_index_column][:10]  # Get first 10 for preview
+                    preview_count = min(10, self._get_encoded_length(root['obs'][obs_index_column]))
+                    obs_names = self._get_categorical_values(root['obs'][obs_index_column], indices=list(range(preview_count)))
                     result["obs_names"] = obs_names.tolist() if hasattr(obs_names, 'tolist') else list(obs_names)
                 except Exception as e:
                     logger.error(f"Error getting obs names: {e}")
