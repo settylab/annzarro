@@ -562,3 +562,24 @@ test('an axis that accounts for FEWER entities than the mask counts still report
     assert.equal(filters.gaps.length, 1, 'but it only accounts for 150 of 200');
     assert.match(filters.lines()[0], /x-axis/);
 });
+
+test('a coverage whose ONLY gap is UNREPORTED explains nothing, counts or not', () => {
+    // `Coverage.unreported()` carries no counts, so the accounts-for clause
+    // already rejects it -- verified by mutation: removing the UNREPORTED
+    // clause kills no test that uses that value. This asserts the clause
+    // against the value that clause is actually for: one that DOES carry
+    // counts and still says only "nobody described this surface". Neither
+    // call site can produce it today; the clause is defence in depth, and
+    // this is the test that measures it rather than assuming it.
+    const nobodySaid = new Coverage({
+        shown: 0, total: 200, unit: 'cells',
+        gaps: [{ reason: GAP.UNREPORTED, detail: 'nobody described this surface' }]
+    });
+    assert.equal(nobodySaid.total - nobodySaid.shown, 200,
+        'it accounts for all 200 arithmetically...');
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: nobodySaid } });
+    assert.equal(filters.gaps.length, 1, '...but names no reason, so it explains nothing');
+    assert.match(filters.lines()[0], /x-axis/);
+});
