@@ -1482,8 +1482,13 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
+  // Per AXIS, not per panel: only the series that loaded x can explain x.
+  const axisCoverage = {
+    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
+    z: data.z && data.z.coverage
+  };
   const panelCoverage = Coverage.merge(
-    [loadCoverage, classifyFilterStats(filterStats, unit, { alreadyExplained: loadCoverage })],
+    [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
     unit
   );
   

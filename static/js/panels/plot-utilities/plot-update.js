@@ -197,9 +197,16 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         const coverageUnit = entityType === 'genes' ? 'genes' : 'cells';
         const loaded = (data.coverage instanceof Coverage)
             ? data.coverage : Coverage.unreported(coverageUnit);
+        // Per AXIS, not per panel: `loaded` is UNREPORTED whenever the previous
+        // render left no coverage behind, and "nobody said" explains nothing.
         const liveCoverage = Coverage.merge([
             loaded,
-            classifyFilterStats(filterStats, coverageUnit, { alreadyExplained: loaded })
+            classifyFilterStats(filterStats, coverageUnit, {
+                axisCoverage: {
+                    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
+                    z: data.z && data.z.coverage
+                }
+            })
         ], coverageUnit);
         renderCoverageNotice(plotContainer, liveCoverage, coverageUnit);
         try {
