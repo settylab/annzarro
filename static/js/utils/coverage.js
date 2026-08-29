@@ -718,11 +718,25 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
     // never suppressed -- with hide-NaN on it removes points that the colour
     // series' own DESCRIBES coverage does not account for, so dropping that line
     // would hide a real consequence rather than a duplicate one.
+    // `shown === 0` would be a PROXY for the condition that actually matters.
+    // The question is whether that axis's own coverage ALREADY ACCOUNTS FOR at
+    // least the `count` entities the mask is about to count again, so ask that:
+    // `total - shown`, against the axis's own total where it has one. The two
+    // coincide whenever the axis agrees with the mask about how many entities
+    // exist, and come apart when it does not -- a series whose coverage counts
+    // 150 while the mask counts 200 explains 150 of them, not 200.
     let suppressed = false;
-    const explains = (cov, count) => (cov instanceof Coverage)
-        && total !== null && count === total
-        && cov.shown === 0
-        && cov.gaps.some(g => g.reason !== GAP.UNREPORTED);
+    const accountedFor = (cov) => {
+        const t = (typeof cov.total === 'number') ? cov.total : total;
+        return (typeof cov.shown === 'number' && typeof t === 'number')
+            ? t - cov.shown : null;
+    };
+    const explains = (cov, count) => {
+        if (!(cov instanceof Coverage) || total === null || count !== total) return false;
+        if (!cov.gaps.some(g => g.reason !== GAP.UNREPORTED)) return false;
+        const accounted = accountedFor(cov);
+        return accounted !== null && accounted >= count;
+    };
     const addAxis = (count, source, detail, cov) => {
         if (explains(cov, count)) { suppressed = true; return; }
         add(count, source, detail);

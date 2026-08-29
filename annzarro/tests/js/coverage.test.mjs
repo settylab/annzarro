@@ -547,3 +547,18 @@ test('an axis its own loader called COMPLETE is still reported as filtered', () 
     assert.match(filters.lines()[0], /x-axis/);
     assert.equal(Coverage.merge([namesDisagree, filters], 'cells').shown, 0);
 });
+
+test('an axis that accounts for FEWER entities than the mask counts still reports', () => {
+    // `shown === 0` is a proxy; "accounts for at least `count`" is the condition.
+    // They come apart when the axis's own total disagrees with the mask's: a
+    // series covering 150 entities, none shown, explains 150 -- not the 200 the
+    // mask is about to call filtered.
+    const xLoaded = Coverage.missing(GAP.EMPTY, 'every entry blank',
+        { source: 'obs.x', unit: 'cells', total: 150 });
+    assert.equal(xLoaded.shown, 0, 'shown IS 0, so the proxy would suppress');
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { axisCoverage: { x: xLoaded } });
+    assert.equal(filters.gaps.length, 1, 'but it only accounts for 150 of 200');
+    assert.match(filters.lines()[0], /x-axis/);
+});
