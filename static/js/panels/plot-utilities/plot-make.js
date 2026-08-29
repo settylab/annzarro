@@ -1483,7 +1483,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
   const panelCoverage = Coverage.merge(
-    [loadCoverage, classifyFilterStats(filterStats, unit)], unit
+    [loadCoverage, classifyFilterStats(filterStats, unit, { alreadyExplained: loadCoverage })],
+    unit
   );
   
   // Apply the filter mask only if explicit filtering is enabled

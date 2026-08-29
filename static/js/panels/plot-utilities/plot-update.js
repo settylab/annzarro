@@ -195,9 +195,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         // on screen, so a notice left over from the previous render would be
         // stale -- and a stale "all shown" is the same lie as no notice at all.
         const coverageUnit = entityType === 'genes' ? 'genes' : 'cells';
+        const loaded = (data.coverage instanceof Coverage)
+            ? data.coverage : Coverage.unreported(coverageUnit);
         const liveCoverage = Coverage.merge([
-            (data.coverage instanceof Coverage) ? data.coverage : Coverage.unreported(coverageUnit),
-            classifyFilterStats(filterStats, coverageUnit)
+            loaded,
+            classifyFilterStats(filterStats, coverageUnit, { alreadyExplained: loaded })
         ], coverageUnit);
         renderCoverageNotice(plotContainer, liveCoverage, coverageUnit);
         try {

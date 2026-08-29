@@ -677,9 +677,18 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
  *
  * @param {Object} filterStats  As produced by `createFilterMask`.
  * @param {string} unit  'cells' | 'genes'.
+ * @param {Object} [opts]
+ * @param {Coverage} [opts.alreadyExplained]  The panel's LOAD coverage, if any.
+ *   When a coordinate axis is ENTIRELY absent, the series that loaded it has
+ *   already said why -- "needs a focused selection", "not in this dataset" --
+ *   and the filter mask, counting the same entities independently, adds a
+ *   second line saying they were "filtered out". Both are true; they are the
+ *   same fact twice, and the second frames a not-yet-made selection as a
+ *   filter. The arithmetic was never wrong (`merge` minimises, so nothing is
+ *   double-subtracted); only the reason list was redundant.
  * @returns {Coverage}
  */
-export function classifyFilterStats(filterStats, unit = 'values') {
+export function classifyFilterStats(filterStats, unit = 'values', { alreadyExplained = null } = {}) {
     if (!filterStats) return Coverage.unreported(unit);
 
     const total = typeof filterStats.total === 'number' ? filterStats.total : null;
@@ -688,9 +697,21 @@ export function classifyFilterStats(filterStats, unit = 'values') {
         if (count > 0) gaps.push({ reason: GAP.FILTERED, detail, source, count });
     };
 
-    add(filterStats.xNaN, 'x-axis', 'points with no x value');
-    add(filterStats.yNaN, 'y-axis', 'points with no y value');
-    add(filterStats.zNaN, 'z-axis', 'points with no z value');
+    // Suppression is deliberately narrow: only a coordinate axis, only when
+    // EVERY entity is missing on it, and only when the loaders already reported
+    // a gap. A partially-NaN axis is a genuine filter and still says so, and
+    // colour is never suppressed -- with hide-NaN on it removes points that the
+    // colour series' own DESCRIBES coverage does not account for, so dropping
+    // that line would hide a real consequence rather than a duplicate one.
+    const explained = (alreadyExplained instanceof Coverage) && !alreadyExplained.isComplete;
+    const addAxis = (count, source, detail) => {
+        if (explained && total !== null && count === total) return;
+        add(count, source, detail);
+    };
+
+    addAxis(filterStats.xNaN, 'x-axis', 'points with no x value');
+    addAxis(filterStats.yNaN, 'y-axis', 'points with no y value');
+    addAxis(filterStats.zNaN, 'z-axis', 'points with no z value');
     if (filterStats.hideNaNActive) {
         add(filterStats.colorNaN, 'colour', 'points with no colour value (hide-NaN is on)');
     }

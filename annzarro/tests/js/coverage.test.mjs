@@ -407,3 +407,68 @@ test('classifyValues carries the role through every branch', () => {
             `role lost for a ${values.length}-value column`);
     }
 });
+
+
+/* ================================================================== *
+ * One condition, ONE reason line.                                     *
+ *                                                                     *
+ * An axis that is entirely absent gets described twice: once by the    *
+ * series that loaded it, once by the filter mask counting the same     *
+ * NaNs. The arithmetic was always right -- merge minimises, so nothing *
+ * is double-subtracted -- but the second line frames a not-yet-made    *
+ * selection as a filter.                                               *
+ * ================================================================== */
+
+test('a fully-absent axis is not also reported as filtered', () => {
+    const loaded = Coverage.missing(GAP.UNFOCUSED,
+        'this column is measured relative to a focused cell, and none is focused yet',
+        { source: 'obsp.conn', unit: 'cells', total: 200 });
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { alreadyExplained: loaded });
+    const panel = Coverage.merge([loaded, filters], 'cells');
+
+    assert.equal(panel.lines().length, 1, `got: ${JSON.stringify(panel.lines())}`);
+    assert.match(panel.lines()[0], /focused/);
+    assert.equal(panel.shown, 0, 'and the count is unchanged');
+    assert.equal(panel.total, 200);
+});
+
+test('a PARTIALLY absent axis is still reported as filtered', () => {
+    // The suppression must not swallow a genuine filter. Only an axis missing
+    // EVERY entity is a duplicate of its series-level reason.
+    const loaded = Coverage.partial(150, 200, GAP.FAILED, 'short read',
+        { source: 'obs.x', unit: 'cells' });
+    const filters = classifyFilterStats(
+        { xNaN: 50, yNaN: 0, zNaN: 0, total: 200, filtered: 50 },
+        'cells', { alreadyExplained: loaded });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /x-axis/);
+});
+
+test('a fully-NaN axis IS reported when the loaders reported nothing', () => {
+    // Without a series-level explanation the filter line is the only reason
+    // the user gets, so suppressing it would restore silence.
+    const filters = classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 },
+        'cells', { alreadyExplained: Coverage.complete(200, 'cells') });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /x-axis/);
+    // and with no argument at all
+    assert.equal(classifyFilterStats(
+        { xNaN: 200, yNaN: 0, zNaN: 0, total: 200, filtered: 200 }, 'cells').gaps.length, 1);
+});
+
+test('colour NaN is never suppressed', () => {
+    // With hide-NaN on, an unreadable colour column REMOVES points -- a real
+    // consequence its own DESCRIBES coverage does not account for. Dropping
+    // that line would hide a fact, not a duplicate.
+    const loaded = Coverage.missing(GAP.UNAVAILABLE, 'not here',
+        { source: 'obs.ct', unit: 'cells', total: 200 });
+    const filters = classifyFilterStats(
+        { xNaN: 0, yNaN: 0, zNaN: 0, colorNaN: 200, total: 200, filtered: 200,
+          hideNaNActive: true },
+        'cells', { alreadyExplained: loaded });
+    assert.equal(filters.gaps.length, 1);
+    assert.match(filters.lines()[0], /colour/);
+});
