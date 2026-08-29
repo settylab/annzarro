@@ -583,3 +583,50 @@ test('a coverage whose ONLY gap is UNREPORTED explains nothing, counts or not', 
     assert.equal(filters.gaps.length, 1, '...but names no reason, so it explains nothing');
     assert.match(filters.lines()[0], /x-axis/);
 });
+
+test('SWEEP: across the rule\'s whole input domain, the panel never overstates what is drawn', () => {
+    // Hand-picked fixtures drawn from the conditions a rule was written for
+    // cannot fail where that rule is wrong -- which is how the panel-wide
+    // version of this suppression passed every test it had. So sweep the
+    // domain instead and assert two invariants over all of it.
+    const T = 200;
+    const covs = {
+        'undefined': undefined,
+        'null': null,
+        'non-Coverage object': { shown: 0, total: T, gaps: [{ reason: 'failed' }] },
+        'unreported()': Coverage.unreported('cells'),
+        'complete(200)': Coverage.complete(T, 'cells'),
+        'missing UNFOCUSED': Coverage.missing(GAP.UNFOCUSED, 'd', { unit: 'cells', total: T }),
+        'missing EMPTY': Coverage.missing(GAP.EMPTY, 'd', { unit: 'cells', total: T }),
+        'missing FAILED total=150': Coverage.missing(GAP.FAILED, 'd', { unit: 'cells', total: 150 }),
+        'partial 0/200': Coverage.partial(0, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'partial 50/200': Coverage.partial(50, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'partial 150/200': Coverage.partial(150, T, GAP.FAILED, 'd', { unit: 'cells' }),
+        'unreported gap WITH counts': new Coverage({
+            shown: 0, total: T, unit: 'cells',
+            gaps: [{ reason: GAP.UNREPORTED, detail: 'nobody said' }] }),
+    };
+    const violations = [];
+    for (const [name, cov] of Object.entries(covs)) {
+        for (const xNaN of [0, 1, 50, 199, 200]) {
+            if (xNaN === 0) continue;
+            const filters = classifyFilterStats(
+                { xNaN, yNaN: 0, zNaN: 0, total: T, filtered: xNaN },
+                'cells', { axisCoverage: { x: cov } });
+            const load = (cov instanceof Coverage) ? cov : Coverage.unreported('cells');
+            const panel = Coverage.merge([load, filters], 'cells');
+
+            // (1) entities are missing, so SOME reason must reach the user.
+            if (panel.lines().length === 0) violations.push(`${name} xNaN=${xNaN}: no reason named`);
+            // (2) the panel must never claim more shown than are actually drawn.
+            const drawn = T - xNaN;
+            if (typeof panel.shown === 'number' && panel.shown > drawn) {
+                violations.push(`${name} xNaN=${xNaN}: claims shown=${panel.shown}, only ${drawn} drawn`);
+            }
+        }
+    }
+    assert.deepEqual(violations, [], violations.join('\n'));
+    // The panel-wide predicate violates (2) on three of these: `unreported()`,
+    // `partial 50/200` and `partial 150/200`, each at xNaN=200 -- the last two
+    // are cases no hand-written fixture in this file had named.
+});
