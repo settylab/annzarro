@@ -996,7 +996,17 @@ function ensureFilterWidget(plotContainer) {
  * had produced a perfectly good one. Silence, which is the defect this whole
  * module exists to end.
  *
- * Both paths now call this, so they cannot drift again.
+ * Both paths now call this for x/y/z, so those cannot drift again.
+ *
+ * `colorCoverage` is NOT yet migrated and still has the shape this function
+ * exists to repair: one writer (the full render) and two readers.
+ * `loadColorDataAndUpdatePlot` replaces `data.color`, `colorType` and
+ * `colorCategories` without touching `colorCoverage`, so after switching to a
+ * healthy colour column the panel still announces the OLD column's failure.
+ * That is unchanged from before this function existed -- the same stale value
+ * previously travelled via `data.coverage` -- and it over-reports rather than
+ * falling silent, which is the safe direction. It is stated here rather than
+ * claimed fixed: settylab/annzarro#40.
  *
  * @param {Object} data  The panel's data object; reads `x`/`y`/`z`.coverage
  *   and `colorCoverage`.
