@@ -5,7 +5,10 @@ import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
-import { encodeView, decodeView, normalizeView } from './utils/deeplink.js';
+import {
+    VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
+    parseDeepLinkLocation, buildDeepLinkUrl
+} from './utils/deeplink.js';
 
 const App = (function() {
     // Private variables
@@ -40,7 +43,7 @@ const App = (function() {
             
             // Check for autosave session before initializing panel manager.
             //
-            // Parse the deep-link up front: a deep-link (?dataset_path=...&view=...)
+            // Parse the deep-link up front: a deep-link (?dataset_path=...#view=...)
             // takes precedence over the autosave session, so when one is present we
             // must NOT show the "restoring previous panel set" spinner. That spinner
             // is only ever cleared as a side effect of a panel being created, so a
@@ -49,7 +52,7 @@ const App = (function() {
             // deep-link boots into the normal Welcome tile, which is the correct
             // fallback whenever nothing opens.
             const autosave = SessionManager.getAutosaveSession();
-            const deepLink = _parseDeepLink();
+            const deepLink = await _parseDeepLink();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
 
             // Initialize panel manager with autosave information
@@ -97,7 +100,15 @@ const App = (function() {
             window.addEventListener('beforeunload', async () => {
                 await SessionManager.saveToLocalStorage();
             });
-            
+
+            // Opening another share link for the same dataset in this tab changes
+            // only the fragment, which the browser treats as in-page navigation:
+            // no reload, so the new view would silently not apply. Reload instead.
+            window.addEventListener('hashchange', () => {
+                const parts = parseDeepLinkLocation(window.location);
+                if (parts && parts.payload) window.location.reload();
+            });
+
             _isInitialized = true;
         } catch (error) {
             console.error('Error initializing application:', error);
@@ -107,33 +118,34 @@ const App = (function() {
 
     /**
      * Parse the deep-link grammar from the current URL:
-     *   ?dataset_path=<path>&view=<base64url(JSON)>
+     *   ?dataset_path=<path>#view=<payload>           (what share links emit)
+     *   ?dataset_path=<path>&view=<base64url(JSON)>   (legacy, e.g. DoLiMap)
      * `view` is optional — a bare ?dataset_path just opens the dataset with no
      * preset panels. Returns null when no dataset_path is present (normal boot).
+     * Async because a compressed payload is inflated with DecompressionStream.
      *
      * Decoding + normalization live in ./utils/deeplink.js, the single source of
      * truth shared with the Node guard and the share-link encoder, so a link this
      * parses and a link _buildShareView produces are governed by one schema.
-     * @returns {{datasetPath: string, view: Object|null}|null}
+     * @returns {Promise<{datasetPath: string, view: Object|null}|null>}
      * @private
      */
-    function _parseDeepLink() {
-        try {
-            const params = new URLSearchParams(window.location.search);
-            const datasetPath = params.get('dataset_path');
-            if (!datasetPath) return null;
-
-            let view = null;
-            const rawView = params.get('view');
-            if (rawView) {
-                view = normalizeView(decodeView(rawView));
+    async function _parseDeepLink() {
+        const parts = parseDeepLinkLocation(window.location);
+        if (!parts) return null;
+        let view = null;
+        if (parts.payload) {
+            try {
+                view = normalizeView(await decodeViewPayload(parts.payload));
+            } catch (error) {
+                // A mangled view (truncated by a mail client, say) should still
+                // open the dataset the link names rather than nothing at all.
+                console.error('Failed to decode deep-link view:', error);
+                _showNotification('Invalid deep-link',
+                    'The shared view could not be decoded; opening the dataset only.', 'error');
             }
-            return { datasetPath, view };
-        } catch (error) {
-            console.error('Failed to parse deep-link parameters:', error);
-            _showNotification('Invalid deep-link', 'The view= parameter could not be decoded.', 'error');
-            return null;
         }
+        return { datasetPath: parts.datasetPath, view };
     }
 
     /**
@@ -144,11 +156,12 @@ const App = (function() {
      * view when opened. This is the "save current layout → shareable link" half
      * of the unified serialization.
      * @param {string} datasetPath - dataset to encode (defaults to the loaded one)
-     * @returns {string} absolute URL with ?dataset_path=&view=
+     * @returns {Promise<string>} absolute URL, ?dataset_path= plus #view=
      */
-    function _buildShareView(datasetPath) {
+    async function _buildShareView(datasetPath) {
         const path = datasetPath || _lastLoadedDatasetPath || '';
         const view = {
+            v: VIEW_SCHEMA_VERSION,
             constants: {
                 focusedGene: DataManager.getFocusedGene(),
                 focusedCell: DataManager.getFocusedCell(),
@@ -156,10 +169,8 @@ const App = (function() {
             },
             layout: PanelManager.saveLayout()
         };
-        const url = new URL(window.location.origin + window.location.pathname);
-        url.searchParams.set('dataset_path', path);
-        url.searchParams.set('view', encodeView(view));
-        return url.toString();
+        return buildDeepLinkUrl(window.location.origin + window.location.pathname,
+            path, await encodeViewPayload(view));
     }
 
     /**
