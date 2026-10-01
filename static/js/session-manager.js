@@ -10,6 +10,7 @@
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
+import { errorFromResponse } from './utils/session-permissions.js';
 
 const SessionManager = (function() {
     // Private variables
@@ -148,7 +149,8 @@ const SessionManager = (function() {
             });
             
             if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
+                // Keep the server's sentence (e.g. who owns the set) instead of "FORBIDDEN"
+                return await errorFromResponse(response);
             }
             
             const result = await response.json();
@@ -238,7 +240,7 @@ const SessionManager = (function() {
             const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(name)}`);
             
             if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
+                return await errorFromResponse(response);
             }
             
             const sessionData = await response.json();
@@ -268,7 +270,7 @@ const SessionManager = (function() {
             });
             
             if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
+                return await errorFromResponse(response);
             }
             
             const result = await response.json();
@@ -379,7 +381,7 @@ const SessionManager = (function() {
             });
             
             if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
+                return await errorFromResponse(response);
             }
             
             const result = await response.json();
