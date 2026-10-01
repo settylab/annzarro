@@ -237,10 +237,14 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       break;
     }
     case 'obsp': {
+      // obsp/varp/layer "columns" are entity names chosen by focus, not a
+      // listed set, so a remembered value is only gated on the lock. There is
+      // no `columns` array in scope here (it is block-scoped to obsm/varm);
+      // referencing one threw a ReferenceError when an axis returned to obsp.
       let focused;
       if (settings.column && settings.type === 'obsp' && settings.locked) {
         focused = settings.column;
-      } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+      } else if (settings.history[type]?.columns?.[settings.key] && settings.history[type]?.locked) {
         settings.column = settings.history[type].columns[settings.key];
         focused = settings.column;
       } else {
@@ -256,7 +260,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       let focused;
       if (settings.column && settings.type === 'varp' && settings.locked) {
         focused = settings.column;
-      } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+      } else if (settings.history[type]?.columns?.[settings.key] && settings.history[type]?.locked) {
         settings.column = settings.history[type].columns[settings.key];
         focused = settings.column;
       } else {
@@ -273,7 +277,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       if (plotType === 'cells') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
           focused = settings.column;
-        } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+        } else if (settings.history[type]?.columns?.[settings.key] && settings.history[type]?.locked) {
           settings.column = settings.history[type].columns[settings.key];
           focused = settings.column;
         } else {
@@ -286,7 +290,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       } else if (plotType === 'genes') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
           focused = settings.column;
-        } else if (settings.history[type]?.columns?.[settings.key] && columns.includes(settings.history[type].columns[settings.key]) && settings.history[type]?.locked) {
+        } else if (settings.history[type]?.columns?.[settings.key] && settings.history[type]?.locked) {
           settings.column = settings.history[type].columns[settings.key];
           focused = settings.column;
         } else {
