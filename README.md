@@ -64,9 +64,30 @@ python annzarro-install.py
 
 # Manage users
 ./annzarro-cli user add
+./annzarro-cli user add --admin       # may delete/overwrite anyone's panel sets
 ./annzarro-cli user list
-./annzarro-cli user remove -u username
+./annzarro-cli user remove --username username
 ```
+
+### Sharing a Server: Login and Permissions
+
+AnnZarro never writes your datasets. The only thing users write is **panel
+sets**, saved as JSON in `<data-dir>/sessions/` and visible to every user of the
+server.
+
+- **Login** is required automatically when the server binds to anything other
+  than `127.0.0.1`/`localhost`. `--auth-disabled` (or `ANNZARRO_AUTH_DISABLED`)
+  turns it off; doing that on a network address logs a `SECURITY` warning at
+  startup and shows a "No login" badge in the header, because anyone who can
+  reach the port can then open any dataset the server can read and delete
+  every panel set. Set `auth.secret_key` to a long random value: the shipped
+  placeholder lets anyone forge a login cookie.
+- **With login**, everyone can load, export and duplicate any panel set and
+  save new ones. Deleting, renaming, or saving/importing **over** an existing
+  set is allowed only to the user who first saved it (its owner, recorded in
+  the file) and to **admins** (`user add --admin`). Sets saved before owners
+  were recorded can only be changed by an admin.
+- **Without login** (local, single-user) there are no restrictions.
 
 ### Desktop Application
 
