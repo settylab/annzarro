@@ -105,6 +105,11 @@ body {
     z-index: 100;
 }
 
+/* Clipboard-less fallback for the Share Link button: the link, ready to copy */
+.share-link-fallback {
+    max-width: 36rem;
+}
+
 .app-title {
     font-size: 1.5rem;
     margin: 0;

@@ -174,6 +174,49 @@ const App = (function() {
     }
 
     /**
+     * Header "Share Link" handler: build the link for the current view and copy
+     * it. The clipboard API needs a secure context, which a plain-http cluster
+     * node is not, so on failure the link is shown in a pre-selected field
+     * instead; the user can always copy it by hand. No modal dialogs either way.
+     * @private
+     */
+    async function _shareCurrentView() {
+        const button = document.getElementById('btn-share-link');
+        const fallback = document.getElementById('share-link-fallback');
+        const field = document.getElementById('share-link-field');
+        const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset();
+        if (!datasetPath) {
+            _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
+            return;
+        }
+
+        let link;
+        try {
+            link = await _buildShareView(datasetPath);
+        } catch (error) {
+            console.error('Building share link failed:', error);
+            _showNotification('Share link failed', error.message || 'Could not encode this view.', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(link);
+            fallback.hidden = true;
+            const label = button.querySelector('.btn-share-label');
+            label.textContent = 'Copied!';
+            clearTimeout(_shareLabelTimer);
+            _shareLabelTimer = setTimeout(() => { label.textContent = 'Share Link'; }, 2000);
+        } catch (error) {
+            console.debug('Clipboard unavailable, showing share link inline:', error);
+            field.value = link;
+            fallback.hidden = false;
+            field.focus();
+            field.select();
+        }
+    }
+    let _shareLabelTimer = null;
+
+    /**
      * Apply a parsed deep-link: load the dataset, restore the focused gene, and
      * materialize each preset panel. Reuses the standard _loadDataset path and
      * PanelManager.createPanel (the same machinery a session restore uses), so a
@@ -433,7 +476,18 @@ const App = (function() {
         if (loadSessionBtn) {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
-        
+
+        const shareLinkBtn = document.getElementById('btn-share-link');
+        if (shareLinkBtn) {
+            shareLinkBtn.addEventListener('click', _shareCurrentView);
+        }
+        const shareLinkClose = document.getElementById('share-link-close');
+        if (shareLinkClose) {
+            shareLinkClose.addEventListener('click', () => {
+                document.getElementById('share-link-fallback').hidden = true;
+            });
+        }
+
         // Setup gene and cell selectors with history navigation
         const focusedGeneSelect = document.getElementById('focused-gene');
         if (focusedGeneSelect) {
