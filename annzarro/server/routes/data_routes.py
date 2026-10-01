@@ -1158,13 +1158,16 @@ def register_data_routes(app, api_version):
         """
         if sessions_dir is None:
             sessions_dir = _get_sessions_dir()
-            
-        # Resolve to absolute paths for comparison
-        sessions_dir = os.path.abspath(sessions_dir)
-        file_path = os.path.abspath(file_path)
-        
-        # Check if the file path is within the sessions directory
-        return file_path.startswith(sessions_dir)
+
+        # A string-prefix test is not containment: "/data/sessions_old/x.json"
+        # starts with "/data/sessions". Resolve symlinks and require the file
+        # to sit DIRECTLY in the sessions directory -- sessions are never
+        # nested -- and to be a .json file, since delete honours a
+        # caller-supplied ``file`` and must not remove anything else.
+        sessions_dir = os.path.realpath(sessions_dir)
+        file_path = os.path.realpath(file_path)
+        return (os.path.dirname(file_path) == sessions_dir
+                and file_path.endswith(".json"))
     
     def _sanitize_session_name(name):
         """
@@ -1536,7 +1539,9 @@ def register_data_routes(app, api_version):
                 session_data = json.load(f)
             
             # Update session name
-            session_data["name"] = new_name
+            # Store the SANITIZED name: list_sessions hands "name" to a client
+            # that renders it as HTML, and save/import already store it this way.
+            session_data["name"] = sanitized_new_name
             
             # Create new file path
             new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
@@ -1623,7 +1628,9 @@ def register_data_routes(app, api_version):
                 session_data = json.load(f)
             
             # Update session name and timestamp
-            session_data["name"] = new_name
+            # Store the SANITIZED name: list_sessions hands "name" to a client
+            # that renders it as HTML, and save/import already store it this way.
+            session_data["name"] = sanitized_new_name
             from datetime import datetime
             session_data["timestamp"] = datetime.now().isoformat()
             
