@@ -12,10 +12,20 @@ import logging
 import hashlib
 import base64
 import uuid
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from threading import Lock
 from pathlib import Path
 from flask import session
+
+# Cross-process file locking (POSIX). Without it, two processes (gunicorn
+# workers, or the server and `annzarro user add`) can interleave their
+# read-modify-write of users.json; the thread lock alone cannot see them.
+try:
+    import fcntl
+except ImportError:  # Windows: the desktop app is single-process
+    fcntl = None
 
 # JWT support (if available)
 try:
@@ -109,6 +119,7 @@ class AuthManager:
         self.lockout_time = lockout_time
         self.users = {}  # {username: User}
         self.file_lock = Lock()  # For thread safety
+        self._file_stamp = None  # (mtime_ns, size) of users.json as last read
         
         # Create directory if needed
         os.makedirs(os.path.dirname(os.path.abspath(self.user_file)), exist_ok=True)
@@ -119,31 +130,107 @@ class AuthManager:
         # Load existing users
         self._load_users()
     
+    def _stamp(self):
+        """(mtime_ns, size) of the users file, or None if it does not exist."""
+        try:
+            st = os.stat(self.user_file)
+            return (st.st_mtime_ns, st.st_size)
+        except FileNotFoundError:
+            return None
+
+    def _read_users_file(self):
+        """Parse the users file into {username: User}; {} if it does not exist."""
+        if not os.path.exists(self.user_file):
+            return {}
+        with open(self.user_file, 'r') as f:
+            data = json.load(f)
+        return {username: User.from_dict(user_data) for username, user_data in data.items()}
+
     def _load_users(self):
         """Load users from file"""
         try:
-            if os.path.exists(self.user_file):
-                with open(self.user_file, 'r') as f:
-                    data = json.load(f)
-                    for username, user_data in data.items():
-                        self.users[username] = User.from_dict(user_data)
-                logging.info(f"Loaded {len(self.users)} users from {self.user_file}")
-            else:
+            stamp = self._stamp()
+            self.users = self._read_users_file()
+            self._file_stamp = stamp
+            if stamp is None:
                 logging.info(f"User file {self.user_file} not found, starting with empty user list")
+            else:
+                logging.info(f"Loaded {len(self.users)} users from {self.user_file}")
         except Exception as e:
             logging.error(f"Error loading users: {e}")
-    
-    def _save_users(self):
-        """Save users to file with thread safety"""
-        try:
+
+    def _reload_if_changed(self):
+        """Pick up changes another process made to the users file.
+
+        `annzarro user add/remove` edits the file while the server runs; this
+        makes a new user, a removed user or a new admin take effect without a
+        restart. One stat() per call.
+        """
+        if self._stamp() != self._file_stamp:
             with self.file_lock:
-                user_data = {username: user.to_dict() for username, user in self.users.items()}
-                with open(self.user_file, 'w') as f:
-                    json.dump(user_data, f, indent=2)
+                self._load_users()
+
+    @contextmanager
+    def _locked_file(self):
+        """Hold the thread lock and, where available, an exclusive file lock."""
+        with self.file_lock:
+            if fcntl is None:
+                yield
+                return
+            with open(self.user_file + ".lock", "a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _save_users(self, changed=(), created=(), removed=()):
+        """Write this process's changes to the users file without losing anyone else's.
+
+        The file is re-read under an exclusive lock and only the named users
+        are applied on top of it: ``created`` are added, ``changed`` replace
+        their on-disk record only if it still exists (so a user removed
+        meanwhile is not resurrected by their own failed login), ``removed``
+        are deleted. Everything else comes from disk. Previously the whole
+        in-memory table was dumped, so a user added by the CLI while the
+        server ran vanished at the next login.
+
+        The write goes to a temporary file that replaces users.json in one
+        step, so a crash or a concurrent reader never sees half a file.
+        """
+        try:
+            with self._locked_file():
+                merged = self._read_users_file()
+                for username in created:
+                    merged[username] = self.users[username]
+                for username in changed:
+                    if username in merged and username in self.users:
+                        merged[username] = self.users[username]
+                for username in removed:
+                    merged.pop(username, None)
+
+                directory = os.path.dirname(os.path.abspath(self.user_file))
+                fd, tmp = tempfile.mkstemp(prefix=".users_", suffix=".json", dir=directory)
+                try:
+                    with os.fdopen(fd, 'w') as f:
+                        json.dump({u: user.to_dict() for u, user in merged.items()}, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    # Keep the existing file's permissions; a new one stays 0600
+                    if os.path.exists(self.user_file):
+                        os.chmod(tmp, os.stat(self.user_file).st_mode & 0o777)
+                    os.replace(tmp, self.user_file)
+                except BaseException:
+                    if os.path.exists(tmp):
+                        os.unlink(tmp)
+                    raise
+
+                self.users = merged
+                self._file_stamp = self._stamp()
             logging.debug(f"Saved {len(self.users)} users to {self.user_file}")
         except Exception as e:
             logging.error(f"Error saving users: {e}")
-    
+
     def create_user(self, username, password, is_admin=False):
         """
         Create a new user
@@ -156,6 +243,7 @@ class AuthManager:
         Returns:
             bool: Success status
         """
+        self._reload_if_changed()
         if username in self.users:
             logging.warning(f"Cannot create user: Username {username} already exists")
             return False
@@ -171,7 +259,7 @@ class AuthManager:
             
         # Create user
         self.users[username] = User(username, password_hash, is_admin)
-        self._save_users()
+        self._save_users(created=[username])
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
     
@@ -188,6 +276,7 @@ class AuthManager:
         """
         logging.info(f"Authentication attempt for user: {username}")
         
+        self._reload_if_changed()
         if username not in self.users:
             logging.warning(f"Authentication failed: User {username} not found")
             return False
@@ -212,7 +301,7 @@ class AuthManager:
             # Reset login attempts on success
             user.login_attempts = 0
             user.last_login = datetime.now().isoformat()
-            self._save_users()
+            self._save_users(changed=[username])
             logging.info(f"User {username} authenticated successfully")
             return True
         else:
@@ -225,7 +314,7 @@ class AuthManager:
                 logging.warning(f"Account {username} locked for {self.lockout_time} seconds after "
                                f"{user.login_attempts} failed attempts")
             
-            self._save_users()
+            self._save_users(changed=[username])
             logging.warning(f"Authentication failed for user {username}: Invalid password "
                            f"(attempt {user.login_attempts}/{self.max_login_attempts})")
             return False
@@ -266,7 +355,7 @@ class AuthManager:
         # Store token with expiration
         expiry = time.time() + (TOKEN_EXPIRY_HOURS * 3600)
         user.tokens[token] = expiry
-        self._save_users()
+        self._save_users(changed=[username])
         
         logging.info(f"Created token for user {username}, expires in {TOKEN_EXPIRY_HOURS} hours")
         return token
@@ -310,7 +399,7 @@ class AuthManager:
                     else:
                         # Token expired
                         self._clean_expired_tokens(user)
-                        self._save_users()
+                        self._save_users(changed=[username])
                         logging.warning(f"Token validation failed: Token expired")
                         return False
             
@@ -349,6 +438,7 @@ class AuthManager:
         Returns:
             User: User object or None if not found
         """
+        self._reload_if_changed()
         return self.users.get(username)
         
     def get_users(self):
@@ -358,6 +448,7 @@ class AuthManager:
         Returns:
             dict: Dictionary of username to User objects
         """
+        self._reload_if_changed()
         return self.users
         
     def add_user(self, username, password, is_admin=False):
@@ -384,13 +475,14 @@ class AuthManager:
         Returns:
             bool: Success status
         """
+        self._reload_if_changed()
         if username not in self.users:
             logging.warning(f"Cannot remove user: User {username} not found")
             return False
             
         # Remove user
         del self.users[username]
-        self._save_users()
+        self._save_users(removed=[username])
         logging.info(f"Removed user: {username}")
         return True
     

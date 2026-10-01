@@ -786,7 +786,8 @@ def main(argv: List[str] = None) -> int:
         '--admin', action='store_true',
         help="Make user an admin: may delete, rename or overwrite ANY shared panel set "
              "(others may only change sets they saved; sets saved before owners were "
-             "recorded are admin-only). Grants nothing else. Takes effect at next server start.")
+             "recorded are admin-only). Grants nothing else. A running server picks it up "
+             "without a restart.")
     
     # User remove command
     user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")

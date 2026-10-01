@@ -65,6 +65,7 @@ python annzarro-install.py
 # Manage users
 ./annzarro-cli user add
 ./annzarro-cli user add --admin       # may delete/overwrite anyone's panel sets
+                                      # (a running server sees user changes at once)
 ./annzarro-cli user list
 ./annzarro-cli user remove --username username
 ```
