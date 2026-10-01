@@ -137,7 +137,8 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Setup logging
     setup_logging(app.config)
-    
+    warn_about_exposure(app.config)
+
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
     configure_zarr_reader(app.config)
@@ -171,6 +172,55 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     register_routes(app)
     
     return app
+
+#: Shipped placeholder secrets. A session cookie signed with a published key
+#: can be forged by anyone -- including one that says "I am the admin".
+PLACEHOLDER_SECRET_KEYS = {
+    "change-this-in-production",
+    "change-this-to-a-secure-random-value",
+}
+
+
+def warn_about_exposure(config: Dict[str, Any]) -> None:
+    """Say loudly, at startup, when the server is reachable by people it can't tell apart.
+
+    Two configurations look fine from the outside and are not:
+
+    * listening beyond localhost with login disabled: anyone who can reach the
+      port can read any dataset the process can read and edit or delete every
+      shared panel set;
+    * login enabled with a shipped placeholder ``secret_key``: session cookies
+      are signed with a public key, so login can be bypassed by forging one.
+
+    Both are logged at WARNING inside a banner, because an INFO line in a
+    scrolling log is exactly how a deployment ran unprotected unnoticed.
+    """
+    from .permissions import is_exposed
+
+    problems = []
+    if is_exposed(config):
+        problems.append(
+            f"Listening on {config.get('host')} with login DISABLED. Anyone who can "
+            "reach this port can list directories and read any dataset this "
+            "process can read (paths are not confined to data_dir), and edit or "
+            "delete every shared panel set. Remove --auth-disabled / "
+            "ANNZARRO_AUTH_DISABLED and add users with `annzarro user add`, or "
+            "bind to 127.0.0.1."
+        )
+    if config.get("auth_enabled", False) and config.get("secret_key") in PLACEHOLDER_SECRET_KEYS:
+        problems.append(
+            "Login is enabled but secret_key is the shipped placeholder. Session "
+            "cookies can be forged by anyone who has read this source, which "
+            "bypasses login. Set auth.secret_key to a long random value."
+        )
+    if not problems:
+        return
+    bar = "!" * 78
+    logger.warning(bar)
+    for problem in problems:
+        logger.warning("SECURITY: %s", problem)
+    logger.warning(bar)
+
 
 def configure_app(app: Flask, config: Dict[str, Any]) -> None:
     """

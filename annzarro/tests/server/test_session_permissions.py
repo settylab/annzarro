@@ -275,3 +275,24 @@ def test_rename_stores_the_sanitized_name(open_app):
     assert resp.status_code == 200
     names = [s["name"] for s in client.get(f"{API}/list").get_json()]
     assert all("<" not in n for n in names), names
+
+
+# --- startup warnings -------------------------------------------------------
+
+def test_startup_warns_when_exposed_without_login(caplog):
+    from annzarro.server.core import warn_about_exposure
+    with caplog.at_level("WARNING"):
+        warn_about_exposure({"host": "0.0.0.0", "auth_enabled": False})
+    assert "login DISABLED" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        warn_about_exposure({"host": "0.0.0.0", "auth_enabled": True,
+                             "secret_key": "change-this-in-production"})
+    assert "placeholder" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        warn_about_exposure({"host": "127.0.0.1", "auth_enabled": False})
+        warn_about_exposure({"host": "0.0.0.0", "auth_enabled": True, "secret_key": "s3cret"})
+    assert "SECURITY" not in caplog.text
