@@ -85,3 +85,48 @@ test('a locked history entry is restored for obsp', () => {
     populateColumnSelector(settings, fakeSelect(), 'x', 'cells', {});
     assert.equal(settings.column, 'cell_3');
 });
+
+// ---------------------------------------------------------------------------
+// A new plot must not default to an EMPTY matrix source.
+//
+// With no varm, a gene plot's x/y became { type: 'varm', key: '' } and
+// initializeUIState threw "No key selected for x-axis after initialization".
+// ---------------------------------------------------------------------------
+const { defaultAxisType, chooseDefaultAxes } =
+    await import('../../../static/js/panels/plot-utilities/panel-ui-update.js');
+
+const NO_VARM = {
+    var: { columns: ['_index', 'gene_ids', 'highly_variable', 'means', 'dispersions'] },
+    varm: { keys: [], dataframes: {} }
+};
+const WITH_VARM = {
+    var: { columns: ['_index', 'means'] },
+    varm: { keys: ['PCs'], dataframes: { PCs: { columns: ['0', '1', '2'] } } }
+};
+
+test('gene plot without varm defaults its axes to var', () => {
+    assert.equal(defaultAxisType('genes', NO_VARM), 'var');
+    assert.equal(defaultAxisType('genes', {}), 'var');
+    const axes = chooseDefaultAxes('genes', NO_VARM);
+    assert.deepEqual(axes.x, { type: 'var', key: 'means', column: '' });
+    assert.deepEqual(axes.y, { type: 'var', key: 'dispersions', column: '' });
+    assert.equal(axes.z, undefined);
+});
+
+test('gene plot with varm keeps defaulting to varm', () => {
+    assert.equal(defaultAxisType('genes', WITH_VARM), 'varm');
+    const axes = chooseDefaultAxes('genes', WITH_VARM);
+    assert.deepEqual(axes.x, { type: 'varm', key: 'PCs', column: '0' });
+    assert.deepEqual(axes.z, { type: 'varm', key: 'PCs', column: '2' });
+});
+
+test('cell plot keeps preferring X_umap in obsm', () => {
+    const s = { obsm: { keys: ['X_pca', 'X_umap'], dataframes: {
+        X_pca: { columns: ['0', '1'] }, X_umap: { columns: ['0', '1'] } } } };
+    assert.equal(defaultAxisType('cells', s), 'obsm');
+    assert.equal(chooseDefaultAxes('cells', s).x.key, 'X_umap');
+});
+
+test('nothing usable yields null rather than a half-built axis', () => {
+    assert.equal(chooseDefaultAxes('genes', { var: { columns: ['_index'] } }), null);
+});

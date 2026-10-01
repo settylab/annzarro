@@ -1,4 +1,4 @@
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
+import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType } from './panel-ui-update.js';
 import { loadAxisData, updateTableEntities } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -165,7 +165,11 @@ export function setupPlotControlListeners(
               zColumn = df.columns.at(-1); // fallback to last column
             }
           }
-          settings.z = { type: plotType === 'genes' ? 'varm' : 'obsm', key: yKey, column: zColumn };
+          const zType = defaultAxisType(plotType, datasetStructure);
+          settings.z = (zType === 'varm' || zType === 'obsm')
+            ? { type: zType, key: yKey, column: zColumn }
+            // No matrix source: let the selector pick an annotation column.
+            : { type: zType, key: '', column: '' };
           // Call the axis selector setup helper from the controls object.
           setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
         }

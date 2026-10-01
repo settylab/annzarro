@@ -3,6 +3,93 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 
+// Annotation columns that are numeric in a typical scanpy/anndata object, in
+// the order we would rather plot them. Used only when the matrix source is
+// absent, so a dataset without varm (or obsm) still opens on something real.
+const PREFERRED_ANNOTATION_AXES = {
+  genes: ['means', 'mean', 'dispersions_norm', 'dispersions', 'variances_norm', 'variances',
+          'mean_counts', 'total_counts', 'n_cells_by_counts', 'n_cells', 'pct_dropout_by_counts'],
+  cells: ['total_counts', 'n_genes_by_counts', 'n_genes', 'n_counts', 'pct_counts_mt']
+};
+
+/**
+ * Whether a dataset has at least one entry in a matrix collection (obsm/varm).
+ * @param {Object} datasetStructure - Structure of the loaded dataset
+ * @param {string} collection - 'obsm' or 'varm'
+ * @returns {boolean}
+ */
+export function hasMatrixEntries(datasetStructure, collection) {
+  const entry = datasetStructure?.[collection];
+  return Object.keys(entry?.dataframes || {}).length > 0 || (entry?.keys?.length || 0) > 0;
+}
+
+/**
+ * The source a fresh x/y/z axis starts on: the matrix collection (varm for
+ * gene plots, obsm for cell plots) when the dataset has one, otherwise the
+ * annotation dataframe (var / obs). Defaulting to an EMPTY varm left the axis
+ * with no key, and initializeUIState then threw "No key selected".
+ * @param {string} plotType - Either 'cells' or 'genes'
+ * @param {Object} datasetStructure - Structure of the loaded dataset
+ * @returns {string}
+ */
+export function defaultAxisType(plotType, datasetStructure) {
+  const matrix = plotType === 'genes' ? 'varm' : 'obsm';
+  const annotation = plotType === 'genes' ? 'var' : 'obs';
+  return hasMatrixEntries(datasetStructure, matrix) ? matrix : annotation;
+}
+
+/**
+ * Default x/y (and possibly z) axes for a new plot.
+ *
+ * Prefers a matrix embedding (X_umap, then X_pca, then the first entry); when
+ * there is no usable one, falls back to two distinct annotation columns.
+ * @param {string} plotType - Either 'cells' or 'genes'
+ * @param {Object} datasetStructure - Structure of the loaded dataset
+ * @returns {{x: Object, y: Object, z?: Object}|null} null when nothing usable exists
+ */
+export function chooseDefaultAxes(plotType, datasetStructure) {
+  const isGenePlot = plotType === 'genes';
+  const collection = isGenePlot ? 'varm' : 'obsm';
+  const dataframeCollection = datasetStructure?.[collection]?.dataframes;
+
+  if (dataframeCollection && Object.keys(dataframeCollection).length > 0) {
+    const dataframeKeys = Object.keys(dataframeCollection);
+    // Try UMAP first, then look for a key starting with "X_umap", then try PCA, then use the first available key
+    const defaultKey =
+      dataframeKeys.includes("X_umap") ? "X_umap" :
+      dataframeKeys.find(k => k.startsWith("X_umap")) ||
+      (dataframeKeys.includes("X_pca") ? "X_pca" : dataframeKeys[0]);
+    const columns = dataframeCollection[defaultKey]?.columns || [];
+    if (columns.length >= 2) {
+      const axes = {
+        x: { type: collection, key: defaultKey, column: columns[0] },
+        y: { type: collection, key: defaultKey, column: columns[1] }
+      };
+      if (columns.length >= 3) {
+        axes.z = { type: collection, key: defaultKey, column: columns[2] };
+      }
+      return axes;
+    }
+    console.warn(`No usable columns in ${collection} dataframe "${defaultKey}"`);
+  } else {
+    console.warn(`No ${collection} dataframes available`);
+  }
+
+  // Fall back to the annotation dataframe (var / obs).
+  const annotation = isGenePlot ? 'var' : 'obs';
+  const available = (datasetStructure?.[annotation]?.columns || []).filter(c => c !== '_index');
+  const preferred = PREFERRED_ANNOTATION_AXES[plotType] || [];
+  const ordered = [
+    ...preferred.filter(c => available.includes(c)),
+    ...available.filter(c => !preferred.includes(c))
+  ];
+  if (ordered.length < 2) return null;
+  return {
+    x: { type: annotation, key: ordered[0], column: '' },
+    y: { type: annotation, key: ordered[1], column: '' }
+  };
+}
+
 /**
  * Populates only the key selector for a given axis.
  * @param {Object} settings - Axis settings object (will be updated)
@@ -358,9 +445,8 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
   
     // Initialize if completely empty
     if (!settings.type) {
-      // Default to 'none' for color, otherwise use varm/obsm
-      settings.type = axis === 'color' ? 'none' : 
-                      (plotType === 'genes' ? 'varm' : 'obsm');
+      // Default to 'none' for color, otherwise varm/obsm when present, else var/obs
+      settings.type = axis === 'color' ? 'none' : defaultAxisType(plotType, datasetStructure);
     }
     
     // Initialize other required fields
