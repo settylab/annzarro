@@ -93,6 +93,15 @@ ln -s /path/to/your-dataset.zarr data/
 ./annzarro-cli start --data-dir /path/to/datasets
 ```
 
+### Sharing a view
+
+**Share Link** in the header copies a URL that reopens the current dataset with
+the same split layout, panel settings and focused cell/gene. The view travels
+compressed in the URL fragment (`?dataset_path=…#view=…`), so it never reaches
+the server and long layouts do not hit request-line limits. Without clipboard
+access (e.g. plain http on a cluster node) the link is shown for manual copying.
+See [docs/deep-link-schema.md](docs/deep-link-schema.md) for the format.
+
 ## Development
 
 ```bash
