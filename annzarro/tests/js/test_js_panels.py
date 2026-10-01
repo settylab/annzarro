@@ -14,6 +14,9 @@ JS_TEST_DIR = os.path.dirname(_THIS)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(JS_TEST_DIR)))
 SUITES = {
     "cache-keys.test.mjs": os.path.join(REPO_ROOT, "static", "js", "cache-manager.js"),
+    "color-range-ui.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
+    ),
     "focus-row.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "coverage.js"),
     "table-focus.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "table-data.js"

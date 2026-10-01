@@ -746,6 +746,13 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           settings.colorMin = dataMin;
           settings.colorMax = dataMax;
         } else {
+          // First load (e.g. a restored deep link or session) or a locked
+          // range: keep the provided values, but fill a missing one from the
+          // data -- that is what the plot itself does for cmin/cmax
+          // (plot-make.js), so the settings now say what is drawn.
+          if (settings.colorMin == null) settings.colorMin = dataMin;
+          if (settings.colorMax == null) settings.colorMax = dataMax;
+
           // Expand slider range (min, max) to include both the new data range and the locked values
           const minSliderRange = Math.min(settings.colorMin ?? dataMin, dataMin);
           const maxSliderRange = Math.max(settings.colorMax ?? dataMax, dataMax);
@@ -769,6 +776,14 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           // Do not change the locked values; just keep them
           $colorMinSlider.val(settings.colorMin ?? dataMin);
           $colorMaxSlider.val(settings.colorMax ?? dataMax);
+
+          // ...and SHOW them. Only the sliders were set here, so the number
+          // boxes kept whatever the panel template rendered: "0" and "100"
+          // when the restored config had no colorMin/colorMax (the usual case
+          // for a hand-written deep link), while the plot was coloured over
+          // the data range.
+          if ($colorMinInput.length) $colorMinInput.val(Number(settings.colorMin).toFixed(2));
+          if ($colorMaxInput.length) $colorMaxInput.val(Number(settings.colorMax).toFixed(2));
         }
 
         // Update input placeholders if fields are empty
