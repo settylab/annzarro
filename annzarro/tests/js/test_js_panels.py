@@ -13,6 +13,7 @@ _THIS = os.path.abspath(__file__)
 JS_TEST_DIR = os.path.dirname(_THIS)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(JS_TEST_DIR)))
 SUITES = {
+    "cache-keys.test.mjs": os.path.join(REPO_ROOT, "static", "js", "cache-manager.js"),
     "panel-axis-selector.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
     ),
