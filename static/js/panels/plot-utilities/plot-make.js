@@ -6,7 +6,7 @@ import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheti
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
-  classifyError, classifyFilterStats, missingEntity
+  classifyError, classifyFilterStats, missingEntity, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, drawPlaceholder } from '../../utils/panel-surface.js';
 
@@ -537,9 +537,22 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     // agreed and the ones just past it did not.
     if (!coverage) {
       const MATRIX = ['obsm', 'varm', 'obsp', 'varp', 'layer'];
-      coverage = MATRIX.includes(settings.type)
-        ? classifyMatrixColumn({ values, expected, unit, source, key: settings.key })
-        : classifyValues({ values, expected, unit, source });
+      // obsp/varp/layer are sliced AT one entity (settings.column). A slice
+      // that is full length and all blank means that entity is not covered by
+      // the matrix, and the user needs to be told which entity and what to
+      // pick instead -- see classifyFocusRow.
+      const sliceKind = settings.type === 'obsp' ? 'cell'
+        : settings.type === 'varp' ? 'gene'
+        : settings.type === 'layer' ? (plotType === 'genes' ? 'cell' : 'gene')
+        : null;
+      coverage = sliceKind
+        ? classifyFocusRow({
+            values, expected, unit, source, key: settings.key,
+            kind: sliceKind, name: settings.column, focused: !settings.locked
+          })
+        : MATRIX.includes(settings.type)
+          ? classifyMatrixColumn({ values, expected, unit, source, key: settings.key })
+          : classifyValues({ values, expected, unit, source });
     }
     return { values, type: dataType, categories, coverage };
   } catch (error) {
@@ -998,15 +1011,12 @@ function ensureFilterWidget(plotContainer) {
  *
  * Both paths now call this for x/y/z, so those cannot drift again.
  *
- * `colorCoverage` is NOT yet migrated and still has the shape this function
- * exists to repair: one writer (the full render) and two readers.
- * `loadColorDataAndUpdatePlot` replaces `data.color`, `colorType` and
- * `colorCategories` without touching `colorCoverage`, so after switching to a
- * healthy colour column the panel still announces the OLD column's failure.
- * That is unchanged from before this function existed -- the same stale value
- * previously travelled via `data.coverage` -- and it over-reports rather than
- * falling silent, which is the safe direction. It is stated here rather than
- * claimed fixed: settylab/annzarro#40.
+ * `colorCoverage` had the same one-writer/two-readers shape until
+ * `loadColorDataAndUpdatePlot` (the incremental colour path: colour dropdown,
+ * colour refocus) started writing it too (settylab/annzarro#40). Before that,
+ * after switching to a healthy colour column the panel still announced the
+ * OLD column's failure, and a refocus onto an entity the colour matrix does
+ * not cover left the plot grey with no reason given.
  *
  * @param {Object} data  The panel's data object; reads `x`/`y`/`z`.coverage
  *   and `colorCoverage`.

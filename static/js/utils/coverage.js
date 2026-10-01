@@ -636,6 +636,48 @@ export function classifyMatrixColumn({ values, expected = null, unit = 'values',
 }
 
 /**
+ * Classify the slice of a matrix taken AT one cell or gene: an obsp/varp row,
+ * or a layer row/column picked by a focused (or fixed) entity.
+ *
+ * Such a slice can be full length and entirely blank while every request
+ * succeeded: a varp written for a subset of genes (a correlation computed
+ * for highly variable genes only, say) carries all-NaN rows for every other
+ * gene. `classifyValues` then said "every entry in this column is blank
+ * (nothing was available to fill it)", which is true and does not tell the
+ * user the one thing they need -- the ENTITY they picked is not covered by
+ * this matrix, and a different one would be. Reported from a live instance:
+ * a gene plot coloured by a varp row turned uniformly grey on the dataset's
+ * default (first) gene, with nothing on screen saying why or what to do.
+ *
+ * Everything that is not "full length and all blank" goes through
+ * `classifyMatrixColumn` unchanged, so the empty-array and malformed-body
+ * rules stay shared with every other matrix read.
+ *
+ * @param {Object} spec  As `classifyMatrixColumn`, plus:
+ * @param {string} spec.kind  'cell' | 'gene' -- what the slice is taken at.
+ * @param {string} spec.name  That entity's name.
+ * @param {boolean} [spec.focused=true]  Whether it follows the focus (vs. a
+ *     fixed/locked entity); only changes the advice.
+ * @returns {Coverage}
+ */
+export function classifyFocusRow({ values, kind, name, focused = true, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS, key = '' } = {}) {
+    if (Array.isArray(values) && values.length > 0 && values.every(isBlank) && name) {
+        const matrix = key || source;
+        const who = focused ? `the focused ${kind} "${name}"` : `the ${kind} "${name}"`;
+        const fix = focused
+            ? `focus a ${kind} that "${matrix}" covers`
+            : `pick a ${kind} that "${matrix}" covers`;
+        return Coverage.missing(
+            GAP.EMPTY,
+            `${who} has no values in "${matrix}" (every entry for it is blank), `
+            + `so this matrix does not cover it -- ${fix}`,
+            { source, unit, total: expected, role }
+        );
+    }
+    return classifyMatrixColumn({ values, expected, unit, source, role, key });
+}
+
+/**
  * Turn a rejected request into a Coverage, preserving the server's reason.
  *
  * `DataManager._fetchWithCache` attaches the parsed error body as `error.data`

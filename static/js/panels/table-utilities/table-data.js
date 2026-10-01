@@ -5,7 +5,7 @@ import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
-    classifyError, missingEntity
+    classifyError, missingEntity, classifyFocusRow
 } from '../../utils/coverage.js';
 
 /**
@@ -218,11 +218,19 @@ async function loadColumnData(column, entityType, signal = null) {
             // plot's alone, and reading this identical body without it is what
             // made the table say "failed to read" (error) beside the plot's
             // "not in this dataset" (warning), on one page.
+            // A slice taken AT one entity (obsp/varp row, layer row/column)
+            // carries `slice`, so an all-blank one names that entity and the
+            // fix -- the same sentence the plot gives (classifyFocusRow).
             return {
                 values: loaded.values,
-                coverage: classifyMatrixColumn({
-                    values: loaded.values, expected, key: loaded.matrixKey, ...opts
-                })
+                coverage: loaded.slice
+                    ? classifyFocusRow({
+                        values: loaded.values, expected, key: loaded.matrixKey,
+                        ...loaded.slice, ...opts
+                    })
+                    : classifyMatrixColumn({
+                        values: loaded.values, expected, key: loaded.matrixKey, ...opts
+                    })
             };
         }
         if (loaded.unsupported) {
@@ -271,6 +279,8 @@ async function loadColumnData(column, entityType, signal = null) {
  *     built by `missingEntity`, shared with the plot.
  *   - `matrixKey` -- this came from an obsm/varm/obsp/varp/layer member, whose
  *     "empty array means the KEY is absent" contract differs from obs/var's.
+ *   - `slice` -- `{kind, name, focused}` when that read was taken AT one cell
+ *     or gene (obsp/varp row, layer row/column), for `classifyFocusRow`.
  *   - `unsupported` -- an unrecognised column type; a defect in this function.
  *
  * Callers must go through `loadColumnData`, which attaches the Coverage.
@@ -322,7 +332,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: firstRow(obspData.data), matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key,
+                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -337,7 +348,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: firstRow(obspData.data), matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key,
+                                 slice: { kind: 'cell', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -356,7 +368,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -371,7 +384,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'gene', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -405,7 +419,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: firstRow(varpData.data), matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key,
+                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -420,7 +435,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: firstRow(varpData.data), matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key,
+                                 slice: { kind: 'gene', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -439,7 +455,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -454,7 +471,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'cell', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
