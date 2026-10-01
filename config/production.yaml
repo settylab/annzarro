@@ -28,7 +28,7 @@ server:
 
 auth:
   user_file: "config/auth/users.json"  # Use the same file as development by default
-  secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this in a real production environment!
+  # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
   #enabled: true
 
 # Proxy configuration is part of the server section above

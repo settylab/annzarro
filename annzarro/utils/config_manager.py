@@ -341,9 +341,6 @@ class ConfigManager:
         
         # Validate auth configuration
         if self.config.get("auth", {}).get("enabled", False):
-            if not self.config.get("auth", {}).get("secret_key"):
-                errors.append("Authentication is enabled but no secret_key is set")
-                
             if not self.config.get("auth", {}).get("user_file"):
                 errors.append("Authentication is enabled but no user_file is set")
         
@@ -388,7 +385,8 @@ class ConfigManager:
             auth_config = self.config["auth"]
             flask_config["auth_enabled"] = auth_config.get("enabled", False)
             flask_config["user_file"] = auth_config.get("user_file", "users.json")
-            flask_config["secret_key"] = auth_config.get("secret_key", "change-this-in-production")
+            # None => a key is generated and stored beside the users file
+            flask_config["secret_key"] = auth_config.get("secret_key")
         
         # Branding section
         if "branding" in self.config:

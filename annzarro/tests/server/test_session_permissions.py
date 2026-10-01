@@ -287,12 +287,6 @@ def test_startup_warns_when_exposed_without_login(caplog):
 
     caplog.clear()
     with caplog.at_level("WARNING"):
-        warn_about_exposure({"host": "0.0.0.0", "auth_enabled": True,
-                             "secret_key": "change-this-in-production"})
-    assert "placeholder" in caplog.text
-
-    caplog.clear()
-    with caplog.at_level("WARNING"):
         warn_about_exposure({"host": "127.0.0.1", "auth_enabled": False})
         warn_about_exposure({"host": "0.0.0.0", "auth_enabled": True, "secret_key": "s3cret"})
     assert "SECURITY" not in caplog.text

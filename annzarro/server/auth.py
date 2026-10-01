@@ -77,6 +77,14 @@ class User:
         user.locked_until = data.get('locked_until')
         return user
 
+def resolve_user_file(user_file):
+    """Absolute path of the users file; relative paths are taken from the package root."""
+    if os.path.isabs(user_file):
+        return user_file
+    package_root = Path(__file__).resolve().parent.parent.parent
+    return os.path.join(package_root, user_file)
+
+
 class AuthManager:
     """Authentication manager for Annzarro"""
     
@@ -93,12 +101,7 @@ class AuthManager:
             lockout_time (int, optional): Account lockout time in seconds. Defaults to 900.
         """
         # Handle relative paths by making them absolute from package root
-        if not os.path.isabs(user_file):
-            # Get the root directory of the package
-            package_root = Path(__file__).resolve().parent.parent.parent
-            self.user_file = os.path.join(package_root, user_file)
-        else:
-            self.user_file = user_file
+        self.user_file = resolve_user_file(user_file)
             
         self.token_secret = token_secret or secrets.token_hex(32)
         self.session_timeout = session_timeout

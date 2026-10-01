@@ -163,6 +163,8 @@ auth/*.json
 .auth/
 *.auth
 config/auth/*.json
+# Generated login cookie key (annzarro/server/secret_key.py)
+annzarro_secret_key
 # Keep the config/auth directory, but not its contents
 !config/auth/.gitkeep
 annzarro/desktop/downloads/

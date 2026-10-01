@@ -62,10 +62,8 @@ chmod -R 755 "$LOG_DIR"
 echo -e "${GREEN}Copying files to installation directory...${NC}"
 cp -R ./* "$INSTALL_DIR/"
 
-# Update configuration with secure key
-echo -e "${GREEN}Generating secure secret key...${NC}"
-RANDOM_KEY=$(openssl rand -hex 32)
-sed -i "s/change-this-to-a-secure-random-value/$RANDOM_KEY/g" "$CONFIG_FILE"
+# No secret key to set: on first start the server generates one and keeps it
+# (mode 0600) beside the users file as annzarro_secret_key.
 
 # Create systemd service
 echo -e "${GREEN}Setting up systemd service...${NC}"

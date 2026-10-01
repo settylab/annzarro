@@ -80,8 +80,11 @@ server.
   turns it off; doing that on a network address logs a `SECURITY` warning at
   startup and shows a "No login" badge in the header, because anyone who can
   reach the port can then open any dataset the server can read and delete
-  every panel set. Set `auth.secret_key` to a long random value: the shipped
-  placeholder lets anyone forge a login cookie.
+  every panel set.
+- **Login cookies** are signed with `auth.secret_key`. Leave it unset: on first
+  start a random key is generated and kept (mode 0600) beside the users file as
+  `annzarro_secret_key`, shared by every worker and reused across restarts.
+  The old shipped placeholder values are ignored with a warning.
 - **With login**, everyone can load, export and duplicate any panel set and
   save new ones. Deleting, renaming, or saving/importing **over** an existing
   set is allowed only to the user who first saved it (its owner, recorded in

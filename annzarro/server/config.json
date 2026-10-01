@@ -15,7 +15,6 @@
     "user_file": "annzarro/server/users.json",
     "workers": 4,
     "proxy_count": 0,
-    "secret_key": "change-this-in-production",
     "session_timeout": 3600,
     "rate_limits": [
         "200 per minute",
