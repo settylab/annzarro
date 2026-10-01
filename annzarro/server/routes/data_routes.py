@@ -16,6 +16,7 @@ from ...core import zarr_reader
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
+from .. import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -1184,6 +1185,25 @@ def register_data_routes(app, api_version):
         # Allow only alphanumeric characters, underscore, hyphen, and space
         return ''.join(c for c in sanitized if c.isalnum() or c in ' _-')
 
+    def _read_stored_session(file_path):
+        """
+        Read a stored panel set for a permission check.
+
+        Returns None when the file does not exist. A file that exists but
+        cannot be parsed is returned as an empty dict: it has no recorded
+        owner, so it is treated like a legacy set (admin-only), never as
+        absent -- absent would let anyone overwrite it.
+        """
+        if not os.path.exists(file_path):
+            return None
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"Unreadable session file {file_path}: {e}")
+            return {}
+
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
     def save_session():
         """
@@ -1227,6 +1247,12 @@ def register_data_routes(app, api_version):
             # Verify the file is within the sessions directory
             if not _is_safe_session_path(session_file, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
+            
+            # Saving over an existing set replaces it: same rule as delete
+            existing = _read_stored_session(session_file)
+            if not permissions.can_modify(existing):
+                return permissions.forbidden("overwrite", session_data["name"], existing)
+            permissions.stamp_session(session_data, existing)
             
             # Save session file
             with open(session_file, 'w') as f:
@@ -1280,7 +1306,11 @@ def register_data_routes(app, api_version):
                                 "dataset": session_data.get("dataset", ""),
                                 "timestamp": session_data.get("timestamp", ""),
                                 "datasetName": session_data.get("datasetName", ""),
-                                "file": session_path
+                                "file": session_path,
+                                "owner": session_data.get("owner"),
+                                "created_at": session_data.get("created_at"),
+                                "modified_at": session_data.get("modified_at"),
+                                "can_modify": permissions.can_modify(session_data)
                             })
                     except Exception as e:
                         logger.warning(f"Error reading session file {entry}: {e}")
@@ -1381,6 +1411,11 @@ def register_data_routes(app, api_version):
             # Verify again that file is within sessions directory (belt and suspenders)
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
+            
+            existing = _read_stored_session(file_path)
+            if not permissions.can_modify(existing):
+                display_name = session_name or os.path.basename(file_path)[:-len(".json")]
+                return permissions.forbidden("delete", display_name, existing)
                 
             # Delete the file
             os.remove(file_path)
@@ -1478,12 +1513,15 @@ def register_data_routes(app, api_version):
             
             # Check if file exists
             file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
-            exists = os.path.exists(file_path)
+            existing = _read_stored_session(file_path)
+            exists = existing is not None
             
             return jsonify({
                 "exists": exists,
                 "file": file_path if exists else None,
-                "sanitized_name": sanitized_name
+                "sanitized_name": sanitized_name,
+                "owner": existing.get("owner") if exists else None,
+                "can_modify": permissions.can_modify(existing)
             })
         except Exception as e:
             logger.error(f"Error checking session existence: {e}")
@@ -1538,6 +1576,10 @@ def register_data_routes(app, api_version):
             with open(old_file_path, 'r') as f:
                 session_data = json.load(f)
             
+            # Renaming removes the set from under its old name: same rule as delete
+            if not permissions.can_modify(session_data):
+                return permissions.forbidden("rename", sanitized_old_name, session_data)
+            
             # Update session name
             # Store the SANITIZED name: list_sessions hands "name" to a client
             # that renders it as HTML, and save/import already store it this way.
@@ -1556,6 +1598,9 @@ def register_data_routes(app, api_version):
                     "status": "conflict",
                     "message": f"Session with name '{new_name}' already exists."
                 }), 409
+            
+            # Ownership and creation time travel with the set
+            permissions.stamp_session(session_data, existing=dict(session_data))
             
             # Write session data to new file
             with open(new_file_path, 'w') as f:
@@ -1648,6 +1693,9 @@ def register_data_routes(app, api_version):
                     "message": f"Session with name '{new_name}' already exists."
                 }), 409
             
+            # A copy is a new set: it belongs to whoever made it
+            permissions.stamp_session(session_data, existing=None)
+            
             # Write session data to new file
             with open(new_file_path, 'w') as f:
                 json.dump(session_data, f, indent=2)
@@ -1730,12 +1778,19 @@ def register_data_routes(app, api_version):
                 return jsonify({"error": "Invalid session name in imported file"}), 400
             
             # Check if session with this name already exists
-            if os.path.exists(file_path) and not overwrite:
+            existing = _read_stored_session(file_path)
+            if existing is not None and not overwrite:
                 return jsonify({
                     "status": "conflict",
                     "message": f"Session with name '{session_data['name']}' already exists.",
                     "exists": True
                 }), 409
+            
+            # Importing over an existing set replaces it: same rule as delete.
+            # Any owner recorded INSIDE the uploaded file is discarded.
+            if not permissions.can_modify(existing):
+                return permissions.forbidden("overwrite", session_data["name"], existing)
+            permissions.stamp_session(session_data, existing)
             
             # Add timestamp if not present
             if "timestamp" not in session_data:
