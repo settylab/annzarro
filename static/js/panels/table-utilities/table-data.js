@@ -892,13 +892,35 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     return dataTable;
 }
 
+const FOCUSED_CELL_COLUMNS = new Set(['focused_cell', '_focused_cell']);
+const FOCUSED_GENE_COLUMNS = new Set(['focused_gene', '_focused_gene']);
+
+/**
+ * Whether any selected column reads the focus that just changed.
+ *
+ * A column follows the focus only through its `focused_cell` / `focused_gene`
+ * placeholder; a column naming a specific (fixed) cell or gene does not move.
+ * @param {Array<Object>} columns - The table's selected columns
+ * @param {string} changedEntityType - Which focus changed ('cells' or 'genes')
+ * @returns {boolean}
+ */
+export function focusChangeAffectsColumns(columns, changedEntityType) {
+    const placeholders = changedEntityType === 'cells' ? FOCUSED_CELL_COLUMNS
+        : changedEntityType === 'genes' ? FOCUSED_GENE_COLUMNS : null;
+    if (!placeholders || !Array.isArray(columns)) return false;
+    return columns.some(col => placeholders.has(col.column));
+}
+
 /**
  * Update table when focus changes
  * @param {Object} dataTable - The DataTables instance
  * @param {string} entity - The focused entity
- * @param {string} entityType - Type of entities ('cells' or 'genes')
+ * @param {string} entityType - Which focus changed ('cells' or 'genes')
+ * @param {string} [tableEntityType] - The table's own rows ('cells' or 'genes').
+ *     Defaults to the opposite of `entityType`, the only pairing that existed
+ *     before tables listened to both foci.
  */
-export async function updateTableOnFocusChange(dataTable, entity, entityType) {
+export async function updateTableOnFocusChange(dataTable, entity, entityType, tableEntityType) {
     // Update any layer or relation columns
     const dtSettings = dataTable.settings()[0];
     const panelSettings = dtSettings._panelSettings;
@@ -908,21 +930,13 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     if (!panelSettings || !panelSettings.columns) {
         return;
     }
+    const tableRows = tableEntityType || (entityType === 'genes' ? 'cells' : 'genes');
     
-    // Check if we need to update any columns
-    const needsUpdate = panelSettings.columns.some(col => {
-        // Check for focused entity references
-        const usesFocusedEntity = 
-            (col.column === 'focused_gene' || col.column === '_focused_gene' || 
-             col.column === 'focused_cell' || col.column === '_focused_cell');
-             
-        // Check for entity type-specific columns
-        const usesEntitySpecificColumns = 
-            (entityType === 'cells' && (col.type === 'layer' || col.type === 'varp')) || 
-            (entityType === 'genes' && (col.type === 'layer' || col.type === 'obsp'));
-            
-        return usesFocusedEntity || usesEntitySpecificColumns;
-    });
+    // Reload only when a selected column reads the focus that changed. This
+    // used to refresh a cell table on every GENE change if it had any obsp
+    // column, and never on a CELL change -- so its "focused cell" obsp column
+    // went stale while unrelated changes reloaded it.
+    const needsUpdate = focusChangeAffectsColumns(panelSettings.columns, entityType);
     
     if (needsUpdate) {
         // Reload the table data
@@ -931,8 +945,9 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
         }));
     }
     
-    //Refresh the main panel as well. 
-    const sources = entityType === 'genes' ? [
+    // Refresh the column chooser as well: its focused-entity labels name the
+    // entity. Which tabs exist depends on the TABLE, not on the focus.
+    const sources = tableRows === 'cells' ? [
         { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
         { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
         { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
@@ -946,7 +961,7 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
 
     //Make everything blank to start fresh
     for (const source of sources) {
-        const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);6
+        const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);
         if (contentContainer == null) {
             console.log("Container is null");
             return;
@@ -977,7 +992,7 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     }
 
     //Add them back
-    if (entityType === 'genes') {
+    if (tableRows === 'cells') {
         populateColumnsCellTable(sources, datasetStructure, panelSettings.id, panelSettings);
     }
     else {
@@ -985,7 +1000,7 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     }
 
     // Set up event listeners for column selection
-    setupColumnSelectionEvents(panelSettings.id, panelSettings, entityType);
+    setupColumnSelectionEvents(panelSettings.id, panelSettings, tableRows);
 }
 
 /**

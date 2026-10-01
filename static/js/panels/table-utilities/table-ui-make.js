@@ -605,7 +605,7 @@ function getColumnDisplayName(column) {
         if (column.column === 'focused_gene' || column.column === '_focused_gene') {
             return `${column.key}: ${focusedGene}`;
         } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedGene}`;
+            return `${column.key}: ${focusedCell}`;
         } else {
             return `${column.key}: ${column.column}`;
         }

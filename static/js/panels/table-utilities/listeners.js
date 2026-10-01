@@ -43,17 +43,16 @@ export function setupTableEventListeners({
         signal
     });
 
-    // Entity-specific event listeners
-    if (entityType === 'cells') {
-        setupCellTableEventListeners({
+    // Focus listeners. BOTH table types hold columns keyed to BOTH foci: a
+    // cell table has obsp "focused cell" and layer "focused gene" columns, a
+    // gene table has varp "focused gene" and layer "focused cell" columns. So
+    // both tables listen to both events and let updateTableOnFocusChange
+    // decide which columns actually depend on the entity that changed.
+    if (entityType === 'cells' || entityType === 'genes') {
+        setupFocusEventListeners({
             id,
             dataTable,
-            signal
-        });
-    } else if (entityType === 'genes') {
-        setupGeneTableEventListeners({
-            id,
-            dataTable,
+            tableEntityType: entityType,
             signal
         });
     }
@@ -142,51 +141,33 @@ function setupCommonEventListeners({
 }
 
 /**
- * Set up cell table specific event listeners
+ * Set up focused cell / focused gene listeners for a table
  * @param {Object} options - Options for setting up listeners
  * @param {string} options.id - Panel ID
  * @param {Object} options.dataTable - DataTable instance
+ * @param {string} options.tableEntityType - The table's rows ('cells' or 'genes')
  * @param {AbortSignal} options.signal - Removes the listeners when aborted
  * @returns {void}
  */
-function setupCellTableEventListeners({
+function setupFocusEventListeners({
     id,
     dataTable,
+    tableEntityType,
     signal
 }) {
-    // Listen for focused gene changes
-    document.addEventListener('focusedGeneChanged', async (e) => {
-        // Handle both immediate updates and deferred updates
-        setTimeout(() => {
-            if (dataTable && !signal.aborted) {
-                console.log(`Cell table ${id} handling focused gene change: ${e.detail.gene}`);
-                updateTableOnFocusChange(dataTable, e.detail.gene, 'genes');
-            }
-        }, 0);
-    }, { signal });
-}
-
-/**
- * Set up gene table specific event listeners
- * @param {Object} options - Options for setting up listeners
- * @param {string} options.id - Panel ID
- * @param {Object} options.dataTable - DataTable instance
- * @param {AbortSignal} options.signal - Removes the listeners when aborted
- * @returns {void}
- */
-function setupGeneTableEventListeners({
-    id,
-    dataTable,
-    signal
-}) {
-    // Listen for focused cell changes
-    document.addEventListener('focusedCellChanged', async (e) => {
-        // Handle both immediate updates and deferred updates
-        setTimeout(() => {
-            if (dataTable && !signal.aborted) {
-                console.log(`Gene table ${id} handling focused cell change: ${e.detail.cell}`);
-                updateTableOnFocusChange(dataTable, e.detail.cell, 'cells');
-            }
-        }, 0);
-    }, { signal });
+    const events = [
+        { name: 'focusedCellChanged', detailKey: 'cell', changed: 'cells' },
+        { name: 'focusedGeneChanged', detailKey: 'gene', changed: 'genes' }
+    ];
+    for (const { name, detailKey, changed } of events) {
+        document.addEventListener(name, (e) => {
+            // Handle both immediate updates and deferred updates
+            setTimeout(() => {
+                if (dataTable && !signal.aborted) {
+                    console.log(`Table ${id} (${tableEntityType}) handling ${name}: ${e.detail?.[detailKey]}`);
+                    updateTableOnFocusChange(dataTable, e.detail?.[detailKey], changed, tableEntityType);
+                }
+            }, 0);
+        }, { signal });
+    }
 }
