@@ -213,8 +213,9 @@ def manage_users(args: argparse.Namespace) -> int:
     """
     from .server.auth import AuthManager
     
-    # Load configuration to get user file path
-    config = load_config(config_path=args.config)
+    # The same environment `annzarro start` runs with (production), so a
+    # user_file set for production is the file both of them use
+    config = load_config(config_path=args.config, env="production")
     
     # Extract user file path from full config
     if "auth" in config and "user_file" in config["auth"]:
@@ -833,6 +834,8 @@ def main(argv: List[str] = None) -> int:
     
     # User management command
     user_parser = subparsers.add_parser('user', help="Manage users")
+    user_parser.add_argument('--config', default=argparse.SUPPRESS,
+                             help="Path to configuration file (as for start)")
     user_subparsers = user_parser.add_subparsers(dest='user_command', help="User management command")
     
     # User add command
