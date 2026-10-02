@@ -2,9 +2,10 @@
 #
 # Copy to /etc/annzarro/site.yaml and point ANNZARRO_CONFIG at it (the systemd
 # unit and run_gunicorn.sh do). It is layered over the built-in defaults
-# (annzarro/config/base.yaml + production.yaml), so list only what differs;
-# `ANNZARRO_CONFIG=/etc/annzarro/site.yaml annzarro config show` prints the
-# merged result and where each value came from.
+# (annzarro/config/base.yaml + production.yaml), so list only what differs.
+# `annzarro config show --config /etc/annzarro/site.yaml` (or with
+# ANNZARRO_CONFIG set, plain `annzarro config show`) prints the merged result
+# and where each value came from; `annzarro user ...` uses the same file.
 
 server:
   # gunicorn binds here; keep it on loopback behind a TLS reverse proxy

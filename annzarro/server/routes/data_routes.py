@@ -53,6 +53,15 @@ def _listing_signature(entry_path):
     return tuple(parts)
 
 
+def _listdir(path):
+    """Entries of ``path``, or none when it cannot be read."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError as exc:
+        logger.warning(f"Error listing directory {path}: {exc}")
+        return []
+
+
 def _probe_dataset_counts(entry_path, probe):
     """
     (cells, genes) for a listing entry, None if it is not a readable
@@ -192,10 +201,6 @@ def _cap_error_response(requested, limit, unit, axis_hint):
 
 #: Fallback for ``max_response_elements`` when the config does not set it.
 DEFAULT_MAX_RESPONSE_ELEMENTS = 10_000_000
-
-
-class IndexParseError(ValueError):
-    """A ``rows``/``cols`` parameter that is present but not a list of indices."""
 
 
 def _matrix_shape(reader, dataset_path, kind, key=None):
@@ -347,10 +352,6 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
-
-    @app.errorhandler(IndexParseError)
-    def _bad_indices(exc):
-        return jsonify({"error": str(exc), "reason": "bad_indices"}), 400
 
     http_cache.install_gzip(app)
 
@@ -1270,7 +1271,7 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             return jsonify({
                 "directory": data_dir
@@ -1298,7 +1299,7 @@ def register_data_routes(app, api_version):
         
         try:
             # Get data directory from config for validation
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             # Verify the requested path is within the data directory or is an absolute path
             if not os.path.isabs(directory_path) and not directory_path.startswith(data_dir):
@@ -1390,20 +1391,24 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
-            # Only search in the "datasets" subdirectory if it exists
+            # The top level of data_dir AND its datasets/ subdirectory (the
+            # desktop app creates one). Listing only datasets/ whenever it
+            # existed hid every store placed directly in the data directory.
             datasets_dir = os.path.join(data_dir, "datasets")
-            if not os.path.exists(datasets_dir) or not os.path.isdir(datasets_dir):
-                datasets_dir = data_dir
+            search = [(data_dir, entry) for entry in _listdir(data_dir)
+                      if entry not in ("datasets", "sessions")]
+            if os.path.isdir(datasets_dir):
+                search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
             # List for storing zarr datasets
             zarr_stores = []
             
             try:
-                # Only search the first level of the datasets directory
-                for entry in os.listdir(datasets_dir):
-                    entry_path = os.path.join(datasets_dir, entry)
+                # Only the first level of each directory
+                for parent, entry in search:
+                    entry_path = os.path.join(parent, entry)
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
@@ -1511,7 +1516,7 @@ def register_data_routes(app, api_version):
         Returns:
             Path to the sessions directory.
         """
-        sessions_dir = os.path.join(app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data")), "sessions")
+        sessions_dir = os.path.join(app.config.get("data_dir"), "sessions")
         os.makedirs(sessions_dir, exist_ok=True)
         return sessions_dir
         
@@ -2281,14 +2286,20 @@ def _parse_indices(indices_str):
             parsed = None
         if not isinstance(parsed, list) or not all(
                 isinstance(i, int) and not isinstance(i, bool) for i in parsed):
-            raise IndexParseError(
-                f"Invalid index list {indices_str[:80]!r}: expected comma-separated integers")
+            raise _bad_indices(indices_str)
         indices = parsed
     if any(i < 0 for i in indices):
         # numpy would wrap -1 to the last entry; an index is a position, not an offset
-        raise DataRequestError(400, "bad_indices",
-                               f"Indices must be 0 or greater, got {min(indices)}.")
+        raise _bad_indices(indices_str)
     return indices
+
+
+def _bad_indices(indices_str):
+    """The one 400 ``bad_indices`` answer, for an unparseable, empty or
+    negative index list alike."""
+    return DataRequestError(
+        400, "bad_indices",
+        f"Indices must be comma-separated non-negative integers, got {indices_str[:80]!r}")
 
 def _parse_strings(strings_str):
     """

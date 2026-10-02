@@ -20,6 +20,8 @@ from flask_cors import CORS
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from annzarro.utils.paths import default_data_dir
+
 logger = logging.getLogger(__name__)
 
 # Default configuration
@@ -32,7 +34,7 @@ DEFAULT_CONFIG = {
     "https_enabled": False,
     "cert_file": None,
     "key_file": None,
-    "data_dir": "data",
+    "data_dir": None,                  # None = ~/annzarro-data (paths.default_data_dir)
     "static_dir": None,  # None = the frontend static directory (paths.frontend_dir)
     "log_file": None,  # None = ~/.annzarro/logs/annzarro_server.log
     "log_level": "INFO",
@@ -201,7 +203,7 @@ def resolve_dataset_segment(endpoint, values):
     segment = values["dataset_path"]
     if "://" in segment:
         return
-    data_dir = current_app.config.get("data_dir") or "data"
+    data_dir = current_app.config.get("data_dir") or default_data_dir()
     values["dataset_path"] = os.path.join(data_dir, segment)
 
 
@@ -261,6 +263,8 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         # Fallback if no config was provided
         logger.warning("No configuration provided, using default configuration")
         app.config.update(DEFAULT_CONFIG)
+    if not app.config.get("data_dir"):
+        app.config["data_dir"] = default_data_dir()
     
     # Login cookie: not sent on cross-site subrequests or form posts (Lax),
     # Secure per cookie_secure, never readable from JavaScript.
@@ -518,20 +522,6 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         session.clear()
         # Redirect to login page
         return redirect("/login")
-    
-    @app.route(f"/api/{api_version}/auth/token", methods=["POST"])
-    def get_auth_token():
-        """API endpoint to get an authentication token"""
-        username = request.json.get("username")
-        password = request.json.get("password")
-        
-        # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            return jsonify({"token": token})
-        else:
-            return jsonify({"error": "Invalid credentials"}), 401
     
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:

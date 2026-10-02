@@ -1,7 +1,7 @@
 """
 Authentication module for Annzarro Server
 -----------------------------------------
-Provides secure user authentication and token management.
+Provides user authentication for login sessions.
 """
 
 import os
@@ -27,16 +27,6 @@ try:
 except ImportError:  # Windows: the desktop app is single-process
     fcntl = None
 
-# JWT support (if available)
-try:
-    import jwt
-    JWT_AVAILABLE = True
-except ImportError:
-    JWT_AVAILABLE = False
-
-# Constants
-TOKEN_EXPIRY_HOURS = 24  # Tokens expire after 24 hours by default
-
 class User:
     """User class for authentication"""
     
@@ -54,7 +44,6 @@ class User:
         self.password_hash = password_hash
         self.is_admin = is_admin
         self.id = id or str(uuid.uuid4())
-        self.tokens = {}  # {token: expiry_timestamp}
         self.last_login = None
         self.login_attempts = 0
         self.locked_until = None
@@ -70,7 +59,6 @@ class User:
             'username': self.username,
             'password_hash': self.password_hash,
             'is_admin': self.is_admin,
-            'tokens': self.tokens,
             'last_login': self.last_login,
             'login_attempts': self.login_attempts,
             'locked_until': self.locked_until,
@@ -87,7 +75,6 @@ class User:
             is_admin=data.get('is_admin', False),
             id=data.get('id')
         )
-        user.tokens = data.get('tokens', {})
         user.last_login = data.get('last_login')
         user.login_attempts = data.get('login_attempts', 0)
         user.locked_until = data.get('locked_until')
@@ -106,14 +93,13 @@ def resolve_user_file(user_file):
 class AuthManager:
     """Authentication manager for Annzarro"""
     
-    def __init__(self, user_file='users.json', token_secret=None, session_timeout=3600,
+    def __init__(self, user_file='users.json', session_timeout=3600,
                  max_login_attempts=5, lockout_time=900):
         """
         Initialize authentication manager
         
         Args:
             user_file (str, optional): Path to user credentials file. Defaults to 'users.json'.
-            token_secret (str, optional): Secret for token signing. Defaults to None.
             session_timeout (int, optional): Session timeout in seconds. Defaults to 3600.
             max_login_attempts (int, optional): Max failed login attempts before lockout. Defaults to 5.
             lockout_time (int, optional): Account lockout time in seconds. Defaults to 900.
@@ -121,7 +107,6 @@ class AuthManager:
         # Handle relative paths by making them absolute from package root
         self.user_file = resolve_user_file(user_file)
             
-        self.token_secret = token_secret or secrets.token_hex(32)
         self.session_timeout = session_timeout
         self.max_login_attempts = max_login_attempts
         self.lockout_time = lockout_time
@@ -331,93 +316,6 @@ class AuthManager:
                            f"(attempt {count}/{self.max_login_attempts})")
             return False
     
-    def create_token(self, username):
-        """
-        Create an authentication token for a user
-        
-        Args:
-            username (str): Username
-            
-        Returns:
-            str: Authentication token or None if user not found
-        """
-        if username not in self.users:
-            return None
-            
-        user = self.users[username]
-        
-        # Clean up expired tokens first
-        self._clean_expired_tokens(user)
-        
-        # Generate a new token
-        if JWT_AVAILABLE:
-            # Use JWT if available
-            expires = datetime.now() + timedelta(hours=TOKEN_EXPIRY_HOURS)
-            token_data = {
-                'sub': user.id,
-                'username': username,
-                'admin': user.is_admin,
-                'exp': int(expires.timestamp())
-            }
-            token = jwt.encode(token_data, self.token_secret, algorithm='HS256')
-        else:
-            # Simple token otherwise
-            token = secrets.token_hex(32)
-            
-        # Store token with expiration
-        expiry = time.time() + (TOKEN_EXPIRY_HOURS * 3600)
-        user.tokens[token] = expiry
-        self._save_users(changed=[username])
-        
-        logging.info(f"Created token for user {username}, expires in {TOKEN_EXPIRY_HOURS} hours")
-        return token
-    
-    def validate_token(self, token):
-        """
-        Validate an authentication token
-        
-        Args:
-            token (str): Authentication token
-            
-        Returns:
-            bool: True if token is valid
-        """
-        if JWT_AVAILABLE:
-            try:
-                # Decode and verify JWT
-                data = jwt.decode(token, self.token_secret, algorithms=['HS256'])
-                username = data.get('username')
-                
-                if username not in self.users:
-                    logging.warning(f"Token validation failed: User not found")
-                    return False
-                    
-                # If we got here, token is valid
-                return True
-            except jwt.ExpiredSignatureError:
-                logging.warning(f"Token validation failed: Token expired")
-                return False
-            except jwt.InvalidTokenError:
-                logging.warning(f"Token validation failed: Invalid token")
-                return False
-        else:
-            # Simple token validation
-            for username, user in self.users.items():
-                if token in user.tokens:
-                    expiry = user.tokens[token]
-                    if expiry > time.time():
-                        # Token is valid
-                        return True
-                    else:
-                        # Token expired
-                        self._clean_expired_tokens(user)
-                        self._save_users(changed=[username])
-                        logging.warning(f"Token validation failed: Token expired")
-                        return False
-            
-            logging.warning(f"Token validation failed: Token not found")
-            return False
-    
     def validate_session(self):
         """
         Validate the current session
@@ -505,7 +403,6 @@ class AuthManager:
         user.login_attempts = 0
         user.locked_until = None
         user.failed_logins = {}
-        user.tokens = {}
         user.password_changed_at = time.time()
         self._save_users(changed=[username])
         logging.info(f"Changed password of user: {username}")
@@ -557,16 +454,6 @@ class AuthManager:
         self._save_users(removed=[username])
         logging.info(f"Removed user: {username}")
         return True
-    
-    def _clean_expired_tokens(self, user):
-        """
-        Remove expired tokens for a user
-        
-        Args:
-            user (User): User object
-        """
-        now = time.time()
-        user.tokens = {token: exp for token, exp in user.tokens.items() if exp > now}
     
     def _hash_password(self, password, salt):
         """
