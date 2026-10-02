@@ -220,6 +220,24 @@ the server and long layouts do not hit request-line limits. Without clipboard
 access (e.g. plain http on a cluster node) the link is shown for manual copying.
 See the [deep-link reference](https://annzarro.readthedocs.io/en/latest/reference/deep-links.html) for the format.
 
+### Large datasets: the cell subset
+
+A dataset with more than 200,000 cells opens on a reproducible subset of
+100,000 cells (`ui.defaults.subset_threshold`, `subset_size`, `subset_seed`).
+The stats bar says so (`Cells: 100,000 of 1,160,000  [Subset · seed 0]`), and
+every plot, table and share link uses the same cells. Clicking the badge
+changes the number of cells and the seed, samples evenly across an obs column,
+restricts the subset to cells passing an obs filter (or a cell table's
+filter), or turns it off. The same seed always selects the same cells, and
+more cells with the same seed keep every cell of fewer. See
+[docs/design/subsetting.md](docs/design/subsetting.md).
+
+Measured on a synthetic 1,160,000-cell store (Apple M3 Max, Chromium, two UMAP
+panels, one coloured by a gene): opening the view took 17 s with every cell and
+2 s with the default subset; the page held 874 MB of JavaScript heap with every
+cell and 94 MB with the subset; recolouring by another gene took 21 s and
+1.3 s. Most of the remaining 1.3 s is Plotly redrawing 100,000 coloured points.
+
 ### Remote datasets
 
 A zarr store can also be opened by URL: type it into the dataset box instead
