@@ -62,8 +62,10 @@ def extract_metadata(dataset_path: str, reader: Reader):
                 "columns_info": metadata.get("var_columns_info", {})
             },
             "X": {
-                "available": True,
-                "shape": shape
+                # A store may have no X (anndata allows X=None); claiming one
+                # sent clients to /data/X for an empty answer.
+                "available": bool(metadata.get("has_X", True)),
+                "shape": shape if metadata.get("has_X", True) else None
             },
             "layers": {
                 "available": metadata.get("has_layers", False),
