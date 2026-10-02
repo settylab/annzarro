@@ -231,7 +231,9 @@ const CellPlotPanel = (function() {
                 await Promise.all(updatePromises);
                 // If more than one axis was updated and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
-                if (updatePromises.length > 1 && _settings.highlightFocusedCell) {
+                // Always: a LOCKED axis is not refocused, so nothing else moves the
+                // highlight to the new focus (it stayed on the old cell)
+                if (_settings.highlightFocusedCell) {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
@@ -254,10 +256,13 @@ const CellPlotPanel = (function() {
                 return;
             }
             // Update the label of the first option in the select element
+            // A locked axis keeps showing the entity it is locked to
+            const locked = !!(_settings[axis] && _settings[axis].locked && _settings[axis].column);
+            if (locked) focusedEntity = _settings[axis].column;
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'genes') {
-                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity);
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity, locked);
             } else if (_settings[axis] && _settings[axis].type === 'obsp' && endityType === 'cells') {
-                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity);
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity, locked);
             }
         }
 

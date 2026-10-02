@@ -148,3 +148,9 @@ for (const [type, plotType, entity, name] of [
         assert.equal(sel.options[0].text, `Focused ${entity === 'cells' ? 'cell' : 'gene'} ${name}`);
     });
 }
+
+test('a locked axis names the cell it is locked to, not the current focus', () => {
+    const sel = fakeSelect();
+    populateColumnSelector({ type: 'obsp', key: 'k', column: 'cell_3', locked: true }, sel, 'x', 'cells', {});
+    assert.equal(sel.options[0].text, 'Locked cell cell_3');   // focus is cell_7
+});
