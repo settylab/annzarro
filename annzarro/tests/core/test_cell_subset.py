@@ -230,3 +230,13 @@ def test_threshold_zero_subsets_every_dataset():
     assert cs.auto_spec(10, {"ui_subset_threshold": 0, "ui_subset_size": 5}) == SubsetSpec(n=5, seed=0)
     assert cs.defaults(None) == {"threshold": cs.DEFAULT_THRESHOLD, "size": cs.DEFAULT_SIZE,
                                  "seed": cs.DEFAULT_SEED}
+
+
+def test_a_spec_too_long_for_a_request_line_is_refused():
+    values = [f"cell_type_{i:04d}" for i in range(cs.MAX_VALUES)]
+    raw = json.dumps({"n": 10, "where": [{"col": "c", "op": "in", "values": values}]})
+    assert len(raw) > cs.MAX_SPEC_CHARS
+    with pytest.raises(SubsetError, match="characters long"):
+        parse_spec(raw)
+    with pytest.raises(SubsetError, match="more than"):
+        parse_spec({"n": 10, "where": [{"col": "c", "op": "in", "values": values + ["x"]}]})

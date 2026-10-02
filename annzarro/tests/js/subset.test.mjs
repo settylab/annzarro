@@ -115,3 +115,8 @@ test("an OR filter is not translated at all", () => {
   assert.deepEqual(r.where, []);
   assert.match(r.unsupported[0], /OR/);
 });
+
+test("a spec too long for a request line is refused before it is sent", () => {
+  const values = Array.from({ length: 150 }, (_, i) => `cell_type_${i}`);
+  assert.throws(() => canonicalSubset({ n: 5, where: [{ col: "c", op: "in", values }] }), /characters long/);
+});

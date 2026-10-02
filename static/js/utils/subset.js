@@ -35,6 +35,8 @@ export const SUBSET_OPS = [
 const TEXT_OPS = new Set(['in', 'not_in']);
 const NUMBER_OPS = new Set(['>', '>=', '<', '<=', '==', '!=']);
 export const MAX_SEED = 2 ** 32 - 1;
+/** The spec rides in every cell-axis request's query string (server: MAX_SPEC_CHARS). */
+export const MAX_SPEC_CHARS = 2000;
 
 function _isInt(v) {
     return typeof v === 'number' && Number.isInteger(v);
@@ -79,6 +81,10 @@ export function canonicalSubset(spec) {
             }
             throw new Error(`Unknown filter operator ${c.op}`);
         });
+    }
+    const length = JSON.stringify(out).length;
+    if (length > MAX_SPEC_CHARS) {
+        throw new Error(`This filter is ${length} characters long; at most ${MAX_SPEC_CHARS} fit in a request. Use fewer values.`);
     }
     return out;
 }

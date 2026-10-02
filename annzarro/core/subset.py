@@ -51,9 +51,11 @@ import numpy as np
 
 from .name_index import _signature as _store_signature
 
-#: ``where`` limits: a spec is a URL parameter, not a query language.
+#: Limits: a spec rides in the query string of every cell-axis request, and
+#: gunicorn refuses a request line over 4094 bytes.
 MAX_CONDITIONS = 16
-MAX_VALUES = 1000
+MAX_VALUES = 200
+MAX_SPEC_CHARS = 2000
 MAX_SEED = 2**32 - 1
 
 #: Ops on a column's text form (categorical/string/bool columns, any column).
@@ -186,6 +188,9 @@ def parse_spec(raw) -> Optional[SubsetSpec]:
         text = raw.strip()
         if text in ("", "all", "null"):
             return None
+        if len(text) > MAX_SPEC_CHARS:
+            raise SubsetError(f"subset is {len(text)} characters long; at most {MAX_SPEC_CHARS} "
+                              "fit in a request. Use fewer filter values.")
         try:
             raw = json.loads(text)
         except ValueError:
