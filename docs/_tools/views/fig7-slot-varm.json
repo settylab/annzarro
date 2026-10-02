@@ -1,0 +1,53 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "gene-plot-S6",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "gene-plot-S6": false
+  },
+  "panelConfigs": {
+   "gene-plot-S6": {
+    "id": "gene-plot-S6",
+    "title": "varm axes: gene loadings on PC 1 and PC 2 (varm PCs); colour var Mahalanobis distance",
+    "x": {
+     "type": "varm",
+     "key": "PCs",
+     "column": "0"
+    },
+    "y": {
+     "type": "varm",
+     "key": "PCs",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "colorScale": "Viridis"
+   }
+  }
+ }
+}

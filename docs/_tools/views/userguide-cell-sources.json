@@ -1,0 +1,184 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-P",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-Q",
+        "controlsVisible": false
+       }
+      ]
+     },
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-K",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-3",
+        "controlsVisible": false
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-P": false,
+   "cell-plot-Q": false,
+   "cell-plot-K": false,
+   "cell-plot-3": false
+  },
+  "panelConfigs": {
+   "cell-plot-P": {
+    "id": "cell-plot-P",
+    "title": "obsm X_pca 0 vs 1, colour obs total_counts",
+    "x": {
+     "type": "obsm",
+     "key": "X_pca",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_pca",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "total_counts",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Viridis"
+   },
+   "cell-plot-Q": {
+    "id": "cell-plot-Q",
+    "title": "obs vs obs: n_genes_by_counts vs pct_counts_mt",
+    "x": {
+     "type": "obs",
+     "key": "n_genes_by_counts",
+     "column": ""
+    },
+    "y": {
+     "type": "obs",
+     "key": "pct_counts_mt",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "Age",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8
+   },
+   "cell-plot-K": {
+    "id": "cell-plot-K",
+    "title": "obsm AbCapture CD150 vs CD48 protein, colour layer H2-Q7",
+    "x": {
+     "type": "obsm",
+     "key": "AbCapture",
+     "column": "CD150_TotalSeqB"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "AbCapture",
+     "column": "CD48_TotalSeqB"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "MAGIC_imputed_data",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Viridis"
+   },
+   "cell-plot-3": {
+    "id": "cell-plot-3",
+    "title": "3D: obsm X_pca 0, 1, 2",
+    "x": {
+     "type": "obsm",
+     "key": "X_pca",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_pca",
+     "column": "1"
+    },
+    "z": {
+     "type": "obsm",
+     "key": "X_pca",
+     "column": "2"
+    },
+    "color": {
+     "type": "obs",
+     "key": "highres_celltype",
+     "column": ""
+    },
+    "pointSize": 2,
+    "pointOpacity": 0.8
+   }
+  }
+ }
+}

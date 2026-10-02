@@ -959,6 +959,75 @@ class ZarrReader(CacheSettings):
         return sp.csr_matrix((data, inner, new_indptr),
                              shape=(len(indices), n_cols))
 
+    #: Stored entries of a sparse matrix's ``indices`` scanned per block by
+    #: _minor_axis_slice (rounded to whole chunks): 4M int32, 16 MB.
+    _SCAN_BLOCK = 1 << 22
+
+    def _minor_axis_slice(self, matrix, shape, indices, axis):
+        """
+        Columns of a CSR group (axis='col') or rows of a CSC one (axis='row'),
+        without materializing the matrix.
+
+        An entry of the uncompressed axis can sit anywhere, so every stored
+        index is looked at -- but ``_SCAN_BLOCK`` entries at a time, whole
+        chunks per read, and only the data between a block's first and last
+        hit is read. Peak memory is a block, not the matrix. Same result,
+        orientation and order as ``M[indices, :]`` / ``M[:, indices]`` on the
+        full load (repeats and any order allowed).
+
+        Args:
+            matrix: zarr group with 'data'/'indices'/'indptr'.
+            shape: (n_rows, n_cols) of the full matrix.
+            indices: rows (CSC) or columns (CSR) to extract.
+            axis: 'col' (CSR) or 'row' (CSC).
+
+        Returns:
+            scipy.sparse matrix, (n_rows, len(indices)) for axis='col' or
+            (len(indices), n_cols) for axis='row'.
+        """
+        n_rows, n_cols = int(shape[0]), int(shape[1])
+        n_minor = n_cols if axis == 'col' else n_rows
+        uniq, inverse = np.unique(np.asarray(indices, dtype=np.int64), return_inverse=True)
+        if uniq.size and (uniq[0] < 0 or uniq[-1] >= n_minor):
+            bad = uniq[0] if uniq[0] < 0 else uniq[-1]
+            raise IndexError(f"index {bad} is out of range for an axis of {n_minor}")
+        indptr = matrix['indptr'][:].astype(np.int64)
+        n_major = len(indptr) - 1
+        data_z, idx_z = matrix['data'], matrix['indices']
+        nnz = int(indptr[-1])
+        chunk = int(idx_z.chunks[0]) if getattr(idx_z, 'chunks', None) else self._SCAN_BLOCK
+        block = max(chunk, (self._SCAN_BLOCK // chunk) * chunk)
+
+        pos_parts, sel_parts, val_parts = [], [], []
+        for s in range(0, nnz if uniq.size else 0, block):
+            stored = idx_z[s:min(s + block, nnz)]
+            if uniq.size == 1:
+                hit = np.flatnonzero(stored == uniq[0])
+                which = np.zeros(hit.size, dtype=np.int64)
+            else:
+                which = np.minimum(np.searchsorted(uniq, stored), uniq.size - 1)
+                hit = np.flatnonzero(uniq[which] == stored)
+                which = which[hit]
+            if hit.size == 0:
+                continue
+            first = int(hit[0])
+            values = data_z[s + first:s + int(hit[-1]) + 1]
+            pos_parts.append(hit + s)
+            sel_parts.append(which)
+            val_parts.append(values[hit - first])
+        if pos_parts:
+            pos, which, values = (np.concatenate(p) for p in (pos_parts, sel_parts, val_parts))
+        else:
+            pos = which = np.empty(0, dtype=np.int64)
+            values = np.empty(0, dtype=data_z.dtype)
+        major = np.searchsorted(indptr, pos, side='right') - 1
+        identity = np.array_equal(inverse, np.arange(uniq.size))
+        if axis == 'col':
+            m = sp.csr_matrix((values, (major, which)), shape=(n_major, uniq.size))
+            return m if identity else m[:, inverse]
+        m = sp.csc_matrix((values, (which, major)), shape=(uniq.size, n_major))
+        return m if identity else m[inverse, :]
+
     def _load_sparse_matrix(self, matrix, row_indices=None, col_indices=None) -> Optional[np.ndarray]:
         """
         Load a sparse matrix from a zarr group.
@@ -997,16 +1066,26 @@ class ZarrReader(CacheSettings):
             # gives cheap row (single-cell) extraction. These two cases cover
             # the interactive coloring requests; everything else falls through
             # to the correct (if heavier) full-load path below.
-            if (sparse_format == 'csc_matrix' and col_indices is not None
-                    and row_indices is None
-                    and all(k in matrix for k in ['data', 'indices', 'indptr'])):
-                return self._lazy_sparse_slice(
-                    matrix, shape, col_indices, axis='col')
-            if (sparse_format == 'csr_matrix' and row_indices is not None
-                    and col_indices is None
-                    and all(k in matrix for k in ['data', 'indices', 'indptr'])):
-                return self._lazy_sparse_slice(
-                    matrix, shape, row_indices, axis='row')
+            #
+            # A selection on the other axis (a cell row of CSC X, a gene
+            # column of a CSR layer) used to take the full-load path below:
+            # 1.08 GB of peak RSS for one cell row of bm_aging.zarr. It is a
+            # bounded scan of the stored indices now (_minor_axis_slice), and
+            # a selection on both axes slices the compressed axis lazily and
+            # cuts the other in memory.
+            compressed = all(k in matrix for k in ['data', 'indices', 'indptr'])
+            if sparse_format == 'csc_matrix' and compressed and (
+                    col_indices is not None or row_indices is not None):
+                if col_indices is None:
+                    return self._minor_axis_slice(matrix, shape, row_indices, axis='row')
+                m = self._lazy_sparse_slice(matrix, shape, col_indices, axis='col')
+                return m if row_indices is None else m[row_indices, :]
+            if sparse_format == 'csr_matrix' and compressed and (
+                    row_indices is not None or col_indices is not None):
+                if row_indices is None:
+                    return self._minor_axis_slice(matrix, shape, col_indices, axis='col')
+                m = self._lazy_sparse_slice(matrix, shape, row_indices, axis='row')
+                return m if col_indices is None else m[:, col_indices]
 
             # Handle CSR format
             if sparse_format == 'csr_matrix':

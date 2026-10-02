@@ -1,0 +1,90 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "AAACAAGTATCTCCCA-1",
+  "focusedGene": "Ttr",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-AO",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-AE",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-AO": false,
+   "cell-plot-AE": false
+  },
+  "panelConfigs": {
+   "cell-plot-AO": {
+    "id": "cell-plot-AO",
+    "title": "Equal aspect off: stretched to the tile",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "leiden",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 1
+   },
+   "cell-plot-AE": {
+    "id": "cell-plot-AE",
+    "title": "Equal aspect on: one unit on x = one unit on y",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "leiden",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 1,
+    "equalAspect": true
+   }
+  }
+ }
+}

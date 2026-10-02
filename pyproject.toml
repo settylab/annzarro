@@ -68,9 +68,10 @@ remote = [
 ]
 
 [project.urls]
-"Documentation" = "https://github.com/yourusername/annzarro#readme"
-"Source" = "https://github.com/yourusername/annzarro"
-"Issues" = "https://github.com/yourusername/annzarro/issues"
+"Homepage" = "https://github.com/settylab/annzarro"
+"Documentation" = "https://annzarro.readthedocs.io"
+"Source" = "https://github.com/settylab/annzarro"
+"Issues" = "https://github.com/settylab/annzarro/issues"
 
 [project.scripts]
 annzarro = "annzarro.cli:main"

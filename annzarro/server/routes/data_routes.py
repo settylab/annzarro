@@ -20,6 +20,8 @@ from ...core import get_reader
 from ...core import name_index
 from ...core import subset as cell_subset
 from .. import confinement, permissions
+from .. import http_cache
+from ...core.array_response import wants_binary
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -209,6 +211,79 @@ def _cap_error_response(requested, limit, unit, axis_hint):
         "unit": unit,
     }), 400
 
+#: Fallback for ``max_response_elements`` when the config does not set it.
+DEFAULT_MAX_RESPONSE_ELEMENTS = 10_000_000
+
+
+def _matrix_shape(reader, dataset_path, kind, key=None):
+    """(rows, cols) of the matrix a route would slice, from cached metadata.
+
+    None when the shape cannot be known cheaply; the guard then stands aside
+    rather than refusing a request it cannot size.
+    """
+    try:
+        meta = reader.get_metadata(dataset_path)
+    except Exception:
+        return None
+    shape = tuple(meta.get("shape") or ())
+    if len(shape) < 2:
+        return None
+    n_obs, n_vars = int(shape[0]), int(shape[1])
+    if kind == "X":
+        return (n_obs, n_vars)
+    if kind == "layer":
+        info = (meta.get("layers_info") or {}).get(key) or {}
+        layer_shape = tuple(info.get("shape") or ())
+        return tuple(int(d) for d in layer_shape) if len(layer_shape) == 2 else (n_obs, n_vars)
+    if kind == "obsp":
+        return (n_obs, n_obs)
+    if kind == "varp":
+        return (n_vars, n_vars)
+    if kind in ("obsm", "varm"):
+        info = (meta.get(f"{kind}_info") or {}).get(key) or {}
+        width = tuple(info.get("shape") or ())
+        cols = int(width[1]) if len(width) == 2 else None
+        return (n_obs if kind == "obsm" else n_vars, cols)
+    return None
+
+
+def _response_too_large(reader, dataset_path, kind, key, rows, cols, single_column=False):
+    """A 413 when the slice would exceed ``max_response_elements``, else None.
+
+    One full row or column is always allowed: that is the unit every view in
+    the client asks for (a gene column, a cell row, an embedding axis, a kNN
+    row), and its size is fixed by the dataset, not by the request. The cap
+    stops what no view needs -- whole matrices and multi-vector blocks, like
+    the 838 MB ``/data/layer`` reply and the worker timeouts seen in
+    production -- before anything is read.
+    """
+    shape = _matrix_shape(reader, dataset_path, kind, key)
+    if shape is None:
+        return None
+    n_rows = len(rows) if rows is not None else shape[0]
+    if single_column:
+        n_cols = 1
+    elif cols is not None:
+        n_cols = len(cols)
+    else:
+        n_cols = shape[1]
+    if n_cols is None or n_rows <= 1 or n_cols <= 1:
+        return None
+    limit = int(app.config.get("max_response_elements", DEFAULT_MAX_RESPONSE_ELEMENTS))
+    requested = n_rows * n_cols
+    if requested <= limit:
+        return None
+    return jsonify({
+        "error": f"Response too large: {n_rows} x {n_cols} = {requested} elements requested "
+                 f"from {kind}{'/' + key if key else ''}; the limit is {limit} "
+                 "(max_response_elements). Request one row or column, or fewer of them.",
+        "reason": "response_too_large",
+        "requested": requested,
+        "limit": limit,
+        "shape": [n_rows, n_cols],
+    }), 413
+
+
 class DataRequestError(Exception):
     """A request the dataset cannot answer: a key it does not have, an index
     outside an axis. Answered as ``status`` with a ``reason`` code instead of
@@ -321,8 +396,11 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
+
+    http_cache.install_gzip(app)
+
     app.register_error_handler(DataRequestError, _data_request_error_response)
-    
+
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
     def get_data_info():
         """
@@ -376,6 +454,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
+    @http_cache.conditional
     def get_dataset_structure():
         """
         Get complete structure information about a dataset including available matrices, embeddings, etc.
@@ -397,6 +476,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
+    @http_cache.conditional
     def get_data_X():
         """
         Get data from the X matrix.
@@ -437,11 +517,16 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "X", rows=row_indices, cols=col_indices)
-            return process_file.extract_X(dataset_path_str, row_indices, col_indices, reader)
+            refusal = _response_too_large(reader, dataset_path_str, "X", None, row_indices, col_indices)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_X(dataset_path_str, row_indices, col_indices, reader,
+                                          binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
+    @http_cache.conditional
     def get_layer(layer_name: str):
         """
         Get data from a specific layer.
@@ -485,11 +570,16 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "layers", key=layer_name, rows=row_indices, cols=col_indices)
-            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, reader)
+            refusal = _response_too_large(reader, dataset_path_str, "layer", layer_name, row_indices, col_indices)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, reader,
+                                              binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
+    @http_cache.conditional
     def get_obs():
         """
         Get observation annotations.
@@ -534,11 +624,13 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
-            return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells")
+            return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells",
+                                                binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
+    @http_cache.conditional
     def get_var():
         """
         Get variable annotations.
@@ -582,11 +674,13 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
-            return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes")
+            return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes",
+                                                binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
+    @http_cache.conditional
     def get_obsm(obsm_key: str):
         """
         Get observation multidimensional data.
@@ -635,12 +729,18 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obsm", key=obsm_key, rows=row_indices, cols=col_indices)
-            return process_file.extract_obsm_varm(dataset_path_str, reader, obsm_key, row_indices, col_indices, column_name, "cells")
+            refusal = _response_too_large(reader, dataset_path_str, "obsm", obsm_key, row_indices, col_indices,
+                                          single_column=column_name is not None)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_obsm_varm(dataset_path_str, reader, obsm_key, row_indices, col_indices, column_name, "cells",
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
         
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
+    @http_cache.conditional
     def get_varm(varm_key: str):
         """
         Get variable multidimensional data.
@@ -689,11 +789,17 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "varm", key=varm_key, rows=row_indices, cols=col_indices)
-            return process_file.extract_obsm_varm(dataset_path_str, reader, varm_key, row_indices, col_indices, column_name, "genes")
+            refusal = _response_too_large(reader, dataset_path_str, "varm", varm_key, row_indices, col_indices,
+                                          single_column=column_name is not None)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_obsm_varm(dataset_path_str, reader, varm_key, row_indices, col_indices, column_name, "genes",
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
+    @http_cache.conditional
     def get_obsp(obsp_key: str):
         """
         Get observation-observation matrices (cell-cell relationships).
@@ -737,11 +843,16 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
-            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", reader)
+            refusal = _response_too_large(reader, dataset_path_str, "obsp", obsp_key, row_indices, col_indices)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", reader,
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
+    @http_cache.conditional
     def get_varp(varp_key: str):
         """
         Get variable-variable matrices (gene-gene relationships).
@@ -785,11 +896,16 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "varp", key=varp_key, rows=row_indices, cols=col_indices)
-            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", reader)
+            refusal = _response_too_large(reader, dataset_path_str, "varp", varp_key, row_indices, col_indices)
+            if refusal is not None:
+                return refusal
+            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", reader,
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
+    @http_cache.conditional
     def get_uns(uns_key: str):
         """
         Get unstructured annotations.
@@ -869,7 +985,18 @@ def register_data_routes(app, api_version):
         
         if not row_indices:
             return jsonify({"error": "rows parameter is required"}), 400
-        
+
+        try:
+            kind = {"X": "X", "layer": "layer", "obsm": "obsm", "varm": "varm",
+                    "obsp": "obsp", "varp": "varp"}[matrix_type]
+            page_rows = row_indices[page * page_size:(page + 1) * page_size]
+            refusal = _response_too_large(get_reader(dataset_path), dataset_path, kind, key,
+                                          page_rows, col_indices)
+            if refusal is not None:
+                return refusal
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path)
+
         try:
             # Get paginated data based on matrix type
             if matrix_type == "X":
@@ -936,6 +1063,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/genes", methods=["GET"])
+    @http_cache.conditional
     def get_genes():
         """
         Get list of gene names.
@@ -958,6 +1086,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
+    @http_cache.conditional
     def get_cells():
         """
         Get list of cell names.
@@ -1231,9 +1360,23 @@ def register_data_routes(app, api_version):
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
         
+        parts = data_path.strip("/").split("/")
+        kind = {"X": "X", "layers": "layer", "obsm": "obsm", "varm": "varm",
+                "obsp": "obsp", "varp": "varp"}.get(parts[0])
+        if kind is not None:
+            try:
+                refusal = _response_too_large(
+                    get_reader(dataset_path), dataset_path, kind,
+                    parts[1] if len(parts) > 1 else None, row_indices, col_indices,
+                    single_column=len(parts) == 3)
+            except Exception as exc:
+                return _reader_error_response(exc, dataset_path)
+            if refusal is not None:
+                return refusal
+
         try:
             # Use direct zarr access for stateless operation
-            data = zarr_reader.get_data_by_path(data_path, dataset_path=dataset_path, 
+            data = zarr_reader.get_data_by_path(data_path, dataset_path=dataset_path,  
                                              indices=row_indices, col_indices=col_indices)
             
             # Convert NumPy arrays to Python lists for JSON serialization
@@ -2269,27 +2412,36 @@ def _parse_indices(indices_str):
     Returns:
         List of integers, or None if indices_str is None or empty.
     """
-    if not indices_str:
+    if indices_str is None:
         return None
 
+    # A present-but-unparseable parameter used to come back as None, which
+    # every route reads as "all rows" / "all columns": `rows=` (what
+    # `[undefined].join(',')` sends) or `cols=abc` asked for the WHOLE matrix.
+    # That is refused now instead of being widened to everything.
     try:
         indices = [int(i) for i in indices_str.split(",")]
     except ValueError:
-        # Handle case where the input might be JSON-encoded
         try:
-            indices = json.loads(indices_str)
+            parsed = json.loads(indices_str)
         except (ValueError, TypeError):
-            indices = None
-        if not isinstance(indices, list) or not all(
-                isinstance(i, int) and not isinstance(i, bool) for i in indices):
-            # Unparseable used to mean "no selection", i.e. the WHOLE axis
-            raise DataRequestError(400, "bad_indices",
-                                   f"Indices must be comma-separated integers, got {indices_str!r}.")
+            parsed = None
+        if not isinstance(parsed, list) or not all(
+                isinstance(i, int) and not isinstance(i, bool) for i in parsed):
+            raise _bad_indices(indices_str)
+        indices = parsed
     if any(i < 0 for i in indices):
         # numpy would wrap -1 to the last entry; an index is a position, not an offset
-        raise DataRequestError(400, "bad_indices",
-                               f"Indices must be 0 or greater, got {min(indices)}.")
+        raise _bad_indices(indices_str)
     return indices
+
+
+def _bad_indices(indices_str):
+    """The one 400 ``bad_indices`` answer, for an unparseable, empty or
+    negative index list alike."""
+    return DataRequestError(
+        400, "bad_indices",
+        f"Indices must be comma-separated non-negative integers, got {indices_str[:80]!r}")
 
 def _parse_strings(strings_str):
     """
