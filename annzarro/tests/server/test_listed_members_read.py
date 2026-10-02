@@ -124,9 +124,26 @@ def test_healthy_obs_column_unchanged(get):
 
 # --- #42 -------------------------------------------------------------------
 
-def test_listed_obsm_keys_are_listed(get):
-    keys = get("/api/v1/data/dataset_structure").get_json()
-    assert all(k in str(keys) for k in ("X_cnv", "means_cell_abundance_w_sf"))
+def test_structure_lists_what_the_reader_reads(get):
+    # The column picker offers what dataset_structure lists. A sparse obsm's
+    # data/indices/indptr arrays were listed as DataFrame columns, so the
+    # picker offered "data" for X_cnv; and a DataFrame's _index was offered as
+    # a column of values.
+    obsm = get("/api/v1/data/dataset_structure").get_json()["obsm"]
+    assert {"X_cnv", "means_cell_abundance_w_sf"} <= set(obsm["keys"])
+    cnv = obsm["dataframes"]["X_cnv"]
+    assert cnv["columns"] == [str(i) for i in range(30)]
+    assert cnv["is_array"] and cnv["sparse"] == "csr_matrix"
+    assert obsm["info"]["X_cnv"]["shape"] == [N_OBS, 30]
+    assert obsm["dataframes"]["means_cell_abundance_w_sf"]["columns"] == DF_COLUMNS
+    for key, entry in obsm["dataframes"].items():
+        for column in entry["columns"]:
+            resp = get(f"/api/v1/data/obsm/{key}", column_name=column)
+            if key == "X_odd":
+                assert resp.status_code == 400, (key, column)
+                continue
+            assert resp.status_code == 200, (key, column, resp.get_data(as_text=True))
+            assert len(resp.get_json()["data"]) == N_OBS, (key, column)
 
 
 @pytest.mark.parametrize("key", ["X_cnv", "X_cnv_csc"])
