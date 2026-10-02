@@ -13,9 +13,3 @@ server:
 
 auth:
   enabled: false  # Authentication disabled in development
-
-# Contact information for development environment
-branding:
-  contact_info:
-    lab_name: "Development Environment"
-    email: "dotto@fredhutch.org"

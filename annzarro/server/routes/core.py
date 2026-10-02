@@ -53,6 +53,10 @@ def register_core_routes(app, api_version):
         
         # List datasets with new options
         datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
+        # Not offered when hosted: anything a link leads to outside the roots
+        from ..confinement import listable
+        datasets = [d for d in datasets
+                    if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
         
         return jsonify({"datasets": datasets})
 
@@ -106,7 +110,7 @@ def register_core_routes(app, api_version):
             "data_dir": app.config.get("data_dir", "data"),
             
             # UI/application information
-            "app_name": app.config.get("app_name", "Annzarro"),
+            "app_name": app.config.get("app_name", "AnnZarro"),
             "project_description": app.config.get("project_description", "Zarr-based AnnData Visualization Tool"),
             
             # Contact info - explicitly extract only what's needed
@@ -116,10 +120,6 @@ def register_core_routes(app, api_version):
                 "email": app.config.get("contact_info", {}).get("email"),
                 "custom_html": app.config.get("contact_info", {}).get("custom_html")
             },
-            
-            # Feature flags and limits - only sharing safe values
-            "max_cells_per_request": app.config.get("max_cells_per_request", 10000),
-            "max_genes_per_request": app.config.get("max_genes_per_request", 10000),
             
             # UI settings
             "ui_max_cells": app.config.get("ui_max_cells", None),
@@ -278,5 +278,8 @@ def register_core_routes(app, api_version):
         """
         # Get dataset info
         info = data_manager.get_dataset_info(dataset_path)
+        if isinstance(info, dict) and "error" in info:
+            # It exists (checked before the route) but cannot be opened
+            return jsonify(dict(info, reason="unsupported_type")), 400
         
         return jsonify(info)

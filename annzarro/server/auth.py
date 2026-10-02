@@ -58,6 +58,10 @@ class User:
         self.last_login = None
         self.login_attempts = 0
         self.locked_until = None
+        # Failed logins per client address: {ip: [count, locked_until, last_failure]}
+        self.failed_logins = {}
+        # When the password last changed; logins from before it are void
+        self.password_changed_at = None
     
     def to_dict(self):
         """Convert user to dictionary for storage"""
@@ -69,7 +73,9 @@ class User:
             'tokens': self.tokens,
             'last_login': self.last_login,
             'login_attempts': self.login_attempts,
-            'locked_until': self.locked_until
+            'locked_until': self.locked_until,
+            'failed_logins': self.failed_logins,
+            'password_changed_at': self.password_changed_at
         }
     
     @classmethod
@@ -85,6 +91,8 @@ class User:
         user.last_login = data.get('last_login')
         user.login_attempts = data.get('login_attempts', 0)
         user.locked_until = data.get('locked_until')
+        user.password_changed_at = data.get('password_changed_at')
+        user.failed_logins = data.get('failed_logins') or {}
         return user
 
 def resolve_user_file(user_file):
@@ -248,28 +256,27 @@ class AuthManager:
             logging.warning(f"Cannot create user: Username {username} already exists")
             return False
             
-        # Hash password using Werkzeug's method
-        try:
-            from werkzeug.security import generate_password_hash
-            password_hash = generate_password_hash(password)
-        except ImportError:
-            # Fallback to custom hash
-            salt = secrets.token_hex(8)
-            password_hash = f"pbkdf2:sha256:150000${salt}${self._hash_password(password, salt)}"
-            
         # Create user
-        self.users[username] = User(username, password_hash, is_admin)
+        self.users[username] = User(username, self._new_hash(password), is_admin)
         self._save_users(created=[username])
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
     
-    def authenticate(self, username, password):
+    def authenticate(self, username, password, client_ip=None):
         """
         Authenticate a user with username and password
+
+        Failed attempts are counted per (user, client address): after
+        ``max_login_attempts`` failures from one address, that address is
+        locked out of that account for ``lockout_time`` seconds. Counting per
+        user alone let anyone who knew a user name lock its owner out by
+        failing on purpose; now they only lock themselves out.
         
         Args:
             username (str): Username
             password (str): Password
+            client_ip (str, optional): The client's address (``None`` for
+                callers without one, e.g. the CLI)
             
         Returns:
             bool: Authentication success
@@ -282,41 +289,46 @@ class AuthManager:
             return False
             
         user = self.users[username]
-        logging.info(f"Found user in database: {username}")
+        source = client_ip or "unknown"
+        now = time.time()
+        # Forget lockouts that ran out and failures older than lockout_time,
+        # so the record does not grow without bound
+        def live(rec):
+            count, locked_until, last = (list(rec) + [None, None, None])[:3]
+            if locked_until:
+                return float(locked_until) > now
+            return last is not None and now - float(last) < self.lockout_time
+        user.failed_logins = {ip: rec for ip, rec in user.failed_logins.items() if live(rec)}
+        count, locked_until = (list(user.failed_logins.get(source, [0, None])) + [None])[:2]
         
-        # Check if account is locked
-        if user.locked_until and float(user.locked_until) > time.time():
-            lock_remaining = int(float(user.locked_until) - time.time())
-            logging.warning(f"Authentication failed: Account {username} is locked for {lock_remaining} seconds")
+        # Check if this address is locked out of the account
+        if locked_until and float(locked_until) > now:
+            lock_remaining = int(float(locked_until) - now)
+            logging.warning(f"Authentication failed: {username} is locked for {source} "
+                            f"for {lock_remaining} seconds")
             return False
         
-        # Log password hash information for debugging
-        logging.info(f"Password hash type for {username}: {user.password_hash[:20]}...")
-            
         # Verify password
         is_valid = self._verify_password(password, user.password_hash)
-        logging.info(f"Password verification result for {username}: {is_valid}")
         
         if is_valid:
-            # Reset login attempts on success
-            user.login_attempts = 0
+            # Reset this address's failures on success
+            user.failed_logins.pop(source, None)
             user.last_login = datetime.now().isoformat()
             self._save_users(changed=[username])
             logging.info(f"User {username} authenticated successfully")
             return True
         else:
-            # Increment failed attempts
-            user.login_attempts += 1
-            
-            # Lock account if too many failed attempts
-            if user.login_attempts >= self.max_login_attempts:
-                user.locked_until = time.time() + self.lockout_time
-                logging.warning(f"Account {username} locked for {self.lockout_time} seconds after "
-                               f"{user.login_attempts} failed attempts")
-            
+            count = (count or 0) + 1
+            locked_until = None
+            if count >= self.max_login_attempts:
+                locked_until = now + self.lockout_time
+                logging.warning(f"Account {username} locked for {source} for {self.lockout_time} "
+                                f"seconds after {count} failed attempts")
+            user.failed_logins[source] = [count, locked_until, now]
             self._save_users(changed=[username])
-            logging.warning(f"Authentication failed for user {username}: Invalid password "
-                           f"(attempt {user.login_attempts}/{self.max_login_attempts})")
+            logging.warning(f"Authentication failed for user {username} from {source}: Invalid password "
+                           f"(attempt {count}/{self.max_login_attempts})")
             return False
     
     def create_token(self, username):
@@ -465,6 +477,66 @@ class AuthManager:
         """
         return self.create_user(username, password, is_admin)
         
+    def _new_hash(self, password):
+        """Hash a new password (Werkzeug's default method, else PBKDF2)."""
+        try:
+            from werkzeug.security import generate_password_hash
+            return generate_password_hash(password)
+        except ImportError:
+            salt = secrets.token_hex(8)
+            return f"pbkdf2:sha256:150000${salt}${self._hash_password(password, salt)}"
+
+    def set_password(self, username, password):
+        """Replace a user's password in place.
+
+        Clears a lockout and failed attempts, and records the time so that
+        logins made with the old password stop working (see
+        ``session_is_current``).
+
+        Returns:
+            bool: False if the user does not exist
+        """
+        self._reload_if_changed()
+        user = self.users.get(username)
+        if user is None:
+            logging.warning(f"Cannot change password: User {username} not found")
+            return False
+        user.password_hash = self._new_hash(password)
+        user.login_attempts = 0
+        user.locked_until = None
+        user.failed_logins = {}
+        user.tokens = {}
+        user.password_changed_at = time.time()
+        self._save_users(changed=[username])
+        logging.info(f"Changed password of user: {username}")
+        return True
+
+    def set_admin(self, username, is_admin):
+        """Grant or revoke admin in place. Returns False if the user does not exist."""
+        self._reload_if_changed()
+        user = self.users.get(username)
+        if user is None:
+            logging.warning(f"Cannot change admin flag: User {username} not found")
+            return False
+        user.is_admin = bool(is_admin)
+        self._save_users(changed=[username])
+        logging.info(f"User {username} admin: {user.is_admin}")
+        return True
+
+    def session_is_current(self, username, logged_in_at):
+        """Whether a login of ``username`` made at ``logged_in_at`` still counts:
+        the user exists and has not changed password since."""
+        user = self.get_user(username)
+        if user is None:
+            return False
+        changed = user.password_changed_at
+        if changed is None:
+            return True
+        try:
+            return float(logged_in_at) >= float(changed)
+        except (TypeError, ValueError):
+            return False
+
     def remove_user(self, username):
         """
         Remove a user
@@ -526,18 +598,15 @@ class AuthManager:
         Returns:
             bool: True if password matches
         """
-        logging.info(f"Verifying password with hash type: {stored_hash.split(':')[0] if ':' in stored_hash else 'unknown'}")
-        
         try:
             from werkzeug.security import check_password_hash
             result = check_password_hash(stored_hash, password)
-            logging.info(f"Werkzeug password check result: {result}")
             return result
         except ImportError as e:
             logging.warning(f"Werkzeug not available for password verification: {e}")
             # Fallback to custom verification
             if not stored_hash.startswith('pbkdf2:sha256:'):
-                logging.warning(f"Hash format not recognized: {stored_hash[:10]}...")
+                logging.warning("Password hash format not recognized")
                 return False
                 
             parts = stored_hash.split('$')
@@ -550,7 +619,6 @@ class AuthManager:
             
             calculated_hash = self._hash_password(password, salt)
             result = hash_value == calculated_hash
-            logging.info(f"Custom password verification result: {result}")
             return result
         except Exception as e:
             logging.error(f"Unexpected error in password verification: {e}")

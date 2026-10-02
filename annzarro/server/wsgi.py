@@ -18,7 +18,7 @@ factory closes that hole:
   confined to the data directory and the remote-store policy for shared
   servers applies;
 * login is ON unless the configuration says ``auth.enabled: false`` (or
-  ``ANNZARRO_AUTH_DISABLED`` is set). That remains possible, and logs the
+  ``ANNZARRO_AUTH_DISABLED`` is true/yes/1/on). That remains possible, and logs the
   same SECURITY banner as an exposed ``annzarro start``.
 """
 
@@ -56,9 +56,9 @@ def load_hosted_config(config_path=None, env=None):
     flask_config.pop("__using_config_manager", None)
 
     auth = merged.get("auth") or {}
-    if os.environ.get("ANNZARRO_AUTH_DISABLED"):
-        auth_enabled = False
-    elif "enabled" in auth:
+    # ANNZARRO_AUTH_DISABLED is applied by ConfigManager (env_flag), which
+    # sets auth.enabled: false only for a true value.
+    if "enabled" in auth:
         auth_enabled = bool(auth["enabled"])
     else:
         auth_enabled = True

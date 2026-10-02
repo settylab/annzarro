@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from functools import wraps
 import time
+from urllib.parse import quote, urlsplit
 
 from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 logger = logging.getLogger(__name__)
@@ -37,10 +39,7 @@ DEFAULT_CONFIG = {
     "auth_enabled": False,
     "user_file": "users.json",
     "unified_server": True,  # New flag to indicate we're using the unified server approach
-    "max_response_elements": 1000000,  # Maximum number of elements in array responses
-    "max_cells_per_request": 10000,    # Maximum number of cells in a single request
-    "max_genes_per_request": 10000,    # Maximum number of genes in a single request
-    "max_embedding_dims": 50,          # Maximum number of dimensions in embedding requests
+    "max_response_elements": 10000000, # Maximum number of elements in array responses (as base.yaml)
     "secret_key": None,                # Login cookie key; None = generated and stored beside user_file
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
@@ -51,7 +50,7 @@ DEFAULT_CONFIG = {
     "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
     "remote_read_timeout_s": 30,       # seconds between bytes before a 504
     "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
-    "app_name": "Annzarro",            # Application name shown on login page
+    "app_name": "AnnZarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page
         "email": None,                 # Contact email address
@@ -60,6 +59,91 @@ DEFAULT_CONFIG = {
         "custom_html": None            # Custom HTML content for additional contact info
     }
 }
+
+#: Default seconds of inactivity before a login expires (auth.session_timeout).
+DEFAULT_SESSION_TIMEOUT = 8 * 3600
+
+
+def is_logged_in() -> bool:
+    """Whether the current request carries a live login session.
+
+    A session idle for longer than ``session_timeout`` seconds (0 = never)
+    is cleared. The idle clock lives in the signed cookie, so it cannot be
+    reset by the client; it is refreshed at most once a minute to avoid
+    re-sending the cookie on every request.
+    """
+    if "user_id" not in session:
+        return False
+    timeout = current_app.config.get("session_timeout", DEFAULT_SESSION_TIMEOUT)
+    now = time.time()
+    try:
+        last = float(session.get("last_activity", 0))
+    except (TypeError, ValueError):
+        last = 0.0
+    if timeout and now - last > float(timeout):
+        logger.info(f"Login session of {session.get('user_id')!r} expired after {timeout}s idle")
+        session.clear()
+        return False
+    # A removed user, or a login from before a password change, no longer counts
+    manager = getattr(current_app, "auth_manager", None)
+    if manager is not None and not manager.session_is_current(
+            session["user_id"], session.get("login_at", 0)):
+        logger.info(f"Login session of {session.get('user_id')!r} revoked "
+                    "(user removed or password changed)")
+        session.clear()
+        return False
+    if now - last > 60:
+        session["last_activity"] = now
+    return True
+
+
+def safe_next(target: Optional[str]) -> str:
+    """``target`` if it is a path on this server, else ``/``.
+
+    Only a relative path that starts with a single ``/`` is accepted, so a
+    crafted ``/login?next=//evil.example`` or ``next=https://...`` cannot send
+    a user who just signed in to another site.
+    """
+    if not target or not isinstance(target, str):
+        return "/"
+    if any(c in target for c in "\r\n\\") or any(ord(c) < 0x20 for c in target):
+        return "/"
+    if not target.startswith("/") or target.startswith("//"):
+        return "/"
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc:
+        return "/"
+    if parts.path.startswith("/login") or parts.path.startswith("/logout"):
+        return "/"
+    return target
+
+
+def safe_fragment(fragment: Optional[str]) -> str:
+    """A URL fragment (``#view=...``) to re-attach after login, or ``""``."""
+    if not fragment or not isinstance(fragment, str):
+        return ""
+    fragment = fragment.lstrip("#")
+    if not fragment or any(ord(c) < 0x20 for c in fragment):
+        return ""
+    return "#" + fragment
+
+
+def login_required_response():
+    """What a request that needs login gets without one: 401 for the API,
+    a redirect to the login page for everything else.
+
+    The redirect carries the page asked for (path and query) as ``next``, so
+    a shared link survives signing in. Its ``#view=`` fragment never reaches
+    the server; the browser keeps it across this redirect and the login page
+    posts it back (see templates/login.html).
+    """
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Authentication required"}), 401
+    target = request.full_path.rstrip("?") if request.query_string else request.path
+    if safe_next(target) == "/":
+        return redirect("/login")
+    return redirect("/login?next=" + quote(target, safe="/"))
+
 
 def require_auth(f):
     """
@@ -81,18 +165,56 @@ def require_auth(f):
             return f(*args, **kwargs)
             
         # Check if user is logged in (in session)
-        if "user_id" not in session:
+        if not is_logged_in():
             logger.warning(f"Unauthenticated access attempt to {request.path}")
-            # For API routes, return 401 Unauthorized
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required"}), 401
-            # For UI routes, redirect to login page
-            return redirect("/login")
+            return login_required_response()
             
         # User is authenticated, proceed with the original function
         logger.debug(f"Authenticated access to {request.path} by {session['user_id']}")
         return f(*args, **kwargs)
     return decorated_function
+
+class _LoginCookieInterface(SecureCookieSessionInterface):
+    """Flask's signed-cookie sessions with ``cookie_secure: auto``: the login
+    cookie is marked Secure exactly when the request came over HTTPS (as
+    reported by the trusted proxies, see ``proxy_count``)."""
+
+    def get_cookie_secure(self, app):
+        mode = app.config.get("cookie_secure", "auto")
+        if isinstance(mode, str) and mode.strip().lower() == "auto":
+            return request.is_secure
+        if isinstance(mode, str):
+            return mode.strip().lower() in ("true", "yes", "1", "on")
+        return bool(mode)
+
+
+def resolve_dataset_segment(endpoint, values):
+    """``/datasets/<path>`` names a dataset RELATIVE TO data_dir.
+
+    The routes used to hand the segment to the readers as is, so it was
+    resolved against the server's working directory, and an absolute path
+    lost its leading "/" in the URL. Resolved here, before the confinement
+    check sees it. (``?dataset_path=`` keeps accepting absolute paths.)
+    """
+    if not values or not values.get("dataset_path"):
+        return
+    segment = values["dataset_path"]
+    if "://" in segment:
+        return
+    data_dir = current_app.config.get("data_dir") or "data"
+    values["dataset_path"] = os.path.join(data_dir, segment)
+
+
+def require_dataset_segment():
+    """404 for a ``/datasets/<path>`` that does not exist, instead of the
+    routes' 200-with-an-error-body, 400 or 500."""
+    path = (request.view_args or {}).get("dataset_path")
+    if path and "://" not in path and not os.path.exists(path):
+        return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
+                                 "to the server's data directory.",
+                        "reason": "not_found"}), 404
+    return None
+
 
 def create_app(config: Dict[str, Any] = None) -> Flask:
     """
@@ -123,9 +245,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     app.json_encoder = NumpyJSONEncoder
     logger.info("Using custom JSON encoder to handle NaN/Infinity values")
     
-    # Enable CORS by default for all routes - important during development
-    CORS(app)
-    
+    # CORS is configured in configure_app() from cors_enabled/cors_origins
+    # (off by default). An unconditional CORS(app) here used to answer every
+    # route with Access-Control-Allow-Origin: *, whatever the configuration.
+
     # Apply configuration
     if config and isinstance(config, dict):
         config_copy = dict(config)
@@ -139,6 +262,12 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         logger.warning("No configuration provided, using default configuration")
         app.config.update(DEFAULT_CONFIG)
     
+    # Login cookie: not sent on cross-site subrequests or form posts (Lax),
+    # Secure per cookie_secure, never readable from JavaScript.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.session_interface = _LoginCookieInterface()
+
     # Configure the app
     configure_app(app, app.config)
     
@@ -149,7 +278,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # A shared server only opens paths inside its data directory (see confinement.py)
     from annzarro.server import confinement
     confinement.warn_about_escaping_links(app.config)
+    app.url_value_preprocessor(resolve_dataset_segment)
     app.before_request(confinement.enforce)
+    app.before_request(require_dataset_segment)
 
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
@@ -240,9 +371,11 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         app: Flask application instance
         config: Configuration dictionary
     """
-    # Enable CORS if configured
+    # Cross-origin API access only when configured. Never with credentials:
+    # the login cookie must not authorize requests from other sites.
     if config.get("cors_enabled", False):
-        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}})
+        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}},
+             supports_credentials=False)
     
     # Enable proxy fix if needed
     if config.get("proxy_count", 0) > 0:
@@ -338,50 +471,43 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
+    def render_login(**extra):
+        return render_template(
+            "login.html",
+            app_name=app.config.get("app_name", "AnnZarro"),
+            project_description=app.config.get("project_description", ""),
+            contact_info=app.config.get("contact_info", {}),
+            **extra
+        )
+
     @app.route("/login", methods=["GET"])
     def login_page():
         """Login page"""
-        # Pass the config variables to the template
-        app_name = app.config.get("app_name", "Annzarro")
-        project_description = app.config.get("project_description", "")
-        contact_info = app.config.get("contact_info", {})
-        
-        return render_template(
-            "login.html",
-            app_name=app_name,
-            project_description=project_description,
-            contact_info=contact_info
-        )
+        return render_login(next_url=safe_next(request.args.get("next")), fragment="")
     
     @app.route("/login", methods=["POST"])
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
+        next_url = safe_next(request.form.get("next"))
+        fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
-            # Set session variables
+        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
+            # A fresh session: nothing from before login carries over
+            session.clear()
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
-            session["last_activity"] = time.time()
+            session["last_activity"] = session["login_at"] = time.time()
             
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            
-            # Redirect to home page
-            return redirect("/")
+            # Back to the page that asked for login, view included
+            return redirect(next_url + fragment)
         else:
-            # Return login page with error
-            app_name = app.config.get("app_name", "Annzarro")
-            project_description = app.config.get("project_description", "")
-            contact_info = app.config.get("contact_info", {})
-            
-            return render_template(
-                "login.html",
-                app_name=app_name,
-                project_description=project_description,
-                contact_info=contact_info,
+            # Return login page with error, keeping where to go afterwards
+            return render_login(
+                next_url=next_url,
+                fragment=fragment,
                 error="Invalid username or password. Please try again."
             )
     
@@ -400,7 +526,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         password = request.json.get("password")
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
+        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
             # Create authentication token
             token = app.auth_manager.create_token(username)
             return jsonify({"token": token})

@@ -36,6 +36,10 @@ Then open http://localhost:8000 in your browser if using server mode.
 
 ### Installation Options
 
+These are options of the checkout's `./annzarro-cli` wrapper and
+`annzarro-install.py`; the `annzarro` command a pip install provides does not
+take them.
+
 ```bash
 # Install without virtual environment
 ./annzarro-cli install --no-venv
@@ -68,6 +72,8 @@ python annzarro-install.py
                                       # (a running server sees user changes at once)
 ./annzarro-cli user list
 ./annzarro-cli user remove --username username
+./annzarro-cli user passwd --username username      # signs out their existing logins
+./annzarro-cli user set-admin --username username   # --no-admin to revoke
 ```
 
 ### Sharing a Server: Login and Permissions
@@ -77,8 +83,8 @@ sets**, saved as JSON in `<data-dir>/sessions/` and visible to every user of the
 server.
 
 - **Login** is required automatically when the server binds to anything other
-  than `127.0.0.1`/`localhost`. `--auth-disabled` (or `ANNZARRO_AUTH_DISABLED`)
-  turns it off; doing that on a network address logs a `SECURITY` warning at
+  than `127.0.0.1`/`localhost`. `--auth-disabled` (or `ANNZARRO_AUTH_DISABLED=true`;
+  only `true`/`yes`/`1`/`on` count, `false`/`0` keep login on) turns it off; doing that on a network address logs a `SECURITY` warning at
   startup and shows a "No login" badge in the header, because anyone who can
   reach the port can then open every shared dataset and delete every panel set.
 - **Shared datasets only.** When login is on or the host is not localhost, every
@@ -91,11 +97,20 @@ server.
   start a random key is generated and kept (mode 0600) beside the users file as
   `annzarro_secret_key`, shared by every worker and reused across restarts.
   The old shipped placeholder values are ignored with a warning.
+  The cookie is `HttpOnly` and `SameSite=Lax`, and `Secure` whenever the
+  request came over HTTPS (`auth.cookie_secure: auto`; behind a proxy this
+  needs `server.proxy_count`). A login expires after `auth.session_timeout`
+  seconds without a request (default 8 hours; 0 = never), and at once when
+  the user is removed or their password is changed.
+- **Unauthenticated requests** get 401 (API) or the login page before any
+  path check, and the login page returns to the requested link, `#view=`
+  included.
 - **With login**, everyone can load, export and duplicate any panel set and
   save new ones. Deleting, renaming, or saving/importing **over** an existing
   set is allowed only to the user who first saved it (its owner, recorded in
   the file) and to **admins** (`user add --admin`). Sets saved before owners
-  were recorded can only be changed by an admin.
+  were recorded can only be changed by an admin. On a shared server only
+  admins can empty the shared cache (`POST /api/v1/cache/reset`).
 - **Without login** (local, single-user) there are no restrictions.
 - **Panel sets from before owners were recorded** stay admin-only until an
   admin hands them to someone: while logged in as an admin,
@@ -108,11 +123,14 @@ Run gunicorn on loopback behind a TLS-terminating reverse proxy, using the
 hosted WSGI factory:
 
 ```bash
-cd /opt/annzarro                      # config/*.yaml are read from here
-export ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-gunicorn -w 4 -b 127.0.0.1:8000 "annzarro.server.wsgi:create_wsgi_app()"
+export ANNZARRO_CONFIG=/etc/annzarro/site.yaml   # start from annzarro/server/site.example.yaml
+gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
 # or: annzarro/server/run_gunicorn.sh, or the systemd unit annzarro/server/annzarro.service
 ```
+
+The gunicorn config binds to `server.host:server.port` from the same
+configuration (default `127.0.0.1:8000`), runs `server.workers` workers
+(default 4; each keeps its own dataset cache), and logs to stderr.
 
 `create_wsgi_app()` loads the same merged configuration as `annzarro start`
 and, because it cannot know where gunicorn binds, treats the server as
@@ -122,15 +140,28 @@ is still honoured but logs a `SECURITY` banner and shows "No login" in the
 header. Do not use `create_app()` directly as a gunicorn target: with no
 configuration it runs with laptop defaults (no login, no confinement).
 
-A minimal `site.yaml`:
+A minimal `site.yaml` (see `annzarro/server/site.example.yaml`):
 
 ```yaml
 server:
   data_dir: /srv/annzarro/data
-  proxy_count: 1          # trust X-Forwarded-* from the one proxy in front
+  proxy_count: 1          # trust X-Forwarded-For/-Proto from the one proxy in front
 auth:
   user_file: /srv/annzarro/users.json   # the login key is generated beside it
 ```
+
+`proxy_count` defaults to 0: no `X-Forwarded-*` header is trusted, so the
+server sees the proxy's address and plain HTTP, and the login cookie is not
+marked `Secure`. Set it to the number of proxies in front.
+
+CORS is off: the frontend is served by the same server. `server.cors_enabled:
+true` with `server.cors_origins` allows other origins to call `/api/*`
+(never with the login cookie).
+
+Every setting can also come from an `ANNZARRO_<SECTION>_<KEY>` variable, e.g.
+`ANNZARRO_SERVER_DATA_DIR`, `ANNZARRO_AUTH_ENABLED`, `ANNZARRO_AUTH_SECRET_KEY`,
+`ANNZARRO_SERVER_ALLOWED_DIRS` (comma-separated). `annzarro config show` lists
+the merged result, where each value came from, and any variable it ignored.
 
 TLS belongs in the proxy, e.g. nginx:
 
@@ -164,7 +195,7 @@ to the server.
   headers. JSON stays the default for other clients. The protocol is
   documented in `annzarro/core/array_response.py`.
 - **Size guard.** A reply larger than `server.max_response_elements`
-  (default 1,000,000) is refused with `413 {"reason": "response_too_large"}`
+  (default 10,000,000) is refused with `413 {"reason": "response_too_large"}`
   before anything is read. One full row or column is always allowed, at any
   dataset size; whole matrices and multi-vector blocks are not.
 - **Revalidation.** Dataset reads carry a weak `ETag` (request URL plus a
@@ -207,7 +238,7 @@ the same split layout, panel settings and focused cell/gene. The view travels
 compressed in the URL fragment (`?dataset_path=…#view=…`), so it never reaches
 the server and long layouts do not hit request-line limits. Without clipboard
 access (e.g. plain http on a cluster node) the link is shown for manual copying.
-See [docs/deep-link-schema.md](docs/deep-link-schema.md) for the format.
+See the [deep-link reference](https://annzarro.readthedocs.io/en/latest/reference/deep-links.html) for the format.
 
 ### Remote datasets
 
@@ -295,11 +326,10 @@ python -m pytest
 
 ## Download
 
-Get the latest desktop app for your platform:
-
-- [Windows](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-Setup.exe)
-- [macOS](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.dmg)
-- [Linux](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.AppImage)
+Desktop apps are published with each release on the
+[releases page](https://github.com/settylab/annzarro/releases): macOS (Apple
+silicon `.dmg`) and Linux (`.AppImage`, `.deb`). There is no Windows build
+yet.
 
 ### Creating a new release
 

@@ -1,4 +1,4 @@
-# Annzarro Base Configuration
+# AnnZarro Base Configuration
 # This file contains common settings shared across all environments
 
 # Server configuration
@@ -29,11 +29,8 @@ server:
   log_file: null
   log_level: "INFO"
   
-  # Rate limiting and protection
+  # Response size protection
   max_response_elements: 10000000
-  max_cells_per_request: 10000000
-  max_genes_per_request: 1000000
-  max_embedding_dims: 200
   
   # Caching configuration
   cache_enabled: true
@@ -70,17 +67,28 @@ auth:
   # <checkout>/config/auth/users.json.
   user_file: null
   # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
+  # Seconds without a request after which a login expires (0 = never).
+  session_timeout: 28800
+  # Secure flag on the login cookie. auto: set when the request arrived over
+  # HTTPS -- directly, or per X-Forwarded-Proto from the server.proxy_count
+  # trusted proxies. true forces it (the cookie is then never sent over plain
+  # HTTP, so login over http:// stops working); false never sets it.
+  cookie_secure: auto
 
 # Application branding
 branding:
-  app_name: "Annzarro"
+  app_name: "AnnZarro"
   project_description: "Zarr-based AnnData Visualization Tool"
   
-  # Contact information shown on login page
+  # Contact block on the login page, shown only when something is set here.
+  # Fill it in for your site, e.g.:
+  #   lab_name: "Example Lab"
+  #   lab_url: "https://lab.example.org"
+  #   email: "annzarro-admin@example.org"
   contact_info:
-    lab_name: "Setty Lab"
-    lab_url: "https://setty-lab.org"
-    email: "dotto@fredhutch.org"
+    lab_name: null
+    lab_url: null
+    email: null
     custom_html: null
 
 # UI configuration

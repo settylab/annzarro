@@ -17,7 +17,7 @@ from ...core.zarr_reader import ZarrFormatError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
-from .. import permissions
+from .. import confinement, permissions
 from .. import http_cache
 from ...core.array_response import wants_binary
 from ...core.remote import is_remote_path, is_timeout, timeout_message
@@ -105,6 +105,11 @@ def _reader_error_response(exc, dataset_path):
     A remote store that stops answering is a 504: the failure is upstream of
     this server, and retrying later may well succeed, unlike a 500.
     """
+    if isinstance(exc, DataRequestError):
+        return _data_request_error_response(exc)
+    if isinstance(exc, KeyError):
+        return jsonify({"error": exc.args[0] if exc.args else "Key not found",
+                        "reason": "key_not_found"}), 404
     if is_timeout(exc):
         return jsonify({
             "error": (timeout_message(dataset_path) if is_remote_path(dataset_path)
@@ -137,12 +142,37 @@ def _reader_error_response(exc, dataset_path):
             "reason": "unsupported_type",
             "exception": type(exc).__name__,
         }), 400
+    reason = getattr(exc, "reason", None)
+    if reason == "stale_metadata":
+        return jsonify({
+            "error": str(exc),
+            "reason": reason,
+            "exception": type(exc).__name__,
+        }), 500
     logger.exception("Unhandled error serving %s", dataset_path)
     return jsonify({
         "error": f"Failed to read {dataset_path}: {exc}",
         "reason": "read_failed",
         "exception": type(exc).__name__,
     }), 500
+
+
+def _request_cap(name):
+    """The ``max_cells``/``max_genes`` cap a client asked for, or None.
+
+    It is the client's own guard against asking for more than it can draw
+    (the frontend sends ui.defaults.max_cells/max_genes). It is not a server
+    limit: a client can send any value. The server-side settings that used
+    to provide its default (max_cells_per_request, max_genes_per_request)
+    were removed for that reason.
+    """
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 def _cap_error_response(requested, limit, unit, axis_hint):
@@ -161,7 +191,7 @@ def _cap_error_response(requested, limit, unit, axis_hint):
     }), 400
 
 #: Fallback for ``max_response_elements`` when the config does not set it.
-DEFAULT_MAX_RESPONSE_ELEMENTS = 1_000_000
+DEFAULT_MAX_RESPONSE_ELEMENTS = 10_000_000
 
 
 class IndexParseError(ValueError):
@@ -237,6 +267,78 @@ def _response_too_large(reader, dataset_path, kind, key, rows, cols, single_colu
     }), 413
 
 
+class DataRequestError(Exception):
+    """A request the dataset cannot answer: a key it does not have, an index
+    outside an axis. Answered as ``status`` with a ``reason`` code instead of
+    ``200`` and empty data, which looked like a dataset with nothing in it."""
+
+    def __init__(self, status, reason, message):
+        super().__init__(message)
+        self.status, self.reason, self.message = status, reason, message
+
+
+def _data_request_error_response(exc):
+    return jsonify({"error": exc.message, "reason": exc.reason}), exc.status
+
+
+#: For each route: (metadata field holding its keys or None, row axis, col axis).
+#: An axis is "obs" / "var" (length n_obs / n_vars), "key" (the second
+#: dimension of the requested matrix) or None (no such index).
+_SLOTS = {
+    "X": (None, "obs", "var"),
+    "layers": ("layers", "obs", "var"),
+    "obs": (None, "obs", None),
+    "var": (None, None, "var"),
+    "obsm": ("obsm", "obs", "key"),
+    "varm": ("varm", "var", "key"),
+    "obsp": ("obsp", "obs", "obs"),
+    "varp": ("varp", "var", "var"),
+    "uns": ("uns", None, None),
+}
+
+
+def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, columns=None):
+    """Refuse what the dataset cannot answer, before reading anything.
+
+    Raises DataRequestError: 404 ``key_not_found`` for a missing layer,
+    obsm/varm/obsp/varp/uns key, obs/var column or X; 400
+    ``index_out_of_range`` for an index at or beyond the axis length. Uses
+    the (cached) metadata the routes already rely on; when the reader cannot
+    say (no metadata), nothing is refused here.
+    """
+    metadata = reader.get_metadata(dataset_path)
+    if not metadata:
+        return
+    field, row_axis, col_axis = _SLOTS[slot]
+    if slot == "X" and metadata.get("has_X") is False:
+        raise DataRequestError(404, "key_not_found", "This dataset has no X matrix.")
+    if field and key is not None:
+        keys = (metadata.get(field) or {}).get("keys")
+        top = key.split("/", 1)[0] if slot == "uns" else key
+        if keys is not None and top not in keys:
+            raise DataRequestError(404, "key_not_found", f"No {field} key '{key}' in this dataset.")
+    if columns and slot in ("obs", "var"):
+        known = metadata.get(f"{slot}_columns")
+        missing = [c for c in columns if known is not None and c not in known]
+        if missing:
+            raise DataRequestError(404, "key_not_found",
+                                   f"No {slot} column {', '.join(repr(c) for c in missing)} in this dataset.")
+    shape = metadata.get("shape") or ()
+    lengths = {"obs": shape[0] if len(shape) > 0 else None,
+               "var": shape[1] if len(shape) > 1 else None}
+    if field in ("obsm", "varm") and key is not None:
+        key_shape = ((metadata.get(f"{field}_info") or {}).get(key) or {}).get("shape")
+        lengths["key"] = key_shape[1] if key_shape and len(key_shape) > 1 else None
+    for name, indices, axis in (("rows", rows, row_axis), ("cols", cols, col_axis)):
+        length = lengths.get(axis) if axis else None
+        if indices and length is not None:
+            bad = [i for i in indices if i >= length]
+            if bad:
+                raise DataRequestError(
+                    400, "index_out_of_range",
+                    f"{name} index {bad[0]} is out of range: this axis has {length} entries (0-{length - 1}).")
+
+
 def register_data_routes(app, api_version):
     """
     Register data access routes with the Flask app.
@@ -251,6 +353,8 @@ def register_data_routes(app, api_version):
         return jsonify({"error": str(exc), "reason": "bad_indices"}), 400
 
     http_cache.install_gzip(app)
+
+    app.register_error_handler(DataRequestError, _data_request_error_response)
 
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
     def get_data_info():
@@ -336,7 +440,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with X matrix data
@@ -352,16 +457,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -369,6 +471,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "X", rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "X", None, row_indices, col_indices)
             if refusal is not None:
                 return refusal
@@ -390,7 +493,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with layer data
@@ -406,16 +510,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -423,6 +524,7 @@ def register_data_routes(app, api_version):
         
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "layers", key=layer_name, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "layer", layer_name, row_indices, col_indices)
             if refusal is not None:
                 return refusal
@@ -441,7 +543,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             columns: Comma-separated list of column names to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with observation annotations
@@ -457,17 +560,14 @@ def register_data_routes(app, api_version):
         columns = request.args.get("columns")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows to integer list and columns to string list
         row_indices = _parse_indices(rows)
         column_names = _parse_strings(columns)
         
         # Check for too many cells
-        if row_indices and len(row_indices) > max_cells:
+        if max_cells is not None and row_indices and len(row_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices), max_cells, "cells",
                 "Please reduce the number of rows."
@@ -477,7 +577,9 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells",
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
+            return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells",
                                                 binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
@@ -492,7 +594,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             cols: Comma-separated list of column indices to get.
             columns: Comma-separated list of column names to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with variable annotations
@@ -508,16 +611,13 @@ def register_data_routes(app, api_version):
         columns = request.args.get("columns")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert cols to integer list and columns to string list
         col_indices = _parse_indices(cols)
         column_names = _parse_strings(columns)
 
-        if col_indices and len(col_indices) > max_genes:
+        if max_genes is not None and col_indices and len(col_indices) > max_genes:
             return _cap_error_response(
                 len(col_indices), max_genes, "genes",
                 "Please reduce the number of columns."
@@ -527,7 +627,9 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes",
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
+            return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes",
                                                 binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
@@ -545,7 +647,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             column_name: Optional column name for dataframe-encoded obsm matrices.
             
         Returns:
@@ -565,17 +668,14 @@ def register_data_routes(app, api_version):
         column_name = request.args.get("column_name")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
         # Check for too many genes
-        if row_indices and len(row_indices) > max_cells:
+        if max_cells is not None and row_indices and len(row_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices), max_cells, "cells",
                 "Please reduce the number of rows."
@@ -583,6 +683,7 @@ def register_data_routes(app, api_version):
         
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obsm", key=obsm_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "obsm", obsm_key, row_indices, col_indices,
                                           single_column=column_name is not None)
             if refusal is not None:
@@ -606,7 +707,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             column_name: Optional column name for dataframe-encoded varm matrices.
             
         Returns:
@@ -626,17 +728,14 @@ def register_data_routes(app, api_version):
         column_name = request.args.get("column_name")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
         # Check for too many genes
-        if row_indices and len(row_indices) > max_genes:
+        if max_genes is not None and row_indices and len(row_indices) > max_genes:
             return _cap_error_response(
                 len(row_indices), max_genes, "genes",
                 "Please reduce the number of rows."
@@ -644,6 +743,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "varm", key=varm_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "varm", varm_key, row_indices, col_indices,
                                           single_column=column_name is not None)
             if refusal is not None:
@@ -666,7 +766,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with obsp data
@@ -682,16 +783,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -699,6 +797,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "obsp", obsp_key, row_indices, col_indices)
             if refusal is not None:
                 return refusal
@@ -720,7 +819,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with varp data
@@ -736,16 +836,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
+        if max_genes is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_genes, "genes",
                 "Please reduce the number of rows or columns."
@@ -753,6 +850,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "varp", key=varp_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "varp", varp_key, row_indices, col_indices)
             if refusal is not None:
                 return refusal
@@ -783,7 +881,9 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_uns(uns_key, dataset_path_str, get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "uns", key=uns_key)
+            return process_file.extract_uns(uns_key, dataset_path_str, reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
         
@@ -1219,6 +1319,10 @@ def register_data_routes(app, api_version):
                 # Skip if not a directory
                 if not os.path.isdir(entry_path):
                     continue
+
+                # A link a hosted server would refuse to open is not offered
+                if not confinement.listable(app.config, entry_path):
+                    continue
                 
                 # Enhanced zarr store detection
                 is_zarr = False
@@ -1303,6 +1407,10 @@ def register_data_routes(app, api_version):
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
+                        continue
+
+                    # A link a hosted server would refuse to open is not offered
+                    if not confinement.listable(app.config, entry_path):
                         continue
 
                     # H5AD files are served directly by the h5ad reader (no zarr
@@ -2165,17 +2273,22 @@ def _parse_indices(indices_str):
     # `[undefined].join(',')` sends) or `cols=abc` asked for the WHOLE matrix.
     # That is refused now instead of being widened to everything.
     try:
-        return [int(i) for i in indices_str.split(",")]
+        indices = [int(i) for i in indices_str.split(",")]
     except ValueError:
-        pass
-    try:
-        parsed = json.loads(indices_str)
-    except (ValueError, TypeError):
-        parsed = None
-    if isinstance(parsed, list) and all(isinstance(i, int) and not isinstance(i, bool) for i in parsed):
-        return parsed
-    raise IndexParseError(
-        f"Invalid index list {indices_str[:80]!r}: expected comma-separated integers")
+        try:
+            parsed = json.loads(indices_str)
+        except (ValueError, TypeError):
+            parsed = None
+        if not isinstance(parsed, list) or not all(
+                isinstance(i, int) and not isinstance(i, bool) for i in parsed):
+            raise IndexParseError(
+                f"Invalid index list {indices_str[:80]!r}: expected comma-separated integers")
+        indices = parsed
+    if any(i < 0 for i in indices):
+        # numpy would wrap -1 to the last entry; an index is a position, not an offset
+        raise DataRequestError(400, "bad_indices",
+                               f"Indices must be 0 or greater, got {min(indices)}.")
+    return indices
 
 def _parse_strings(strings_str):
     """
