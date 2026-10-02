@@ -118,3 +118,18 @@ test('two focus changes during the first add leave ONE highlight trace', async (
     assert.equal(gd.data.filter(t => t.name === 'Focused Cell').length, 1);
     assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout', 'restyle']);
 });
+
+test('a 3D plot (scene, no xaxis title) gets its highlight without a page error', async () => {
+    // protocol-integration threw "Cannot set properties of undefined (setting
+    // 'text')" here for every new gene plot (3D on varm PCs by default)
+    calls.length = 0; failMode = null; unhandled = [];
+    const s3 = { ...settings, z: { type: 'obsm', key: 'X_pca', column: '2' } };
+    const d3 = { ...data, z: { values: [9, 8, 7] } };
+    const gd = { data: [{ name: 'data' }], layout: { scene: { camera: { eye: { x: 1, y: 2, z: 3 } } } } };
+    await highlightFocusedEntity(gd, d3, s3, 'cells');
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(unhandled.length, 0);
+    assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout']);
+    assert.equal(calls[0][1][1].type, 'scatter3d');
+    assert.deepEqual(calls[1][1][1]['scene.camera'], { eye: { x: 1, y: 2, z: 3 } });
+});
