@@ -25,7 +25,7 @@ def _arr(group, name, value, dtype=None):
         numcodecs = pytest.importorskip("numcodecs")
         kw = {"object_codec": numcodecs.VLenUTF8(), "dtype": object} if value.dtype.kind in "UO" else {"dtype": value.dtype}
         a = group.create_dataset(name, shape=value.shape, **kw)
-    a[()] = value
+    a[()] = value if value.ndim else value[()]  # zarr 2 VLenUTF8 takes a str, not a 0-d array
     return a
 
 

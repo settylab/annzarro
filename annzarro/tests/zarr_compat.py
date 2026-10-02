@@ -18,14 +18,15 @@ def open_group(path, mode="w"):
     return zarr.open_group(str(path), mode=mode)
 
 
-def write_array(group, name, data, dtype=None):
+def write_array(group, name, data, dtype=None, chunks=None):
     arr = np.asarray(data) if dtype is None else np.asarray(data, dtype=dtype)
+    kw = {} if chunks is None else {"chunks": chunks}
     if not ZARR_V3:
-        return group.create_dataset(name, data=arr)
+        return group.create_dataset(name, data=arr, **kw)
     if arr.dtype.kind in "UO":
-        out = group.create_array(name, shape=arr.shape, dtype=str)
+        out = group.create_array(name, shape=arr.shape, dtype=str, **kw)
         out[...] = arr.astype(str)
         return out
-    out = group.create_array(name, shape=arr.shape, dtype=arr.dtype)
+    out = group.create_array(name, shape=arr.shape, dtype=arr.dtype, **kw)
     out[...] = arr
     return out

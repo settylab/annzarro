@@ -13,6 +13,13 @@ from annzarro.tests import zarr_compat
 from pathlib import Path
 
 from annzarro.data.manager import DataManager
+from annzarro.data import manager as _manager_module
+
+# patch.object on the instance the manager calls: the dotted string
+# 'annzarro.core.zarr_reader.zarr_reader' does not resolve on Python < 3.11,
+# where mock imports it as a module path and annzarro.core.zarr_reader is a
+# module, not a package.
+_reader = _manager_module.zarr_reader
 
 class TestDataManager(unittest.TestCase):
     """Test cases for DataManager."""
@@ -98,9 +105,9 @@ class TestDataManager(unittest.TestCase):
         datasets = self.manager.list_datasets(self.data_dir)
         self.assertEqual(len(datasets), 2)
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_obs_names')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_var_names')
+    @patch.object(_reader, 'open_dataset_by_path')
+    @patch.object(_reader, 'get_obs_names')
+    @patch.object(_reader, 'get_var_names')
     def test_get_dataset_info(self, mock_get_var_names, mock_get_obs_names, mock_open):
         """Test getting dataset info."""
         mock_open.return_value = (object(), {
@@ -159,7 +166,7 @@ class TestDataManager(unittest.TestCase):
         
         self.assertFalse(self.manager.load_dataset("/invalid/path"))
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_metadata')
+    @patch.object(_reader, 'get_metadata')
     def test_get_basic_info(self, mock_get_metadata):
         """Test getting basic info."""
         # Test when no dataset is loaded
@@ -206,7 +213,7 @@ class TestDataManager(unittest.TestCase):
         self.assertIn("raw", info["layers"])
         self.assertIn("X_umap", info["embeddings"])
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_X')
+    @patch.object(_reader, 'get_X')
     def test_get_X(self, mock_get_X):
         """Test getting X data."""
         # Mock data
@@ -241,7 +248,7 @@ class TestDataManager(unittest.TestCase):
         np.testing.assert_array_equal(result, mock_data)
         mock_get_X.assert_not_called()  # Should use cached value
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_layer')
+    @patch.object(_reader, 'get_layer')
     def test_get_layer(self, mock_get_layer):
         """Test getting layer data."""
         # Mock data
@@ -409,10 +416,10 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual(stats["nan_count"], 1)
         self.assertEqual(stats["inf_count"], 1)
         
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_X')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_layer')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_obs_names')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_var_names')
+    @patch.object(_reader, 'get_X')
+    @patch.object(_reader, 'get_layer')
+    @patch.object(_reader, 'get_obs_names')
+    @patch.object(_reader, 'get_var_names')
     def test_analyze_expression_data(self, mock_var_names, mock_obs_names, mock_get_layer, mock_get_X):
         """Test expression data analysis."""
         # Set up mocks
@@ -464,7 +471,7 @@ class TestDataManager(unittest.TestCase):
         }
         
         # Use a different approach with patch context manager
-        with patch('annzarro.core.zarr_reader.zarr_reader.get_metadata') as mock_metadata:
+        with patch.object(_reader, 'get_metadata') as mock_metadata:
             # Mock the metadata to return a fixed shape
             mock_metadata.return_value = {"shape": (1000, 50)}
             
@@ -488,7 +495,7 @@ class TestDataManager(unittest.TestCase):
         }
         
         # Test stratified sampling with mocking
-        with patch('annzarro.core.zarr_reader.zarr_reader.get_metadata') as mock_metadata:
+        with patch.object(_reader, 'get_metadata') as mock_metadata:
             mock_metadata.return_value = {
                 "shape": (1000, 50),
                 "has_obs": True,
@@ -515,7 +522,7 @@ class TestDataManager(unittest.TestCase):
         }
         
         # Test k-means sampling with mocking
-        with patch('annzarro.core.zarr_reader.zarr_reader.get_metadata') as mock_metadata:
+        with patch.object(_reader, 'get_metadata') as mock_metadata:
             mock_metadata.return_value = {
                 "shape": (100, 50),
                 "has_obsm": True,
@@ -523,7 +530,7 @@ class TestDataManager(unittest.TestCase):
             }
             
             with patch.object(self.manager, 'get_embeddings', return_value=["X_umap"]):
-                with patch('annzarro.core.zarr_reader.zarr_reader.get_obsm') as mock_get_obsm:
+                with patch.object(_reader, 'get_obsm') as mock_get_obsm:
                     # Create embedding data
                     mock_get_obsm.return_value = np.random.rand(100, 2)
                     
