@@ -114,3 +114,17 @@ test('remapPanelReferences moves tableFilter to a renamed table', () => {
     assert.equal(configs[0].tableFilter, 'cell-table-99');
     assert.equal(configs[1].tableFilter, 'none');
 });
+
+test('derived table state is not serialized into links or panel sets', async () => {
+    // an unfiltered 8,090-row table put every row index into the share link
+    // (23,674 characters headless on protocol-integration; 544 without)
+    const { serializableConfig } = await import('../../../static/js/utils/deeplink.js');
+    const live = { title: 't', columns: [{ type: 'obs', key: 'Age' }], searchBuilderConfig: { criteria: [], logic: 'AND' } };
+    Object.defineProperty(live, 'currentEntries', { enumerable: true, get: () => Array.from({ length: 8090 }, (_, i) => i) });
+    live.filteredCells = ['a', 'b'];
+    const out = serializableConfig(live);
+    assert.equal('currentEntries' in out, false);
+    assert.equal('filteredCells' in out, false);
+    assert.deepEqual(out.columns, live.columns);
+    assert.deepEqual(out.searchBuilderConfig, { criteria: [], logic: 'AND' });
+});

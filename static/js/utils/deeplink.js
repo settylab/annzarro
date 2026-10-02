@@ -394,3 +394,25 @@ export function remapPanelReferences(configs, idMap) {
     });
     return configs;
 }
+
+/**
+ * Config keys that describe what a panel currently SHOWS, not how it is set
+ * up. A table's `currentEntries` is the row index of every row passing its
+ * filter (a getter over the live DataTable): an unfiltered 8,090-row table
+ * put 8,090 numbers into every share link (a 25,340-character URL) and
+ * panel set. They are recomputed when the panel loads.
+ */
+export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells'];
+
+/**
+ * A copy of a panel config without its derived state, for serialization.
+ * @param {Object} config
+ * @returns {Object}
+ */
+export function serializableConfig(config) {
+    const out = {};
+    for (const [key, value] of Object.entries(config || {})) {
+        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = value;
+    }
+    return out;
+}

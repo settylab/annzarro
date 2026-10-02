@@ -11,7 +11,7 @@
 import { LayoutManager } from './layout-manager.js';
 import { SelectionTile } from './selection-tile.js';
 import { Config } from './config.js';
-import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds } from './utils/deeplink.js';
+import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible } from './utils/controls-visibility.js';
 
 const PanelManager = (function() {
@@ -696,7 +696,8 @@ const PanelManager = (function() {
                 }
             }
             try {
-                const cfg = (panel.getConfig && panel.getConfig()) || {};
+                // without derived state (a table's row list): see serializableConfig
+                const cfg = serializableConfig((panel.getConfig && panel.getConfig()) || {});
                 panelConfigs[id] = { id, ...cfg };
             } catch (err) {
                 console.warn(`saveLayout: could not serialize config for ${id}:`, err);

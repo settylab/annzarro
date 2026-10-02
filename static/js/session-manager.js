@@ -12,7 +12,7 @@ import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
 import { errorFromResponse } from './utils/session-permissions.js';
-import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences } from './utils/deeplink.js';
+import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 
 const SessionManager = (function() {
     // Private variables
@@ -160,7 +160,7 @@ const SessionManager = (function() {
                 
                 try {
                     // Get panel configuration and associated data
-                    const config = panel.getConfig() || {};
+                    const config = serializableConfig(panel.getConfig() || {});
                     const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
                     
                     // For each panel, store only its configuration
@@ -563,7 +563,7 @@ const SessionManager = (function() {
                 
                 try {
                     // Get panel configuration and associated data
-                    const config = panel.getConfig() || {};
+                    const config = serializableConfig(panel.getConfig() || {});
                     const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
                     
                     // For each panel, store only its configuration
