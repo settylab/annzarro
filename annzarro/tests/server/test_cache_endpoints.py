@@ -83,108 +83,45 @@ def test_cache_info_endpoint(test_client):
     assert set(data["item_counts"]) == {"matrix", "dataframe", "metadata", "total"}
 
 
+# These two caught every exception as a skip and drove the removed
+# load_zarr()/dataset-id API, so they skipped on every run and could not fail.
+
+def _cache_key(path):
+    import urllib.parse
+    return f"path:{urllib.parse.quote(path, safe='')}:test_data"
+
+
 def test_cache_reset_endpoint(test_client, zarr_test_dataset):
-    """Test the POST /api/v1/cache/reset endpoint."""
-    try:
-        # Load a dataset to populate the cache
-        dataset_id = zarr_reader.load_zarr(zarr_test_dataset)
-        
-        # If we couldn't load the dataset, manually populate the cache 
-        # to ensure we can test the cache reset function
-        if not dataset_id:
-            # Create a fake dataset ID and populate cache
-            dataset_id = "test_dataset"
-            import numpy as np
-            zarr_reader._add_to_cache(f"{dataset_id}:test_data", np.random.rand(10, 10), 'matrix')
-        else:
-            # Try to read some data
-            try:
-                _ = zarr_reader.get_X(dataset_id)
-            except Exception as e:
-                # If reading fails, still populate cache manually
-                import numpy as np
-                zarr_reader._add_to_cache(f"{dataset_id}:test_data", np.random.rand(10, 10), 'matrix')
-        
-        # Make sure cache has something in it
-        if zarr_reader.get_cache_info()["matrix_cache_items"] == 0:
-            import numpy as np
-            zarr_reader._add_to_cache(f"{dataset_id}:test_data", np.random.rand(10, 10), 'matrix')
-            
-        # Verify cache is populated
-        cache_info = zarr_reader.get_cache_info()
-        assert cache_info["matrix_cache_items"] > 0 or cache_info["dataframe_cache_items"] > 0
-        
-        # Reset the cache
-        response = test_client.post('/api/v1/cache/reset')
-        
-        # Check response
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        
-        # Verify response structure
-        assert data["status"] == "success"
-        assert data["cache_cleared"] is True
-        assert "memory_before" in data
-        assert "memory_after" in data
-        assert "items_cleared" in data
-        
-        # Verify cache is actually cleared
-        cache_info = zarr_reader.get_cache_info()
-        assert cache_info["matrix_cache_items"] == 0
-        assert cache_info["dataframe_cache_items"] == 0
-    except Exception as e:
-        import pytest
-        pytest.skip(f"Error in test_cache_reset_endpoint: {e}")
+    """POST /api/v1/cache/reset empties the whole cache."""
+    zarr_reader.open_dataset_by_path(dataset_path=zarr_test_dataset)
+    zarr_reader._add_to_cache(_cache_key(zarr_test_dataset), np.random.rand(10, 10), 'matrix')
+    assert zarr_reader.get_cache_info()["item_counts"]["total"] > 0
+
+    response = test_client.post('/api/v1/cache/reset')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data["status"] == "success"
+    assert data["cleared_all"] is True
+    assert data["cache_types_cleared"]["matrix"] > 0
+    info = zarr_reader.get_cache_info()
+    assert info["item_counts"]["total"] == 0
+    assert info["datasets"] == {}
 
 
-def test_cache_reset_with_dataset_id(test_client):
-    """Test resetting cache for a specific dataset."""
-    try:
-        # Create fake dataset IDs and manually add to cache
-        dataset1_id = "test_dataset1"
-        dataset2_id = "test_dataset2"
-        
-        # Populate cache with fake data
-        import numpy as np
-        zarr_reader._add_to_cache(f"{dataset1_id}:test_data", np.random.rand(10, 10), 'matrix')
-        zarr_reader._add_to_cache(f"{dataset2_id}:test_data", np.random.rand(10, 10), 'matrix')
-        
-        # Make sure the cache is populated
-        cache_info = zarr_reader.get_cache_info()
-        
-        # If the cache isn't populated as expected, skip the test
-        if dataset1_id not in cache_info.get("datasets", {}) or dataset2_id not in cache_info.get("datasets", {}):
-            import pytest
-            pytest.skip("Failed to populate cache with test data")
-            return
-            
-        # Reset cache for dataset1 only
-        response = test_client.post(f'/api/v1/cache/reset?dataset_id={dataset1_id}')
-        
-        # Check response
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        
-        # Verify response structure
-        assert data["status"] == "success"
-        assert data["dataset_id"] == dataset1_id
-        
-        # Verify dataset1 cache is cleared but dataset2 is not
-        cache_info = zarr_reader.get_cache_info()
-        
-        # Dataset1 should be gone or empty
-        dataset1_cleared = (
-            dataset1_id not in cache_info.get("datasets", {}) or
-            sum(cache_info["datasets"][dataset1_id].get(ctype, 0) for ctype in ["matrices", "dataframes", "metadata"]) == 0
-        )
-        assert dataset1_cleared
-        
-        # Dataset2 should still have entries
-        dataset2_still_cached = (
-            dataset2_id in cache_info.get("datasets", {}) and
-            sum(cache_info["datasets"][dataset2_id].get(ctype, 0) for ctype in ["matrices", "dataframes", "metadata"]) > 0
-        )
-        assert dataset2_still_cached
-    except Exception as e:
-        import pytest
-        pytest.skip(f"Error in test_cache_reset_with_dataset_id: {e}")
+def test_cache_reset_with_dataset_path(test_client):
+    """POST /api/v1/cache/reset?dataset_path=X clears only X."""
+    zarr_reader.clear_cache()
+    zarr_reader._add_to_cache(_cache_key("/d/one.zarr"), np.random.rand(10, 10), 'matrix')
+    zarr_reader._add_to_cache(_cache_key("/d/two.zarr"), np.random.rand(10, 10), 'matrix')
+
+    response = test_client.post('/api/v1/cache/reset?dataset_path=/d/one.zarr')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data["status"] == "success"
+    assert data["cleared"] is True
+    assert data["items_removed"]["matrix"] == 1
+    datasets = zarr_reader.get_cache_info()["datasets"]
+    assert "/d/one.zarr" not in datasets
+    assert datasets["/d/two.zarr"] == 1

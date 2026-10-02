@@ -43,23 +43,21 @@ class TestServer(unittest.TestCase):
         self.assertIn('resources', data)
         self.assertIn('data', data)
 
-    @patch('annzarro.data.manager.data_manager.list_datasets')
-    def test_list_datasets(self, mock_list_datasets):
-        """Test listing datasets."""
-        mock_list_datasets.return_value = [
-            {
-                'name': 'test_dataset',
-                'path': 'tests/data/test_dataset.zarr',
-                'size': '123 MB',
-                'is_directory': True
-            }
-        ]
-        response = self.client.get('/api/v1/datasets')
+    def test_list_datasets(self):
+        """/api/v1/datasets is the frontend's listing (a JSON list of stores).
+
+        This test used to mock data_manager.list_datasets and expect
+        {"datasets": [...]}; that shape belongs to /api/v1/core/datasets.
+        """
+        import os
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+        app = create_app({'TESTING': True, 'DEBUG': False, 'data_dir': data_dir})
+        response = app.test_client().get('/api/v1/datasets')
         self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertIn('datasets', data)
-        self.assertEqual(len(data['datasets']), 1)
-        self.assertEqual(data['datasets'][0]['name'], 'test_dataset')
+        entries = {d['rel_path']: d for d in json.loads(response.data)}
+        self.assertIn('fixture_small.zarr', entries)
+        self.assertEqual(entries['fixture_small.zarr']['cells'], 200)
+        self.assertEqual(entries['fixture_small.zarr']['genes'], 20)
 
 if __name__ == '__main__':
     unittest.main()
