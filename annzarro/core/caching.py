@@ -79,6 +79,11 @@ class DatasetCache:
         
         # Cache access timestamps for LRU eviction
         self._cache_access_times = {}  # Dict of cache_key -> last access timestamp
+
+        # The size (MB) each key was counted at when added, so removing it
+        # frees exactly that. Recomputing on removal (and a fixed 1 MB for
+        # metadata) made memory_usage_mb drift from what is really held.
+        self._sizes_mb = {}  # Dict of cache_key -> MB
         
     def clear_cache(self, dataset_path: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -112,10 +117,25 @@ class DatasetCache:
             self._metadata_cache = {}
             self._dataset_caches = {}
             self._cache_access_times = {}
+            self._sizes_mb = {}
             self.memory_usage_mb = 0
             
             return result
     
+    def _forget(self, key: str) -> Tuple[Optional[str], float]:
+        """Drop ``key`` from whichever cache holds it and from the memory
+        count. Returns (cache type or None, MB freed)."""
+        kind = None
+        for name, cache in (("matrix", self._matrix_cache), ("dataframe", self._dataframe_cache),
+                            ("metadata", self._metadata_cache)):
+            if key in cache:
+                del cache[key]
+                kind = name
+        freed = self._sizes_mb.pop(key, 0.0)
+        self.memory_usage_mb = max(0.0, self.memory_usage_mb - freed)
+        self._cache_access_times.pop(key, None)
+        return kind, freed
+
     def _remove_dataset_from_cache(self, dataset_path: str) -> Dict[str, Any]:
         """
         Remove all cached data for a specific dataset path.
@@ -150,38 +170,13 @@ class DatasetCache:
         
         # Process each cache key
         for key in cache_keys:
-            # Check each cache type
-            if key in self._matrix_cache:
-                # Estimate memory usage
-                matrix = self._matrix_cache[key]
-                memory_freed += self._estimate_memory_usage(matrix)
-                del self._matrix_cache[key]
-                result["items_removed"]["matrix"] += 1
-            
-            elif key in self._dataframe_cache:
-                # Estimate memory usage
-                df_data = self._dataframe_cache[key]
-                memory_freed += self._estimate_memory_usage(df_data)
-                del self._dataframe_cache[key]
-                result["items_removed"]["dataframe"] += 1
-            
-            elif key in self._metadata_cache:
-                # For metadata, we use a fixed estimate
-                memory_freed += 1  # Assume 1MB for metadata
-                del self._metadata_cache[key]
-                result["items_removed"]["metadata"] += 1
-            
-            # Remove from access times
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
+            kind, freed = self._forget(key)
+            if kind:
+                memory_freed += freed
+                result["items_removed"][kind] += 1
         
         # Remove dataset from tracking
         del self._dataset_caches[dataset_path]
-        
-        # Update memory usage
-        self.memory_usage_mb -= memory_freed
-        if self.memory_usage_mb < 0:
-            self.memory_usage_mb = 0
         
         # Update result
         result["cleared"] = True
@@ -223,29 +218,9 @@ class DatasetCache:
             
             # Remove oldest items until we're under the memory limit
             for key, _ in key_times:
-                # Find which cache this key is in
-                if key in self._matrix_cache:
-                    memory_freed = self._estimate_memory_usage(self._matrix_cache[key])
-                    del self._matrix_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted matrix {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._dataframe_cache:
-                    memory_freed = self._estimate_memory_usage(self._dataframe_cache[key])
-                    del self._dataframe_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted dataframe {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._metadata_cache:
-                    # For metadata, we use a fixed estimate
-                    memory_freed = 1  # Assume 1MB for metadata
-                    del self._metadata_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted metadata {key} from cache (freed {memory_freed}MB)")
-                
-                # Remove from access times
-                if key in self._cache_access_times:
-                    del self._cache_access_times[key]
+                kind, freed = self._forget(key)
+                if kind:
+                    logger.debug(f"Evicted {kind} {key} from cache (freed {freed:.2f}MB)")
                 
                 # Update dataset tracking - find and remove this key from dataset_caches
                 for dataset_path, keys in list(self._dataset_caches.items()):
@@ -282,6 +257,9 @@ class DatasetCache:
         elif cache_type == 'metadata':
             cache_dict = self._metadata_cache
         
+        # Replacing a key frees what the old value was counted at
+        self._forget(key)
+
         # Add the item to the cache
         cache_dict[key] = data
         
@@ -290,6 +268,7 @@ class DatasetCache:
         
         # Track memory usage
         memory_mb = self._estimate_memory_usage(data)
+        self._sizes_mb[key] = memory_mb
         self.memory_usage_mb += memory_mb
         
         # Track dataset association
