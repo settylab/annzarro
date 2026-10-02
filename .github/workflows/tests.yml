@@ -1,0 +1,89 @@
+name: Tests
+
+# Every Python test, every JS suite (annzarro/tests/js/*.test.mjs, found by
+# glob through test_js_suites.py) and ESLint, on every PR and push to main.
+#
+# Kept lean for Actions minutes: the full suite runs on the oldest and newest
+# supported Python only. They are the two that differ in kind: 3.9 installs
+# zarr 2 (zarr 3 needs Python >= 3.11), 3.13 installs zarr 3. The versions in
+# between get an install-and-import check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest + JS + ESLint (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.9"
+            extras: test
+          - python: "3.13"
+            extras: test,remote
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install ESLint (pinned in package-lock.json)
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[${{ matrix.extras }}]"
+
+      - name: Provision vendor assets
+        # Mirrors run-supervised.sh: the deep-link and vendor smoke tests check
+        # that the page's vendor bundles are actually served.
+        run: |
+          python - <<'PY'
+          import importlib.util, types
+          spec = importlib.util.spec_from_file_location("annzarro_install", "annzarro-install.py")
+          mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+          mod.download_external_resources(".", types.SimpleNamespace(no_electron_resources=False))
+          PY
+
+      - name: pytest (includes every JS suite and ESLint)
+        run: python -m pytest -q -rsx annzarro/tests
+
+  import:
+    name: install + import (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install .
+      - name: Import and build the app
+        working-directory: /tmp  # import the installed package, not the checkout
+        run: python -c "import annzarro; from annzarro.server.core import create_app; create_app()"
