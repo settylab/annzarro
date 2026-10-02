@@ -126,10 +126,10 @@ def run_server(
             "--data-dir", data_dir
         ] + list(detach_args or [])
         
-        # Pass debug flag if enabled
-        if final_config.get("debug", False):
-            cmd.append("--debug")
-            
+        # server.debug reaches the child through the same configuration
+        # (--config / --development in detach_args). Appending `--debug` here
+        # was a parse error: it is a global option and cannot follow `start`.
+
         # Pass auth settings to detached process
         if "auth_enabled" in final_config:
             if not final_config.get("auth_enabled"):

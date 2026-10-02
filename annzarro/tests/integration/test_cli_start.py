@@ -13,8 +13,8 @@ and ANNZARRO_HOME all point into tmp), waits for the port, and checks:
 * / and every /static/ asset it references (vendored bundles included) are 200,
 * the log went to $ANNZARRO_HOME/logs, and nothing was written to the CWD.
 
-The server binds 127.0.0.1 on a free port and is killed (whole process group:
-the production defaults run Werkzeug's reloader, which forks) at the end.
+The server binds 127.0.0.1 on a free port and is killed (whole process group,
+in case a debug configuration runs the Werkzeug reloader, which forks) at the end.
 """
 import json
 import os

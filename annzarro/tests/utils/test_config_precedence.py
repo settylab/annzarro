@@ -66,6 +66,11 @@ def test_defaults_load_from_an_unrelated_cwd(isolated, env):
     assert mgr.sources["defaults:base"].endswith(os.path.join("annzarro", "config", "base.yaml"))
 
 
+def test_production_defaults_do_not_run_the_flask_debugger(isolated):
+    assert ConfigManager().load_config(env="production")["server"]["debug"] is False
+    assert ConfigManager().load_config(env="development")["server"]["debug"] is True
+
+
 def test_cli_flags_set_server_keys_and_nothing_else(isolated, tmp_path):
     mgr = ConfigManager()
     config = mgr.load_config(env="production", cli_args=_args(
