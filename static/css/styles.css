@@ -131,6 +131,38 @@ body {
     }
 }
 
+/* Above 768 px the header is one row: the dataset / gene / cell columns
+   shrink (their inputs scroll their text) instead of pushing the actions
+   onto a second row. At 1000 px the actions used to drop under the dataset
+   picker as bare icons and the header grew from 79 to 117 px. */
+@media (min-width: 768.02px) {
+    .app-header > .container-fluid > .row,
+    .global-controls > .row {
+        flex-wrap: nowrap;
+    }
+    .app-header > .container-fluid > .row > .col,
+    .global-controls > .row > .col,
+    .global-controls .d-flex > .flex-grow-1,
+    .global-controls .select2-container,
+    .global-controls .name-picker {
+        min-width: 0;
+    }
+    .global-controls .name-picker,
+    .global-controls #focused-gene,
+    .global-controls #focused-cell {
+        max-width: 100%;
+    }
+}
+
+/* The cell picker sits near the right edge in a narrow window: open its
+   320 px menu leftwards so it stays inside the window. */
+@media (min-width: 768.02px) and (max-width: 1099.98px) {
+    .name-picker:has(#focused-cell) .name-picker-menu {
+        left: auto;
+        right: 0;
+    }
+}
+
 /* Clipboard-less fallback for the Share Link button: the link, ready to copy.
    Floats under the header, right-aligned and wide, instead of squeezing into
    the button column (it was ~190 px and made the header one row taller). */
@@ -231,6 +263,24 @@ body {
     overflow: auto;
     position: relative;
     flex: 1; /* Use all available space */
+}
+
+/* The page-level chooser under the panels ("Create New Panel / Duplicate or
+   Reopen") keeps a usable height: below panels that fill the window it was
+   squeezed to 2 px, so closed panels could only be reached through a split.
+   A panel keeps its own height (1000 px, or what its handle was dragged to)
+   but at most the visible tile area less 5rem, so the chooser's heading
+   shows at the bottom and the rest is a scroll away; the panel itself is
+   not squeezed to make room. */
+.tile-container > .tile-selector {
+    min-height: 320px;
+    flex-shrink: 0;
+}
+
+.tile-container > .panel-wrapper {
+    flex-shrink: 0;
+    max-height: calc(100% - 5rem);
+    min-height: 360px;
 }
 
 .tile-header {
@@ -2538,33 +2588,42 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Datapoint filter info widget */
-/* Bottom-left corner, under the x tick labels, one line (title and total);
-   the per-reason list shows on hover. At bottom/left 10px with its list open
-   it sat on the x tick labels and the lowest points. */
+/* Top-left corner, in the margin above the plotting area (at the bottom it
+   sat on the x tick labels or the centred x-axis title): one row with the title, every
+   reason and the total (each reason inline). The reasons used to show only on
+   hover, so the box read just "Total: 6,540"; before that the box stood 10 px
+   into the plot over the x tick labels. */
 .datapoint-filter-widget {
     position: absolute;
-    bottom: 2px;
+    top: 2px;
     left: 2px;
     background-color: rgba(248, 249, 250, 0.85);
     border: 1px solid #dee2e6;
     border-radius: 4px;
-    padding: 6px 8px;
-    font-size: 0.75rem;
+    padding: 2px 6px;
+    font-size: 0.72rem;
     color: #666;
-    max-width: 200px;
+    max-width: calc(100% - 190px);   /* clear of the modebar on the right */
     z-index: 10;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     transition: opacity 0.3s ease;
     display: flex;
-    flex-direction: column-reverse; /* the list opens upward */
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
 }
 
 .datapoint-filter-widget .filter-stats-list {
-    display: none;
+    display: contents;
 }
 
-.datapoint-filter-widget:hover .filter-stats-list {
-    display: block;
+.datapoint-filter-widget .filter-stats-item {
+    display: inline-flex;
+    margin: 0;
+}
+
+.datapoint-filter-widget .filter-stats-title {
+    margin: 0;
 }
 
 .datapoint-filter-widget.hidden {
@@ -2784,4 +2843,14 @@ button.dtsb-button.dtsb-clear:hover {
 
 .session-card-owner i {
     margin-right: 4px;
+}
+
+/* Hover columns picker (settings.hoverInfo) */
+.hover-columns-controls {
+    display: flex;
+    align-items: flex-start;
+}
+.hover-columns-controls .hover-columns-select {
+    max-width: 24rem;
+    padding-right: 0.5rem;
 }
