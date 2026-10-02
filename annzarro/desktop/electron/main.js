@@ -19,9 +19,11 @@
  *   ANNZARRO_DESKTOP_DATA_DIR  data directory instead of ~/annzarro-data
  *   ANNZARRO_DESKTOP_SMOKE=1 start, load the UI, check /api/v1/datasets, print
  *                            "ANNZARRO_DESKTOP_SMOKE ok <url>" and quit (exit 0,
- *                            or 1 on failure)
+ *                            or 1 on failure). The network is cut off for the
+ *                            window: any request not to 127.0.0.1 is cancelled
+ *                            and fails the check.
  */
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -45,6 +47,8 @@ let serverProcess = null;
 let serverUrl = null;
 let isQuitting = false;
 let appDataPath = null;
+// SMOKE: requests the window tried to make beyond the local server.
+const externalRequests = [];
 
 /**
  * The directory datasets are browsed from by default, created on first run.
@@ -237,7 +241,10 @@ async function smokeCheck() {
     if (!hasPlotly || !response.ok) {
         throw new Error(`UI loaded without Plotly (${hasPlotly}) or /api/v1/datasets failed (${response.status})`);
     }
-    console.log(`ANNZARRO_DESKTOP_SMOKE ok ${serverUrl} title="${title}" datasets=${datasets.length}`);
+    if (externalRequests.length) {
+        throw new Error(`the UI requested external resources: ${externalRequests.join(', ')}`);
+    }
+    console.log(`ANNZARRO_DESKTOP_SMOKE ok ${serverUrl} title="${title}" datasets=${datasets.length} external_requests=0`);
     isQuitting = true;
     await stopServer();
     app.exit(0);
@@ -327,6 +334,15 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
 
     app.whenReady().then(() => {
         log.info(`AnnZarro ${app.getVersion()} starting (packaged: ${app.isPackaged})`);
+        if (SMOKE) {
+            // Everything the UI needs is bundled; prove it by cutting it off.
+            session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+                const local = /^(https?|wss?):\/\/127\.0\.0\.1(:\d+)?\//.test(details.url)
+                    || /^(file|data|blob|devtools|chrome):/.test(details.url);
+                if (!local) externalRequests.push(details.url);
+                callback({ cancel: !local });
+            });
+        }
         setupIpcHandlers();
         createWindow();
         launch();

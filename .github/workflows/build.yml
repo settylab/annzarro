@@ -135,6 +135,28 @@ jobs:
                      xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$app" --no-sandbox ;;
           esac
 
+      - name: Offline session test (network cut off)
+        # Drives the packaged app with playwright-core (no browser download):
+        # open a dataset, cell plot, focus a gene and a cell, cell table, PNG
+        # export. Any request not to 127.0.0.1, any failed local request or
+        # page error fails the step.
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   app=$(ls -d annzarro/desktop/electron/dist/mac*/AnnZarro.app)/Contents/MacOS/AnnZarro ;;
+            Windows) app=annzarro/desktop/electron/dist/win-unpacked/AnnZarro.exe ;;
+            Linux)   app=$(find annzarro/desktop/electron/dist/linux-unpacked -maxdepth 1 -type f -name 'annzarro*' -perm -u+x | head -1) ;;
+          esac
+          run=(node annzarro/desktop/electron/test/offline-session.js "$app" annzarro/tests/data/fixture_small.zarr offline-report.json)
+          if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a "${run[@]}"; else "${run[@]}"; fi
+
+      - name: Size report
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            python annzarro/desktop/scripts/size_report.py annzarro/desktop/electron
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Collect release files
         run: |
           mkdir -p out
