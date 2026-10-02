@@ -9,7 +9,7 @@ only needs the keys it changes.
 | 2 | System file | `/etc/annzarro/config.yaml` |
 | 3 | User file | `~/.config/annzarro/config.yaml` (`$XDG_CONFIG_HOME` honoured) |
 | 4 | Project file | `./config.yaml` in the directory the command runs from |
-| 5 | Named file | `--config FILE` for `annzarro`, `ANNZARRO_CONFIG` for the gunicorn entry point; must exist |
+| 5 | Named file | `--config FILE`, or else the file named by `ANNZARRO_CONFIG` (read by every `annzarro` command and by the gunicorn entry point); must exist |
 | 6 | Environment | `ANNZARRO_<SECTION>_<KEY>` |
 | 7 | Command line | `--host`, `--port`, `--data-dir`, `--auth-disabled` |
 
@@ -102,6 +102,22 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
+
+## Security tiers
+
+Every key in the configuration schema (`annzarro/config/schema.yaml`) has a tier, set on the key
+or inherited from its section; a key without one is `internal`.
+
+| Tier | Keys | Where the value appears |
+|---|---|---|
+| `public` | `server.host`, `server.port`, `server.https_enabled`, `server.unified_server`, `auth.enabled`, all of `branding`, `ui` and `integrations` | sent to the browser by `GET /api/v1/config`; printed by `config show` |
+| `internal` | every other key, including `server.data_dir`, `allowed_dirs`, `log_file`, the cache, limit and remote-store keys, `auth.user_file`, `session_timeout`, `cookie_secure` | printed by `config show`; never sent to the browser |
+| `sensitive` | `auth.secret_key`, `server.cert_file`, `server.key_file` | masked as `********` by `config show` and `config info`; never sent |
+
+`GET /api/v1/config` serves exactly the public keys (plus two flags for the desktop app), so
+the browser never learns server paths such as the data directory. If the schema cannot be read,
+nothing is published. `config info` also masks environment variables whose name mentions a
+secret, password, token or credential, and `--password` arguments.
 
 ## A minimal file per mode
 

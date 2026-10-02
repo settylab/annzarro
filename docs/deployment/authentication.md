@@ -52,8 +52,8 @@ annzarro --config site.yaml user list
 annzarro --config site.yaml user remove --username bob
 ```
 
-`--config` may also follow `user` (`annzarro user --config site.yaml list`), but not the
-final subcommand (`add`, `list`, ...). The `user` commands read the same `production`
+Instead of `--config` you can set `ANNZARRO_CONFIG=site.yaml`, as for gunicorn. `--config`
+may also follow `user` (`annzarro user --config site.yaml list`), but not the final subcommand (`add`, `list`, ...). The `user` commands read the same `production`
 configuration as `annzarro start`. `--password` exists, but it puts the password into your shell history and the
 process list; leave it out and type the password at the prompt.
 

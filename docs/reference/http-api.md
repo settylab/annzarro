@@ -200,7 +200,7 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | Route | Returns |
 |---|---|
 | `GET /auth/me` | `{auth_enabled, username, is_admin, exposed}`; `exposed` is true when the server listens beyond localhost with login off |
-| `GET /config` | the public part of the configuration (UI defaults, branding, login settings) |
+| `GET /config` | the keys of the `public` tier only: host and port, `auth.enabled`, branding, UI defaults ({doc}`configuration`); no server paths |
 | `GET /status` | version, uptime, memory, data directory checks |
 | `GET /cache/info` | the server's result cache: datasets, items, `memory_usage_mb`, `max_memory_mb` |
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`. On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache; this clears only the worker that answers |

@@ -68,6 +68,8 @@ branding:
     email: annzarro-admin@example.org
 ```
 
+Every `annzarro` command reads `ANNZARRO_CONFIG` when `--config` is not given, so with
+`export ANNZARRO_CONFIG=/etc/annzarro/site.yaml` the commands below work without `--config`.
 Check what the server will run with, as the service user:
 
 ```bash

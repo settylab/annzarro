@@ -72,9 +72,9 @@ A running server sees every change without a restart.
 
 | Command | Meaning |
 |---|---|
-| `config show [--format yaml\|json] [--env production\|development] [override flags]` | Print the merged configuration, every source considered (loaded, not found, ignored) and, at the end, each value not taken from the built-in defaults with its origin. Secrets are masked. Exit 1 if the result is invalid, but it is printed anyway. The YAML output can be saved and used with `--config`. |
+| `config show [--format yaml\|json] [--env production\|development] [override flags]` | Print the merged configuration, every source considered (loaded, not found, ignored) and, at the end, each value not taken from the built-in defaults with its origin. Keys the schema marks sensitive (`auth.secret_key`, `server.cert_file`, `server.key_file`) are masked ({doc}`configuration`). Exit 1 if the result is invalid, but it is printed anyway. The YAML output can be saved and used with `--config`. |
 | `config validate [--file FILE] [--env ...] [override flags]` | Validate the merged configuration, or with `--file` one file layered over the built-in defaults. Exit 1 on errors. |
-| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables and the command line. Secret values (variables naming a secret, password, token or credential, or setting a secret key; `--password` arguments) are masked. |
+| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables and the command line. Secret values (variables setting a sensitive key or naming a secret, password, token or credential; `--password` arguments) are masked. |
 | `config init [--output FILE] [--force]` | Write a copy of the built-in `base.yaml` (default `./config.yaml`; refuses to overwrite without `--force`). Comments are not kept. |
 
 The override flags are those of `start`: `--config`, `--host`, `--port`, `--data-dir` and
@@ -116,6 +116,6 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
 | `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
-| `ANNZARRO_CONFIG` | Configuration file for the WSGI entry point (gunicorn). Not read by `annzarro start`. |
+| `ANNZARRO_CONFIG` | Configuration file used when `--config` is not given, by every `annzarro` command and by the WSGI entry point (gunicorn). `--config` wins if both are set. |
 | `ANNZARRO_ENV` | `production` (default) or `development`, for the WSGI entry point. |
 | `XDG_CONFIG_HOME` | Moves the user configuration file `~/.config/annzarro/config.yaml`. |
