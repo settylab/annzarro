@@ -72,7 +72,8 @@ which is what makes several gunicorn workers behind one proxy work
 | page cache | operating system | file | free RAM | the OS |
 
 All server caches assume a store does not change while the server runs. After rewriting a
-store in place, call `POST /api/v1/cache/reset` or restart.
+store in place, call `POST /api/v1/cache/reset` or restart. On a shared server the reset is
+admins only, and under gunicorn it clears only the worker that answers, so restart there.
 
 ### Memory
 

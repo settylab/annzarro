@@ -39,7 +39,7 @@ Body layout of the two binary encodings.
 | `X-Annzarro-Encoding` | `dense` or `sparse` | |
 | `X-Annzarro-Nnz` | number of stored entries; sparse only | `15` |
 | `ETag`, `Cache-Control` | see {ref}`revalidation` | |
-| `Access-Control-Expose-Headers` | the four `X-Annzarro-*` headers and `ETag`, so a cross-origin page can read them | |
+| `Access-Control-Expose-Headers` | the four `X-Annzarro-*` headers and `ETag`, so a cross-origin page can read them when `server.cors_enabled` allows its origin | |
 
 ### Dtype
 
@@ -150,13 +150,12 @@ $ curl -s -D - -o /dev/null -H 'If-None-Match: W/"bacbfc34ca6b53360c0b06d1992739
 HTTP/1.1 304 NOT MODIFIED
 ETag: W/"bacbfc34ca6b53360c0b06d1992739a6767bfba0"
 Cache-Control: private, no-cache
-Access-Control-Allow-Origin: *
 ```
 
 In Chromium, three identical `fetch` calls for that gene column transferred 32,660 bytes the
 first time and 300 bytes (headers only) for each repeat. Rewriting a store moves the directory
 modification times, so old tags stop matching. Overwriting chunk files in place does not; restart
-the server or `POST /api/v1/cache/reset` after such a change. Remote stores get no ETag.
+the server or `POST /api/v1/cache/reset` (admins only on a shared server) after such a change. Remote stores get no ETag.
 
 ## Compression
 

@@ -72,7 +72,9 @@ stored by username.
 
 **Lockout.** After 5 failed sign-ins from one client address, that username is locked for that
 address for 15 minutes, even for the correct password. The count is kept in the users file, so
-every gunicorn worker sees it.
+every gunicorn worker sees it. Behind a reverse proxy, `server.proxy_count` must match the number
+of proxies so that the address is the client's; with 0 every user appears to come from the proxy
+and one person's typos lock the username for everyone.
 
 **How long a login lasts.** A login expires after `auth.session_timeout` seconds without a
 request (28,800, i.e. 8 hours, by default; `0` means never). The session cookie is `HttpOnly`
@@ -134,11 +136,14 @@ that key can forge a cookie for any user, admins included.
 On a shared server (login on, a network address, or the WSGI entry point) every local path a
 request names (`dataset_path`, the directory browser, the dataset routes) must resolve, after
 following symlinks and `..`, inside `server.data_dir` or one of `server.allowed_dirs`. Anything
-else is refused with HTTP 403 and the reason `outside_data_dir`.
+else is refused with HTTP 403 and the reason `outside_data_dir`; the message names no server
+directories. Login is checked first, so a client without a session gets 401 (or the login page)
+before any path is looked at.
 
 - `allowed_dirs` grants a whole directory tree, not single datasets. Listing `/lab/atlases`
   lets every user open any store under `/lab/atlases` by typing its path, whether or not it is
-  linked into the data directory.
+  linked into the data directory. To share single datasets, list the stores themselves
+  (`/lab/atlases/bm_aging.zarr`).
 - A symlink in the data directory whose target is outside every allowed root is left out of the
   Dataset picker and refused if opened by path. The startup log names every such link.
 - On a local single-user server (loopback, no login) there is no confinement: you can open any

@@ -91,8 +91,9 @@ Step 4 must open the store with `use_consolidated=False` and must end with
 `zarr.consolidate_metadata`. Without the first, zarr refuses: `ValueError: Cannot
 overwrite/edit a store with consolidated metadata`. Without the second, `.zmetadata` still
 describes the old arrays: `anndata.read_zarr` fails with `ValueError: cannot reshape array of
-size 512 into shape (300,50)` and AnnZarro answers `200` with an empty `data` list for that
-array (both reproduced with a 300 × 50 store).
+size 512 into shape (300,50)` and AnnZarro refuses that array with `500` `stale_metadata`,
+naming the mismatch ("consolidated metadata says chunks (300, 50), the array on disk has
+(16, 16)") and the fix (both reproduced with a 300 × 50 store).
 :::
 
 Check the result before you serve it. This prints what AnnZarro will slice:
@@ -160,7 +161,8 @@ X-Annzarro-Nnz: 9
 
 ```{note}
 The server caches what it read and assumes stores do not change while it runs. After
-rewriting a store in place, restart the server or call `POST /api/v1/cache/reset`.
+rewriting a store in place, restart the server or call `POST /api/v1/cache/reset` (admins only
+on a shared server).
 ```
 
 (zarr-format)=

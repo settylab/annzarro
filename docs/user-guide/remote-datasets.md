@@ -73,12 +73,12 @@ proxy; allowlist only)]
 A URL outside the allowlist is refused with "Remote dataset URL is not under an allowed prefix
 (remote_allowlist: …)".
 
-```{important}
-In this build, `annzarro start` without `--development` loads the production defaults, which set
-`proxy_count: 1`. `auto` then treats even a laptop server as hosted and refuses remote URLs unless
-they are in `remote_allowlist`; the startup log says "remote stores disabled [remote_stores: auto
-(server is behind a proxy; …)]". Set `remote_allowlist` (or `remote_stores: allow` on a
-single-user machine) to open remote stores.
+```{note}
+The example log line above comes from a build whose production defaults still set
+`proxy_count: 1`. Current builds default to `proxy_count: 0`, so `annzarro start` on a laptop or
+HPC node (loopback, login off) is a local single-user server and `auto` opens any remote URL; the
+log then reads `remote_stores: auto (local single-user server)`. A server behind a reverse proxy
+sets `proxy_count: 1` and needs `remote_allowlist`.
 ```
 
 ```{warning}

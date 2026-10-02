@@ -23,7 +23,8 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 |---|---|---|
 | Dataset missing from the Dataset menu (Step 12) | Store outside the data directory, deeper than one level, or not a `.zarr`/`.h5ad` path; or `<data_dir>/datasets/` exists, in which case only that folder is listed | Move or symlink the store into the listed folder and reload ({doc}`../data/preparing-a-store`) |
 | Dataset listed without cell and gene counts, with an error | zarr format 3 store on a server running zarr 2 | Rewrite as format 2, or run the server with zarr ≥ 3 |
-| Dataset opens but one array shows no data; the API returns `200` with `"data": []`. Reproduced | `.zmetadata` out of date after an in-place rewrite (AnnZarro does not report it); or a key or index that does not exist | Re-consolidate; check the key with `GET /api/v1/data/dataset_structure`; call `POST /api/v1/cache/reset` |
+| One array fails to load with `500` `stale_metadata`: "The store's consolidated metadata (.zmetadata) is out of date" | The store was rewritten in place without re-consolidating, so `.zmetadata` disagrees with the array on disk | `zarr.consolidate_metadata(path)`, then `POST /api/v1/cache/reset` or restart the server |
+| `404` `key_not_found` ("No layers key '…' in this dataset") or `400` `index_out_of_range`. Reproduced | A key, column or index the dataset does not have, often from a panel set or link made for another store | Check the keys with `GET /api/v1/data/dataset_structure` |
 | Changes to a store do not show up | Server caches assume stores do not change; an in-place overwrite of chunk files also keeps the old ETag | `POST /api/v1/cache/reset` or restart the server |
 | First view slow on datasets with about 1M cells (Step 12) | The Focused Cell selector lists every cell name (36 MB at 1.17M cells) | Expected in this release; selecting cells by clicking works |
 | Remote dataset refused: `Remote datasets are disabled on this server (remote_stores: auto (server is behind a proxy; …))`, `403`, on a laptop. Reproduced | In builds before commit 58122bc (PR #43), `annzarro start` used `production.yaml`'s `proxy_count: 1`, so `auto` treated even a loopback server as proxied. Fixed there: the default is now 0 | Upgrade; on an older build set `server: {remote_stores: allow}`, or `proxy_count: 0` when no proxy is in front; with the latter the log reads `remote_stores: auto (local single-user server)` ({doc}`../user-guide/remote-datasets`) |
@@ -47,7 +48,9 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Symptom | Cause | Fix |
 |---|---|---|
 | Shared link returns "Request Line is too large" (Step 34) | A legacy `?view=` link longer than gunicorn's 4,094-byte request line | Use Share Link on this release: it puts the view in the `#view=` fragment, compressed, which never reaches the server ({doc}`deep-links`) |
-| Remote users see no login (Step 38) | Server bound to localhost, or started with `--auth-disabled` | Start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
+| Remote users see no login (Step 38) | Server bound to localhost, or started with `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` | Run behind a proxy with gunicorn, or start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
+| Login works over `http://` but not over `https://`, or the reverse | `auth.cookie_secure: true` sends the cookie only over HTTPS; behind a TLS proxy with `proxy_count: 0` the server does not see that the request was HTTPS | Leave `cookie_secure: auto` and set `proxy_count` to the number of proxies ({doc}`../deployment/authentication`) |
+| Everyone is locked out after a few failed logins | Lockout is per username and client address; with `proxy_count` too low all users appear to come from the proxy's address | Set `server.proxy_count: 1` behind nginx |
 | `403` with `"reason": "outside_data_dir"`. Reproduced | Hosted server (login on, or network host) and a `dataset_path` outside the data directory | Put the store under the data directory, or add its folder to `server.allowed_dirs` |
 | Cannot delete or overwrite a panel set: `403`, `legacy_admin_only` or `not_owner`. Reproduced | With login on, only the owner or an admin may change a set; sets saved before owners were recorded are admin-only | Save under a new name, or ask an admin |
 
@@ -56,12 +59,10 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Symptom | Cause | Fix |
 |---|---|---|
 | `413` `response_too_large`. Reproduced | The slice exceeds `max_response_elements` (10,000,000 by default) | Request one row or column, or fewer at a time ({doc}`http-api`) |
-| `400` `cap_exceeded`. Reproduced | More indices than `max_cells_per_request` / `max_genes_per_request` (20,000 by default) | Fewer indices, or pass `max_cells=` / `max_genes=` |
-| `400` `bad_indices`. Reproduced | `rows=` empty or not integers (e.g. a trailing comma from macOS `seq -s,`) | Send `rows=1,2,3` or `rows=[1,2,3]` |
+| `400` `cap_exceeded`. Reproduced | More indices than the request's own `max_cells=` / `max_genes=` parameter | Raise or drop that parameter; the server sets no such cap itself |
+| `400` `bad_indices`. Reproduced | `rows=` empty, not integers (e.g. a trailing comma from macOS `seq -s,`) or negative | Send `rows=1,2,3` or `rows=[1,2,3]` |
+| `403` `admin_only` on `POST /api/v1/cache/reset` | On a shared server only admins may clear the cache | Sign in as an admin, or restart the service |
 | `401` although you sent `Authorization: Bearer <token>` from `/auth/token`. Reproduced | No route accepts the token; only the session cookie | Log in through `POST /login` and reuse the cookie ({doc}`http-api`) |
-| `GET /data/uns/<key>` returns `"data": null` for a string, or strings like `<Array file:///… shape=() dtype=StringDType()>` for a group. Reproduced | The uns route does not read zarr string scalars | Read `uns` in Python with zarr or anndata |
-| `ANNZARRO_SERVER_COMPRESS_RESPONSES=true` has no effect. Reproduced | Environment variables only override keys present in the built-in config, and `compress_responses` is not in `base.yaml` | Set it in a config file passed with `--config` |
-| A negative index returns data | Indices follow numpy: `-1` is the last row | Validate indices client side |
 
 ## Diagnosing
 
