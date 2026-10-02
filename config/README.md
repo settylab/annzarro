@@ -1,8 +1,14 @@
 # Annzarro Configuration
 
-This directory contains the configuration files for Annzarro. The configuration system is designed to be flexible, layered, and secure.
+The configuration system is designed to be flexible, layered, and secure.
 
 ## Configuration Files
+
+The built-in defaults ship inside the Python package, in `annzarro/config/`, so
+an installed AnnZarro finds them no matter which directory it is started from.
+Do not edit them to configure a deployment; put overrides in your own file (see
+"Configuration Precedence" below). This directory only holds `auth/`, the legacy
+location of the user database in a source checkout.
 
 - **base.yaml**: Base configuration with default values
 - **development.yaml**: Development environment overrides

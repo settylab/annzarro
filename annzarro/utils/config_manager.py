@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 from copy import deepcopy
 
+from annzarro.utils import paths
+
 logger = logging.getLogger(__name__)
 
 class ConfigManager:
@@ -37,8 +39,10 @@ class ConfigManager:
     SYSTEM_CONFIG_PATH = "/etc/annzarro/config.yaml"
     USER_CONFIG_PATH = os.path.expanduser("~/.config/annzarro/config.yaml")
     
-    # Schema file path
-    SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "schema.yaml")
+    # Built-in defaults ship inside the package, so they are found the same way
+    # from a source checkout, an editable install or a wheel, whatever the CWD.
+    DEFAULTS_DIR = str(paths.DEFAULTS_DIR)
+    SCHEMA_PATH = os.path.join(DEFAULTS_DIR, "schema.yaml")
     
     # Environment variable prefix
     ENV_PREFIX = "ANNZARRO_"
@@ -79,10 +83,10 @@ class ConfigManager:
             Merged configuration dictionary
         """
         # Step 1: Load base configuration
-        self._load_yaml_config("config/base.yaml", "base_defaults")
+        self._load_yaml_config(os.path.join(self.DEFAULTS_DIR, "base.yaml"), "base_defaults")
         
         # Step 2: Load environment-specific configuration
-        env_file = f"config/{env}.yaml"
+        env_file = os.path.join(self.DEFAULTS_DIR, f"{env}.yaml")
         self._load_yaml_config(env_file, f"{env}_defaults")
         
         # Step 3: Load system-wide configuration if available

@@ -637,11 +637,7 @@ def config_command(args: argparse.Namespace) -> int:
             return 1
                 
         # Load base configuration
-        base_config_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "config", 
-            "base.yaml"
-        )
+        base_config_path = os.path.join(config_manager.DEFAULTS_DIR, "base.yaml")
         
         try:
             import yaml
