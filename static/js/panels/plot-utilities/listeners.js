@@ -1096,6 +1096,10 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
     if (buttonType === 'lock' && settings[axis]) {
       // Handle lock button click
       settings[axis].locked = !settings[axis].locked;
+      // Tables offer every locked cell and gene as a column (panel-tracker.js)
+      document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', {
+        detail: { axis, locked: settings[axis].locked, entity: settings[axis].column }
+      }));
       
       if (settings[axis].locked) {
         // Locking - update button style to locked state

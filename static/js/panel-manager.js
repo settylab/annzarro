@@ -539,6 +539,9 @@ const PanelManager = (function() {
 
         // Remove from source panels of bottom selection
         updateSourcePanelSelection();
+
+        // Its locked cells/genes are no longer offered as table columns
+        document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', { detail: { closed: id } }));
     }
     
     /**
