@@ -74,7 +74,6 @@ remote = [
 
 [project.scripts]
 annzarro = "annzarro.cli:main"
-annzarro-server = "annzarro.server.__main__:main"
 
 # Packages, package data and the frontend mapping are declared in setup.py.
 [tool.setuptools]
