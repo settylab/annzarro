@@ -34,12 +34,17 @@ def main(electron_dir):
     rows = [("frozen server, total", size(server))]
     parts = {}
     for entry in internal.iterdir():
-        name = entry.name.split("-")[0].split(".")[0] if entry.is_dir() else entry.name
-        if entry.name.endswith(".dist-info"):
+        n = entry.name
+        if n.endswith(".dist-info"):
             name = "dist-info metadata"
-        elif entry.is_file() and ("python3" in entry.name.lower() or entry.name.startswith("libpython")):
-            name = "Python runtime (libpython)"
-        elif entry.is_file():
+        elif entry.is_dir():
+            # numpy.libs (OpenBLAS ...) counts towards numpy
+            name = n[:-5] if n.endswith(".libs") else n
+        elif n.startswith(("libpython", "python3")) or n == "Python" or n.startswith("python3"):
+            name = "Python runtime"
+        elif n == "base_library.zip":
+            name = "Python runtime"
+        else:
             name = "other shared libraries"
         parts[name] = parts.get(name, 0) + size(entry)
     exe = [p for p in server.iterdir() if p.is_file() and p.name.startswith("annzarro-server")]

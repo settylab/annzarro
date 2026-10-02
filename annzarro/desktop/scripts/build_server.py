@@ -39,6 +39,33 @@ def venv_python(path: Path) -> Path:
     return path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def strip_debug_symbols(root: Path):
+    """Remove debug sections from the Linux bundle's shared objects.
+
+    The manylinux wheels and setup-python's libpython ship with debug info
+    (numcodecs' extensions alone are 34 MB, 3 MB on macOS). Libraries that
+    auditwheel rewrote with patchelf (the ``*.libs`` directories, and
+    extensions whose RPATH points there) are left alone: strip corrupts them
+    ("ELF load command address/offset not page-aligned"), which is why
+    PyInstaller's own strip option stays off.
+    """
+    saved = 0
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if not (".so" in path.suffixes or path.name.startswith("libpython")):
+            continue
+        if any(part.endswith(".libs") for part in path.relative_to(root).parts):
+            continue
+        dyn = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
+        if ".libs" in dyn and ("RPATH" in dyn or "RUNPATH" in dyn):
+            continue
+        before = path.stat().st_size
+        if subprocess.run(["strip", "--strip-debug", str(path)]).returncode == 0:
+            saved += before - path.stat().st_size
+    print(f"Stripped debug symbols: {saved / 1048576:.1f} MB")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--reuse-venv", action="store_true",
@@ -65,6 +92,9 @@ def main(argv=None):
     BUILD.mkdir(parents=True, exist_ok=True)
     run([py, "-m", "PyInstaller", "--noconfirm", "--clean",
          "--distpath", DIST, "--workpath", BUILD / "pyinstaller", SPEC], cwd=BUILD)
+
+    if sys.platform.startswith("linux"):
+        strip_debug_symbols(out)
 
     # Record exactly what was frozen, next to the binary.
     freeze = subprocess.run([str(py), "-m", "pip", "freeze", "--exclude-editable"],
