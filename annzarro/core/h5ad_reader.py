@@ -19,7 +19,7 @@ import logging
 from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 import scipy.sparse as sp
-from .caching import DatasetCache, cached_method
+from .caching import CacheSettings, DatasetCache, cached_method
 from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError
 
 logger = logging.getLogger(__name__)
@@ -341,7 +341,7 @@ def _uns_value(node) -> Any:
     return value
 
 
-class h5adReader:
+class h5adReader(CacheSettings):
 
     def __init__(self, max_memory_mb=1000, enable_caching=True, cache_limit=10):
         """
@@ -356,11 +356,6 @@ class h5adReader:
         self.cache = DatasetCache(max_memory_mb=max_memory_mb,
                                  enable_caching=enable_caching,
                                  cache_limit=cache_limit)
-
-        # Keep reference to cache settings for backwards compatibility
-        self.max_memory_mb = max_memory_mb
-        self.enable_caching = enable_caching
-        self.cache_limit = cache_limit
 
     def get_cache_info(self):
         """

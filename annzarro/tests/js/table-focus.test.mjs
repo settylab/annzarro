@@ -1,3 +1,4 @@
+/* global document -- stubbed on globalThis below */
 /**
  * A table column that follows a focus must refresh when THAT focus changes,
  * and only then.

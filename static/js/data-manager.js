@@ -33,7 +33,7 @@ const DataManager = (function() {
         } catch (err) {
         // only replace tokens that aren’t inside quotes:
         // lookbehind (?<=[\[:,\s]) and lookahead (?=[,\]\}\s])
-        const FIX_SPECIAL = /(?<=[\[\{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
+        const FIX_SPECIAL = /(?<=[[{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
         const cleaned = text.replace(FIX_SPECIAL, 'null');
         // second chance
         return JSON.parse(cleaned);
@@ -125,6 +125,10 @@ const DataManager = (function() {
                 method: 'POST'
             });
             
+            if (response.status === 403) {
+                // admin-only on a hosted server: an expected refusal, not an error
+                return { status: 'forbidden', reason: 'admin_only' };
+            }
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
             }

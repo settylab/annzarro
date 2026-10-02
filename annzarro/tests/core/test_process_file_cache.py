@@ -124,11 +124,9 @@ def test_uns_group_and_string_are_read_from_the_bucket_they_were_written_to(stor
 
 
 def test_listing_warms_the_configured_reader(stores, tmp_path):
-    """The /datasets listing read h5ad shapes through the reader that
-    data_routes imported, which is the first app's: a later app in the same
-    process (each create_app configures a new reader) listed through a cache
-    its own routes never read, and with a positional get_metadata, through
-    no cache at all."""
+    """The /datasets listing's shape probe fills the metadata cache the
+    routes read, also for a second app in the process (positional
+    get_metadata used to bypass the cache entirely)."""
     import shutil
     from annzarro.server.core import create_app
     import annzarro.core as core

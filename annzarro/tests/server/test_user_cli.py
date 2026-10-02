@@ -78,3 +78,19 @@ def test_removed_user_is_signed_out(users, tmp_path):
     assert client.get("/api/v1/auth/me").status_code == 200
     assert _run(cfg, "remove", "--username", "alice") == 0
     assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_user_commands_load_the_production_environment_like_start(users, monkeypatch):
+    """`annzarro user` loaded the development defaults while `start` loads
+    production, so a user_file set for production could differ."""
+    from annzarro.utils.config_manager import ConfigManager
+    seen = []
+    real = ConfigManager.load_config
+
+    def spy(self, env="development", *a, **kw):
+        seen.append(env)
+        return real(self, env, *a, **kw)
+    monkeypatch.setattr(ConfigManager, "load_config", spy)
+    _, cfg = users
+    assert cli.main(["user", "--config", cfg, "list"]) == 0, "--config after `user` is accepted"
+    assert seen == ["production"]

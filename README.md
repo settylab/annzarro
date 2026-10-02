@@ -128,6 +128,10 @@ gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_
 # or: annzarro/server/run_gunicorn.sh, or the systemd unit annzarro/server/annzarro.service
 ```
 
+`ANNZARRO_CONFIG` is read by the `annzarro` command too (when `--config` is
+not given), so `annzarro config show` and `annzarro user add` see the same
+site file as gunicorn.
+
 The gunicorn config binds to `server.host:server.port` from the same
 configuration (default `127.0.0.1:8000`), runs `server.workers` workers
 (default 4; each keeps its own dataset cache), and logs to stderr.
@@ -198,14 +202,16 @@ to the server.
 
 ## Working with Data
 
-Add datasets by copying or linking .zarr directories to the data/ folder:
+Add datasets by copying or linking .zarr directories (or .h5ad files) into the
+data directory, `~/annzarro-data` unless `server.data_dir` or `--data-dir` says
+otherwise (the desktop app uses the same folder):
 
 ```bash
 # Copy a dataset
-cp -r /path/to/your-dataset.zarr data/
+cp -r /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Or create a symlink
-ln -s /path/to/your-dataset.zarr data/
+ln -s /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Use a custom data directory
 ./annzarro-cli start --data-dir /path/to/datasets
@@ -291,8 +297,16 @@ A refused URL is answered with HTTP 403 and never fetched.
 ## Development
 
 ```bash
-# Run tests
+# Once: install the pinned ESLint (needs Node.js 22+)
+npm ci
+
+# Run every test: Python, all JS suites (annzarro/tests/js/*.test.mjs) and ESLint.
+# CI runs exactly this; without node or `npm ci` the JS and lint tests fail.
 python -m pytest
+
+# Or the JS side alone
+npm run lint
+npm test
 
 # Start in development mode
 ./annzarro-cli start --development

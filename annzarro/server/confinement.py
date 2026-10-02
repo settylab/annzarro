@@ -29,6 +29,7 @@ import os
 from flask import current_app, jsonify, request
 
 from .permissions import is_shared
+from annzarro.utils.paths import default_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def is_hosted(config):
 
 def allowed_roots(config):
     """Real paths of the directories a hosted server may read from."""
-    roots = [config.get("data_dir") or "data"]
+    roots = [config.get("data_dir") or default_data_dir()]
     extra = config.get("allowed_dirs") or []
     if isinstance(extra, str):
         extra = [extra]
@@ -83,7 +84,7 @@ def _requested_paths():
         directory = request.args.get("path")
         if directory:
             # list_directory resolves a relative path against data_dir
-            data_dir = current_app.config.get("data_dir") or "data"
+            data_dir = current_app.config.get("data_dir") or default_data_dir()
             if not os.path.isabs(directory) and not directory.startswith(data_dir):
                 directory = os.path.join(data_dir, directory)
             paths.append(directory)
@@ -173,7 +174,7 @@ def warn_about_escaping_links(config):
     """
     if not is_hosted(config):
         return
-    data_dir = config.get("data_dir") or "data"
+    data_dir = config.get("data_dir") or default_data_dir()
     roots = allowed_roots(config)
     try:
         entries = os.listdir(data_dir)

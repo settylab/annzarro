@@ -4,7 +4,13 @@ import {
   createFilterMask, 
   applyFilterMask, 
   updateTableEntities,
-  panelLoadCoverage 
+  panelLoadCoverage,
+  stableAxisRanges,
+  applyHoverInfo,
+  sortTracesByColor,
+  unsortTraces,
+  applyLogColor,
+  applyLogColorbar
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -176,6 +182,15 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
     
     try {
         removeHighlight(plotContainer); // One trace less to take care of
+        // back to data order: the updates below write arrays in data order
+        await unsortTraces(plotContainer);
+
+        // The axes as shown before this update, so hiding points can keep them
+        const fl = plotContainer._fullLayout;
+        const axesBefore = fl && fl.xaxis && fl.yaxis && Array.isArray(fl.xaxis.range) ? {
+            auto: fl.xaxis.autorange !== false && fl.yaxis.autorange !== false,
+            x: [...fl.xaxis.range], y: [...fl.yaxis.range]
+        } : null;
 
         const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
@@ -458,8 +473,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     }
                 }
                 
-                // Process categories to create traces for each category
-                const categoricalTraces = processCategories(settings, data, catValues, customColors);
+                // Process categories to create traces for each category, from
+                // the same masked points as the full render: with Hide NaN on,
+                // the points it counted as hidden must not be drawn under NA.
+                const shownData = (settings.hideNaN || settings.hideOutliers)
+                    ? applyFilterMask(data, indexMask) : data;
+                const categoricalTraces = processCategories(settings, shownData, catValues, customColors);
                 
                 // Remove all existing traces
                 while (plotContainer.data.length > 0) {
@@ -787,6 +806,31 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             }
         }
 
+        // Filtering removed or restored points: keep the axes on all points
+        if (updateOptions.filter) {
+            const pinned = stableAxisRanges(data, settings);
+            // Hiding switched on while the axes were auto-fitted to all points:
+            // keep exactly those ranges (no jump from a different padding)
+            if (pinned && pinned['xaxis.range'] && axesBefore && axesBefore.auto) {
+                pinned['xaxis.range'] = axesBefore.x;
+                pinned['yaxis.range'] = axesBefore.y;
+            }
+            if (pinned) {
+                // awaited: the highlight below snapshots the layout and puts it
+                // back, which would otherwise undo this
+                try {
+                    await Plotly.relayout(plotContainer, pinned);
+                } catch (err) {
+                    console.warn('Axis range update skipped:', err && err.message);
+                }
+            }
+        }
+
+        // hover labels for whatever traces the update left
+        await applyHoverInfo(plotContainer, data, settings);
+        await applyLogColorbar(plotContainer, data, settings);
+        await sortTracesByColor(plotContainer, settings);
+
         // bring back the focused entity if enabled
         highlightFocusedEntity(plotContainer, data, settings, entityType);
         
@@ -901,6 +945,7 @@ export async function loadColorDataAndUpdatePlot(
             // Update the data cache with new color information.
             data.color = colorData.values;
             data.colorType = colorData.type;
+            applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on

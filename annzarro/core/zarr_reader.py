@@ -26,7 +26,7 @@ from pathlib import Path
 from collections import OrderedDict
 
 from .metadata_extraction import extract_metadata
-from .caching import DatasetCache, cached_method
+from .caching import CacheSettings, DatasetCache, cached_method
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
 # Try to import optional dependencies
@@ -176,7 +176,7 @@ def zarr_format_problem(dataset_path) -> Optional[str]:
     return None
 
 
-class ZarrReader:
+class ZarrReader(CacheSettings):
     """
     Class for reading AnnData objects from zarr sources with lazy loading.
     
@@ -208,11 +208,6 @@ class ZarrReader:
         self.cache = DatasetCache(max_memory_mb=max_memory_mb, 
                                  enable_caching=enable_caching, 
                                  cache_limit=cache_limit)
-        
-        # Keep reference to cache settings for backwards compatibility
-        self.max_memory_mb = max_memory_mb
-        self.enable_caching = enable_caching
-        self.cache_limit = cache_limit
 
         # url -> zarr root group for remote stores (see _get_remote_root)
         self._remote_roots = OrderedDict()
