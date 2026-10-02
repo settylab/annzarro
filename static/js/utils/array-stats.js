@@ -61,3 +61,19 @@ export function arrayMinMax(arr) {
   }
   return { min, max };
 }
+
+/**
+ * A colour-range bound as the Min/Max boxes show it: three significant
+ * digits, whole numbers from 1000 up. The boxes used toFixed(2), so a range
+ * ending at 0.012 read "0.01", and one inside [0, 0.004] read "0.00".
+ * Display only: the range itself is never rounded.
+ * @param {number} v
+ * @returns {string}
+ */
+export function formatRangeValue(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (n === 0) return '0';
+  if (Math.abs(n) >= 1000) return String(Math.round(n));
+  return String(Number(n.toPrecision(3)));
+}

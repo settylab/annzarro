@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
 
@@ -765,8 +765,8 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           $colorMinSlider.val(dataMin);
           $colorMaxSlider.val(dataMax);
           
-          if ($colorMinInput.length) $colorMinInput.val(dataMin.toFixed(2));
-          if ($colorMaxInput.length) $colorMaxInput.val(dataMax.toFixed(2));
+          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(dataMin));
+          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(dataMax));
           
           settings.colorMin = dataMin;
           settings.colorMax = dataMax;
@@ -807,17 +807,17 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           // when the restored config had no colorMin/colorMax (the usual case
           // for a hand-written deep link), while the plot was coloured over
           // the data range.
-          if ($colorMinInput.length) $colorMinInput.val(Number(settings.colorMin).toFixed(2));
-          if ($colorMaxInput.length) $colorMaxInput.val(Number(settings.colorMax).toFixed(2));
+          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
+          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
         }
 
         // Update input placeholders if fields are empty
         if ($colorMinInput.length && $colorMinInput.val() === '') {
-          $colorMinInput.attr('placeholder', (settings.colorMin ?? dataMin).toFixed(2));
+          $colorMinInput.attr('placeholder', formatRangeValue(settings.colorMin ?? dataMin));
         }
         
         if ($colorMaxInput.length && $colorMaxInput.val() === '') {
-          $colorMaxInput.attr('placeholder', (settings.colorMax ?? dataMax).toFixed(2));
+          $colorMaxInput.attr('placeholder', formatRangeValue(settings.colorMax ?? dataMax));
         }
       }
     }
@@ -867,8 +867,8 @@ export function applyCentering(container, data, settings, id) {
   const $colorMinInput = $container.find(`#color-min-${id}`);
   const $colorMaxInput = $container.find(`#color-max-${id}`);
   
-  if ($colorMinInput.length) $colorMinInput.val(effectiveColorMin.toFixed(2));
-  if ($colorMaxInput.length) $colorMaxInput.val(effectiveColorMax.toFixed(2));
+  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(effectiveColorMin));
+  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(effectiveColorMax));
 
   // Update slider controls
   const $colorMinSlider = $container.find(`#color-min-slider-${id}`);

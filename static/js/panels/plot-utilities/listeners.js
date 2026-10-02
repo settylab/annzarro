@@ -10,7 +10,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -556,7 +556,7 @@ export function setupColorControls(
     // --- Min slider --- use debounce for smoother performance
     $colorMinSlider.on('input', $.debounce((e) => {
         const minValue = parseFloat(e.target.value);
-        $colorMinInput.val(minValue.toFixed(2));
+        $colorMinInput.val(formatRangeValue(minValue));
         settings.colorMin = minValue;
         updateColorRangeDirect('min', minValue);
         _updatePlotElements({
@@ -569,7 +569,7 @@ export function setupColorControls(
     // --- Max slider --- use debounce for smoother performance
     $colorMaxSlider.on('input', $.debounce((e) => {
         const maxValue = parseFloat(e.target.value);
-        $colorMaxInput.val(maxValue.toFixed(2));
+        $colorMaxInput.val(formatRangeValue(maxValue));
         settings.colorMax = maxValue;
         updateColorRangeDirect('max', maxValue);
         _updatePlotElements({
@@ -625,8 +625,8 @@ export function setupColorControls(
         const maxValue = -minValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMinInput.val(minValue.toFixed(2));
-        $csColorMaxInput.val(maxValue.toFixed(2));
+        $csColorMinInput.val(formatRangeValue(minValue));
+        $csColorMaxInput.val(formatRangeValue(maxValue));
         $csColorMaxSlider.val(maxValue);
         
         // Update the plot with the new range values
@@ -700,8 +700,8 @@ export function setupColorControls(
         const minValue = -maxValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMaxInput.val(maxValue.toFixed(2));
-        $csColorMinInput.val(minValue.toFixed(2));
+        $csColorMaxInput.val(formatRangeValue(maxValue));
+        $csColorMinInput.val(formatRangeValue(minValue));
         $csColorMinSlider.val(minValue);
         
         // Update the plot with the new range values
