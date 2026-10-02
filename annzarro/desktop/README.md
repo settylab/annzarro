@@ -35,6 +35,15 @@ not need Python.
   only read. The window loads the UI once `GET /api/v1/datasets` answers
   (up to 180 s: the first start after installing is slowed by Gatekeeper and
   Defender scanning the server). Quitting the app stops the server.
+- Starting is bounded: the loading screen counts the seconds and explains a
+  slow first start; if the server has not answered after 180 s, or the
+  interface has not loaded 60 s after that, the window shows an error page
+  with the reason, the log path and a Retry button. A second launch focuses
+  the running window (one instance per profile). Each launch tags its server
+  with a random token (`ANNZARRO_INSTANCE_ID`, sent back in an
+  `X-AnnZarro-Instance` header) and only trusts the server that answers with
+  it, so two launches that pick the same port at once never adopt each other's
+  server; the one that loses the port tries the next.
 - `electron/preload.js` gives the page a native folder dialog (the folder
   button next to the Dataset picker) and an autosave hook before quit.
 
@@ -84,8 +93,11 @@ python annzarro/desktop/scripts/smoke_app.py dist/mac-arm64/AnnZarro.app/Content
 It runs the app with `ANNZARRO_DESKTOP_SMOKE=1`: the app starts its server,
 loads the UI, checks that Plotly loaded and `/api/v1/datasets` answers, prints
 `ANNZARRO_DESKTOP_SMOKE ok ...` and quits. Other switches:
-`ANNZARRO_DESKTOP_DATA_DIR` (data directory), `ANNZARRO_SERVER_BINARY`
-(server to run). The app prints `ANNZARRO_DESKTOP_READY <url>` once the server
+`ANNZARRO_DESKTOP_DATA_DIR` (data directory), `ANNZARRO_DESKTOP_USER_DATA`
+(profile: settings, local storage, log and the single-instance lock; the
+self-test and the offline test always use a temporary one, so they never hand
+a user's launch to a test window or leave state in the user's profile),
+`ANNZARRO_SERVER_BINARY` (server to run). The app prints `ANNZARRO_DESKTOP_READY <url>` once the server
 answers. In this mode every request the window makes beyond 127.0.0.1 is
 cancelled and fails the check.
 

@@ -139,13 +139,14 @@
     <div class="error-icon">⚠️</div>
     <h1>Server Error</h1>
     <p id="errorMessage">The AnnZarro server failed to start.</p>
+    <p id="logPath"></p>
 
     <button class="collapsible">Troubleshooting Steps</button>
     <div class="content">
       <div class="help-section">
         <h2>Try the following steps:</h2>
         <ol>
-          <li>Use "Restart Server" below, or quit and start the application again.</li>
+          <li>Use "Retry" below, or quit and start the application again.</li>
           <li>The first start after installing can take a minute while the system
               scans the bundled server; a second attempt is usually fast.</li>
           <li>Check that your data directory (shown below) exists and is writable.</li>
@@ -165,7 +166,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn" id="restartBtn">Restart Server</button>
+      <button class="btn" id="restartBtn">Retry</button>
       <button class="btn secondary" id="quitBtn">Quit Application</button>
     </div>
   </div>
@@ -186,6 +187,7 @@
         // Get detailed app information
         const appInfo = await window.api.getAppInfo();
         const sysInfo = await window.api.getSystemInfo();
+        document.getElementById('logPath').textContent = `Details are in the log: ${appInfo.logFile}`;
         
         // Format system information for display
         document.getElementById('systemInfo').textContent = `
@@ -217,7 +219,7 @@ Error getting detailed info: ${err.message}
       // Set up button handlers
       document.getElementById('restartBtn').addEventListener('click', async () => {
         try {
-          document.getElementById('restartBtn').textContent = 'Restarting...';
+          document.getElementById('restartBtn').textContent = 'Retrying...';
           document.getElementById('restartBtn').disabled = true;
           
           await window.api.restartServer();
@@ -228,7 +230,7 @@ Error getting detailed info: ${err.message}
           }, 3000);
         } catch (err) {
           alert('Failed to restart the server. Please quit and restart the application.');
-          document.getElementById('restartBtn').textContent = 'Restart Server';
+          document.getElementById('restartBtn').textContent = 'Retry';
           document.getElementById('restartBtn').disabled = false;
         }
       });

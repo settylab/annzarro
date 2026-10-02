@@ -17,6 +17,11 @@
  *   ANNZARRO_SERVER_BINARY   run this server executable instead
  *   ANNZARRO_PYTHON          Python used from a source checkout (default python3/python)
  *   ANNZARRO_DESKTOP_DATA_DIR  data directory instead of ~/annzarro-data
+ *   ANNZARRO_DESKTOP_USER_DATA profile directory (settings, local storage, log
+ *                            and the single-instance lock) instead of the
+ *                            user's; tests set it so they never meet a
+ *                            running AnnZarro. ANNZARRO_DESKTOP_SMOKE=1 uses a
+ *                            fresh temporary one when it is not set.
  *   ANNZARRO_DESKTOP_SMOKE=1 start, load the UI, check /api/v1/datasets, print
  *                            "ANNZARRO_DESKTOP_SMOKE ok <url>" and quit (exit 0,
  *                            or 1 on failure). The network is cut off for the
@@ -29,6 +34,7 @@ const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const log = require('electron-log');
 
 log.transports.file.level = 'info';
@@ -40,7 +46,20 @@ const DEFAULT_PORT = 39487;
 // First launch can be slow: macOS Gatekeeper and Windows Defender scan the
 // server's libraries before it may run.
 const SERVER_START_TIMEOUT_MS = 180 * 1000;
+// From the moment the server answers, the UI page must finish loading in this
+// time, or the window shows the error page instead of a spinner.
+const UI_LOAD_TIMEOUT_MS = 60 * 1000;
 const SMOKE = process.env.ANNZARRO_DESKTOP_SMOKE === '1';
+
+// A test's profile: its own settings, local storage, log and single-instance
+// lock, so a test never hands a user's launch to its own window (or restores
+// its panels into the user's next session), and vice versa.
+const PROFILE_DIR = process.env.ANNZARRO_DESKTOP_USER_DATA
+    || (SMOKE ? fs.mkdtempSync(path.join(os.tmpdir(), 'annzarro-smoke-profile-')) : null);
+if (PROFILE_DIR) {
+    app.setPath('userData', PROFILE_DIR);
+    log.transports.file.resolvePathFn = () => path.join(PROFILE_DIR, 'logs', 'main.log');
+}
 
 let mainWindow = null;
 let serverProcess = null;
@@ -106,7 +125,7 @@ async function findFreePort(start) {
  * Resolve once GET /api/v1/datasets answers; reject if the server exits
  * first or does not answer in time.
  */
-function waitForServer(url, proc) {
+function waitForServer(url, proc, instanceId) {
     const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
         let exited = null;
@@ -118,7 +137,11 @@ function waitForServer(url, proc) {
             }
             try {
                 const response = await fetch(`${url}/api/v1/datasets`);
-                if (response.ok) return resolve();
+                // Only our own server: another AnnZarro that took the same
+                // port a moment earlier answers without our token.
+                if (response.ok && response.headers.get('x-annzarro-instance') === instanceId) {
+                    return resolve();
+                }
             } catch (err) {
                 // not listening yet
             }
@@ -131,7 +154,23 @@ function waitForServer(url, proc) {
 async function startServer() {
     if (serverProcess) return;
     const dataDir = initDataDir();
-    const port = await findFreePort(DEFAULT_PORT);
+    // Two launches can pick the same free port at the same moment; the one
+    // that loses the bind exits at once, and then tries the next port.
+    let port = DEFAULT_PORT;
+    for (let attempt = 1; ; attempt++) {
+        port = await findFreePort(port);
+        try {
+            await startServerOn(port, dataDir);
+            return;
+        } catch (err) {
+            if (!err.portInUse || attempt >= 5) throw err;
+            log.warn(`Port ${port} was taken while the server started; trying the next one`);
+            port += 1;
+        }
+    }
+}
+
+async function startServerOn(port, dataDir) {
     const { command, args, cwd } = serverCommand();
     const fullArgs = args.concat([
         'start',
@@ -146,6 +185,7 @@ async function startServer() {
     if (path.isAbsolute(command) && !fs.existsSync(command)) {
         throw new Error(`Server executable not found: ${command}`);
     }
+    const instanceId = crypto.randomUUID();
     const proc = spawn(command, fullArgs, {
         cwd: cwd || app.getPath('userData'),
         env: {
@@ -153,28 +193,36 @@ async function startServer() {
             ANNZARRO_ELECTRON_APP: 'true',
             ANNZARRO_HEADLESS: '1',
             ANNZARRO_AUTH_DISABLED: 'true',
+            ANNZARRO_INSTANCE_ID: instanceId,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
     });
     serverProcess = proc;
-    proc.stdout.on('data', (d) => log.info(`server: ${d.toString().trimEnd()}`));
-    proc.stderr.on('data', (d) => log.info(`server: ${d.toString().trimEnd()}`));
+    let output = '';
+    const onOutput = (d) => {
+        const text = d.toString();
+        if (output.length < 20000) output += text;
+        log.info(`server: ${text.trimEnd()}`);
+    };
+    proc.stdout.on('data', onOutput);
+    proc.stderr.on('data', onOutput);
     proc.on('error', (err) => log.error(`Server process error: ${err.message}`));
     proc.on('exit', (code, signal) => {
         log.info(`Server exited (code ${code}, signal ${signal || 'none'})`);
         if (serverProcess === proc) serverProcess = null;
         if (!isQuitting && mainWindow && serverUrl) {
-            showErrorScreen('The AnnZarro server stopped unexpectedly. Use "Restart server" to start it again.');
+            showErrorScreen('The AnnZarro server stopped unexpectedly. Use "Retry" to start it again.');
         }
         serverUrl = null;
     });
 
     const url = `http://${HOST}:${port}`;
     try {
-        await waitForServer(url, proc);
+        await waitForServer(url, proc, instanceId);
     } catch (err) {
-        stopServer();
+        await stopServer();
+        if (/Port \d+ is in use/.test(output)) err.portInUse = true;
         throw err;
     }
     serverUrl = url;
@@ -209,12 +257,55 @@ function showErrorScreen(message) {
     }
 }
 
+/**
+ * Say on the loading page what is happening and for how long, so a slow
+ * first start is never an anonymous spinner. Returns a function that stops it.
+ */
+function showStartupProgress() {
+    const started = Date.now();
+    const timer = setInterval(() => {
+        if (!mainWindow || serverUrl) return;
+        const s = Math.round((Date.now() - started) / 1000);
+        let text = `Starting the AnnZarro server (${s} s)`;
+        if (s >= 15) {
+            text += '. The first start after installing can take up to a minute while the system checks the app.';
+        }
+        if (s >= 90) {
+            text += ` The app gives up after ${SERVER_START_TIMEOUT_MS / 1000} s and shows the log.`;
+        }
+        mainWindow.webContents.executeJavaScript(
+            `window.setStatus && window.setStatus(${JSON.stringify(text)})`).catch(() => {});
+    }, 1000);
+    return () => clearInterval(timer);
+}
+
+/**
+ * Load the UI; if it has not finished loading within UI_LOAD_TIMEOUT_MS,
+ * or fails to load, show the error page instead.
+ */
+function loadUi() {
+    if (!mainWindow) return Promise.resolve();
+    const win = mainWindow;
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`the interface did not finish loading within ${UI_LOAD_TIMEOUT_MS / 1000} s`));
+        }, UI_LOAD_TIMEOUT_MS);
+        win.loadURL(serverUrl).then(
+            () => { clearTimeout(timer); resolve(); },
+            (err) => { clearTimeout(timer); reject(new Error(`the interface failed to load: ${err.message}`)); });
+    });
+}
+
 async function launch() {
+    const stopProgress = showStartupProgress();
     try {
         await startServer();
-        if (mainWindow) await mainWindow.loadURL(serverUrl);
+        stopProgress();
+        await loadUi();
+        log.info(`Interface loaded from ${serverUrl}`);
         if (SMOKE) await smokeCheck();
     } catch (err) {
+        stopProgress();
         log.error(`Failed to start: ${err.message}`);
         if (SMOKE) {
             console.log(`ANNZARRO_DESKTOP_SMOKE failed: ${err.message}`);
@@ -223,7 +314,7 @@ async function launch() {
             app.exit(1);
             return;
         }
-        showErrorScreen(`Failed to start the AnnZarro server: ${err.message}`);
+        showErrorScreen(`AnnZarro could not start: ${err.message}`);
     }
 }
 
@@ -280,6 +371,10 @@ function createWindow() {
         if (/^https?:\/\//.test(url)) shell.openExternal(url);
     });
 
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+        if (!isQuitting) showErrorScreen(`The window's renderer stopped (${details.reason}).`);
+    });
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -291,7 +386,7 @@ function setupIpcHandlers() {
         try {
             await stopServer();
             await startServer();
-            if (mainWindow) mainWindow.loadURL(serverUrl);
+            await loadUi();
             return { success: true };
         } catch (err) {
             log.error(`Failed to restart server: ${err.message}`);
@@ -320,16 +415,23 @@ function setupIpcHandlers() {
     }));
 }
 
-// One instance: a second launch focuses the existing window instead of
-// starting a second server.
-if (!SMOKE && !app.requestSingleInstanceLock()) {
+// One instance per profile: a second launch focuses the existing window
+// instead of starting a second server.
+if (!app.requestSingleInstanceLock()) {
+    log.info('AnnZarro is already running; handing this launch to its window');
     app.quit();
 } else {
     app.on('second-instance', () => {
-        if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
+        log.info('Second launch: focusing the existing window');
+        if (!mainWindow) {
+            createWindow();
+            if (serverUrl) mainWindow.loadURL(serverUrl);
+            else launch();
+            return;
         }
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
     });
 
     app.whenReady().then(() => {

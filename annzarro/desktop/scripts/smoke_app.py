@@ -23,7 +23,10 @@ def main(argv):
     if not argv:
         sys.exit(__doc__)
     data_dir = tempfile.mkdtemp(prefix="annzarro-app-smoke-")
-    env = dict(os.environ, ANNZARRO_DESKTOP_SMOKE="1", ANNZARRO_DESKTOP_DATA_DIR=data_dir)
+    # Own data directory and profile (settings, log, single-instance lock):
+    # the test never meets an AnnZarro the user is running.
+    env = dict(os.environ, ANNZARRO_DESKTOP_SMOKE="1", ANNZARRO_DESKTOP_DATA_DIR=data_dir,
+               ANNZARRO_DESKTOP_USER_DATA=tempfile.mkdtemp(prefix="annzarro-app-profile-"))
     cmd = [os.path.abspath(argv[0])] + argv[1:]
     print("+", " ".join(cmd), flush=True)
     started = time.time()

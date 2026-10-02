@@ -42,7 +42,10 @@ async function main() {
     const app = await electron.launch({
         executablePath: path.resolve(exe),
         args,
-        env: { ...process.env, ANNZARRO_DESKTOP_DATA_DIR: dataDir },
+        // Own profile: never shares the single-instance lock, local storage
+        // or log with an AnnZarro the user is running.
+        env: { ...process.env, ANNZARRO_DESKTOP_DATA_DIR: dataDir,
+               ANNZARRO_DESKTOP_USER_DATA: path.join(tmp, 'profile') },
     });
     const t0 = Date.now();
     const log = (msg) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`);

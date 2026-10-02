@@ -124,16 +124,22 @@ jobs:
           npx electron-builder "${args[@]}"
           ls -la dist
 
-      - name: Smoke-test the app
+      - name: Smoke-test the app (twice at once)
+        # Two self-tests start together, each with its own profile: they race
+        # for the same free port, and each must end up with its own server.
         run: |
           case "$RUNNER_OS" in
-            macOS)   app=$(ls -d annzarro/desktop/electron/dist/mac*/AnnZarro.app)/Contents/MacOS/AnnZarro
-                     python annzarro/desktop/scripts/smoke_app.py "$app" ;;
-            Windows) python annzarro/desktop/scripts/smoke_app.py annzarro/desktop/electron/dist/win-unpacked/AnnZarro.exe ;;
+            macOS)   app=$(ls -d annzarro/desktop/electron/dist/mac*/AnnZarro.app)/Contents/MacOS/AnnZarro; run=(python annzarro/desktop/scripts/smoke_app.py "$app") ;;
+            Windows) run=(python annzarro/desktop/scripts/smoke_app.py annzarro/desktop/electron/dist/win-unpacked/AnnZarro.exe) ;;
             Linux)   app=$(find annzarro/desktop/electron/dist/linux-unpacked -maxdepth 1 -type f -name 'annzarro*' -perm -u+x | head -1)
                      # Unprivileged CI user: Chromium's setuid sandbox is not installed here.
-                     xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$app" --no-sandbox ;;
+                     run=(xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$app" --no-sandbox) ;;
           esac
+          "${run[@]}" > smoke-a.log 2>&1 & a=$!
+          "${run[@]}" > smoke-b.log 2>&1 & b=$!
+          status=0; wait $a || status=1; wait $b || status=1
+          cat smoke-a.log smoke-b.log
+          exit $status
 
       - name: Offline session test (network cut off)
         # Drives the packaged app with playwright-core (no browser download):

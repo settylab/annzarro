@@ -133,3 +133,17 @@ def test_electron_build_is_trimmed():
     assert build["compression"] == "maximum"
     assert build["asar"] is True
     assert not [p for p in build["files"] if "node_modules" in p or p.startswith("test")]
+
+
+def test_server_tags_responses_with_the_desktop_instance(monkeypatch, tmp_path):
+    """The desktop app trusts only the server that carries its launch token:
+    two launches that pick the same free port at once must not adopt each
+    other's server."""
+    from annzarro.server.core import create_app
+    config = {"TESTING": True, "data_dir": str(tmp_path)}
+    monkeypatch.setenv("ANNZARRO_INSTANCE_ID", "launch-123")
+    tagged = create_app(config).test_client().get("/api/v1/datasets")
+    assert tagged.headers.get("X-AnnZarro-Instance") == "launch-123"
+    monkeypatch.delenv("ANNZARRO_INSTANCE_ID")
+    plain = create_app(config).test_client().get("/api/v1/datasets")
+    assert "X-AnnZarro-Instance" not in plain.headers
