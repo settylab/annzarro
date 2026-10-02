@@ -6,8 +6,9 @@ others, gene modules, the classes in a scatter. To rebuild those panels inside A
 numbers have to be in the store.
 
 `bm_aging_showcase.zarr` is {doc}`demo-data` (`bm_aging.zarr`) plus these precomputed fields.
-The figure guides under {doc}`../paper/index` use it, so that every panel can be clicked through
-in the app. It is also a worked example of the main idea behind AnnZarro: compute once in
+The tutorials use it ({doc}`../tutorials/tour`, {doc}`../tutorials/cell-similarity`,
+{doc}`../tutorials/gene-similarity`, {doc}`../tutorials/cells-and-genes`), and so does the paper-figure
+appendix ({doc}`../paper/index`), so that every panel can be clicked through in the app. It is also a worked example of the main idea behind AnnZarro: compute once in
 Python, then explore without code.
 
 - **Exact copies of the paper's analysis.** Each field is computed with the code of the paper's
@@ -21,7 +22,9 @@ Python, then explore without code.
 Field names begin with the paper figure that uses them. General-purpose fields have plain names.
 The full table, with shapes, dtypes, chunking and colours, is `bm_aging_showcase.FIELDS.md` next to the store.
 
-### Cell x cell, {doc}`../paper/fig3-cell-by-cell`
+### Cell x cell
+
+Used in {doc}`../tutorials/cell-similarity`; paper figure: {doc}`../paper/fig3-cell-by-cell`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|
@@ -36,7 +39,9 @@ The full table, with shapes, dtypes, chunking and colours, is `bm_aging_showcase
 The kNN graph (`obsp/connectivities`, `obsp/distances`) and Palantir's kernel were already sparse
 CSR matrices in the original store, so they serve as the sparse examples.
 
-### Gene x gene, {doc}`../paper/fig4-gene-by-gene`
+### Gene x gene
+
+Used in {doc}`../tutorials/gene-similarity`; paper figure: {doc}`../paper/fig4-gene-by-gene`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|
@@ -46,7 +51,9 @@ CSR matrices in the original store, so they serve as the sparse examples.
 | `var/fig4c_rank_H2-Q7`, `var/fig4c_rank_S100a9` | Rank of each DE gene by ρ with the focus gene | x axis of the ranked strips in Fig 4c | H2-Q7 in-module median ρ 0.16 |
 | `var/fig4d_class` | Shares the age response (fold-change ρ > 0.5), shares the cell-state pattern only (smoothed ρ > 0.7, fold-change ρ < 0.5), or other | Colour (Fig 4d) | 35 and 192 genes |
 
-### Cells and genes, {doc}`../paper/fig5-cells-and-genes`
+### Cells and genes
+
+Used in {doc}`../tutorials/cells-and-genes`; paper figure: {doc}`../paper/fig5-cells-and-genes`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|

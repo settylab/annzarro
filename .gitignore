@@ -182,3 +182,4 @@ annzarro/desktop/downloads/
 # Docs sources live under docs/; only top-level data dirs are local data.
 !docs/data/
 !docs/_static/screens/data/
+docs/_static/screens/.server-*.log

@@ -23,6 +23,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -228,7 +229,7 @@ class Session:
         base = self.url
         if base is None:
             exe = str(Path(sys.executable).with_name("annzarro"))
-            logf = self.out.parent / f".server-{self.port}.log"
+            logf = Path(tempfile.gettempdir()) / f".server-{self.port}.log"
             self.out.mkdir(parents=True, exist_ok=True)
             self.proc = start_server(exe, self.port, logf, self.data_dir)
             base = f"http://127.0.0.1:{self.port}"

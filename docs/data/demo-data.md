@@ -1,6 +1,6 @@
 # Demo data
 
-The examples, tutorials and paper figures in this documentation use one dataset,
+The tutorials, examples and paper-figure pages in this documentation use one dataset,
 `bm_aging.zarr`. It holds murine bone marrow across ageing {cite:p}`zenodo_bm_aging`, processed
 with Kompot as in Kompot's getting-started tutorial {cite:p}`otto2025kompot`, and written as an
 AnnZarro-ready Zarr store.
@@ -129,4 +129,15 @@ that the guides and figures focus on. Each was chosen by a rule, not by eye:
 
 Cell names contain `#`. Deep links encode it; type it URL-encoded if you build an API query by hand.
 
-For the paper figures, a copy with extra precomputed fields exists: {doc}`showcase-store`.
+Where to see these fields in use:
+
+- `obsp/diffusion_walk_t5`, `obsp/DM_Kernel` and the embeddings: {doc}`../tutorials/cell-similarity`
+  (paper figure: {doc}`../paper/fig3-cell-by-cell`).
+- `varp/spearman_fold_change`, `varp/spearman_smoothed` and the Kompot `var` columns:
+  {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/fig4-gene-by-gene`).
+- The fold-change and smoothed layers: {doc}`../tutorials/cells-and-genes`
+  (paper figure: {doc}`../paper/fig5-cells-and-genes`).
+- All of them together: {doc}`../tutorials/tour`.
+
+A copy with extra precomputed fields, used where a tutorial needs a number the app cannot
+compute, is described in {doc}`showcase-store`.
