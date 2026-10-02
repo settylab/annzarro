@@ -96,3 +96,12 @@ def test_csv_export_uses_data_not_display():
                             "table-data.js"), encoding="utf-8").read()
     block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 600]
     assert "exportOptions: { orthogonal: 'export' }" in block
+
+
+def test_plot_area_keeps_a_drawable_height():
+    """A single plot with its controls open at 1600x750 got a 94 px graph
+    area (0 px at 600 px) and no plot: Plotly threw 'Something went wrong
+    with axis scaling'. Headless after: 260 px, drawn, the tile scrolls."""
+    css = open(CSS, encoding="utf-8").read()
+    m = re.search(r"min-height:\s*(\d+)px", _rule(css, ".plot-container"))
+    assert m and int(m.group(1)) >= 200
