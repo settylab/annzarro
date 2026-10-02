@@ -22,6 +22,17 @@ PACKAGE_DIR = Path(__file__).resolve().parent.parent
 #: Built-in configuration defaults (``base.yaml``, ``<env>.yaml``, ``schema.yaml``).
 DEFAULTS_DIR = PACKAGE_DIR / "config"
 
+#: The data directory when none is configured: the same folder the desktop
+#: app uses. It used to be "data", i.e. relative to wherever annzarro was
+#: started, so `annzarro start` in $HOME created and served ~/data.
+DEFAULT_DATA_DIR = "~/annzarro-data"
+
+
+def default_data_dir() -> str:
+    """The unconfigured data directory, expanded (``~/annzarro-data``)."""
+    return os.path.expanduser(DEFAULT_DATA_DIR)
+
+
 #: Environment variable that relocates the per-user state directory.
 STATE_DIR_ENV = "ANNZARRO_HOME"
 

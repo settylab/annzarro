@@ -50,7 +50,7 @@ def test_create_app():
     assert app is not None
     assert app.config.get("host") == "127.0.0.1"
     assert app.config.get("port") == 8000
-    assert app.config.get("data_dir") == "data"
+    assert app.config.get("data_dir") == os.path.expanduser("~/annzarro-data")
 
 def test_create_app_with_config():
     """Test creating a Flask app with custom config."""
