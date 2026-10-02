@@ -30,6 +30,9 @@ SUITES = {
     "controls-visibility.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "utils", "controls-visibility.js"
     ),
+    "legend-placement.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-aesthetics-menu.js"
+    ),
     "name-picker.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "name-picker.js"),
     "panelset-view.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "deeplink.js"),
     "panel-settings.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "panel-settings.js"),

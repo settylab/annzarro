@@ -33,6 +33,9 @@ export function createLayout(settings) {
     autosize: true,
     margin: { l: 40, r: 40, t: 40, b: 40 },
     hovermode: 'closest',
+    // Legend symbols at a readable size, not the plot's point size (3 px by
+    // default made the category colours hard to match to their labels)
+    legend: { itemsizing: 'constant' },
     // For 2D plots, xaxis and yaxis are defined.
     xaxis: {
       ...baseAxis,

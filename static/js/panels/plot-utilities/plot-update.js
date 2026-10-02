@@ -1108,13 +1108,19 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   // (adding a trace must not reset zoom), with the configured axis titles.
   const adding = settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
     if (!currentLayout) return undefined;
-    if (currentLayout.xaxis && currentLayout.xaxis.title) {
-      currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
+    // Put back only the VIEW (zoom, camera) and the axis titles. Re-sending
+    // the whole layout snapshot taken before the add undid any layout change
+    // made meanwhile, e.g. the legend moved off the colour bar.
+    const restore = {};
+    for (const axis of ['xaxis', 'yaxis']) {
+      const ax = currentLayout[axis];
+      if (!ax) continue;
+      if (Array.isArray(ax.range)) restore[`${axis}.range`] = ax.range;
+      if (ax.autorange !== undefined) restore[`${axis}.autorange`] = ax.autorange;
+      if (ax.title) restore[`${axis}.title.text`] = settings.showAxisTitles ? (axis === 'xaxis' ? newXTitle : newYTitle) : "";
     }
-    if (currentLayout.yaxis && currentLayout.yaxis.title) {
-      currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
-    }
-    return Plotly.relayout(plotContainer, currentLayout);
+    if (currentLayout.scene && currentLayout.scene.camera) restore['scene.camera'] = currentLayout.scene.camera;
+    return Object.keys(restore).length ? Plotly.relayout(plotContainer, restore) : undefined;
   })).finally(() => {
     if (plotContainer.__focusHighlightAdding === adding) plotContainer.__focusHighlightAdding = null;
   });

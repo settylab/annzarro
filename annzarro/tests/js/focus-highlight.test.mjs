@@ -53,7 +53,7 @@ const settings = {
 const data = { entities: 'cells', cells: ['c0', 'c1', 'c2'], x: { values: [0, 1, 2] }, y: { values: [5, 6, 7] }, colorType: 'numerical' };
 const plot = (withHighlight) => ({
     data: withHighlight ? [{ name: 'data' }, { name: 'Focused Cell', x: [0], y: [5] }] : [{ name: 'data' }],
-    layout: { xaxis: { title: { text: '' }, range: [0, 2] }, yaxis: { title: { text: '' }, range: [5, 7] } }
+    layout: { xaxis: { title: { text: '' }, range: [0, 2] }, yaxis: { title: { text: '' }, range: [5, 7] }, legend: { x: 1.05 } }
 });
 
 let unhandled = [];
@@ -97,7 +97,8 @@ test('the first highlight is added at the focused cell and the view is restored'
     await run(false, null);
     assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout']);
     assert.deepEqual(calls[0][1][1].x, [1]);
-    assert.deepEqual(calls[1][1][1].xaxis.range, [0, 2]);
+    assert.deepEqual(calls[1][1][1]['xaxis.range'], [0, 2]);
+    assert.equal(calls[1][1][1].legend, undefined, 'the rest of the layout is not re-sent');
 });
 
 test('two focus changes during the first add leave ONE highlight trace', async () => {
