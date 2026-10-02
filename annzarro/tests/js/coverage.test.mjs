@@ -630,3 +630,101 @@ test('SWEEP: across the rule\'s whole input domain, the panel never overstates w
     // `partial 50/200` and `partial 150/200`, each at xNaN=200 -- the last two
     // are cases no hand-written fixture in this file had named.
 });
+
+// --- settylab/annzarro#37: "nothing restricts" vs "every restrictor declined" ---
+
+test('#37: restrictors that all declined leave shown UNKNOWN, not equal to total', () => {
+    // The measured input from the issue. Before the fix: shown=200 total=200,
+    // i.e. a panel whose only statement is a failed read claimed every cell.
+    const m = Coverage.merge([
+        Coverage.unreported('cells'),
+        new Coverage({ shown: null, total: 200, unit: 'cells',
+                       gaps: [{ reason: GAP.FAILED, detail: 'read failed', source: 'obs.a' }] })
+    ], 'cells');
+    assert.equal(m.shown, null);
+    assert.equal(m.total, 200);
+    assert.equal(m.isComplete, false);
+    assert.equal(m.toJSON().shown, null, 'the serialised form must not carry a fabricated count');
+    assert.doesNotMatch(m.headline(), /200 of 200/);
+});
+
+test('#37: one restrictor declining makes the minimum of the rest an upper bound only', () => {
+    const m = Coverage.merge([
+        Coverage.complete(200, 'cells'),
+        Coverage.unreported('cells')
+    ], 'cells');
+    assert.equal(m.shown, null);
+    assert.equal(m.worstReason, GAP.UNREPORTED);
+});
+
+test('#37: a declining restrictor with NO gaps still produces a reason', () => {
+    // The severe variant: without a gap the panel would render nothing at all.
+    const silent = new Coverage({ shown: null, total: 200, unit: 'cells' });
+    const m = Coverage.merge([silent], 'cells');
+    assert.equal(m.shown, null);
+    assert.equal(m.isComplete, false);
+    assert.equal(m.worstReason, GAP.UNREPORTED);
+    assert.match(m.lines()[0], /how many cells are on screen was not reported/);
+});
+
+test('#37: a re-merge does not inherit a fabricated bound', () => {
+    const declined = Coverage.merge([Coverage.unreported('cells')], 'cells');
+    const withFilter = Coverage.merge([
+        declined,
+        classifyFilterStats({ xNaN: 50, total: 200, filtered: 50 }, 'cells')
+    ], 'cells');
+    assert.equal(withFilter.shown, null, 'still unknown: the first contributor never said');
+    assert.equal(withFilter.worstReason, GAP.UNREPORTED);
+});
+
+test('#37: nothing restricting still means every entity is on screen', () => {
+    const m = Coverage.merge([
+        Coverage.unreported('cells').asDescribing(),
+        Coverage.complete(300, 'cells').asDescribing()
+    ], 'cells');
+    assert.equal(m.shown, 300);
+    assert.equal(m.worstReason, GAP.UNREPORTED, 'the undescribed column is still loud');
+});
+
+test('#37: a describing total above every restricting total is stated, not left bare', () => {
+    // merge([complete(150), describes(total 200)]) used to read
+    // "150 of 200 cells shown" with no line underneath saying why.
+    const m = Coverage.merge([
+        Coverage.complete(150, 'cells'),
+        Coverage.complete(200, 'cells').asDescribing()
+    ], 'cells');
+    assert.equal(m.shown, 150);
+    assert.equal(m.total, 200, 'the larger expectation is the evidence; keep it');
+    assert.equal(m.headline(), '150 of 200 cells shown');
+    assert.equal(m.lines().length, 1);
+    assert.match(m.lines()[0], /disagree about how many cells there are \(150 drawn from, 200 expected\)/);
+});
+
+test('#37: agreeing totals add no disagreement gap', () => {
+    const m = Coverage.merge([
+        Coverage.complete(200, 'cells'),
+        Coverage.partial(10, 200, GAP.FAILED, 'x', { unit: 'cells' }).asDescribing()
+    ], 'cells');
+    assert.equal(m.gaps.length, 1);
+    assert.equal(m.gaps[0].reason, GAP.FAILED);
+});
+
+// --- settylab/annzarro#41/#42: the server's reason codes since #45 -----------
+
+test('#41: a 404 key_not_found is "not in this dataset", not a failed read', () => {
+    const err = Object.assign(new Error("No obs column 'gone' in this dataset."),
+        { status: 404, data: { reason: 'key_not_found' } });
+    const c = classifyError(err, { unit: 'cells', source: 'obs.gone', total: 10 });
+    assert.equal(c.worstReason, GAP.UNAVAILABLE);
+    assert.match(c.lines()[0], /not in this dataset/);
+});
+
+test('#41: unsupported_type and read_failed are failures that keep the server sentence', () => {
+    for (const [status, reason] of [[400, 'unsupported_type'], [500, 'read_failed'], [500, 'stale_metadata']]) {
+        const err = Object.assign(new Error(`obs column 'Nucleus': ${reason}`),
+            { status, data: { reason } });
+        const c = classifyError(err, { unit: 'cells', source: 'obs.Nucleus', total: 10 });
+        assert.equal(c.worstReason, GAP.FAILED, reason);
+        assert.match(c.lines()[0], /Nucleus/);
+    }
+});
