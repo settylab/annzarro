@@ -78,7 +78,7 @@ server:
     max_response_elements:
       type: integer
       description: Maximum number of elements in an array response
-      default: 1000000
+      default: 10000000
     cache_enabled:
       type: boolean
       description: Whether to enable caching
