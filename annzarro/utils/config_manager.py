@@ -578,19 +578,44 @@ class ConfigManager:
         Returns:
             ``sources`` (loaded sources, name -> path), ``layers`` (every source
             considered, in precedence order, with its outcome), ``origins``
-            (dotted key -> source that set it), plus the raw environment and argv.
+            (dotted key -> source that set it), plus the ANNZARRO_* environment
+            and argv. Secret values (a variable whose name or whose target key
+            names a secret, a ``--password`` argument) are masked: this is
+            printed by ``annzarro config info``.
         """
+        if not self._security_metadata:
+            self._load_schema()
+        sensitive_vars = {origin[len("env:"):] for key, origin in self.origins.items()
+                          if origin.startswith("env:") and self._is_sensitive_key(key)}
+        environment_variables = {}
+        for name, value in os.environ.items():
+            if not name.startswith(self.ENV_PREFIX):
+                continue
+            secret = name in sensitive_vars or any(
+                word in name for word in ("SECRET", "PASSWORD", "PASSWD", "TOKEN", "CREDENTIAL"))
+            environment_variables[name] = self.MASK if secret and value else value
+        args = self.argv[1:] if len(self.argv) > 1 else []
+        masked_args = []
+        for i, arg in enumerate(args):
+            if i and args[i - 1] in ("--password", "--secret-key"):
+                arg = self.MASK
+            elif arg.startswith(("--password=", "--secret-key=")):
+                arg = arg.split("=", 1)[0] + "=" + self.MASK
+            masked_args.append(arg)
         return {
             "environment": self.environment,
             "sources": dict(self.sources),
             "layers": [dict(layer) for layer in self.layers],
             "origins": dict(self.origins),
-            "environment_variables": {
-                k: v for k, v in os.environ.items()
-                if k.startswith(self.ENV_PREFIX)
-            },
-            "command_line_args": self.argv[1:] if len(self.argv) > 1 else []
+            "environment_variables": environment_variables,
+            "command_line_args": masked_args
         }
+
+    def _is_sensitive_key(self, key: str) -> bool:
+        """A dotted config key whose value is a secret (schema or name says so)."""
+        leaf = key.rsplit(".", 1)[-1]
+        return (self._security_metadata.get(key) == "sensitive"
+                or "secret" in leaf or "password" in leaf)
 
     def validate_config(self) -> Tuple[bool, List[str]]:
         """
@@ -647,10 +672,7 @@ class ConfigManager:
             self._load_schema()
         masked = deepcopy(self.config)
         for key, value in self._flatten_config(self.config).items():
-            leaf = key.rsplit(".", 1)[-1]
-            sensitive = (self._security_metadata.get(key) == "sensitive"
-                         or "secret" in leaf or "password" in leaf)
-            if sensitive and value:
+            if self._is_sensitive_key(key) and value:
                 self._set_nested_value(masked, key.split("."), self.MASK)
         return masked
 
