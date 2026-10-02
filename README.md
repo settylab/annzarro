@@ -13,6 +13,10 @@ A read-only browser viewer for AnnData in zarr (or h5ad) built around the matric
 leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
 explored one focused cell or gene at a time and linked to the cell x gene layers.
 
+**Documentation: [annzarro.readthedocs.io](https://annzarro.readthedocs.io)** (tutorials, user guide,
+data preparation, deployment and reference). Developed by the [Setty Lab](https://settylab.org) at
+Fred Hutch.
+
 ![Clicking a cell moves the diffusion-walk colouring; clicking a gene recolours its correlations and per-cell fold change](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/focus.gif)
 
 ## What it does

@@ -74,3 +74,11 @@ reference/index
 paper/index
 references
 ```
+
+```{toctree}
+:hidden:
+:caption: Links
+
+GitHub repository <https://github.com/settylab/annzarro>
+Setty Lab <https://settylab.org>
+```
