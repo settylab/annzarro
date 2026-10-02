@@ -1096,9 +1096,17 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
   }
 
+  // A second call while the first add is still in flight would see no
+  // highlight trace either and add another one (seen after a restore: two
+  // 'Focused Cell' traces). Wait for that add, then move its marker.
+  if (plotContainer.__focusHighlightAdding) {
+    return plotContainer.__focusHighlightAdding
+      .then(() => highlightFocusedEntity(plotContainer, data, settings, entityType));
+  }
+
   // No highlight trace yet: add one, then put back the view the user had
   // (adding a trace must not reset zoom), with the configured axis titles.
-  return settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
+  const adding = settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
     if (!currentLayout) return undefined;
     if (currentLayout.xaxis && currentLayout.xaxis.title) {
       currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
@@ -1107,7 +1115,11 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
     }
     return Plotly.relayout(plotContainer, currentLayout);
-  }));
+  })).finally(() => {
+    if (plotContainer.__focusHighlightAdding === adding) plotContainer.__focusHighlightAdding = null;
+  });
+  plotContainer.__focusHighlightAdding = adding;
+  return adding;
 }
 
 

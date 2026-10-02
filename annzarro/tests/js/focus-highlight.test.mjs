@@ -99,3 +99,21 @@ test('the first highlight is added at the focused cell and the view is restored'
     assert.deepEqual(calls[0][1][1].x, [1]);
     assert.deepEqual(calls[1][1][1].xaxis.range, [0, 2]);
 });
+
+test('two focus changes during the first add leave ONE highlight trace', async () => {
+    calls.length = 0; failMode = null;
+    const gd = plot(false);
+    const realAdd = Plotly.addTraces;
+    Plotly.addTraces = (container, trace) => {
+        calls.push(['addTraces']);
+        return new Promise(r => setTimeout(() => { container.data.push(trace); r(); }, 20));
+    };
+    try {
+        await Promise.all([
+            highlightFocusedEntity(gd, data, settings, 'cells'),
+            highlightFocusedEntity(gd, data, settings, 'cells')
+        ]);
+    } finally { Plotly.addTraces = realAdd; }
+    assert.equal(gd.data.filter(t => t.name === 'Focused Cell').length, 1);
+    assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout', 'restyle']);
+});
