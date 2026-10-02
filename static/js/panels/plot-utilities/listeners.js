@@ -1,6 +1,6 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType } from './panel-ui-update.js';
 import { loadAxisData, updateTableEntities, applyLogColor } from './plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   setupAestheticsMenuListeners, 
@@ -12,6 +12,7 @@ import {
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate } from './plot-make-helper.js';
 import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
+import { coalesce } from '../../utils/render-queue.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -178,29 +179,30 @@ export function setupPlotControlListeners(
       }
     });
   
-    // --- Point Size Slider ---
+    // --- Point Size / Opacity Sliders ---
+    // The sliders write settings on every input event; the restyle that shows
+    // it is coalesced (utils/render-queue.js): at most one runs at a time and
+    // the next starts only after it is painted, with the newest values.
+    const redrawStyling = coalesce(
+      () => restyleMarkers(plotContainer, settings),
+      {
+        onError: (error) => {
+          console.error("Error updating point size/opacity:", error);
+          loadDataAndCreatePlot();
+        }
+      }
+    );
     const $pointSizeSlider = $controlsContainer.find(`#point-size-${id}`);
-    $pointSizeSlider.on('input', $.debounce((e) => {
-      const newSize = parseFloat(e.target.value);
-      settings.pointSize = newSize;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
-        .catch(error => {
-          console.error("Error updating point size:", error);
-          loadDataAndCreatePlot();
-        });
-    }, 5));
+    $pointSizeSlider.on('input', (e) => {
+      settings.pointSize = parseFloat(e.target.value);
+      redrawStyling();
+    });
   
-    // --- Point Opacity Slider ---
     const $pointOpacitySlider = $controlsContainer.find(`#point-opacity-${id}`);
-    $pointOpacitySlider.on('input', $.debounce((e) => {
-      const newOpacity = parseFloat(e.target.value);
-      settings.pointOpacity = newOpacity;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
-        .catch(error => {
-          console.error("Error updating point opacity:", error);
-          loadDataAndCreatePlot();
-        });
-    }, 5));
+    $pointOpacitySlider.on('input', (e) => {
+      settings.pointOpacity = parseFloat(e.target.value);
+      redrawStyling();
+    });
     
     const $existingBtn = $controlsContainer.find(`#aesthetics-menu-btn-${id}`);
     const cleanupAesthetics = createAestheticsMenu(id, $existingBtn[0], controlsContainer, plotContainer, settings);

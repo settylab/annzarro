@@ -1171,6 +1171,36 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
 
 
 /**
+ * Apply the point size and opacity to an existing plot in at most two restyles.
+ *
+ * The slider path used to run updatePlotElements({styling: true}), which
+ * removes and re-adds the focus highlight trace and re-applies every
+ * aesthetic setting: ~38 Plotly calls and ~320 ms per slider step on
+ * bm_aging. Size and opacity need none of that: they are marker properties
+ * of the data traces, plus the highlight's size (always twice the points).
+ *
+ * @param {HTMLElement} plotContainer - The Plotly plot.
+ * @param {Object} settings - Plot settings (pointSize, pointOpacity).
+ * @returns {Promise<void>} Resolves once Plotly has applied both restyles.
+ */
+export async function restyleMarkers(plotContainer, settings) {
+    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
+    const isHighlight = (trace) => trace && typeof trace.name === 'string'
+        && /^focused (cell|gene)$/i.test(trace.name.trim());
+    const dataIdx = [];
+    const highlightIdx = [];
+    plotContainer.data.forEach((trace, i) => (isHighlight(trace) ? highlightIdx : dataIdx).push(i));
+    if (dataIdx.length) {
+        await Plotly.restyle(plotContainer,
+            { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
+    }
+    if (highlightIdx.length) {
+        await Plotly.restyle(plotContainer, { 'marker.size': settings.pointSize * 2 }, highlightIdx);
+    }
+}
+
+
+/**
  * Removes any highlight trace for cells or genes from the Plotly plot.
  *
  * This function will look for any trace in plotContainer.data whose name (case-insensitive)

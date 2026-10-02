@@ -56,6 +56,7 @@ SUITES = {
     "pairwise-columns.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "panel-tracker.js"
     ),
+    "render-queue.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "render-queue.js"),
     "panel-axis-selector.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
     ),
