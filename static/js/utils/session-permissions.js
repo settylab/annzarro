@@ -91,7 +91,7 @@ export function authIndicator(me) {
         return {
             text: 'No login',
             title: 'This server is reachable from the network with login disabled: '
-                + 'anyone who can reach it can open any dataset and edit or delete every shared panel set.',
+                + 'anyone who can reach it can open every shared dataset and edit or delete every shared panel set.',
             variant: 'warning',
             href: null,
         };

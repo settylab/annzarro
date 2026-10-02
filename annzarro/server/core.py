@@ -138,6 +138,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # Setup logging
     setup_logging(app.config)
     warn_about_exposure(app.config)
+    
+    # A shared server only opens paths inside its data directory (see confinement.py)
+    from annzarro.server import confinement
+    confinement.warn_about_escaping_links(app.config)
+    app.before_request(confinement.enforce)
 
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
@@ -193,9 +198,8 @@ def warn_about_exposure(config: Dict[str, Any]) -> None:
     if is_exposed(config):
         problems.append(
             f"Listening on {config.get('host')} with login DISABLED. Anyone who can "
-            "reach this port can list directories and read any dataset this "
-            "process can read (paths are not confined to data_dir), and edit or "
-            "delete every shared panel set. Remove --auth-disabled / "
+            "reach this port can open every dataset under the data directory "
+            "and edit or delete every shared panel set. Remove --auth-disabled / "
             "ANNZARRO_AUTH_DISABLED and add users with `annzarro user add`, or "
             "bind to 127.0.0.1."
         )

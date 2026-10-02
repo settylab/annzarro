@@ -80,8 +80,13 @@ server.
   than `127.0.0.1`/`localhost`. `--auth-disabled` (or `ANNZARRO_AUTH_DISABLED`)
   turns it off; doing that on a network address logs a `SECURITY` warning at
   startup and shows a "No login" badge in the header, because anyone who can
-  reach the port can then open any dataset the server can read and delete
-  every panel set.
+  reach the port can then open every shared dataset and delete every panel set.
+- **Shared datasets only.** When login is on or the host is not localhost, every
+  dataset path and directory listing must resolve (symlinks and `..` followed)
+  inside `--data-dir`, or a directory listed in `server.allowed_dirs`;
+  anything else is refused. A dataset symlinked into the data directory from
+  elsewhere therefore needs its target's directory in `allowed_dirs` (startup
+  names any such links). Local single-user mode browses freely, as before.
 - **Login cookies** are signed with `auth.secret_key`. Leave it unset: on first
   start a random key is generated and kept (mode 0600) beside the users file as
   `annzarro_secret_key`, shared by every worker and reused across restarts.
