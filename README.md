@@ -61,8 +61,8 @@ precompute `obsp`/`varp` matrices and how to chunk for speed: [preparing data](h
 
 ## Documentation
 
-[annzarro.readthedocs.io](https://annzarro.readthedocs.io): user guide, guides that rebuild each
-paper figure in the app, CLI, configuration and HTTP API reference.
+[annzarro.readthedocs.io](https://annzarro.readthedocs.io): tutorials on cell and gene
+similarity, the user guide, data preparation, deployment, and the CLI, configuration and HTTP API reference.
 
 ## Citation
 
