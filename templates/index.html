@@ -116,6 +116,12 @@
                                 <div class="btn-group">
                                     <button id="btn-save-session" class="btn btn-primary"><i class="fas fa-save"></i> Save Panel Set</button>
                                     <button id="btn-load-session" class="btn btn-secondary"><i class="fas fa-folder-open"></i> Load Panel Set</button>
+                                    <button id="btn-share-link" class="btn btn-outline-secondary" title="Copy a link that reopens this dataset, layout and focus"><i class="fas fa-link"></i> <span class="btn-share-label">Share Link</span></button>
+                                </div>
+                                <!-- Shown only when the clipboard is unavailable (e.g. plain http on a cluster node) -->
+                                <div id="share-link-fallback" class="share-link-fallback input-group input-group-sm mt-1" hidden>
+                                    <input id="share-link-field" type="text" class="form-control" readonly aria-label="Shareable link">
+                                    <button id="share-link-close" class="btn btn-outline-secondary" type="button" title="Close"><i class="fas fa-times"></i></button>
                                 </div>
                             </div>
                         </div>
