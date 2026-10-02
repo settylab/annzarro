@@ -35,7 +35,7 @@ const SessionManager = (function() {
      * @returns {{v: number, constants: Object, layout: Object}}
      */
     function captureView() {
-        return {
+        const view = {
             v: VIEW_SCHEMA_VERSION,
             constants: {
                 focusedGene: DataManager.getFocusedGene(),
@@ -44,6 +44,10 @@ const SessionManager = (function() {
             },
             layout: PanelManager.saveLayout()
         };
+        // The cells shown, so the link reopens on the same cells
+        const subset = DataManager.getSubsetForView();
+        if (subset !== undefined) view.subset = subset;
+        return view;
     }
 
     /**

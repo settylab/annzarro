@@ -12,6 +12,7 @@ AnnZarro is a modern single-cell data visualization tool for analyzing AnnData o
 - **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
 - **Flexible Access** - Local .zarr and .h5ad files; remote zarr stores over S3, GCS or HTTP(S) (optional extra, see [Remote datasets](#remote-datasets))
 - **Desktop Application** - Standalone cross-platform electron app
+- **Million-cell datasets** - Datasets over 200,000 cells open on a reproducible, seeded 100,000-cell subset that every panel and share link shares; change or remove it from the cell count (see [docs/design/subsetting.md](docs/design/subsetting.md))
 
 ## Installation & Usage
 

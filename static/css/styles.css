@@ -171,6 +171,26 @@ body {
     border-bottom: 1px solid #dee2e6;
 }
 
+/* Cell subset: badge next to the cell count, and its dialog */
+.subset-badge {
+    padding: 0 0.4rem;
+    margin-left: 0.35rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    border: 1px solid #adb5bd;
+    border-radius: 0.6rem;
+    background: transparent;
+    color: #495057;
+}
+.subset-badge.subset-active {
+    background-color: #fff3cd;
+    border-color: #e0a800;
+    color: #664d03;
+    font-weight: 600;
+}
+.subset-dialog .subset-disabled { opacity: 0.5; }
+.subset-preview { min-height: 2.5em; white-space: pre-line; }
+
 /* Main Content Area */
 .tile-container {
     flex: 1;

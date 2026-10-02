@@ -7,11 +7,13 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { sameSubset } from './utils/subset.js';
+import { SubsetControl } from './subset-dialog.js';
 
 const App = (function() {
     // Private variables
@@ -271,6 +273,19 @@ const App = (function() {
      */
     async function _applyView({ datasetPath, view }) {
 
+        // 0. The cells the view shows. A view without `subset` keeps the
+        //    subset of an already open dataset (or the default for a new
+        //    one); a different subset of the open dataset reloads it.
+        const subset = view && 'subset' in view ? view.subset : undefined;
+        if (subset !== undefined) {
+            const open = datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset;
+            const current = DataManager.getSubset();
+            if (!open || !sameSubset(current ? current.subset : null, subset)) {
+                DataManager.setSubsetRequest(subset);
+                _lastLoadedDatasetPath = null;
+            }
+        }
+
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
         await _loadDataset(datasetPath);
@@ -296,7 +311,20 @@ const App = (function() {
             if (constants.focusedGene) {
                 DataManager.setFocusedGene(constants.focusedGene);
             }
-            if (constants.focusedCell) DataManager.setFocusedCell(constants.focusedCell);
+            if (constants.focusedCell) {
+                if (DataManager.getCellIndex(constants.focusedCell) >= 0) {
+                    DataManager.setFocusedCell(constants.focusedCell);
+                } else if (DataManager.getSubset()) {
+                    // Said once: loading the dataset may already have said it
+                    if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
+                        _showNotification('Focused cell not in the subset',
+                            `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
+                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                    }
+                } else {
+                    DataManager.setFocusedCell(constants.focusedCell);
+                }
+            }
             if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
 
             // 3. Materialize the panels. Two shapes, one preferred:
@@ -395,6 +423,31 @@ const App = (function() {
     }
 
     /**
+     * Show other cells (the subset dialog's Apply): the open view, its
+     * panels, focus and layout, reopened on the new subset through the same
+     * path a panel set loads by, so every panel is rebuilt on the new cells.
+     * @param {Object|null} spec - subset spec, or null for every cell
+     * @private
+     */
+    async function _changeSubset(spec) {
+        const datasetPath = DataManager.getCurrentDataset();
+        if (!datasetPath) return;
+        const view = SessionManager.captureView();
+        view.subset = spec;
+        const plan = panelSetToView({ dataset: datasetPath, view });
+        try {
+            await _applyPanelSet(plan, { name: 'cell subset' });
+            const subset = DataManager.getSubset();
+            _showNotification('Cell subset',
+                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).`
+                       : 'Showing every cell.', 'success', 3000);
+        } catch (error) {
+            console.error('Changing the cell subset failed:', error);
+            _showNotification('Cell subset not changed', error.message || String(error), 'error');
+        }
+    }
+
+    /**
      * A notice that asks: like _showNotification, but it stays until one of
      * its buttons (or the close cross) is clicked. Never a modal dialog.
      * @param {string} title
@@ -474,6 +527,10 @@ const App = (function() {
     function _initUI() {
         // Setup bootstrap modals
         _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
+
+        // Cell count and subset badge in the stats bar; its dialog reloads
+        // the open view on the chosen cells
+        SubsetControl.init({ onApply: _changeSubset });
         
         // Setup keyboard shortcuts
         _initKeyboardShortcuts();
@@ -872,8 +929,8 @@ const App = (function() {
                 return;
             }
             
-            // Update dataset info
-            document.getElementById('cell-count').textContent = datasetStructure.n_obs || 0;
+            // Update dataset info: cells shown of the dataset's cells, and the subset
+            SubsetControl.update();
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
             
@@ -938,6 +995,7 @@ const App = (function() {
 
                     document.getElementById('cell-count').textContent =
                         `${cells.length.toLocaleString()} cells`;
+                    SubsetControl.update();
                     document.getElementById('gene-count').textContent =
                         `${genes.length.toLocaleString()} genes`;
                     document.getElementById('dataset-path').textContent = currentDataset;
@@ -971,10 +1029,15 @@ const App = (function() {
             if (!datasetPath) return Promise.resolve({ matches: [], truncated: false });
             return fetchNameMatches(Config.API.NAMES, {
                 datasetPath, entity, query, signal, limit: 100,
-                mode: regex ? 'regex' : 'substring'
+                mode: regex ? 'regex' : 'substring',
+                subset: DataManager.getSubsetParam()
             });
         };
     }
+
+    // The last focused cell a notice said was outside the subset, so a view
+    // restore does not say it a second time.
+    let _focusOutsideSubsetNoticed = null;
 
     /**
      * After a dataset loads, keep the focused cell/gene if the new dataset has
@@ -990,18 +1053,31 @@ const App = (function() {
         const setFocused = entity === 'cells' ? DataManager.setFocusedCell : DataManager.setFocusedGene;
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
+        const subset = DataManager.getSubsetParam();
         try {
             const current = getFocused();
             if (current) {
                 const hit = await fetchNameMatches(Config.API.NAMES, {
-                    datasetPath, entity, query: current, mode: 'exact', limit: 1 });
+                    datasetPath, entity, query: current, mode: 'exact', limit: 1, subset });
                 if (hit.matches.length && hit.matches[0].name === current) {
                     if (picker) picker.setValue(current);
                     return;
                 }
+                if (entity === 'cells' && subset) {
+                    // In the dataset but not among the cells shown: say why
+                    // the focus moves, instead of moving it silently.
+                    const outside = await fetchNameMatches(Config.API.NAMES, {
+                        datasetPath, entity, query: current, mode: 'exact', limit: 1 });
+                    if (outside.matches.length && outside.matches[0].name === current) {
+                        _focusOutsideSubsetNoticed = current;
+                        _showNotification('Focused cell not in the subset',
+                            `${current} is not among the cells shown, so another cell is focused. ` +
+                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                    }
+                }
             }
             const first = await fetchNameMatches(Config.API.NAMES, {
-                datasetPath, entity, query: '', limit: 1 });
+                datasetPath, entity, query: '', limit: 1, subset });
             const name = first.matches.length ? first.matches[0].name : null;
             if (name && name !== current) setFocused(name);
             if (picker) picker.setValue(name);
