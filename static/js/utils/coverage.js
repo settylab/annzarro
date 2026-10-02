@@ -502,9 +502,14 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
         // group through its two children (settylab/annzarro#26), and
         // `annzarro/tests/core/test_nullable_encodings.py::
         // test_masked_entries_become_none` measures a nullable column reading
-        // back at full length with masked entries as null. So the premise holds
-        // for the encodings that exist, and if a future one does not read, the
-        // right fix is in the reader -- not a softer sentence here.
+        // back at full length with masked entries as null. An encoding the
+        // reader cannot read no longer arrives here at all: a group with no
+        // known encoding used to be caught in `get_obs_var` and served as `[]`
+        // at 200 (two obs columns of a served dataset, settylab/annzarro#41);
+        // it is now `400 unsupported_type`, and a failed read `500
+        // read_failed`, both classified by `classifyError`. So the premise
+        // holds, and if a future encoding does not read, the right fix is in
+        // the reader -- not a softer sentence here.
         if (typeof expected === 'number' && expected > 0) {
             return Coverage.missing(
                 GAP.FAILED,
@@ -551,18 +556,22 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
 /**
  * Classify one column of an `/api/v1/data/obs` or `/data/var` response.
  *
- * This encodes the server's ACTUAL, MEASURED semantics (annzarro @ zarr 3.1.6,
- * live probe 2026-08-28 against `/api/v1/data/obs`):
+ * This encodes the server's semantics for a `200` body (measured live
+ * 2026-08-28 against `/api/v1/data/obs`, annzarro @ zarr 3.1.6):
  *
- *   - a requested column that does NOT exist is silently dropped: the response
- *     is `200 {"data": {}}` with the key ABSENT
+ *   - a requested column that does NOT exist was silently dropped: the
+ *     response is `200 {"data": {}}` with the key ABSENT
  *     (`zarr_reader.get_obs_var` filters `column_names` by group membership);
- *   - a column that FAILED to read comes back as the key PRESENT with `[]`
- *     (`get_obs_var`'s per-column `except` sets `result['data'][col] = []`);
+ *   - a column that FAILED to read came back as the key PRESENT with `[]`;
  *   - a healthy column comes back with exactly `n_obs` values.
  *
  * So key-absent vs key-present-but-short is the discriminator between
- * "not in this dataset" and "failed to read", and it needs no reader change.
+ * "not in this dataset" and "failed to read". The current server answers both
+ * before a body is built -- `404 key_not_found` for a column it does not list,
+ * `400 unsupported_type` / `500 read_failed` for one it cannot read
+ * (settylab/annzarro#41) -- and those reach `classifyError` instead. The body
+ * rules stay for a server that predates that, and for one with no metadata
+ * to check a column against.
  * Everything past that presence test is `classifyValues`, so the table -- which
  * once carried its own copy of it -- cannot drift from the plot again.
  *
@@ -639,13 +648,18 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
  * Classify a column read from a MATRIX-shaped member: `obsm`, `varm`, `obsp`,
  * `varp`, `layer`.
  *
- * These do not share `obs`/`var`'s contract. There is no key-presence signal in
- * the body to inspect -- `classifyColumn`'s discriminator does not apply -- and
- * the server's measured semantics differ: a missing `obsm`/`varm` key answers
- * `200` with `"data": []` rather than by omitting the key. On a dataset with
- * entities that cannot be a legitimate empty read, so an empty array here means
- * the key is NOT IN THIS DATASET, where the same empty array from `obs` means a
- * failed read.
+ * These do not share `obs`/`var`'s contract: there is no key-presence signal in
+ * the body to inspect, so `classifyColumn`'s discriminator does not apply.
+ *
+ * An empty array here used to mean "not in this dataset", because a missing
+ * `obsm`/`varm` key answered `200` with `"data": []`. That stopped being true
+ * from both ends. The server now answers a key it does not list with
+ * `404 key_not_found` (`classifyError` -> UNAVAILABLE), and a key it DOES list
+ * reads or raises rather than coming back empty (settylab/annzarro#42: a
+ * sparse `X_cnv` and cell2location DataFrames, listed by `dataset_structure`,
+ * were read as `[]` and badged "not in this dataset" on 15 keys of 10 served
+ * datasets). So an empty array on a dataset with entities is the same claim
+ * it is for `obs`: listed, and the read produced nothing -- FAILED.
  *
  * That rule lived only in `plot-make.js`, so the table read the identical body
  * in the opposite direction: `unavailable` (warning) on the plot,
@@ -656,12 +670,9 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
  * @returns {Coverage}
  */
 export function classifyMatrixColumn({ values, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS, key = '' } = {}) {
-    // An EMPTY ARRAY specifically -- not merely a falsy or non-array body. The
-    // measured server shape for an absent key is `{"data": []}`; a body that is
-    // not an array at all is MALFORMED, which is a different claim and belongs
-    // to `classifyValues` as a read failure. Treating the two alike would have
-    // this function assert "the key is absent" about a response that says no
-    // such thing.
+    // An EMPTY ARRAY and a non-array body are both failures, with different
+    // sentences: a body that is not an array at all is MALFORMED, and naming
+    // what was sent points at the right question.
     if (!Array.isArray(values)) {
         // Malformed, and worth saying so specifically: naming the shape the
         // server actually sent points the reader at the right question, where
@@ -677,9 +688,9 @@ export function classifyMatrixColumn({ values, expected = null, unit = 'values',
     }
     if (values.length === 0 && typeof expected === 'number' && expected > 0) {
         return Coverage.missing(
-            GAP.UNAVAILABLE,
-            `"${key || source}" returned no values for this dataset -- the key is `
-            + 'either absent or unreadable',
+            GAP.FAILED,
+            `"${key || source}" is listed by this dataset but returned no values; `
+            + 'the server could not read it',
             { source, unit, total: expected, role }
         );
     }
@@ -748,7 +759,11 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     if (serverReason === 'cap_exceeded') {
         return Coverage.missing(GAP.CAPPED, message, { source, unit, total, role });
     }
-    if (serverReason === 'not_found') {
+    // `key_not_found` is the server saying the column/key is not in this
+    // dataset (settylab/annzarro#45 answers a missing obs/var column or
+    // obsm/varm/obsp/varp/layer key with 404 instead of an empty 200). Read as
+    // a generic failure it turned every absent column into "failed to read".
+    if (serverReason === 'not_found' || serverReason === 'key_not_found') {
         return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });
     }
     // A cap rejection from a server that predates the `reason` field still has

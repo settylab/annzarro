@@ -708,3 +708,23 @@ test('#37: agreeing totals add no disagreement gap', () => {
     assert.equal(m.gaps.length, 1);
     assert.equal(m.gaps[0].reason, GAP.FAILED);
 });
+
+// --- settylab/annzarro#41/#42: the server's reason codes since #45 -----------
+
+test('#41: a 404 key_not_found is "not in this dataset", not a failed read', () => {
+    const err = Object.assign(new Error("No obs column 'gone' in this dataset."),
+        { status: 404, data: { reason: 'key_not_found' } });
+    const c = classifyError(err, { unit: 'cells', source: 'obs.gone', total: 10 });
+    assert.equal(c.worstReason, GAP.UNAVAILABLE);
+    assert.match(c.lines()[0], /not in this dataset/);
+});
+
+test('#41: unsupported_type and read_failed are failures that keep the server sentence', () => {
+    for (const [status, reason] of [[400, 'unsupported_type'], [500, 'read_failed'], [500, 'stale_metadata']]) {
+        const err = Object.assign(new Error(`obs column 'Nucleus': ${reason}`),
+            { status, data: { reason } });
+        const c = classifyError(err, { unit: 'cells', source: 'obs.Nucleus', total: 10 });
+        assert.equal(c.worstReason, GAP.FAILED, reason);
+        assert.match(c.lines()[0], /Nucleus/);
+    }
+});
