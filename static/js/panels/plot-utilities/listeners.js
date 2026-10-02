@@ -444,15 +444,34 @@ export function setupColorControls(
         }
     }
 
-    // Update sliders and plot when input values change
+    // A typed bound is used as typed. It used to be passed through the
+    // slider, whose step (range/500) and min/max snapped and clamped it, so
+    // typing 0.0126 into Max on a 0..0.012 range did nothing.
+    function _applyTypedBound(which, value) {
+        const other = which === 'min' ? 'max' : 'min';
+        settings[which === 'min' ? 'colorMin' : 'colorMax'] = value;
+        const $slider = which === 'min' ? $colorMinSlider : $colorMaxSlider;
+        $slider.val(value);   // display only; the slider may clamp, the setting does not
+        updateColorRangeDirect(which, value);
+        if (settings.centeringActive) {
+            // centred scale: the other bound mirrors the typed one
+            const mirrored = -value;
+            settings[other === 'min' ? 'colorMin' : 'colorMax'] = mirrored;
+            (other === 'min' ? $colorMinInput : $colorMaxInput).val(formatRangeValue(mirrored));
+            (other === 'min' ? $colorMinSlider : $colorMaxSlider).val(mirrored);
+            updateColorRangeDirect(other, mirrored);
+        }
+        _updatePlotElements({
+            colors: false,
+            colorRange: true,
+            filter: settings.hideOutliers
+        });
+    }
+
     $colorMinInput.on('change', (e) => {
         const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (minValue !== null) {
-            // Update the slider with the typed value
-            $colorMinSlider.val(minValue);
-            
-            // Manually trigger the slider's input event to use existing handler
-            $colorMinSlider.trigger('input');
+        if (minValue !== null && Number.isFinite(minValue)) {
+            _applyTypedBound('min', minValue);
         } else {
             _updateColorRange(minValue, settings.colorMax, true);
         }
@@ -460,12 +479,8 @@ export function setupColorControls(
 
     $colorMaxInput.on('change', (e) => {
         const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (maxValue !== null) {
-            // Update the slider with the typed value
-            $colorMaxSlider.val(maxValue);
-            
-            // Manually trigger the slider's input event to use existing handler
-            $colorMaxSlider.trigger('input');
+        if (maxValue !== null && Number.isFinite(maxValue)) {
+            _applyTypedBound('max', maxValue);
         } else {
             _updateColorRange(settings.colorMin, maxValue, true);
         }
