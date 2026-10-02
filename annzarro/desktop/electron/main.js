@@ -49,6 +49,8 @@ const SERVER_START_TIMEOUT_MS = 180 * 1000;
 // From the moment the server answers, the UI page must finish loading in this
 // time, or the window shows the error page instead of a spinner.
 const UI_LOAD_TIMEOUT_MS = 60 * 1000;
+// One readiness probe; a server that is up answers it in milliseconds.
+const PROBE_TIMEOUT_MS = 3000;
 const SMOKE = process.env.ANNZARRO_DESKTOP_SMOKE === '1';
 
 // A test's profile: its own settings, local storage, log and single-instance
@@ -126,26 +128,39 @@ async function findFreePort(start) {
  * first or does not answer in time.
  */
 function waitForServer(url, proc, instanceId) {
-    const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
+    // Every way out is armed independently of the polling: a probe that
+    // hangs (another program holding the port, accepting connections and
+    // never answering) used to block the loop, so neither the server's exit
+    // nor the deadline was ever noticed and the window spun forever.
     return new Promise((resolve, reject) => {
-        let exited = null;
-        proc.once('exit', (code, signal) => { exited = `exited with ${signal || code}`; });
+        let done = false;
+        const finish = (fn, arg) => {
+            if (done) return;
+            done = true;
+            clearTimeout(deadline);
+            proc.removeListener('exit', onExit);
+            fn(arg);
+        };
+        const onExit = (code, signal) => finish(reject,
+            new Error(`The server exited with ${signal || code} before it was ready`));
+        proc.once('exit', onExit);
+        const deadline = setTimeout(() => finish(reject,
+            new Error(`The server did not answer within ${SERVER_START_TIMEOUT_MS / 1000}s`)),
+            SERVER_START_TIMEOUT_MS);
         const attempt = async () => {
-            if (exited) return reject(new Error(`The server ${exited} before it was ready`));
-            if (Date.now() > deadline) {
-                return reject(new Error(`The server did not answer within ${SERVER_START_TIMEOUT_MS / 1000}s`));
-            }
+            if (done) return;
             try {
-                const response = await fetch(`${url}/api/v1/datasets`);
+                const response = await fetch(`${url}/api/v1/datasets`,
+                    { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
                 // Only our own server: another AnnZarro that took the same
                 // port a moment earlier answers without our token.
                 if (response.ok && response.headers.get('x-annzarro-instance') === instanceId) {
-                    return resolve();
+                    return finish(resolve);
                 }
             } catch (err) {
-                // not listening yet
+                // not listening yet, or a probe that timed out
             }
-            setTimeout(attempt, 300);
+            if (!done) setTimeout(attempt, 300);
         };
         attempt();
     });
@@ -221,8 +236,15 @@ async function startServerOn(port, dataDir) {
     try {
         await waitForServer(url, proc, instanceId);
     } catch (err) {
+        // 'exit' can come before the last of the server's output; wait for
+        // the streams to close so the port-in-use message is not missed.
+        const closed = new Promise((r) => {
+            if (proc.stdout.readableEnded && proc.stderr.readableEnded) r();
+            else proc.once('close', r);
+        });
         await stopServer();
-        if (/Port \d+ is in use/.test(output)) err.portInUse = true;
+        await Promise.race([closed, new Promise((r) => setTimeout(r, 2000))]);
+        if (/Port \d+ is in use|Address already in use/.test(output)) err.portInUse = true;
         throw err;
     }
     serverUrl = url;
