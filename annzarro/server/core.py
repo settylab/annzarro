@@ -173,9 +173,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     app.json_encoder = NumpyJSONEncoder
     logger.info("Using custom JSON encoder to handle NaN/Infinity values")
     
-    # Enable CORS by default for all routes - important during development
-    CORS(app)
-    
+    # CORS is configured in configure_app() from cors_enabled/cors_origins
+    # (off by default). An unconditional CORS(app) here used to answer every
+    # route with Access-Control-Allow-Origin: *, whatever the configuration.
+
     # Apply configuration
     if config and isinstance(config, dict):
         config_copy = dict(config)
@@ -290,9 +291,11 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         app: Flask application instance
         config: Configuration dictionary
     """
-    # Enable CORS if configured
+    # Cross-origin API access only when configured. Never with credentials:
+    # the login cookie must not authorize requests from other sites.
     if config.get("cors_enabled", False):
-        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}})
+        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}},
+             supports_credentials=False)
     
     # Enable proxy fix if needed
     if config.get("proxy_count", 0) > 0:
