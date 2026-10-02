@@ -1,3 +1,4 @@
+/* global Plotly -- stubbed on globalThis below */
 /**
  * Moving the focused-cell highlight must never leave an unhandled rejection.
  *

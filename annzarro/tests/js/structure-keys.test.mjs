@@ -1,3 +1,4 @@
+/* global document -- stubbed on globalThis below */
 /**
  * X is a plot/table source, and a missing source is reported, not swapped
  * in silently.

@@ -211,8 +211,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
   // below key on the message containing "Failed to load data for", which the
   // ReferenceError replaced.
   //
-  // `node --check` passes on the broken form; the repo's own `.eslintrc.js`
-  // catches it (`no-undef`) and nothing runs ESLint. Keep these here.
+  // `node --check` passes on the broken form; ESLint's `no-undef` catches it
+  // (`npm run lint`, run in CI). Keep these here.
   //
   // Only work that CANNOT throw belongs here, though: this region is outside
   // both the `catch` and the `finally`, so anything raised in it escapes

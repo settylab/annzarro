@@ -58,7 +58,7 @@ export function lockReason(session) {
  * @returns {Promise<{status: string, message: string, reason: (string|null), owner: (string|null), httpStatus: number}>}
  */
 export async function errorFromResponse(response) {
-    let body = null;
+    let body;
     try {
         body = await response.json();
     } catch (e) {
