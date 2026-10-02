@@ -581,6 +581,41 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
 }
 
 /**
+ * Which colour-toolbar controls apply to which colour type, by element id
+ * prefix (the panel id is appended).
+ *
+ * Hide NaN acts on categorical colours too (points with no category), and
+ * Equal aspect is about the axes, not the colour. The categorical branch used
+ * to hide the whole toolbar, so both were unreachable there: a Hide NaN left
+ * on from a numerical colour or a restored view kept hiding points that the
+ * user could not show again from that panel.
+ */
+export const COLOR_TOOLBAR_CONTROLS = Object.freeze({
+  numerical: Object.freeze(['center-colormap', 'reverse-colormap', 'lock-range', 'hide-outliers',
+    'hide-nan', 'equal-aspect', 'sort-by-color', 'log-color', 'log-floor']),
+  categorical: Object.freeze(['hide-nan', 'equal-aspect'])
+});
+
+/** Show the toolbar with exactly the controls that apply to `colorType`. */
+function applyColorToolbar($container, colorType, id) {
+  const shown = COLOR_TOOLBAR_CONTROLS[colorType] || [];
+  for (const name of COLOR_TOOLBAR_CONTROLS.numerical) {
+    const $el = $container.find(`#${name}-${id}`);
+    if (!$el.length) continue;
+    $el.attr('style', shown.includes(name)
+      ? (name === 'log-floor' ? 'width: 7.5rem' : 'display: inline-block !important')
+      : 'display: none !important');
+  }
+  const $buttonToolbar = $container.find('.btn-toolbar');
+  if ($buttonToolbar.length) {
+    $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
+    $buttonToolbar.find('.btn-group').each(function() {
+      jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
+    });
+  }
+}
+
+/**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
  *
@@ -597,8 +632,6 @@ export function updateColorControlsVisibility(container, colorType, id) {
   const $colorMaxInput = $container.find(`#color-max-${id}`);
   const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
   const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
-  const $centerColormapButton = $container.find(`#center-colormap-${id}`);
-  const $hideOutliersButton = $container.find(`#hide-outliers-${id}`);
   const $numericalLabel = $container.find(`#numerical-color-label-${id}`);
   const $categoricalLabel = $container.find(`#categorical-color-label-${id}`);
 
@@ -621,23 +654,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($colorMinSliderContainer, true, 'block');
     $.showHide($colorMaxSliderContainer, true, 'block');
     
-    // Override inline styles for control buttons
-    $centerColormapButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
-    $hideOutliersButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
-    
-    const $lockRangeButton = $container.find(`#lock-range-${id}`);
-    if ($lockRangeButton.length) {
-      $lockRangeButton.attr('style', 'display: inline-block !important');
-    }
-    
-    // Show toolbar for numerical controls
-    const $buttonToolbar = $container.find('.btn-toolbar');
-    if ($buttonToolbar.length) {
-      $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
-      $buttonToolbar.find('.btn-group').each(function() {
-        jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
-      });
-    }
+    // Every toolbar control applies to a numerical colour
+    applyColorToolbar($container, 'numerical', id);
     
     // Show the entire color range inputs section
     const $colorRangeInputs = $container.find('.color-range-inputs');
@@ -662,23 +680,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($colorMinSliderContainer, false);
     $.showHide($colorMaxSliderContainer, false);
     
-    // Hide numerical control buttons
-    $centerColormapButton.attr('style', 'display: none !important');
-    $hideOutliersButton.attr('style', 'display: none !important');
-    
-    const $lockRangeButton = $container.find(`#lock-range-${id}`);
-    if ($lockRangeButton.length) {
-      $lockRangeButton.attr('style', 'display: none !important');
-    }
-    
-    // Hide the button toolbar and its button groups
-    const $buttonToolbar = $container.find('.btn-toolbar');
-    if ($buttonToolbar.length) {
-      $buttonToolbar.attr('style', 'display: none !important');
-      $buttonToolbar.find('.btn-group').each(function() {
-        jQuery(this).attr('style', 'display: none !important');
-      });
-    }
+    // Only the controls that apply to categories: Hide NaN, Equal aspect
+    applyColorToolbar($container, 'categorical', id);
     
     // Hide the entire color range inputs section
     const $colorRangeInputs = $container.find('.color-range-inputs');

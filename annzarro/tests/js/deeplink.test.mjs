@@ -13,7 +13,7 @@
 // in the browser; here we lock the serialization layer the link rides on.
 //
 // Run: `node --test annzarro/tests/js/deeplink.test.mjs` (node >= 18). Also
-// driven by the pytest wrapper test_js_deeplink.py.
+// driven by the pytest wrapper test_js_suites.py.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";

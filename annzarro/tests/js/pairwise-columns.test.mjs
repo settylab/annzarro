@@ -33,9 +33,17 @@ const structure = {
 test('varp items are named after the matrices', () => {
     const items = getVarpColumnsForGeneTable(structure);
     assert.deepEqual(items.map(i => i.key), ['spearman_fold_change', 'spearman_smoothed']);
-    assert.equal(items[0].label, 'spearman_fold_change: Focused Gene (S100a9)');
-    // what a restored column is matched against
-    assert.ok(items.some(i => i.type === 'varp' && i.key === 'spearman_fold_change' && i.column === 'focused_gene'));
+    assert.equal(items[0].label, 'spearman_fold_change: S100a9 (focused)');
+    // a column picked from the focus stores the gene, not a placeholder (#9)
+    assert.ok(items.some(i => i.type === 'varp' && i.key === 'spearman_fold_change' && i.column === 'S100a9'));
+});
+
+test('a restored placeholder column is still listed, so it can be removed', () => {
+    const items = getVarpColumnsForGeneTable(structure,
+        [{ type: 'varp', key: 'spearman_fold_change', column: 'focused_gene' }]);
+    const restored = items.find(i => i.column === 'focused_gene');
+    assert.ok(restored);
+    assert.equal(restored.label, 'spearman_fold_change: follows the focused gene (S100a9)');
 });
 
 test('obsp items are named after the matrices', () => {

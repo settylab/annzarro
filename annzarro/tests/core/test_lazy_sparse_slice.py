@@ -3,8 +3,8 @@
 These exercise the fast path added to ``_load_sparse_matrix`` that extracts a
 few columns (CSC) or rows (CSR) without materializing the whole sparse matrix
 -- the optimization that makes single-gene UMAP coloring interactive on large
-datasets. The stores are built with the live zarr API (not the legacy
-``create_dataset(data=...)`` form), so they track the pinned zarr version.
+datasets. The stores are built through tests/zarr_compat.py, so they run
+under zarr 2 and zarr 3.
 
 Run: python -m pytest annzarro/tests/core/test_lazy_sparse_slice.py \
          -c /dev/null -o addopts=""
@@ -14,9 +14,9 @@ import tempfile
 
 import numpy as np
 import scipy.sparse as sp
-import zarr
 
 from annzarro.core.zarr_reader import ZarrReader
+from annzarro.tests import zarr_compat
 
 
 def _write_sparse_group(parent, name, mat, encoding):
@@ -27,16 +27,14 @@ def _write_sparse_group(parent, name, mat, encoding):
     g.attrs["shape"] = list(mat.shape)
     for comp in ("data", "indices", "indptr"):
         arr = getattr(mat, comp)
-        z = g.create_array(comp, shape=arr.shape, dtype=arr.dtype,
-                           chunks=(max(1, min(len(arr), 7)),))
-        z[:] = arr
+        zarr_compat.write_array(g, comp, arr, chunks=(max(1, min(len(arr), 7)),))
     return g
 
 
 def _build_store(path, X, layer_csc, layer_csr):
     # zarr_format=2 mirrors what anndata.write_zarr emits today (.zgroup
     # markers), which is what _get_root validates against.
-    root = zarr.open_group(path, mode="w", zarr_format=2)
+    root = zarr_compat.open_group(path)
     _write_sparse_group(root, "X", X, "csc_matrix")
     layers = root.create_group("layers")
     _write_sparse_group(layers, "logcounts", layer_csc, "csc_matrix")

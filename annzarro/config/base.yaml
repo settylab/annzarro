@@ -19,9 +19,16 @@ server:
   
   # Proxy settings
   proxy_count: 0
+  # Path the app is served under behind a reverse proxy, e.g. "/explore"
+  # (empty = the root). Works whether the proxy strips the prefix or not.
+  # A trusted proxy (proxy_count > 0) can instead send X-Forwarded-Prefix.
+  url_prefix: ""
   
   # Data storage
-  data_dir: "data"
+  # Datasets and shared panel sets (sessions/). A relative path is taken
+  # relative to the directory annzarro is started from; the default is the
+  # folder the desktop app uses.
+  data_dir: "~/annzarro-data"
   
   # Logging configuration
   # null = ~/.annzarro/logs/annzarro_server.log (or $ANNZARRO_HOME/logs/...).

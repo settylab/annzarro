@@ -226,6 +226,7 @@ def test_refusal_message_does_not_echo_credentials():
 # --------------------------------------------------------------------------
 
 def test_storage_options_default_to_anonymous():
+    pytest.importorskip("aiohttp")  # the [remote] extra
     p = _policy(**LOCAL)
     assert p.storage_options("s3://b/x.zarr")["anon"] is True
     assert p.storage_options("gs://b/x.zarr")["token"] == "anon"
@@ -236,6 +237,7 @@ def test_storage_options_default_to_anonymous():
 
 
 def test_storage_options_environment_uses_backend_credential_chain():
+    pytest.importorskip("aiohttp")  # the [remote] extra
     p = _policy(**LOCAL, remote_credentials="environment")
     # no explicit keys: s3fs/gcsfs fall back to env vars, profiles, roles
     assert "anon" not in p.storage_options("s3://b/x.zarr")
@@ -301,6 +303,7 @@ def test_is_timeout_sees_through_wrapping():
 
 
 def test_allowlisted_http_does_not_follow_redirects():
+    pytest.importorskip("aiohttp")  # the [remote] extra
     p = _policy(**LOCAL, remote_allowlist=["https://h/"])
     opts = p.storage_options("https://h/x.zarr")
     assert opts["allow_redirects"] is False

@@ -12,6 +12,7 @@ AnnZarro is a modern single-cell data visualization tool for analyzing AnnData o
 - **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
 - **Flexible Access** - Local .zarr and .h5ad files; remote zarr stores over S3, GCS or HTTP(S) (optional extra, see [Remote datasets](#remote-datasets))
 - **Desktop Application** - Standalone cross-platform electron app
+- **Million-cell datasets** - Datasets over 200,000 cells open on a reproducible, seeded 100,000-cell subset that every panel and share link shares; change or remove it from the cell count (see [docs/design/subsetting.md](docs/design/subsetting.md))
 
 ## Installation & Usage
 
@@ -128,6 +129,10 @@ gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_
 # or: annzarro/server/run_gunicorn.sh, or the systemd unit annzarro/server/annzarro.service
 ```
 
+`ANNZARRO_CONFIG` is read by the `annzarro` command too (when `--config` is
+not given), so `annzarro config show` and `annzarro user add` see the same
+site file as gunicorn.
+
 The gunicorn config binds to `server.host:server.port` from the same
 configuration (default `127.0.0.1:8000`), runs `server.workers` workers
 (default 4; each keeps its own dataset cache), and logs to stderr.
@@ -198,14 +203,16 @@ to the server.
 
 ## Working with Data
 
-Add datasets by copying or linking .zarr directories to the data/ folder:
+Add datasets by copying or linking .zarr directories (or .h5ad files) into the
+data directory, `~/annzarro-data` unless `server.data_dir` or `--data-dir` says
+otherwise (the desktop app uses the same folder):
 
 ```bash
 # Copy a dataset
-cp -r /path/to/your-dataset.zarr data/
+cp -r /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Or create a symlink
-ln -s /path/to/your-dataset.zarr data/
+ln -s /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Use a custom data directory
 ./annzarro-cli start --data-dir /path/to/datasets
@@ -219,24 +226,6 @@ compressed in the URL fragment (`?dataset_path=…#view=…`), so it never reach
 the server and long layouts do not hit request-line limits. Without clipboard
 access (e.g. plain http on a cluster node) the link is shown for manual copying.
 See the [deep-link reference](https://annzarro.readthedocs.io/en/latest/reference/deep-links.html) for the format.
-
-### Large datasets: the cell subset
-
-A dataset with more than 200,000 cells opens on a reproducible subset of
-100,000 cells (`ui.defaults.subset_threshold`, `subset_size`, `subset_seed`).
-The stats bar says so (`Cells: 100,000 of 1,160,000  [Subset · seed 0]`), and
-every plot, table and share link uses the same cells. Clicking the badge
-changes the number of cells and the seed, samples evenly across an obs column,
-restricts the subset to cells passing an obs filter (or a cell table's
-filter), or turns it off. The same seed always selects the same cells, and
-more cells with the same seed keep every cell of fewer. See
-[docs/design/subsetting.md](docs/design/subsetting.md).
-
-Measured on a synthetic 1,160,000-cell store (Apple M3 Max, Chromium, two UMAP
-panels, one coloured by a gene): opening the view took 17 s with every cell and
-2 s with the default subset; the page held 874 MB of JavaScript heap with every
-cell and 94 MB with the subset; recolouring by another gene took 21 s and
-1.3 s. Most of the remaining 1.3 s is Plotly redrawing 100,000 coloured points.
 
 ### Remote datasets
 
@@ -309,8 +298,16 @@ A refused URL is answered with HTTP 403 and never fetched.
 ## Development
 
 ```bash
-# Run tests
+# Once: install the pinned ESLint (needs Node.js 22+)
+npm ci
+
+# Run every test: Python, all JS suites (annzarro/tests/js/*.test.mjs) and ESLint.
+# CI runs exactly this; without node or `npm ci` the JS and lint tests fail.
 python -m pytest
+
+# Or the JS side alone
+npm run lint
+npm test
 
 # Start in development mode
 ./annzarro-cli start --development

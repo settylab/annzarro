@@ -13,6 +13,7 @@ import { SelectionTile } from './selection-tile.js';
 import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible } from './utils/controls-visibility.js';
+import { notifyEach } from './utils/notify-panels.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -538,6 +539,9 @@ const PanelManager = (function() {
 
         // Remove from source panels of bottom selection
         updateSourcePanelSelection();
+
+        // Its locked cells/genes are no longer offered as table columns
+        document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', { detail: { closed: id } }));
     }
     
     /**
@@ -585,33 +589,10 @@ const PanelManager = (function() {
             _abortSignal: signal
         };
         
-        // Create an array of promises for all panel updates
-        const updatePromises = [];
-        
-        // Notify each panel and collect promises for async updates
-        _activePanels.forEach(panel => {
-            if (typeof panel.onDataUpdate === 'function') {
-                try {
-                    const result = panel.onDataUpdate(updateType, updateData);
-                    
-                    // If the panel returns a promise, add it to our collection
-                    if (result instanceof Promise) {
-                        updatePromises.push(result.catch(err => {
-                            // Only log non-abort errors
-                            if (!err || err.name !== 'AbortError') {
-                                console.error(`Error updating panel ${panel.getId()}:`, err);
-                            }
-                        }));
-                    }
-                } catch (error) {
-                    console.error(`Error in panel ${panel.getId()} update:`, error);
-                }
-            }
-        });
-        
-        // Wait for all panel updates to complete or be aborted
+        // Wait for all panel updates to complete or be aborted. Every panel
+        // updates on its own: one failing cannot hold up the rest.
         try {
-            await Promise.all(updatePromises);
+            await notifyEach(_activePanels, updateType, updateData);
             
             // Clear the controller reference after successful completion
             if (_currentUpdateAbortController && _currentUpdateAbortController.signal === signal) {

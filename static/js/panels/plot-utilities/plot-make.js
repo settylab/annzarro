@@ -1,5 +1,5 @@
 import { DataManager } from '../../data-manager.js';
-import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -211,8 +211,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
   // below key on the message containing "Failed to load data for", which the
   // ReferenceError replaced.
   //
-  // `node --check` passes on the broken form; the repo's own `.eslintrc.js`
-  // catches it (`no-undef`) and nothing runs ESLint. Keep these here.
+  // `node --check` passes on the broken form; ESLint's `no-undef` catches it
+  // (`npm run lint`, run in CI). Keep these here.
   //
   // Only work that CANNOT throw belongs here, though: this region is outside
   // both the `catch` and the `finally`, so anything raised in it escapes
@@ -385,6 +385,19 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'obsp':
       case 'varp': {
         const focusKind = type === 'obsp' ? 'cell' : 'gene';
+        if (!key) {
+          // A dataset without any obsp/varp matrix leaves the key selector
+          // empty, and the request became `/data/obsp/` with no key: a 404
+          // reported as "failed to read -- Not found". Nothing failed; the
+          // dataset has no such matrix. Say so without asking the server, as
+          // a blank series so the rest of the plot still renders.
+          values = Array(typeof expected === 'number' ? expected : 0).fill(NaN);
+          coverage = Coverage.missing(GAP.UNAVAILABLE,
+            `this dataset has no ${type} matrices`,
+            { source: type, unit, total: expected });
+          dataType = 'numerical';
+          break;
+        }
         const focusIndex = type === 'obsp'
           ? DataManager.getCellIndex(column)
           : DataManager.getGeneIndex(column);
@@ -665,8 +678,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
-    // Reset cached data without changing its reference.
+    // Reset cached data without changing its reference. Until this load
+    // finishes, `data.generation` is null: the series are half-built, and
+    // incremental updates (a table filter, a focus change) must leave them
+    // alone (isPlotDataCurrent in plot-update.js).
+    const generation = DataManager.getDatasetGeneration();
     Object.keys(data).forEach(key => delete data[key]);
+    data.generation = null;
     
     // Set up the appropriate entity list (cells or genes)
     if (isGenePlot) {
@@ -809,6 +827,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot creation aborted', 'AbortError');
       }
+      // The dataset changed while this load was in flight: its series belong
+      // to the previous dataset. Drop them; the load started for the new
+      // dataset draws the plot.
+      if (DataManager.getDatasetGeneration() !== generation) {
+        loadingIndicator.hide(plotContainer, 'full-plot');
+        throw new DOMException('Plot data is from a previous dataset', 'AbortError');
+      }
     } catch (error) {
       // Always clean up loading indicator for any error
       loadingIndicator.hide(plotContainer, 'full-plot');
@@ -827,6 +852,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // that is what stops a new axis type from silently reintroducing the gap.
     const unit = isGenePlot ? 'genes' : 'cells';
     data.coverage = panelLoadCoverage(data, settings, unit);
+    data.generation = generation;
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
@@ -1325,8 +1351,11 @@ export function createFilterMask(data, settings) {
         });
       }
       
-      // Count all NaNs for statistics
-      filterStats.colorNaN = data.color.filter(v => v == null || isNaN(v)).length;
+      // Count what the mask REMOVES, not every NaN in the array. With a table
+      // filter the mask only applies to table entities, and counting the
+      // whole array printed "2 filtered out" under "5 of 6 shown"
+      // (settylab/annzarro#37).
+      filterStats.colorNaN = colorValidMask.filter(keep => !keep).length;
     }
 
     // b) "in-range" mask for outliers
@@ -1357,23 +1386,20 @@ export function createFilterMask(data, settings) {
         });
       }
       
-      // Count all outliers for statistics
-      filterStats.colorOutliers = data.color.filter(v => 
-        v != null && !isNaN(v) && (v < cmin || v > cmax)
-      ).length;
+      // Count what the mask removes; see colorNaN above.
+      filterStats.colorOutliers = colorRangeMask.filter(keep => !keep).length;
     }
   }
 
   // Categorical colour: Hide NaN hides points with no category. It used to
   // act on numerical colours only, so on a categorical colour it did nothing.
+  // Without Hide NaN those points are drawn under NA (processCategories).
   if (data.colorType === 'categorical' && Array.isArray(data.color) && settings.hideNaN) {
-    const missing = v => v === null || v === undefined || v === ''
-      || (typeof v === 'number' && Number.isNaN(v))
-      || (typeof v === 'string' && v.toLowerCase() === 'nan');
     const applyToAll = !hasTableFilter || !tableEntities;
     colorValidMask = data.color.map((v, i) =>
-      !missing(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
-    filterStats.colorNaN = data.color.filter(missing).length;
+      !isMissingCategory(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
+    // What the mask removes, as for numerical colours (settylab/annzarro#37).
+    filterStats.colorNaN = colorValidMask.filter(keep => !keep).length;
   }
 
   // 5. Gather only the masks we need for explicit filtering

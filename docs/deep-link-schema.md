@@ -49,7 +49,7 @@ Encode/decode/normalize and the URL parse/build helpers live in
 imported by both the browser entrypoint (`main.js`) and the Node guard
 (`annzarro/tests/js/deeplink.test.mjs`, run with
 `node --test annzarro/tests/js/deeplink.test.mjs` or via the pytest wrapper
-`annzarro/tests/js/test_js_deeplink.py`). There is exactly one encoder and one
+`annzarro/tests/js/test_js_suites.py`). There is exactly one encoder and one
 decoder; the browser and the tests cannot drift.
 
 ## The `view` object

@@ -11,6 +11,7 @@ ANNZARRO_HOME and the system config path pointed into tmp, so nothing on the
 developer's machine leaks in.
 """
 import argparse
+import json
 import os
 
 import pytest
@@ -392,3 +393,32 @@ def test_every_shipped_schema_key_is_settable_from_env(isolated):
     paths = mgr._schema_key_paths()
     assert ("server", "max_response_elements") in paths and ("auth", "session_timeout") in paths
 
+
+
+def test_config_info_masks_secrets(isolated, monkeypatch, capsys):
+    """`annzarro config info` printed every ANNZARRO_* value verbatim."""
+    monkeypatch.setenv("ANNZARRO_AUTH_SECRET_KEY", "hunter2-signing-key")
+    monkeypatch.setenv("ANNZARRO_SERVER_PORT", "9123")
+    assert cli.main(["config", "info"]) == 0
+    out = capsys.readouterr().out
+    assert "hunter2-signing-key" not in out
+    assert "ANNZARRO_AUTH_SECRET_KEY=********" in out
+    assert "ANNZARRO_SERVER_PORT=9123" in out, "non-secret values stay visible"
+
+
+def test_config_show_masks_secret_from_env(isolated, monkeypatch, capsys):
+    monkeypatch.setenv("ANNZARRO_AUTH_SECRET_KEY", "hunter2-signing-key")
+    cli.main(["config", "show"])
+    assert "hunter2-signing-key" not in capsys.readouterr().out
+
+
+def test_cli_reads_annzarro_config_when_no_config_flag(isolated, tmp_path, monkeypatch, capsys):
+    """gunicorn honoured ANNZARRO_CONFIG, the CLI ignored it: `config show` and
+    `user ...` on a server read the defaults instead of the site file."""
+    site = _write(tmp_path / "site.yaml", {"server": {"port": 9311}})
+    other = _write(tmp_path / "other.yaml", {"server": {"port": 9312}})
+    monkeypatch.setenv("ANNZARRO_CONFIG", str(site))
+    cli.main(["config", "show", "--format", "json"])
+    assert json.loads(capsys.readouterr().out)["config"]["server"]["port"] == 9311
+    cli.main(["config", "show", "--format", "json", "--config", str(other)])
+    assert json.loads(capsys.readouterr().out)["config"]["server"]["port"] == 9312, "--config wins"

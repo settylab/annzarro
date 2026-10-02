@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Path the app is mounted at behind a reverse proxy ("" at the root); see static/js/utils/app-url.js -->
+    <meta name="annzarro-root" content="{{ request.script_root }}">
     <title>{{ app_name|default('AnnZarro') }} - {{ project_description|default('Zarr-based AnnData Visualization') }}</title>
     
     <!-- Favicons -->

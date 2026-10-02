@@ -419,8 +419,6 @@ const CellPlotPanel = (function() {
                 // Clean up any loading indicators before purging the plot
                 if (window.loadingIndicator && typeof window.loadingIndicator.cleanupContainer === 'function') {
                     window.loadingIndicator.cleanupContainer(_plotContainer);
-                } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
-                    loadingIndicator.cleanupContainer(_plotContainer);
                 }
                 
                 // Clean up aesthetics menu event listeners
@@ -530,8 +528,14 @@ const CellPlotPanel = (function() {
                         throw error;
                     }
                     
-                    // Otherwise log and continue
+                    // Otherwise this plot shows its own failure instead of
+                    // the previous dataset's plot (issue #2)
                     console.error(`Error updating cell plot ${_id}:`, error);
+                    if (_plotContainer) {
+                        drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'cells' }), 'cells');
+                    }
                 }
             } 
             

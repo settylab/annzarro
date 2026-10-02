@@ -14,8 +14,7 @@ import json
 import re
 
 from ...core import zarr_reader
-from ...core.zarr_reader import ZarrFormatError
-from ...core import h5ad_reader_obj
+from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import process_file
 from ...core import get_reader
 from ...core import name_index
@@ -54,6 +53,15 @@ def _listing_signature(entry_path):
     return tuple(parts)
 
 
+def _listdir(path):
+    """Entries of ``path``, or none when it cannot be read."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError as exc:
+        logger.warning(f"Error listing directory {path}: {exc}")
+        return []
+
+
 def _probe_dataset_counts(entry_path, probe):
     """
     (cells, genes) for a listing entry, None if it is not a readable
@@ -75,7 +83,9 @@ def _probe_dataset_counts(entry_path, probe):
         # reason, beats dropping it: a store that silently vanishes from the
         # list is as unexplained as one that silently reads as empty.
         counts = exc
-    except Exception:
+    except Exception as exc:
+        # Not listed; say why once (the result is cached until it changes).
+        logger.warning(f"Not listing {entry_path}: {type(exc).__name__}: {exc}")
         counts = None
     _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
     return counts
@@ -137,6 +147,14 @@ def _reader_error_response(exc, dataset_path):
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
+    if isinstance(exc, UnsupportedEncodingError):
+        # One member of a readable dataset, not the dataset's type: the text
+        # names the member and the encoding.
+        return jsonify({
+            "error": str(exc),
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
     if isinstance(exc, ValueError):
         return jsonify({
             "error": f"Unsupported dataset type for {dataset_path}: {exc}",
@@ -238,6 +256,12 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
         raise DataRequestError(404, "key_not_found", "This dataset has no X matrix.")
     if field and key is not None:
         keys = (metadata.get(field) or {}).get("keys")
+        # A dataset WITHOUT the group (no obsp/varp/layers at all) lists no
+        # keys rather than "unknown": every key is missing. It used to fall
+        # through to the reader and answer 200 {"data": []}, which the client
+        # must read as "listed but unreadable" and showed as "failed to read".
+        if keys is None and metadata.get(f"has_{field}") is False:
+            keys = []
         top = key.split("/", 1)[0] if slot == "uns" else key
         # layer 'X' is the X matrix when no layer has that name (readers' get_layer)
         x_as_layer = slot == "layers" and key == "X" and metadata.get("has_X") is not False
@@ -1244,7 +1268,7 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             return jsonify({
                 "directory": data_dir
@@ -1272,7 +1296,7 @@ def register_data_routes(app, api_version):
         
         try:
             # Get data directory from config for validation
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             # Verify the requested path is within the data directory or is an absolute path
             if not os.path.isabs(directory_path) and not directory_path.startswith(data_dir):
@@ -1364,20 +1388,24 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
-            # Only search in the "datasets" subdirectory if it exists
+            # The top level of data_dir AND its datasets/ subdirectory (the
+            # desktop app creates one). Listing only datasets/ whenever it
+            # existed hid every store placed directly in the data directory.
             datasets_dir = os.path.join(data_dir, "datasets")
-            if not os.path.exists(datasets_dir) or not os.path.isdir(datasets_dir):
-                datasets_dir = data_dir
+            search = [(data_dir, entry) for entry in _listdir(data_dir)
+                      if entry not in ("datasets", "sessions")]
+            if os.path.isdir(datasets_dir):
+                search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
             # List for storing zarr datasets
             zarr_stores = []
             
             try:
-                # Only search the first level of the datasets directory
-                for entry in os.listdir(datasets_dir):
-                    entry_path = os.path.join(datasets_dir, entry)
+                # Only the first level of each directory
+                for parent, entry in search:
+                    entry_path = os.path.join(parent, entry)
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
@@ -1394,8 +1422,10 @@ def register_data_routes(app, api_version):
                     if entry.endswith(".h5ad") and os.path.isfile(entry_path):
                         def _h5ad_counts(path):
                             # get_metadata reads only the file's structure (not
-                            # the matrices), so this is a cheap shape probe.
-                            shape = h5ad_reader_obj.get_metadata(path).get("shape", (0, 0))
+                            # the matrices), and it is the cached metadata every
+                            # route uses once the dataset is opened: get_reader
+                            # returns the same reader the routes read through.
+                            shape = get_reader(path).get_metadata(path).get("shape", (0, 0))
                             return int(shape[0]), int(shape[1])
 
                         counts = _probe_dataset_counts(entry_path, _h5ad_counts)
@@ -1485,7 +1515,7 @@ def register_data_routes(app, api_version):
         Returns:
             Path to the sessions directory.
         """
-        sessions_dir = os.path.join(app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data")), "sessions")
+        sessions_dir = os.path.join(app.config.get("data_dir"), "sessions")
         os.makedirs(sessions_dir, exist_ok=True)
         return sessions_dir
         

@@ -283,8 +283,39 @@ export function attachViewportTracking(plotContainer, settings) {
 }
   
 
+  /** Legend name of the trace holding points with no colour value. */
+  export const NO_VALUE_CATEGORY = 'NA';
+
+  /**
+   * A categorical colour value that names no category: null, undefined, NaN,
+   * '' or the string 'nan'. One definition for both places that ask: the NA
+   * trace here, and Hide NaN in `createFilterMask`, so a point Hide NaN would
+   * remove is exactly a point that is otherwise drawn under NA.
+   */
+  export function isMissingCategory(v) {
+    return v === null || v === undefined || v === ''
+      || (typeof v === 'number' && Number.isNaN(v))
+      || (typeof v === 'string' && v.toLowerCase() === 'nan');
+  }
+
   /**
    * Processes categorical data and generates Plotly traces.
+   *
+   * Every point handed in lands in exactly one trace, unless it is excluded on
+   * purpose (`removeNonTableEntries`, which `createFilterMask` counts). This
+   * used to build one trace per known category by strict equality and nothing
+   * else, so a point whose value matched no category -- a missing value
+   * (`null`, or `NaN`, which equals nothing) or a value absent from the
+   * server's category list -- was in no trace and Plotly never drew it. No
+   * Coverage was produced for it either, so the panel reported every point on
+   * screen (settylab/annzarro#38). Now:
+   *
+   *  - a non-blank value missing from `catValues` becomes a category of its
+   *    own, appended after the listed ones (it is data, and has a name);
+   *  - a missing value (`isMissingCategory`) goes to one grey `NA` trace at
+   *    the end of the legend -- unless Hide NaN removed it first, which
+   *    `createFilterMask` counts.
+   *
    * @param {Object} settings - Settings object containing plot configurations.
    * @param {Object} data - Data object containing x, y, and color values.
    * @param {Array<string>} catValues - Array of unique category values.
@@ -292,6 +323,25 @@ export function attachViewportTracking(plotContainer, settings) {
    * @returns {Array<Object>} - Array of Plotly trace objects for each category.
    */
   export function processCategories(settings, data, catValues, customColors = null) {
+    // Resolve every point to a category slot once. `slotOf[i]` is the index
+    // into `categories`, or -1 for a blank value.
+    const categories = Array.isArray(catValues) ? catValues.slice() : [];
+    const slotByValue = new Map();
+    categories.forEach((c, i) => { if (!slotByValue.has(c)) slotByValue.set(c, i); });
+    const color = Array.isArray(data.color) ? data.color : [];
+    const slotOf = new Array(color.length);
+    for (let idx = 0; idx < color.length; idx++) {
+      const v = color[idx];
+      if (isMissingCategory(v)) { slotOf[idx] = -1; continue; }
+      let slot = slotByValue.get(v);
+      if (slot === undefined) {
+        slot = categories.length;
+        categories.push(v);
+        slotByValue.set(v, slot);
+      }
+      slotOf[idx] = slot;
+    }
+
     // Generate a color palette
     let selectedPalette;
     
@@ -306,164 +356,84 @@ export function attachViewportTracking(plotContainer, settings) {
         try {
           if (settings.categoryPalette === "uns") {
             // If "uns" is selected but no custom colors are provided, fall back to default palette.
-            selectedPalette = generateDiscreteColors(catValues.length);
+            selectedPalette = generateDiscreteColors(categories.length);
           } else {
             // Generate a color palette based on the provided palette name.
-            selectedPalette = generateDiscreteColors(catValues.length, settings.categoryPalette);
+            selectedPalette = generateDiscreteColors(categories.length, settings.categoryPalette);
           }
         }
         catch (error) {
           console.error(`Error generating color palette "${settings.categoryPalette}": ${error}`);
           // Fallback to a default palette if the provided one fails.
-          selectedPalette = generateDiscreteColors(catValues.length);
+          selectedPalette = generateDiscreteColors(categories.length);
         }
     }
-  
-    const traces = [];
-    const tableTraces = []; // Separate array for table entities to control ordering
-    
+
     // Determine if this is a gene plot or cell plot
     const isGenePlot = data.genes !== undefined;
     const entityKey = isGenePlot ? 'genes' : 'cells';
 
     // Check if table filtering is active (for highlighting or removal)
     const isTableFilterActive = settings.tableFilter && settings.tableFilter !== 'none' && data.tableEntities;
-    
-    // For non-table entries when we want to show them in gray
-    let allNonTableIndices = [];
-    
-    // First pass: collect all indices and separate table vs non-table
-    if (isTableFilterActive) {
-      catValues.forEach((category, i) => {
-        // Get indices of all points that belong to this category.
-        const indices = data.color.reduce((acc, val, idx) => {
-          if (val === category) acc.push(idx);
-          return acc;
-        }, []);
-        
-        if (indices.length === 0) return; // Skip this category if there are no points
-        
-        // Collect non-table indices
-        for (const idx of indices) {
-          if (!data.tableEntities.has(data[entityKey][idx])) {
-            allNonTableIndices.push(idx);
-          }
-        }
-      });
+    const inTable = idx => data.tableEntities.has(data[entityKey][idx]);
+
+    // Partition the points: per category slot, blank, and not in the table.
+    const bySlot = categories.map(() => []);
+    const blankIndices = [];
+    const nonTableIndices = [];
+    for (let idx = 0; idx < slotOf.length; idx++) {
+      if (isTableFilterActive && !inTable(idx)) {
+        // Greyed out, or removed and counted by createFilterMask.
+        if (!settings.removeNonTableEntries) nonTableIndices.push(idx);
+        continue;
+      }
+      if (slotOf[idx] === -1) blankIndices.push(idx);
+      else bySlot[slotOf[idx]].push(idx);
     }
-    
-    // Create a single trace for all non-table entities if needed
-    // Only do this when we're NOT removing non-table entries completely
-    if (isTableFilterActive && !settings.removeNonTableEntries && allNonTableIndices.length > 0) {
-      // Create one trace for all non-table entities with gray color
-      const nonTableTrace = {
+
+    const makeTrace = (indices, name, markerColor, hoverLabel) => {
+      const trace = {
         type: settings.z ? 'scatter3d' : 'scattergl',
         mode: 'markers',
-        name: 'Not in table',
-        text: allNonTableIndices.map(idx => data[entityKey][idx]),
-        customdata: allNonTableIndices.map(idx => data[entityKey][idx]), // Store entity names for click handling
-        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<extra></extra>`,
-        x: allNonTableIndices.map(idx => data.x.values[idx]),
-        y: allNonTableIndices.map(idx => data.y.values[idx]),
+        name,
+        text: indices.map(idx => data[entityKey][idx]),
+        customdata: indices.map(idx => data[entityKey][idx]), // Store entity names for click handling
+        hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '')
+          + (hoverLabel !== null ? `<br>${hoverLabel}` : '') + `<extra></extra>`,
+        x: indices.map(idx => data.x.values[idx]),
+        y: indices.map(idx => data.y.values[idx]),
         marker: {
           size: settings.pointSize,
           opacity: settings.pointOpacity,
-          color: 'rgba(180, 180, 180, 1.)'
+          color: markerColor
         },
         showlegend: true
       };
-      
-      // Add z-axis values for 3D plots if applicable
+      // Add z-axis values for 3D plots if applicable.
       if (settings.z && data.z) {
-        nonTableTrace.z = allNonTableIndices.map(idx => data.z.values[idx]);
+        trace.z = indices.map(idx => data.z.values[idx]);
       }
-      
-      // Add non-table trace first (so it's drawn at the bottom)
-      traces.push(nonTableTrace);
+      return trace;
+    };
+
+    const traces = [];
+
+    // One trace for all non-table entities, drawn first so it sits at the bottom.
+    if (nonTableIndices.length > 0) {
+      traces.push(makeTrace(nonTableIndices, 'Not in table', 'rgba(180, 180, 180, 1.)', null));
     }
-    
-    // Second pass: create traces for each category
-    catValues.forEach((category, i) => {
-      // Get indices of all points that belong to this category.
-      const indices = data.color.reduce((acc, val, idx) => {
-        if (val === category) acc.push(idx);
-        return acc;
-      }, []);
-  
-      if (indices.length === 0) return; // Skip this category if there are no points
-  
-      const categoryColor = selectedPalette[i % selectedPalette.length];
-      
-      // Handle table filtering
-      if (isTableFilterActive) {
-        // Split indices into table entities only
-        const tableIndices = [];
-        
-        for (const idx of indices) {
-          if (data.tableEntities.has(data[entityKey][idx])) {
-            tableIndices.push(idx);
-          }
-        }
-        
-        // Only show entities in the table for this category
-        if (tableIndices.length === 0) return; // Skip if no entities in this category are in the table
-        
-        // Create a trace for the table entities only
-        const tableTrace = {
-          type: settings.z ? 'scatter3d' : 'scattergl',
-          mode: 'markers',
-          name: category,
-          text: tableIndices.map(idx => data[entityKey][idx]),
-          customdata: tableIndices.map(idx => data[entityKey][idx]), // Store entity names for click handling
-          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
-          x: tableIndices.map(idx => data.x.values[idx]),
-          y: tableIndices.map(idx => data.y.values[idx]),
-          marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
-            color: categoryColor
-          },
-          showlegend: true
-        };
-        
-        // Add z-axis values for 3D plots if applicable
-        if (settings.z && data.z) {
-          tableTrace.z = tableIndices.map(idx => data.z.values[idx]);
-        }
-        
-        tableTraces.push(tableTrace);
-      }
-      // No table filtering active, create a normal trace
-      else {
-        // Build the normal trace object for this category.
-        const catTrace = {
-          type: settings.z ? 'scatter3d' : 'scattergl',
-          mode: 'markers',
-          name: category,
-          text: indices.map(idx => data[entityKey][idx]),
-          customdata: indices.map(idx => data[entityKey][idx]), // Store entity names for click handling
-          hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '') + `<br>${category}<extra></extra>`,
-          x: indices.map(idx => data.x.values[idx]),
-          y: indices.map(idx => data.y.values[idx]),
-          marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
-            color: categoryColor
-          },
-          showlegend: true
-        };
-    
-        // Add z-axis values for 3D plots if applicable.
-        if (settings.z && data.z) {
-          catTrace.z = indices.map(idx => data.z.values[idx]);
-        }
-    
-        tableTraces.push(catTrace);
-      }
+
+    // Points with no value, under the categories and last in the legend.
+    if (blankIndices.length > 0) {
+      const naTrace = makeTrace(blankIndices, NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', 'no value');
+      naTrace.legendrank = 1001;
+      traces.push(naTrace);
+    }
+
+    categories.forEach((category, i) => {
+      if (bySlot[i].length === 0) return; // Skip this category if there are no points
+      traces.push(makeTrace(bySlot[i], category, selectedPalette[i % selectedPalette.length], category));
     });
-    
-    // Add table traces after non-table trace
-    traces.push(...tableTraces);
-  
+
     return traces;
   }

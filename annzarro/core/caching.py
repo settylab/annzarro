@@ -5,12 +5,63 @@ This module provides caching functionality that can be used across the applicati
 with a focus on efficient memory management and dataset-specific caching.
 """
 
+import functools
+import inspect
 import time
 import logging
 from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+def _scalar_bytes(item) -> int:
+    """Bytes one Python scalar in a cached list or dict costs (object + slot).
+
+    This used to be a flat 1 KB per element, ~30x a float's real size, so one
+    obs column of a million cells was costed at 977 MB of the default 1000 MB
+    cache_memory_mb: caching it evicted nearly everything else, and a column
+    of 1.03M cells or more was evicted the moment it was added.
+    """
+    if isinstance(item, str):
+        return 57 + len(item)
+    if isinstance(item, bytes):
+        return 41 + len(item)
+    return 32
+
+
+class CacheSettings:
+    """``max_memory_mb``, ``enable_caching`` and ``cache_limit`` on a reader,
+    read from and written to its ``self.cache`` (a DatasetCache).
+
+    The readers used to copy these at construction, so setting one on the
+    reader changed nothing the cache used, and /cache/reset reported the
+    stale copy.
+    """
+
+    @property
+    def max_memory_mb(self):
+        return self.cache.max_memory_mb
+
+    @max_memory_mb.setter
+    def max_memory_mb(self, value):
+        self.cache.max_memory_mb = value
+
+    @property
+    def enable_caching(self):
+        return self.cache.enable_caching
+
+    @enable_caching.setter
+    def enable_caching(self, value):
+        self.cache.enable_caching = value
+
+    @property
+    def cache_limit(self):
+        return self.cache.cache_limit
+
+    @cache_limit.setter
+    def cache_limit(self, value):
+        self.cache.cache_limit = value
+
 
 class DatasetCache:
     """
@@ -45,6 +96,11 @@ class DatasetCache:
         
         # Cache access timestamps for LRU eviction
         self._cache_access_times = {}  # Dict of cache_key -> last access timestamp
+
+        # The size (MB) each key was counted at when added, so removing it
+        # frees exactly that. Recomputing on removal (and a fixed 1 MB for
+        # metadata) made memory_usage_mb drift from what is really held.
+        self._sizes_mb = {}  # Dict of cache_key -> MB
         
     def clear_cache(self, dataset_path: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -78,10 +134,25 @@ class DatasetCache:
             self._metadata_cache = {}
             self._dataset_caches = {}
             self._cache_access_times = {}
+            self._sizes_mb = {}
             self.memory_usage_mb = 0
             
             return result
     
+    def _forget(self, key: str) -> Tuple[Optional[str], float]:
+        """Drop ``key`` from whichever cache holds it and from the memory
+        count. Returns (cache type or None, MB freed)."""
+        kind = None
+        for name, cache in (("matrix", self._matrix_cache), ("dataframe", self._dataframe_cache),
+                            ("metadata", self._metadata_cache)):
+            if key in cache:
+                del cache[key]
+                kind = name
+        freed = self._sizes_mb.pop(key, 0.0)
+        self.memory_usage_mb = max(0.0, self.memory_usage_mb - freed)
+        self._cache_access_times.pop(key, None)
+        return kind, freed
+
     def _remove_dataset_from_cache(self, dataset_path: str) -> Dict[str, Any]:
         """
         Remove all cached data for a specific dataset path.
@@ -116,38 +187,13 @@ class DatasetCache:
         
         # Process each cache key
         for key in cache_keys:
-            # Check each cache type
-            if key in self._matrix_cache:
-                # Estimate memory usage
-                matrix = self._matrix_cache[key]
-                memory_freed += self._estimate_memory_usage(matrix)
-                del self._matrix_cache[key]
-                result["items_removed"]["matrix"] += 1
-            
-            elif key in self._dataframe_cache:
-                # Estimate memory usage
-                df_data = self._dataframe_cache[key]
-                memory_freed += self._estimate_memory_usage(df_data)
-                del self._dataframe_cache[key]
-                result["items_removed"]["dataframe"] += 1
-            
-            elif key in self._metadata_cache:
-                # For metadata, we use a fixed estimate
-                memory_freed += 1  # Assume 1MB for metadata
-                del self._metadata_cache[key]
-                result["items_removed"]["metadata"] += 1
-            
-            # Remove from access times
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
+            kind, freed = self._forget(key)
+            if kind:
+                memory_freed += freed
+                result["items_removed"][kind] += 1
         
         # Remove dataset from tracking
         del self._dataset_caches[dataset_path]
-        
-        # Update memory usage
-        self.memory_usage_mb -= memory_freed
-        if self.memory_usage_mb < 0:
-            self.memory_usage_mb = 0
         
         # Update result
         result["cleared"] = True
@@ -189,29 +235,9 @@ class DatasetCache:
             
             # Remove oldest items until we're under the memory limit
             for key, _ in key_times:
-                # Find which cache this key is in
-                if key in self._matrix_cache:
-                    memory_freed = self._estimate_memory_usage(self._matrix_cache[key])
-                    del self._matrix_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted matrix {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._dataframe_cache:
-                    memory_freed = self._estimate_memory_usage(self._dataframe_cache[key])
-                    del self._dataframe_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted dataframe {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._metadata_cache:
-                    # For metadata, we use a fixed estimate
-                    memory_freed = 1  # Assume 1MB for metadata
-                    del self._metadata_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted metadata {key} from cache (freed {memory_freed}MB)")
-                
-                # Remove from access times
-                if key in self._cache_access_times:
-                    del self._cache_access_times[key]
+                kind, freed = self._forget(key)
+                if kind:
+                    logger.debug(f"Evicted {kind} {key} from cache (freed {freed:.2f}MB)")
                 
                 # Update dataset tracking - find and remove this key from dataset_caches
                 for dataset_path, keys in list(self._dataset_caches.items()):
@@ -248,6 +274,9 @@ class DatasetCache:
         elif cache_type == 'metadata':
             cache_dict = self._metadata_cache
         
+        # Replacing a key frees what the old value was counted at
+        self._forget(key)
+
         # Add the item to the cache
         cache_dict[key] = data
         
@@ -256,6 +285,7 @@ class DatasetCache:
         
         # Track memory usage
         memory_mb = self._estimate_memory_usage(data)
+        self._sizes_mb[key] = memory_mb
         self.memory_usage_mb += memory_mb
         
         # Track dataset association
@@ -328,9 +358,10 @@ class DatasetCache:
                     size += item.nbytes
                 elif hasattr(item, 'nbytes'):
                     size += item.nbytes
+                elif isinstance(item, (list, tuple, dict)):
+                    size += self._estimate_memory_usage(item) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(item)
             return size / (1024 * 1024)
         
         # Dictionaries
@@ -353,8 +384,7 @@ class DatasetCache:
                     # Recursive approximation (simplified)
                     size += self._estimate_memory_usage(value) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(value)
             return size / (1024 * 1024)
         
         # For other types, use a fixed estimate
@@ -407,6 +437,9 @@ def cached_method(func):
         def get_layer(self, layer_name, dataset_path=None, ...):
             # Method implementation
     """
+    signature = inspect.signature(func)
+
+    @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         method_name = func.__name__
         
@@ -423,110 +456,104 @@ def cached_method(func):
                 kwargs = {k: v for k, v in kwargs.items() if k != 'disable_caching'}
             return func(self, *args, **kwargs)
         
-        # Get the dataset path for cache key
-        dataset_path = kwargs.get('dataset_path')
-        
+        # Read every argument by NAME, however the caller passed it. The
+        # routes call ``get_layer(name, path, rows, cols)`` and
+        # ``get_X(path, rows, cols)`` positionally; looking only in kwargs
+        # found no dataset_path, so X and layer slices were never cached (and
+        # get_X had no key branch at all). Binding against the signature also
+        # applies the defaults, so a cache key does not depend on whether an
+        # argument was spelled out.
+        try:
+            bound = signature.bind(self, *args, **kwargs)
+        except TypeError:
+            # Let the method raise its own, clearer, error.
+            return func(self, *args, **kwargs)
+        bound.apply_defaults()
+        arg = bound.arguments
+
+        def idx_key(name, values):
+            return 'all' if values is None else f"{name}:{','.join(map(str, values))}"
+
+        dataset_path = arg.get('dataset_path')
+
         # Log the dataset identification
         if dataset_path is not None:
             logger.debug(f"CACHE[{method_name}]: Using dataset_path={dataset_path}")
-        
+
+        root_arg = arg.get('root')
         # Skip caching if we can't identify the dataset
-        if dataset_path is None:
+        if dataset_path is None and not (root_arg is not None and hasattr(root_arg, 'store')):
             logger.debug(f"CACHE[{method_name}]: Skipping cache (no dataset path)")
             return func(self, *args, **kwargs)
-        
+
         # Convert path to string for cache key
-        path_str = str(dataset_path)
-        
+        path_str = None if dataset_path is None else str(dataset_path)
+
         # URL encode the path to ensure special characters like ":" are handled properly in cache keys
         import urllib.parse
-        encoded_path = urllib.parse.quote(path_str, safe='')
-        
+        encoded_path = None if path_str is None else urllib.parse.quote(path_str, safe='')
+
         # Create cache key
         cache_key = None
-        
+
         # Different methods have different key parameters
-        if method_name == 'get_layer':
-            layer_name = args[0] if args else kwargs.get('layer_name')
-            row_indices = kwargs.get('row_indices', None)
-            col_indices = kwargs.get('col_indices', None)
-            
-            # Use string representation of indices for key or 'all' if None
-            row_key = 'all' if row_indices is None else f"rows:{','.join(map(str, row_indices))}"
-            col_key = 'all' if col_indices is None else f"cols:{','.join(map(str, col_indices))}"
-            
-            cache_key = f"path:{encoded_path}:layer:{layer_name}:{row_key}:{col_key}"
-        
+        if method_name == 'get_X':
+            cache_key = (f"path:{encoded_path}:X:"
+                         f"{idx_key('rows', arg.get('row_indices'))}:"
+                         f"{idx_key('cols', arg.get('col_indices'))}")
+
+        elif method_name == 'get_layer':
+            cache_key = (f"path:{encoded_path}:layer:{arg.get('layer_name')}:"
+                         f"{idx_key('rows', arg.get('row_indices'))}:"
+                         f"{idx_key('cols', arg.get('col_indices'))}")
+
         elif method_name == 'get_obs_var':
-            indices = kwargs.get('indices', None)
-            column_names = kwargs.get('column_names', None)
-            include_categories = kwargs.get('include_categories', True)
-            entity = kwargs.get('entity', None)
-            
-            # Create key components
-            indices_key = 'all' if indices is None else f"indices:{','.join(map(str, indices))}"
+            column_names = arg.get('column_names')
             columns_key = 'all' if column_names is None else f"columns:{','.join(column_names)}"
-            cat_key = 'withCat' if include_categories else 'noCat'
-            
-            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{indices_key}:{columns_key}:{cat_key}"
-        
+            cat_key = 'withCat' if arg.get('include_categories', True) else 'noCat'
+            cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:"
+                         f"{idx_key('indices', arg.get('indices'))}:{columns_key}:{cat_key}")
+
         elif method_name == 'get_obsm_varm':
-            matrix_key = args[0] if args else kwargs.get('key')
-            indices = kwargs.get('indices', None)
-            col_indices = kwargs.get('col_indices', None)
-            column_name = kwargs.get('column_name', None)
-            entity = kwargs.get('entity', None)
-            
-            # Create key components
-            indices_key = 'all' if indices is None else f"indices:{','.join(map(str, indices))}"
-            col_key = 'all' if col_indices is None else f"cols:{','.join(map(str, col_indices))}"
+            column_name = arg.get('column_name')
             column_name_key = 'all' if column_name is None else column_name
-            
-            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{matrix_key}:{indices_key}:{col_key}:{column_name_key}"
-        
+            cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:{arg.get('key')}:"
+                         f"{idx_key('indices', arg.get('indices'))}:"
+                         f"{idx_key('cols', arg.get('col_indices'))}:{column_name_key}")
+
         elif method_name == 'get_obsp_varp':
-            matrix_key = args[0] if args else kwargs.get('key')
-            row_indices = kwargs.get('row_indices', None)
-            col_indices = kwargs.get('col_indices', None)
-            entity = kwargs.get('entity', None)
-            
-            # Create key components
-            row_key = 'all' if row_indices is None else f"rows:{','.join(map(str, row_indices))}"
-            col_key = 'all' if col_indices is None else f"cols:{','.join(map(str, col_indices))}"
-            
-            cache_key = f"path:{encoded_path}:{method_name}:{entity}:{matrix_key}:{row_key}:{col_key}"
-        
+            cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:{arg.get('key')}:"
+                         f"{idx_key('rows', arg.get('row_indices'))}:"
+                         f"{idx_key('cols', arg.get('col_indices'))}")
+
         elif method_name == 'get_uns':
-            uns_key = args[0] if args else kwargs.get('key')
-            
-            cache_key = f"path:{encoded_path}:uns:{uns_key}"
-                
+            cache_key = f"path:{encoded_path}:uns:{arg.get('key')}"
+
+        elif method_name == 'get_cell_gene_names':
+            cache_key = f"path:{encoded_path}:names:{arg.get('entity')}"
+
         elif method_name == 'open_dataset_by_path':
-            # Special handling for open_dataset_by_path
-            metadata = kwargs.get('metadata', True)
-            metadata_level = kwargs.get('metadata_level', 'full')
-            
-            cache_key = f"path:{encoded_path}:root:{metadata}:{metadata_level}"
-            
+            cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"
+                         f"{arg.get('metadata_level', 'full')}")
+
         elif method_name in ['_extract_metadata', '_extract_metadata_legacy', 'get_metadata']:
             # Handle special case for metadata extraction and retrieval
-            detail_level = kwargs.get('detail_level', 'full')
-            
-            if path_str is not None:
+            detail_level = arg.get('detail_level', 'full')
+
+            if encoded_path is not None:
                 cache_key = f"path:{encoded_path}:metadata:{detail_level}"
-            elif hasattr(args[0], 'store'):  # root parameter (first positional arg)
-                root = args[0]
+            elif root_arg is not None and hasattr(root_arg, 'store'):
                 store_path = None
-                if hasattr(root.store, 'path'):
-                    store_path = root.store.path
-                elif hasattr(root.store, 'dir_path'):
-                    store_path = root.store.dir_path
-                    
+                if hasattr(root_arg.store, 'path'):
+                    store_path = root_arg.store.path
+                elif hasattr(root_arg.store, 'dir_path'):
+                    store_path = root_arg.store.dir_path
+
                 if store_path:
                     # URL encode the store path as well
                     encoded_store_path = urllib.parse.quote(str(store_path), safe='')
                     cache_key = f"path:{encoded_store_path}:metadata:{detail_level}"
-        
+
         # If we couldn't create a cache key, skip caching
         if cache_key is None:
             logger.debug(f"CACHE[{method_name}]: Skipping cache (couldn't create cache key)")
@@ -543,11 +570,11 @@ def cached_method(func):
         elif method_name == 'open_dataset_by_path':
             # Store the root and metadata in the metadata cache
             cache_type = 'metadata'
-        elif method_name == 'get_uns':
-            # This is a special case, could be any type
-            # Use a heuristic: if it returns a dict, use dataframe; otherwise matrix
-            pass
-        
+        # get_uns stays in 'matrix' whatever it returns: the lookup below
+        # must use the same bucket as the write, and a write chosen by the
+        # result's type (dict -> dataframe, str -> metadata) was never read
+        # back, so a uns group or string was re-read on every request.
+
         # Check if result is already cached
         cached_result = self.cache._get_from_cache(cache_key, cache_type=cache_type)
         if cached_result is not None:
@@ -567,17 +594,7 @@ def cached_method(func):
         # Cache the result
         if result is not None:
             logger.debug(f"CACHE[{method_name}]: Method execution took {elapsed_time:.4f}s")
-            
-            # For get_uns, determine cache type based on result
-            if method_name == 'get_uns':
-                if isinstance(result, dict):
-                    cache_type = 'dataframe'
-                elif isinstance(result, np.ndarray) or hasattr(result, 'nbytes'):
-                    cache_type = 'matrix'
-                else:
-                    # For other types, use a basic type
-                    cache_type = 'metadata'
-            
+
             # Cache the result with dataset_path
             logger.debug(f"CACHE[{method_name}]: Caching result with dataset_path='{dataset_path}'")
             self.cache._add_to_cache(cache_key, result, dataset_path=dataset_path, cache_type=cache_type)
