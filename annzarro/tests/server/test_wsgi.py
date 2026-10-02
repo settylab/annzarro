@@ -75,6 +75,25 @@ def test_auth_disabled_env_var_is_honoured_and_warns(layout, monkeypatch):
     assert config["auth_enabled"] is False and is_exposed(config)
 
 
+@pytest.mark.parametrize("value", ["false", "False", "0", "no", "off", ""])
+def test_auth_disabled_env_var_set_to_false_keeps_login(layout, monkeypatch, value):
+    """Only a true value disables login; ``=false`` used to disable it too."""
+    monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", value)
+    config = load_hosted_config(config_path=_yaml(layout))
+    assert config["auth_enabled"] is True
+
+
+@pytest.mark.parametrize("value", ["true", "YES", "1", "on"])
+def test_auth_disabled_env_var_true_values(layout, monkeypatch, value):
+    monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", value)
+    assert load_hosted_config(config_path=_yaml(layout))["auth_enabled"] is False
+
+
+def test_auth_disabled_env_var_typo_keeps_login(layout, monkeypatch):
+    monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", "ture")
+    assert load_hosted_config(config_path=_yaml(layout))["auth_enabled"] is True
+
+
 def test_flat_json_config_is_understood(layout):
     """The shipped server/production_config.json is flat; its keys must land."""
     path = layout / "flat.json"

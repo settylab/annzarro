@@ -28,6 +28,30 @@ logger = logging.getLogger(__name__)
 
 _MISSING = object()
 
+_TRUE = ("true", "yes", "1", "on")
+_FALSE = ("false", "no", "0", "off", "")
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    """Read an on/off environment variable the same way everywhere.
+
+    ``true/yes/1/on`` is True and ``false/no/0/off`` (or empty) is False,
+    case-insensitively. Anything else is ``default``, with a warning: a typo
+    in ``ANNZARRO_AUTH_DISABLED`` must not silently decide whether login is on.
+    Before this, the WSGI entry point disabled login for ANY non-empty value,
+    including ``ANNZARRO_AUTH_DISABLED=false``.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    logger.warning(f"Ignoring {name}={raw!r}: expected true/false, yes/no, 1/0 or on/off")
+    return default
+
 
 class ConfigManager:
     """
@@ -375,8 +399,7 @@ class ConfigManager:
         # A server reachable from other machines requires login, unless
         # explicitly disabled with --auth-disabled or ANNZARRO_AUTH_DISABLED.
         host = server.get("host")
-        env_disabled = self._convert_value(os.environ.get("ANNZARRO_AUTH_DISABLED", "") or "false")
-        if env_disabled is True:
+        if env_flag("ANNZARRO_AUTH_DISABLED"):
             self._set_override(["auth", "enabled"], False, "env:ANNZARRO_AUTH_DISABLED")
         elif (host and str(host) not in ("127.0.0.1", "localhost", "::1")
               and self.origins.get("auth.enabled") != "cli:--auth-disabled"):
