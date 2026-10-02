@@ -145,7 +145,8 @@ def stop_server(args: argparse.Namespace) -> int:
     """
     try:
         # Look in the standard location first
-        pid_file = Path.home() / ".annzarro" / "server.pid"
+        from annzarro.utils.paths import pid_file as default_pid_file
+        pid_file = default_pid_file()
         
         # If the PID file doesn't exist in the home directory, try the temp directory
         if not pid_file.exists():

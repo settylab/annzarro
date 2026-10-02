@@ -15,7 +15,6 @@ server:
   
   # Production logging
   log_level: "INFO"
-  log_file: "logs/annzarro_server.log"
   
   # Resource limits for production
   max_cells_per_request: 20000
@@ -27,7 +26,6 @@ server:
   proxy_count: 1
 
 auth:
-  user_file: "config/auth/users.json"  # Use the same file as development by default
   secret_key: "__CHANGE_THIS_TO_A_RANDOM_STRING__"  # Change this in a real production environment!
   #enabled: true
 

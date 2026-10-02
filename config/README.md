@@ -120,6 +120,21 @@ source that was considered and which one set each value. It accepts the same
 override flags as `start`, so `annzarro config show --port 9000` shows exactly
 what `annzarro start --port 9000` would run with.
 
+## Runtime Files
+
+AnnZarro never writes into the installed package or, unless you configure a
+relative path, into the directory it was started from. Runtime state lives in
+`~/.annzarro` (set `ANNZARRO_HOME` to move it):
+
+- `logs/annzarro_server.log` when `server.log_file` is unset
+- `server.pid` for `annzarro start --detach` / `annzarro stop`
+- `auth/users.json` when `auth.user_file` is unset (a source checkout that
+  already has `config/auth/users.json` keeps using it)
+
+Relative `server.log_file` and `server.data_dir` values are taken relative to
+the working directory; a relative `auth.user_file` relative to the state
+directory (or to the checkout root in a source checkout, as before).
+
 ## Environment Variables
 
 Environment variables override configuration values. Use the prefix `ANNZARRO_` followed by the configuration key with underscores.

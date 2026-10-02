@@ -222,3 +222,49 @@ def test_config_flag_before_or_after_subcommand(isolated, monkeypatch, argv, exp
     monkeypatch.setattr(cli, "start_server", fake_start)
     assert cli.main(argv) == 0
     assert seen["config"] == expected
+
+
+# --- Where runtime state goes ------------------------------------------------
+
+def test_log_file_defaults_to_the_user_state_dir(isolated, tmp_path):
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production")
+    expected = tmp_path / "home" / ".annzarro" / "logs" / "annzarro_server.log"
+    assert config["server"]["log_file"] == str(expected)
+    assert mgr.to_flask_config()["log_file"] == str(expected)
+    assert mgr.origins["server.log_file"] == "derived:user state dir"
+
+
+def test_explicit_log_file_is_kept(isolated, tmp_path):
+    explicit = _write(tmp_path / "c.yaml", {"server": {"log_file": "~/x/annzarro.log"}})
+    config = ConfigManager().load_config(env="production", config_path=str(explicit))
+    assert config["server"]["log_file"] == os.path.expanduser("~/x/annzarro.log")
+
+
+def test_user_file_never_points_into_the_package(isolated, tmp_path, monkeypatch):
+    from annzarro.utils import paths
+    monkeypatch.setattr(paths, "source_checkout_root", lambda: None)  # as in a wheel
+    config = ConfigManager().load_config(env="production")
+    assert config["auth"]["user_file"] == str(tmp_path / "home" / ".annzarro" / "auth" / "users.json")
+    rel = _write(tmp_path / "c.yaml", {"auth": {"user_file": "auth/team.json"}})
+    config = ConfigManager().load_config(env="production", config_path=str(rel))
+    assert config["auth"]["user_file"] == str(tmp_path / "home" / ".annzarro" / "auth" / "team.json")
+    assert not config["auth"]["user_file"].startswith(str(paths.PACKAGE_DIR))
+
+
+def test_server_logging_writes_to_the_state_dir(isolated, tmp_path):
+    import logging
+    from annzarro.server.core import setup_logging
+    root = logging.getLogger("")
+    saved = root.handlers[:], root.level
+    try:
+        setup_logging({"log_level": "INFO"})
+        assert (tmp_path / "home" / ".annzarro" / "logs" / "annzarro_server.log").is_file()
+        assert not any((tmp_path / "cwd").iterdir()), "nothing may be written to the CWD"
+    finally:
+        for h in root.handlers[:]:
+            root.removeHandler(h)
+            h.close()
+        for h in saved[0]:
+            root.addHandler(h)
+        root.setLevel(saved[1])

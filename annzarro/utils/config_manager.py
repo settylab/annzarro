@@ -338,6 +338,35 @@ class ConfigManager:
         if isinstance(server.get("data_dir"), str):
             server["data_dir"] = os.path.expanduser(server["data_dir"])
 
+        # Runtime state never lands in the package directory, and only lands in
+        # the working directory when a relative path is configured explicitly.
+        if not server.get("log_file"):
+            self._set_override(["server", "log_file"], str(paths.default_log_file()),
+                               "derived:user state dir")
+        else:
+            server["log_file"] = os.path.expanduser(str(server["log_file"]))
+
+        user_file = auth.get("user_file")
+        if not user_file:
+            checkout = paths.source_checkout_root()
+            legacy = checkout / "config" / "auth" / "users.json" if checkout else None
+            if legacy is not None and legacy.is_file():
+                self._set_override(["auth", "user_file"], str(legacy),
+                                   "derived:source checkout (legacy location)")
+            else:
+                self._set_override(["auth", "user_file"],
+                                   str(paths.user_state_dir() / "auth" / "users.json"),
+                                   "derived:user state dir")
+        else:
+            user_file = os.path.expanduser(str(user_file))
+            if not os.path.isabs(user_file):
+                # Historical behaviour (AuthManager) resolved relative paths
+                # against the checkout root; outside a checkout that would be
+                # site-packages, so use the state directory instead.
+                anchor = paths.source_checkout_root() or paths.user_state_dir()
+                user_file = str(Path(anchor) / user_file)
+            auth["user_file"] = user_file
+
         # A server reachable from other machines requires login, unless
         # explicitly disabled with --auth-disabled or ANNZARRO_AUTH_DISABLED.
         host = server.get("host")

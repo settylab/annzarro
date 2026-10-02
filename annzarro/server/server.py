@@ -165,10 +165,11 @@ def run_server(
         
         # Store PID for later management
         # Standard location in home directory with a fallback if access fails
-        pid_dir = Path.home() / ".annzarro"
+        from annzarro.utils.paths import pid_file
+        pid_dir = pid_file().parent
         try:
             # Create the directory if it doesn't exist
-            pid_dir.mkdir(exist_ok=True)
+            pid_dir.mkdir(parents=True, exist_ok=True)
             
             # Try to write the PID file
             with open(pid_dir / "server.pid", "w") as f:
