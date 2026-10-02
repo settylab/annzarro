@@ -147,12 +147,12 @@ Open the browser's developer tools on the **Network** tab, filter for `api/v1/da
 click a gene or a cell: each panel that follows the focus issues one request, whose **Size**
 and **Time** are the cost of that click. In headless Chromium on `bm_aging.zarr`, laptop,
 localhost (view `docs/_tools/views/fig9-click-cost.json`, measured by
-`docs/_tools/shoot_figs79.py` over three runs):
+`docs/_tools/shoot_figs79.py` over four runs, the latest on the build with PRs 46 to 57):
 
 | Click | Request | Body | Duration |
 |---|---|---|---|
 | a gene in the volcano | `layer/kompot_de_Young_to_Old_fold_change?cols=…&format=f32` | 32,360 B (8,090 × 4 B) | 14 to 20 ms |
-| a cell in the embedding | `layer/kompot_de_Young_to_Old_fold_change?rows=…&format=f32` | 65,140 B (16,285 × 4 B) | 19 to 21 ms |
+| a cell in the embedding | `layer/kompot_de_Young_to_Old_fold_change?rows=…&format=f32` | 65,140 B (16,285 × 4 B) | 19 to 22 ms |
 | "Previous gene", back to one already shown | none | | |
 
 More on measuring and tuning on your own deployment is in {doc}`../reference/performance`.

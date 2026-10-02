@@ -48,14 +48,14 @@ focus.
 3. In the Welcome tile, under "Create New Panel", click **Cell Plot**. A new panel opens with
    its controls showing. Set:
    - **X-Axis** `obsm` · `X_umap` · `0`; **Y-Axis** `obsm` · `X_umap` · `1`.
-   - **Color** `obsp` · `diffusion_walk_t5`. The third dropdown now reads "Focused cell to
+   - **Color** `obsp` · `diffusion_walk_t5`. The third dropdown now reads "Focused cell
      HSPC_Old_1#…": the colour is that cell's row.
    - **Color Map** `Blues`, then click **Reverse Colormap**, so that a cell the walk does not
      reach is light grey and the outline of the UMAP stays visible.
 
    ```{figure} ../_static/screens/paper/fig1-controls-walk.png
    :class: screenshot
-   :alt: Cell plot controls. X-Axis obsm X_umap 0, Y-Axis obsm X_umap 1, Color obsp diffusion_walk_t5 "Focused cell to HSPC_Old_1#", Color Map Blues with Reverse Colormap active.
+   :alt: Cell plot controls. X-Axis obsm X_umap 0, Y-Axis obsm X_umap 1, Color obsp diffusion_walk_t5 "Focused cell HSPC_Old_1#", Color Map Blues with Reverse Colormap active.
    :width: 70%
 
    The open padlock beside the third Color dropdown means the panel follows the focused cell.
@@ -150,13 +150,13 @@ driven by the focused cell and the bottom row by the focused gene.
     **Color Map** `RdBu`, **Center at 0**.
 12. **Bottom right: the focused gene's row of varp.** Click "Split Vertically" on the gene
     plot, choose **Gene Plot**, volcano axes, **Color** `varp` · `spearman_fold_change` (third
-    dropdown "Focused gene to H2-Q7"). Choose **Color Map** `RdBu`, type `-1` in **Min** and `1`
+    dropdown "Focused gene H2-Q7"). Choose **Color Map** `RdBu`, type `-1` in **Min** and `1`
     in **Max**, and click **Lock Range**, so that a colour means the same ρ for every gene you
     focus.
 
     ```{figure} ../_static/screens/paper/fig1-controls-varp.png
     :class: screenshot
-    :alt: Gene plot controls. X-Axis var kompot_de_Young_to_Old_mean_lfc, Y-Axis var kompot_de_Young_to_Old_mahalanobis, Color varp spearman_fold_change "Focused gene to H2-Q7", RdBu from -1 to 1 with Lock Range active.
+    :alt: Gene plot controls. X-Axis var kompot_de_Young_to_Old_mean_lfc, Y-Axis var kompot_de_Young_to_Old_mahalanobis, Color varp spearman_fold_change "Focused gene H2-Q7", RdBu from -1 to 1 with Lock Range active.
     :width: 70%
 
     Controls of the bottom-right panel.
@@ -234,15 +234,11 @@ The header names the HSC and the top-right panel shows its fold changes again. T
 panel still shows the monocyte's row; its colour-bar title names the cell it is locked to.
 ```
 
+The dark dot in every cell panel, the locked one included, marks the focused cell (the HSC).
 While a panel is locked and the focus differs, a crosshair button ("Refocus to current
-selection") appears beside the padlock and moves the lock to the current focus. Click the
-padlock again to follow the focus.
-
-```{note}
-In the locked walk panel the dark "focused cell" dot stays on the monocyte instead of moving to
-the HSC (compare the bottom-left panel). The colour is right; only the marker is stale. This is
-a display bug in the current version, reported for a fix.
-```
+selection") appears beside the padlock. It makes the locked cell the focused cell again, so the
+other panels catch up with the locked one; the panel stays locked. Click the padlock again to
+make the panel follow the focus.
 
 (tut-tour-overview)=
 ## 6. Four linked panels with a table
@@ -348,7 +344,7 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
 The tutorials and paper-figure pages offer their views as panel set files. To load one:
 
 1. Click **Load Panel Set**, then **Upload file** (bottom left), **Browse files**, pick the
-   file, and click **Load**. A toast reads "Panel set was imported and loaded successfully."
+   file, and click **Load**.
 
    ```{figure} ../_static/screens/paper/fig2-upload-panel-set.png
    :class: screenshot
@@ -356,24 +352,33 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    :width: 60%
    ```
 
-2. Nothing on screen changes yet: loading registers the panels as closed. Click a split button
-   on any tile; in the "Add New Panel" tile the loaded panels are listed under "Duplicate or
-   Reopen Panel" with a "Closed" badge. Click each to open it.
+2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
+   its data directory. When that path differs from the open dataset's, AnnZarro asks first;
+   nothing changes until you answer.
 
-   ```{figure} ../_static/screens/paper/fig2-reopen-panels.png
+   ```{figure} ../_static/screens/paper/fig2-switch-dataset.png
    :class: screenshot
-   :alt: Duplicate or Reopen Panel section listing the two open panels and the four loaded panels of section 4 marked Closed.
-   :width: 70%
+   :alt: Notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with buttons Switch and load and Keep current.
+   :width: 45%
+   ```
 
-   After loading the panel set of section 4: its four panels wait under "Duplicate or Reopen
-   Panel".
+3. Click **Switch and load**. A notice reads "Panel set was imported and loaded successfully."
+   The panel set replaces the open panels: same dataset, same
+   focused cell and gene, same split layout, every panel with its settings. The panels that were
+   open before stay under "Duplicate or Reopen Panel".
+
+   ```{figure} ../_static/screens/paper/fig2-panel-set-loaded.png
+   :class: screenshot
+   :alt: The four panels of section 4 restored in their 2 x 2 layout, with Focused Gene H2-Q7 and Focused Cell HSPC_Old_1#GAAG.
+   :width: 100%
+
+   After loading the panel set of section 4: its four panels in their layout, with its focus.
    ```
 
 ```{important}
-A panel set restores panel settings only: not the split layout, not the focused cell and gene,
-not the dataset. Open the right dataset first and set the focus from the header. An uploaded
-file also becomes a saved panel set on that server, visible to its other users. To restore
-everything at once, use a share link.
+A panel set restores what a share link restores (dataset, focus, layout and panel settings),
+but it is stored on the server under a name. An uploaded file also becomes a saved panel set on
+that server, visible to its other users.
 ```
 
 (tut-tour-share)=
@@ -390,7 +395,8 @@ everything at once, use a share link.
     ```
 
 The link holds the dataset path, the whole layout, every panel's settings and the focus, in the
-URL fragment after `#view=` (about 2,400 characters for the view of section 7). Anyone who can
+URL fragment after `#view=` (1,448 characters for the view of section 7, server address and
+dataset path included). Anyone who can
 reach the same server and dataset path opens exactly this view ({doc}`../user-guide/share-links`,
 {doc}`../reference/deep-links`).
 
@@ -439,7 +445,8 @@ The same panels as panel set files ({ref}`tut-tour-load-file`):
 - A click on a point moves the focus; every panel that follows it reads one new slice.
 - A lock pins a panel to its current cell or gene, so two states can be compared.
 - A table filter combines conditions with AND or OR and masks linked plots without new reads.
-- Panel sets keep panel settings on the server; share links keep everything.
+- Panel sets and share links both restore the dataset, focus, layout and panel settings; a
+  panel set lives on the server under a name, a share link in its URL.
 
 Next: {doc}`cell-similarity` asks how similar cells really are, reading a kernel or distance row
 instead of trusting the UMAP.

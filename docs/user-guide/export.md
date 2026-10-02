@@ -57,7 +57,7 @@ draw the figure in Python (below).
 ## Export a table as CSV
 
 **Export CSV** in a table's controls writes the rows that pass the table's filter, in the current
-sort order, with all displayed columns and four-decimal values ({doc}`tables-and-filters`).
+sort order, with all displayed columns at full precision ({doc}`tables-and-filters`).
 
 ## Reproduce a plot later
 

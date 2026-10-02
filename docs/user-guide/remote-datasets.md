@@ -34,11 +34,6 @@ stores are switched on and limited in the server's configuration.
 Remote paths work everywhere a local path does: in panel sets (the dataset is stored as the URL)
 and in {doc}`share links <share-links>` (`?dataset_path=https%3A%2F%2F…`).
 
-```{note}
-When a share link opens a remote store, the **Dataset** picker shows "Select or enter a dataset
-path" instead of the URL, although the store is open (the statistics bar shows it). This is a
-display problem only.
-```
 
 ## What the server must allow
 
@@ -62,23 +57,21 @@ The environment variables `ANNZARRO_REMOTE_STORES`, `ANNZARRO_REMOTE_ALLOWLIST`,
 `ANNZARRO_REMOTE_CREDENTIALS`, `ANNZARRO_REMOTE_CONNECT_TIMEOUT`, `ANNZARRO_REMOTE_READ_TIMEOUT`
 and `ANNZARRO_REMOTE_CHUNK_CACHE_MB` override these keys.
 
-The server logs its decision at startup, for example:
+The server logs its decision at startup. For the test on this page (a local server with
+`ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8837/`):
 
 ```text
-Remote store policy: remote stores allowed for http://127.0.0.1:8827; credentials=anonymous;
-timeouts connect=10s read=30s; chunk cache 256 MB/store [remote_stores: auto (server is behind a
-proxy; allowlist only)]
+Remote store policy: remote stores allowed for http://127.0.0.1:8837; credentials=anonymous;
+timeouts connect=10s read=30s; chunk cache 256 MB/store [remote_stores: auto (local single-user server)]
 ```
 
 A URL outside the allowlist is refused with "Remote dataset URL is not under an allowed prefix
 (remote_allowlist: …)".
 
 ```{note}
-The example log line above comes from a build whose production defaults still set
-`proxy_count: 1`. Current builds default to `proxy_count: 0`, so `annzarro start` on a laptop or
-HPC node (loopback, login off) is a local single-user server and `auto` opens any remote URL; the
-log then reads `remote_stores: auto (local single-user server)`. A server behind a reverse proxy
-sets `proxy_count: 1` and needs `remote_allowlist`.
+`annzarro start` on a laptop or HPC node (loopback, login off, `proxy_count: 0`, the default) is a
+local single-user server, so `auto` opens any remote URL unless an allowlist is set. A server
+behind a reverse proxy sets `proxy_count: 1` and then needs `remote_allowlist`.
 ```
 
 ```{warning}
@@ -117,10 +110,10 @@ URL; everything else is fetched on demand. Measured on public Vitessce AnnData s
 ## What was tested for this page
 
 There was no public HTTPS AnnData Zarr store at hand, so this page was checked with a local web
-server: `python -m http.server 8827` serving the folder that holds `bm_aging.zarr` (Zarr v2,
+server: `python -m http.server 8837` serving the folder that holds `bm_aging.zarr` (Zarr v2,
 consolidated metadata), and AnnZarro started with
-`ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8827/`. Typing
-`http://127.0.0.1:8827/bm_aging.zarr` into the Dataset picker opened the store (8,090 cells,
+`ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8837/`. Typing
+`http://127.0.0.1:8837/bm_aging.zarr` into the Dataset picker opened the store (8,090 cells,
 16,285 genes) and the plots on this page were drawn from it. A URL outside the allowlist
 (`https://example.org/x.zarr`) was refused with the message above. S3 and GCS stores go through
 the same code path with a different fsspec backend but were not tested here.

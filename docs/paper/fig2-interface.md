@@ -34,10 +34,9 @@ rebuilds them exactly.
   95d0e64 (pull request 43); the tutorial's are at 1.5 on the documentation branch, so fonts and
   point sizes differ slightly.
 - **Last click in b.** The paper's last frame is not the protocol's example monocyte
-  (`Mature_Young_2#TCAATTCAGTGAGGCT-1`), which is drawn under a neighbour and cannot be hit by a
-  click. To focus that exact cell, type its ID into **Focused Cell**.
-- **Legend overlap in c.** The "Not in table" legend entry overlaps the colour-bar title, as in the
-  paper; a known display issue.
+  (`Mature_Young_2#TCAATTCAGTGAGGCT-1`), which is drawn under a neighbour. A click focuses the
+  nearest point; clicking the same spot again steps through the points under it, or type the ID
+  into **Focused Cell**.
 
 ## Views
 
@@ -68,8 +67,6 @@ Panel sets: {download}`fig2-overview.json <../_static/panelsets/paper/fig2-overv
 View JSON: {download}`fig2-overview.view.json <../_tools/views/fig2-overview.json>`,
 {download}`fig2-focus-sequence.view.json <../_tools/views/fig2-focus-sequence.json>`,
 {download}`fig2-table-filter.view.json <../_tools/views/fig2-table-filter.json>`.
-These panel sets were saved without the split layout that current panel sets store: loading one
-opens the dataset and the saved focus, with the panels in rows of two; the links restore the
-exact layout ({ref}`tut-tour-load-file`).
+Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`.

@@ -11,13 +11,13 @@ log fold change above 0.05.
 
 ## Choose the columns
 
-1. Add a **Gene Table** panel (here to the right of the volcano plot, with **Split Horizontally**).
+1. Add a **Gene Table** panel (here to the right of the volcano plot, with **Split side by side**).
    A new table has one column, **Gene ID** (a cell table: **Cell ID**).
 2. Open the table's controls with the chevron in its tile header.
 
    ```{figure} ../_static/screens/user-guide/tables-columns.png
    :class: screenshot
-   :alt: Table controls: Available Columns with tabs var, varm, varp, layers (1) and two var columns ticked; Selected Columns (2) listing them; Apply Changes (3); Export CSV (4); Show entries.
+   :alt: Table controls on the varp tab (1) with "spearman_fold_change: H2-Q7 (focused)" ticked (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Show entries.
 
    Table controls of a gene table.
    ```
@@ -25,28 +25,27 @@ log fold change above 0.05.
 3. **Available Columns** (1) has one tab per source: `var`, `varm`, `varp` and `layers` for a gene
    table; `obs`, `obsm`, `obsp` and `layers` for a cell table. Each tab has a search field.
    On the `var` tab, tick `kompot_de_Young_to_Old_mean_lfc` and
-   `kompot_de_Young_to_Old_mahalanobis`. They appear under **Selected Columns** (2); the red
-   **×** removes one.
-4. Click **Apply Changes** (3). The table reloads with the new columns.
+   `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, tick
+   `spearman_fold_change: H2-Q7 (focused)` (2): each gene's Spearman correlation with H2-Q7. The
+   choices appear under **Selected Columns** (3); the red **×** removes one (hover over a
+   shortened name to read it in full).
+4. Click **Apply Changes** (4). The table reloads with the new columns.
 5. **Show entries** sets the number of rows per page (25 by default).
 
-What the focus-dependent tabs offer:
+The `obsp`, `varp` and `layers` tabs list one choice per matrix and cell or gene, labelled
+"*matrix*: *name* (*where it comes from*)":
 
-| Table | Tab | Column |
-|---|---|---|
-| cell table | `obsp` | each obsp matrix's row of the focused cell, labelled "*key*: Focused Cell (*name*)", and the row of every cell that a panel is locked to ("Fixed in *panel title*") |
-| cell table | `layers` | each layer's column of the focused gene, and of every locked gene |
-| gene table | `varp` | each varp matrix's row of the focused gene, and of every locked gene |
-| gene table | `layers` | each layer's row of the focused cell, and of every locked cell |
+| Label ends in | Meaning |
+|---|---|
+| `(focused)` | the focused cell or gene |
+| `(fixed in *plot title*)` | a cell or gene some plot is locked to ({doc}`focus-and-lock`) |
+| `(in this table)` | a column the table already holds, so it can be removed |
 
-Focus-dependent columns update when the focus changes, like plots do.
-
-```{warning}
-In this version the gene table's `varp` tab lists its entries as "0: Focused Gene (…)", "1: …"
-instead of by matrix name, and a column added from it stays empty with the notice "varp.0 … not in
-this dataset". Use a gene plot coloured by the varp row instead. The cell table's `obsp` tab is not
-affected.
-```
+A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer
+rows (cells). A column keeps the cell or gene it was added for: picking `H2-Q7 (focused)` and then
+focusing Cd74 leaves the column `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To
+add Cd74's row, pick it on the tab while Cd74 is focused. Columns saved by an older version that
+followed the focus are listed as "*matrix*: follows the focused gene (…)" and still follow it.
 
 ## Sort and search
 
@@ -140,8 +139,7 @@ and a cell plot can follow a cell table the same way.
 ```{note}
 The grey of excluded points (`rgb(180, 180, 180)`) is close to the middle of RdBu, so with a
 diverging map, genes with a value near 0 and genes outside the table look alike. Use the eye
-toggle, or a colour map without grey, when that matters ({doc}`colour-scales`). The legend entry
-"Not in table" is drawn on top of the colour bar in this version.
+toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 ```
 
 ## Export a table
@@ -149,8 +147,8 @@ toggle, or a colour map without grey, when that matters ({doc}`colour-scales`). 
 Click **Export CSV** in the table's controls. The file, named after the table title and the date
 (here `Gene_table_2026-10-02.csv`), contains the rows that pass the current filter in the current
 sort order, with every displayed column: 160 lines here, a header and 159 genes. Values are
-written as displayed, rounded to four decimals; for full precision read the columns from the store
-in Python.
+written at full precision (`15.22166232974675`), not as displayed (`15.2217`). With a
+{doc}`cell subset <subsets>`, a cell table and its CSV hold the subset's cells only.
 
 The whole filtered view, including the nested conditions, is kept in panel sets and share links;
 the view file is
@@ -161,6 +159,6 @@ the view file is
 A table reads each of its columns once, as one vector each (here two var columns of 16,285
 values). Sorting, searching and filtering run in the browser on those vectors and send nothing.
 Linking a plot sends nothing either: the plot already holds its vectors and only applies the
-table's row set as a mask. A focus-dependent column sends one request per focus change, like a
-plot.
+table's row set as a mask. A column from `obsp`, `varp` or `layers` is one row or column of that
+matrix, read once when it is added.
 ```

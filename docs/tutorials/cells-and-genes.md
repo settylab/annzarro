@@ -95,7 +95,7 @@ same range and lock it ({doc}`../user-guide/colour-scales`).
 
 ```{figure} ../_static/screens/paper/fig5b-range-controls.png
 :class: screenshot
-:alt: Colour controls with Min 0.00, Max 3.77 and Lock Range pressed.
+:alt: Colour controls with Min 0, Max 3.77 and Lock Range pressed.
 
 The colour controls of the Young plot. With **Lock Range** on, a new focused gene keeps the range.
 ```
@@ -138,11 +138,9 @@ follows the focus.
 The controls after step 5: x locked (blue) to the HSC, y following the focused monocyte.
 ```
 
-```{note}
-The locked x axis still reads "Focused cell HSPC_Old_1#…" in its third box, although the focused
-cell is now the monocyte. The blue lock is what tells you the axis is fixed. This label is
-reported as a bug.
-```
+Once the focus has moved, the locked x axis reads "Locked cell HSPC_Old_1#…" in its third box
+and the crosshair button appears beside its lock; the y axis reads "Focused cell
+Mature_Young_2#…".
 
 ```{figure} ../_static/screens/paper/fig5d-plot.png
 :class: screenshot
@@ -263,8 +261,7 @@ The same panels as panel-set files:
 {download}`fig5-a-cells.json <../_static/panelsets/paper/fig5-a-cells.json>`,
 {download}`fig5-d.json <../_static/panelsets/paper/fig5-d.json>`,
 {download}`fig5-d-noise.json <../_static/panelsets/paper/fig5-d-noise.json>`. **Load Panel Set** >
-upload registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen
-Panel"; it does not restore the focus or the layout, so prefer the links
+upload restores a set like its link: dataset, focus, layout and panel settings
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned

@@ -28,7 +28,7 @@ on the UMAP. The tutorial {doc}`../tutorials/cell-similarity` builds every panel
 
 | In the paper | In AnnZarro | Closest equivalent |
 |---|---|---|
-| **Log colour scale** for the walk (10⁻⁵ to 0.0126), cells below 10⁻⁵ in grey | Linear colour scales only. Of the 956 cells the HSC's walk reaches above 10⁻⁵, 64% are below 5 × 10⁻⁴ (median 1.0 × 10⁻⁴), so they show as pale blue and the walks look narrower. | Store `log10(max(W, 1e-5))` as a second obsp matrix and colour by that. |
+| **Log colour scale** for the walk (10⁻⁵ to 0.0126), cells below 10⁻⁵ in grey | Linear by default. Of the 956 cells the HSC's walk reaches above 10⁻⁵, 64% are below 5 × 10⁻⁴ (median 1.0 × 10⁻⁴), so on a linear scale they show as pale blue and the walks look narrower. | Click **Log** in the colour controls and type `1e-5` in the floor box beside it: the colour becomes log10 of the value, and values at or below the floor share the lowest colour. |
 | **Shared colour range** across the four panels of a | Each row scales itself. | **Lock Range** with the HSC focused keeps 0 to 0.0126, the largest value in the four rows. |
 | **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/fig3a_focus_cells` (raise **Size**). |
 | **n_eff = 1/Σp²** per panel (251, 517, 559, 289 cells) | Not computed. | Values in `figures/numbers/fig2.json` of the paper repository. |
@@ -63,9 +63,7 @@ Panel sets: {download}`fig3-walk.json <../_static/panelsets/paper/fig3-walk.json
 {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`.
 View JSON: {download}`fig3-walk.view.json <../_tools/views/fig3-walk.json>`,
 {download}`fig3-umap-vs-diffusion.view.json <../_tools/views/fig3-umap-vs-diffusion.json>`.
-These panel sets were saved without the split layout that current panel sets store: loading one
-opens the dataset and the saved focus, with the panels in rows of two; the links restore the
-exact layout ({ref}`tut-tour-load-file`).
+Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
 `figures/numbers/fig2.json` of the paper repository.

@@ -1,11 +1,12 @@
 # Panel sets
 
-A **panel set** is a named, stored collection of panels: each panel's type, title and settings,
-plus the focused cell and gene and the dataset. Panel sets are stored **on the server**, in the
+A **panel set** is a named, stored view: the dataset, the focused cell and gene, the cell subset,
+the split layout with its sizes, and every panel with its settings, the same things a
+{doc}`share link <share-links>` carries. Panel sets are stored **on the server**, in the
 `sessions` folder of its data directory, so every user of the same server sees the same list.
-They are the way to keep a set of views for later and to hand them to colleagues on a shared
-server. To send a view to someone as a URL, use a {doc}`share link <share-links>` instead; the
-differences are summarised at the end of this page.
+They are the way to keep views for later and to hand them to colleagues on a shared server; a
+share link sends one view as a URL instead. The differences are summarised at the end of this
+page.
 
 ## Save a panel set
 
@@ -48,35 +49,32 @@ name") and keeps the dialog open.
    - **Upload file** (4) adds a panel set from such a JSON file (also the panel-set files offered
      for download in these docs).
 2. Click a card to select it and click **Load** (5).
-3. AnnZarro opens the panel set's dataset if it is not open yet. The panels are added under
-   **Duplicate or Reopen Panel** at the bottom of the canvas, marked **Closed**; nothing on the
-   canvas is replaced.
+3. AnnZarro opens the view as it was saved: the same dataset, focused cell and gene, layout and
+   panels. The panels that were open are closed (they stay under **Duplicate or Reopen Panel**),
+   and panels that were closed when the set was saved come back closed.
 
-   ```{figure} ../_static/screens/user-guide/panelsets-loaded-closed.png
+   ```{figure} ../_static/screens/user-guide/panelsets-loaded.png
    :class: screenshot
-   :alt: The Welcome canvas after loading: under Duplicate or Reopen Panel, two cards "Fold change (Young to Old) of the focused gene" and "5-step diffusion walk from the focused cell", both marked Closed.
+   :alt: After loading: the two panels side by side as saved, the diffusion walk from the HSC on the left and the H2-Q7 fold change on the right, with H2-Q7 and the HSC in the header.
 
-   After Load: the panel set's panels wait under Duplicate or Reopen Panel.
+   After **Load**: layout, panels and focus as saved.
    ```
 
-4. Hover over a **Closed** badge and click **Reopen** to place that panel on the canvas, or click
-   the card to open a copy. Repeat for each panel you want.
+4. If the panel set was saved on another dataset than the one open, AnnZarro asks first.
+   **Switch and load** opens the panel set's dataset and its view; **Keep current** leaves
+   everything as it is.
 
-   ```{figure} ../_static/screens/user-guide/panelsets-reopened.png
+   ```{figure} ../_static/screens/user-guide/panelsets-switch.png
    :class: screenshot
-   :alt: The fold-change panel reopened full width, coloured by the fold change of 0610005C13Rik, the focused gene of this window, instead of H2-Q7.
+   :width: 50%
+   :alt: A yellow notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with the buttons "Switch and load" and "Keep current".
 
-   One panel reopened. It follows this window's focused gene, not the one saved in the panel set.
+   Loading a panel set made on `bm_aging.zarr` while `spatial_demo.zarr` is open.
    ```
 
-```{important}
-Panel sets store the panels, not their arrangement: reopened panels are placed one below the
-other, and you split and resize them again. When the panel set's dataset is already open, the
-saved focused cell and gene are not applied either, so unlocked panels follow the current focus
-(above: the first gene in the list, 0610005C13Rik, instead of H2-Q7). Pick the focus in the header
-after loading, or lock the panels before saving. A {doc}`share link <share-links>` keeps the
-layout and the focus.
-```
+Panel sets saved by older versions of AnnZarro hold only the panels. They still load: their panels
+are added under **Duplicate or Reopen Panel**, marked **Closed**, ready to reopen
+({doc}`interface`).
 
 ## Who can change a panel set
 
@@ -112,13 +110,13 @@ case ({doc}`../deployment/hosting-checklist`).
 | Stored | on the server, `<data_dir>/sessions/*.json` | in the URL fragment, nowhere on the server | in your browser's local storage |
 | Visible to | every user of the server | whoever has the URL | you, in this browser |
 | Panels and settings | yes | yes | yes |
-| Split layout and sizes | no | yes | no |
-| Focused cell and gene | stored, applied only when the dataset changes | yes | yes |
-| Reopens as | closed panels to reopen | the full layout | closed panels to reopen, on your next visit |
+| Split layout and sizes | yes | yes | yes |
+| Focused cell and gene, cell subset | yes | yes | yes |
+| Reopens as | the full layout | the full layout | the full layout, on your next visit |
 
 ```{admonition} What happens on the server
 :class: note
 Saving writes one JSON file to `<data_dir>/sessions/`; the file holds the panel settings, not
-data. Loading reads it back. Each reopened panel then requests its vectors like any new panel. The
+data. Loading reads it back. Each panel then requests its vectors like any new panel. The
 server never writes to the dataset itself.
 ```

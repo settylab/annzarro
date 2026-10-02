@@ -63,7 +63,21 @@
     "pointSize": 3,
     "pointOpacity": 0.8,
     "colorScale": "Blues",
-    "colorReversed": true
+    "colorReversed": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     },
+     {
+      "type": "obs",
+      "key": "Age"
+     }
+    ]
    },
    "cell-plot-F": {
     "id": "cell-plot-F",

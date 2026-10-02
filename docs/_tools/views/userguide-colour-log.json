@@ -1,0 +1,95 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-N",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-G",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-N": false,
+   "cell-plot-G": false
+  },
+  "panelConfigs": {
+   "cell-plot-N": {
+    "id": "cell-plot-N",
+    "title": "Linear colour (diffusion walk)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "diffusion_walk_t5",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Viridis"
+   },
+   "cell-plot-G": {
+    "id": "cell-plot-G",
+    "title": "Log colour, floor 1e-5",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "diffusion_walk_t5",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false,
+     "log": true,
+     "logFloor": 1e-05
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Viridis"
+   }
+  }
+ }
+}

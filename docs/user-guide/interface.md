@@ -18,8 +18,10 @@ The header. Numbers match the list below.
 1. **Dataset** lists every dataset the server found at the top level of its data directory
    (`~/annzarro-data` unless set with `--data-dir`) and in that directory's `datasets` folder. You can also type a
    path or a remote URL into its search field and press Enter ({doc}`remote-datasets`).
-2. **Refresh dataset** clears the server's and the browser's caches for the current dataset,
-   reloads the dataset list and reopens the dataset. Use it after the store on disk changed.
+2. **Refresh dataset** reloads the dataset list and reopens the current dataset with the
+   browser's cache cleared. On your own machine, and for admins of a hosted server, it also clears
+   the server's cache for that dataset; other users of a hosted server get a reload without it,
+   because that cache is shared. Use it after the store on disk changed.
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).
 5. **Previous cell / Next cell** step through the cells you focused.
@@ -28,29 +30,33 @@ The header. Numbers match the list below.
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
-Below the header, the statistics bar shows the number of cells (8090) and genes (16285) and the
-dataset's display name.
+Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
+cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
+200,000 cells open on a reproducible subset of 100,000 cells; the badge then reads **Subset ·
+seed 0** ({doc}`subsets`).
 
 ## Pick a gene or a cell by name
 
-1. Click the **Focused Gene** box. A search field opens with the genes in alphabetical order.
-2. Type part of a name, for example `H2-`. The list narrows to matching genes.
-3. Click a gene, or move to it with the arrow keys and press **Ctrl+Enter** to select it and
-   close the list. A plain click selects the gene and leaves the list open, so you can step
-   through several genes; press **Escape** to close it.
+1. Click the **Focused Gene** box and type part of a name, for example `H2-`. A list of matching
+   genes opens under the box; the line above it says how many matched (here 22). The server
+   searches all gene names as you type and sends back at most 100 matches, exact matches first,
+   then names that start with the text, then names that contain it, ignoring case. With more
+   matches the list says "First 100 matches, keep typing to narrow".
+2. Click a gene, or move to it with the arrow keys and press **Enter**. **Escape** closes the list
+   and keeps the current gene.
 
 ```{figure} ../_static/screens/user-guide/ui-gene-picker.png
 :class: screenshot
-:width: 60%
-:alt: The focused gene picker open, with "H2-" typed and the matching genes H2-Aa, H2-Ab1, H2-D1 and so on listed below a "Regex Mode" button.
+:width: 45%
+:alt: The focused gene picker with "H2-" typed and a list of 22 matching genes, H2-K1 highlighted, with the regular-expression button (1) and the match count (2) above the list.
 
-The gene picker after typing `H2-`.
+The gene picker after typing `H2-`: the regular-expression button (1) and the match count (2).
 ```
 
-The **Regex Mode** button under the search field switches the filter from substring matching
-to a case-insensitive regular expression (it turns blue when on), for example `^H2-(Aa|Ab1)$`.
-The mode switches off again each time the list is reopened. The **Focused Cell** picker works the
-same way on cell names.
+The **.\*** button (1) above the list switches to a case-insensitive regular expression, for
+example `^H2-(Aa|Ab1)$`. The **Focused Cell** picker works the same way on cell names; with a
+{doc}`cell subset <subsets>` it only finds cells in the subset. Because the list is fetched from
+the server, the pickers stay fast with millions of names.
 
 Every focus change, whether from a picker, a plot click or a table click, is added to the
 history behind the arrow buttons. Going back and then choosing a new item discards the forward
@@ -71,7 +77,9 @@ The Welcome tile.
    `obsm/X_umap` columns 0 and 1, coloured by `obs/leiden` (the defaults are explained in
    {doc}`cell-and-gene-plots`).
 2. Below the new tile, the same set of cards appears again, so the next panel is always one click
-   away. It also lists every open and closed panel under **Duplicate or Reopen Panel**.
+   away. It also lists every open and closed panel under **Duplicate or Reopen Panel**. Once
+   tiles fill the window, this area has no room left; new panels then go into a split
+   (below).
 
 ```{figure} ../_static/screens/user-guide/ui-first-cell-plot.png
 :class: screenshot
@@ -93,25 +101,21 @@ A tile header.
    shown in panel sets.
 2. **Toggle Controls** (chevron) shows or hides the panel's controls. Hide them to give the plot
    the whole tile; your settings are kept.
-3. **Split Horizontally** puts a new, empty pane to the right of this tile.
-4. **Split Vertically** puts a new, empty pane below this tile.
+3. **Split side by side** puts a new, empty pane to the right of this tile.
+4. **Split top and bottom** puts a new, empty pane below this tile.
 5. **Close** removes the tile. Its settings are kept under **Duplicate or Reopen Panel**.
 
-```{note}
-The Split Vertically icon is the Split Horizontally icon turned by 90 degrees; at small sizes it
-looks like a floppy-disk "save" icon. It does not save anything.
-```
 
 ## Split and resize
 
-1. In the tile header, click **Split Horizontally**. The tile shrinks to the left half and the
+1. In the tile header, click **Split side by side**. The tile shrinks to the left half and the
    right half shows **Add New Panel** with the same cards.
 
    ```{figure} ../_static/screens/user-guide/ui-split-selector.png
    :class: screenshot
    :alt: The cell plot on the left half; the right half shows "Add New Panel" with Cell Plot, Gene Plot, Cell Table and Gene Table cards, and a Duplicate or Reopen Panel section.
 
-   After Split Horizontally: the new pane waits for a panel type.
+   After Split side by side: the new pane waits for a panel type.
    ```
 
 2. In the right pane, click **Gene Plot**. A gene plot opens there: genes at `varm/PCs`
@@ -136,24 +140,27 @@ looks like a floppy-disk "save" icon. It does not save anything.
    The split handle (1) between two tiles.
    ```
 
-Plots resize with their tile. The pane sizes are stored as percentages in panel layouts and share
+Plots fill their tile and resize with it (a plot is at least 260 px tall; a smaller tile
+scrolls). The pane sizes are stored as percentages in panel layouts and share
 links, so a shared layout opens with the same proportions on any screen.
 
 ## Close, reopen and duplicate panels
 
 1. Click **Close** on a tile. The neighbouring tile takes over its space.
-2. Scroll to the bottom of the canvas. The closed panel is listed under **Duplicate or Reopen
-   Panel** with a **Closed** badge; open panels are listed there too, without a badge.
+2. To bring it back, split any tile (**Split side by side** or **Split top and bottom**). The new
+   pane lists the closed panel under **Duplicate or Reopen Panel** with a **Closed** badge; open
+   panels are listed there too, without a badge. (When the last tile is closed, the Welcome tile
+   shows the same list.)
 
    ```{figure} ../_static/screens/user-guide/ui-reopen.png
    :class: screenshot
-   :alt: The bottom of the canvas with "Create New Panel" cards and a "Duplicate or Reopen Panel" section listing "Cell Plot 1" and "Gene Plot 1", the latter marked Closed.
+   :alt: The "Duplicate or Reopen Panel" section of a new pane, listing "Cell Plot 1" and "Gene Plot 1", the latter marked Closed, with a "Clear closed panels" button.
 
    Gene Plot 1 was closed; Cell Plot 1 is open.
    ```
 
 3. Hover over the **Closed** badge; it changes to **Reopen**. Click it to bring the panel back
-   with all its settings.
+   with all its settings, in that pane.
 4. Click anywhere else on a card to open a **copy** of that panel (a duplicate with a new
    title). This works for open and closed panels.
 5. The small **×** on a closed card forgets that panel. **Clear closed panels** forgets all
@@ -161,9 +168,9 @@ links, so a shared layout opens with the same proportions on any screen.
 
 ## The browser remembers your last layout
 
-AnnZarro autosaves the open panels to the browser's local storage every 10 seconds (and when the
-page is closed). On your next visit to the same server it opens the dataset again and lists those
-panels under **Duplicate or Reopen Panel**, ready to reopen. This copy lives only in
+AnnZarro autosaves the view (dataset, focus, layout and every panel's settings) to the browser's
+local storage every 10 seconds and when the page is closed. On your next visit to the same server
+it reopens that view as it was. This copy lives only in
 your browser. To keep a layout or give it to someone else, use {doc}`panel-sets` or
 {doc}`share-links`. Opening a share link always wins over the autosaved layout. The interval
 and the restore behaviour are set under `ui.autosave` in the configuration
@@ -172,8 +179,7 @@ and the restore behaviour are set under `ui.autosave` in the configuration
 ```{admonition} What happens on the server
 :class: note
 Opening a dataset costs a handful of small requests: the dataset structure (which keys exist in
-obs, obsm, obsp, layers, var, varm, varp and uns), the list of cell names and the list of gene
-names. No matrix values are read until a panel asks for a vector. Splitting, resizing, closing
+obs, obsm, obsp, layers, var, varm, varp and uns) and the cell and gene names. No matrix values are read until a panel asks for a vector. Splitting, resizing, closing
 and reopening tiles are handled in the browser and send nothing to the server; a reopened panel
 reads its data again, usually from the browser's cache.
 ```

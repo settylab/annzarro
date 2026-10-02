@@ -73,7 +73,7 @@ expressed in the same cell states whether or not they change. Both are dense
    ```
 
 8. Hover over the dark red point at mean log2 fold change 0.24, Mahalanobis 9.8. The label reads
-   `H2-Q6`, and `c: 0.817…` is its ρ with H2-Q7.
+   `H2-Q6`, and `c: 0.8172` is its ρ with H2-Q7.
 
    ```{figure} ../_static/screens/paper/fig4a-hover-h2q6.png
    :class: screenshot
@@ -84,8 +84,9 @@ expressed in the same cell states whether or not they change. Both are dense
 
 H2-Q7's strongest partners are H2-Q6 (0.82), Tapbpl (0.73), H2-D1 (0.66) and B2m (0.60): MHC
 class I antigen presentation. Only H2-Q6 is itself called differentially expressed. Tapbpl, H2-D1
-and B2m sit in the dense lower part of the volcano (Mahalanobis 3.6, 5.3 and 5.2); zoom with the
-mouse wheel and hover to find them, or sort a table ({ref}`tut-gene-check`). A module built from
+and B2m sit in the dense lower part of the volcano (Mahalanobis 3.6, 5.3 and 5.2). With **Strong
+on top** (on by default) the genes with the largest |ρ| are drawn last, so they show above the
+grey core; hover to find them, or sort a table ({ref}`tut-gene-check`). A module built from
 DE genes alone could not contain them.
 
 :::{note}
@@ -106,7 +107,7 @@ DE genes alone could not contain them.
    The same plot after one click. H2-Q7 (top right) is now pale: ρ = 0.20 with H2-Aa.
    ```
 
-2. Hover over the dark red neighbours of H2-Aa. H2-Ab1 reads `c: 0.884…`; H2-Eb1 (0.124, 11.4)
+2. Hover over the dark red neighbours of H2-Aa. H2-Ab1 reads `c: 0.8844`; H2-Eb1 (0.124, 11.4)
    reads 0.933 and Cd74 (0.106, 12.8) reads 0.811. Ciita (0.84) is not DE and sits in the core.
 
    ```{figure} ../_static/screens/paper/fig4b-hover-h2ab1.png
@@ -241,10 +242,10 @@ The 52 entries were read off the app (screenshot above). The other results were 
 Python from the same stored columns and match the paper's `figures/numbers/fig3.json`.
 
 ```{note}
-A **Gene table** cannot show a `varp` row as a column in this version, so the `rho_fc_*` and
-`rho_smoothed_*` columns of the showcase store stand in for "H2-Q7's row of `varp/…`". For the
-DE filter, use the Mahalanobis threshold, not `kompot_de_Young_to_Old_is_de`: an **Equals Yes**
-condition on a boolean column matches no rows in this version. Both are known bugs.
+The `rho_fc_*` and `rho_smoothed_*` columns of the showcase store hold H2-Q7's (and S100a9's,
+H2-Aa's) rows of `varp/…` as fixed columns. A gene table can also show a `varp` row directly: on
+its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` follows the focused gene. The boolean
+`kompot_de_Young_to_Old_is_de` works as a filter too: **Equals** `Yes` keeps the 190 DE genes.
 ```
 
 (tut-gene-views)=
@@ -275,9 +276,9 @@ the link ({doc}`../user-guide/share-links`). `dataset_path` must be absolute.
 The same panels as panel-set files:
 {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`,
 {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
-{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. **Load Panel Set** > upload
-registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen Panel"; it
-does not restore the focus or the layout, so prefer the links ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
+{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. **Load Panel Set** >
+upload restores a set like its link: dataset, focus, layout and panel settings
+({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned
 

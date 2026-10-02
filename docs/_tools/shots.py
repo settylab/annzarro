@@ -35,15 +35,6 @@ DATA_DIR = Path(os.environ.get("ANNZARRO_DOCS_DATA", Path.home() / "gits/annzarr
 VIEWPORT = {"width": 1600, "height": 1000}
 DSF = 1.5
 
-HOLD_CONTROLS_JS = """
-document.addEventListener('DOMContentLoaded', () => {
-  const s = document.createElement('style');
-  s.id = 'shot-hold-controls';
-  s.textContent = '.tile-content .plot-controls, .tile-content .table-controls { display: none !important; }';
-  document.head.appendChild(s);
-});
-"""
-
 # Hides transient UI (toasts) and the hover label; injected before every capture.
 CLEAN_CSS = """
 #notification-container, .notification { display: none !important; }
@@ -115,7 +106,7 @@ class Shooter:
         self.out.mkdir(parents=True, exist_ok=True)
 
     def open(self, view: dict | None, dataset="bm_aging.zarr", viewport=VIEWPORT,
-             clipboard_denied=False, hold_controls=True) -> Page:
+             clipboard_denied=False) -> Page:
         ctx = self.browser.new_context(viewport=viewport, device_scale_factor=DSF,
                                        color_scheme="light")
         if clipboard_denied:
@@ -124,8 +115,6 @@ class Shooter:
               Object.defineProperty(navigator, 'clipboard', {value: {
                 writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError'))
               }});""")
-        if hold_controls:
-            ctx.add_init_script(HOLD_CONTROLS_JS)
         page = ctx.new_page()
         page._inflight = set()
         page.on("request", lambda r: page._inflight.add(r))
@@ -134,16 +123,9 @@ class Shooter:
         page.on("console", lambda m: self.log.append(f"console.{m.type}: {m.text[:300]}")
                 if m.type == "error" else None)
         page.on("pageerror", lambda e: self.log.append(f"pageerror: {e}"))
-        # Deep links do not keep tile controls collapsed: controlState=false is
-        # overridden when the dataset finishes loading (see SCREENSHOTS.md). With the
-        # controls open, a half-height tile leaves the graph ~0 px tall and Plotly throws
-        # "Something went wrong with axis scaling". Until that is fixed, a stylesheet
-        # holds the controls closed while the view loads, then each tile's own toggle
-        # button collapses them for real (as a user would) and the stylesheet is removed.
+        # A view's controlState is applied on restore (tiles open with their controls
+        # collapsed as saved), so the page is shot as the link opens it.
         page.goto(deep_link(self.base, view, dataset))
-        self.ready(page)
-        self.hide_controls(page)
-        page.evaluate("document.getElementById('shot-hold-controls')?.remove()")
         self.ready(page)
         # The page grows with its content (body is min-height 100vh, not height), so a
         # tall tile such as a table with its SearchBuilder pushes the layout below the
@@ -184,8 +166,8 @@ class Shooter:
         self.log.append(f"WARNING: not ready after {timeout}s: {s}, inflight={urls}")
 
     def hide_controls(self, page: Page) -> None:
-        """Deep-link controlState=false is overridden at panel init (see SCREENSHOTS.md),
-        so collapse each tile's controls with its own toggle button, as a user would."""
+        """Collapse every tile's open controls with its own toggle button, as a user
+        would (for panels created interactively, which open with controls shown)."""
         n = page.evaluate("""() => {
           let n = 0;
           for (const t of document.querySelectorAll('.tile')) {

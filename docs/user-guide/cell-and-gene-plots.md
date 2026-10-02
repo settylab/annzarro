@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with ten numbered parts: X-Axis type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Filter by Table; Size and Opacity sliders; Color Palette.
+:alt: Cell plot controls with twelve numbered parts: X-Axis type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Filter by Table; Size and Opacity sliders; Color Palette; Hide NaN; Equal aspect.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -31,6 +31,11 @@ Cell plot controls, coloured by a categorical obs column.
 9. **Size** (0.1 to 20) and **Opacity** (0.01 to 1) of the points.
 10. **Color Palette** (categorical colour) or **Color Map** and range controls (numerical colour,
     {doc}`colour-scales`).
+11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
+    points of the **NA** legend entry).
+12. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
+    ({doc}`spatial-coordinates`). Numerical colours have more buttons in the same row
+    ({doc}`colour-scales`).
 
 Every change redraws the panel straight away.
 
@@ -40,8 +45,8 @@ Every change redraws the panel straight away.
 |---|---|---|---|
 | `obs` | any obs column | N/A | that column |
 | `obsm` | any obsm matrix (embedding, PCA, spatial positions, protein counts…) | a column name or index | that column |
-| `obsp` | any obsp matrix | "Focused cell to *name*" | the focused cell's row: its value to every cell |
-| `layer` | any layer | "Focused gene *name*" | the focused gene's column of the layer |
+| `obsp` | any obsp matrix | "Focused cell *name*" | the focused cell's row: its value to every cell |
+| `layer` | `X` or any layer | "Focused gene *name*" | the focused gene's column of `X` or the layer |
 
 ## Sources for a gene plot
 
@@ -49,8 +54,8 @@ Every change redraws the panel straight away.
 |---|---|---|---|
 | `var` | any var column | N/A | that column |
 | `varm` | any varm matrix (PC loadings, per-group means…) | a column name or index | that column |
-| `varp` | any varp matrix | "Focused gene to *name*" | the focused gene's row: its value to every gene |
-| `layer` | any layer | "Focused cell *name*" | the focused cell's row of the layer |
+| `varp` | any varp matrix | "Focused gene *name*" | the focused gene's row: its value to every gene |
+| `layer` | `X` or any layer | "Focused cell *name*" | the focused cell's row of `X` or the layer |
 
 All four types are available for x, y, z and colour alike. An axis that reads `obsp`, `varp` or a
 `layer` follows the focus and gets the lock and refocus buttons ({doc}`focus-and-lock`); for
@@ -58,11 +63,15 @@ example, x = the focused cell's row of a UMAP distance matrix and y = its row of
 distance matrix plots every cell's distance to the focused cell in both spaces, as in
 {ref}`tut-cell-distance-axes` of the tutorial {doc}`../tutorials/cell-similarity`.
 
-```{note}
-`X` itself is not offered as a source. To plot expression, store it (or a normalised copy) as a
-layer, which is what {doc}`../data/preparing-a-store` does. Columns of obsm and varm with more than
-ten entries are listed alphabetically.
-```
+`X` is listed first under the `layer` type. Columns of obsm and varm with more than ten entries are
+listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X_cnv` stored as
+CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
+
+If a panel names a source the open dataset does not have (a view made for another dataset, or a
+column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and a
+notice above the plot says which source is missing, for example "obs.not_a_column: not in this
+dataset (8,090 cells)". A source that exists but cannot be read gets a "failed to read" notice with
+the reason instead.
 
 ## Defaults of a new panel
 
@@ -116,11 +125,14 @@ the focused cell.
 
 ## Categorical and numerical colour
 
-AnnZarro decides per colour source whether it is categorical or numerical by looking at its first
-100 values: if at least 80 % are numbers it is numerical, otherwise (strings, booleans, mostly
-missing values) it is categorical.
+AnnZarro decides per colour source whether it is categorical or numerical from up to 1,000 of its
+values that are not missing, spread over the whole column: if at least 80 % of them are numbers it
+is numerical, otherwise (strings, booleans) it is categorical. A numeric column that is mostly
+missing is therefore still numerical.
 
-- **Categorical**: one trace per category with a legend. **Color Palette** offers "As stored in
+- **Categorical**: one trace per category with a legend, and every point drawn. Points with a
+  missing value are drawn in grey under an **NA** legend entry, and values that are not among the
+  column's categories appear as categories of their own. **Color Palette** offers "As stored in
   adata.uns if available" (uses `uns/<key>_colors`, as scanpy writes them; the default),
   **hue** (evenly spaced hues), discrete palettes (Accent, Dark2, Paired, Pastel1, Pastel2, Set1,
   Set2, Set3, tab10, tab20, tab20b, tab20c, RetroMetro, DutchField, RiverNights, SpringPastels,
@@ -137,20 +149,24 @@ Categorical colour: `obs/highres_celltype` with the colours stored in `uns/highr
 The legend scrolls when it has more entries than fit.
 ```
 
-```{warning}
-A numeric column whose first 100 values are mostly missing is treated as categorical, with one
-legend entry per distinct value. For example `var/fig4c_rank_H2-Q7` in
-`bm_aging_showcase.zarr` (189 values, NaN for the other 16,096 genes) draws as 190 categories.
-Until this is fixed, sort such a column so that values come first, or fill the missing values
-before writing the store.
+```{figure} ../_static/screens/user-guide/plots-categorical-na.png
+:class: screenshot
+:alt: A volcano plot coloured by var fig4_module_k3: the 190 DE genes in purple, green and yellow for modules 1 to 3, the 16,095 other genes in grey under an NA legend entry.
+
+`var/fig4_module_k3` of `bm_aging_showcase.zarr`: three modules (87, 68 and 35 genes) and 16,095
+genes without a module, drawn in grey as **NA**. View:
+{download}`userguide-categorical-na.json <../_tools/views/userguide-categorical-na.json>`.
 ```
 
 ## Hover
 
-Hovering a point shows its name, its x and y (and z) values, and for numerical colour its value
-`c`; for categorical colour the category. These fields are fixed: the `hoverInfo` list stored in a
-panel's settings is not used yet. To read other values for a set of points, use a table
-({doc}`tables-and-filters`).
+Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a
+categorical colour, the category), with numbers to 4 significant digits. Below them it lists the
+panel's hover columns, its `hoverInfo` setting: a list of sources such as
+`[{"type": "obs", "key": "highres_celltype"}, {"type": "obs", "key": "Age"}]` (any type an axis
+can use). There is no control for it in the panel yet; it is set in a view's JSON and kept in panel
+sets and share links ({doc}`../reference/deep-links`). {doc}`focus-and-lock` shows a hover label
+with two such columns.
 
 ## Zoom, pan and click
 
@@ -160,7 +176,8 @@ have orbit and turntable rotation instead of pan. Drag in a 2D plot to zoom into
 double-click to zoom out to all points. The current zoom range (or 3D camera) is stored in
 the panel's settings.
 
-A single click on a point focuses that cell or gene ({doc}`focus-and-lock`).
+A click focuses the point nearest to the pointer; clicking the same spot again steps through
+points that overlap there ({doc}`focus-and-lock`).
 
 ```{admonition} What happens on the server
 :class: note

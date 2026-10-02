@@ -219,13 +219,14 @@ def z1(v: dict) -> str:
 
 
 def panelset(name: str, v: dict, dataset: str) -> dict:
-    """A panel set file as Save Panel Set writes it. Loading one re-registers the panels
-    (Add New Panel > Duplicate or Reopen Panel); it does not restore focus or layout."""
+    """A panel set file as Save Panel Set writes it: the panel configs plus `view`, the same
+    object a share link encodes. Loading it restores the dataset, focus and split layout."""
     cfgs = v["layout"]["panelConfigs"]
     return {"name": name, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "dataset": dataset, "datasetName": Path(dataset).stem, "constants": v["constants"],
             "panelConfigs": {k: {"id": k, "type": k.rsplit("-", 1)[0], "title": c["title"],
-                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()}}
+                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()},
+            "view": v}
 
 
 ALL_VIEWS = {
@@ -276,14 +277,18 @@ def focused(page, which="cell") -> str:
 
 def pick(page, which: str, value: str) -> str:
     """Type `value` into the header's Focused Cell / Focused Gene picker and press Enter."""
-    page.click(f"#focused-{which} + .select2 .select2-selection")
-    field = page.locator(".select2-container--open .select2-search__field")
-    field.fill(value)
-    time.sleep(0.6)
-    field.press("Enter")
+    box = page.locator(f"#focused-{which}")
+    box.click()
+    box.fill(value)
+    # The picker is a server-side typeahead (static/js/utils/name-picker.js): wait for
+    # the matches, then Enter picks the highlighted (first) one and closes the menu.
+    page.locator(".name-picker-menu:not([hidden]) .name-picker-option").first.wait_for()
+    box.press("Enter")
     time.sleep(0.3)
-    page.keyboard.press("Escape")
-    time.sleep(0.5)
+    # Leave the box: while it keeps keyboard focus, the header does not show a focus
+    # change made by clicking a plot (name-picker.js setValue skips a focused input).
+    box.press("Escape")
+    time.sleep(0.3)
     return focused(page, which)
 
 
@@ -294,14 +299,22 @@ def toggle_controls(page, tid: str) -> None:
 
 def press_lock(page, tid: str, axis: str = "color") -> str:
     """Press the lock button of one axis selector (the controls must be open)."""
-    btn = page.locator(f'.tile[data-tile-id="{tid}"] .axis-special-buttons-{axis} [id="lock-{axis}"]')
+    btn = page.locator(f'.tile[data-tile-id="{tid}"] .axis-special-buttons-{axis} .axis-lock-btn')
     btn.click()
     time.sleep(0.6)
     return btn.get_attribute("title")
 
 
 def crop(page, selector: str, path: Path) -> None:
-    page.locator(selector).screenshot(path=str(path))
+    # Clip from a page screenshot: an element screenshot scrolls the element into view
+    # first, and a short row near the top can end up under the sticky header.
+    from PIL import Image
+    page.mouse.move(2, 2)
+    page.screenshot(path=str(path))
+    b = page.locator(selector).first.bounding_box()
+    k = page.evaluate("window.devicePixelRatio")
+    Image.open(path).crop((int(b["x"] * k), int(b["y"] * k), int((b["x"] + b["width"]) * k),
+                           int((b["y"] + b["height"]) * k))).save(path)
 
 
 def shrink(paths) -> None:
@@ -337,8 +350,21 @@ def shoot_fig1(s) -> None:
     # Lock the walk panel's colour on the monocyte, then focus the HSC from the header.
     toggle_controls(page, "cell-plot-F1a")
     s.log.append(f"fig1 lock: {press_lock(page, 'cell-plot-F1a')}")
-    crop(page, '.tile[data-tile-id="cell-plot-F1a"] .color-selector-container .axis-selector',
-         OUT / "fig1-4-lock-button.png")
+    s.ready(page)        # locking redraws the panel; crop once it has settled
+    page.evaluate("window.scrollTo(0, 0)")
+    time.sleep(0.5)
+    # The third Color dropdown and the lock beside it (the row is wider than the half tile).
+    from PIL import Image
+    page.mouse.move(2, 2)
+    page.screenshot(path=str(OUT / "fig1-4-lock-button.png"))
+    t = '.tile[data-tile-id="cell-plot-F1a"]'
+    a = page.locator(f"{t} .axis-key-select[data-axis=color]").bounding_box()
+    b = page.locator(f"{t} .axis-special-buttons-color .axis-lock-btn").bounding_box()
+    k = page.evaluate("window.devicePixelRatio")
+    Image.open(OUT / "fig1-4-lock-button.png").crop((
+        int((a["x"] - 6) * k), int((min(a["y"], b["y"]) - 6) * k),
+        int((b["x"] + b["width"] + 6) * k), int((max(a["y"] + a["height"], b["y"] + b["height"]) + 6) * k)
+    )).save(OUT / "fig1-4-lock-button.png")
     toggle_controls(page, "cell-plot-F1a")
     s.ready(page)
     s.log.append(f"fig1 header pick -> {pick(page, 'cell', HSC)}")
@@ -416,25 +442,39 @@ def shoot_fig2(s) -> None:
     time.sleep(0.3)
     crop(page, "#app-header", OUT / "fig2-share-link.png")
 
+    page.click("#share-link-close")
     page.click("#btn-load-session")
     page.wait_for_selector("#session-modal", state="visible")
     time.sleep(1.0)
     crop(page, "#session-modal .modal-content", OUT / "fig2-load-panel-set.png")
-    # Upload the Fig 1 panel set file, load it, and open Add New Panel to show where its
-    # panels land. The uploaded set is deleted again so the shared list stays clean.
+    # Upload the Fig 1 panel set file and load it. The file names its dataset by the bare
+    # name bm_aging.zarr (resolved in the server's data directory), which differs from the
+    # open dataset's absolute path, so AnnZarro asks before switching. Accept, then shoot
+    # the restored layout. The uploaded set is deleted again so the shared list stays clean.
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(PANELSETS / "fig1-focus-model.json"))
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
     page.click("#btn-confirm-session")
-    time.sleep(3)
-    s.toasts(page, "fig2 upload")
     try:
-        page.locator('.tile[data-tile-id="cell-plot-E2"] .tile-split-v').click()
-        time.sleep(2)
+        ask = page.locator(".notification-ask")
+        try:
+            ask.first.wait_for(timeout=8000)
+            time.sleep(1.0)      # let the notice finish fading in
+            crop(page, ".notification-ask", OUT / "fig2-switch-dataset.png")
+            s.log.append("fig2 upload asked: " + ask.first.inner_text().replace("\n", " | ")[:300])
+            ask.first.get_by_text("Switch and load").click()
+        except Exception:
+            s.log.append("fig2 upload: no Switch dataset? notice")
+        s.ready(page)
+        time.sleep(1.0)
+        s.toasts(page, "fig2 upload")
         page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
-        page.locator(".selection-section", has_text="Duplicate or Reopen Panel").last.screenshot(
-            path=str(OUT / "fig2-reopen-panels.png"))
+        page.mouse.move(2, 2)
+        page.screenshot(path=str(OUT / "fig2-panel-set-loaded.png"))
+        s.log.append("fig2 loaded tiles: " + str(page.evaluate(
+            "[...new Set([...document.querySelectorAll('.tile')].map(t => t.dataset.tileId))]")))
+        s.log.append("fig2 loaded focus: " + focused(page, "cell") + " / " + focused(page, "gene"))
     finally:
         s.log.append("fig2 delete uploaded set: " + str(page.evaluate(
             "fetch('/api/v1/sessions/delete?name=fig1-focus-model', {method: 'DELETE'}).then(r => r.status)")))

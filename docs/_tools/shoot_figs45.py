@@ -231,7 +231,8 @@ def panelset(name: str, v: dict) -> dict:
     return {"name": name, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "dataset": DATASET, "datasetName": Path(DATASET).stem, "constants": v["constants"],
             "panelConfigs": {k: {"id": k, "type": k.rsplit("-", 1)[0], "title": c["title"],
-                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()}}
+                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()},
+            "view": v}
 
 
 def write_artefacts() -> dict:
@@ -284,14 +285,18 @@ def focused(page, which: str) -> str:
 
 def pick(s, page, which: str, value: str) -> str:
     """Type `value` into the header's Focused Gene / Focused Cell picker and press Enter."""
-    page.click(f"#focused-{which} + .select2 .select2-selection")
-    field = page.locator(".select2-container--open .select2-search__field")
-    field.fill(value)
-    time.sleep(0.6)
-    field.press("Enter")
+    box = page.locator(f"#focused-{which}")
+    box.click()
+    box.fill(value)
+    # The picker is a server-side typeahead (static/js/utils/name-picker.js): wait for
+    # the matches, then Enter picks the highlighted (first) one and closes the menu.
+    page.locator(".name-picker-menu:not([hidden]) .name-picker-option").first.wait_for()
+    box.press("Enter")
     time.sleep(0.3)
-    page.keyboard.press("Escape")
-    time.sleep(0.5)
+    # Leave the box: while it keeps keyboard focus, the header does not show a focus
+    # change made by clicking a plot (name-picker.js setValue skips a focused input).
+    box.press("Escape")
+    time.sleep(0.3)
     s.ready(page)
     return focused(page, which)
 

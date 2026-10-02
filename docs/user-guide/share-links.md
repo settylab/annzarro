@@ -33,9 +33,10 @@ http://<server>/?dataset_path=<path on the server>#view=z1.<compressed view>
 
 - `dataset_path` (query) is the dataset as the server sees it: a path inside its data directory, or
   a remote URL ({doc}`remote-datasets`).
-- `#view=` (fragment) holds the view: the focused cell, focused gene and taxonomy, and the layout
-  tree (splits, pane sizes in percent, which panels have their controls open, and each panel's full
-  settings, including locks, colour ranges and table filters). The `z1.` prefix marks it as
+- `#view=` (fragment) holds the view: the focused cell, focused gene and taxonomy, the cell subset
+  ({doc}`subsets`), and the layout tree (splits, pane sizes in percent, which panels have their
+  controls open, and each panel's full settings, including locks, colour ranges and table
+  filters). Panels created from the Welcome tile are included like any other. The `z1.` prefix marks it as
   deflate-compressed JSON in base64url.
 
 The fragment is never sent to the server, so a link does not appear in server logs and has no
@@ -49,25 +50,24 @@ names a path on that laptop.
 
 ## How long is a link?
 
-Measured on this build with `bm_aging.zarr`. Each count includes the server address and the URL-encoded
-dataset path, about 130 to 170 characters here; a shorter data directory path gives shorter links.
+Measured on this build with `bm_aging.zarr`. Each count includes the server address and the
+URL-encoded dataset path, 169 characters here; a shorter data directory path gives shorter links.
 
 | View | Link length |
 |---|---|
-| Two cell plots ({doc}`focus-and-lock`) | 1,401 characters |
-| Two cell plots, a gene plot and a cell table filtered to 319 HSCs (the landing-page view) | 2,858 characters |
-| Same, table filtered to the 3,116 cells of Age = Old | 10,621 characters |
-| Same, table without a filter (8,090 rows) | 25,340 characters |
+| Two cell plots ({doc}`focus-and-lock`) | 1,472 characters |
+| Two cell plots, a gene plot and a cell table filtered to 319 HSCs (the landing-page view) | 1,826 characters |
+| Same, table filtered to the 3,116 cells of Age = Old | 1,825 characters |
+| Same, table without a filter (8,090 rows) | 1,741 characters |
 
-Plots add a few hundred characters each. Tables currently also store the row numbers that pass their
-filter, so a link with a large table grows with the number of rows. Links of tens of thousands of
-characters still open in current browsers, but chat tools and e-mail clients may cut them. For
-large tables, filter the table first, or save a {doc}`panel set <panel-sets>` instead.
+A link stores each table's filter conditions, not the rows that pass them, so its length does
+not depend on how many rows a table shows. Plots add a few hundred characters each.
 
 ## Open a link
 
 Paste the link into the address bar of a browser that can reach the server (and log in if the server
-asks). AnnZarro opens the dataset, applies the focus and rebuilds the layout. A link takes
+asks). Links work the same when the server runs under a path prefix behind a proxy (for example
+`https://lab.example.org/annzarro/?dataset_path=…`). AnnZarro opens the dataset, applies the focus and rebuilds the layout. A link takes
 precedence over the panels autosaved in that browser. Opening a second link in the same tab
 reloads the page and applies the new view.
 

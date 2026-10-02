@@ -104,7 +104,8 @@
      "column": ""
     },
     "pointSize": 4,
-    "pointOpacity": 1
+    "pointOpacity": 1,
+    "equalAspect": true
    },
    "cell-plot-SG": {
     "id": "cell-plot-SG",
@@ -128,6 +129,7 @@
     },
     "pointSize": 4,
     "pointOpacity": 1,
+    "equalAspect": true,
     "colorScale": "Viridis"
    },
    "cell-plot-SK": {
@@ -152,6 +154,7 @@
     },
     "pointSize": 4,
     "pointOpacity": 1,
+    "equalAspect": true,
     "colorScale": "Blues",
     "colorReversed": true
    },

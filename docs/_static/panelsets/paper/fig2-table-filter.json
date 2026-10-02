@@ -1,6 +1,6 @@
 {
   "name": "fig2-table-filter",
-  "timestamp": "2026-10-02T19:43:11+00:00",
+  "timestamp": "2026-10-02T21:33:48+00:00",
   "dataset": "bm_aging.zarr",
   "datasetName": "bm_aging",
   "constants": {
@@ -101,6 +101,132 @@
         "hideNonSubset": false
       },
       "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "focusedGene": "S100a9",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 45,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 55,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "cell-table-E1",
+              "controlsVisible": false
+            },
+            {
+              "type": "tile",
+              "id": "cell-plot-E2",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "cell-table-E1": false,
+        "cell-plot-E2": false
+      },
+      "panelConfigs": {
+        "cell-table-E1": {
+          "id": "cell-table-E1",
+          "title": "HSC with DA z-score > 2",
+          "columns": [
+            {
+              "type": "obs",
+              "key": "highres_celltype",
+              "column": ""
+            },
+            {
+              "type": "obs",
+              "key": "kompot_da_Young_to_Old_lfc_zscore",
+              "column": ""
+            },
+            {
+              "type": "obs",
+              "key": "Age",
+              "column": ""
+            }
+          ],
+          "searchBuilderConfig": {
+            "criteria": [
+              {
+                "condition": "=",
+                "data": "highres_celltype",
+                "origData": "obs_highres_celltype_main",
+                "type": "string",
+                "value": [
+                  "HSC"
+                ]
+              },
+              {
+                "condition": ">",
+                "data": "kompot_da_Young_to_Old_lfc_zscore",
+                "origData": "obs_kompot_da_Young_to_Old_lfc_zscore_main",
+                "type": "num",
+                "value": [
+                  "2"
+                ]
+              }
+            ],
+            "logic": "AND"
+          }
+        },
+        "cell-plot-E2": {
+          "id": "cell-plot-E2",
+          "title": "UMAP masked by the table filter",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obs",
+            "key": "kompot_da_Young_to_Old_lfc_zscore",
+            "column": ""
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorScale": "RdBu",
+          "centeringActive": true,
+          "tableFilter": "cell-table-E1",
+          "hideNonSubset": false
+        }
+      }
     }
   }
 }

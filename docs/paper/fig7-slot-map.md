@@ -12,9 +12,8 @@ selects one row (blue) of every cell-indexed array; a click on a gene selects on
 Every view reads one AnnData slot, and each click reads one slice of it. What to store in
 each slot, and what the demonstration store contains, is in {doc}`../data/slot-map`. Choosing
 a slot for a plot's axes or colour (the type, key and column dropdowns) is in
-{doc}`../user-guide/cell-and-gene-plots`. One limitation is not visible in the figure: the
-`layer` dropdown lists only the arrays under `layers/`, so values stored only in `X` cannot be
-shown in a plot; copy them into a layer when writing the store.
+{doc}`../user-guide/cell-and-gene-plots`. The `layer` type lists `X` first, then the arrays
+under `layers/`, so the main matrix is a source like any layer.
 
 The panels below put each slot on screen once on `bm_aging.zarr`, with the focused cell
 `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` and the focused gene `H2-Q7`. The settings of each are in
@@ -48,7 +47,7 @@ Color `obs` `kompot_da_Young_to_Old_lfc`.
 :class: screenshot
 :alt: UMAP in grey with a blue patch around the focused stem cell.
 
-**obsp row.** Color `obsp` `diffusion_walk_t5`, "Focused cell to …": the focused cell's row.
+**obsp row.** Color `obsp` `diffusion_walk_t5`, "Focused cell …": the focused cell's row.
 ```
 :::
 
@@ -87,7 +86,7 @@ outside the PCA have zero loadings and sit at the origin.
 :class: screenshot
 :alt: Kompot volcano coloured by Spearman correlation to H2-Q7.
 
-**varp row.** Color `varp` `spearman_fold_change`, "Focused gene to H2-Q7", range locked at
+**varp row.** Color `varp` `spearman_fold_change`, "Focused gene H2-Q7", range locked at
 −1 to 1.
 ```
 :::

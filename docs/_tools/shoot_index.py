@@ -18,5 +18,10 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=8810)
     a = ap.parse_args()
     with Session(a.port, HERE.parent / "_static" / "screens" / "index") as s:
-        page = s.open(VIEW)
+        # Taller than the default so the HSC table shows rows below its SearchBuilder.
+        page = s.open(VIEW, viewport={"width": 1600, "height": 1250})
         s.shot(page, "overview")
+    from PIL import Image
+    png = HERE.parent / "_static" / "screens" / "index" / "overview.png"
+    if png.stat().st_size > 400_000:     # keep the landing image under ~400 KB
+        Image.open(png).convert("RGB").quantize(256, method=Image.Quantize.MEDIANCUT).save(png, optimize=True)

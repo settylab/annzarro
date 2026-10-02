@@ -26,12 +26,13 @@ The focused cell is drawn as a larger red dot with a black ring in every cell pl
 ## Hover, then click to focus
 
 1. Move the pointer over a point in the left plot. A label shows the cell name, its x and y
-   values, and its colour value `c`.
+   values, its colour value `c`, and the columns listed in the panel's hover settings (here
+   `highres_celltype` and `Age`). Numbers are shown to 4 significant digits.
 
    ```{figure} ../_static/screens/user-guide/focus-hover.png
    :class: screenshot
    :width: 70%
-   :alt: The diffusion walk UMAP with a hover label over a cell showing its name, x, y and c values.
+   :alt: The diffusion walk UMAP with a hover label over a cell showing its name, x 12.23, y 3.241, c 3.348e-8, highres_celltype GMP and Age Old.
 
    Hover label in a cell plot.
    ```
@@ -50,8 +51,11 @@ The focused cell is drawn as a larger red dot with a black ring in every cell pl
 3. The right plot keeps its colours, because the fold change depends on the focused gene, not the
    focused cell; only its focus marker moves.
 
-Clicking a point in a **gene plot** focuses that gene in the same way, and clicking a gene or cell
-name in a table does too ({doc}`tables-and-filters`).
+A click picks the point nearest to the pointer. Where points overlap, clicking the same spot again
+steps to the next point under the pointer, so every cell in a dense patch can be reached (here, a
+second and third click at the same place focused two other cells). Clicking a point in a **gene
+plot** focuses that gene in the same way, and clicking a gene or cell name in a table does too
+({doc}`tables-and-filters`).
 
 ```{admonition} What happens on the server
 :class: note
@@ -82,9 +86,11 @@ buttons to the right of its third drop-down: a **lock** and, while locked, a **r
 crosshair.
 
 1. Open the left panel's controls with its **Toggle Controls** chevron.
-2. In the **Color** row, the third drop-down reads "Focused cell to HSPC_Old_1#…". Click the open
+2. In the **Color** row, the third drop-down reads "Focused cell HSPC_Old_1#…". Click the open
    padlock (2) to the right of it. It turns blue and closed: the panel is now locked to that cell's
-   row.
+   row. The drop-down then names the locked cell, "Locked cell HSPC_Old_1#…" (in this version the
+   new wording appears once the panel is rebuilt, for example when the view is reopened from a
+   panel set or share link; right after the click it still reads "Focused cell …").
 
    ```{figure} ../_static/screens/user-guide/focus-lock-button.png
    :class: screenshot
@@ -94,11 +100,11 @@ crosshair.
    ```
 
 3. Click **Next cell** in the header (or click any other cell). The focused cell changes and the
-   right panel's marker moves, but the locked panel keeps the HSC's walk.
+   focus marker moves to the GMP in both panels, but the locked panel keeps the HSC's walk.
 
    ```{figure} ../_static/screens/user-guide/focus-locked.png
    :class: screenshot
-   :alt: Left, the HSC's walk stays near the HSC; right, the fold change UMAP with the focus marker on the GMP.
+   :alt: Left, the HSC's walk stays near the HSC while the focus marker sits on the GMP above it; right, the fold change UMAP with the focus marker on the GMP.
 
    The left panel stays on the HSC while the focus is on the GMP.
    ```
@@ -117,11 +123,8 @@ crosshair.
    the panel stays locked. To make the panel follow the focus again, click the lock to open it;
    the panel then redraws for the current focused cell.
 
-```{note}
-In a locked obsp panel the red focus marker stays on the locked cell when the focus moves (the
-left plot above marks the HSC while the focused cell is the GMP). In unlocked panels the marker
-follows the focused cell.
-```
+The red focus marker always marks the focused cell, in locked and unlocked panels alike; the
+locked cell is named in the drop-down and in the colour bar title.
 
 ```{admonition} What happens on the server
 :class: note
@@ -148,8 +151,8 @@ Left: locked to H2-Q7. Right: follows the focused gene (S100a9). Same scale.
 To build it yourself:
 
 1. Make a cell plot coloured by `layer` → `kompot_de_Young_to_Old_fold_change` → "Focused gene".
-2. In its tile header, close the panel, then click its card under **Duplicate or Reopen Panel**
-   to make a copy (or set up a second panel the same way).
+2. Click **Split side by side** in its tile header, then click the panel's card under
+   **Duplicate or Reopen Panel** in the new pane to make a copy.
 3. In the first panel, click the lock in the Color row.
 4. In both panels, type `-1` in **Min** and `1` in **Max** and click **Lock Range**.
 5. Pick another gene in the header: only the unlocked panel changes.

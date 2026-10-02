@@ -47,15 +47,16 @@ Hover labels and table filters check most statements; offline ones are marked. S
   do not.
 - **Labels.** The paper labels the top partners next to their points. AnnZarro has no text labels
   on plots; use hover labels or a sorted table.
-- **Drawing order.** The paper draws the strongest |ρ| on top and uses a smaller marker.
-  AnnZarro draws genes in store order, which hides some of H2-Q7's partners (Tapbpl, B2m) in the
-  dense core until you zoom.
+- **Drawing order and marker size.** Both draw the strongest |ρ| on top (AnnZarro's **Strong on
+  top**, on by default). The paper uses a smaller marker.
 - **Threshold line.** The dashed 5% FDR line in a and b is not drawn; the DE threshold is the
   smallest Mahalanobis distance of a DE gene, 5.82.
 - **Colour map.** AnnZarro's `RdBu` from −1 to 1 stands in for the paper's diverging map; both put
   positive ρ in red.
-- **Table columns.** A gene table cannot show a `varp` row in this version, so the checks use the
-  showcase columns `rho_fc_*` and `rho_smoothed_H2-Q7`.
+- **Table columns.** The checks use the showcase columns `rho_fc_*` and `rho_smoothed_H2-Q7`,
+  which hold the same values as H2-Q7's `varp` rows. A gene table can also show a `varp` row
+  directly (`spearman_fold_change: H2-Q7 (focused)` on its `varp` tab), but that column follows
+  the focused gene.
 
 ## Views
 
@@ -82,9 +83,8 @@ directory that holds the store; the path must be absolute):
 
 Panel sets: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`,
 {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
-{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. They were saved without the split
-layout that current panel sets store: loading one opens the dataset and the saved focus, with
-the panels in rows of two; the links restore the exact layout ({doc}`../user-guide/panel-sets`).
+{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. Loading one restores the dataset, the
+focus and the split layout, like the links ({doc}`../user-guide/panel-sets`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
 `figures/numbers/fig3.json` of the paper repository.

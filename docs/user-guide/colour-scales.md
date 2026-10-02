@@ -2,16 +2,16 @@
 
 When a plot is coloured by numbers (an expression value, a fold change, a kernel row), the colour
 map and its range decide what you see. This page covers the colour map, the Min and Max of the
-range, centring at zero, reversing, locking a range so that two panels or two focus states share
-one scale, and what happens to values outside the range and to missing values. Categorical colour
+range, centring at zero, reversing, a log scale, drawing order, locking a range so that two
+panels or two focus states share one scale, and what happens to values outside the range and to
+missing values. Categorical colour
 is covered in {doc}`cell-and-gene-plots`.
 
 The numerical colour controls appear in a panel's controls once its colour is numerical.
 
 ```{figure} ../_static/screens/user-guide/colour-controls.png
 :class: screenshot
-:width: 70%
-:alt: Numerical colour controls with eight numbered parts: Color Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse Colormap, Lock Range, Hide Outliers, Hide NaN.
+:alt: Numerical colour controls with twelve numbered parts: Color Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse Colormap, Lock Range, Hide Outliers, Hide NaN, Equal aspect, Strong on top, Log and the floor box.
 
 Numerical colour controls of the fold-change panel.
 ```
@@ -28,11 +28,15 @@ Numerical colour controls of the fold-change panel.
 6. **Lock Range** keeps Min and Max fixed when the data change.
 7. **Hide Outliers** removes points whose value lies outside Min to Max.
 8. **Hide NaN** removes points with no value.
+9. **Equal aspect** gives x and y the same scale ({doc}`spatial-coordinates`).
+10. **Strong on top** (on by default) draws the points with the largest absolute colour value
+    last, so they are not hidden under weaker ones.
+11. **Log** switches to a log10 colour scale.
+12. **floor** is the smallest value the log scale shows; empty means the smallest positive value
+    in the data.
 
-```{note}
-The Min and Max boxes show two decimals. For small values such as kernel rows (0 to 0.0046) they
-read 0.00 even though the range in use is exact. Type a value with more decimals to set it.
-```
+The Min and Max boxes show 3 significant digits (0.0126, −1.03), and a value you type is used
+exactly as typed: typing `0.004` in **Max** sets the colour bar's top to 0.004.
 
 ## Sequential or diverging
 
@@ -77,8 +81,8 @@ colours. Right: the same range with Hide Outliers.
 
 With **Hide Outliers** on, the right panel draws only the 1,550 of 8,090 cells whose fold change
 lies between −0.25 and 0.25. The panel says so in a notice above the plot, and the **Removed
-Datapoints** box in its lower left corner counts the removed points per reason (here 6,540 colour
-outliers, 81 %). The axes rescale to the remaining points. The view is
+Datapoints** box in its lower left corner counts the removed points (here 6,540, 81 %). The axes
+keep the range of all cells, so the panel lines up with the others. The view is
 {download}`userguide-colour-range.json <../_tools/views/userguide-colour-range.json>`.
 
 ## Two panels on one scale
@@ -95,6 +99,37 @@ compare Young and Old. There is no control that ties two panels' ranges together
 they are saved with the panel in panel sets and share links (`colorMin`, `colorMax`,
 `lockColorRange`).
 
+## Log scale
+
+Kernel rows, transition probabilities and counts often span several orders of magnitude; on a
+linear scale everything but the top decade is one colour. Click **Log** to colour by log10 of the
+value. Values at or below the **floor** (including zeros) take the floor's colour. Type a floor,
+for example `1e-5`, or leave the box empty to use the smallest positive value.
+
+```{figure} ../_static/screens/user-guide/colour-log.png
+:class: screenshot
+:alt: The HSC's diffusion walk row in Viridis. Left, linear: only a small patch near the HSC is not dark purple. Right, log with floor 1e-5: the walk's reach spreads in green and blue over the progenitor region, the colour bar runs from 1e-5 to 0.01.
+
+The same diffusion walk row, linear (left) and log with floor 1e-5 (right). View:
+{download}`userguide-colour-log.json <../_tools/views/userguide-colour-log.json>`.
+```
+
+## Drawing order: Strong on top
+
+Points are drawn one over the other, so in a dense plot the last drawn decide what you see. With
+**Strong on top** on (the default), AnnZarro draws the points with the largest absolute colour
+value last. In the volcano plot below, the genes most correlated or anticorrelated with H2-Q7 sit
+on top of the weakly correlated mass; with it off, the points are drawn in data order and strong
+values are scattered under weak ones.
+
+```{figure} ../_static/screens/user-guide/colour-strong-on-top.png
+:class: screenshot
+:alt: Two volcano plots coloured by Spearman correlation with H2-Q7. Left, Strong on top off: the dense centre is a mix of pale colours. Right, Strong on top on: saturated red and blue genes are visible on top of the centre.
+
+Strong on top off (left) and on (right). View:
+{download}`userguide-colour-strong-on-top.json <../_tools/views/userguide-colour-strong-on-top.json>`.
+```
+
 ## Grey points and missing values
 
 Several things can make a point grey, and they mean different things:
@@ -106,6 +141,7 @@ Several things can make a point grey, and they mean different things:
 | Flat grey `rgb(180, 180, 180)`, no colour bar entry | the point is not in the linked table ({doc}`tables-and-filters`) |
 | Uniform grey `rgb(150, 150, 150)` | the colour is **None (constant)** |
 | Dark grey `#444` in a numerical colour | the value is missing (NaN); Plotly draws missing colour values in this grey |
+| Light grey under an **NA** legend entry | a missing value in a categorical colour ({doc}`cell-and-gene-plots`) |
 
 Points whose **x** or **y** value is missing are never drawn; the **Removed Datapoints** box counts
 them as "X-axis NaN" or "Y-axis NaN". Points with a missing **colour** value stay in the plot in
@@ -120,6 +156,6 @@ both grey.
 
 ```{admonition} What happens on the server
 :class: note
-None of these controls send a request. Colour map, range, centring, reversing, locking and
-hiding all work on the vector the browser already holds.
+None of these controls send a request. Colour map, range, centring, reversing, log scale,
+drawing order, locking and hiding all work on the vector the browser already holds.
 ```
