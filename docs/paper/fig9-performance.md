@@ -54,7 +54,9 @@ The published run used Python 3.11, anndata 0.12.19, zarr 3.1.6, numcodecs 0.16.
 3.1.3, psutil and requests, with AnnZarro installed editable from a checkout at commit
 `63b57e6` (`results/environment.json` lists every version). The harness starts the server as
 `python -m annzarro.server` with `ANNZARRO_HEADLESS=1`, the same Flask app that
-`annzarro start` runs. The cold condition clones each store with `cp -c` (an APFS clone), so
+`annzarro start` runs. `run_benchmark.py env` records the commit of the AnnZarro checkout
+in `ANNZARRO_REPO` (default: `annzarro/` next to the paper repository); set it if your checkout
+lives elsewhere. The cold condition clones each store with `cp -c` (an APFS clone), so
 it is written for macOS.
 
 ### A small run (verified)
@@ -134,8 +136,8 @@ git archive origin/dominik/hpc-bench benchmark/hpc/results | tar -x -C /tmp/hpc
 
 It takes about 2 s and overwrites `manuscript/figures/fig6_performance.{pdf,png}`,
 `figS_chunk_sweep` and `figS_interactions`; rebuilding from the committed CSVs gives
-byte-identical PNGs. The script reads the laptop CSVs from an absolute path (the
-`REPO` constant at the top of the script); edit it if your clone lives elsewhere.
+byte-identical PNGs. It reads the laptop CSVs from `benchmark/results/` of the clone it
+sits in.
 
 ## Measuring a click in your own browser
 
