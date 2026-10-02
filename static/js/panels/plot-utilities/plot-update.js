@@ -1077,38 +1077,37 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
     trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
   
-  // To avoid any layout disruption, use different approach based on whether highlight exists
+  // Plotly reports a degenerate plot area (a panel squeezed to nothing,
+  // e.g. while a restored layout is still sizing itself) by THROWING from
+  // update/relayout, synchronously or from the returned promise. Inside a
+  // focus-change handler that surfaced as an unhandled promise rejection on
+  // every focus change. The highlight is cosmetic: log it and move on; the
+  // next resize or focus change redraws it.
+  const settle = (what, run) => Promise.resolve()
+    .then(run)
+    .catch(error => console.warn(`Focused-${entityType === 'cells' ? 'cell' : 'gene'} highlight ${what} skipped:`, error && error.message ? error.message : error));
+
   if (existingIdx >= 0) {
-    // We have a highlight trace already - use a one-step update operation
-    // that updates JUST the trace data while preserving layout exactly
-    const update = {
-      // Trace data updates
-      'x': [highlightTrace.x],
-      'y': [highlightTrace.y]
-    };
-    
-    // For 3D plots, include z coordinates
-    if (is3D) {
-      update.z = [highlightTrace.z];
-    }
-    
-    // Only update the focused trace
-    const indices = [existingIdx];
-    
-    // Preserve the entire existing layout - don't modify anything
-    Plotly.update(plotContainer, update, currentLayout, indices);
-  } else {
-    // No existing highlight trace - first add one, then restore layout completely
-    Plotly.addTraces(plotContainer, highlightTrace)
-      .then(() => {
-        if (currentLayout) {
-          // Restore the ENTIRE layout to maintain all settings exactly as they were
-          currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
-          currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
-          Plotly.relayout(plotContainer, currentLayout);
-        }
-      });
+    // Move the existing highlight marker. restyle touches only that trace;
+    // the layout is unchanged, so it is not re-sent (re-sending a deep copy
+    // of it is what made Plotly redo the axis scaling here).
+    const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
+    if (is3D) update.z = [highlightTrace.z];
+    return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
   }
+
+  // No highlight trace yet: add one, then put back the view the user had
+  // (adding a trace must not reset zoom), with the configured axis titles.
+  return settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
+    if (!currentLayout) return undefined;
+    if (currentLayout.xaxis && currentLayout.xaxis.title) {
+      currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
+    }
+    if (currentLayout.yaxis && currentLayout.yaxis.title) {
+      currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
+    }
+    return Plotly.relayout(plotContainer, currentLayout);
+  }));
 }
 
 

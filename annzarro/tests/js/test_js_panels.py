@@ -24,6 +24,9 @@ SUITES = {
     "table-listeners.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "listeners.js"
     ),
+    "focus-highlight.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-update.js"
+    ),
     "name-picker.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "name-picker.js"),
     "panel-axis-selector.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
