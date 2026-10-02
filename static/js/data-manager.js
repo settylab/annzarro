@@ -310,7 +310,14 @@ const DataManager = (function() {
             info = await _fetchWithCache(Config.API.SUBSET,
                 { dataset_path: datasetPath, subset: param }, signal);
         } catch (error) {
-            if (request === 'auto' || (error && error.name === 'AbortError')) throw error;
+            if (error && error.name === 'AbortError') throw error;
+            if (request === 'auto') {
+                // A server that cannot say (an older one without the route)
+                // serves every cell, as before subsets existed.
+                console.warn('No cell subset information; showing every cell:', error);
+                _subsetReply = null;
+                return null;
+            }
             // A link or panel set whose subset this dataset cannot apply (a
             // column it lacks) still opens, on the default, and says so.
             notify('Cell subset not applied',
