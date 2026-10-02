@@ -275,9 +275,15 @@ const App = (function() {
         //    and dataset info populate exactly as a manual selection would.
         await _loadDataset(datasetPath);
 
-        // Reflect the selection in the dataset dropdown if the option exists.
+        // Reflect the selection in the dataset dropdown. A dataset that is not
+        // in the listing (a remote URL, a path outside the data directory) gets
+        // its own option; otherwise the picker showed its placeholder.
         const datasetSelector = document.getElementById('dataset-selector');
         if (datasetSelector) {
+            if (DataManager.getCurrentDataset() === datasetPath &&
+                ![...datasetSelector.options].some(o => o.value === datasetPath)) {
+                datasetSelector.appendChild(new Option(datasetPath, datasetPath));
+            }
             datasetSelector.value = datasetPath;
             if (window.$ && $.fn.select2) {
                 $(datasetSelector).trigger('change.select2');
