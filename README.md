@@ -97,6 +97,10 @@ server.
   the file) and to **admins** (`user add --admin`). Sets saved before owners
   were recorded can only be changed by an admin.
 - **Without login** (local, single-user) there are no restrictions.
+- **Panel sets from before owners were recorded** stay admin-only until an
+  admin hands them to someone: while logged in as an admin,
+  `POST /api/v1/sessions/owner` with `{"name": "<set>", "owner": "<user>"}`
+  (the owner must be an existing user; this also reassigns any other set).
 
 ### Desktop Application
 

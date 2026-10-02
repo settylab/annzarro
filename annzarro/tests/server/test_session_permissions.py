@@ -220,6 +220,39 @@ def test_unparseable_set_is_not_treated_as_absent(app):
     assert _save(_client(app, "alice"), "broken").status_code == 403
 
 
+def test_admin_can_hand_a_legacy_set_to_its_owner(app):
+    _write_legacy(app, "old")
+    root = _client(app, "root")
+    resp = root.post(f"{API}/owner", json={"name": "old", "owner": "alice"})
+    assert resp.status_code == 200
+    assert resp.get_json()["previous_owner"] is None
+    stored = _stored(app, "old")
+    assert stored["owner"] == "alice"
+    assert stored["created_at"] == "2025-01-01T00:00:00", "creation time comes from the legacy timestamp"
+
+    alice = _client(app, "alice")
+    listed = {s["name"]: s for s in alice.get(f"{API}/list").get_json()}
+    assert listed["old"]["can_modify"] is True
+    assert alice.delete(f"{API}/delete?name=old").status_code == 200
+
+
+def test_only_admins_assign_owners(app):
+    _write_legacy(app, "old")
+    resp = _client(app, "alice").post(f"{API}/owner", json={"name": "old", "owner": "alice"})
+    assert resp.status_code == 403 and resp.get_json()["reason"] == "admin_only"
+    assert _stored(app, "old").get("owner") is None
+
+    root = _client(app, "root")
+    assert root.post(f"{API}/owner", json={"name": "old", "owner": "nobody"}).status_code == 400
+    assert root.post(f"{API}/owner", json={"name": "missing", "owner": "alice"}).status_code == 404
+
+
+def test_owner_assignment_needs_login(open_app):
+    _write_legacy(open_app, "old")
+    resp = _client(open_app).post(f"{API}/owner", json={"name": "old", "owner": "alice"})
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "auth_disabled"
+
+
 # --- auth disabled: single local user, unchanged behaviour -------------------
 
 def test_auth_disabled_allows_everything(open_app):

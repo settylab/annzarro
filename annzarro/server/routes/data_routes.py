@@ -1623,6 +1623,74 @@ def register_data_routes(app, api_version):
             logger.error(f"Error renaming session: {e}")
             return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
     
+    @app.route(f"/api/{api_version}/sessions/owner", methods=["POST"])
+    def set_session_owner():
+        """
+        Assign a panel set to a user. Admins only.
+
+        This is how a set saved before owners were recorded -- admin-only to
+        change until then -- is handed back to the person who made it. It can
+        also reassign any set, e.g. when someone leaves.
+
+        Expected JSON input:
+        {
+            "name": "Session name",
+            "owner": "existing username"
+        }
+
+        Returns:
+            JSON response with the updated owner
+        """
+        if not permissions.auth_enabled():
+            return jsonify({
+                "error": "Owners only matter when login is enabled; this server runs without login.",
+                "reason": "auth_disabled",
+            }), 400
+        _, is_admin = permissions.current_user()
+        if not is_admin:
+            return jsonify({
+                "error": "Only an admin can assign a panel set's owner.",
+                "reason": "admin_only",
+            }), 403
+
+        data = request.json or {}
+        name = data.get("name")
+        owner = data.get("owner")
+        if not name or not owner:
+            return jsonify({"error": "Both name and owner are required"}), 400
+        if app.auth_manager.get_user(owner) is None:
+            return jsonify({"error": f"No such user: {owner}", "reason": "unknown_user"}), 400
+
+        try:
+            sessions_dir = _get_sessions_dir()
+            sanitized_name = _sanitize_session_name(name)
+            file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            if not _is_safe_session_path(file_path, sessions_dir):
+                return jsonify({"error": "Invalid session name"}), 400
+            existing = _read_stored_session(file_path)
+            if existing is None:
+                return jsonify({"error": f"Session not found: {name}"}), 404
+            if not existing and os.path.getsize(file_path) > 0:
+                return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
+
+            previous = existing.get("owner")
+            permissions.stamp_session(existing, existing=dict(existing))
+            existing["owner"] = owner
+            with open(file_path, 'w') as f:
+                json.dump(existing, f, indent=2)
+            logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
+
+            return jsonify({
+                "status": "success",
+                "message": f"Panel set '{sanitized_name}' now belongs to {owner}",
+                "name": sanitized_name,
+                "owner": owner,
+                "previous_owner": previous,
+            })
+        except Exception as e:
+            logger.error(f"Error assigning session owner: {e}")
+            return jsonify({"error": f"Failed to assign owner: {str(e)}"}), 500
+
     @app.route(f"/api/{api_version}/sessions/duplicate", methods=["POST"])
     def duplicate_session():
         """
