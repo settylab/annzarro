@@ -116,3 +116,15 @@ def test_split_buttons_have_distinct_unambiguous_icons():
     v = re.search(r'<button[^>]*tile-split-v[^>]*>.*?</button>', html, re.S).group(0)
     assert "fa-rotate-90" not in v and "<svg" in h and "<svg" in v
     assert 'x1="8" y1="2" x2="8" y2="14"' in h and 'x1="2" y1="8" x2="14" y2="8"' in v
+
+
+def test_filter_box_lists_every_reason_above_the_plot():
+    """The Removed Datapoints box showed only 'Total' (its per-reason list was
+    shown on hover only) and sat on the x-axis labels. Headless on the docs'
+    colour-range view after: 'Color outliers: 6,540  Total: 6,540 (81%)',
+    in the margin above the plotting area, clear of the modebar."""
+    css = open(CSS, encoding="utf-8").read()
+    box = _rule(css, ".datapoint-filter-widget")
+    assert "top: 2px" in box and "bottom:" not in box
+    assert "display: none" not in _rule(css, ".datapoint-filter-widget .filter-stats-list")
+    assert ".datapoint-filter-widget:hover .filter-stats-list" not in css
