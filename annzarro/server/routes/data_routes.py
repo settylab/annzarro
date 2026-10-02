@@ -51,6 +51,15 @@ def _listing_signature(entry_path):
     return tuple(parts)
 
 
+def _listdir(path):
+    """Entries of ``path``, or none when it cannot be read."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError as exc:
+        logger.warning(f"Error listing directory {path}: {exc}")
+        return []
+
+
 def _probe_dataset_counts(entry_path, probe):
     """
     (cells, genes) for a listing entry, None if it is not a readable
@@ -1241,18 +1250,22 @@ def register_data_routes(app, api_version):
             # Get data directory from config
             data_dir = app.config.get("data_dir")
             
-            # Only search in the "datasets" subdirectory if it exists
+            # The top level of data_dir AND its datasets/ subdirectory (the
+            # desktop app creates one). Listing only datasets/ whenever it
+            # existed hid every store placed directly in the data directory.
             datasets_dir = os.path.join(data_dir, "datasets")
-            if not os.path.exists(datasets_dir) or not os.path.isdir(datasets_dir):
-                datasets_dir = data_dir
+            search = [(data_dir, entry) for entry in _listdir(data_dir)
+                      if entry not in ("datasets", "sessions")]
+            if os.path.isdir(datasets_dir):
+                search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
             # List for storing zarr datasets
             zarr_stores = []
             
             try:
-                # Only search the first level of the datasets directory
-                for entry in os.listdir(datasets_dir):
-                    entry_path = os.path.join(datasets_dir, entry)
+                # Only the first level of each directory
+                for parent, entry in search:
+                    entry_path = os.path.join(parent, entry)
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
