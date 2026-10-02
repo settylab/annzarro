@@ -18,6 +18,7 @@ from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
 from .. import permissions
+from ...core.array_response import wants_binary
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -281,7 +282,8 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
+            return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str),
+                                          binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -329,7 +331,8 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
+            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str),
+                                              binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -378,7 +381,8 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells")
+            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells",
+                                                binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -426,7 +430,8 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes")
+            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes",
+                                                binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -479,7 +484,8 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells")
+            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells",
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
         
@@ -533,7 +539,8 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes")
+            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes",
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -581,7 +588,8 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
+            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str),
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -629,7 +637,8 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
+            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str),
+                                                  binary=wants_binary(request.args))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
              
