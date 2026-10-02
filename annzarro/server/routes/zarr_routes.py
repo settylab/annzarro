@@ -53,7 +53,23 @@ def register_zarr_routes(app, api_version):
         
         Returns:
             JSON response with cache reset result
+
+        On a hosted server only an admin may do this: the cache is shared by
+        every user, and emptying it on demand makes every open session re-read
+        its data from disk. A hosted server with login disabled has no admins,
+        so nobody may (restart it to empty the cache). The frontend's refresh
+        button tolerates the 403.
         """
+        from ..confinement import is_hosted
+        from .. import permissions
+        if is_hosted(app.config):
+            _, is_admin = permissions.current_user()
+            if not is_admin:
+                return jsonify({
+                    "status": "error",
+                    "reason": "admin_only",
+                    "message": "Only an admin can reset the shared cache on this server.",
+                }), 403
         try:
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
