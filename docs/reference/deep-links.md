@@ -75,6 +75,9 @@ companion repository `settylab/annzarro-paper`. The docs' screenshot views are i
     "taxonomyId":   "tax-1"
   },
 
+  // the cells every panel shows, optional (see "Cell subset" below)
+  "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default
+
   // PREFERRED: a full layout tree
   "layout": {                      // exactly what PanelManager.saveLayout() emits
     "v": 1,
@@ -92,6 +95,16 @@ companion repository `settylab/annzarro-paper`. The docs' screenshot views are i
 
 A link carries **`layout` or `panels`** (or neither). If both are present, `layout` wins;
 `panels` is the simple shorthand. `normalizeView` enforces this and stamps `v`.
+
+`subset` names the cells every panel shows: `{n, seed, balance?, where?}`. `n` is the number
+of cells, or `null` for every cell that passes `where`; `balance` is an obs column to sample
+evenly across; `where` is a list of conditions on obs columns (see
+`static/js/utils/subset.js`). The same spec always names the same cells, on any machine, and a
+larger `n` only adds cells. A share link records the subset whenever one is shown, and
+`null` when every cell of a dataset above the subset threshold is shown. A link without
+`subset` opens on the server's default (a 100,000-cell subset above 200,000 cells, otherwise
+every cell); a malformed one is dropped, so the link still opens. A hand-written link can ask
+for a subset of an atlas directly, e.g. `"subset": {"n": 50000, "seed": 1, "balance": "batch"}`.
 
 `focusedCell` and `focusedGene` are names (`obs_names`, `var_names`), not indices. Cell names
 may contain `#` (the demonstration data's do); inside the base64 payload that is harmless.
@@ -164,7 +177,7 @@ Encode, decode, normalize and the URL parse/build helpers live in
 `parseDeepLinkLocation`, `buildDeepLinkUrl`): a pure, isomorphic module imported by both the
 browser entry point (`main.js`) and the Node guard (`annzarro/tests/js/deeplink.test.mjs`, run
 with `node --test annzarro/tests/js/deeplink.test.mjs` or via the pytest wrapper
-`annzarro/tests/js/test_js_deeplink.py`). There is exactly one encoder and one decoder; the
+`annzarro/tests/js/test_js_suites.py`). There is exactly one encoder and one decoder; the
 browser and the tests cannot drift.
 
 ## Why one serialization, not two

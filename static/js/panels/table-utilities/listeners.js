@@ -3,7 +3,7 @@
  * This file contains functions to set up event listeners for table panels
  */
 import { DataManager } from '../../data-manager.js';
-import { exportTableToCsv, updateTableOnFocusChange } from './table-data.js';
+import { exportTableToCsv, updateTableOnFocusChange, refreshColumnChooser } from './table-data.js';
 
 /**
  * Set up event listeners for table panels
@@ -57,6 +57,16 @@ export function setupTableEventListeners({
         });
     }
     
+    // A plot locked or unlocked an axis on a cell or gene, or a panel closed:
+    // the chooser offers every locked entity, so list them again. The table's
+    // data does not change.
+    if (entityType === 'cells' || entityType === 'genes') {
+        document.addEventListener('fixedEntitiesChanged', () => {
+            refreshColumnChooser(settings, entityType).catch(error =>
+                console.error(`Table ${id}: refreshing the column chooser failed:`, error));
+        }, { signal });
+    }
+
     // Return a cleanup function that can be called when refreshing the table
     return function cleanupListeners() {
         controller.abort();

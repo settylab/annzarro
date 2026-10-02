@@ -73,6 +73,18 @@ const LayoutManager = (function() {
      * @returns {Object} - A layout node representing this element and its children
      */
     function buildLayoutHierarchy(element) {
+        // A panel made from a selection tile (the welcome screen's "Cell Plot",
+        // or a pane's chooser) sits in a sized .panel-wrapper. This walk did not
+        // know that element, so the panel was left out and a share link or panel
+        // set made right after held only {type: 'selector'}: the opened link
+        // showed the welcome screen.
+        if (element.classList.contains('panel-wrapper') || (element.dataset && element.dataset.panelWrapper === 'true')) {
+            // its content: the panel's tile, or the split it was turned into
+            const child = [...element.children].find(c =>
+                c.classList.contains('split-container') || c.classList.contains('tile'));
+            return child ? buildLayoutHierarchy(child) : null;
+        }
+
         // Base case: element is a tile
         if (element.classList.contains('tile')) {
             const id = element.dataset.tileId;
@@ -694,8 +706,20 @@ const LayoutManager = (function() {
         const panel = createPanelCallback(panelType, panelConfig, panelElement);
         const panelId = panel.getId();
         
-        // Add ID to elements for tracking
-        panelElement.dataset.tileId = panelId;
+        // createPanel built its own .tile inside panelElement, so the page had
+        // two nested .tile elements with the same data-tile-id (queries found
+        // the outer one, which has no header of its own). Put the panel's tile
+        // in the host's place.
+        const innerTile = [...panelElement.children].find(c => c.classList && c.classList.contains('tile'));
+        if (innerTile) {
+            innerTile.style.width = '100%';
+            innerTile.style.height = '100%';
+            if (panelElement.dataset.isInSplitPane) innerTile.dataset.isInSplitPane = panelElement.dataset.isInSplitPane;
+            panelWrapper.replaceChild(innerTile, panelElement);
+        } else {
+            panelElement.dataset.tileId = panelId;
+        }
+        const placed = innerTile || panelElement;
         panelWrapper.dataset.wrapperId = panelId;
         
         // Store a link to the split container's parent wrapper if applicable
@@ -703,8 +727,8 @@ const LayoutManager = (function() {
             const splitContainer = container.closest('.split-container');
             if (splitContainer && splitContainer.dataset.parentWrapperId) {
                 // Store the parent wrapper ID directly on the panel element
-                panelElement.dataset.parentWrapperId = splitContainer.dataset.parentWrapperId;
-                console.log(`Panel's parent wrapper ID set to: ${panelElement.dataset.parentWrapperId}`);
+                placed.dataset.parentWrapperId = splitContainer.dataset.parentWrapperId;
+                console.log(`Panel's parent wrapper ID set to: ${placed.dataset.parentWrapperId}`);
             }
         }
         

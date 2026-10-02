@@ -184,6 +184,20 @@ test('an incomplete coverage produces a tagged, self-describing annotation', () 
     assert.equal(ann.showarrow, false);
 });
 
+test('the annotation sits above the plotting area, with room made for it', () => {
+    // At paper (0.01, 0.99), anchored top-left, it covered the top-left points.
+    const cov = Coverage.partial(3412, 75000, GAP.FILTERED, 'points with no x value',
+        { source: 'x-axis', unit: 'cells' });
+    const ann = coverageAnnotation(cov);
+    assert.equal(ann.yref, 'paper');
+    assert.ok(ann.y >= 1 && ann.yanchor === 'bottom', 'outside the plot, in the top margin');
+    const layout = withCoverageAnnotation({ margin: { t: 20, l: 40 } }, cov);
+    const lines = ann.text.split('<br>').length;
+    assert.ok(layout.margin.t >= 15 * lines, `top margin ${layout.margin.t} for ${lines} lines`);
+    assert.equal(layout.margin.l, 40, 'other margins kept');
+    assert.equal(withCoverageAnnotation({ margin: { t: 300 } }, cov).margin.t, 300, 'a larger margin is kept');
+});
+
 test('the annotation elides a long reason list rather than covering the plot', () => {
     let cov = Coverage.partial(1, 10, GAP.FILTERED, 'r1', { source: 's1', unit: 'cells' });
     for (const i of [2, 3, 4, 5]) cov = cov.withGap(GAP.FILTERED, `r${i}`, `s${i}`);

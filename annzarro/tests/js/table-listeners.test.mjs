@@ -1,3 +1,4 @@
+/* global document -- stubbed on globalThis below */
 /**
  * Table panels must not accumulate event listeners across refreshes.
  *

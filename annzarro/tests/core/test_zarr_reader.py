@@ -6,6 +6,8 @@ import tempfile
 import unittest
 import numpy as np
 import zarr
+
+from annzarro.tests import zarr_compat
 from unittest.mock import patch, MagicMock
 
 # For tests we use absolute imports to ensure we're testing the installed package
@@ -32,30 +34,30 @@ class TestZarrReader(unittest.TestCase):
     def create_test_zarr(self):
         """Create a test zarr archive."""
         # Create a new zarr store
-        root = zarr.open_group(self.zarr_path, mode='w')
+        root = zarr_compat.open_group(self.zarr_path)
         
         # Create X matrix
         X = np.random.rand(100, 50).astype('float32')
-        root.create_dataset('X', data=X)
+        zarr_compat.write_array(root, 'X', data=X)
         
         # Create obs
         obs_group = root.create_group('obs')
         cell_ids = np.array([f'cell_{i}' for i in range(100)])
-        obs_group.create_dataset('_index', data=cell_ids)
+        zarr_compat.write_array(obs_group, '_index', data=cell_ids)
         cell_types = np.array(['type_A'] * 50 + ['type_B'] * 50)
-        obs_group.create_dataset('cell_type', data=cell_types)
+        zarr_compat.write_array(obs_group, 'cell_type', data=cell_types)
         
         # Create var
         var_group = root.create_group('var')
         gene_ids = np.array([f'gene_{i}' for i in range(50)])
-        var_group.create_dataset('_index', data=gene_ids)
+        zarr_compat.write_array(var_group, '_index', data=gene_ids)
         gene_names = np.array([f'GENE_{i}' for i in range(50)])
-        var_group.create_dataset('gene_name', data=gene_names)
+        zarr_compat.write_array(var_group, 'gene_name', data=gene_names)
         
         # Create obsm with a standard matrix
         obsm_group = root.create_group('obsm')
         umap = np.random.rand(100, 2).astype('float32')
-        obsm_group.create_dataset('X_umap', data=umap)
+        zarr_compat.write_array(obsm_group, 'X_umap', data=umap)
         
         # Create a dataframe-encoded obsm matrix (like AbCapture in the aging.zarr dataset)
         df_obsm = obsm_group.create_group('cell_markers')
@@ -67,20 +69,20 @@ class TestZarrReader(unittest.TestCase):
         
         # Create index column
         index_group = df_obsm.create_group('_index')
-        index_group.create_dataset('0', data=cell_ids)
+        zarr_compat.write_array(index_group, '0', data=cell_ids)
         index_group.attrs['encoding-type'] = 'string-array'
         
         # Create data columns
         for col_name in ['CD4', 'CD8', 'CD19']:
             col_group = df_obsm.create_group(col_name)
             col_data = np.random.rand(100).astype('float32')
-            col_group.create_dataset('0', data=col_data)
+            zarr_compat.write_array(col_group, '0', data=col_data)
             col_group.attrs['encoding-type'] = 'array'
         
         # Create varm with a standard matrix
         varm_group = root.create_group('varm')
         pca_loadings = np.random.rand(50, 10).astype('float32')
-        varm_group.create_dataset('PCs', data=pca_loadings)
+        zarr_compat.write_array(varm_group, 'PCs', data=pca_loadings)
         
         # Create a dataframe-encoded varm matrix (like kompot_de_* in the aging.zarr dataset)
         df_varm = varm_group.create_group('differential_expression')
@@ -92,14 +94,14 @@ class TestZarrReader(unittest.TestCase):
         
         # Create index column
         index_group = df_varm.create_group('_index')
-        index_group.create_dataset('0', data=gene_ids)
+        zarr_compat.write_array(index_group, '0', data=gene_ids)
         index_group.attrs['encoding-type'] = 'string-array'
         
         # Create data columns with spaces in names
         for col_name in ['cell type A', 'cell type B', 'cell type C']:
             col_group = df_varm.create_group(col_name)
             col_data = np.random.rand(50).astype('float32')
-            col_group.create_dataset('0', data=col_data)
+            zarr_compat.write_array(col_group, '0', data=col_data)
             col_group.attrs['encoding-type'] = 'array'
         
         # Create obsp (observation-observation matrices)
@@ -107,25 +109,25 @@ class TestZarrReader(unittest.TestCase):
         # Create a connectivities matrix (sparse representation of cell-cell relationships)
         connectivities = np.random.rand(100, 100).astype('float32')
         np.fill_diagonal(connectivities, 1.0)  # Cells always connect to themselves
-        obsp_group.create_dataset('connectivities', data=connectivities)
+        zarr_compat.write_array(obsp_group, 'connectivities', data=connectivities)
         # Create a distances matrix
         distances = np.random.rand(100, 100).astype('float32')
         np.fill_diagonal(distances, 0.0)  # Distance to self is zero
-        obsp_group.create_dataset('distances', data=distances)
+        zarr_compat.write_array(obsp_group, 'distances', data=distances)
         
         # Create varp (variable-variable matrices)
         varp_group = root.create_group('varp')
         # Create a correlation matrix between genes
         correlation = np.random.rand(50, 50).astype('float32')
         np.fill_diagonal(correlation, 1.0)  # Self-correlation is 1
-        varp_group.create_dataset('correlation', data=correlation)
+        zarr_compat.write_array(varp_group, 'correlation', data=correlation)
         
         # Create layers group
         layers_group = root.create_group('layers')
         
         # Create a regular dense layer
         raw = np.random.rand(100, 50).astype('float32')
-        layers_group.create_dataset('raw', data=raw)
+        zarr_compat.write_array(layers_group, 'raw', data=raw)
         
         # 1. Create a CSR sparse matrix layer (Compressed Sparse Row)
         csr_group = layers_group.create_group('logged_counts')
@@ -145,9 +147,9 @@ class TestZarrReader(unittest.TestCase):
             indptr[i] = indptr[i-1] + nnz_per_row
         
         # Create the CSR components
-        csr_group.create_dataset('data', data=data)
-        csr_group.create_dataset('indices', data=indices)
-        csr_group.create_dataset('indptr', data=indptr)
+        zarr_compat.write_array(csr_group, 'data', data=data)
+        zarr_compat.write_array(csr_group, 'indices', data=indices)
+        zarr_compat.write_array(csr_group, 'indptr', data=indptr)
         
         # Set attributes for CSR sparse matrix
         csr_group.attrs['encoding-type'] = 'csr_matrix'
@@ -172,9 +174,9 @@ class TestZarrReader(unittest.TestCase):
             indptr[i] = indptr[i-1] + nnz_per_col
         
         # Create the CSC components
-        csc_group.create_dataset('data', data=data)
-        csc_group.create_dataset('indices', data=indices)
-        csc_group.create_dataset('indptr', data=indptr)
+        zarr_compat.write_array(csc_group, 'data', data=data)
+        zarr_compat.write_array(csc_group, 'indices', data=indices)
+        zarr_compat.write_array(csc_group, 'indptr', data=indptr)
         
         # Set attributes for CSC sparse matrix
         csc_group.attrs['encoding-type'] = 'csc_matrix'
@@ -193,9 +195,9 @@ class TestZarrReader(unittest.TestCase):
         col_indices = np.random.randint(0, 50, size=n_nonzero)
         
         # Create the COO components
-        coo_group.create_dataset('data', data=data)
-        coo_group.create_dataset('row', data=row_indices)
-        coo_group.create_dataset('col', data=col_indices)
+        zarr_compat.write_array(coo_group, 'data', data=data)
+        zarr_compat.write_array(coo_group, 'row', data=row_indices)
+        zarr_compat.write_array(coo_group, 'col', data=col_indices)
         
         # Set attributes for COO sparse matrix
         coo_group.attrs['encoding-type'] = 'coo_matrix'
@@ -207,15 +209,15 @@ class TestZarrReader(unittest.TestCase):
 
         # Add various types of unstructured data
         # 1. String array (not scalar to work with [:] indexing)
-        uns_group.create_dataset('description', data=np.array(['Test dataset for unit testing']))
+        zarr_compat.write_array(uns_group, 'description', data=np.array(['Test dataset for unit testing']))
 
         # 2. Numeric array
-        uns_group.create_dataset('analysis_params', data=np.array([0.1, 0.5, 1.0]))
+        zarr_compat.write_array(uns_group, 'analysis_params', data=np.array([0.1, 0.5, 1.0]))
 
         # 3. Nested group with datasets
         analysis_group = uns_group.create_group('analysis')
-        analysis_group.create_dataset('explained_variance', data=np.random.rand(10).astype('float32'))
-        analysis_group.create_dataset('method', data=np.array(['pca']))
+        zarr_compat.write_array(analysis_group, 'explained_variance', data=np.random.rand(10).astype('float32'))
+        zarr_compat.write_array(analysis_group, 'method', data=np.array(['pca']))
 
     def test_get_metadata(self):
         """Test getting metadata."""
@@ -533,20 +535,9 @@ class TestZarrReader(unittest.TestCase):
     def test_load_chunked_data(self):
         """Test loading chunked data with optimized strategy."""
         
-        # Get the root from the correct dataset
-        root = self.reader._get_root(dataset_path=self.zarr_path)
-        
-        # Mock the chunks attribute
-        original_get_item = root.__getitem__
-        
-        def mocked_get_item(key):
-            array = original_get_item(key)
-            if key == 'X':
-                array.chunks = (20, 10)  # Add chunks attribute
-            return array
-            
-        root.__getitem__ = mocked_get_item
-        
+        # X is written with zarr's default chunking; the old test patched
+        # root.__getitem__ to fake a chunks attribute, which zarr 3 groups forbid
+        # and _load_chunked_data never saw (it reopens the root from the path).
         # Test chunked loading with row selection
         row_indices = list(range(30))
         chunked_data = self.reader._load_chunked_data('X', row_indices=row_indices, dataset_path=self.zarr_path)
@@ -560,11 +551,9 @@ class TestZarrReader(unittest.TestCase):
         # Test chunked loading with both row and column selection
         chunked_data = self.reader._load_chunked_data('X', row_indices=row_indices, col_indices=col_indices, dataset_path=self.zarr_path)
         self.assertEqual(chunked_data.shape, (30, 25))
-        
-        # Test with no chunks info
-        root.__getitem__ = original_get_item
-        regular_data = self.reader._load_chunked_data('X', row_indices=row_indices, dataset_path=self.zarr_path)
-        self.assertEqual(regular_data.shape, (30, 50))
+
+        np.testing.assert_array_equal(
+            chunked_data, self.reader.get_X(dataset_path=self.zarr_path)[np.ix_(row_indices, col_indices)])
         
     def test_downsample_array(self):
         """Test downsampling large arrays."""
@@ -692,11 +681,11 @@ class TestZarrReader(unittest.TestCase):
             
         # Create a zarr store without obs/_index
         incomplete_path = os.path.join(self.temp_dir.name, 'incomplete.zarr')
-        incomplete_root = zarr.open_group(incomplete_path, mode='w')
+        incomplete_root = zarr_compat.open_group(incomplete_path)
         
         # Add just X without obs/var
         X = np.random.rand(80, 40).astype('float32')
-        incomplete_root.create_dataset('X', data=X)
+        zarr_compat.write_array(incomplete_root, 'X', data=X)
         
         # Get counts from X shape
         counts = self.reader.get_basic_counts(incomplete_path)
@@ -705,7 +694,7 @@ class TestZarrReader(unittest.TestCase):
         
         # Create an empty zarr store
         empty_path = os.path.join(self.temp_dir.name, 'empty.zarr')
-        zarr.open_group(empty_path, mode='w')
+        zarr_compat.open_group(empty_path)
         
         # Should raise an error for invalid AnnData structure
         with self.assertRaises(ValueError):
@@ -715,18 +704,18 @@ class TestZarrReader(unittest.TestCase):
         """Test stateless access to multiple datasets without interference."""
         # Create a second zarr file with different data
         zarr_path2 = os.path.join(self.temp_dir.name, 'test2.zarr')
-        root2 = zarr.open_group(zarr_path2, mode='w')
+        root2 = zarr_compat.open_group(zarr_path2)
         
         # Create X matrix with different dimensions
         X2 = np.random.rand(50, 30).astype('float32')
-        root2.create_dataset('X', data=X2)
+        zarr_compat.write_array(root2, 'X', data=X2)
         
         # Create obs with different values
         obs_group2 = root2.create_group('obs')
         cell_ids2 = np.array([f'cell2_{i}' for i in range(50)])
-        obs_group2.create_dataset('_index', data=cell_ids2)
+        zarr_compat.write_array(obs_group2, '_index', data=cell_ids2)
         cell_types2 = np.array(['type_C'] * 25 + ['type_D'] * 25)
-        obs_group2.create_dataset('cell_type', data=cell_types2)
+        zarr_compat.write_array(obs_group2, 'cell_type', data=cell_types2)
         
         # Access first dataset
         root1, metadata1 = self.reader.open_dataset_by_path(self.zarr_path)
@@ -768,7 +757,7 @@ class TestZarrReader(unittest.TestCase):
             zarr_path = os.path.join(temp_dir, 'shape_test.zarr')
             
             # Test shape discovery from X attributes (shape in attributes)
-            test_root = zarr.open_group(zarr_path, mode='w')
+            test_root = zarr_compat.open_group(zarr_path)
             # Create X as a group with shape attribute instead of direct array
             x_group = test_root.create_group('X')
             x_group.attrs['shape'] = [200, 100]
@@ -778,7 +767,7 @@ class TestZarrReader(unittest.TestCase):
             
             # Test shape inference from obs and var lengths
             # Re-open the file (overwrite by default in zarr library)
-            test_root = zarr.open_group(zarr_path, mode='w')
+            test_root = zarr_compat.open_group(zarr_path)
             obs_group = test_root.create_group('obs')
             var_group = test_root.create_group('var')
             
@@ -786,8 +775,8 @@ class TestZarrReader(unittest.TestCase):
             obs_index = np.array([f'cell_{i}' for i in range(150)])
             var_index = np.array([f'gene_{i}' for i in range(75)])
             
-            obs_group.create_dataset('_index', data=obs_index)
-            var_group.create_dataset('_index', data=var_index)
+            zarr_compat.write_array(obs_group, '_index', data=obs_index)
+            zarr_compat.write_array(var_group, '_index', data=var_index)
             
             # No X, should infer from obs and var lengths
             shape = self.reader._get_dataset_shape(test_root)
@@ -795,12 +784,12 @@ class TestZarrReader(unittest.TestCase):
             
             # Test shape discovery from layers
             # Re-open the file (overwrite by default in zarr library)
-            test_root = zarr.open_group(zarr_path, mode='w')
+            test_root = zarr_compat.open_group(zarr_path)
             layers_group = test_root.create_group('layers')
             
             # Create a layer with shape
             raw = np.random.rand(180, 90).astype('float32')
-            layers_group.create_dataset('raw', data=raw)
+            zarr_compat.write_array(layers_group, 'raw', data=raw)
             
             # Should discover from layer shape
             shape = self.reader._get_dataset_shape(test_root)
@@ -808,7 +797,7 @@ class TestZarrReader(unittest.TestCase):
             
             # Test shape discovery from sparse matrix in layers
             # Re-open the file (overwrite by default in zarr library)
-            test_root = zarr.open_group(zarr_path, mode='w')
+            test_root = zarr_compat.open_group(zarr_path)
             layers_group = test_root.create_group('layers')
             sparse_group = layers_group.create_group('sparse')
             

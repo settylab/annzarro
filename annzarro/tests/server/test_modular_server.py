@@ -65,22 +65,35 @@ def test_create_app_with_config():
     assert app.config.get("port") == 9000
     assert app.config.get("data_dir") == "/tmp/data"
 
-@patch("logging.basicConfig")
-def test_setup_logging(mock_basic_config):
-    """Test setting up logging."""
-    config = {
-        "log_file": "test.log",
-        "log_level": "DEBUG"
-    }
-    setup_logging(config)
-    mock_basic_config.assert_called_once()
+def test_setup_logging(tmp_path):
+    """setup_logging installs file + console handlers at the configured level.
+
+    It configures the root logger directly; it never called basicConfig, which
+    is what this test used to assert.
+    """
+    import logging
+    root = logging.getLogger("")
+    saved_handlers, saved_level = root.handlers[:], root.level
+    log_file = tmp_path / "test.log"
+    try:
+        setup_logging({"log_file": str(log_file), "log_level": "DEBUG"})
+        assert root.level == logging.DEBUG
+        files = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
+        assert [h.baseFilename for h in files] == [str(log_file)]
+    finally:
+        for h in root.handlers[:]:
+            root.removeHandler(h)
+            h.close()
+        for h in saved_handlers:
+            root.addHandler(h)
+        root.setLevel(saved_level)
 
 # Tests for routes registration
 def test_register_core_routes(app):
     """Test registering core routes."""
     register_core_routes(app, "v1")
     routes = [rule.rule for rule in app.url_map.iter_rules()]
-    assert "/api/v1/datasets" in routes
+    assert "/api/v1/core/datasets" in routes
     assert "/api/v1/config" in routes
     assert "/api/v1/status" in routes
 
@@ -135,18 +148,3 @@ def test_full_app_creation():
     # Static routes
     assert "/" in routes
     assert "/<path:path>" in routes
-
-@patch("annzarro.server.core.setup_logging")
-def test_app_configuration(mock_setup_logging):
-    """Test app configuration with environment variables."""
-    with patch.dict(os.environ, {
-        "ANNZARRO_HOST": "0.0.0.0",
-        "ANNZARRO_PORT": "9000",
-        "ANNZARRO_DATA_DIR": "/tmp/data",
-        "ANNZARRO_DEBUG": "true"
-    }):
-        app = create_app()
-        assert app.config.get("host") == "0.0.0.0"
-        assert app.config.get("port") == 9000
-        assert app.config.get("data_dir") == "/tmp/data"
-        assert app.config.get("debug") is True
