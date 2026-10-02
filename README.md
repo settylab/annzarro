@@ -12,6 +12,7 @@ AnnZarro is a modern single-cell data visualization tool for analyzing AnnData o
 - **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
 - **Flexible Access** - Local .zarr and .h5ad files; remote zarr stores over S3, GCS or HTTP(S) (optional extra, see [Remote datasets](#remote-datasets))
 - **Desktop Application** - Standalone app for Windows, macOS and Linux, server included (no Python needed)
+- **Million-cell datasets** - Datasets over 200,000 cells open on a reproducible, seeded 100,000-cell subset that every panel and share link shares; change or remove it from the cell count (see [docs/design/subsetting.md](docs/design/subsetting.md))
 
 ## Installation & Usage
 
@@ -301,8 +302,16 @@ A refused URL is answered with HTTP 403 and never fetched.
 ## Development
 
 ```bash
-# Run tests
+# Once: install the pinned ESLint (needs Node.js 22+)
+npm ci
+
+# Run every test: Python, all JS suites (annzarro/tests/js/*.test.mjs) and ESLint.
+# CI runs exactly this; without node or `npm ci` the JS and lint tests fail.
 python -m pytest
+
+# Or the JS side alone
+npm run lint
+npm test
 
 # Start in development mode
 ./annzarro-cli start --development

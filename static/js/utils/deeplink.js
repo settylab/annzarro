@@ -44,6 +44,9 @@
  *     constants: {                           // global focus state (all optional)
  *       focusedGene, focusedCell, taxonomyId
  *     },
+ *     subset: { n, seed, balance?, where? }  // the cells shown (utils/subset.js);
+ *             | null                         //   null: every cell; absent: the
+ *                                            //   server's default for the dataset
  *     // ── preferred: a full layout tree ────────────────────────────────────
  *     layout: {                              // exactly what saveLayout() returns
  *       v: 1,
@@ -68,6 +71,8 @@
  * A link may carry `layout` OR `panels` (or neither — a bare dataset open).
  * If both are present, `layout` wins; `panels` is the simple/legacy shorthand.
  */
+
+import { normalizeViewSubset } from './subset.js';
 
 /** Current deep-link `view` schema version. Bump on a breaking change. */
 export const VIEW_SCHEMA_VERSION = 1;
@@ -266,6 +271,11 @@ export function normalizeView(view) {
         out.constants = view.constants;
     }
 
+    // Absent stays absent (the dataset's default); a malformed subset is
+    // dropped rather than failing the whole link.
+    const subset = normalizeViewSubset(view.subset);
+    if (subset !== undefined) out.subset = subset;
+
     // Prefer the layout tree. Only surface it if it actually opens a panel;
     // an empty/selector-only tree should fall through to the Welcome fallback.
     if (view.layout && typeof view.layout === 'object' && layoutHasPanels(view.layout)) {
@@ -274,5 +284,145 @@ export function normalizeView(view) {
         out.panels = view.panels;
     }
 
+    return out;
+}
+
+/**
+ * Panel sets carry the SAME view a share link does.
+ *
+ * A saved panel set used to hold only `panelConfigs`, and loading one merely
+ * registered those panels as closed: no dataset, no focus, no split layout,
+ * so "Load Panel Set" did not bring back the view that was saved. A panel set
+ * now stores `view` (exactly the object a share link encodes: constants plus
+ * PanelManager.saveLayout()) next to the fields older readers know, and
+ * loading it goes through the deep-link path.
+ *
+ *   panelSet = {
+ *     name, timestamp, dataset, datasetName,
+ *     constants,                     // kept for older AnnZarro and previews
+ *     panelConfigs: { <id>: {id, type, title, config, isSelectionTile} },
+ *     view: { v, constants, layout } // what share links carry; preferred
+ *   }
+ *
+ * Files without `view` (every set saved before this) still load: their open
+ * panels are laid out in rows of two, and panels whose config says
+ * `active: false` (closed when saved) come back closed.
+ */
+
+/**
+ * A layout hierarchy for panels that have no saved arrangement: rows of
+ * two side by side, rows stacked with equal heights.
+ * @param {string[]} ids
+ * @returns {Array} hierarchy (empty for no ids)
+ */
+export function defaultHierarchy(ids) {
+    const tile = id => ({ type: 'tile', id });
+    const rows = [];
+    for (let i = 0; i < ids.length; i += 2) {
+        rows.push(i + 1 < ids.length
+            ? { type: 'split', direction: 'horizontal',
+                panes: [{ percentage: 50 }, { percentage: 50 }],
+                children: [tile(ids[i]), tile(ids[i + 1])] }
+            : tile(ids[i]));
+    }
+    const stack = (list) => {
+        if (list.length === 1) return list[0];
+        const first = Math.round(100 / list.length);
+        return { type: 'split', direction: 'vertical',
+            panes: [{ percentage: first }, { percentage: 100 - first }],
+            children: [list[0], stack(list.slice(1))] };
+    };
+    return rows.length ? [stack(rows)] : [];
+}
+
+/**
+ * Turn a stored panel set (any version) into what the deep-link path applies.
+ * @param {Object} panelSet
+ * @returns {{datasetPath: string|null, view: Object,
+ *            closedPanels: Array<{id: string, type: string, config: Object}>,
+ *            legacy: boolean}|null}
+ */
+export function panelSetToView(panelSet) {
+    if (!panelSet || typeof panelSet !== 'object') return null;
+    const datasetPath = panelSet.dataset || null;
+    const constants = panelSet.constants && typeof panelSet.constants === 'object'
+        ? panelSet.constants : undefined;
+
+    if (panelSet.view && typeof panelSet.view === 'object') {
+        const view = normalizeView(panelSet.view) || { v: VIEW_SCHEMA_VERSION };
+        if (!view.constants && constants) view.constants = constants;
+        // Panels that existed but were closed when the set was saved are in
+        // layout.panelConfigs without a tile; they come back closed.
+        const all = (panelSet.view.layout && panelSet.view.layout.panelConfigs) || {};
+        const open = new Set(view.layout ? collectTileIds(view.layout.hierarchy) : []);
+        const closedPanels = Object.entries(all)
+            .filter(([id]) => !open.has(id))
+            .map(([id, config]) => ({ id, type: panelTypeFromTileId(id), config: { ...config, id } }));
+        return { datasetPath, view, closedPanels, legacy: false };
+    }
+
+    // Legacy: panelConfigs only.
+    const entries = Object.entries(panelSet.panelConfigs || {})
+        .filter(([, p]) => p && !p.isSelectionTile && p.type)
+        .map(([key, p]) => {
+            const id = (p.config && p.config.id) || p.id || key;
+            const config = { ...(p.config || {}), id };
+            if (!config.title && p.title) config.title = p.title;
+            return { id, type: p.type, config };
+        });
+    // A tile id must start with its type: restoreLayout derives the type from it.
+    const opened = entries.filter(e => e.config.active !== false && e.id.startsWith(e.type + '-'));
+    const closedPanels = entries.filter(e => !opened.includes(e));
+    const view = { v: VIEW_SCHEMA_VERSION };
+    if (constants) view.constants = constants;
+    if (opened.length) {
+        const panelConfigs = {};
+        opened.forEach(e => { panelConfigs[e.id] = e.config; });
+        view.layout = {
+            v: VIEW_SCHEMA_VERSION,
+            hierarchy: defaultHierarchy(opened.map(e => e.id)),
+            controlState: {},
+            panelConfigs
+        };
+    }
+    return { datasetPath, view, closedPanels, legacy: true };
+}
+
+/**
+ * Rewrite references between panels after ids changed: a plot's
+ * `tableFilter` holds the id of the table it is filtered by.
+ * @param {Object[]} configs - panel configs, rewritten in place
+ * @param {Map<string,string>|Object} idMap - old id -> new id
+ * @returns {Object[]} the same configs
+ */
+export function remapPanelReferences(configs, idMap) {
+    const map = idMap instanceof Map ? idMap : new Map(Object.entries(idMap || {}));
+    configs.forEach(cfg => {
+        if (cfg && typeof cfg.tableFilter === 'string' && map.has(cfg.tableFilter)) {
+            cfg.tableFilter = map.get(cfg.tableFilter);
+        }
+    });
+    return configs;
+}
+
+/**
+ * Config keys that describe what a panel currently SHOWS, not how it is set
+ * up. A table's `currentEntries` is the row index of every row passing its
+ * filter (a getter over the live DataTable): an unfiltered 8,090-row table
+ * put 8,090 numbers into every share link (a 25,340-character URL) and
+ * panel set. They are recomputed when the panel loads.
+ */
+export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells'];
+
+/**
+ * A copy of a panel config without its derived state, for serialization.
+ * @param {Object} config
+ * @returns {Object}
+ */
+export function serializableConfig(config) {
+    const out = {};
+    for (const [key, value] of Object.entries(config || {})) {
+        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = value;
+    }
     return out;
 }

@@ -11,12 +11,14 @@ import numpy as np
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 import json
+import re
 
 from ...core import zarr_reader
-from ...core.zarr_reader import ZarrFormatError
-from ...core import h5ad_reader_obj
+from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import process_file
 from ...core import get_reader
+from ...core import name_index
+from ...core import subset as cell_subset
 from .. import confinement, permissions
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
@@ -81,7 +83,9 @@ def _probe_dataset_counts(entry_path, probe):
         # reason, beats dropping it: a store that silently vanishes from the
         # list is as unexplained as one that silently reads as empty.
         counts = exc
-    except Exception:
+    except Exception as exc:
+        # Not listed; say why once (the result is cached until it changes).
+        logger.warning(f"Not listing {entry_path}: {type(exc).__name__}: {exc}")
         counts = None
     _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
     return counts
@@ -143,6 +147,14 @@ def _reader_error_response(exc, dataset_path):
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
+    if isinstance(exc, UnsupportedEncodingError):
+        # One member of a readable dataset, not the dataset's type: the text
+        # names the member and the encoding.
+        return jsonify({
+            "error": str(exc),
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
     if isinstance(exc, ValueError):
         return jsonify({
             "error": f"Unsupported dataset type for {dataset_path}: {exc}",
@@ -244,8 +256,16 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
         raise DataRequestError(404, "key_not_found", "This dataset has no X matrix.")
     if field and key is not None:
         keys = (metadata.get(field) or {}).get("keys")
+        # A dataset WITHOUT the group (no obsp/varp/layers at all) lists no
+        # keys rather than "unknown": every key is missing. It used to fall
+        # through to the reader and answer 200 {"data": []}, which the client
+        # must read as "listed but unreadable" and showed as "failed to read".
+        if keys is None and metadata.get(f"has_{field}") is False:
+            keys = []
         top = key.split("/", 1)[0] if slot == "uns" else key
-        if keys is not None and top not in keys:
+        # layer 'X' is the X matrix when no layer has that name (readers' get_layer)
+        x_as_layer = slot == "layers" and key == "X" and metadata.get("has_X") is not False
+        if keys is not None and top not in keys and not x_as_layer:
             raise DataRequestError(404, "key_not_found", f"No {field} key '{key}' in this dataset.")
     if columns and slot in ("obs", "var"):
         known = metadata.get(f"{slot}_columns")
@@ -267,6 +287,30 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
                 raise DataRequestError(
                     400, "index_out_of_range",
                     f"{name} index {bad[0]} is out of range: this axis has {length} entries (0-{length - 1}).")
+
+
+def _reader_for(dataset_path):
+    """The reader for a cell-axis request: the dataset, or with a ``subset``
+    parameter the subset of its cells (core/subset.py).
+
+    With a subset, every cell position in the request and the response is a
+    position in the subset, and whole-axis reads return the subset's cells,
+    so obs, obsm, obsp, X and layers all describe the same cells.
+    """
+    reader = get_reader(dataset_path)
+    raw = request.args.get("subset")
+    if raw is None:
+        return reader
+    try:
+        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config)
+    except cell_subset.SubsetError as exc:
+        raise DataRequestError(exc.status, exc.reason, exc.message)
+    return reader if resolved is None else cell_subset.SubsetView(reader, resolved)
+
+
+#: Cell-dependent routes that read the store directly and cannot apply a
+#: subset. They refuse one rather than answer for every cell.
+_SUBSET_UNAWARE_ENDPOINTS = ("get_paginated_data", "get_statistics", "get_data_by_path")
 
 
 def register_data_routes(app, api_version):
@@ -348,7 +392,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_metadata(dataset_path_str, get_reader(dataset_path_str))
+            return process_file.extract_metadata(dataset_path_str, _reader_for(dataset_path_str))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -391,7 +435,7 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            reader = get_reader(dataset_path_str)
+            reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "X", rows=row_indices, cols=col_indices)
             return process_file.extract_X(dataset_path_str, row_indices, col_indices, reader)
         except Exception as exc:
@@ -439,7 +483,7 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            reader = get_reader(dataset_path_str)
+            reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "layers", key=layer_name, rows=row_indices, cols=col_indices)
             return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, reader)
         except Exception as exc:
@@ -488,7 +532,7 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            reader = get_reader(dataset_path_str)
+            reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
             return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells")
         except Exception as exc:
@@ -589,7 +633,7 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            reader = get_reader(dataset_path_str)
+            reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obsm", key=obsm_key, rows=row_indices, cols=col_indices)
             return process_file.extract_obsm_varm(dataset_path_str, reader, obsm_key, row_indices, col_indices, column_name, "cells")
         except Exception as exc:
@@ -691,7 +735,7 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            reader = get_reader(dataset_path_str)
+            reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
             return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", reader)
         except Exception as exc:
@@ -931,10 +975,106 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_cells_genes(dataset_path_str, "cells", get_reader(dataset_path_str))
+            return process_file.extract_cells_genes(dataset_path_str, "cells", _reader_for(dataset_path_str))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
+    @app.route(f"/api/{api_version}/data/names", methods=["GET"])
+    def search_names():
+        """
+        Search cell (obs) or gene (var) names; the typeahead behind the header
+        pickers, so the browser never needs the full name list to pick one.
+
+        Query parameters:
+            dataset_path: Path to the dataset.
+            entity: "cells" or "genes".
+            q: Text to match (case-insensitive). Empty returns the first names.
+            mode: "substring" (default: exact, then prefix, then contains),
+                  "exact" or "regex".
+            limit: Maximum matches (default 50, at most 500).
+
+        Returns:
+            {"matches": [{"name", "index"}], "truncated": bool, "total": n}
+            where total is the number of names on that axis.
+        """
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        entity = request.args.get("entity", "cells")
+        if entity not in ("cells", "genes"):
+            return jsonify({"error": "entity must be 'cells' or 'genes'"}), 400
+        mode = request.args.get("mode", "substring")
+        if mode not in ("substring", "exact", "regex"):
+            return jsonify({"error": "mode must be 'substring', 'exact' or 'regex'"}), 400
+        try:
+            limit = int(request.args.get("limit", name_index.DEFAULT_LIMIT))
+        except ValueError:
+            return jsonify({"error": "limit must be an integer"}), 400
+        query = request.args.get("q", "")
+
+        try:
+            reader = _reader_for(dataset_path_str)
+            # A subset's cells are their own index: matches are subset
+            # positions, and a cell outside the subset is not found.
+            subset = reader.subset if isinstance(reader, cell_subset.SubsetView) else None
+            index_key = entity if subset is None or entity != "cells" else f"cells@{subset.spec.key()}"
+            index = name_index.get_index(
+                dataset_path_str, index_key,
+                lambda: reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True))
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
+
+        try:
+            result = index.search(query, limit=limit, mode=mode)
+        except re.error as exc:
+            return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
+        result["total"] = len(index)
+        return jsonify(result)
+
+    @app.before_request
+    def _refuse_unapplied_subset():
+        if "subset" in request.args and request.endpoint in _SUBSET_UNAWARE_ENDPOINTS:
+            return jsonify({"error": f"{request.path} cannot apply a cell subset; "
+                                     "request it without the subset parameter.",
+                            "reason": "subset_unsupported"}), 400
+        return None
+
+    @app.route(f"/api/{api_version}/data/subset", methods=["GET"])
+    def get_subset_info():
+        """
+        Resolve a cell subset and describe it.
+
+        Query parameters:
+            dataset_path: Path to the dataset.
+            subset: The subset spec (JSON), "auto" for the server's default
+                for this dataset's size, or "all".
+
+        Returns:
+            {"subset": <canonical spec> or null, "key": <the spec as the
+            subset parameter to send>, "n": cells in the subset, "n_total":
+            cells in the dataset, "n_eligible": cells passing the filter,
+            "groups": per-group counts when balanced, "defaults": the
+            server's threshold/size/seed}. With no subset (all cells, or
+            "auto" below the threshold) subset and key are null and n is
+            n_total.
+        """
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        try:
+            reader = _reader_for(dataset_path_str)
+            if isinstance(reader, cell_subset.SubsetView):
+                body = reader.subset.describe()
+            else:
+                shape = (reader.get_metadata(dataset_path_str) or {}).get("shape") or (0,)
+                n_total = int(shape[0])
+                body = {"subset": None, "key": None, "n": n_total, "n_total": n_total,
+                        "n_eligible": n_total}
+            body["defaults"] = cell_subset.defaults(app.config)
+            return jsonify(body)
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
+
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
     def get_statistics():
         """
@@ -1282,8 +1422,10 @@ def register_data_routes(app, api_version):
                     if entry.endswith(".h5ad") and os.path.isfile(entry_path):
                         def _h5ad_counts(path):
                             # get_metadata reads only the file's structure (not
-                            # the matrices), so this is a cheap shape probe.
-                            shape = h5ad_reader_obj.get_metadata(path).get("shape", (0, 0))
+                            # the matrices), and it is the cached metadata every
+                            # route uses once the dataset is opened: get_reader
+                            # returns the same reader the routes read through.
+                            shape = get_reader(path).get_metadata(path).get("shape", (0, 0))
                             return int(shape[0]), int(shape[1])
 
                         counts = _probe_dataset_counts(entry_path, _h5ad_counts)

@@ -9,6 +9,9 @@ import {
     getVarpColumnsForGeneTable,
     getLayerColumnsForGeneTable
 } from './panel-tracker.js';
+import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
+import { getColumnDisplayName } from './table-data.js';
+import { middleEllipsis } from '../../utils/plot-titles.js';
 
 /**
  * Creates the basic table panel HTML structure.
@@ -18,6 +21,16 @@ import {
  * @param {Object} settings - Optional settings object with controlsVisible property
  * @returns {{ tableContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
+/**
+ * A selected column's name for the narrow list: at most 34 characters,
+ * shortened in the middle so the distinguishing end stays visible.
+ * @param {string} name
+ * @returns {string}
+ */
+export function shortColumnName(name, maxChars = 34) {
+    return middleEllipsis(String(name), s => Array.from(s).length <= maxChars);
+}
+
 export function createTablePanelStructure(container, id, settings = {}) {
     // Determine if controls should be visible (default to true if not specified)
     const controlsVisible = settings.controlsVisible !== false;
@@ -118,9 +131,7 @@ export function checkDatasetLoadingStatus(id) {
     const tablePanel = document.getElementById(`table-container-${id}`)?.closest('.table-panel');
     const controlsContainer = tablePanel?.querySelector('.table-controls');
     
-    if (controlsContainer) {
-        controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
-    }
+    syncControlsWithDataset(controlsContainer, isDatasetLoaded);
     
     return isDatasetLoaded;
 }
@@ -200,10 +211,10 @@ export function populateColumnsCellTable(dataSources, datasetStructure, id, sett
             continue;
         } else if (source.id === 'obsp' && datasetStructure.obsp?.keys) {
             // Get fixed cell items from panel tracker
-            items = getObspColumnsForCellTable(datasetStructure);
+            items = getObspColumnsForCellTable(datasetStructure, settings.columns);
         } else if (source.id === 'layer' && datasetStructure.layers) {
             // Get fixed gene items from panel tracker
-            items = getLayerColumnsForCellTable(datasetStructure);
+            items = getLayerColumnsForCellTable(datasetStructure, settings.columns);
         }
         
         createCheckboxList(contentContainer, items, id, settings);
@@ -247,10 +258,10 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
             continue;
         } else if (source.id === 'varp' && datasetStructure.varp?.keys) {
             // Get fixed gene items from panel tracker
-            items = getVarpColumnsForGeneTable(datasetStructure);
+            items = getVarpColumnsForGeneTable(datasetStructure, settings.columns);
         } else if (source.id === 'layer' && datasetStructure.layers) {
             // Get fixed cell items from panel tracker
-            items = getLayerColumnsForGeneTable(datasetStructure);
+            items = getLayerColumnsForGeneTable(datasetStructure, settings.columns);
         }
         
         createCheckboxList(contentContainer, items, id, settings);
@@ -558,8 +569,11 @@ function createCheckboxList(container, items, id, settings) {
         checkboxList.appendChild(checkboxDiv);
     });
     
-    // Add search functionality
-    const searchInput = container.querySelector('.column-search');
+    // Add search functionality. The search box sits on the TAB pane; the
+    // obsm/varm lists are inside an accordion in that pane, so look upward
+    // (querySelector from the accordion found nothing and the box was inert).
+    const searchInput = container.querySelector('.column-search')
+        || container.closest?.('.tab-pane')?.querySelector('.column-search');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             const searchText = e.target.value.toLowerCase();
@@ -571,46 +585,6 @@ function createCheckboxList(container, items, id, settings) {
             });
         });
     }
-}
-
-/**
- * Get display name for a column
- * @param {Object} column - The column object
- * @returns {string} - The display name
- */
-function getColumnDisplayName(column) {
-    const focusedCell = DataManager.getFocusedCell();
-    const focusedGene = DataManager.getFocusedGene();
-    if (column.type === 'obs' || column.type === 'var') {
-        return `${column.key}`;
-    } else if (column.type === 'obsm' || column.type === 'varm') {
-        return `${column.key}:${column.column}`;
-    } else if (column.type === 'obsp') {
-        if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedCell}`;
-        } else if (column.column) {
-            return `${column.key}: ${column.column}`;
-        } else {
-            return `${column.key}`;
-        }
-    } else if (column.type === 'varp') {
-        if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: ${focusedGene}`;
-        } else if (column.column) {
-            return `${column.key}: ${column.column}`;
-        } else {
-            return `${column.key}`;
-        }
-    } else if (column.type === 'layer') {
-        if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: ${focusedGene}`;
-        } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedCell}`;
-        } else {
-            return `${column.key}: ${column.column}`;
-        }
-    }
-    return `${column.type}:${column.key}:${column.column}`;
 }
 
 /** Per-panel AbortController for the listeners setupColumnSelectionEvents adds. */
@@ -780,7 +754,9 @@ function updateSelectedColumnsList(id, settings) {
         
         // Create text span with ellipsis for long names
         const textSpan = document.createElement('span');
-        textSpan.textContent = displayName;
+        // Shortened in the MIDDLE: kompot_de_..._mahalanobis and
+        // kompot_de_..._mean_lfc used to look identical (cut at the end)
+        textSpan.textContent = shortColumnName(displayName);
         textSpan.title = displayName; // Full name in tooltip
         textSpan.className = 'text-truncate';
         listItem.appendChild(textSpan);

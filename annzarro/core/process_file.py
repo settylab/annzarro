@@ -1,4 +1,3 @@
-from . import h5ad_reader_obj
 from flask import jsonify
 from pathlib import Path
 from .reader import Reader
@@ -10,9 +9,10 @@ logger = logging.getLogger("data_routes")
 
 def _raise_if_store_error(exc):
     """Let a failed read reach the route's error handler with its reason
-    (stale_metadata, read_failed) instead of a generic 500 here."""
-    from .zarr_reader import StoreReadError
-    if isinstance(exc, StoreReadError):
+    (stale_metadata, read_failed, unsupported_type, key_not_found) instead of
+    a generic 500 here."""
+    from .zarr_reader import StoreReadError, UnsupportedEncodingError, MissingKeyError
+    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError)):
         raise exc
 
 
@@ -197,7 +197,8 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
         raise_if_timeout(e)
         _raise_if_store_error(e)
         logger.error(f"Error getting {'obs' if type == 'cells' else 'var'} data for {dataset_path}: {e}")
-        return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}"}), 500
+        return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}",
+                        "reason": "read_failed"}), 500
     
 
 def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"]):
@@ -240,16 +241,14 @@ def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_in
         raise_if_timeout(e)
         _raise_if_store_error(e)
         logger.error(f"Error getting {'obsm' if entity_type == 'cells' else 'varm'}/{key} data for {dataset_path}: {e}")
-        return jsonify({"error": f"Failed to get {'obsm' if entity_type == 'cells' else 'varm'} data: {str(e)}"}), 500
+        return jsonify({"error": f"Failed to get {'obsm' if entity_type == 'cells' else 'varm'} data: {str(e)}",
+                        "reason": "read_failed"}), 500
 
 
 def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_uns(uns_key, dataset_path)
-        if data is None and reader is h5ad_reader_obj:
-            # the h5ad reader answers None for a missing key
-            raise KeyError(f"No uns key '{uns_key}' in this dataset.")
         
         logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         

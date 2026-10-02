@@ -1,149 +1,67 @@
+"""Tests for the uns routes under /api/v1/datasets/<path>/uns.
+
+Run the real routes and reader against stores written into a temp data dir.
+These used to mock reader methods against a dataset that did not exist, which
+the routes now refuse with 404 before reading anything.
 """
-Tests for the uns routes in the zarr API.
-"""
-import json
-import unittest
-from unittest.mock import patch, MagicMock
 import numpy as np
+import pytest
 
-# For tests we use absolute imports to ensure we're testing the installed package
-from annzarro.server.core import create_app, DEFAULT_CONFIG
+from annzarro.server.core import create_app
+from annzarro.tests import zarr_compat
 
-class TestUnsRoutes(unittest.TestCase):
-    """Test cases for the uns routes."""
 
-    def setUp(self):
-        """Set up the test environment."""
-        # Create and configure the app for testing
-        self.app = create_app({
-            'TESTING': True,
-            'DEBUG': False,
-            'data_dir': 'tests/data'
-        })
-        self.client = self.app.test_client()
+def _store(path, with_uns):
+    root = zarr_compat.open_group(path)
+    root.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
+    zarr_compat.write_array(root, "X", np.zeros((3, 2), dtype=np.float32))
+    for name, n in (("obs", 3), ("var", 2)):
+        g = root.create_group(name)
+        g.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0",
+                        "_index": "_index", "column-order": []})
+        zarr_compat.write_array(g, "_index", np.array([f"{name}{i}" for i in range(n)]))
+    if with_uns:
+        spatial = root.create_group("uns").create_group("spatial")
+        zarr_compat.write_array(spatial.create_group("scalefactors"), "spot_diameter_fullres",
+                                np.array(0.8))
+        zarr_compat.write_array(spatial, "coords", np.arange(4, dtype=np.int64))
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
-    def test_get_uns_structure(self, mock_open_dataset):
-        """Test getting uns structure."""
-        # Mock the dataset root and metadata
-        mock_root = MagicMock()
-        mock_metadata = {
-            'shape': (100, 200),
-            'has_uns': True
-        }
 
-        # Mock uns data
-        mock_root['uns'] = {}
-        mock_root['uns'].keys = MagicMock(return_value=['spatial', 'neighbors', 'pca'])
-        
-        # Set up the mock return value
-        mock_open_dataset.return_value = (mock_root, mock_metadata)
+@pytest.fixture
+def client(tmp_path):
+    _store(str(tmp_path / "with_uns.zarr"), with_uns=True)
+    _store(str(tmp_path / "no_uns.zarr"), with_uns=False)
+    app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False,
+                      "data_dir": str(tmp_path)})
+    return app.test_client()
 
-        # Mock the get_uns_structure method
-        mock_structure = {
-            'spatial': {'encoding-type': 'dict'},
-            'neighbors': {'encoding-type': 'dict'},
-            'pca': {'encoding-type': 'array(float32)', 'shape': [50, 50]}
-        }
-        with patch('annzarro.core.zarr_reader.zarr_reader.get_uns_structure', return_value=mock_structure):
-            # Make the request
-            response = self.client.get('/api/v1/datasets/test_dataset.zarr/uns/structure')
-            
-            # Check the response
-            self.assertEqual(response.status_code, 200)
-            data = json.loads(response.data)
-            
-            # Verify the data
-            self.assertEqual(data['dataset_path'], 'test_dataset.zarr')
-            self.assertEqual(data['uns_structure'], mock_structure)
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_uns')
-    def test_get_uns_data(self, mock_get_uns, mock_open_dataset):
-        """Test getting uns data."""
-        # Mock the dataset root and metadata
-        mock_root = MagicMock()
-        mock_metadata = {
-            'shape': (100, 200),
-            'has_uns': True
-        }
-        
-        # Set up the mock return value
-        mock_open_dataset.return_value = (mock_root, mock_metadata)
+def test_get_uns_structure(client):
+    response = client.get("/api/v1/datasets/with_uns.zarr/uns/structure")
+    assert response.status_code == 200, response.get_json()
+    data = response.get_json()
+    assert data["dataset_path"].endswith("with_uns.zarr")
+    assert "spatial" in data["uns_structure"]
 
-        # Mock the get_uns method response
-        mock_data = {
-            'images': {'hires': np.zeros((100, 100, 3)).tolist()},
-            'scalefactors': {'spot_diameter_fullres': 0.8}
-        }
-        mock_get_uns.return_value = mock_data
-        
-        # Make the request
-        response = self.client.get('/api/v1/datasets/test_dataset.zarr/uns/spatial')
-        
-        # Check the response
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        
-        # Verify the data
-        self.assertEqual(data['dataset_path'], 'test_dataset.zarr')
-        self.assertEqual(data['uns_key'], 'spatial')
-        self.assertEqual(data['data'], mock_data)
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_uns')
-    def test_get_uns_data_missing_key(self, mock_get_uns, mock_open_dataset):
-        """Test getting uns data with missing key."""
-        # Mock the dataset root and metadata
-        mock_root = MagicMock()
-        mock_metadata = {
-            'shape': (100, 200),
-            'has_uns': True
-        }
-        
-        # Set up the mock return value
-        mock_open_dataset.return_value = (mock_root, mock_metadata)
-        
-        # Mock the get_uns method to return None (key not found)
-        mock_get_uns.return_value = None
+def test_get_uns_data(client):
+    response = client.get("/api/v1/datasets/with_uns.zarr/uns/spatial")
+    assert response.status_code == 200, response.get_json()
+    data = response.get_json()
+    assert data["uns_key"] == "spatial"
+    assert data["data"]["scalefactors"]["spot_diameter_fullres"] == pytest.approx(0.8)
+    assert data["data"]["coords"] == [0, 1, 2, 3]
 
-        # Make the request for a key that doesn't exist
-        response = self.client.get('/api/v1/datasets/test_dataset.zarr/uns/missing_key')
-        
-        # Check the response - now we expect a 200 with data = None
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        
-        # Verify the data
-        self.assertEqual(data['dataset_path'], 'test_dataset.zarr')
-        self.assertEqual(data['uns_key'], 'missing_key')
-        self.assertEqual(data['data'], None)
-        self.assertIn('message', data)
-        self.assertIn('not found', data['message'])
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
-    def test_get_uns_data_no_uns(self, mock_open_dataset):
-        """Test getting uns data when dataset has no uns."""
-        # Mock the dataset root and metadata
-        mock_root = MagicMock()
-        mock_metadata = {
-            'shape': (100, 200),
-            'has_uns': False
-        }
-        
-        # Set up the mock return value
-        mock_open_dataset.return_value = (mock_root, mock_metadata)
+def test_get_uns_data_missing_key(client):
+    response = client.get("/api/v1/datasets/with_uns.zarr/uns/missing_key")
+    assert response.status_code == 404
+    data = response.get_json()
+    assert data["reason"] == "key_not_found"
+    assert "missing_key" in data["error"]
 
-        # Make the request
-        response = self.client.get('/api/v1/datasets/test_dataset.zarr/uns/spatial')
-        
-        # Check the response
-        self.assertEqual(response.status_code, 404)
-        data = json.loads(response.data)
-        
-        # Verify the error
-        self.assertIn('error', data)
-        self.assertIn('does not have uns data', data['error'])
 
-if __name__ == '__main__':
-    unittest.main()
+def test_get_uns_data_no_uns(client):
+    response = client.get("/api/v1/datasets/no_uns.zarr/uns/spatial")
+    assert response.status_code == 404
+    assert "does not have uns data" in response.get_json()["error"]

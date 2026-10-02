@@ -1,7 +1,9 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
+import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
+import { notify } from '../../utils/notify.js';
 
 // Annotation columns that are numeric in a typical scanpy/anndata object, in
 // the order we would rather plot them. Used only when the matrix source is
@@ -91,6 +93,19 @@ export function chooseDefaultAxes(plotType, datasetStructure) {
 }
 
 /**
+ * The label of an axis column option that follows the focused cell or gene.
+ * One wording everywhere: the menus said "Focused cell to X" when built and
+ * "Focused cell X" after a focus change (cell-plot.js / gene-plot.js).
+ * @param {'cells'|'genes'} entity
+ * @param {string} name
+ * @returns {string}
+ */
+export function focusedOptionLabel(entity, name, locked = false) {
+  // a locked axis names the entity it is locked to, and says so
+  return `${locked ? 'Locked' : 'Focused'} ${entity === 'cells' ? 'cell' : 'gene'} ${name}`;
+}
+
+/**
  * Populates only the key selector for a given axis.
  * @param {Object} settings - Axis settings object (will be updated)
  * @param {HTMLSelectElement} keySelect - The key select dropdown
@@ -146,7 +161,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         break;
       }
       case 'layer': {
-        let keys = datasetStructure.layers?.details?.keys || datasetStructure.layers?.keys || [];
+        // X first, then the layers (layerKeys): X was not offered at all
+        let keys = layerKeys(datasetStructure);
         // Sort keys alphabetically if there are more than 10
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
@@ -198,8 +214,19 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     } 
     // Last resort: use first available key, but avoid _index if possible
     else {
-      if (type === 'obs' || type === 'var') {
-        // For obs and var types, avoid using _index if there are other options
+      const wanted = settings.key;
+      if (wanted && !keyExistsInStructure(datasetStructure, wanted)) {
+        // A key the dataset does not have at all (a deep link or panel set
+        // from another dataset) is KEPT, listed as missing, and reported:
+        // the loader then states the gap ('not in this dataset') instead of
+        // the plot silently showing some other column.
+        $.createSelect([...keyOptions, { value: wanted, text: `${wanted} (not in this dataset)` }], $keySelect);
+        notify('Plot source not found',
+          `${type} "${wanted}" is not in this dataset; nothing is shown for it. Pick another ${type} key.`,
+          'warning');
+      } else if (type === 'obs' || type === 'var') {
+        // The user switched the type menu: take a key of the new type,
+        // avoiding _index if there are other options
         const nonIndexKey = keyValues.find(k => k !== '_index');
         settings.key = nonIndexKey || keyValues[0] || '';
       } else {
@@ -339,7 +366,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
         settings.column = focused;
       }
       columnOptions = focused ? 
-        [{ value: focused, text: `Focused cell to ${focused}` }] : 
+        [{ value: focused, text: focusedOptionLabel('cells', focused, !!(settings.locked || settings.history[type]?.locked)) }] : 
         [{ value: '', text: 'Select a focused cell first' }];
       break;
     }
@@ -355,7 +382,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
         settings.column = focused;
       }
       columnOptions = focused ? 
-        [{ value: focused, text: `Focused gene to ${focused}` }] : 
+        [{ value: focused, text: focusedOptionLabel('genes', focused, !!(settings.locked || settings.history[type]?.locked)) }] : 
         [{ value: '', text: 'Select a focused gene first' }];
       break;
     }
@@ -372,7 +399,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
           settings.column = focused;
         }
         columnOptions = focused ? 
-          [{ value: focused, text: `Focused gene ${focused}` }] : 
+          [{ value: focused, text: focusedOptionLabel('genes', focused, !!(settings.locked || settings.history[type]?.locked)) }] : 
           [{ value: '', text: 'Select a focused gene first' }];
       } else if (plotType === 'genes') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
@@ -385,7 +412,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
           settings.column = focused;
         }
         columnOptions = focused ? 
-          [{ value: focused, text: `Focused cell ${focused}` }] : 
+          [{ value: focused, text: focusedOptionLabel('cells', focused, !!(settings.locked || settings.history[type]?.locked)) }] : 
           [{ value: '', text: 'Select a focused cell first' }];
       }
       break;
@@ -482,9 +509,10 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         });
         
         // Create refocus button
+        // Classes + data-axis, not ids: 'refocus-x' / 'lock-color' repeated in
+        // every plot panel on the page (duplicate DOM ids)
         const $refocusButton = $.createElement('button', {
-          id: `refocus-${axis}`,
-          class: 'btn btn-sm btn-outline-secondary',
+          class: 'btn btn-sm btn-outline-secondary axis-refocus-btn',
           title: 'Refocus to current selection',
           'data-axis': axis,
           'data-type': settings.type
@@ -493,8 +521,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         
         // Create lock button
         const $lockButton = $.createElement('button', {
-          id: `lock-${axis}`,
-          class: 'btn btn-sm btn-outline-secondary',
+          class: 'btn btn-sm btn-outline-secondary axis-lock-btn',
           'data-axis': axis,
           'data-type': settings.type
         });
@@ -512,8 +539,8 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         }
         
         // Get references to buttons
-        const $refocusButton = $buttonsContainer.find(`#refocus-${axis}`);
-        const $lockButton = $buttonsContainer.find(`#lock-${axis}`);
+        const $refocusButton = $buttonsContainer.find('.axis-refocus-btn');
+        const $lockButton = $buttonsContainer.find('.axis-lock-btn');
         
         // Update data type attribute for both buttons
         if ($refocusButton.length) {
@@ -554,6 +581,41 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
 }
 
 /**
+ * Which colour-toolbar controls apply to which colour type, by element id
+ * prefix (the panel id is appended).
+ *
+ * Hide NaN acts on categorical colours too (points with no category), and
+ * Equal aspect is about the axes, not the colour. The categorical branch used
+ * to hide the whole toolbar, so both were unreachable there: a Hide NaN left
+ * on from a numerical colour or a restored view kept hiding points that the
+ * user could not show again from that panel.
+ */
+export const COLOR_TOOLBAR_CONTROLS = Object.freeze({
+  numerical: Object.freeze(['center-colormap', 'reverse-colormap', 'lock-range', 'hide-outliers',
+    'hide-nan', 'equal-aspect', 'sort-by-color', 'log-color', 'log-floor']),
+  categorical: Object.freeze(['hide-nan', 'equal-aspect'])
+});
+
+/** Show the toolbar with exactly the controls that apply to `colorType`. */
+function applyColorToolbar($container, colorType, id) {
+  const shown = COLOR_TOOLBAR_CONTROLS[colorType] || [];
+  for (const name of COLOR_TOOLBAR_CONTROLS.numerical) {
+    const $el = $container.find(`#${name}-${id}`);
+    if (!$el.length) continue;
+    $el.attr('style', shown.includes(name)
+      ? (name === 'log-floor' ? 'width: 7.5rem' : 'display: inline-block !important')
+      : 'display: none !important');
+  }
+  const $buttonToolbar = $container.find('.btn-toolbar');
+  if ($buttonToolbar.length) {
+    $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
+    $buttonToolbar.find('.btn-group').each(function() {
+      jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
+    });
+  }
+}
+
+/**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
  *
@@ -570,8 +632,6 @@ export function updateColorControlsVisibility(container, colorType, id) {
   const $colorMaxInput = $container.find(`#color-max-${id}`);
   const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
   const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
-  const $centerColormapButton = $container.find(`#center-colormap-${id}`);
-  const $hideOutliersButton = $container.find(`#hide-outliers-${id}`);
   const $numericalLabel = $container.find(`#numerical-color-label-${id}`);
   const $categoricalLabel = $container.find(`#categorical-color-label-${id}`);
 
@@ -594,23 +654,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($colorMinSliderContainer, true, 'block');
     $.showHide($colorMaxSliderContainer, true, 'block');
     
-    // Override inline styles for control buttons
-    $centerColormapButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
-    $hideOutliersButton.attr('style', 'display: inline-block !important; margin-right: 4px !important');
-    
-    const $lockRangeButton = $container.find(`#lock-range-${id}`);
-    if ($lockRangeButton.length) {
-      $lockRangeButton.attr('style', 'display: inline-block !important');
-    }
-    
-    // Show toolbar for numerical controls
-    const $buttonToolbar = $container.find('.btn-toolbar');
-    if ($buttonToolbar.length) {
-      $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
-      $buttonToolbar.find('.btn-group').each(function() {
-        jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
-      });
-    }
+    // Every toolbar control applies to a numerical colour
+    applyColorToolbar($container, 'numerical', id);
     
     // Show the entire color range inputs section
     const $colorRangeInputs = $container.find('.color-range-inputs');
@@ -635,23 +680,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($colorMinSliderContainer, false);
     $.showHide($colorMaxSliderContainer, false);
     
-    // Hide numerical control buttons
-    $centerColormapButton.attr('style', 'display: none !important');
-    $hideOutliersButton.attr('style', 'display: none !important');
-    
-    const $lockRangeButton = $container.find(`#lock-range-${id}`);
-    if ($lockRangeButton.length) {
-      $lockRangeButton.attr('style', 'display: none !important');
-    }
-    
-    // Hide the button toolbar and its button groups
-    const $buttonToolbar = $container.find('.btn-toolbar');
-    if ($buttonToolbar.length) {
-      $buttonToolbar.attr('style', 'display: none !important');
-      $buttonToolbar.find('.btn-group').each(function() {
-        jQuery(this).attr('style', 'display: none !important');
-      });
-    }
+    // Only the controls that apply to categories: Hide NaN, Equal aspect
+    applyColorToolbar($container, 'categorical', id);
     
     // Hide the entire color range inputs section
     const $colorRangeInputs = $container.find('.color-range-inputs');
@@ -740,8 +770,8 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           $colorMinSlider.val(dataMin);
           $colorMaxSlider.val(dataMax);
           
-          if ($colorMinInput.length) $colorMinInput.val(dataMin.toFixed(2));
-          if ($colorMaxInput.length) $colorMaxInput.val(dataMax.toFixed(2));
+          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(dataMin));
+          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(dataMax));
           
           settings.colorMin = dataMin;
           settings.colorMax = dataMax;
@@ -782,17 +812,17 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
           // when the restored config had no colorMin/colorMax (the usual case
           // for a hand-written deep link), while the plot was coloured over
           // the data range.
-          if ($colorMinInput.length) $colorMinInput.val(Number(settings.colorMin).toFixed(2));
-          if ($colorMaxInput.length) $colorMaxInput.val(Number(settings.colorMax).toFixed(2));
+          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
+          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
         }
 
         // Update input placeholders if fields are empty
         if ($colorMinInput.length && $colorMinInput.val() === '') {
-          $colorMinInput.attr('placeholder', (settings.colorMin ?? dataMin).toFixed(2));
+          $colorMinInput.attr('placeholder', formatRangeValue(settings.colorMin ?? dataMin));
         }
         
         if ($colorMaxInput.length && $colorMaxInput.val() === '') {
-          $colorMaxInput.attr('placeholder', (settings.colorMax ?? dataMax).toFixed(2));
+          $colorMaxInput.attr('placeholder', formatRangeValue(settings.colorMax ?? dataMax));
         }
       }
     }
@@ -842,8 +872,8 @@ export function applyCentering(container, data, settings, id) {
   const $colorMinInput = $container.find(`#color-min-${id}`);
   const $colorMaxInput = $container.find(`#color-max-${id}`);
   
-  if ($colorMinInput.length) $colorMinInput.val(effectiveColorMin.toFixed(2));
-  if ($colorMaxInput.length) $colorMaxInput.val(effectiveColorMax.toFixed(2));
+  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(effectiveColorMin));
+  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(effectiveColorMax));
 
   // Update slider controls
   const $colorMinSlider = $container.find(`#color-min-slider-${id}`);

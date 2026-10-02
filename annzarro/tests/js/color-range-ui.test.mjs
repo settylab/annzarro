@@ -49,7 +49,7 @@ test('first load with no stored range shows the data range in the boxes', () => 
     const controls = makeControls('p');
     const settings = { colorMin: null, colorMax: null, lockColorRange: false };
     updateColorSliderUI(controls, data, settings, 'p', true);
-    assert.equal(controls['#color-min-p'].value, '-2.50');
+    assert.equal(controls['#color-min-p'].value, '-2.5');
     assert.equal(controls['#color-max-p'].value, '7.75');
     assert.equal(settings.colorMin, -2.5);
     assert.equal(settings.colorMax, 7.75);
@@ -59,7 +59,7 @@ test('first load with a restored range shows THAT range', () => {
     const controls = makeControls('q', { min: '0', max: '100' });
     const settings = { colorMin: -1, colorMax: 3.14159, lockColorRange: false };
     updateColorSliderUI(controls, data, settings, 'q', true);
-    assert.equal(controls['#color-min-q'].value, '-1.00');
+    assert.equal(controls['#color-min-q'].value, '-1');
     assert.equal(controls['#color-max-q'].value, '3.14');
     assert.equal(controls['#color-max-slider-q'].value, '3.14159');
     assert.equal(settings.colorMax, 3.14159, 'the restored value itself is not rounded');
@@ -69,14 +69,24 @@ test('a locked range is kept and shown when new data arrives', () => {
     const controls = makeControls('r', { min: '', max: '' });
     const settings = { colorMin: 0.5, colorMax: 2, lockColorRange: true };
     updateColorSliderUI(controls, data, settings, 'r', false);
-    assert.equal(controls['#color-min-r'].value, '0.50');
-    assert.equal(controls['#color-max-r'].value, '2.00');
+    assert.equal(controls['#color-min-r'].value, '0.5');
+    assert.equal(controls['#color-max-r'].value, '2');
 });
 
 test('an unlocked later load still follows the data', () => {
     const controls = makeControls('s');
     const settings = { colorMin: -1, colorMax: 3, lockColorRange: false };
     updateColorSliderUI(controls, data, settings, 's', false);
-    assert.equal(controls['#color-min-s'].value, '-2.50');
+    assert.equal(controls['#color-min-s'].value, '-2.5');
     assert.equal(controls['#color-max-s'].value, '7.75');
+});
+
+test('a small range is shown with its significant digits, not rounded to 0.01', () => {
+    // A diffusion-walk row: the colour bar ends at 0.012; toFixed(2) showed "0.01"
+    const controls = makeControls('t');
+    const settings = { colorMin: null, colorMax: null, lockColorRange: false };
+    updateColorSliderUI(controls, { color: [0, 0.00042, 0.012345] }, settings, 't', true);
+    assert.equal(controls['#color-min-t'].value, '0');
+    assert.equal(controls['#color-max-t'].value, '0.0123');
+    assert.equal(settings.colorMax, 0.012345, 'the range itself keeps full precision');
 });

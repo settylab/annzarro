@@ -11,6 +11,7 @@ from pathlib import Path
 from flask import jsonify, request, current_app as app
 
 from ...core import zarr_reader
+from ...core import name_index
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,8 @@ def register_zarr_routes(app, api_version):
             
             # Clear the cache
             result = zarr_reader.clear_cache(dataset_path=dataset_path)
+            # The name search index is a cache too: a reset must rebuild it.
+            name_index.clear(dataset_path)
             
             # Add cache configuration to the response
             result["cache_config"] = {

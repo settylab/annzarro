@@ -299,11 +299,29 @@ export class Coverage {
      * rows -- every entity is on screen, so `shown` is the total. The gaps
      * still travel, so the reason is stated; only the false count is gone.
      *
+     * That is a different condition from "something restricts and did not say
+     * how much": a restricting contributor with `shown === null`
+     * (`Coverage.unreported()` is one by construction). It used to vanish from
+     * the minimum and land in the same `: total` arm, so a panel whose only
+     * statement was that a read failed came out as "every entity is on
+     * screen" (settylab/annzarro#37). A minimum over the contributors that
+     * spoke is only an UPPER bound when one did not, so `shown` is then
+     * unknown -- `null`, except at zero, which no count is below -- and a gap
+     * says so if no contributor already does.
+     *
+     * `total` stays the maximum over ALL contributors, describing ones
+     * included. A colour or table column that expected more entities than any
+     * restricting series counted is the only evidence that the difference is
+     * missing; taking the total over the restrictors alone would drop that
+     * evidence and report the panel complete. The disagreement is stated as a
+     * gap rather than left as a bare count with no reason under it.
+     *
      * `UNREPORTED` survives merging (it is a gap like any other), so combining
      * a described series with an undescribed one does not launder the latter.
      *
-     * The merged value RESTRICTS: its `shown` is a real entity count, so a
-     * panel coverage re-merged with a filter mask bounds correctly.
+     * The merged value RESTRICTS: its `shown` is a real entity count (or
+     * `null`), so a panel coverage re-merged with a filter mask bounds
+     * correctly.
      */
     static merge(coverages, unit = null) {
         const list = coverages.filter(Boolean);
@@ -311,7 +329,9 @@ export class Coverage {
 
         const restricting = list.filter(c => c.role !== ROLE.DESCRIBES);
         const shownVals = restricting.map(c => c.shown).filter(v => typeof v === 'number');
+        const declined = restricting.length - shownVals.length;
         const totalVals = list.map(c => c.total).filter(v => typeof v === 'number');
+        const restrictTotals = restricting.map(c => c.total).filter(v => typeof v === 'number');
         const gaps = [];
         // Element-by-element, not `push(...c.gaps)`: spreading an identifier
         // into a call is the stack-overflow idiom this repo guards against
@@ -326,11 +346,42 @@ export class Coverage {
         // These arrays are short today, but writing the banned shape in the
         // module that exists to stop a defect class recurring is precisely the
         // mistake worth not making.
-        const total = totalVals.length ? totalVals.reduce((a, b) => (b > a ? b : a)) : null;
+        const max = (vals) => vals.reduce((a, b) => (b > a ? b : a));
+        const total = totalVals.length ? max(totalVals) : null;
+        const resolvedUnit = unit || list[0].unit;
+        let shown;
+        if (restricting.length === 0) {
+            shown = total;
+        } else if (declined > 0) {
+            // ... unless the contributors that spoke already bound it at zero:
+            // no count is below that, so "nothing is shown" stays exact.
+            shown = (shownVals.length && shownVals.some(v => v === 0)) ? 0 : null;
+            // A contributor that declined AND gave no reason would leave the
+            // panel with an unknown count and nothing saying so.
+            if (restricting.some(c => typeof c.shown !== 'number' && c.gaps.length === 0)) {
+                gaps.push({
+                    reason: GAP.UNREPORTED,
+                    detail: `how many ${resolvedUnit} are on screen was not reported`,
+                    source: '', count: null
+                });
+            }
+        } else {
+            shown = shownVals.reduce((a, b) => (b < a ? b : a));
+            const counted = restrictTotals.length ? max(restrictTotals) : null;
+            if (counted !== null && total !== null && total > counted) {
+                gaps.push({
+                    reason: GAP.UNREPORTED,
+                    detail: `the series on this panel disagree about how many ${resolvedUnit} `
+                        + `there are (${fmt(counted)} drawn from, ${fmt(total)} expected); `
+                        + 'nothing reports why the rest are missing',
+                    source: '', count: total - counted
+                });
+            }
+        }
         return new Coverage({
-            shown: shownVals.length ? shownVals.reduce((a, b) => (b < a ? b : a)) : total,
+            shown,
             total,
-            unit: unit || list[0].unit,
+            unit: resolvedUnit,
             gaps,
             role: ROLE.RESTRICTS
         });
@@ -451,9 +502,14 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
         // group through its two children (settylab/annzarro#26), and
         // `annzarro/tests/core/test_nullable_encodings.py::
         // test_masked_entries_become_none` measures a nullable column reading
-        // back at full length with masked entries as null. So the premise holds
-        // for the encodings that exist, and if a future one does not read, the
-        // right fix is in the reader -- not a softer sentence here.
+        // back at full length with masked entries as null. An encoding the
+        // reader cannot read no longer arrives here at all: a group with no
+        // known encoding used to be caught in `get_obs_var` and served as `[]`
+        // at 200 (two obs columns of a served dataset, settylab/annzarro#41);
+        // it is now `400 unsupported_type`, and a failed read `500
+        // read_failed`, both classified by `classifyError`. So the premise
+        // holds, and if a future encoding does not read, the right fix is in
+        // the reader -- not a softer sentence here.
         if (typeof expected === 'number' && expected > 0) {
             return Coverage.missing(
                 GAP.FAILED,
@@ -500,18 +556,22 @@ export function classifyValues({ values, expected = null, unit = 'values', sourc
 /**
  * Classify one column of an `/api/v1/data/obs` or `/data/var` response.
  *
- * This encodes the server's ACTUAL, MEASURED semantics (annzarro @ zarr 3.1.6,
- * live probe 2026-08-28 against `/api/v1/data/obs`):
+ * This encodes the server's semantics for a `200` body (measured live
+ * 2026-08-28 against `/api/v1/data/obs`, annzarro @ zarr 3.1.6):
  *
- *   - a requested column that does NOT exist is silently dropped: the response
- *     is `200 {"data": {}}` with the key ABSENT
+ *   - a requested column that does NOT exist was silently dropped: the
+ *     response is `200 {"data": {}}` with the key ABSENT
  *     (`zarr_reader.get_obs_var` filters `column_names` by group membership);
- *   - a column that FAILED to read comes back as the key PRESENT with `[]`
- *     (`get_obs_var`'s per-column `except` sets `result['data'][col] = []`);
+ *   - a column that FAILED to read came back as the key PRESENT with `[]`;
  *   - a healthy column comes back with exactly `n_obs` values.
  *
  * So key-absent vs key-present-but-short is the discriminator between
- * "not in this dataset" and "failed to read", and it needs no reader change.
+ * "not in this dataset" and "failed to read". The current server answers both
+ * before a body is built -- `404 key_not_found` for a column it does not list,
+ * `400 unsupported_type` / `500 read_failed` for one it cannot read
+ * (settylab/annzarro#41) -- and those reach `classifyError` instead. The body
+ * rules stay for a server that predates that, and for one with no metadata
+ * to check a column against.
  * Everything past that presence test is `classifyValues`, so the table -- which
  * once carried its own copy of it -- cannot drift from the plot again.
  *
@@ -588,13 +648,18 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
  * Classify a column read from a MATRIX-shaped member: `obsm`, `varm`, `obsp`,
  * `varp`, `layer`.
  *
- * These do not share `obs`/`var`'s contract. There is no key-presence signal in
- * the body to inspect -- `classifyColumn`'s discriminator does not apply -- and
- * the server's measured semantics differ: a missing `obsm`/`varm` key answers
- * `200` with `"data": []` rather than by omitting the key. On a dataset with
- * entities that cannot be a legitimate empty read, so an empty array here means
- * the key is NOT IN THIS DATASET, where the same empty array from `obs` means a
- * failed read.
+ * These do not share `obs`/`var`'s contract: there is no key-presence signal in
+ * the body to inspect, so `classifyColumn`'s discriminator does not apply.
+ *
+ * An empty array here used to mean "not in this dataset", because a missing
+ * `obsm`/`varm` key answered `200` with `"data": []`. That stopped being true
+ * from both ends. The server now answers a key it does not list with
+ * `404 key_not_found` (`classifyError` -> UNAVAILABLE), and a key it DOES list
+ * reads or raises rather than coming back empty (settylab/annzarro#42: a
+ * sparse `X_cnv` and cell2location DataFrames, listed by `dataset_structure`,
+ * were read as `[]` and badged "not in this dataset" on 15 keys of 10 served
+ * datasets). So an empty array on a dataset with entities is the same claim
+ * it is for `obs`: listed, and the read produced nothing -- FAILED.
  *
  * That rule lived only in `plot-make.js`, so the table read the identical body
  * in the opposite direction: `unavailable` (warning) on the plot,
@@ -605,12 +670,9 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
  * @returns {Coverage}
  */
 export function classifyMatrixColumn({ values, expected = null, unit = 'values', source = '', role = ROLE.RESTRICTS, key = '' } = {}) {
-    // An EMPTY ARRAY specifically -- not merely a falsy or non-array body. The
-    // measured server shape for an absent key is `{"data": []}`; a body that is
-    // not an array at all is MALFORMED, which is a different claim and belongs
-    // to `classifyValues` as a read failure. Treating the two alike would have
-    // this function assert "the key is absent" about a response that says no
-    // such thing.
+    // An EMPTY ARRAY and a non-array body are both failures, with different
+    // sentences: a body that is not an array at all is MALFORMED, and naming
+    // what was sent points at the right question.
     if (!Array.isArray(values)) {
         // Malformed, and worth saying so specifically: naming the shape the
         // server actually sent points the reader at the right question, where
@@ -626,9 +688,9 @@ export function classifyMatrixColumn({ values, expected = null, unit = 'values',
     }
     if (values.length === 0 && typeof expected === 'number' && expected > 0) {
         return Coverage.missing(
-            GAP.UNAVAILABLE,
-            `"${key || source}" returned no values for this dataset -- the key is `
-            + 'either absent or unreadable',
+            GAP.FAILED,
+            `"${key || source}" is listed by this dataset but returned no values; `
+            + 'the server could not read it',
             { source, unit, total: expected, role }
         );
     }
@@ -697,7 +759,11 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     if (serverReason === 'cap_exceeded') {
         return Coverage.missing(GAP.CAPPED, message, { source, unit, total, role });
     }
-    if (serverReason === 'not_found') {
+    // `key_not_found` is the server saying the column/key is not in this
+    // dataset (settylab/annzarro#45 answers a missing obs/var column or
+    // obsm/varm/obsp/varp/layer key with 404 instead of an empty 200). Read as
+    // a generic failure it turned every absent column into "failed to read".
+    if (serverReason === 'not_found' || serverReason === 'key_not_found') {
         return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });
     }
     // A cap rejection from a server that predates the `reason` field still has

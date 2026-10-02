@@ -49,7 +49,7 @@ Encode/decode/normalize and the URL parse/build helpers live in
 imported by both the browser entrypoint (`main.js`) and the Node guard
 (`annzarro/tests/js/deeplink.test.mjs`, run with
 `node --test annzarro/tests/js/deeplink.test.mjs` or via the pytest wrapper
-`annzarro/tests/js/test_js_deeplink.py`). There is exactly one encoder and one
+`annzarro/tests/js/test_js_suites.py`). There is exactly one encoder and one
 decoder; the browser and the tests cannot drift.
 
 ## The `view` object
@@ -63,6 +63,11 @@ decoder; the browser and the tests cannot drift.
     "focusedCell":  "cell-123",
     "taxonomyId":   "tax-1"
   },
+
+  // the cells shown (docs/design/subsetting.md) — optional
+  "subset": { "n": 100000, "seed": 0 },  // or null: every cell
+                                         // absent: the server's default for the
+                                         // dataset (a subset above 200,000 cells)
 
   // ── PREFERRED: a full layout tree ─────────────────────────────────────────
   "layout": {                      // EXACTLY what PanelManager.saveLayout() emits
@@ -82,6 +87,16 @@ decoder; the browser and the tests cannot drift.
 A link carries **`layout` OR `panels`** (or neither). If both are present,
 `layout` wins; `panels` is the simple shorthand. `normalizeView` enforces this
 and stamps `v`.
+
+`subset` names the cells every panel shows: `{n, seed, balance?, where?}`
+(`n` cells, or `null` for every cell passing `where`; `balance` an obs column
+to sample evenly across; `where` a list of conditions on obs columns, see
+`static/js/utils/subset.js`). The same spec always names the same cells. A
+share link records it whenever a subset is shown, and `null` when every cell of
+a dataset above the subset threshold is shown. A link without `subset` opens on
+the server's default; a malformed one is dropped, so the link still opens. A
+templated link can ask for a subset of an atlas directly, for example
+`"subset": {"n": 50000, "seed": 1, "balance": "batch"}`.
 
 ### Hierarchy node types
 

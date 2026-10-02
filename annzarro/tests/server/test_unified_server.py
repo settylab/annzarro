@@ -44,28 +44,27 @@ class TestUnifiedServerFeatures(unittest.TestCase):
     
     def setUp(self):
         """Set up the test environment."""
-        # Create a test Flask app
-        self.app = Flask(__name__)
-        
-        # Configure for testing
-        self.app.config.update({
+        # The SPA shell is the Jinja template templates/index.html, rendered
+        # for "/", directories and unknown paths; static_dir only serves files.
+        # (These tests used to expect static_dir/index.html, and built a bare
+        # Flask app with no template folder, so every index request raised
+        # TemplateNotFound.)
+        self.app = create_app({
             'TESTING': True,
             'DEBUG': False,
+            'auth_enabled': False,
             'static_dir': self.temp_dir.name,
             'data_dir': 'tests/data'
         })
-        
-        # Register static routes
-        register_static_routes(self.app, "v1")
-        
-        # Create a test client
         self.client = self.app.test_client()
-    
+
+    INDEX_MARKER = b'<title>AnnZarro'
+
     def test_serve_index_html(self):
         """Test serving index.html when requesting root."""
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Test Index', response.data)
+        self.assertIn(self.INDEX_MARKER, response.data)
     
     def test_serve_static_file(self):
         """Test serving a static file."""
@@ -77,7 +76,7 @@ class TestUnifiedServerFeatures(unittest.TestCase):
         """Test serving index.html when requesting a subdirectory."""
         response = self.client.get('/subdir')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Test Index', response.data)  # Should serve root index.html
+        self.assertIn(self.INDEX_MARKER, response.data)  # the SPA shell
     
     def test_serve_subdirectory_file(self):
         """Test serving a file in a subdirectory."""
@@ -89,7 +88,7 @@ class TestUnifiedServerFeatures(unittest.TestCase):
         """Test serving a non-existent file (should serve index.html for SPA)."""
         response = self.client.get('/not_exist.html')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Test Index', response.data)  # Should serve index.html
+        self.assertIn(self.INDEX_MARKER, response.data)  # the SPA shell
     
     def test_skip_api_routes(self):
         """Test skipping API routes in static file handler."""

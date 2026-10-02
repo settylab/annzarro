@@ -129,7 +129,9 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
         metadata['var_columns'] = []
         
     if metadata['has_obsm']:
-        metadata['embeddings'] = [key for key in zs['obsm'].keys() if key.startswith('X_')]
+        # Every obsm key, as the plot axis menus offer: a 'spatial' or
+        # 'spatial_upright' embedding has no X_ prefix and was missing here.
+        metadata['embeddings'] = list(zs['obsm'].keys())
         metadata['obsm'] = {'keys': list(zs['obsm'].keys())}
     else:
         metadata['embeddings'] = []
@@ -237,6 +239,12 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
                     df_name = path_parts[1]
                     col_name = path_parts[2]
                     
+                    # The member arrays of a sparse matrix are not columns,
+                    # and a DataFrame's row index is not one either.
+                    if (metadata['obsm_dataframes'].get(df_name, {}).get('is_array')
+                            or col_name == '_index'):
+                        return
+
                     # Ensure dataframe entry exists
                     if df_name not in metadata['obsm_dataframes']:
                         metadata['obsm_dataframes'][df_name] = {
@@ -274,6 +282,12 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
                     df_name = path_parts[1]
                     col_name = path_parts[2]
                     
+                    # The member arrays of a sparse matrix are not columns,
+                    # and a DataFrame's row index is not one either.
+                    if (metadata['varm_dataframes'].get(df_name, {}).get('is_array')
+                            or col_name == '_index'):
+                        return
+
                     # Ensure dataframe entry exists
                     if df_name not in metadata['varm_dataframes']:
                         metadata['varm_dataframes'][df_name] = {
@@ -310,6 +324,24 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
                         'type': encoding_type,
                         'shape': shape
                     }
+
+                # A sparse obsm/varm matrix is a matrix, addressed by column
+                # position like a dense one. Left unhandled here, its
+                # data/indices/indptr arrays were listed below as the columns
+                # of a "dataframe", so the column picker offered "data",
+                # "indices" and "indptr" for X_cnv (settylab/annzarro#42).
+                elif len(path_parts) == 2 and path_parts[0] in ('obsm', 'varm'):
+                    slot, key = path_parts
+                    data_dtype = str(obj['data'].dtype) if 'data' in obj else encoding_type
+                    metadata[f'{slot}_info'][key] = {'type': encoding_type, 'shape': shape}
+                    if len(shape) > 1:
+                        metadata[f'{slot}_dataframes'][key] = {
+                            'columns': [str(i) for i in range(shape[1])],
+                            'is_array': True,
+                            'array_shape': shape,
+                            'array_dtype': data_dtype,
+                            'sparse': encoding_type
+                        }
             
             # Handle categorical columns
             elif encoding_type == 'categorical':

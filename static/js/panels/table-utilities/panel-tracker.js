@@ -6,6 +6,7 @@
  */
 import { PanelManager } from '../../panel-manager.js';
 import { DataManager } from '../../data-manager.js';
+import { layerKeys } from '../../utils/structure-keys.js';
 
 /**
  * Get fixed cells from all active panels
@@ -312,196 +313,151 @@ export function getFixedGenes() {
 }
 
 /**
- * Get obsp matrices for cell table with fixed cells
- * @param {Object} datasetStructure - The dataset structure
- * @returns {Array<Object>} - Array of obsp items for column selection
+ * The matrix names of an obsp/varp section of /data/dataset_structure.
+ *
+ * The server sends them as a list (`keys`, process_file.py get_keys); an
+ * older shape had a `matrices` object keyed by name. The varp code iterated
+ * Object.keys() of the list, so a gene table offered "0: Focused Gene",
+ * "1: Focused Gene" instead of the varp names, and a restored column
+ * {type: 'varp', key: 'spearman_fold_change'} matched nothing and was
+ * silently dropped. Both shapes give names here.
+ * @param {{keys?: string[]|Object, matrices?: string[]|Object}|undefined} section
+ * @returns {string[]}
  */
-export function getObspColumnsForCellTable(datasetStructure) {
-    if (!datasetStructure?.obsp?.matrices && !datasetStructure?.obsp?.keys) return [];
-    
+export function pairwiseKeys(section) {
+    const keys = section?.matrices ? section.matrices : section?.keys;
+    if (!keys) return [];
+    return Array.isArray(keys) ? keys : Object.keys(keys);
+}
+
+const PLACEHOLDERS = {
+    cell: new Set(['focused_cell', '_focused_cell']),
+    gene: new Set(['focused_gene', '_focused_gene'])
+};
+
+/**
+ * Column choices for one pairwise source (obsp/varp rows, layer rows or
+ * columns): every matrix crossed with every entity the table could name.
+ *
+ * Choosing the focused entity stores its NAME (`column: 'S100a9'`), not a
+ * placeholder. Issue #9: a column added from the focus used to follow it, so
+ * every focus change reloaded the table, re-ran filters on that column and
+ * cascaded into the plots filtered by the table; the "Selected Columns" list
+ * could only call it "focused". A table needs the entity, not whether it is
+ * focused right now.
+ *
+ * Offered, once per entity: the focused one, every one locked in a plot
+ * (all of them, from any panel), and every one this table already holds, so
+ * a column added from an earlier focus stays listed and can be removed.
+ * A placeholder column from an older session still follows the focus and is
+ * listed as such.
+ *
+ * @param {Object} options
+ * @param {string} options.type - 'obsp' | 'varp' | 'layer'
+ * @param {string[]} options.keys - Matrix (or layer) names
+ * @param {Array<{name: string, source: string, panelTitle?: string, panelId?: string}>} options.entities
+ *     Focused entity first, then locked ones, deduplicated
+ * @param {'cell'|'gene'} options.kind - What the entities are
+ * @param {Array<Object>} [options.selected] - The table's current columns
+ * @returns {Array<Object>} Checkbox items
+ */
+export function entityColumnItems({ type, keys, entities, kind, selected = [] }) {
     const items = [];
-    const fixedCells = getFixedCells();
-    
-    // Add the focused cell entry for each obsp matrix
-    const focusedCell = fixedCells.find(fc => fc.source === 'focused');
-    if (focusedCell) {
-        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
+    const seen = new Set();
+    const add = (item) => {
+        const id = `${item.key}\u0000${item.column}`;
+        if (seen.has(id)) return;
+        seen.add(id);
+        items.push(item);
+    };
+    for (const entity of entities) {
         for (const key of keys) {
-            items.push({
-                type: 'obsp',
-                key,
-                column: 'focused_cell',
-                label: `${key}: Focused Cell (${focusedCell.cell})`,
+            const note = entity.source === 'focused' ? 'focused'
+                : `fixed in ${entity.panelTitle}`;
+            add({
+                type, key, column: entity.name,
+                label: `${key}: ${entity.name} (${note})`,
+                source: entity.source,
+                ...(entity.panelId ? { panelId: entity.panelId } : {})
+            });
+        }
+    }
+    const focused = entities.find(e => e.source === 'focused')?.name;
+    for (const col of selected || []) {
+        if (!col || col.type !== type || !keys.includes(col.key) || !col.column) continue;
+        if (PLACEHOLDERS[kind].has(col.column)) {
+            add({
+                type, key: col.key, column: col.column,
+                label: `${col.key}: follows the focused ${kind}${focused ? ` (${focused})` : ''}`,
                 source: 'focused'
             });
-        }
-    }
-    
-    // Add fixed cells from other panels
-    for (const fixedCell of fixedCells) {
-        if (fixedCell.source === 'focused') continue; // Skip focused cell, already added
-
-        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
-        for (const key of keys) {
-            items.push({
-                type: 'obsp',
-                key,
-                column: fixedCell.cell,
-                label: `${key}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
-                source: fixedCell.source,
-                panelId: fixedCell.panelId
+        } else {
+            add({
+                type, key: col.key, column: col.column,
+                label: `${col.key}: ${col.column} (in this table)`,
+                source: 'table'
             });
         }
     }
-    
     return items;
+}
+
+const cellEntities = () => getFixedCells().map(fc => ({ ...fc, name: fc.cell }));
+const geneEntities = () => getFixedGenes().map(fg => ({ ...fg, name: fg.gene }));
+
+/**
+ * Get obsp matrices for cell table with fixed cells
+ * @param {Object} datasetStructure - The dataset structure
+ * @param {Array<Object>} [selected] - The table's current columns
+ * @returns {Array<Object>} - Array of obsp items for column selection
+ */
+export function getObspColumnsForCellTable(datasetStructure, selected = []) {
+    if (!datasetStructure?.obsp?.matrices && !datasetStructure?.obsp?.keys) return [];
+    return entityColumnItems({
+        type: 'obsp', keys: pairwiseKeys(datasetStructure.obsp),
+        entities: cellEntities(), kind: 'cell', selected
+    });
 }
 
 /**
  * Get varp matrices for gene table with fixed genes
  * @param {Object} datasetStructure - The dataset structure
+ * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of varp items for column selection
  */
-export function getVarpColumnsForGeneTable(datasetStructure) {
+export function getVarpColumnsForGeneTable(datasetStructure, selected = []) {
     if (!datasetStructure?.varp?.matrices && !datasetStructure?.varp?.keys) return [];
-    
-    const items = [];
-    const fixedGenes = getFixedGenes();
-    
-    // Add the focused gene entry for each varp matrix
-    const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
-    if (focusedGene) {
-        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
-        for (const key of Object.keys(keys)) {
-            items.push({
-                type: 'varp',
-                key,
-                column: 'focused_gene',
-                label: `${key}: Focused Gene (${focusedGene.gene})`,
-                source: 'focused'
-            });
-        }
-    }
-    
-    // Add fixed genes from other panels
-    for (const fixedGene of fixedGenes) {
-        if (fixedGene.source === 'focused') continue; // Skip focused gene, already added
-        
-        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
-        for (const key of Object.keys(keys)) {
-            items.push({
-                type: 'varp',
-                key,
-                column: fixedGene.gene,
-                label: `${key}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
-                source: fixedGene.source,
-                panelId: fixedGene.panelId
-            });
-        }
-    }
-    
-    return items;
+    return entityColumnItems({
+        type: 'varp', keys: pairwiseKeys(datasetStructure.varp),
+        entities: geneEntities(), kind: 'gene', selected
+    });
 }
 
 /**
  * Get layer columns for cell table with fixed genes
  * @param {Object} datasetStructure - The dataset structure
+ * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of layer items for column selection
  */
-export function getLayerColumnsForCellTable(datasetStructure) {
-    if (!datasetStructure?.layers) return [];
-    
-    const items = [];
-    const fixedGenes = getFixedGenes();
-    
-    // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
-        datasetStructure.layers.keys : 
-        (typeof datasetStructure.layers.keys === 'object' ? 
-            Object.keys(datasetStructure.layers.keys) : 
-            []);
-    
-    // Add the focused gene entry for each layer
-    const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
-    if (focusedGene) {
-        for (const layer of layersArray) {
-            //May delete the focused gene part.
-            items.push({
-                type: 'layer',
-                key: layer,
-                column: 'focused_gene',
-                label: `${layer}: ${focusedGene.gene}`,
-                source: 'focused'
-            });
-        }
-    }
-    
-    // Add fixed genes from other panels
-    for (const fixedGene of fixedGenes) {
-        if (fixedGene.source === 'focused') continue; // Skip focused gene, already added
-        
-        for (const layer of layersArray) {
-            items.push({
-                type: 'layer',
-                key: layer,
-                column: fixedGene.gene,
-                label: `${layer}: ${fixedGene.gene} (Fixed in ${fixedGene.panelTitle})`,
-                source: fixedGene.source,
-                panelId: fixedGene.panelId
-            });
-        }
-    }
-    
-    return items;
+export function getLayerColumnsForCellTable(datasetStructure, selected = []) {
+    if (!datasetStructure?.layers && !datasetStructure?.X) return [];
+    // X first, then the layers, as in the plot menus
+    return entityColumnItems({
+        type: 'layer', keys: layerKeys(datasetStructure),
+        entities: geneEntities(), kind: 'gene', selected
+    });
 }
 
 /**
  * Get layer columns for gene table with fixed cells
  * @param {Object} datasetStructure - The dataset structure
+ * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of layer items for column selection
  */
-export function getLayerColumnsForGeneTable(datasetStructure) {
-    if (!datasetStructure?.layers) return [];
-    
-    const items = [];
-    const fixedCells = getFixedCells();
-    
-    // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
-        datasetStructure.layers.keys : 
-        (typeof datasetStructure.layers.keys === 'object' ? 
-            Object.keys(datasetStructure.layers.keys) : 
-            []);
-    
-    // Add the focused cell entry for each layer
-    const focusedCell = fixedCells.find(fc => fc.source === 'focused');
-    if (focusedCell) {
-        for (const layer of layersArray) {
-            items.push({
-                type: 'layer',
-                key: layer,
-                column: 'focused_cell',
-                label: `${layer}: ${focusedCell.cell}`,
-                source: 'focused'
-            });
-        }
-    }
-    
-    // Add fixed cells from other panels
-    for (const fixedCell of fixedCells) {
-        if (fixedCell.source === 'focused') continue; // Skip focused cell, already added
-        
-        for (const layer of layersArray) {
-            items.push({
-                type: 'layer',
-                key: layer,
-                column: fixedCell.cell,
-                label: `${layer}: ${fixedCell.cell} (Fixed in ${fixedCell.panelTitle})`,
-                source: fixedCell.source,
-                panelId: fixedCell.panelId
-            });
-        }
-    }
-    
-    return items;
+export function getLayerColumnsForGeneTable(datasetStructure, selected = []) {
+    if (!datasetStructure?.layers && !datasetStructure?.X) return [];
+    return entityColumnItems({
+        type: 'layer', keys: layerKeys(datasetStructure),
+        entities: cellEntities(), kind: 'cell', selected
+    });
 }

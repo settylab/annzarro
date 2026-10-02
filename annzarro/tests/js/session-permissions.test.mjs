@@ -13,7 +13,7 @@
 //   * user-controlled strings are escaped before reaching innerHTML.
 //
 // Run: `node --test annzarro/tests/js/session-permissions.test.mjs`. Also
-// driven by the pytest wrapper test_js_coverage.py.
+// driven by the pytest wrapper test_js_suites.py.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -115,4 +115,39 @@ test("escapeHtml neutralises markup from uploaded panel-set files", () => {
   );
   assert.equal(escapeHtml(null), "");
   assert.equal(escapeHtml(undefined), "");
+});
+
+// --- Refresh button: clearing the server's shared cache is admin-only on a
+// hosted server (POST /cache/reset -> 403 admin_only, PR #45). Non-admins still
+// refresh in their browser, quietly, and are not promised a server clear.
+test("refreshPlan: hosted non-admins reload locally; admins and desktop clear the server cache", async () => {
+  const { refreshPlan } = await import(pathToFileURL(MODULE_PATH).href);
+  const user = refreshPlan({ auth_enabled: true, username: "ana", is_admin: false, exposed: false });
+  assert.equal(user.resetServerCache, false);
+  assert.doesNotMatch(user.title, /^Reload this dataset and clear/);
+  assert.match(user.title, /only an admin/);
+  assert.equal(refreshPlan({ auth_enabled: false, exposed: true, is_admin: false }).resetServerCache, false,
+    "a network server without login has no admins");
+  assert.equal(refreshPlan({ auth_enabled: true, username: "root", is_admin: true }).resetServerCache, true);
+  assert.equal(refreshPlan({ auth_enabled: false, exposed: false }).resetServerCache, true, "desktop / local");
+  assert.equal(refreshPlan(null).resetServerCache, true, "unknown: try, the refusal is tolerated");
+});
+
+test("a 403 from /cache/reset is an expected answer, not an error", async () => {
+  globalThis.document = new EventTarget();
+  globalThis.window = { addEventListener() {}, location: { href: "http://localhost/" } };
+  globalThis.fetch = async (url, opts) => (String(url).includes("cache/reset")
+    ? new Response(JSON.stringify({ status: "error", reason: "admin_only" }), { status: 403 })
+    : new Response("{}", { status: 404 }));
+  const errors = [];
+  const origError = console.error;
+  console.error = (...a) => errors.push(a.join(" "));
+  try {
+    const { DataManager } = await import("../../../static/js/data-manager.js");
+    const result = await DataManager.resetBackendCache("/d.zarr");
+    assert.deepEqual(result, { status: "forbidden", reason: "admin_only" });
+    assert.equal(errors.filter(e => /cache/i.test(e)).length, 0, errors.join("\n"));
+  } finally {
+    console.error = origError;
+  }
 });

@@ -56,6 +56,11 @@ server:
       description: Path to SSL key file
       default: null
       security: sensitive
+    url_prefix:
+      type: string
+      description: "Path the app is served under behind a reverse proxy, e.g. /explore (empty = the root)"
+      default: ""
+      security: public
     data_dir:
       type: string
       description: Data directory
@@ -244,6 +249,18 @@ ui:
           type: string
           description: Default taxonomy ID
           default: "9606"
+        subset_threshold:
+          type: integer
+          description: A dataset with more cells than this opens on a reproducible cell subset (0 = always)
+          default: 200000
+        subset_size:
+          type: integer
+          description: Cells in that subset
+          default: 100000
+        subset_seed:
+          type: integer
+          description: Seed of that subset (same seed, same cells)
+          default: 0
     cache:
       type: object
       description: Client-side cache settings
