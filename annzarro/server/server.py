@@ -164,31 +164,20 @@ def run_server(
         # Server started successfully in background
         logger.info(f"Server started in detached mode (PID: {proc.pid})")
         
-        # Store PID for later management
-        # Standard location in home directory with a fallback if access fails
+        # Store the PID for `annzarro stop`, in the per-user state directory
+        # only: a file in the shared temp directory could be replaced by any
+        # user on the machine.
         from annzarro.utils.paths import pid_file
-        pid_dir = pid_file().parent
+        path = pid_file()
         try:
-            # Create the directory if it doesn't exist
-            pid_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Try to write the PID file
-            with open(pid_dir / "server.pid", "w") as f:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 f.write(str(proc.pid))
-                
-            logger.info(f"PID file written to {pid_dir / 'server.pid'}")
-        except (PermissionError, OSError) as e:
-            # If we can't write to the home directory, try the temp directory
-            logger.warning(f"Failed to write PID to home directory: {e}")
-            try:
-                import tempfile
-                pid_dir = Path(tempfile.gettempdir()) / "annzarro"
-                pid_dir.mkdir(exist_ok=True)
-                with open(pid_dir / "server.pid", "w") as f:
-                    f.write(str(proc.pid))
-                logger.info(f"PID file written to alternative location: {pid_dir / 'server.pid'}")
-            except Exception as e2:
-                logger.error(f"Failed to write PID file to alternative location: {e2}")
+            logger.info(f"PID file written to {path}")
+        except OSError as e:
+            logger.error(f"Could not write the PID file {path} ({e}); stop the server "
+                         f"with `kill {proc.pid}`")
             
     else:
         try:
