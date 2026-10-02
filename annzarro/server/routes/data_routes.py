@@ -15,7 +15,6 @@ import re
 
 from ...core import zarr_reader
 from ...core.zarr_reader import ZarrFormatError
-from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
 from ...core import name_index
@@ -74,7 +73,9 @@ def _probe_dataset_counts(entry_path, probe):
         # reason, beats dropping it: a store that silently vanishes from the
         # list is as unexplained as one that silently reads as empty.
         counts = exc
-    except Exception:
+    except Exception as exc:
+        # Not listed; say why once (the result is cached until it changes).
+        logger.warning(f"Not listing {entry_path}: {type(exc).__name__}: {exc}")
         counts = None
     _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
     return counts
@@ -1319,8 +1320,13 @@ def register_data_routes(app, api_version):
                     if entry.endswith(".h5ad") and os.path.isfile(entry_path):
                         def _h5ad_counts(path):
                             # get_metadata reads only the file's structure (not
-                            # the matrices), so this is a cheap shape probe.
-                            shape = h5ad_reader_obj.get_metadata(path).get("shape", (0, 0))
+                            # the matrices), and it is the cached metadata every
+                            # route uses once the dataset is opened. get_reader
+                            # returns the reader this app configured; the
+                            # h5ad_reader_obj once imported here was bound at the
+                            # first create_app, so any later app in the process
+                            # listed through the first app's reader and cache.
+                            shape = get_reader(path).get_metadata(path).get("shape", (0, 0))
                             return int(shape[0]), int(shape[1])
 
                         counts = _probe_dataset_counts(entry_path, _h5ad_counts)
