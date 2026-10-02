@@ -122,6 +122,16 @@ server:
       description: Credentials for remote stores; environment uses the AWS/GCP standard credential chain
       default: anonymous
       security: internal
+    remote_connect_timeout_s:
+      type: number
+      description: Seconds to establish a connection to a remote store
+      default: 10
+      security: internal
+    remote_read_timeout_s:
+      type: number
+      description: Seconds to wait between bytes from a remote store before failing with 504
+      default: 30
+      security: internal
   required:
     - host
     - port

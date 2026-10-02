@@ -50,6 +50,10 @@ server:
   # environment - backend credential chain: AWS_* env vars, AWS_PROFILE/~/.aws,
   #               instance roles; Google application default credentials
   remote_credentials: anonymous
+  # Seconds to establish a connection / to wait between bytes. A store that
+  # stops answering fails the request with HTTP 504 instead of holding it.
+  remote_connect_timeout_s: 10
+  remote_read_timeout_s: 30
 
 # Authentication configuration
 auth:

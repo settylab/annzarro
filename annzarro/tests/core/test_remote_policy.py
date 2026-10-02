@@ -219,18 +219,68 @@ def test_refusal_message_does_not_echo_credentials():
 
 def test_storage_options_default_to_anonymous():
     p = _policy(**LOCAL)
-    assert p.storage_options("s3://b/x.zarr") == {"anon": True}
-    assert p.storage_options("gs://b/x.zarr") == {"token": "anon"}
-    # plain HTTP has no credentials; only the 403-as-missing hook is set
-    assert p.storage_options("https://h/x.zarr") == {
-        "client_kwargs": {"raise_for_status": remote._http_status}}
+    assert p.storage_options("s3://b/x.zarr")["anon"] is True
+    assert p.storage_options("gs://b/x.zarr")["token"] == "anon"
+    # plain HTTP has no credentials; only the 403-as-missing hook and timeouts
+    opts = p.storage_options("https://h/x.zarr")
+    assert set(opts) == {"client_kwargs"}
+    assert opts["client_kwargs"]["raise_for_status"] is remote._http_status
 
 
 def test_storage_options_environment_uses_backend_credential_chain():
     p = _policy(**LOCAL, remote_credentials="environment")
     # no explicit keys: s3fs/gcsfs fall back to env vars, profiles, roles
-    assert p.storage_options("s3://b/x.zarr") == {}
-    assert p.storage_options("gs://b/x.zarr") == {}
+    assert "anon" not in p.storage_options("s3://b/x.zarr")
+    assert "token" not in p.storage_options("gs://b/x.zarr")
+
+
+# --------------------------------------------------------------------------
+# timeouts
+# --------------------------------------------------------------------------
+
+def test_timeouts_default_and_reach_every_backend():
+    pytest.importorskip("aiohttp")
+    p = _policy(**LOCAL)
+    assert (p.connect_timeout, p.read_timeout) == (10.0, 30.0)
+    p = _policy(**LOCAL, remote_connect_timeout_s=3, remote_read_timeout_s="7.5")
+    s3 = p.storage_options("s3://b/x.zarr")["config_kwargs"]
+    assert (s3["connect_timeout"], s3["read_timeout"]) == (3.0, 7.5)
+    for url, timeout in [
+        ("gs://b/x.zarr", lambda o: o["requests_timeout"]),
+        ("https://h/x.zarr", lambda o: o["client_kwargs"]["timeout"]),
+    ]:
+        t = timeout(p.storage_options(url))
+        # per-socket bounds, not a cap on a whole (possibly large) transfer
+        assert (t.sock_connect, t.sock_read, t.total) == (3.0, 7.5, None)
+    t = _policy(**LOCAL, remote_allowlist=["https://h/"],
+                remote_read_timeout_s=2).storage_options("https://h/x.zarr")
+    assert t["client_kwargs"]["timeout"].sock_read == 2.0
+
+
+def test_timeout_environment_override_and_validation():
+    env = {"ANNZARRO_REMOTE_CONNECT_TIMEOUT": "1", "ANNZARRO_REMOTE_READ_TIMEOUT": "2"}
+    p = _policy(env, **LOCAL, remote_read_timeout_s=99)
+    assert (p.connect_timeout, p.read_timeout) == (1.0, 2.0)
+    for bad in (0, -1, "soon"):
+        with pytest.raises(ValueError, match="remote_read_timeout_s"):
+            _policy(**LOCAL, remote_read_timeout_s=bad)
+
+
+def test_is_timeout_sees_through_wrapping():
+    class ReadTimeoutError(Exception):  # botocore's is not a TimeoutError
+        pass
+
+    assert remote.is_timeout(TimeoutError())
+    assert remote.is_timeout(ReadTimeoutError())
+    try:
+        try:
+            raise TimeoutError("socket")
+        except TimeoutError as inner:
+            raise RuntimeError("zarr wrapped it") from inner
+    except RuntimeError as outer:
+        assert remote.is_timeout(outer)
+    assert not remote.is_timeout(RuntimeError("no"))
+    assert not remote.is_timeout(FileNotFoundError("missing"))
 
 
 def test_allowlisted_http_does_not_follow_redirects():

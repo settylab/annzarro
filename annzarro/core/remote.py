@@ -48,6 +48,11 @@ _CREDENTIALS = ("anonymous", "environment")
 ENV_MODE = "ANNZARRO_REMOTE_STORES"
 ENV_ALLOWLIST = "ANNZARRO_REMOTE_ALLOWLIST"
 ENV_CREDENTIALS = "ANNZARRO_REMOTE_CREDENTIALS"
+ENV_CONNECT_TIMEOUT = "ANNZARRO_REMOTE_CONNECT_TIMEOUT"
+ENV_READ_TIMEOUT = "ANNZARRO_REMOTE_READ_TIMEOUT"
+
+DEFAULT_CONNECT_TIMEOUT_S = 10.0
+DEFAULT_READ_TIMEOUT_S = 30.0
 
 
 class RemoteAccessDenied(PermissionError):
@@ -56,6 +61,46 @@ class RemoteAccessDenied(PermissionError):
 
 class RemoteDependencyError(ImportError):
     """The optional packages needed to read this URL scheme are not installed."""
+
+
+class RemoteTimeout(TimeoutError):
+    """A remote store did not connect or answer within the configured timeout."""
+
+
+# Timeouts arrive as different types per backend: aiohttp's ServerTimeoutError
+# and asyncio's TimeoutError (both TimeoutError on Python >= 3.11), botocore's
+# Connect/ReadTimeoutError (not TimeoutError at all), urllib3's, or wrapped by
+# zarr or this reader in a RuntimeError. So match on the whole cause chain.
+_TIMEOUT_NAMES = {"TimeoutError", "ServerTimeoutError", "ConnectTimeoutError",
+                  "ReadTimeoutError", "ConnectTimeout", "ReadTimeout",
+                  "SocketTimeoutError", "ConnectionTimeoutError"}
+
+
+def raise_if_timeout(exc: BaseException) -> None:
+    """Re-raise a timeout as ``RemoteTimeout``; do nothing for anything else.
+
+    The reader has dozens of ``except Exception`` fallbacks that turn a read
+    failure into an empty result (HTTP 200, no data). Harmless-ish for a
+    corrupt local file; for a remote store that merely went quiet it means a
+    stall is shown as "this column is empty". Each fallback calls this first,
+    so a timeout always reaches the route and becomes a 504.
+    """
+    if is_timeout(exc):
+        if isinstance(exc, RemoteTimeout):
+            raise exc
+        raise RemoteTimeout(f"Remote store did not respond in time: "
+                            f"{type(exc).__name__}: {exc}") from exc
+
+
+def is_timeout(exc: BaseException) -> bool:
+    """True if ``exc`` or anything in its cause/context chain is a timeout."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, TimeoutError) or type(exc).__name__ in _TIMEOUT_NAMES:
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def remote_scheme(path: Any) -> Optional[str]:
@@ -98,6 +143,16 @@ def validate_remote_url(url: str) -> urllib.parse.SplitResult:
     if "." in segments or ".." in segments:
         raise ValueError(f"Remote dataset URL must not contain '.' or '..' segments: {url!r}")
     return parts
+
+
+def _seconds(value: Any, key: str) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a number of seconds, got {value!r}")
+    if not seconds > 0:
+        raise ValueError(f"{key} must be positive, got {value!r}")
+    return seconds
 
 
 def _split_list(value: Any) -> Tuple[str, ...]:
@@ -181,6 +236,8 @@ class RemotePolicy:
     allowlist: Tuple[_Prefix, ...] = ()
     credentials: str = "anonymous"
     reason: str = "library default"
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT_S
+    read_timeout: float = DEFAULT_READ_TIMEOUT_S
 
     @property
     def restricted(self) -> bool:
@@ -201,9 +258,11 @@ class RemotePolicy:
             case only those prefixes are allowed.
         ``remote_allowlist``  list (or comma-separated string) of URL prefixes
         ``remote_credentials``  ``anonymous`` (default) | ``environment``
+        ``remote_connect_timeout_s`` / ``remote_read_timeout_s``  seconds
+            (default 10 / 30) to establish a connection / between bytes read
 
-        ``ANNZARRO_REMOTE_STORES``, ``ANNZARRO_REMOTE_ALLOWLIST`` and
-        ``ANNZARRO_REMOTE_CREDENTIALS`` override the config keys.
+        ``ANNZARRO_REMOTE_STORES``, ``_ALLOWLIST``, ``_CREDENTIALS``,
+        ``_CONNECT_TIMEOUT`` and ``_READ_TIMEOUT`` override the config keys.
         """
         config = config or {}
         environ = os.environ if environ is None else environ
@@ -215,6 +274,10 @@ class RemotePolicy:
                                       config.get("remote_credentials", "anonymous"))).strip().lower()
         if credentials not in _CREDENTIALS:
             raise ValueError(f"remote_credentials must be one of {_CREDENTIALS}, got {credentials!r}")
+        connect_timeout = _seconds(environ.get(ENV_CONNECT_TIMEOUT, config.get(
+            "remote_connect_timeout_s", DEFAULT_CONNECT_TIMEOUT_S)), "remote_connect_timeout_s")
+        read_timeout = _seconds(environ.get(ENV_READ_TIMEOUT, config.get(
+            "remote_read_timeout_s", DEFAULT_READ_TIMEOUT_S)), "remote_read_timeout_s")
 
         if mode == "deny":
             enabled, reason = False, "remote_stores: deny"
@@ -230,13 +293,15 @@ class RemotePolicy:
                 enabled, reason = False, (f"remote_stores: auto ({', '.join(hosted)}; "
                                           f"set remote_allowlist or remote_stores: allow)")
         return cls(enabled=enabled, allowlist=allowlist, credentials=credentials,
-                   reason=reason)
+                   reason=reason, connect_timeout=connect_timeout, read_timeout=read_timeout)
 
     def describe(self) -> str:
         if not self.enabled:
             return f"remote stores disabled [{self.reason}]"
         scope = ", ".join(str(p) for p in self.allowlist) if self.allowlist else "any URL"
-        return f"remote stores allowed for {scope}; credentials={self.credentials} [{self.reason}]"
+        return (f"remote stores allowed for {scope}; credentials={self.credentials}; "
+                f"timeouts connect={self.connect_timeout:g}s read={self.read_timeout:g}s "
+                f"[{self.reason}]")
 
     def check(self, url: str) -> urllib.parse.SplitResult:
         """Raise ``RemoteAccessDenied`` unless this policy permits ``url``."""
@@ -251,19 +316,43 @@ class RemotePolicy:
         return parts
 
     def storage_options(self, url: str) -> Dict[str, Any]:
-        """fsspec ``storage_options`` for opening ``url`` under this policy."""
+        """fsspec ``storage_options`` for opening ``url`` under this policy.
+
+        Every backend gets a connect and a read timeout. Without them a store
+        that accepts the connection and then goes quiet holds a server thread
+        for aiohttp's 5-minute default -- or indefinitely for gcsfs, which
+        passes ``timeout=None`` on every request.
+        """
         scheme = remote_scheme(url)
         anonymous = self.credentials == "anonymous"
         if scheme == "s3":
-            return {"anon": True} if anonymous else {}
+            options = {"config_kwargs": {"connect_timeout": self.connect_timeout,
+                                         "read_timeout": self.read_timeout}}
+            if anonymous:
+                options["anon"] = True
+            return options
         if scheme in ("gs", "gcs"):
-            return {"token": "anon"} if anonymous else {}
+            # gcsfs hands requests_timeout to every aiohttp request, which
+            # overrides any session-level timeout.
+            options = {"requests_timeout": self._aiohttp_timeout()}
+            if anonymous:
+                options["token"] = "anon"
+            return options
         if scheme in ("http", "https"):
+            client_kwargs = {"timeout": self._aiohttp_timeout()}
             if self.restricted:
-                return {"allow_redirects": False,
-                        "client_kwargs": {"raise_for_status": _http_status_restricted}}
-            return {"client_kwargs": {"raise_for_status": _http_status}}
+                client_kwargs["raise_for_status"] = _http_status_restricted
+                return {"allow_redirects": False, "client_kwargs": client_kwargs}
+            client_kwargs["raise_for_status"] = _http_status
+            return {"client_kwargs": client_kwargs}
         return {}
+
+    def _aiohttp_timeout(self):
+        import aiohttp
+        # sock_read bounds the gap between bytes, not the whole transfer, so a
+        # large chunk on a slow but live link still completes.
+        return aiohttp.ClientTimeout(total=None, sock_connect=self.connect_timeout,
+                                     sock_read=self.read_timeout)
 
 
 async def _http_status(response) -> None:
@@ -352,6 +441,7 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
             the (anonymous) request
         RemoteDependencyError: the scheme's optional backend is not installed
         FileNotFoundError: no zarr group at the URL
+        RemoteTimeout: no connection or no answer within the policy's timeouts
         RuntimeError: any other failure (network, DNS, TLS, ...)
     """
     policy = policy or _policy
@@ -365,27 +455,33 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
                + (" or it needs credentials (remote_credentials: environment)"
                   if policy.credentials == "anonymous"
                   and remote_scheme(url) not in ("http", "https") else ""))
+    # Exceptions the store reads as "key absent". Deliberately NOT OSError as a
+    # whole: a timeout is an OSError, and zarr fills an "absent" chunk with
+    # the fill value -- a stalled read would come back as zeros, not an error.
+    missing_key = (FileNotFoundError, IsADirectoryError, NotADirectoryError)
+    if remote_scheme(url) == "s3":
+        # s3fs raises PermissionError for a 403, which is how S3 says
+        # "no such key" to a caller without ListBucket (see _http_status).
+        missing_key += (PermissionError,)
     try:
         if _ZARR_V3:
             # zarr 3 reads consolidated metadata on its own when present.
             from zarr.storage import FsspecStore
-            allowed = (FileNotFoundError, IsADirectoryError, NotADirectoryError)
-            if remote_scheme(url) == "s3":
-                # s3fs raises PermissionError for a 403, which is how S3 says
-                # "no such key" to a caller without ListBucket (see _http_status).
-                allowed += (PermissionError,)
             store = FsspecStore.from_url(target, storage_options=options, read_only=True,
-                                         allowed_exceptions=allowed)
+                                         allowed_exceptions=missing_key)
             group = zarr.open_group(store, mode="r")
             consolidated = getattr(group.metadata, "consolidated_metadata", None) is not None
         else:
+            # zarr 2's FSStore defaults to treating every IOError as absent.
+            store = zarr.storage.FSStore(target, mode="r", exceptions=(KeyError,) + missing_key,
+                                         **options)
             # zarr 2 must be asked for consolidated metadata. One .zmetadata
             # request replaces a request per member: ms versus seconds remotely.
             try:
-                group = zarr.open_consolidated(target, mode="r", storage_options=options)
+                group = zarr.open_consolidated(store, mode="r")
                 consolidated = True
             except KeyError:
-                group = zarr.open_group(target, mode="r", storage_options=options)
+                group = zarr.open_group(store, mode="r")
                 consolidated = False
         if not consolidated and remote_scheme(url) in ("http", "https"):
             # HTTP has no listing primitive. Without .zmetadata, member names
@@ -397,17 +493,35 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
                            "HTTP its members may not be listable. Consolidate it with "
                            "zarr.consolidate_metadata() or serve it via s3:// / gs://.", url)
         return group
-    except (RemoteAccessDenied, ValueError) as exc:
-        if _is_missing_group(exc):
-            raise FileNotFoundError(missing) from exc
+    except Exception as exc:
+        error = _classify_open_error(exc, url, policy, missing)
+        if error is exc:
+            raise
+        raise error from exc
+
+
+def timeout_message(url: str, policy: Optional[RemotePolicy] = None) -> str:
+    policy = policy or _policy
+    return (f"Remote store {url} did not respond in time (connect timeout "
+            f"{policy.connect_timeout:g}s, read timeout {policy.read_timeout:g}s; "
+            f"see remote_connect_timeout_s / remote_read_timeout_s)")
+
+
+def _classify_open_error(exc: Exception, url: str, policy: RemotePolicy,
+                         missing: str) -> Exception:
+    """The typed error ``open_remote_group`` promises, for whatever was raised."""
+    if is_timeout(exc):
+        return RemoteTimeout(timeout_message(url, policy))
+    if _is_missing_group(exc):
+        return FileNotFoundError(missing)
+    if isinstance(exc, RemoteAccessDenied):
+        return exc
+    if isinstance(exc, ValueError):
         if "contains an array" in str(exc).lower():
-            raise ValueError(f"URL points at a zarr array, not an AnnData group: {url}") from exc
-        raise
-    except PermissionError as exc:
+            return ValueError(f"URL points at a zarr array, not an AnnData group: {url}")
+        return exc
+    if isinstance(exc, PermissionError):
         hint = (" The store may require credentials; set remote_credentials: environment."
                 if policy.credentials == "anonymous" else "")
-        raise RemoteAccessDenied(f"Remote store refused access to {url}.{hint}") from exc
-    except Exception as exc:
-        if _is_missing_group(exc):
-            raise FileNotFoundError(missing) from exc
-        raise RuntimeError(f"Could not open remote store {url}: {type(exc).__name__}: {exc}") from exc
+        return RemoteAccessDenied(f"Remote store refused access to {url}.{hint}")
+    return RuntimeError(f"Could not open remote store {url}: {type(exc).__name__}: {exc}")

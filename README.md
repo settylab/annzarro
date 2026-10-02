@@ -143,6 +143,8 @@ server:
   remote_stores: auto          # auto | allow | deny
   remote_allowlist: []         # e.g. ["s3://lab-bucket/atlases/", "https://data.example.org/zarr/"]
   remote_credentials: anonymous  # anonymous | environment
+  remote_connect_timeout_s: 10   # a store that does not answer in time
+  remote_read_timeout_s: 30      # fails the request with HTTP 504
 ```
 
 - `auto` (default) allows any URL on a local single-user server (loopback

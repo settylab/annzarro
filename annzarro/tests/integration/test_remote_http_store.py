@@ -12,6 +12,7 @@ print latency; they skip when the network is unavailable.
 import functools
 import http.server
 import os
+import re
 import threading
 import time
 
@@ -109,8 +110,18 @@ def _write_store(path):
     zarr.consolidate_metadata(str(path))
 
 
+STALL_S = 3.0
+_CHUNK_KEY = re.compile(r"^\d+(\.\d+)*$")
+
+
 class _Handler(http.server.SimpleHTTPRequestHandler):
-    """Static files plus a redirect endpoint; records every request path."""
+    """Static files plus misbehaving endpoints; records every request path.
+
+    /redirect/<p>      302 to /<p>
+    /stall-all/<p>     accept the connection, then say nothing for STALL_S
+    /stall-chunks/<p>  serve /<p>, but stall on chunk keys only: metadata
+                       opens fine and the stall hits mid-read
+    """
 
     requests = []
 
@@ -121,6 +132,14 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Location", self.path[len("/redirect"):])
             self.end_headers()
             return
+        if self.path.startswith("/stall-all/"):
+            time.sleep(STALL_S)
+            return
+        if self.path.startswith("/stall-chunks/"):
+            self.path = self.path[len("/stall-chunks"):]
+            if _CHUNK_KEY.match(self.path.rsplit("/", 1)[-1]):
+                time.sleep(STALL_S)
+                return
         super().do_GET()
 
     def log_message(self, *args):
@@ -261,6 +280,45 @@ def test_allowlisted_host_cannot_redirect_the_server(http_store, make_client):
     assert made, "the allow-listed URL itself should have been requested"
     # ...but never the target it redirected to, which is outside the allowlist
     assert all(p.startswith("/redirect/") for p in made), made
+
+
+# --------------------------------------------------------------------------
+# timeouts: a store that goes quiet is a 504, never a hang or a zero-fill
+# --------------------------------------------------------------------------
+
+FAST_TIMEOUTS = {"remote_connect_timeout_s": 0.5, "remote_read_timeout_s": 0.3}
+
+
+def test_store_that_stalls_on_open_is_a_504(http_store, make_client):
+    base, _ = http_store
+    client = make_client(**FAST_TIMEOUTS)
+    start = time.perf_counter()
+    resp = _get(client, "X", f"{base}/stall-all/toy.zarr", cols="0")
+    elapsed = time.perf_counter() - start
+    assert resp.status_code == 504, resp.get_json()
+    body = resp.get_json()
+    assert body["reason"] == "remote_timeout"
+    assert "remote_read_timeout_s" in body["error"]
+    assert elapsed < STALL_S, f"waited {elapsed:.1f}s; the timeout did not apply"
+
+
+@pytest.mark.parametrize("route,params", [
+    ("X", {"cols": "2"}),
+    ("obs", {"columns": "total_counts"}),
+    ("obsm/X_umap", {"cols": "1"}),
+    ("obsp/connectivities", {"rows": "4"}),
+])
+def test_store_that_stalls_mid_read_is_a_504(http_store, make_client, route, params):
+    base, _ = http_store
+    url = f"{base}/stall-chunks/toy.zarr"
+    client = make_client(**FAST_TIMEOUTS)
+    # metadata is served normally, so the store opens...
+    assert _get(client, "dataset_structure", url).status_code == 200
+    # ...and the stall hits the chunk read. It must surface, not be read as an
+    # absent chunk (which zarr would fill with zeros and answer 200).
+    resp = _get(client, route, url, **params)
+    assert resp.status_code == 504, resp.get_json()
+    assert resp.get_json()["reason"] == "remote_timeout"
 
 
 # --------------------------------------------------------------------------

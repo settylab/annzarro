@@ -2,6 +2,7 @@ from . import h5ad_reader_obj
 from flask import jsonify
 from pathlib import Path
 from .reader import Reader
+from .remote import raise_if_timeout
 from typing import Literal
 import logging
 
@@ -32,6 +33,7 @@ def extract_metadata(dataset_path: str, reader: Reader):
             "path": dataset_path
         }), 400
     except Exception as e:
+        raise_if_timeout(e)
         logger.exception(f"Error opening dataset at {dataset_path}")
         return jsonify({
             "status": "error",
@@ -102,6 +104,7 @@ def extract_metadata(dataset_path: str, reader: Reader):
         return jsonify(dataset_structure)
     
     except Exception as e:
+        raise_if_timeout(e)
         logger.exception(f"Error building dataset structure for path {dataset_path}")
         return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
 
@@ -139,6 +142,7 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
             type: []
         }), 500
     except Exception as e:
+        raise_if_timeout(e)
         # Handle unexpected errors
         error_message = str(e)
         logger.error(f"Unexpected error getting {'gene' if type == 'genes' else 'cell'} names for {dataset_path}: {e}")
@@ -177,6 +181,7 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
             
         return jsonify(response)
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting {'obs' if type == 'cells' else 'var'} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}"}), 500
     
@@ -218,6 +223,7 @@ def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_in
         
         return jsonify(response_data)
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting {'obsm' if entity_type == 'cells' else 'varm'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsm' if entity_type == 'cells' else 'varm'} data: {str(e)}"}), 500
 
@@ -235,6 +241,7 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
             "dataset_path": dataset_path
         })
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
     
@@ -261,6 +268,7 @@ def extract_X(dataset_path: str, row_indices, col_indices, reader: Reader):
             "dataset_path": dataset_path
         })
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting X data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500
 
@@ -288,6 +296,7 @@ def extract_layer(dataset_path: str, layer_name: str, row_indices, col_indices, 
             "dataset_path": dataset_path
         })
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting layer {layer_name} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500
 
@@ -317,5 +326,6 @@ def extract_obsp_varp(dataset_path: str, key: str, row_indices, col_indices, ent
             "dataset_path": dataset_path
         })
     except Exception as e:
+        raise_if_timeout(e)
         logger.error(f"Error getting {'obsp' if entity_type == 'cells' else 'varp'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsp' if entity_type == 'cells' else 'varp'} data: {str(e)}"}), 500
