@@ -140,6 +140,13 @@ def _reader_error_response(exc, dataset_path):
             "reason": "unsupported_type",
             "exception": type(exc).__name__,
         }), 400
+    reason = getattr(exc, "reason", None)
+    if reason == "stale_metadata":
+        return jsonify({
+            "error": str(exc),
+            "reason": reason,
+            "exception": type(exc).__name__,
+        }), 500
     logger.exception("Unhandled error serving %s", dataset_path)
     return jsonify({
         "error": f"Failed to read {dataset_path}: {exc}",

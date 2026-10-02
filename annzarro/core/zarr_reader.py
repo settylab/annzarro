@@ -84,6 +84,61 @@ class ZarrFormatError(ValueError):
     """
 
 
+class StoreReadError(RuntimeError):
+    """
+    Reading an array that the store says exists failed.
+
+    The readers used to log this and return an empty array, which the data
+    routes served as ``200`` with ``"data": []``. ``reason`` is
+    ``stale_metadata`` when the store's consolidated metadata no longer
+    matches the array on disk (rewritten in place without re-consolidating),
+    else ``read_failed``.
+    """
+
+    def __init__(self, message, reason="read_failed"):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _metadata_mismatch(node) -> Optional[str]:
+    """How ``node`` (opened through consolidated metadata) differs from its
+    own metadata on disk, or None. Only arrays are compared; for a sparse
+    group, its member arrays."""
+    arrays = []
+    if hasattr(node, 'keys'):
+        arrays = [node[name] for name in node.keys() if not hasattr(node[name], 'keys')]
+    else:
+        arrays = [node]
+    for array in arrays:
+        try:
+            fresh = zarr.open_array(store=array.store, path=array.path, mode='r')
+        except Exception:
+            continue
+        for attr in ('shape', 'dtype', 'chunks'):
+            said, real = getattr(array, attr, None), getattr(fresh, attr, None)
+            if said != real:
+                return f"{array.path}: consolidated metadata says {attr} {said}, the array on disk has {real}"
+    return None
+
+
+def store_read_error(node, exc, dataset_path=None) -> StoreReadError:
+    """The StoreReadError for a failed read of ``node``, saying whether stale
+    consolidated metadata is the cause and how to fix it."""
+    where = getattr(node, 'path', '?')
+    try:
+        mismatch = _metadata_mismatch(node)
+    except Exception:
+        mismatch = None
+    if mismatch:
+        return StoreReadError(
+            f"The store's consolidated metadata (.zmetadata) is out of date ({mismatch}). "
+            "It was probably rewritten in place without re-consolidating. Run "
+            "`zarr.consolidate_metadata(path)` on the store (or rewrite it with "
+            "anndata), then reset the server cache or restart the server.",
+            reason="stale_metadata")
+    return StoreReadError(f"Failed to read {where}: {exc}")
+
+
 def zarr_format_problem(dataset_path) -> Optional[str]:
     """
     Why the installed zarr cannot read the LOCAL store at `dataset_path`, or
@@ -1027,7 +1082,7 @@ class ZarrReader:
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error loading sparse matrix: {e}")
-            return None
+            raise store_read_error(matrix, e) from e
     
     def _get_dense_array(self, path: str, root: zarr.Group, row_indices=None, col_indices=None) -> np.ndarray:
         """
@@ -1072,7 +1127,7 @@ class ZarrReader:
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error getting dense array {path}: {e}")
-            return np.array([])
+            raise store_read_error(root[path], e) from e
     
     @cached_method
     def get_X(self, dataset_path: Optional[str] = None, row_indices: Optional[List[int]] = None, 
@@ -1338,6 +1393,11 @@ class ZarrReader:
             raise
         except Exception as e:
             raise_if_timeout(e)
+            # Stale consolidated metadata is an error to report; anything
+            # else keeps the old per-column degradation (an empty column)
+            problem = store_read_error(group, e)
+            if problem.reason == "stale_metadata":
+                raise problem from e
             logger.error(f"Error processing encoded data: {e}")
             if return_categories:
                 return [], []
@@ -1391,6 +1451,8 @@ class ZarrReader:
                     result['data']['_index'] = cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
                 except Exception as e:
                     raise_if_timeout(e)
+                    if isinstance(e, StoreReadError):
+                        raise
                     logger.error(f"Error getting cell names: {e}")
                     result['data']['_index'] = []
         
@@ -1418,6 +1480,8 @@ class ZarrReader:
                     result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
                 raise_if_timeout(e)
+                if isinstance(e, StoreReadError):
+                    raise
                 logger.error(f"Error getting obs column {col}: {e}")
                 result['data'][col] = []
         
@@ -1557,7 +1621,7 @@ class ZarrReader:
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error getting obsp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
-            return np.array([])
+            raise store_read_error(obj, e) from e
     
     def _downsample_array(self, path: str, max_size: int = 1000, dataset_path: Optional[str] = None) -> np.ndarray:
         """
