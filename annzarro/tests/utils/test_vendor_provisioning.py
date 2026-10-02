@@ -4,15 +4,19 @@ These are pure static checks -- no server, no assets, no network -- so they run
 everywhere and pin the two halves of the fix:
 
   1. *Manifest completeness*: every ``vendor/...`` file ``index.html`` references
-     must have a download entry in ``annzarro-install.py``. If the template grows
-     a new bundle but the fetcher is never taught to fetch it, the asset 404s in
-     every deploy -- exactly the silent gap behind bug #1. (Catches drift the
-     runtime smoke test only catches once a deploy is already broken.)
+     must have an entry in ``scripts/vendor-assets.json`` (the pinned manifest
+     both ``annzarro-install.py`` and the wheel build install from). If the
+     template grows a new bundle but the manifest is never taught about it, the
+     asset 404s in every deploy and is missing from every wheel -- exactly the
+     silent gap behind bug #1. (Catches drift the runtime smoke test only
+     catches once a deploy is already broken.)
 
   2. *Supervisor self-provisioning*: ``run-supervised.sh`` must self-provision
      vendor assets on a fresh clone (the gitignored tree is empty there), guarded
      by a sentinel, so a pilot deploy can't silently come up bundle-less.
 """
+import importlib.util
+import json
 import os
 import re
 
@@ -21,7 +25,8 @@ import pytest
 _THIS = os.path.abspath(__file__)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_THIS))))
 INDEX_HTML = os.path.join(REPO_ROOT, "templates", "index.html")
-INSTALL_PY = os.path.join(REPO_ROOT, "annzarro-install.py")
+MANIFEST = os.path.join(REPO_ROOT, "scripts", "vendor-assets.json")
+LICENSES_DIR = os.path.join(REPO_ROOT, "annzarro", "THIRD_PARTY_LICENSES")
 SUPERVISOR = os.path.join(REPO_ROOT, "run-supervised.sh")
 VENDOR_DIR = os.path.join(REPO_ROOT, "static", "vendor")
 # main.js sets up a bootstrap.Modal at boot; this bundle missing == "bootstrap is
@@ -35,24 +40,62 @@ def _referenced_vendor_files():
     return refs
 
 
-def _manifest_basenames():
-    src = open(INSTALL_PY).read()
-    urls = re.findall(r'"url":\s*"([^"]+)"', src)
-    return {os.path.basename(u) for u in urls}
+def _manifest():
+    with open(MANIFEST) as f:
+        return json.load(f)
+
+
+def _manifest_paths():
+    return {entry["path"] for comp in _manifest()["components"] for entry in comp["files"]}
+
+
+def _vendor_tool():
+    spec = importlib.util.spec_from_file_location(
+        "_vendor_assets_under_test", os.path.join(REPO_ROOT, "scripts", "vendor_assets.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_every_referenced_vendor_file_is_in_install_manifest():
-    """index.html must reference nothing the fetcher doesn't provide (BUG #1)."""
+    """index.html must reference nothing the manifest doesn't provide (BUG #1)."""
     referenced = _referenced_vendor_files()
     assert referenced, "parsed no vendor references from index.html"
-    manifest = _manifest_basenames()
-    missing = sorted(
-        rel for rel in referenced if os.path.basename(rel) not in manifest
-    )
+    missing = sorted(referenced - _manifest_paths())
     assert not missing, (
-        "index.html references vendor assets that annzarro-install.py never "
-        f"downloads -> they will 404 in every deploy: {missing}"
+        "index.html references vendor assets that scripts/vendor-assets.json does "
+        f"not pin -> they will 404 in every deploy and every wheel: {missing}"
     )
+
+
+def test_manifest_entries_are_pinned_and_licensed():
+    """Every vendored file has a URL, a SHA-256 and an SPDX license, and every
+    license text the manifest cites ships in THIRD_PARTY_LICENSES."""
+    for comp in _manifest()["components"]:
+        assert comp["license"] and comp["version"], comp["name"]
+        for text in comp["license_files"]:
+            assert os.path.isfile(os.path.join(LICENSES_DIR, text)), (comp["name"], text)
+        for entry in comp["files"]:
+            assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), entry["path"]
+            assert entry["url"].startswith("https://"), entry["path"]
+
+
+def test_third_party_notice_is_generated_from_the_manifest():
+    """THIRD_PARTY_LICENSES/README.md must not drift from the manifest."""
+    with open(os.path.join(LICENSES_DIR, "README.md")) as f:
+        committed = f.read()
+    assert committed == _vendor_tool().render_notice(), (
+        "run `python scripts/vendor_assets.py --notice` and commit the result"
+    )
+
+
+def test_provisioned_vendor_files_match_their_checksums():
+    """A provisioned static/vendor/ must hold exactly the pinned bytes."""
+    if not os.path.isdir(VENDOR_DIR):
+        pytest.skip("static/vendor/ not provisioned in this environment")
+    missing, mismatched = _vendor_tool().verify(VENDOR_DIR)
+    assert not mismatched, f"vendored files differ from the pinned SHA-256: {mismatched}"
+    assert not missing, f"vendored files missing (run scripts/vendor_assets.py): {missing}"
 
 
 def test_supervisor_self_provisions_vendor():
