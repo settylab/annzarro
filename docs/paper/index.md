@@ -4,15 +4,14 @@ Reference pages for the figures of the AnnZarro paper (Otto, Baasri and Setty, i
 preparation), on the demonstration data `bm_aging.zarr` (8,090 cells × 16,285 genes; ageing
 murine bone marrow processed with Kompot {cite:p}`otto2025kompot`). Each page shows the figure
 and links to where the documentation covers it. Figs. 2 to 5 are reproduced step by step
-inside the {doc}`../tutorials/index`; Fig. 6 compares AnnZarro with other viewers and is not
-an AnnZarro view, so it has no page.
+inside the {doc}`../tutorials/index`.
 
 ::::{grid} 2 3 3 3
 :gutter: 2
 
-:::{grid-item-card} Fig. 1 · Focus model
+:::{grid-item-card} Fig. 1 · Focus model, slot map, comparison
 :img-top: ../_static/figures/paper/fig1-thumb.png
-:link: fig1-focus-model
+:link: fig1-overview
 :link-type: doc
 :::
 
@@ -40,27 +39,15 @@ an AnnZarro view, so it has no page.
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 6 · Tool comparison
+:::{grid-item-card} Fig. 6 · Deployment
 :img-top: ../_static/figures/paper/fig6-thumb.png
-
-No page: not an AnnZarro view.
+:link: fig6-deployment
+:link-type: doc
 :::
 
-:::{grid-item-card} Fig. 7 · Slot map
+:::{grid-item-card} Fig. 7 · Performance
 :img-top: ../_static/figures/paper/fig7-thumb.png
-:link: fig7-slot-map
-:link-type: doc
-:::
-
-:::{grid-item-card} Fig. 8 · Deployment
-:img-top: ../_static/figures/paper/fig8-thumb.png
-:link: fig8-deployment
-:link-type: doc
-:::
-
-:::{grid-item-card} Fig. 9 · Performance
-:img-top: ../_static/figures/paper/fig9-thumb.png
-:link: fig9-performance
+:link: fig7-performance
 :link-type: doc
 :::
 ::::
@@ -69,12 +56,11 @@ No page: not an AnnZarro view.
 :hidden:
 :maxdepth: 1
 
-fig1-focus-model
+fig1-overview
 fig2-interface
 fig3-cell-by-cell
 fig4-gene-by-gene
 fig5-cells-and-genes
-fig7-slot-map
-fig8-deployment
-fig9-performance
+fig6-deployment
+fig7-performance
 ```

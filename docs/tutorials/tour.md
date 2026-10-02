@@ -11,7 +11,7 @@ slice.
 This tour builds that model in the app, then uses it: it walks a diffusion kernel along
 haematopoiesis, filters cells with a two-condition table, and saves and shares the result.
 Along the way you rebuild the paper's Fig. 1 as a live layout and its Fig. 2 screenshots
-({doc}`../paper/fig1-focus-model`, {doc}`../paper/fig2-interface`).
+({doc}`../paper/fig1-overview`, {doc}`../paper/fig2-interface`).
 
 ## What you need
 
@@ -203,7 +203,7 @@ module). In both gene scatters the large dot moved to H2-Aa.
 ```
 
 :::{note}
-**Paper Fig. 1.** The four panels are the four arrows of the focus-model diagram, each ending
+**Paper Fig. 1a.** The four panels are the four arrows of the focus-model diagram, each ending
 in a scatter.
 :::
 

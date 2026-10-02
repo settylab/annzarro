@@ -1,7 +1,7 @@
 """Screenshots for the paper-figure guides 7 (slot map) and 9 (performance).
 
-Fig 7: one single-panel view per AnnData slot, each cropped to its tile, plus the controls
-of three panels so the guide can show the exact dropdown values. Fig 9: one deep link is
+Fig 1b (slot map, Fig 7 before the paper's renumbering): one single-panel view per AnnData slot, each cropped to its tile, plus the controls
+of three panels so the guide can show the exact dropdown values. Fig 7 (performance, formerly Fig 9): one deep link is
 opened, a gene and a cell are clicked, and the browser's own Resource Timing entries for
 the data requests are written to fig9-resource-timing.json (the numbers quoted in the
 guide come from that file).
@@ -86,7 +86,7 @@ FIG7 = {
         colorScale="RdBu", colorMin=-1, colorMax=1, lockColorRange=True),
 }
 # Output names are referenced by docs/data/slot-map.md (slot-obsp, slot-layer-gene, slot-varp,
-# slot-varp-controls) as well as docs/paper/fig7-slot-map.md; keep them stable.
+# slot-varp-controls) as well as docs/paper/fig1-overview.md; keep them stable.
 # shots that also crop the panel's controls, to show the three dropdowns
 WITH_CONTROLS = ["slot-obsp", "slot-layer-cell", "slot-varp"]
 
@@ -131,7 +131,7 @@ def fig7(s):
         page.context.close()
 
 
-# Fig 9: what one click costs, measured by the browser itself.
+# Fig 7 (formerly 9): what one click costs, measured by the browser itself.
 TIMING_JS = """() => performance.getEntriesByType('resource')
   .filter(e => e.name.includes('/api/v1/data/'))
   .map(e => ({url: e.name.replace(location.origin, ''), ms: +e.duration.toFixed(1),

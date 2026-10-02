@@ -1,14 +1,14 @@
-# Fig. 9: what one click costs
+# Fig. 7 · What one click costs
 
-```{figure} ../_static/figures/paper/fig9.png
+```{figure} ../_static/figures/paper/fig7.png
 :alt: Six panels: bytes per click, latency per click, peak server memory, chunk shape trade-off, time breakdown at 1M cells, and JSON versus binary transfer.
 :width: 100%
 
-Paper Fig. 9. Interactions cost one vector, and memory stays flat. HPC numbers are
+Paper Fig. 7. Interactions cost one vector, and memory stays flat. HPC numbers are
 provisional pending a rerun on a quieter file system.
 ```
 
-Fig. 9 is measured, not drawn in the app. Each panel answers one question about what a
+Fig. 7 is measured, not drawn in the app. Each panel answers one question about what a
 click costs: bytes sent (a), time (b), server memory (c), the effect of chunk shape (d), where
 the time goes (e) and the gain from binary transfer (f). What these mean for your own data
 and how to tune a store is in {doc}`../reference/performance` and {doc}`../data/chunking`.
@@ -146,7 +146,7 @@ sits in.
 Open the browser's developer tools on the **Network** tab, filter for `api/v1/data`, and
 click a gene or a cell: each panel that follows the focus issues one request, whose **Size**
 and **Time** are the cost of that click. In headless Chromium on `bm_aging.zarr`, laptop,
-localhost (view `docs/_tools/views/fig9-click-cost.json`, measured by
+localhost (view `docs/_tools/views/fig9-click-cost.json`, named after the figure's earlier number, measured by
 `docs/_tools/shoot_figs79.py` over four runs, the latest on the build with PRs 46 to 57):
 
 | Click | Request | Body | Duration |

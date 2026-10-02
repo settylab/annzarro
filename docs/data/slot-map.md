@@ -10,7 +10,7 @@ whole of the experimental design. This page maps each AnnData slot to the views 
 :width: 100%
 :target: ../_static/figures/slot-map.svg
 
-**Which stored array drives which view** (paper Fig. 7). A click on a cell selects one row
+**Which stored array drives which view** (paper Fig. 1b, {ref}`fig1b-slot-map`). A click on a cell selects one row
 (blue) of every cell-indexed array; a click on a gene selects one column (orange) of every
 gene-indexed array. AnnZarro fetches only these slices. Figure numbers in the notes refer to
 the paper: {doc}`Fig. 3 <../paper/fig3-cell-by-cell>`, {doc}`Fig. 4 <../paper/fig4-gene-by-gene>`,

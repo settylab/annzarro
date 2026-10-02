@@ -6,7 +6,7 @@ measured numbers, each with the conditions it was measured under. Read the condi
 "cold" request on a laptop NVMe and a cold request on a busy network filesystem differ by
 orders of magnitude.
 
-The paper's {doc}`Fig. 9 <../paper/fig9-performance>` summarises the benchmarks; its numbers are
+The paper's {doc}`Fig. 7 <../paper/fig7-performance>` summarises the benchmarks; its numbers are
 reproduced below where they matter for setting up a store or a server.
 
 ```{important}

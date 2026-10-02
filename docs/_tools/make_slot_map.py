@@ -1,4 +1,4 @@
-"""Render the paper's slot map (Fig. 7) for the docs: docs/_static/figures/slot-map.{svg,png}.
+"""Render the paper's slot map (Fig. 1b) for the docs: docs/_static/figures/slot-map.{svg,png}.
 
     .venv-docs/bin/python docs/_tools/make_slot_map.py
 

@@ -1,11 +1,12 @@
-"""Web PNGs of the paper figures for docs/_static/figures/paper/ (fig1.png ... fig9.png),
+"""Web PNGs of the paper figures for docs/_static/figures/paper/ (fig1.png ... fig7.png),
 plus same-size gallery thumbnails (fig1-thumb.png ...) for paper/index.md.
 
-The matplotlib figures are taken from the PNGs that the paper's figure scripts write into
-manuscript/figures/. The three TikZ figures (1 focus model, 7 slot map, 8 deployment) are
-compiled with pdflatex in a minimal wrapper that loads the same packages and TikZ libraries as
-manuscript/main.tex, rendered with pdftocairo and trimmed. Fig 6 (tool comparison) is not an
-AnnZarro view and gets no guide, but is converted too so the gallery is complete.
+Numbering follows the manuscript (annzarro-paper c9df73c): 1 overview (a focus model, b slot
+map, c tool comparison), 2 app, 3 cell x cell, 4 gene x gene, 5 cells <-> genes, 6 deployment,
+7 performance. The raster figures are taken from the PNGs in manuscript/figures/. The one TikZ
+figure (6, deployment) is compiled with pdflatex in a minimal wrapper that loads the same
+packages and TikZ libraries as manuscript/main.tex, rendered with pdftocairo and trimmed.
+Images of figure numbers the paper no longer has (fig8, fig9) are deleted.
 
 Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper ~/gits/annzarro-paper]
 Needs pdflatex (TeX Live) and pdftocairo (poppler) on PATH.
@@ -24,9 +25,10 @@ MAX_W = 1600
 MAX_KB = 400
 
 # docs number -> manuscript/figures source
-RASTER = {2: "fig5_app.png", 3: "fig2_cell_by_cell.png", 4: "fig3_gene_by_gene.png",
-          5: "fig4_cells_by_genes.png", 6: "fig_comparison.png", 9: "fig6_performance.png"}
-TIKZ = {1: "fig1_focus_model.tex", 7: "fig_slots.tex", 8: "fig_deploy.tex"}
+RASTER = {1: "fig1_overview.png", 2: "fig5_app.png", 3: "fig2_cell_by_cell.png",
+          4: "fig3_gene_by_gene.png", 5: "fig4_cells_by_genes.png", 7: "fig6_performance.png"}
+TIKZ = {6: "fig_deploy.tex"}
+RETIRED = (8, 9)
 
 # Same packages and libraries as manuscript/main.tex. \ref is mapped to the paper's figure
 # numbers so the slot map's cross references read "Fig. 3" instead of "??".
@@ -46,7 +48,7 @@ WRAPPER = r"""\documentclass{article}
 \expandafter\def\csname fn@fig:cellcell\endcsname{3}
 \expandafter\def\csname fn@fig:genegene\endcsname{4}
 \expandafter\def\csname fn@fig:cellgene\endcsname{5}
-\expandafter\def\csname fn@fig:performance\endcsname{9}
+\expandafter\def\csname fn@fig:performance\endcsname{7}
 \makeatother
 \begin{document}
 \noindent\begin{minipage}{16.4cm}
@@ -97,6 +99,9 @@ def main() -> None:
     figs = a.paper / "manuscript" / "figures"
     OUT.mkdir(parents=True, exist_ok=True)
     want = set(a.only or list(RASTER) + list(TIKZ))
+    for n in RETIRED:
+        for f in (OUT / f"fig{n}.png", OUT / f"fig{n}-thumb.png"):
+            f.unlink(missing_ok=True)
     for n, src in RASTER.items():
         if n in want:
             save(Image.open(figs / src), n)
