@@ -129,7 +129,9 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
         metadata['var_columns'] = []
         
     if metadata['has_obsm']:
-        metadata['embeddings'] = [key for key in zs['obsm'].keys() if key.startswith('X_')]
+        # Every obsm key, as the plot axis menus offer: a 'spatial' or
+        # 'spatial_upright' embedding has no X_ prefix and was missing here.
+        metadata['embeddings'] = list(zs['obsm'].keys())
         metadata['obsm'] = {'keys': list(zs['obsm'].keys())}
     else:
         metadata['embeddings'] = []
