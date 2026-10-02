@@ -448,9 +448,9 @@ def shoot_fig2(s) -> None:
     time.sleep(1.0)
     crop(page, "#session-modal .modal-content", OUT / "fig2-load-panel-set.png")
     # Upload the Fig 1 panel set file and load it. The file names its dataset by the bare
-    # name bm_aging.zarr (resolved in the server's data directory), which differs from the
-    # open dataset's absolute path, so AnnZarro asks before switching. Accept, then shoot
-    # the restored layout. The uploaded set is deleted again so the shared list stays clean.
+    # name bm_aging.zarr (resolved in the server's data directory). That is the open store
+    # under another path, so it loads without asking (PR #58); older builds asked first, which
+    # the fallback below still accepts. Then shoot the restored layout. The uploaded set is deleted again so the shared list stays clean.
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(PANELSETS / "fig1-focus-model.json"))
     time.sleep(0.5)
@@ -461,7 +461,6 @@ def shoot_fig2(s) -> None:
         try:
             ask.first.wait_for(timeout=8000)
             time.sleep(1.0)      # let the notice finish fading in
-            crop(page, ".notification-ask", OUT / "fig2-switch-dataset.png")
             s.log.append("fig2 upload asked: " + ask.first.inner_text().replace("\n", " | ")[:300])
             ask.first.get_by_text("Switch and load").click()
         except Exception:

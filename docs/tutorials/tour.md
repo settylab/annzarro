@@ -353,19 +353,11 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    ```
 
 2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
-   its data directory. When that path differs from the open dataset's, AnnZarro asks first;
-   nothing changes until you answer.
-
-   ```{figure} ../_static/screens/paper/fig2-switch-dataset.png
-   :class: screenshot
-   :alt: Notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with buttons Switch and load and Keep current.
-   :width: 45%
-   ```
-
-3. Click **Switch and load**. A notice reads "Panel set was imported and loaded successfully."
-   The panel set replaces the open panels: same dataset, same
-   focused cell and gene, same split layout, every panel with its settings. The panels that were
-   open before stay under "Duplicate or Reopen Panel".
+   its data directory. That is the dataset already open, so it loads at once. A notice reads
+   "Panel set was imported and loaded successfully." The panel set replaces the open panels:
+   same dataset, same focused cell and gene, same split layout, every panel with its settings.
+   The panels that were
+open before stay under "Duplicate or Reopen Panel".
 
    ```{figure} ../_static/screens/paper/fig2-panel-set-loaded.png
    :class: screenshot

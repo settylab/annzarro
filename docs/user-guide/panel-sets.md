@@ -60,7 +60,9 @@ name") and keeps the dialog open.
    After **Load**: layout, panels and focus as saved.
    ```
 
-4. If the panel set was saved on another dataset than the one open, AnnZarro asks first.
+4. If the panel set was saved on another dataset than the one open, AnnZarro asks first. A
+   panel set that names the open store by another path (`bm_aging.zarr` for
+   `/data/bm_aging.zarr`) counts as the same dataset and loads without asking.
    **Switch and load** opens the panel set's dataset and its view; **Keep current** leaves
    everything as it is.
 

@@ -162,11 +162,14 @@ genes without a module, drawn in grey as **NA**. View:
 
 Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a
 categorical colour, the category), with numbers to 4 significant digits. Below them it lists the
-panel's hover columns, its `hoverInfo` setting: a list of sources such as
-`[{"type": "obs", "key": "highres_celltype"}, {"type": "obs", "key": "Age"}]` (any type an axis
-can use). There is no control for it in the panel yet; it is set in a view's JSON and kept in panel
-sets and share links ({doc}`../reference/deep-links`). {doc}`focus-and-lock` shows a hover label
-with two such columns.
+panel's hover columns. Pick them in the panel's **Hover** list, which offers the obs columns
+(Cell Plot) or var columns (Gene Plot); Ctrl-click or Cmd-click selects several. A change loads
+only those columns and relabels the points without redrawing the plot. The choice is the panel's
+`hoverInfo` setting, kept in panel sets and share links ({doc}`../reference/deep-links`). In a
+view's JSON it can also name other sources, such as a layer column:
+`[{"type": "obs", "key": "highres_celltype"}, {"type": "layer", "key": "kompot_de_Young_to_Old_fold_change", "column": "S100a9"}]`;
+the **Hover** list keeps such entries when you change its selection. {doc}`focus-and-lock` shows a
+hover label with two obs columns.
 
 ## Zoom, pan and click
 
