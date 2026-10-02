@@ -834,6 +834,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       await applyHoverInfo(plotContainer, data, settings);
+      await sortTracesByColor(plotContainer, settings);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
       console.error('Insufficient data for plotting');
@@ -1134,6 +1135,73 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     await Plotly.restyle(plotContainer, update, indices);
   } catch (err) {
     console.warn('Hover labels not updated:', err && err.message);
+  }
+}
+
+/**
+ * Draw the strongest colour values on top.
+ *
+ * scattergl draws points in array order, so in a dense core a few large
+ * values were buried under hundreds of small ones. For continuously
+ * coloured traces the point arrays are reordered by |colour| ascending
+ * (missing values first, so they sit at the bottom). On by default;
+ * settings.sortByColor = false keeps data order.
+ *
+ * Incremental updates write arrays in DATA order, so updatePlotElements
+ * calls unsortTraces first and sortTracesByColor last; the permutation lives
+ * on the trace (_azOrder) only in between.
+ */
+const SORTED_ATTRS = ['x', 'y', 'z', 'text', 'customdata', 'hovertext', 'marker.color'];
+
+function _get(trace, attr) {
+  return attr === 'marker.color' ? (trace.marker && trace.marker.color) : trace[attr];
+}
+
+function _permuted(trace, order) {
+  const update = {};
+  for (const attr of SORTED_ATTRS) {
+    const arr = _get(trace, attr);
+    if (Array.isArray(arr) && arr.length === order.length) update[attr] = [order.map(i => arr[i])];
+  }
+  return update;
+}
+
+export function colorSortOrder(colors) {
+  const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
+  return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+}
+
+export async function sortTracesByColor(gd, settings) {
+  if (!gd || !Array.isArray(gd.data) || settings.sortByColor === false || typeof Plotly === 'undefined') return;
+  for (let i = 0; i < gd.data.length; i++) {
+    const t = gd.data[i];
+    const colors = t && t.marker && t.marker.color;
+    if (!Array.isArray(colors) || t.marker.colorscale === undefined || t._azOrder) continue;
+    const order = colorSortOrder(colors);
+    if (order.every((v, k) => v === k)) continue;
+    try {
+      await Plotly.restyle(gd, _permuted(t, order), [i]);
+      gd.data[i]._azOrder = order;
+    } catch (err) {
+      console.warn('Colour sort skipped:', err && err.message);
+    }
+  }
+}
+
+export async function unsortTraces(gd) {
+  if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
+  for (let i = 0; i < gd.data.length; i++) {
+    const t = gd.data[i];
+    if (!t || !t._azOrder) continue;
+    const order = t._azOrder;
+    const inverse = new Array(order.length);
+    order.forEach((orig, pos) => { inverse[orig] = pos; });
+    delete t._azOrder;
+    try {
+      await Plotly.restyle(gd, _permuted(t, inverse), [i]);
+    } catch (err) {
+      console.warn('Colour unsort skipped:', err && err.message);
+    }
   }
 }
 

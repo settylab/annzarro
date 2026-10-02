@@ -190,6 +190,7 @@ export function createPanelStructure(container, id, settings) {
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}">Lock Range</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="sort-by-color-${id}" title="Draw the largest |colour| values on top">Strong on top</button>
                 </div>
               </div>
             </div>
@@ -514,6 +515,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     $.updateButtonState($hideOutliersButton, settings.hideOutliers);
   }
   
+  // Strong-on-top button (default on)
+  const $sortByColorButton = jQuery(`#sort-by-color-${id}`);
+  if ($sortByColorButton.length) {
+    $.updateButtonState($sortByColorButton, settings.sortByColor !== false);
+  }
+
   // Hide NaN button
   const $hideNanButton = jQuery(`#hide-nan-${id}`);
   if ($hideNanButton.length) {

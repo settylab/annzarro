@@ -6,7 +6,9 @@ import {
   updateTableEntities,
   panelLoadCoverage,
   stableAxisRanges,
-  applyHoverInfo
+  applyHoverInfo,
+  sortTracesByColor,
+  unsortTraces
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -178,6 +180,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
     
     try {
         removeHighlight(plotContainer); // One trace less to take care of
+        // back to data order: the updates below write arrays in data order
+        await unsortTraces(plotContainer);
 
         // The axes as shown before this update, so hiding points can keep them
         const fl = plotContainer._fullLayout;
@@ -818,6 +822,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
 
         // hover labels for whatever traces the update left
         await applyHoverInfo(plotContainer, data, settings);
+        await sortTracesByColor(plotContainer, settings);
 
         // bring back the focused entity if enabled
         highlightFocusedEntity(plotContainer, data, settings, entityType);

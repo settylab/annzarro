@@ -558,6 +558,15 @@ export function setupColorControls(
         _updatePlotElements({ filter: true, colors: true });
     });
     
+    // --- Strong-on-top button: draw the largest |colour| last (default on) ---
+    const $sortByColorButton = $container.find(`#sort-by-color-${id}`);
+    $.updateButtonState($sortByColorButton, settings.sortByColor !== false);
+    $sortByColorButton.on('click', () => {
+        settings.sortByColor = settings.sortByColor === false;
+        $.updateButtonState($sortByColorButton, settings.sortByColor);
+        _updatePlotElements({ colors: true });
+    });
+
     // --- Hide NaN button ---
     const $hideNanButton = $container.find(`#hide-nan-${id}`);
     $.updateButtonState($hideNanButton, settings.hideNaN);
