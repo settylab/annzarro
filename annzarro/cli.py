@@ -134,9 +134,28 @@ def start_server(args: argparse.Namespace) -> int:
     
     return 0
 
+def _is_annzarro_server(proc) -> bool:
+    """Whether ``proc`` (a psutil.Process) is a detached AnnZarro server: run
+    by this user as ``<python> -m annzarro.cli start ...`` (the command
+    ``annzarro start --detach`` launches)."""
+    try:
+        if hasattr(os, "getuid") and proc.uids().real != os.getuid():
+            return False
+        args = proc.cmdline()
+    except Exception:
+        return False
+    return "annzarro.cli" in args and "start" in args[args.index("annzarro.cli"):]
+
+
 def stop_server(args: argparse.Namespace) -> int:
     """
-    Stop the Annzarro server
+    Stop a server started with ``annzarro start --detach``.
+
+    The PID comes only from the per-user state directory (``~/.annzarro``),
+    never from the shared temp directory, where anyone on the machine could
+    plant a file naming a process of yours. Before signalling, the PID must
+    still belong to an AnnZarro process of this user; PIDs are reused, and a
+    stale file must not kill whatever runs under that number now.
     
     Args:
         args: Command line arguments
@@ -144,62 +163,51 @@ def stop_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    try:
-        # Look in the standard location first
-        from annzarro.utils.paths import pid_file as default_pid_file
-        pid_file = default_pid_file()
-        
-        # If the PID file doesn't exist in the home directory, try the temp directory
-        if not pid_file.exists():
-            import tempfile
-            temp_pid_file = Path(tempfile.gettempdir()) / "annzarro" / "server.pid"
-            if temp_pid_file.exists():
-                pid_file = temp_pid_file
-                logger.info(f"Using alternative PID file location: {pid_file}")
-            else:
-                logger.error("Server is not running (PID file not found in any location)")
-                return 1
-        
-        logger.info(f"Found PID file at: {pid_file}")
-            
-        with open(pid_file, 'r') as f:
-            pid = int(f.read().strip())
-            
-        logger.info(f"Stopping Annzarro server (PID: {pid})")
-        
-        try:
-            os.kill(pid, signal.SIGTERM)
-            
-            # Wait for process to terminate
-            for _ in range(10):  # Try for 5 seconds
-                time.sleep(0.5)
-                try:
-                    # If this doesn't raise an exception, the process is still running
-                    os.kill(pid, 0)
-                except OSError:
-                    # Process has terminated
-                    break
-            else:
-                logger.warning("Server did not terminate gracefully, sending SIGKILL")
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    # Process already terminated
-                    pass
-            
-            # Remove PID file
-            pid_file.unlink()
-            logger.info("Server stopped successfully")
-            
-        except ProcessLookupError:
-            logger.warning(f"Process with PID {pid} not found, removing stale PID file")
-            pid_file.unlink()
-            
-        return 0
-            
-    except Exception as e:
-        logger.error(f"Error stopping server: {e}")
+    import psutil
+    from annzarro.utils.paths import pid_file as default_pid_file
+
+    pid_file = default_pid_file()
+    if not pid_file.exists():
+        logger.error(f"No server to stop: {pid_file} not found. `annzarro stop` stops a "
+                     "server started with `annzarro start --detach`; stop a foreground "
+                     "server with Ctrl+C.")
         return 1
+    try:
+        st = pid_file.stat()
+        if hasattr(os, "getuid") and st.st_uid != os.getuid():
+            logger.error(f"Refusing to use {pid_file}: it is not owned by you")
+            return 1
+        pid = int(pid_file.read_text().strip())
+    except (OSError, ValueError) as e:
+        logger.error(f"Unreadable PID file {pid_file}: {e}")
+        return 1
+
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        logger.warning(f"Process {pid} is not running; removing the stale PID file")
+        pid_file.unlink(missing_ok=True)
+        return 0
+    if not _is_annzarro_server(proc):
+        logger.error(f"PID file {pid_file} names process {pid}, which is not an AnnZarro "
+                     "server of yours (the PID was probably reused). Not signalling it; "
+                     "removing the stale PID file.")
+        pid_file.unlink(missing_ok=True)
+        return 1
+
+    logger.info(f"Stopping AnnZarro server (PID: {pid})")
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except psutil.TimeoutExpired:
+            logger.warning("Server did not terminate gracefully, sending SIGKILL")
+            proc.kill()
+    except psutil.NoSuchProcess:
+        pass
+    pid_file.unlink(missing_ok=True)
+    logger.info("Server stopped successfully")
+    return 0
 
 def manage_users(args: argparse.Namespace) -> int:
     """
@@ -213,8 +221,9 @@ def manage_users(args: argparse.Namespace) -> int:
     """
     from .server.auth import AuthManager
     
-    # Load configuration to get user file path
-    config = load_config(config_path=args.config)
+    # The same environment `annzarro start` runs with (production), so a
+    # user_file set for production is the file both of them use
+    config = load_config(config_path=args.config, env="production")
     
     # Extract user file path from full config
     if "auth" in config and "user_file" in config["auth"]:
@@ -828,6 +837,8 @@ def main(argv: List[str] = None) -> int:
     
     # User management command
     user_parser = subparsers.add_parser('user', help="Manage users")
+    user_parser.add_argument('--config', default=argparse.SUPPRESS,
+                             help="Path to configuration file (as for start)")
     user_subparsers = user_parser.add_subparsers(dest='user_command', help="User management command")
     
     # User add command
@@ -930,6 +941,12 @@ def main(argv: List[str] = None) -> int:
     
     # Parse arguments
     args = parser.parse_args(argv)
+
+    # ANNZARRO_CONFIG names the site file for every entry point: gunicorn
+    # (wsgi.py) always read it, the CLI did not, so `annzarro config show`
+    # or `annzarro user add` on a server silently used another users file.
+    if not getattr(args, "config", None) and os.environ.get("ANNZARRO_CONFIG"):
+        args.config = os.environ["ANNZARRO_CONFIG"]
     
     # Set up logging
     if args.debug:
