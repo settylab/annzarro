@@ -264,7 +264,9 @@ def run_server(
                     # Determine protocol (http or https)
                     protocol = "https" if ssl_context else "http"
                     # Open browser to the local server
-                    url = f"{protocol}://127.0.0.1:{use_port}"
+                    from annzarro.server.core import normalize_url_prefix
+                    prefix = normalize_url_prefix(final_config.get("url_prefix"))
+                    url = f"{protocol}://127.0.0.1:{use_port}{prefix}/"
                     logger.info(f"Opening browser to {url}")
                     try:
                         if not webbrowser.open(url):
