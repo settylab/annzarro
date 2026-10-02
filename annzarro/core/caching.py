@@ -9,6 +9,7 @@ import functools
 import inspect
 import time
 import logging
+import threading
 from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 import numpy as np
 
@@ -47,7 +48,38 @@ class DatasetCache:
         
         # Cache access timestamps for LRU eviction
         self._cache_access_times = {}  # Dict of cache_key -> last access timestamp
-        
+
+        # What each key was charged when added, so removing it uncharges
+        # exactly that (a flat 1 MB per metadata entry used to drift).
+        self._sizes = {}
+
+        # One reader, and so one cache, serves every request thread of a
+        # threaded server. Every read and write of the dicts above and of
+        # memory_usage_mb happens under this lock: an eviction iterating them
+        # while another thread added a key raised "dictionary changed size
+        # during iteration" mid-request. Re-entrant: eviction calls back into
+        # the removal helpers.
+        self._lock = threading.RLock()
+
+    def _buckets(self):
+        return (('matrix', self._matrix_cache), ('dataframe', self._dataframe_cache),
+                ('metadata', self._metadata_cache))
+
+    def _drop(self, key: str) -> Tuple[Optional[str], float]:
+        """Remove ``key`` from its bucket and the accounting (not from the
+        dataset tracking); return (bucket name or None, MB uncharged). Call
+        with the lock held."""
+        found = None
+        for name, bucket in self._buckets():
+            if key in bucket:
+                del bucket[key]
+                found = name
+                break
+        size = self._sizes.pop(key, 0)
+        self.memory_usage_mb = max(0, self.memory_usage_mb - size)
+        self._cache_access_times.pop(key, None)
+        return found, size
+
     def clear_cache(self, dataset_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Clear the cache for a specific dataset or all datasets.
@@ -61,8 +93,7 @@ class DatasetCache:
         """
         if dataset_path is not None:
             return self._remove_dataset_from_cache(dataset_path)
-        else:
-            # Clear all caches
+        with self._lock:
             result = {
                 "status": "success",
                 "cleared_all": True,
@@ -73,17 +104,15 @@ class DatasetCache:
                     "metadata": len(self._metadata_cache)
                 }
             }
-            
-            # Reset all caches
             self._matrix_cache = {}
             self._dataframe_cache = {}
             self._metadata_cache = {}
             self._dataset_caches = {}
             self._cache_access_times = {}
+            self._sizes = {}
             self.memory_usage_mb = 0
-            
             return result
-    
+
     def _remove_dataset_from_cache(self, dataset_path: str) -> Dict[str, Any]:
         """
         Remove all cached data for a specific dataset path.
@@ -94,7 +123,6 @@ class DatasetCache:
         Returns:
             Dict with cache clearing results
         """
-        # Initialize result dict
         result = {
             "status": "success",
             "dataset_path": dataset_path,
@@ -106,128 +134,48 @@ class DatasetCache:
                 "metadata": 0
             }
         }
-        
-        # Check if dataset is in cache
-        if dataset_path not in self._dataset_caches:
-            result["message"] = f"Dataset {dataset_path} not found in cache"
+        with self._lock:
+            if dataset_path not in self._dataset_caches:
+                result["message"] = f"Dataset {dataset_path} not found in cache"
+                return result
+            memory_freed = 0
+            for key in self._dataset_caches.pop(dataset_path):
+                bucket, size = self._drop(key)
+                if bucket is not None:
+                    result["items_removed"][bucket] += 1
+                memory_freed += size
+            result["cleared"] = True
+            result["memory_freed_mb"] = memory_freed
             return result
-        
-        # Get all cache keys for this dataset
-        cache_keys = self._dataset_caches.get(dataset_path, [])
-        memory_freed = 0
-        
-        # Process each cache key
-        for key in cache_keys:
-            # Check each cache type
-            if key in self._matrix_cache:
-                # Estimate memory usage
-                matrix = self._matrix_cache[key]
-                memory_freed += self._estimate_memory_usage(matrix)
-                del self._matrix_cache[key]
-                result["items_removed"]["matrix"] += 1
-            
-            elif key in self._dataframe_cache:
-                # Estimate memory usage
-                df_data = self._dataframe_cache[key]
-                memory_freed += self._estimate_memory_usage(df_data)
-                del self._dataframe_cache[key]
-                result["items_removed"]["dataframe"] += 1
-            
-            elif key in self._metadata_cache:
-                # For metadata, we use a fixed estimate
-                memory_freed += 1  # Assume 1MB for metadata
-                del self._metadata_cache[key]
-                result["items_removed"]["metadata"] += 1
-            
-            # Remove from access times
-            if key in self._cache_access_times:
-                del self._cache_access_times[key]
-        
-        # Remove dataset from tracking
-        del self._dataset_caches[dataset_path]
-        
-        # Update memory usage
-        self.memory_usage_mb -= memory_freed
-        if self.memory_usage_mb < 0:
-            self.memory_usage_mb = 0
-        
-        # Update result
-        result["cleared"] = True
-        result["memory_freed_mb"] = memory_freed
-        
-        return result
-    
+
     def _manage_cache_size(self) -> None:
         """
         Manage cache size by removing least recently used items when over limits.
         """
-        # Check if we need to evict datasets (over dataset limit)
-        if len(self._dataset_caches) > self.cache_limit:
-            # Find least recently used dataset
-            datasets_with_times = []
-            for dataset_path, keys in self._dataset_caches.items():
-                # Get most recent access time for any key in this dataset
-                most_recent = 0
-                for key in keys:
-                    access_time = self._cache_access_times.get(key, 0)
-                    most_recent = max(most_recent, access_time)
-                datasets_with_times.append((dataset_path, most_recent))
-            
-            # Sort by access time (oldest first)
-            datasets_with_times.sort(key=lambda x: x[1])
-            
-            # Remove oldest datasets until we're under the limit
-            while len(datasets_with_times) > self.cache_limit:
-                oldest_dataset, _ = datasets_with_times.pop(0)
-                self._remove_dataset_from_cache(oldest_dataset)
-                logger.debug(f"Evicted dataset {oldest_dataset} from cache (over dataset limit)")
-        
-        # Check if we need to evict items (over memory limit)
-        if self.memory_usage_mb > self.max_memory_mb:
-            # Get all keys with access times
-            key_times = [(k, t) for k, t in self._cache_access_times.items()]
-            # Sort by access time (oldest first)
-            key_times.sort(key=lambda x: x[1])
-            
-            # Remove oldest items until we're under the memory limit
-            for key, _ in key_times:
-                # Find which cache this key is in
-                if key in self._matrix_cache:
-                    memory_freed = self._estimate_memory_usage(self._matrix_cache[key])
-                    del self._matrix_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted matrix {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._dataframe_cache:
-                    memory_freed = self._estimate_memory_usage(self._dataframe_cache[key])
-                    del self._dataframe_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted dataframe {key} from cache (freed {memory_freed}MB)")
-                
-                elif key in self._metadata_cache:
-                    # For metadata, we use a fixed estimate
-                    memory_freed = 1  # Assume 1MB for metadata
-                    del self._metadata_cache[key]
-                    self.memory_usage_mb -= memory_freed
-                    logger.debug(f"Evicted metadata {key} from cache (freed {memory_freed}MB)")
-                
-                # Remove from access times
-                if key in self._cache_access_times:
-                    del self._cache_access_times[key]
-                
-                # Update dataset tracking - find and remove this key from dataset_caches
-                for dataset_path, keys in list(self._dataset_caches.items()):
-                    if key in keys:
-                        keys.remove(key)
-                        # If this was the last key for this dataset, remove the dataset
-                        if not keys:
-                            del self._dataset_caches[dataset_path]
+        with self._lock:
+            # Over the dataset limit: drop the least recently used datasets
+            if len(self._dataset_caches) > self.cache_limit:
+                last_used = sorted(
+                    (max((self._cache_access_times.get(k, 0) for k in keys), default=0), path)
+                    for path, keys in self._dataset_caches.items())
+                for _, path in last_used[:len(last_used) - self.cache_limit]:
+                    self._remove_dataset_from_cache(path)
+                    logger.debug(f"Evicted dataset {path} from cache (over dataset limit)")
+
+            # Over the memory limit: drop the least recently used items
+            if self.memory_usage_mb > self.max_memory_mb:
+                for key, _ in sorted(self._cache_access_times.items(), key=lambda kv: kv[1]):
+                    bucket, size = self._drop(key)
+                    logger.debug(f"Evicted {bucket} {key} from cache (freed {size}MB)")
+                    for path, keys in list(self._dataset_caches.items()):
+                        if key in keys:
+                            keys.remove(key)
+                            if not keys:
+                                del self._dataset_caches[path]
+                            break
+                    if self.memory_usage_mb <= self.max_memory_mb:
                         break
-                
-                # Check if we're under the limit now
-                if self.memory_usage_mb <= self.max_memory_mb:
-                    break
-    
+
     def _add_to_cache(self, key: str, data: Any, dataset_path: Optional[str] = None, 
                      cache_type: str = 'matrix') -> None:
         """
@@ -242,36 +190,22 @@ class DatasetCache:
         # Skip if caching is disabled
         if not self.enable_caching:
             return
-        
-        # Determine the appropriate cache based on type
-        cache_dict = self._matrix_cache
-        if cache_type == 'dataframe':
-            cache_dict = self._dataframe_cache
-        elif cache_type == 'metadata':
-            cache_dict = self._metadata_cache
-        
-        # Add the item to the cache
-        cache_dict[key] = data
-        
-        # Update access time
-        self._cache_access_times[key] = time.time()
-        
-        # Track memory usage
-        memory_mb = self._estimate_memory_usage(data)
-        self.memory_usage_mb += memory_mb
-        
-        # Track dataset association
-        if dataset_path is not None:
-            if dataset_path not in self._dataset_caches:
-                self._dataset_caches[dataset_path] = []
-            if key not in self._dataset_caches[dataset_path]:
-                self._dataset_caches[dataset_path].append(key)
-        
-        # Manage cache size (evict if over limits)
-        self._manage_cache_size()
-        
+        memory_mb = self._estimate_memory_usage(data)  # outside the lock: it walks the data
+        with self._lock:
+            # A key added again (two threads computed it at once) replaces
+            # the old entry instead of being charged twice.
+            self._drop(key)
+            dict(self._buckets()).get(cache_type, self._matrix_cache)[key] = data
+            self._cache_access_times[key] = time.time()
+            self._sizes[key] = memory_mb
+            self.memory_usage_mb += memory_mb
+            if dataset_path is not None:
+                keys = self._dataset_caches.setdefault(dataset_path, [])
+                if key not in keys:
+                    keys.append(key)
+            self._manage_cache_size()
         logger.debug(f"Added {cache_type} to cache: {key} ({memory_mb:.2f}MB)")
-    
+
     def _get_from_cache(self, key: str, cache_type: str = 'matrix') -> Optional[Any]:
         """
         Get an item from the cache and update its access time.
@@ -286,23 +220,12 @@ class DatasetCache:
         # Skip if caching is disabled
         if not self.enable_caching:
             return None
-        
-        # Determine the appropriate cache based on type
-        cache_dict = self._matrix_cache
-        if cache_type == 'dataframe':
-            cache_dict = self._dataframe_cache
-        elif cache_type == 'metadata':
-            cache_dict = self._metadata_cache
-        
-        # Get the item from the cache
-        cached_data = cache_dict.get(key, None)
-        
-        # Update access time if item was found
-        if cached_data is not None:
-            self._cache_access_times[key] = time.time()
-        
-        return cached_data
-    
+        with self._lock:
+            cached_data = dict(self._buckets()).get(cache_type, self._matrix_cache).get(key)
+            if cached_data is not None:
+                self._cache_access_times[key] = time.time()
+            return cached_data
+
     def _estimate_memory_usage(self, data: Any) -> float:
         """
         Estimate memory usage of data in MB.
@@ -369,6 +292,10 @@ class DatasetCache:
         Returns:
             Dict with cache information
         """
+        with self._lock:
+            return self._cache_info()
+
+    def _cache_info(self) -> Dict[str, Any]:
         # Count items by type
         matrix_count = len(self._matrix_cache)
         dataframe_count = len(self._dataframe_cache)
