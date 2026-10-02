@@ -7,6 +7,8 @@ import tempfile
 import pytest
 import numpy as np
 import zarr
+
+from annzarro.tests import zarr_compat
 import json
 from flask import Flask
 from flask.testing import FlaskClient
@@ -19,11 +21,11 @@ from annzarro.server.routes import register_zarr_routes
 def create_test_zarr_dataset(path):
     """Create a minimal test zarr dataset."""
     # Create root group
-    root = zarr.open_group(path, mode='w')
+    root = zarr_compat.open_group(path)
     
     # Add X matrix (main dataset)
     n_obs, n_vars = 50, 20
-    root.create_dataset('X', data=np.random.rand(n_obs, n_vars).astype(np.float32))
+    zarr_compat.write_array(root, 'X', data=np.random.rand(n_obs, n_vars).astype(np.float32))
     
     return path
 
@@ -74,15 +76,11 @@ def test_cache_info_endpoint(test_client):
     assert response.status_code == 200
     data = json.loads(response.data)
     
-    # Verify response structure
-    assert data["status"] == "success"
-    assert "cache_enabled" in data
-    assert "cache_memory_mb" in data
-    assert "cache_dataset_limit" in data
-    assert "current_memory_usage_mb" in data
-    assert "matrix_cache_items" in data
-    assert "dataframe_cache_items" in data
-    assert "datasets" in data
+    # The body is DatasetCache.get_cache_info() (annzarro/core/caching.py).
+    for key in ("enabled", "memory_usage_mb", "max_memory_mb", "dataset_limit",
+                "dataset_count", "datasets", "item_counts"):
+        assert key in data, key
+    assert set(data["item_counts"]) == {"matrix", "dataframe", "metadata", "total"}
 
 
 def test_cache_reset_endpoint(test_client, zarr_test_dataset):

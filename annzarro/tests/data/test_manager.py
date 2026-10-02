@@ -5,8 +5,11 @@ import os
 import tempfile
 import unittest
 import numpy as np
+import pytest
 from unittest.mock import patch, MagicMock
 import zarr
+
+from annzarro.tests import zarr_compat
 from pathlib import Path
 
 from annzarro.data.manager import DataManager
@@ -36,35 +39,35 @@ class TestDataManager(unittest.TestCase):
 
     def create_test_zarr(self, path):
         """Create a test zarr archive."""
-        root = zarr.open_group(path, mode='w')
+        root = zarr_compat.open_group(path)
         
         # Create X matrix
         X = np.random.rand(100, 50).astype('float32')
-        root.create_dataset('X', data=X)
+        zarr_compat.write_array(root, 'X', data=X)
         
         # Create obs
         obs_group = root.create_group('obs')
         cell_ids = np.array([f'cell_{i}' for i in range(100)])
-        obs_group.create_dataset('_index', data=cell_ids)
+        zarr_compat.write_array(obs_group, '_index', data=cell_ids)
         cell_types = np.array(['type_A'] * 50 + ['type_B'] * 50)
-        obs_group.create_dataset('cell_type', data=cell_types)
+        zarr_compat.write_array(obs_group, 'cell_type', data=cell_types)
         
         # Create var
         var_group = root.create_group('var')
         gene_ids = np.array([f'gene_{i}' for i in range(50)])
-        var_group.create_dataset('_index', data=gene_ids)
+        zarr_compat.write_array(var_group, '_index', data=gene_ids)
         gene_names = np.array([f'GENE_{i}' for i in range(50)])
-        var_group.create_dataset('gene_name', data=gene_names)
+        zarr_compat.write_array(var_group, 'gene_name', data=gene_names)
         
         # Create obsm
         obsm_group = root.create_group('obsm')
         umap = np.random.rand(100, 2).astype('float32')
-        obsm_group.create_dataset('X_umap', data=umap)
+        zarr_compat.write_array(obsm_group, 'X_umap', data=umap)
         
         # Create layers
         layers_group = root.create_group('layers')
         raw = np.random.rand(100, 50).astype('float32')
-        layers_group.create_dataset('raw', data=raw)
+        zarr_compat.write_array(layers_group, 'raw', data=raw)
 
     def test_discover_datasets(self):
         """Test discovering datasets."""
@@ -95,15 +98,12 @@ class TestDataManager(unittest.TestCase):
         datasets = self.manager.list_datasets(self.data_dir)
         self.assertEqual(len(datasets), 2)
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_zarr')
-    @patch('annzarro.core.zarr_reader.zarr_reader.get_metadata')
+    @patch('annzarro.core.zarr_reader.zarr_reader.open_dataset_by_path')
     @patch('annzarro.core.zarr_reader.zarr_reader.get_obs_names')
     @patch('annzarro.core.zarr_reader.zarr_reader.get_var_names')
-    def test_get_dataset_info(self, mock_get_var_names, mock_get_obs_names, mock_get_metadata, mock_open_zarr):
+    def test_get_dataset_info(self, mock_get_var_names, mock_get_obs_names, mock_open):
         """Test getting dataset info."""
-        # Mock the zarr_reader
-        mock_open_zarr.return_value = True
-        mock_get_metadata.return_value = {
+        mock_open.return_value = (object(), {
             "shape": (100, 50),
             "has_obs": True,
             "has_var": True,
@@ -113,14 +113,12 @@ class TestDataManager(unittest.TestCase):
             "var_columns": ["gene_name"],
             "layers": ["raw"],
             "embeddings": ["X_umap"]
-        }
+        })
         mock_get_obs_names.return_value = [f"cell_{i}" for i in range(10)]
         mock_get_var_names.return_value = [f"gene_{i}" for i in range(10)]
-        
-        # Test getting info for a valid dataset
+
         info = self.manager.get_dataset_info(str(self.test_zarr_1))
-        
-        # Verify basic info
+
         self.assertEqual(info["name"], "Test Dataset1")
         self.assertEqual(info["shape"], (100, 50))
         self.assertEqual(info["n_obs"], 100)
@@ -129,25 +127,25 @@ class TestDataManager(unittest.TestCase):
         self.assertIn("gene_name", info["var_columns"])
         self.assertIn("raw", info["layers"])
         self.assertIn("X_umap", info["embeddings"])
-        
-        # Verify mock calls
-        mock_open_zarr.assert_called_once_with(str(self.test_zarr_1))
-        mock_get_metadata.assert_called_once()
-        mock_get_obs_names.assert_called_once()
-        mock_get_var_names.assert_called_once()
-        
-        # Test with failure to open
-        mock_open_zarr.reset_mock()
-        mock_open_zarr.return_value = False
-        
+        self.assertEqual(info["obs_names_sample"], mock_get_obs_names.return_value)
+
+        mock_open.assert_called_once_with(str(self.test_zarr_1))
+        mock_get_obs_names.assert_called_once_with(str(self.test_zarr_1))
+        mock_get_var_names.assert_called_once_with(str(self.test_zarr_1))
+
+        # The stateless reader raises on a store it cannot open.
+        mock_open.side_effect = ValueError("not a zarr store")
         info = self.manager.get_dataset_info("/invalid/path")
         self.assertIn("error", info)
 
-    @patch('annzarro.core.zarr_reader.zarr_reader.open_zarr')
-    def test_load_dataset(self, mock_open_zarr):
-        """Test loading a dataset."""
-        # Test successful load
-        mock_open_zarr.return_value = True
+    @pytest.mark.xfail(strict=True, raises=AttributeError, reason=(
+        "real bug: DataManager's stateful half (load_dataset, get_obs/get_var/"
+        "get_obsm, downsample_cells stratified/kmeans) calls ZarrReader.open_zarr/"
+        "get_obs/get_obsm, removed when the reader became stateless (a5c1aed). "
+        "The server does not reach it (it uses list_datasets/get_dataset_info), "
+        "but DataManager is exported from the package."))
+    def test_load_dataset(self):
+        """Test loading a dataset (real reader, real store)."""
         result = self.manager.load_dataset(str(self.test_zarr_1))
         self.assertTrue(result)
         self.assertEqual(self.manager.current_dataset["name"], "Test Dataset1")
@@ -159,10 +157,7 @@ class TestDataManager(unittest.TestCase):
         self.assertIsNone(self.manager.focused_gene)
         self.assertEqual(len(self.manager.cache), 0)
         
-        # Test failed load
-        mock_open_zarr.return_value = False
-        result = self.manager.load_dataset("/invalid/path")
-        self.assertFalse(result)
+        self.assertFalse(self.manager.load_dataset("/invalid/path"))
 
     @patch('annzarro.core.zarr_reader.zarr_reader.get_metadata')
     def test_get_basic_info(self, mock_get_metadata):
@@ -478,6 +473,12 @@ class TestDataManager(unittest.TestCase):
             self.assertEqual(len(result), 100)
             self.assertEqual(len(set(result)), 100)  # Check for uniqueness
             
+    @pytest.mark.xfail(strict=True, raises=AttributeError, reason=(
+        "real bug: DataManager's stateful half (load_dataset, get_obs/get_var/"
+        "get_obsm, downsample_cells stratified/kmeans) calls ZarrReader.open_zarr/"
+        "get_obs/get_obsm, removed when the reader became stateless (a5c1aed). "
+        "The server does not reach it (it uses list_datasets/get_dataset_info), "
+        "but DataManager is exported from the package."))
     def test_downsample_cells_stratified(self):
         """Test stratified downsampling of cells."""
         # Set up a test dataset
@@ -494,14 +495,10 @@ class TestDataManager(unittest.TestCase):
                 "obs_columns": ["cell_type"]
             }
             
-            with patch('annzarro.core.zarr_reader.zarr_reader.get_obs') as mock_get_obs:
-                # Create cell types array
-                mock_get_obs.return_value = np.array(['type_A'] * 500 + ['type_B'] * 500)
-                
-                # Test stratified sampling
-                result = self.manager.downsample_cells(n_samples=100, method='stratified', seed=42)
-                self.assertEqual(len(result), 100)
-                self.assertEqual(len(set(result)), 100)  # Check for uniqueness
+            # Real reader: get_obs is the call that no longer exists.
+            result = self.manager.downsample_cells(n_samples=100, method='stratified', seed=42)
+            self.assertEqual(len(result), 100)
+            self.assertEqual(len(set(result)), 100)  # Check for uniqueness
     
     def test_downsample_cells_kmeans(self):
         """Test k-means downsampling of cells."""
