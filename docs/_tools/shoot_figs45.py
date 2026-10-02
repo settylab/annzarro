@@ -245,7 +245,7 @@ def write_artefacts() -> dict:
         links[name] = {"dataset": DATASET, "fragment": "#view=" + z1(v)}
         # The link a reader pastes: default local server, data directory as a placeholder.
         (PANELSETS / f"{name}.url.txt").write_text(
-            f"http://127.0.0.1:8000/?dataset_path=/path/to/annzarro-data/{DATASET}"
+            f"http://127.0.0.1:8000/?dataset_path=/ABSOLUTE/PATH/TO/{DATASET}"
             f"{links[name]['fragment']}\n")
     (PANELSETS / "links-figs45.json").write_text(json.dumps(links, indent=1) + "\n")
     return views

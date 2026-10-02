@@ -59,8 +59,8 @@ Hover labels and table filters check most statements; offline ones are marked. S
 
 ## Views
 
-Share links (replace `/path/to/annzarro-data` with your absolute data directory and the host with
-your server's):
+Share links (replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
+directory that holds the store; the path must be absolute):
 
 ::::{dropdown} Panels a and b
 ```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt

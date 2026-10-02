@@ -230,8 +230,8 @@ Only Apoe changes in opposite directions beyond the noise level in both cells.
 (tut-cg-views)=
 ## Open the views
 
-Replace `/path/to/annzarro-data` with the absolute path of your data directory and
-`127.0.0.1:8000` with your server's address, then open the link ({doc}`../user-guide/share-links`).
+Replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
+directory that holds the store on the server, then open the link ({doc}`../user-guide/share-links`).
 `dataset_path` must be absolute.
 
 ::::{dropdown} Steps 1 and 2: S100a9 fold change, Young and Old on a shared scale (HSC focused)
@@ -265,7 +265,7 @@ The same panels as panel-set files:
 {download}`fig5-d-noise.json <../_static/panelsets/paper/fig5-d-noise.json>`. **Load Panel Set** >
 upload registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen
 Panel"; it does not restore the focus or the layout, so prefer the links
-({doc}`../user-guide/panel-sets`).
+({ref}`fig2-load-panel-set`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned
 

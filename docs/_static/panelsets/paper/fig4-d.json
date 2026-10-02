@@ -1,6 +1,6 @@
 {
   "name": "fig4-d",
-  "timestamp": "2026-10-02T19:36:20+00:00",
+  "timestamp": "2026-10-02T19:42:40+00:00",
   "dataset": "bm_aging_showcase.zarr",
   "datasetName": "bm_aging_showcase",
   "constants": {

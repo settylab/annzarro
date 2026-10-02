@@ -250,8 +250,8 @@ condition on a boolean column matches no rows in this version. Both are known bu
 (tut-gene-views)=
 ## Open the views
 
-Each view is a share link with the panels configured. Replace `/path/to/annzarro-data` with the
-absolute path of your data directory and `127.0.0.1:8000` with your server's address, then open
+Each view is a share link with the panels configured. Replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
+directory that holds the store on the server, then open
 the link ({doc}`../user-guide/share-links`). `dataset_path` must be absolute.
 
 ::::{dropdown} Steps 1 and 2: volcano coloured by the focused gene's row (H2-Q7)
@@ -277,7 +277,7 @@ The same panels as panel-set files:
 {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
 {download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. **Load Panel Set** > upload
 registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen Panel"; it
-does not restore the focus or the layout, so prefer the links ({doc}`../user-guide/panel-sets`).
+does not restore the focus or the layout, so prefer the links ({ref}`fig2-load-panel-set`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned
 
