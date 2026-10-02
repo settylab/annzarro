@@ -385,6 +385,19 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'obsp':
       case 'varp': {
         const focusKind = type === 'obsp' ? 'cell' : 'gene';
+        if (!key) {
+          // A dataset without any obsp/varp matrix leaves the key selector
+          // empty, and the request became `/data/obsp/` with no key: a 404
+          // reported as "failed to read -- Not found". Nothing failed; the
+          // dataset has no such matrix. Say so without asking the server, as
+          // a blank series so the rest of the plot still renders.
+          values = Array(typeof expected === 'number' ? expected : 0).fill(NaN);
+          coverage = Coverage.missing(GAP.UNAVAILABLE,
+            `this dataset has no ${type} matrices`,
+            { source: type, unit, total: expected });
+          dataType = 'numerical';
+          break;
+        }
         const focusIndex = type === 'obsp'
           ? DataManager.getCellIndex(column)
           : DataManager.getGeneIndex(column);

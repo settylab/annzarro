@@ -461,3 +461,24 @@ test('nothing outside the try can throw unclassified', async () => {
         );
     } finally { restore(); }
 });
+
+for (const type of ['obsp', 'varp']) {
+    test(`${type} on a dataset with no ${type} matrix: "not in this dataset", no request`, async () => {
+        const restore = stubDataManager({ entityIndex: 3 });
+        const requests = [];
+        try {
+            DataManager.loadObsp = async (o) => { requests.push(o); return { data: [] }; };
+            DataManager.loadVarp = async (o) => { requests.push(o); return { data: [] }; };
+            // what the key selector leaves when the dataset offers no keys
+            const out = await loadAxisData({ type, key: '', column: 'c3' }, 'cells', null);
+            assert.equal(requests.length, 0, 'no /data/obsp/ request with an empty key');
+            assert.equal(out.values.length, N, 'a full-length blank series keeps the plot drawable');
+            assert.ok(out.values.every(Number.isNaN));
+            assert.ok(out.coverage.gaps.some(g => g.reason === GAP.UNAVAILABLE),
+                JSON.stringify(out.coverage));
+            assert.ok(!out.coverage.gaps.some(g => g.reason === GAP.FAILED));
+        } finally {
+            restore();
+        }
+    });
+}
