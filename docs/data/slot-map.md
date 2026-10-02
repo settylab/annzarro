@@ -41,12 +41,11 @@ once per panel and reused while you click.
 | `uns['{col}_colors']` | categories | the whole list | category colours for `obs[col]` | written by scanpy plotting functions |
 
 ```{important}
-**X is served by the API but not offered in the plot menus.** The Cell Plot sources are
-obs, obsm, obsp and layer; the Gene Plot sources are var, varm, varp and layer
-(`static/js/panels/plot-utilities/panel-ui-make.js`, lines 328-346). `DataManager.loadX` exists
-but nothing calls it. Put every matrix you want to colour by into `layers`, for example
-`adata.layers["logged_counts"]`, and treat X as optional. If X holds the expression you want,
-copy it: `adata.layers["X"] = adata.X`.
+**Store what you want to colour by in `layers`.** Layers are offered in both plot types,
+for gene columns and cell rows. As of this version, X is served by the API but not offered in
+the plot menus (Cell Plot sources: obs, obsm, obsp, layer; Gene Plot sources: var, varm, varp,
+layer). A layer works whether or not a later version adds X, so if X holds the expression you
+want, also keep it as a layer: `adata.layers["X"] = adata.X`.
 ```
 
 ## Required and optional
@@ -95,7 +94,7 @@ The exact byte layout is in {doc}`../reference/wire-format`.
   `raw_counts`, `cc_counts`.
 - `var`: Kompot differential expression statistics.
 - `varp`: `spearman_fold_change` and `spearman_smoothed` (16,285 × 16,285, dense float32).
-- `X`: scaled expression (z-scores) stored as CSC. As noted above, the UI does not show it.
+- `X`: scaled expression (z-scores) stored as CSC. As of this version it is not offered in the plot menus (see above).
 
 You can list the same thing for any store with the structure endpoint:
 

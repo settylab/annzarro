@@ -26,7 +26,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Dataset opens but one array shows no data; the API returns `200` with `"data": []`. Reproduced | `.zmetadata` out of date after an in-place rewrite (AnnZarro does not report it); or a key or index that does not exist | Re-consolidate; check the key with `GET /api/v1/data/dataset_structure`; call `POST /api/v1/cache/reset` |
 | Changes to a store do not show up | Server caches assume stores do not change; an in-place overwrite of chunk files also keeps the old ETag | `POST /api/v1/cache/reset` or restart the server |
 | First view slow on datasets with about 1M cells (Step 12) | The Focused Cell selector lists every cell name (36 MB at 1.17M cells) | Expected in this release; selecting cells by clicking works |
-| Remote dataset refused: `Remote datasets are disabled on this server (remote_stores: auto (server is behind a proxy; …))`, `403`, on a laptop. Reproduced | `annzarro start` uses the `production` environment, whose `production.yaml` sets `proxy_count: 1`, so `auto` treats even a loopback server as proxied | In your config: `server: {remote_stores: allow}`, or `proxy_count: 0` when no proxy is in front; with the latter the log reads `remote_stores: auto (local single-user server)` ({doc}`../user-guide/remote-datasets`) |
+| Remote dataset refused: `Remote datasets are disabled on this server (remote_stores: auto (server is behind a proxy; …))`, `403`, on a laptop. Reproduced | In builds before commit 58122bc (PR #43), `annzarro start` used `production.yaml`'s `proxy_count: 1`, so `auto` treated even a loopback server as proxied. Fixed there: the default is now 0 | Upgrade; on an older build set `server: {remote_stores: allow}`, or `proxy_count: 0` when no proxy is in front; with the latter the log reads `remote_stores: auto (local single-user server)` ({doc}`../user-guide/remote-datasets`) |
 | `501` `missing_dependency`: `Reading https:// datasets needs the optional package(s) fsspec, aiohttp`. Reproduced | Remote extras not installed | `pip install 'annzarro[remote]'` |
 | `Configuration error: Missing required configuration: server.host / server.port / server.data_dir` | AnnZarro before PR #43, started outside its source tree | Upgrade; with this branch `annzarro start --data-dir … --port …` works from any directory (verified) |
 
@@ -34,7 +34,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| X is not in any source menu | The plot sources are obs/obsm/obsp/layer and var/varm/varp/layer; X is not offered | Store the matrix as a layer: `adata.layers["X"] = adata.X` ({doc}`../data/slot-map`) |
+| X is not in any source menu | As of this version the plot sources are obs/obsm/obsp/layer and var/varm/varp/layer; X is not offered | Store the matrix as a layer: `adata.layers["X"] = adata.X` ({doc}`../data/slot-map`) |
 | Gene Plot shows no options (Step 18) | Default source is varm and the dataset has none | Switch the axis source to var |
 | Volcano all grey (Step 20) | Focused gene has no row in the varp matrix (outside a gene subset) | Click a gene that is in the matrix, or pick one from the Focused Gene selector |
 | Colour range looks wrong after loading a view (Steps 22-23) | Range restored from another focus | Toggle Lock Range or reset min and max |
