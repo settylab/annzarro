@@ -66,6 +66,48 @@ class UnsupportedEncodingError(ValueError):
     """
 
 
+# Major version of the installed zarr library. zarr 2 reads only zarr FORMAT 2
+# stores; zarr 3 reads formats 2 and 3.
+ZARR_LIBRARY_MAJOR = int(zarr.__version__.split('.')[0])
+
+
+class ZarrFormatError(ValueError):
+    """
+    Raised when a store is in a zarr format the installed zarr cannot read.
+
+    A ValueError for the same reason as UnsupportedEncodingError: existing
+    handlers keep working, and the type is narrow enough to surface past the
+    broad fallbacks that otherwise turn an unopenable store into empty data.
+    """
+
+
+def zarr_format_problem(dataset_path) -> Optional[str]:
+    """
+    Why the installed zarr cannot read the LOCAL store at `dataset_path`, or
+    None when it can (or when the path is not a local directory).
+
+    A zarr format 3 store has ``zarr.json`` in every node and no
+    ``.zgroup``/``.zarray``. Under zarr 2 it used to be rejected by a marker
+    check whose ValueError was swallowed by `_get_root`, so every data route
+    answered ``200`` with ``"data": {}`` -- the dataset looked empty, not
+    unreadable. The sentence says what the store is and how to fix it.
+    """
+    path_obj = Path(dataset_path)
+    if not path_obj.is_dir():
+        return None
+    is_v3 = (path_obj / 'zarr.json').exists()
+    is_v2 = (path_obj / '.zgroup').exists() or (path_obj / '.zarray').exists()
+    if is_v3 and not is_v2 and ZARR_LIBRARY_MAJOR < 3:
+        return (
+            f"{dataset_path} is a zarr format 3 store (it has zarr.json and no "
+            f".zgroup), and this server's zarr {zarr.__version__} reads only "
+            "format 2. Rewrite it as format 2 -- in an environment with "
+            "zarr>=3: `import anndata as ad; ad.settings.zarr_write_format = 2; "
+            "ad.read_zarr(src).write_zarr(dst)` -- or run the server with zarr>=3."
+        )
+    return None
+
+
 class ZarrReader:
     """
     Class for reading AnnData objects from zarr sources with lazy loading.
@@ -290,6 +332,15 @@ class ZarrReader:
             raise ValueError("No dataset path provided")
             
         logger.debug(f"_get_root: Loading root for path {dataset_path}")
+
+        # Outside the try below ON PURPOSE: its broad `except Exception` turns
+        # any ValueError whose text it does not recognise into `None`, which
+        # the data routes then serve as empty data.
+        if not dataset_path.startswith(("s3://", "http://", "https://")):
+            problem = zarr_format_problem(dataset_path)
+            if problem:
+                logger.error(problem)
+                raise ZarrFormatError(problem)
         
         # Look for the root using the path
         try:
@@ -328,8 +379,10 @@ class ZarrReader:
                 
                 # For directories, check if it appears to be a zarr directory
                 # by looking for .zarray or .zgroup files
+                # zarr.json marks a format 3 store, readable under zarr>=3
+                # (zarr_format_problem above rejects it under zarr 2).
                 if path_obj.is_dir() and not any((path_obj / file).exists() 
-                                              for file in ['.zarray', '.zgroup']):
+                                              for file in ['.zarray', '.zgroup', 'zarr.json']):
                     raise ValueError(f"Directory does not appear to be a zarr dataset: {dataset_path}")
                 
                 try:
@@ -569,6 +622,9 @@ class ZarrReader:
         Raises:
             ValueError: If the zarr store doesn't appear to be a valid AnnData structure
         """
+        problem = zarr_format_problem(path)
+        if problem:
+            raise ZarrFormatError(problem)
         try:
             # Open the zarr store
             root = zarr.open_group(path, mode='r')

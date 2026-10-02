@@ -167,8 +167,10 @@ config/auth/*.json
 !config/auth/.gitkeep
 annzarro/desktop/downloads/
 
-# The committed test fixture is an AnnData store whose members share names
+# The committed test fixtures are AnnData stores whose members share names
 # with directories ignored above (var/, data/). Without these, var/ and X/data/
-# were silently left out of it and every test reading genes or X failed.
+# were silently left out of them and every test reading genes or X failed.
 !annzarro/tests/data/fixture_small.zarr/var/
 !annzarro/tests/data/fixture_small.zarr/X/data/
+!annzarro/tests/data/fixture_small_v3.zarr/var/
+!annzarro/tests/data/fixture_small_v3.zarr/X/data/

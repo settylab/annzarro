@@ -13,6 +13,7 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
+from ...core.zarr_reader import ZarrFormatError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
@@ -50,8 +51,9 @@ def _listing_signature(entry_path):
 
 def _probe_dataset_counts(entry_path, probe):
     """
-    (cells, genes) for a listing entry, or None if it is not a readable
-    dataset. `probe` does the expensive open; it runs only when the entry's
+    (cells, genes) for a listing entry, None if it is not a readable
+    dataset, or the ZarrFormatError when it is one in a zarr format this
+    server cannot read. `probe` does the expensive open; it runs only when the entry's
     stat signature differs from the cached one.
     """
     try:
@@ -63,6 +65,11 @@ def _probe_dataset_counts(entry_path, probe):
         return cached[1]
     try:
         counts = probe(entry_path)
+    except ZarrFormatError as exc:
+        # A real dataset this server cannot read. Listing it, with the
+        # reason, beats dropping it: a store that silently vanishes from the
+        # list is as unexplained as one that silently reads as empty.
+        counts = exc
     except Exception:
         counts = None
     _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
@@ -1166,6 +1173,17 @@ def register_data_routes(app, api_version):
                         counts = _probe_dataset_counts(entry_path, _zarr_counts)
                         if counts is None:
                             # If we can't open the zarr store or it's not a valid AnnData structure, skip it
+                            continue
+                        if isinstance(counts, ZarrFormatError):
+                            zarr_stores.append({
+                                "name": entry,
+                                "path": entry_path,
+                                "is_link": os.path.islink(entry_path),
+                                "cells": None,
+                                "genes": None,
+                                "error": str(counts),
+                                "rel_path": os.path.relpath(entry_path, data_dir)
+                            })
                             continue
                         cells, genes = counts
                         
