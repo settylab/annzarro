@@ -221,3 +221,57 @@ def test_unparseable_indices_are_refused_not_widened(client, ds):
     assert get(client, "layer/counts", ds, cols="[1, 2]").status_code == 200
 
 
+# --- ETag / revalidation ---------------------------------------------------------
+
+def test_repeat_is_a_304_without_a_read(client, ds, monkeypatch):
+    r1 = get(client, "X", ds, cols="0", format="f32")
+    etag = r1.headers["ETag"]
+    assert r1.headers["Cache-Control"] == "private, no-cache"
+    from annzarro.core import process_file
+    monkeypatch.setattr(process_file, "extract_X", lambda *a, **k: pytest.fail("read on a 304"))
+    r2 = client.get("/api/v1/data/X", query_string={"dataset_path": ds["path"], "cols": "0", "format": "f32"},
+                    headers={"If-None-Match": etag})
+    assert r2.status_code == 304 and r2.data == b""
+
+
+def test_etag_depends_on_url_and_store(client, ds):
+    a = get(client, "X", ds, cols="0").headers["ETag"]
+    assert get(client, "X", ds, cols="0", format="f32").headers["ETag"] != a
+    assert get(client, "X", ds, cols="1").headers["ETag"] != a
+    st = os.stat(os.path.join(ds["path"], "X"))
+    os.utime(os.path.join(ds["path"], "X"), ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+    assert get(client, "X", ds, cols="0").headers["ETag"] != a
+
+
+def test_errors_carry_no_etag(client, ds):
+    r = client.get("/api/v1/data/X", query_string={"dataset_path": str(ds["tmp"] / "data" / "nope.zarr")})
+    assert r.status_code == 404
+    assert "ETag" not in r.headers
+
+
+# --- gzip ------------------------------------------------------------------------
+
+def test_gzip_off_on_loopback_by_default(client, ds):
+    r = client.get("/api/v1/data/cells", query_string={"dataset_path": ds["path"]},
+                   headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in r.headers
+
+
+def test_gzip_json_when_enabled_but_never_binary(ds):
+    client = _client(ds["tmp"], compress_responses=True)
+    big = client.get("/api/v1/data/X", query_string={"dataset_path": ds["path"], "rows": "0"},
+                     headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in big.headers  # under GZIP_MIN_BYTES
+    from annzarro.server import http_cache
+    http_cache.GZIP_MIN_BYTES, old = 10, http_cache.GZIP_MIN_BYTES
+    try:
+        r = client.get("/api/v1/data/X", query_string={"dataset_path": ds["path"], "cols": "0"},
+                       headers={"Accept-Encoding": "gzip"})
+        assert r.headers["Content-Encoding"] == "gzip"
+        assert "Accept-Encoding" in r.headers["Vary"]
+        assert len(json.loads(gzip.decompress(r.data))["data"]) == N_OBS
+        b = client.get("/api/v1/data/X", query_string={"dataset_path": ds["path"], "cols": "0", "format": "f32"},
+                       headers={"Accept-Encoding": "gzip"})
+        assert "Content-Encoding" not in b.headers
+    finally:
+        http_cache.GZIP_MIN_BYTES = old

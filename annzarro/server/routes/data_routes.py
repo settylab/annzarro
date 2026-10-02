@@ -18,6 +18,7 @@ from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
 from .. import permissions
+from .. import http_cache
 from ...core.array_response import wants_binary
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
@@ -249,6 +250,7 @@ def register_data_routes(app, api_version):
     def _bad_indices(exc):
         return jsonify({"error": str(exc), "reason": "bad_indices"}), 400
 
+    http_cache.install_gzip(app)
 
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
     def get_data_info():
@@ -303,6 +305,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
+    @http_cache.conditional
     def get_dataset_structure():
         """
         Get complete structure information about a dataset including available matrices, embeddings, etc.
@@ -324,6 +327,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
+    @http_cache.conditional
     def get_data_X():
         """
         Get data from the X matrix.
@@ -374,6 +378,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
+    @http_cache.conditional
     def get_layer(layer_name: str):
         """
         Get data from a specific layer.
@@ -427,6 +432,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
+    @http_cache.conditional
     def get_obs():
         """
         Get observation annotations.
@@ -477,6 +483,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
+    @http_cache.conditional
     def get_var():
         """
         Get variable annotations.
@@ -526,6 +533,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
+    @http_cache.conditional
     def get_obsm(obsm_key: str):
         """
         Get observation multidimensional data.
@@ -586,6 +594,7 @@ def register_data_routes(app, api_version):
         
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
+    @http_cache.conditional
     def get_varm(varm_key: str):
         """
         Get variable multidimensional data.
@@ -645,6 +654,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
+    @http_cache.conditional
     def get_obsp(obsp_key: str):
         """
         Get observation-observation matrices (cell-cell relationships).
@@ -698,6 +708,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
+    @http_cache.conditional
     def get_varp(varp_key: str):
         """
         Get variable-variable matrices (gene-gene relationships).
@@ -751,6 +762,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
+    @http_cache.conditional
     def get_uns(uns_key: str):
         """
         Get unstructured annotations.
@@ -906,6 +918,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/genes", methods=["GET"])
+    @http_cache.conditional
     def get_genes():
         """
         Get list of gene names.
@@ -928,6 +941,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
+    @http_cache.conditional
     def get_cells():
         """
         Get list of cell names.

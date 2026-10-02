@@ -79,6 +79,10 @@ server:
       type: integer
       description: Maximum number of elements in an array response
       default: 1000000
+    compress_responses:
+      type: [boolean, string]
+      description: gzip JSON responses (level 1); auto compresses only on a shared server (login on or a network host)
+      default: auto
     max_cells_per_request:
       type: integer
       description: Maximum number of cells in a single request
