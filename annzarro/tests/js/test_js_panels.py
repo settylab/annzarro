@@ -35,6 +35,7 @@ SUITES = {
     ),
     "name-picker.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "name-picker.js"),
     "structure-keys.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "structure-keys.js"),
+    "plot-titles.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "plot-titles.js"),
     "panelset-view.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "deeplink.js"),
     "panel-settings.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "panel-settings.js"),
     "pairwise-columns.test.mjs": os.path.join(

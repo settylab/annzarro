@@ -27,6 +27,7 @@
  */
 
 import { Coverage, GAP } from './coverage.js';
+import { keepTitlesFitted } from './plot-titles.js';
 
 /** Class prefix for the notice element; styled in static/css/styles.css. */
 const NOTICE_CLASS = 'coverage-notice';
@@ -220,6 +221,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         plotContainer, traces, withCoverageAnnotation(layout, cov), config
     );
     renderCoverageNotice(plotContainer, cov, unit);
+    // long axis / colour-bar titles: shortened to fit, full text on hover
+    keepTitlesFitted(plotContainer);
     return result;
 }
 
