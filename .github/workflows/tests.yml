@@ -31,9 +31,9 @@ jobs:
           - python: "3.13"
             extras: test,remote
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -41,10 +41,10 @@ jobs:
       - name: Install ESLint (pinned in package-lock.json)
         run: npm ci
 
-      - name: ESLint
-        run: npm run lint
+      - name: ESLint (errors only; warnings would become PR annotations)
+        run: npm run lint -- --quiet
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -77,8 +77,8 @@ jobs:
       matrix:
         python: ["3.10", "3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
