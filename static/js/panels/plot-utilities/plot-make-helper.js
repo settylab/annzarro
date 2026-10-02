@@ -286,9 +286,16 @@ export function attachViewportTracking(plotContainer, settings) {
   /** Legend name of the trace holding points with no colour value. */
   export const NO_VALUE_CATEGORY = 'NA';
 
-  /** A colour value that names no category: null, undefined or NaN. */
-  function isBlankValue(v) {
-    return v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v));
+  /**
+   * A categorical colour value that names no category: null, undefined, NaN,
+   * '' or the string 'nan'. One definition for both places that ask: the NA
+   * trace here, and Hide NaN in `createFilterMask`, so a point Hide NaN would
+   * remove is exactly a point that is otherwise drawn under NA.
+   */
+  export function isMissingCategory(v) {
+    return v === null || v === undefined || v === ''
+      || (typeof v === 'number' && Number.isNaN(v))
+      || (typeof v === 'string' && v.toLowerCase() === 'nan');
   }
 
   /**
@@ -305,7 +312,9 @@ export function attachViewportTracking(plotContainer, settings) {
    *
    *  - a non-blank value missing from `catValues` becomes a category of its
    *    own, appended after the listed ones (it is data, and has a name);
-   *  - a blank value goes to one grey `NA` trace at the end of the legend.
+   *  - a missing value (`isMissingCategory`) goes to one grey `NA` trace at
+   *    the end of the legend -- unless Hide NaN removed it first, which
+   *    `createFilterMask` counts.
    *
    * @param {Object} settings - Settings object containing plot configurations.
    * @param {Object} data - Data object containing x, y, and color values.
@@ -323,7 +332,7 @@ export function attachViewportTracking(plotContainer, settings) {
     const slotOf = new Array(color.length);
     for (let idx = 0; idx < color.length; idx++) {
       const v = color[idx];
-      if (isBlankValue(v)) { slotOf[idx] = -1; continue; }
+      if (isMissingCategory(v)) { slotOf[idx] = -1; continue; }
       let slot = slotByValue.get(v);
       if (slot === undefined) {
         slot = categories.length;

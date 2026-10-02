@@ -10,7 +10,8 @@
  *    drew it, and nothing produced a Coverage for it: the panel reported
  *    "6 of 6" over 4 drawn points. The invariant tested here is the one that
  *    makes such a drop impossible to hide: every point handed in is in exactly
- *    one trace, or was removed by a filter that `createFilterMask` counted.
+ *    one trace, or was removed by a filter that `createFilterMask` counted --
+ *    the table filter, or Hide NaN, which applies to categorical colours too.
  *  - settylab/annzarro#37 (third finding): with a table filter, the hide-NaN
  *    mask applies only to table entities, but `colorNaN` counted the whole
  *    array, so "5 of 6 shown" sat above "2 filtered out".
@@ -95,16 +96,39 @@ function drawCategorical(data, settings) {
 
 test('#38: a categorical point with no value is drawn, under NA', () => {
     // The measured case from the issue: 6 cells, 2 missing, categories [A, B].
+    // Before the fix the 2 were in no trace: 4 drawn, panel said 6 of 6.
     const { data, settings } = panel({
-        color: ['A', 'A', 'B', 'B', null, NaN], categories: ['A', 'B'], hideNaN: true
+        color: ['A', 'A', 'B', 'B', null, NaN], categories: ['A', 'B'], hideNaN: false
     });
     const { traces, drawn, filterStats } = drawCategorical(data, settings);
-    assert.equal(drawn, 6, 'before the fix: 4 drawn, 2 dropped, panel said 6 of 6');
+    assert.equal(drawn, 6);
     const na = traces.find(t => t.name === NO_VALUE_CATEGORY);
     assert.ok(na, 'the missing values have a legend entry');
     assert.deepEqual(na.customdata, ['c4', 'c5']);
     const cov = classifyFilterStats(filterStats, 'cells');
     assert.equal(cov.isComplete, true, 'nothing is hidden, so nothing is claimed hidden');
+});
+
+test('#38 with Hide NaN on: the missing points are hidden, and the panel says so', () => {
+    // Hide NaN applies to categorical colours (#46), so this is the one case
+    // where the 2 are legitimately not drawn -- and then the count and the
+    // reason must say it, which is what #38 was missing.
+    const { data, settings } = panel({
+        color: ['A', 'A', 'B', 'B', null, 'nan'], categories: ['A', 'B'], hideNaN: true
+    });
+    const { traces, drawn, filterStats } = drawCategorical(data, settings);
+    assert.equal(drawn, 4);
+    assert.ok(!traces.some(t => t.name === NO_VALUE_CATEGORY));
+    const cov = classifyFilterStats(filterStats, 'cells');
+    assert.equal(cov.headline(), '4 of 6 cells shown');
+    assert.match(cov.lines()[0], /colour: filtered out \(2 cells\) -- points with no colour value \(hide-NaN is on\)/);
+});
+
+test('#38: Hide NaN and the NA trace agree on what is missing', () => {
+    // '' and 'nan' are missing for Hide NaN, so they must be NA when drawn too.
+    const { data, settings } = panel({ color: ['A', '', 'NaN', 'B'], categories: ['A', 'B'] });
+    const { traces } = drawCategorical(data, settings);
+    assert.deepEqual(traces.find(t => t.name === NO_VALUE_CATEGORY).customdata, ['c1', 'c2']);
 });
 
 test('#38: a value the category list does not name gets its own trace', () => {
@@ -121,6 +145,7 @@ test('#38: sweep -- every point is drawn exactly once or counted as filtered', (
         nans: [NaN, 'A', 'B', NaN, 'A', 'B', 'A', NaN],
         unlisted: ['A', 'B', 'Z', 'A', 'Y', 'B', 'Z', 'A'],
         allBlank: [null, null, NaN, NaN, undefined, null, NaN, null],
+        missingStrings: ['A', '', 'nan', 'B', 'NaN', 'A', '', 'B'],
         numericCodes: [0, 1, 2, 0, 1, 2, NaN, 0]
     };
     const tables = [null, [0, 2, 4, 6], [1, 3, 5, 7], []];
@@ -135,8 +160,13 @@ test('#38: sweep -- every point is drawn exactly once or counted as filtered', (
                     });
                     const { traces, drawn, filterStats } = drawCategorical(data, settings);
                     const label = `${name} table=${JSON.stringify(table)} remove=${remove} hideNaN=${hideNaN}`;
+                    // Drawn, or removed by a filter that says so: the table
+                    // (removeNonTableEntries) or Hide NaN (#46). Nothing else.
                     const removedByTable = table && remove ? filterStats.tableFiltered : 0;
-                    assert.equal(drawn + removedByTable, color.length, label);
+                    const removedByColour = hideNaN ? filterStats.colorNaN : 0;
+                    assert.equal(drawn + removedByTable + removedByColour, color.length, label);
+                    assert.equal(drawn, filterStats.total - filterStats.filtered,
+                        `${label}: the panel's count is the drawn count`);
                     const seen = traces.flatMap(t => t.customdata);
                     assert.equal(new Set(seen).size, seen.length, `${label}: a point in two traces`);
                     cases++;
@@ -144,7 +174,7 @@ test('#38: sweep -- every point is drawn exactly once or counted as filtered', (
             }
         }
     }
-    assert.ok(cases >= 60, `swept ${cases} cases`);
+    assert.ok(cases >= 90, `swept ${cases} cases`);
 });
 
 // --- #37, third finding ----------------------------------------------------
@@ -220,4 +250,54 @@ test('#40: switching from a failed colour column to a healthy one drops the old 
     const live = panelLoadCoverage(data, settings, 'cells');
     assert.equal(live.isComplete, true, live.lines().join('; '));
     assert.ok(!live.lines().some(l => l.includes('obs.oldcol')), 'no stale reason survives');
+});
+
+test('#38/#46: switching to a categorical colour with Hide NaN on draws only what the panel counts', async () => {
+    const N = 8;
+    const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
+    const labels = ['A', null, 'B', 'nan', 'A', 'B', '', 'A'];
+    Object.assign(DataManager, {
+        getCells: () => CELLS, getGenes: () => [],
+        getCurrentDataset: () => '/fixture.zarr',
+        loadObs: async ({ columns }) => ({
+            data: { [columns[0]]: labels.slice() }, categories: { [columns[0]]: ['A', 'B'] }
+        })
+    });
+    const complete = Coverage.complete(N, 'cells');
+    const data = {
+        entities: 'cells', cells: CELLS,
+        x: { values: CELLS.map((_, i) => i), coverage: complete },
+        y: { values: CELLS.map((_, i) => i), coverage: complete },
+        z: null, color: CELLS.map((_, i) => i), colorType: 'numerical', colorCategories: null,
+        colorCoverage: complete, tableEntities: null, tableFilterMask: null
+    };
+    const settings = {
+        x: { type: 'obs', key: 'a' }, y: { type: 'obs', key: 'b' }, z: null,
+        color: { type: 'obs', key: 'celltype' }, hideNaN: true, hideOutliers: false,
+        tableFilter: 'none', categoryPalette: 'tab10'
+    };
+    const added = [];
+    const saved = globalThis.Plotly;
+    globalThis.Plotly = new Proxy({}, {
+        get: (_t, p) => p === 'addTraces'
+            ? (_gd, traces) => { added.push(...[].concat(traces)); return Promise.resolve(); }
+            : p === 'deleteTraces'
+                ? (gd, i) => { gd.data.splice(i, 1); return Promise.resolve(); }
+                : () => Promise.resolve()
+    });
+    const plotContainer = {
+        data: [{ type: 'scattergl', mode: 'markers', x: [], y: [] }], layout: {},
+        parentNode: { querySelector: () => null, insertBefore() {}, appendChild() {}, children: [] },
+        querySelector: () => null, querySelectorAll: () => [],
+        classList: { add() {}, remove() {} }, dataset: {}, id: 'plot-container-k', style: {},
+        appendChild(c) { return c; }, removeChild() {}, contains: () => false
+    };
+    try {
+        await loadColorDataAndUpdatePlot({}, plotContainer, settings, data, 'k', () => {
+            throw new Error('fell back to a full render');
+        });
+    } finally { globalThis.Plotly = saved; }
+    const drawn = added.filter(t => t.name !== 'Focused Cell').reduce((n, t) => n + t.x.length, 0);
+    assert.equal(drawn, 5, `traces: ${added.map(t => `${t.name}:${t.x.length}`).join(' ')}`);
+    assert.ok(!added.some(t => t.name === NO_VALUE_CATEGORY), 'hidden points are not drawn under NA');
 });

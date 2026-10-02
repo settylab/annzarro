@@ -1,5 +1,5 @@
 import { DataManager } from '../../data-manager.js';
-import { createLayout, processCategories, attachClickHandler } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -1365,14 +1365,13 @@ export function createFilterMask(data, settings) {
 
   // Categorical colour: Hide NaN hides points with no category. It used to
   // act on numerical colours only, so on a categorical colour it did nothing.
+  // Without Hide NaN those points are drawn under NA (processCategories).
   if (data.colorType === 'categorical' && Array.isArray(data.color) && settings.hideNaN) {
-    const missing = v => v === null || v === undefined || v === ''
-      || (typeof v === 'number' && Number.isNaN(v))
-      || (typeof v === 'string' && v.toLowerCase() === 'nan');
     const applyToAll = !hasTableFilter || !tableEntities;
     colorValidMask = data.color.map((v, i) =>
-      !missing(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
-    filterStats.colorNaN = data.color.filter(missing).length;
+      !isMissingCategory(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
+    // What the mask removes, as for numerical colours (settylab/annzarro#37).
+    filterStats.colorNaN = colorValidMask.filter(keep => !keep).length;
   }
 
   // 5. Gather only the masks we need for explicit filtering
