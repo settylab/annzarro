@@ -12,4 +12,5 @@ architecture
 performance
 troubleshooting
 license
+../design/subsetting
 ```

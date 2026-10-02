@@ -19,7 +19,7 @@ cell-axis request names it.
 
 A spec, sent as compact JSON:
 
-```jsonc
+```text
 { "n": 100000,              // cells to show; null = every cell passing `where`
   "seed": 0,                // 0 .. 2^32-1
   "balance": "batch",       // optional: sample as evenly as the group sizes allow
