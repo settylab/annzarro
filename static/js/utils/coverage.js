@@ -697,7 +697,10 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     if (serverReason === 'cap_exceeded') {
         return Coverage.missing(GAP.CAPPED, message, { source, unit, total, role });
     }
-    if (serverReason === 'not_found') {
+    // `key_not_found` is what data_routes.py answers for a column, layer or
+    // matrix key the dataset does not have (404). Read as a failure, a table
+    // switched to a dataset without that column said "failed to read".
+    if (serverReason === 'not_found' || serverReason === 'key_not_found') {
         return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });
     }
     // A cap rejection from a server that predates the `reason` field still has

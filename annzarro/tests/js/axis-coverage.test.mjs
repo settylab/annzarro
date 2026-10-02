@@ -131,6 +131,19 @@ const CONDITIONS = [
         patch: { loadObsp: async () => ({ data: [Array(N).fill(1)] }) }
     },
     {
+        // What the server answers today for a column the dataset does not have
+        // (data_routes.py: KeyError -> 404 {"reason": "key_not_found"}). The
+        // table called it "failed to read" after a dataset switch (PR #53).
+        name: 'obs: 404 key_not_found -- the column is not in this dataset',
+        reason: GAP.UNAVAILABLE,
+        settings: { type: 'obs', key: 'highres_celltype' },
+        tableColumn: { type: 'obs', key: 'highres_celltype' },
+        patch: { loadObs: async () => { throw Object.assign(
+            new Error("No obs column 'highres_celltype' in this dataset."),
+            { status: 404, data: { reason: 'key_not_found',
+                                   error: "No obs column 'highres_celltype' in this dataset." } }); } }
+    },
+    {
         name: 'layer: the named gene is not in this dataset',
         reason: GAP.UNAVAILABLE,
         entityIndex: -1,

@@ -229,6 +229,15 @@ test('classifyError: a not_found reason reads as UNAVAILABLE', () => {
     assert.equal(classifyError(err).worstReason, GAP.UNAVAILABLE);
 });
 
+test('classifyError: a key_not_found reason reads as UNAVAILABLE ("not in this dataset")', () => {
+    const err = new Error("No obs column 'highres_celltype' in this dataset.");
+    err.status = 404;
+    err.data = { reason: 'key_not_found', error: err.message };
+    const c = classifyError(err, { unit: 'cells', source: 'obs.highres_celltype' });
+    assert.equal(c.worstReason, GAP.UNAVAILABLE);
+    assert.match(c.lines()[0], /not in this dataset/);
+});
+
 // --- classifyFilterStats --------------------------------------------------
 
 test('classifyFilterStats: no filtering is complete', () => {
