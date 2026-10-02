@@ -103,6 +103,25 @@ server:
       type: integer
       description: Maximum number of datasets to keep in memory
       default: 10
+    remote_stores:
+      type: string
+      enum: [auto, allow, deny]
+      description: Whether remote (s3/gs/http) zarr datasets may be opened; auto allows them only on a local single-user server
+      default: auto
+      security: internal
+    remote_allowlist:
+      type: array
+      items:
+        type: string
+      description: URL prefixes remote datasets must start with; enables remote stores on hosted servers under auto
+      default: []
+      security: internal
+    remote_credentials:
+      type: string
+      enum: [anonymous, environment]
+      description: Credentials for remote stores; environment uses the AWS/GCP standard credential chain
+      default: anonymous
+      security: internal
   required:
     - host
     - port

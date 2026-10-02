@@ -45,6 +45,9 @@ DEFAULT_CONFIG = {
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
     "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
+    "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
+    "remote_allowlist": [],            # URL prefixes remote datasets must start with
+    "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
     "app_name": "Annzarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page
@@ -151,6 +154,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
                f"cache_enabled={app.config.get('cache_enabled')}, "
                f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
     
+    # Decide whether this server may open remote (s3/gs/http) datasets. This
+    # must see the final auth/host/proxy settings, so it runs after config.
+    from annzarro.core.remote import configure_remote_policy
+    configure_remote_policy(app.config)
+
     # Set up authentication if enabled
     if app.config.get("auth_enabled", False):
         # Set up Flask session secret key
