@@ -614,7 +614,7 @@ class ConfigManager:
     def _is_sensitive_key(self, key: str) -> bool:
         """A dotted config key whose value is a secret (schema or name says so)."""
         leaf = key.rsplit(".", 1)[-1]
-        return (self._security_metadata.get(key) == "sensitive"
+        return (self._get_security_level(key) == "sensitive"
                 or "secret" in leaf or "password" in leaf)
 
     def validate_config(self) -> Tuple[bool, List[str]]:
@@ -676,6 +676,52 @@ class ConfigManager:
                 self._set_nested_value(masked, key.split("."), self.MASK)
         return masked
 
+    @staticmethod
+    def client_keys(tree: Dict[str, Any]) -> Dict[str, Any]:
+        """The flat keys the Flask app and the browser read (app_name,
+        contact_info, ui_*, enabled_panel_types, integrations), from a
+        hierarchical config -- the whole one, or only its public part."""
+        flat: Dict[str, Any] = {}
+        # Branding section
+        if "branding" in tree:
+            branding = tree["branding"]
+            flat["app_name"] = branding.get("app_name", "AnnZarro")
+            flat["project_description"] = branding.get(
+                "project_description", "Zarr-based AnnData Visualization Tool"
+            )
+            flat["contact_info"] = branding.get("contact_info", {})
+        
+        # UI defaults
+        if "ui" in tree and "defaults" in tree["ui"]:
+            for key, value in tree["ui"]["defaults"].items():
+                flat[f"ui_{key}"] = value
+                
+        # UI panel types
+        if "ui" in tree and "enabled_panel_types" in tree["ui"]:
+            flat["enabled_panel_types"] = tree["ui"]["enabled_panel_types"]
+        
+        # Cache configuration
+        if "ui" in tree and "cache" in tree["ui"]:
+            cache_config = tree["ui"]["cache"]
+            flat["ui_cache_max_entries"] = cache_config.get("max_entries", 1000)
+            flat["ui_cache_max_size_mb"] = cache_config.get("max_size_mb", 1024)
+            
+        # Autosave configuration
+        if "ui" in tree and "autosave" in tree["ui"]:
+            autosave_config = tree["ui"]["autosave"]
+            flat["ui_autosave_enabled"] = autosave_config.get("enabled", True)
+            flat["ui_autosave_interval_ms"] = autosave_config.get("interval_ms", 10000)
+            flat["ui_autosave_storage_key"] = autosave_config.get("storage_key", "annzarro_autosave")
+            flat["ui_autosave_session_name"] = autosave_config.get("session_name", "Autosave")
+            flat["ui_autosave_show_in_list"] = autosave_config.get("show_in_list", False)
+            flat["ui_autosave_auto_restore"] = autosave_config.get("auto_restore", True)
+            
+        # External integrations
+        if "integrations" in tree:
+            flat["integrations"] = tree["integrations"]
+        
+        return flat
+
     def to_flask_config(self) -> Dict[str, Any]:
         """
         Convert hierarchical configuration to flat Flask configuration.
@@ -685,7 +731,9 @@ class ConfigManager:
         """
         flask_config = {
             # Mark this as coming from the config manager
-            "__using_config_manager": True
+            "__using_config_manager": True,
+            # The hierarchical form, for /api/v1/config to filter by tier
+            "config_tree": deepcopy(self.config),
         }
         
         # Server section
@@ -707,43 +755,7 @@ class ConfigManager:
                 if key in auth_config:
                     flask_config[key] = auth_config[key]
         
-        # Branding section
-        if "branding" in self.config:
-            branding = self.config["branding"]
-            flask_config["app_name"] = branding.get("app_name", "AnnZarro")
-            flask_config["project_description"] = branding.get(
-                "project_description", "Zarr-based AnnData Visualization Tool"
-            )
-            flask_config["contact_info"] = branding.get("contact_info", {})
-        
-        # UI defaults
-        if "ui" in self.config and "defaults" in self.config["ui"]:
-            for key, value in self.config["ui"]["defaults"].items():
-                flask_config[f"ui_{key}"] = value
-                
-        # UI panel types
-        if "ui" in self.config and "enabled_panel_types" in self.config["ui"]:
-            flask_config["enabled_panel_types"] = self.config["ui"]["enabled_panel_types"]
-        
-        # Cache configuration
-        if "ui" in self.config and "cache" in self.config["ui"]:
-            cache_config = self.config["ui"]["cache"]
-            flask_config["ui_cache_max_entries"] = cache_config.get("max_entries", 1000)
-            flask_config["ui_cache_max_size_mb"] = cache_config.get("max_size_mb", 1024)
-            
-        # Autosave configuration
-        if "ui" in self.config and "autosave" in self.config["ui"]:
-            autosave_config = self.config["ui"]["autosave"]
-            flask_config["ui_autosave_enabled"] = autosave_config.get("enabled", True)
-            flask_config["ui_autosave_interval_ms"] = autosave_config.get("interval_ms", 10000)
-            flask_config["ui_autosave_storage_key"] = autosave_config.get("storage_key", "annzarro_autosave")
-            flask_config["ui_autosave_session_name"] = autosave_config.get("session_name", "Autosave")
-            flask_config["ui_autosave_show_in_list"] = autosave_config.get("show_in_list", False)
-            flask_config["ui_autosave_auto_restore"] = autosave_config.get("auto_restore", True)
-            
-        # External integrations
-        if "integrations" in self.config:
-            flask_config["integrations"] = self.config["integrations"]
+        flask_config.update(self.client_keys(self.config))
         
         return flask_config
 
@@ -782,86 +794,64 @@ class ConfigManager:
             return {}
     
     def _parse_security_metadata(self, schema: Dict[str, Any], path: str = "") -> None:
-        """
-        Parse security metadata from schema.
-        
-        Args:
-            schema: Schema dictionary
-            path: Current path in the schema
+        """Record every ``security:`` annotation in the schema, by dotted path.
+
+        Both property-level annotations (``server.port``) and object-level
+        ones (``branding``: the whole section) are read; a key inherits the
+        nearest annotated ancestor's tier (``_get_security_level``). A guard
+        that returned at the root whenever ``__security_levels`` was present
+        used to skip the whole traversal, so no annotation was ever read
+        (issue #32).
         """
         if not isinstance(schema, dict):
             return
-            
-        # Check if this is a property with security metadata
-        if "security" in schema and "type" in schema:
-            security_level = schema.get("security", "internal")  # Default to internal
-            self._security_metadata[path] = security_level
+        if path and "security" in schema:
+            self._security_metadata[path] = schema["security"]
+        children = schema.get("properties") if path else schema
+        if not isinstance(children, dict):
             return
-            
-        # Skip schema metadata
-        if path == "" and "__security_levels" in schema:
-            return
-            
-        # Recurse into nested objects
-        for key, value in schema.items():
-            # Skip metadata keys
-            if key.startswith("__"):
+        for key, child in children.items():
+            if key.startswith("__") or not isinstance(child, dict):
                 continue
-                
-            # Skip type and required keys at the property level
-            if key in ("type", "properties", "required", "items", "description", "default"):
-                continue
-                
-            new_path = f"{path}.{key}" if path else key
-            
-            # Check for properties in objects
-            if isinstance(value, dict):
-                # If this is an object with properties, recurse into properties
-                if "properties" in value:
-                    for prop_name, prop_schema in value.get("properties", {}).items():
-                        prop_path = f"{new_path}.{prop_name}"
-                        if "security" in prop_schema:
-                            self._security_metadata[prop_path] = prop_schema["security"]
-                        self._parse_security_metadata(prop_schema, prop_path)
-                else:
-                    # Regular nested object
-                    self._parse_security_metadata(value, new_path)
-    
-    def get_filtered_config(self, security_level: str = "public") -> Dict[str, Any]:
-        """
-        Get a filtered view of the configuration based on security level.
-        
-        Args:
-            security_level: Minimum security level to include
-            
-        Returns:
-            Filtered configuration dictionary
-        """
-        # Load schema if not already loaded
+            self._parse_security_metadata(child, f"{path}.{key}" if path else key)
+
+    def _get_security_level(self, path: str) -> str:
+        """Tier of a dotted key: its own annotation, else its nearest annotated
+        ancestor's, else ``internal`` (never published, never masked)."""
         if not self._security_metadata:
             self._load_schema()
-            
-        # If no security metadata, use a default filter
+        parts = path.split('.')
+        for i in range(len(parts), 0, -1):
+            level = self._security_metadata.get('.'.join(parts[:i]))
+            if level:
+                return level
+        return "internal"
+
+    def filter_by_level(self, config: Dict[str, Any], security_level: str = "public") -> Dict[str, Any]:
+        """The keys of ``config`` (hierarchical) at or below ``security_level``.
+
+        Fails closed: without a readable schema nothing is published at the
+        ``public`` level, and a ``sensitive`` value is only ever returned when
+        ``sensitive`` is asked for explicitly.
+        """
         if not self._security_metadata:
-            return self._default_filtered_config(security_level)
-            
-        # Get numerical security level
+            self._load_schema()
+        if not self._security_metadata and security_level != "sensitive":
+            logger.error("No security annotations loaded from the schema; publishing nothing")
+            return {}
         level_value = self.SECURITY_LEVELS.get(security_level, 0)
-        
-        # Create a copy of the configuration
-        filtered_config = {}
-        
-        # Filter configuration based on security level
-        for config_path, config_value in self._flatten_config(self.config).items():
-            # Check security level for this path
-            path_security = self._get_security_level(config_path)
-            
-            # If security level is lower or equal to requested level, include it
-            if self.SECURITY_LEVELS.get(path_security, 1) <= level_value:
-                self._set_nested_value(filtered_config, config_path.split('.'), config_value)
-                
-        return filtered_config
-    
+        filtered: Dict[str, Any] = {}
+        for config_path, config_value in self._flatten_config(config).items():
+            tier = self._get_security_level(config_path)
+            if self.SECURITY_LEVELS.get(tier, 1) <= level_value:
+                self._set_nested_value(filtered, config_path.split('.'), config_value)
+        return filtered
+
+    def get_filtered_config(self, security_level: str = "public") -> Dict[str, Any]:
+        """The loaded configuration filtered to ``security_level`` (see
+        ``filter_by_level``)."""
+        return self.filter_by_level(self.config, security_level)
+
     def _flatten_config(self, config: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
         """
         Flatten a nested configuration dictionary into a flat dictionary with dotted keys.
@@ -887,69 +877,6 @@ class ConfigManager:
                 flat_config[new_key] = value
                 
         return flat_config
-    
-    def _get_security_level(self, path: str) -> str:
-        """
-        Get the security level for a path.
-        
-        Args:
-            path: Configuration path
-            
-        Returns:
-            Security level (public, internal, sensitive)
-        """
-        # Try exact match first
-        if path in self._security_metadata:
-            return self._security_metadata[path]
-            
-        # Try to match parent paths
-        parts = path.split('.')
-        for i in range(len(parts), 0, -1):
-            parent_path = '.'.join(parts[:i])
-            if parent_path in self._security_metadata:
-                return self._security_metadata[parent_path]
-                
-        # Default to internal
-        return "internal"
-    
-    def _default_filtered_config(self, security_level: str) -> Dict[str, Any]:
-        """
-        Apply a default filter to the configuration when no schema is available.
-        
-        Args:
-            security_level: Security level to filter by
-            
-        Returns:
-            Filtered configuration
-        """
-        # If security level is not public, return everything
-        if security_level != "public":
-            return deepcopy(self.config)
-            
-        # Create a copy of the configuration
-        filtered_config = deepcopy(self.config)
-        
-        # Remove sensitive keys by convention
-        sensitive_keys = [
-            "secret_key", "auth.secret_key", "server.secret_key", 
-            "server.cert_file", "server.key_file"
-        ]
-        
-        # Remove sensitive keys
-        for key in sensitive_keys:
-            parts = key.split('.')
-            current = filtered_config
-            
-            for part in parts[:-1]:
-                if part not in current:
-                    break
-                current = current[part]
-                
-            last_part = parts[-1]
-            if last_part in current:
-                del current[last_part]
-                
-        return filtered_config
 
 
 # Singleton instance for easier imports

@@ -31,7 +31,8 @@ class TestServer(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('host', data)
         self.assertIn('port', data)
-        self.assertIn('data_dir', data)
+        # an absolute server path; schema.yaml marks it internal (issue #32)
+        self.assertNotIn('data_dir', data)
 
     def test_get_status(self):
         """Test getting server status."""
