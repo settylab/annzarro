@@ -666,7 +666,7 @@ class ConfigManager:
         # Branding section
         if "branding" in self.config:
             branding = self.config["branding"]
-            flask_config["app_name"] = branding.get("app_name", "Annzarro")
+            flask_config["app_name"] = branding.get("app_name", "AnnZarro")
             flask_config["project_description"] = branding.get(
                 "project_description", "Zarr-based AnnData Visualization Tool"
             )

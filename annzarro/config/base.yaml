@@ -1,4 +1,4 @@
-# Annzarro Base Configuration
+# AnnZarro Base Configuration
 # This file contains common settings shared across all environments
 
 # Server configuration
@@ -80,14 +80,18 @@ auth:
 
 # Application branding
 branding:
-  app_name: "Annzarro"
+  app_name: "AnnZarro"
   project_description: "Zarr-based AnnData Visualization Tool"
   
-  # Contact information shown on login page
+  # Contact block on the login page, shown only when something is set here.
+  # Fill it in for your site, e.g.:
+  #   lab_name: "Example Lab"
+  #   lab_url: "https://lab.example.org"
+  #   email: "annzarro-admin@example.org"
   contact_info:
-    lab_name: "Setty Lab"
-    lab_url: "https://setty-lab.org"
-    email: "dotto@fredhutch.org"
+    lab_name: null
+    lab_url: null
+    email: null
     custom_html: null
 
 # UI configuration

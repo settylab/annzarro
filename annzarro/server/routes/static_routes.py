@@ -76,7 +76,7 @@ def register_static_routes(app, api_version):
             logger.debug(f"Rendering index.html template")
             return render_template(
                 "index.html",
-                app_name=app.config.get("app_name", "Annzarro"),
+                app_name=app.config.get("app_name", "AnnZarro"),
                 project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
             )
         
@@ -109,6 +109,6 @@ def register_static_routes(app, api_version):
             logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
             return render_template(
                 "index.html",
-                app_name=app.config.get("app_name", "Annzarro"),
+                app_name=app.config.get("app_name", "AnnZarro"),
                 project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
             )

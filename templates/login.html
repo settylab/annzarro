@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title|default('Annzarro Login') }}</title>
+    <title>{{ title|default((app_name or 'AnnZarro') ~ ' sign in') }}</title>
     
     <!-- Favicons -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
@@ -94,7 +94,7 @@
 <body>
     <div class="login-container">
         <div class="logo">
-            <h2>{{ app_name|default('Annzarro') }}</h2>
+            <h2>{{ app_name|default('AnnZarro') }}</h2>
         </div>
         <h1>Sign in</h1>
         {% if error %}
@@ -124,7 +124,7 @@
         </div>
         {% endif %}
         
-        {% if contact_info %}
+        {% if contact_info and (contact_info.lab_name or contact_info.email or contact_info.custom_html) %}
         <div class="contact-info">
             {% if contact_info.lab_name %}
             <div class="lab-info">

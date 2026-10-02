@@ -110,7 +110,7 @@ def register_core_routes(app, api_version):
             "data_dir": app.config.get("data_dir", "data"),
             
             # UI/application information
-            "app_name": app.config.get("app_name", "Annzarro"),
+            "app_name": app.config.get("app_name", "AnnZarro"),
             "project_description": app.config.get("project_description", "Zarr-based AnnData Visualization Tool"),
             
             # Contact info - explicitly extract only what's needed
