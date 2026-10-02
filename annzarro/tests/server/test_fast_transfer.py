@@ -186,3 +186,38 @@ def test_json_obsp_row_matches_dense(client, ds):
     np.testing.assert_array_equal(np.array(body["data"], dtype=np.float32)[0], ds["knn"][5])
 
 
+# --- guard -----------------------------------------------------------------------
+
+def test_whole_matrix_is_refused_before_reading(ds, monkeypatch):
+    from annzarro.core.zarr_reader import ZarrReader
+    client = _client(ds["tmp"], max_response_elements=50)
+    reads = []
+    monkeypatch.setattr(ZarrReader, "_get_dense_array",
+                        lambda self, *a, **k: reads.append(a) or np.array([]))
+    r = get(client, "layer/counts", ds)
+    assert r.status_code == 413
+    body = r.get_json()
+    assert body["reason"] == "response_too_large"
+    assert body["requested"] == N_OBS * N_VAR and body["limit"] == 50
+    assert reads == []
+    assert get(client, "X", ds, rows="0,1,2,3,4,5,6,7,8,9").status_code == 413
+    assert get(client, "obsp/connectivities", ds).status_code == 413
+    assert get(client, "obsm/X_umap", ds).status_code == 413
+
+
+def test_single_vectors_are_always_allowed(ds):
+    client = _client(ds["tmp"], max_response_elements=5)
+    assert get(client, "X", ds, cols="1").status_code == 200   # 40 elements > 5
+    assert get(client, "X", ds, rows="1").status_code == 200
+    assert get(client, "obsp/connectivities", ds, rows="1").status_code == 200
+    assert get(client, "obsm/X_umap", ds, column_name="0").status_code == 200
+
+
+def test_unparseable_indices_are_refused_not_widened(client, ds):
+    for bad in ("", "abc", "1,,2", "[1.5]"):
+        r = get(client, "layer/counts", ds, cols=bad)
+        assert r.status_code == 400, bad
+        assert r.get_json()["reason"] == "bad_indices"
+    assert get(client, "layer/counts", ds, cols="[1, 2]").status_code == 200
+
+
