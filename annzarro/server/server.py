@@ -98,7 +98,7 @@ def run_server(
     
     logger.info(f"Starting Annzarro server on {host}:{port}")
     logger.info(f"Data directory: {data_dir}")
-    logger.info(f"Static directory: {final_config.get('static_dir', 'project root')}")
+    logger.info(f"Static directory: {final_config.get('static_dir') or 'frontend static/'}")
     logger.info(f"Debug mode: {debug}")
     
     # Show the full server configuration section for debugging

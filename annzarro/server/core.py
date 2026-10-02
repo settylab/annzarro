@@ -31,7 +31,7 @@ DEFAULT_CONFIG = {
     "cert_file": None,
     "key_file": None,
     "data_dir": "data",
-    "static_dir": None,  # Will default to project root directory
+    "static_dir": None,  # None = the frontend static directory (paths.frontend_dir)
     "log_file": None,  # None = ~/.annzarro/logs/annzarro_server.log
     "log_level": "INFO",
     "auth_enabled": False,
