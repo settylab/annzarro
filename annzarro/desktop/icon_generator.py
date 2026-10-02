@@ -58,8 +58,12 @@ class IconGenerator:
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Save as ICO file
-        images[0].save(
+        # Save as ICO file. Pillow writes only the sizes no larger than the
+        # image it is called on, so save from the largest one; saving from
+        # the 16x16 one produced a 16x16-only icon, which electron-builder
+        # rejects for Windows (it needs 256x256).
+        largest = max(images, key=lambda img: img.width)
+        largest.save(
             output_path,
             format='ICO',
             sizes=[(img.width, img.height) for img in images]

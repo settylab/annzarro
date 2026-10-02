@@ -92,3 +92,13 @@ def test_electron_ships_the_frozen_server_and_starts_it_on_loopback():
     assert "const HOST = '127.0.0.1';" in main
     for arg in ("'--host', HOST", "'--auth-disabled'", "'--no-browser'"):
         assert arg in main
+
+
+def test_windows_icon_has_a_256px_image():
+    """electron-builder refuses a Windows icon without a 256x256 image; the
+    committed one used to hold only 16x16."""
+    with open(os.path.join(ELECTRON, "icons", "icon.ico"), "rb") as f:
+        data = f.read()
+    count = int.from_bytes(data[4:6], "little")
+    widths = [data[6 + 16 * i] or 256 for i in range(count)]  # 0 means 256
+    assert 256 in widths, widths
