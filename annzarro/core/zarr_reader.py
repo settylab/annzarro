@@ -2225,6 +2225,7 @@ class ZarrReader:
             node = node[part]
         return self._uns_value(node)
 
+    @cached_method
     def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:
         """
         Get list of gene names.

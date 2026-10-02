@@ -14,6 +14,21 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+def _scalar_bytes(item) -> int:
+    """Bytes one Python scalar in a cached list or dict costs (object + slot).
+
+    This used to be a flat 1 KB per element, ~30x a float's real size, so one
+    obs column of a million cells was costed at 977 MB of the default 1000 MB
+    cache_memory_mb: caching it evicted nearly everything else, and a column
+    of 1.03M cells or more was evicted the moment it was added.
+    """
+    if isinstance(item, str):
+        return 57 + len(item)
+    if isinstance(item, bytes):
+        return 41 + len(item)
+    return 32
+
+
 class DatasetCache:
     """
     Cache manager for dataset access operations.
@@ -330,9 +345,10 @@ class DatasetCache:
                     size += item.nbytes
                 elif hasattr(item, 'nbytes'):
                     size += item.nbytes
+                elif isinstance(item, (list, tuple, dict)):
+                    size += self._estimate_memory_usage(item) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(item)
             return size / (1024 * 1024)
         
         # Dictionaries
@@ -355,8 +371,7 @@ class DatasetCache:
                     # Recursive approximation (simplified)
                     size += self._estimate_memory_usage(value) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(value)
             return size / (1024 * 1024)
         
         # For other types, use a fixed estimate
@@ -501,6 +516,9 @@ def cached_method(func):
         elif method_name == 'get_uns':
             cache_key = f"path:{encoded_path}:uns:{arg.get('key')}"
 
+        elif method_name == 'get_cell_gene_names':
+            cache_key = f"path:{encoded_path}:names:{arg.get('entity')}"
+
         elif method_name == 'open_dataset_by_path':
             cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"
                          f"{arg.get('metadata_level', 'full')}")
@@ -539,11 +557,11 @@ def cached_method(func):
         elif method_name == 'open_dataset_by_path':
             # Store the root and metadata in the metadata cache
             cache_type = 'metadata'
-        elif method_name == 'get_uns':
-            # This is a special case, could be any type
-            # Use a heuristic: if it returns a dict, use dataframe; otherwise matrix
-            pass
-        
+        # get_uns stays in 'matrix' whatever it returns: the lookup below
+        # must use the same bucket as the write, and a write chosen by the
+        # result's type (dict -> dataframe, str -> metadata) was never read
+        # back, so a uns group or string was re-read on every request.
+
         # Check if result is already cached
         cached_result = self.cache._get_from_cache(cache_key, cache_type=cache_type)
         if cached_result is not None:
@@ -563,17 +581,7 @@ def cached_method(func):
         # Cache the result
         if result is not None:
             logger.debug(f"CACHE[{method_name}]: Method execution took {elapsed_time:.4f}s")
-            
-            # For get_uns, determine cache type based on result
-            if method_name == 'get_uns':
-                if isinstance(result, dict):
-                    cache_type = 'dataframe'
-                elif isinstance(result, np.ndarray) or hasattr(result, 'nbytes'):
-                    cache_type = 'matrix'
-                else:
-                    # For other types, use a basic type
-                    cache_type = 'metadata'
-            
+
             # Cache the result with dataset_path
             logger.debug(f"CACHE[{method_name}]: Caching result with dataset_path='{dataset_path}'")
             self.cache._add_to_cache(cache_key, result, dataset_path=dataset_path, cache_type=cache_type)
