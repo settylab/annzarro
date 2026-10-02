@@ -61,6 +61,19 @@ DEFAULT_CONFIG = {
     }
 }
 
+def is_logged_in() -> bool:
+    """Whether the current request carries a login session."""
+    return "user_id" in session
+
+
+def login_required_response():
+    """What a request that needs login gets without one: 401 for the API,
+    a redirect to the login page for everything else."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
+
 def require_auth(f):
     """
     Decorator for routes that require authentication.
@@ -81,13 +94,9 @@ def require_auth(f):
             return f(*args, **kwargs)
             
         # Check if user is logged in (in session)
-        if "user_id" not in session:
+        if not is_logged_in():
             logger.warning(f"Unauthenticated access attempt to {request.path}")
-            # For API routes, return 401 Unauthorized
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required"}), 401
-            # For UI routes, redirect to login page
-            return redirect("/login")
+            return login_required_response()
             
         # User is authenticated, proceed with the original function
         logger.debug(f"Authenticated access to {request.path} by {session['user_id']}")

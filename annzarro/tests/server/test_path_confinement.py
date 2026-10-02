@@ -91,9 +91,34 @@ def test_every_path_carrying_parameter_is_checked(hosted, layout):
     assert _refused(hosted.get("/api/v1/directories/list", query_string={"path": "../outside"}))
 
 
+def _logged_in(app):
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = "alice"
+        sess["last_activity"] = 9e12
+    return client
+
+
 def test_login_enabled_on_localhost_is_also_confined(layout):
-    client = _app(layout, auth_enabled=True).test_client()
+    client = _logged_in(_app(layout, auth_enabled=True))
     assert _refused(_structure(client, str(layout / "outside" / "secret.zarr")))
+
+
+def test_login_is_checked_before_confinement(layout):
+    """An anonymous client must not learn which paths are outside the root
+    (403) versus inside (401): both are 401 before login."""
+    client = _app(layout, auth_enabled=True).test_client()
+    outside = _structure(client, str(layout / "outside" / "secret.zarr"))
+    inside = _structure(client, str(layout / "data" / "inside.zarr"))
+    assert outside.status_code == inside.status_code == 401
+    assert str(layout) not in outside.get_data(as_text=True)
+
+
+def test_refusal_does_not_reveal_server_paths(hosted, layout):
+    resp = _structure(hosted, "/etc")
+    assert _refused(resp)
+    body = resp.get_data(as_text=True)
+    assert str(layout / "data") not in body and os.path.realpath(str(layout)) not in body
 
 
 # --- allowed when hosted ----------------------------------------------------

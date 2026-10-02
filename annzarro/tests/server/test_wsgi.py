@@ -52,8 +52,15 @@ def test_factory_defaults_to_login_and_confinement(layout):
     client = app.test_client()
     outside = client.get("/api/v1/data/dataset_structure",
                          query_string={"dataset_path": str(layout / "outside" / "secret.zarr")})
+    assert outside.status_code == 401, "login is checked before the path"
+    with client.session_transaction() as sess:
+        sess["user_id"] = "alice"
+        sess["last_activity"] = 9e12
+    outside = client.get("/api/v1/data/dataset_structure",
+                         query_string={"dataset_path": str(layout / "outside" / "secret.zarr")})
     assert outside.status_code == 403
     assert outside.get_json()["reason"] == "outside_data_dir"
+    client = app.test_client()
 
     inside = client.get("/api/v1/data/dataset_structure",
                         query_string={"dataset_path": str(layout / "data" / "inside.zarr")})
