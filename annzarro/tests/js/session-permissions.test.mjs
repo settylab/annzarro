@@ -13,7 +13,7 @@
 //   * user-controlled strings are escaped before reaching innerHTML.
 //
 // Run: `node --test annzarro/tests/js/session-permissions.test.mjs`. Also
-// driven by the pytest wrapper test_js_coverage.py.
+// driven by the pytest wrapper test_js_suites.py.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";

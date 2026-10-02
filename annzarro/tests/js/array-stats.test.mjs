@@ -8,7 +8,7 @@
 // stack-safe and correct, so the overflow class cannot regress.
 //
 // Run: `node --test annzarro/tests/js/array-stats.test.mjs` (node >= 18). Also
-// driven by the pytest wrapper test_js_array_stats.py so a single `pytest` run
+// driven by the pytest wrapper test_js_suites.py so a single `pytest` run
 // covers it.
 import assert from "node:assert/strict";
 import test from "node:test";
