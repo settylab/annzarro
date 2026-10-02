@@ -133,7 +133,14 @@ def numeric_json_text(arr: np.ndarray) -> str:
     if arr.dtype.kind == "f" and arr.dtype.itemsize < 4:
         arr = arr.astype(np.float32)
     flat = arr.reshape(-1)
-    text = flat.astype(str).tolist()
+    nonzero = np.flatnonzero(flat)
+    if len(nonzero) * 2 < flat.size:
+        # Mostly zeros (a kNN row, a UMI gene column): format only the rest.
+        text = ["0"] * flat.size
+        for i, s in zip(nonzero.tolist(), flat[nonzero].astype(str).tolist()):
+            text[i] = s
+    else:
+        text = flat.astype(str).tolist()
     if arr.dtype.kind == "f":
         for i in np.flatnonzero(~np.isfinite(flat)).tolist():
             text[i] = "null"
