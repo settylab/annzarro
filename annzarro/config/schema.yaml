@@ -162,6 +162,16 @@ auth:
       description: Secret key for sessions
       default: null  # generated and stored beside user_file; shipped placeholders are refused
       security: sensitive
+    session_timeout:
+      type: integer
+      description: Seconds of inactivity after which a login expires (0 = never)
+      default: 28800
+      security: internal
+    cookie_secure:
+      type: string
+      description: "Secure flag on the login cookie: auto (when the request came over HTTPS, as seen through proxy_count proxies), true or false"
+      default: auto
+      security: internal
   required:
     - enabled
 

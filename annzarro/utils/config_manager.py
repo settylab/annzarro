@@ -464,6 +464,7 @@ class ConfigManager:
         "user_file": ("auth", "user_file"),
         "secret_key": ("auth", "secret_key"),
         "session_timeout": ("auth", "session_timeout"),
+        "cookie_secure": ("auth", "cookie_secure"),
         "app_name": ("branding", "app_name"),
         "project_description": ("branding", "project_description"),
         "contact_info": ("branding", "contact_info"),
@@ -658,6 +659,9 @@ class ConfigManager:
             flask_config["user_file"] = auth_config.get("user_file", "users.json")
             # None => a key is generated and stored beside the users file
             flask_config["secret_key"] = auth_config.get("secret_key")
+            for key in ("session_timeout", "cookie_secure"):
+                if key in auth_config:
+                    flask_config[key] = auth_config[key]
         
         # Branding section
         if "branding" in self.config:

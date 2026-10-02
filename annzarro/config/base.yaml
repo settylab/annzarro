@@ -70,6 +70,13 @@ auth:
   # <checkout>/config/auth/users.json.
   user_file: null
   # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
+  # Seconds without a request after which a login expires (0 = never).
+  session_timeout: 28800
+  # Secure flag on the login cookie. auto: set when the request arrived over
+  # HTTPS -- directly, or per X-Forwarded-Proto from the server.proxy_count
+  # trusted proxies. true forces it (the cookie is then never sent over plain
+  # HTTP, so login over http:// stops working); false never sets it.
+  cookie_secure: auto
 
 # Application branding
 branding:

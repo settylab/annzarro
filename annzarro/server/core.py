@@ -17,6 +17,7 @@ from urllib.parse import quote, urlsplit
 from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 logger = logging.getLogger(__name__)
@@ -62,9 +63,33 @@ DEFAULT_CONFIG = {
     }
 }
 
+#: Default seconds of inactivity before a login expires (auth.session_timeout).
+DEFAULT_SESSION_TIMEOUT = 8 * 3600
+
+
 def is_logged_in() -> bool:
-    """Whether the current request carries a login session."""
-    return "user_id" in session
+    """Whether the current request carries a live login session.
+
+    A session idle for longer than ``session_timeout`` seconds (0 = never)
+    is cleared. The idle clock lives in the signed cookie, so it cannot be
+    reset by the client; it is refreshed at most once a minute to avoid
+    re-sending the cookie on every request.
+    """
+    if "user_id" not in session:
+        return False
+    timeout = current_app.config.get("session_timeout", DEFAULT_SESSION_TIMEOUT)
+    now = time.time()
+    try:
+        last = float(session.get("last_activity", 0))
+    except (TypeError, ValueError):
+        last = 0.0
+    if timeout and now - last > float(timeout):
+        logger.info(f"Login session of {session.get('user_id')!r} expired after {timeout}s idle")
+        session.clear()
+        return False
+    if now - last > 60:
+        session["last_activity"] = now
+    return True
 
 
 def safe_next(target: Optional[str]) -> str:
@@ -144,6 +169,20 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated_function
 
+class _LoginCookieInterface(SecureCookieSessionInterface):
+    """Flask's signed-cookie sessions with ``cookie_secure: auto``: the login
+    cookie is marked Secure exactly when the request came over HTTPS (as
+    reported by the trusted proxies, see ``proxy_count``)."""
+
+    def get_cookie_secure(self, app):
+        mode = app.config.get("cookie_secure", "auto")
+        if isinstance(mode, str) and mode.strip().lower() == "auto":
+            return request.is_secure
+        if isinstance(mode, str):
+            return mode.strip().lower() in ("true", "yes", "1", "on")
+        return bool(mode)
+
+
 def create_app(config: Dict[str, Any] = None) -> Flask:
     """
     Create and configure the Flask application.
@@ -190,6 +229,12 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         logger.warning("No configuration provided, using default configuration")
         app.config.update(DEFAULT_CONFIG)
     
+    # Login cookie: not sent on cross-site subrequests or form posts (Lax),
+    # Secure per cookie_secure, never readable from JavaScript.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.session_interface = _LoginCookieInterface()
+
     # Configure the app
     configure_app(app, app.config)
     
