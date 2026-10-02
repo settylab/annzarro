@@ -1,4 +1,4 @@
-# Deep-link schema & the unified layout serialization
+# Deep links
 
 AnnZarro deep links let one URL pre-open a dataset with a specific arrangement
 of panels. This note documents the `view` grammar and, more importantly, *why*
@@ -54,7 +54,7 @@ decoder; the browser and the tests cannot drift.
 
 ## The `view` object
 
-```jsonc
+```javascript
 {
   "v": 1,                          // schema version (always present after normalize)
 
@@ -85,7 +85,7 @@ and stamps `v`.
 
 ### Hierarchy node types
 
-```jsonc
+```javascript
 // a panel
 { "type": "tile", "id": "cell-plot-1718000000000", "controlsVisible": true }
 

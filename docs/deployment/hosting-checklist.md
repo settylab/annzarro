@@ -1,0 +1,3 @@
+# Hosting checklist
+
+*Being written.*
