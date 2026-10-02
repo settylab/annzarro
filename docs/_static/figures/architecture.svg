@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1036 600" width="1036" height="600" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">AnnZarro architecture</title>
+  <desc id="d">The browser asks the AnnZarro server for one slice per view. The server checks access, answers repeats with 304, refuses oversized slices, reads only the needed chunks through the zarr or h5ad reader, caches the result and encodes it as binary float32 or JSON. Storage holds the zarr stores, h5ad files and the shared panel sets.</desc>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+    <style>
+      .frame { fill: #ffffff; }
+      .machine { fill: none; stroke: #898781; stroke-width: 1.2; stroke-dasharray: 6 4; }
+      .box { fill: #ffffff; stroke: #898781; stroke-width: 1; }
+      .srv { fill: #eaf2fc; stroke: #2A78D6; stroke-width: 1.2; }
+      .store { fill: #f4f3ef; stroke: #898781; stroke-width: 1; }
+      .h { font-size: 15px; font-weight: 700; fill: #0b0b0b; }
+      .b { font-size: 12.5px; font-weight: 700; fill: #0b0b0b; }
+      .s { font-size: 11px; fill: #52514e; }
+      .m { font-size: 11px; fill: #0b0b0b; font-family: Menlo, Consolas, monospace; }
+      .flow { stroke: #52514e; stroke-width: 1.4; fill: none; }
+      .lab { font-size: 11px; fill: #0b0b0b; }
+    </style>
+  </defs>
+  <rect class="frame" x="0" y="0" width="1036" height="600" rx="10"/>
+
+  <!-- Browser -->
+  <rect class="machine" x="16" y="16" width="270" height="568" rx="8"/>
+  <text class="h" x="32" y="42">Browser</text>
+  <text class="s" x="32" y="60">static/js, plotly.js, DataTables</text>
+
+  <rect class="box" x="32" y="76" width="238" height="74" rx="5"/>
+  <text class="b" x="44" y="96">Panels</text>
+  <text class="s" x="44" y="113">Cell Plot, Gene Plot, Cell Table,</text>
+  <text class="s" x="44" y="128">Gene Table (panels/*.js)</text>
+  <text class="s" x="44" y="143">focused cell / gene drive every panel</text>
+
+  <rect class="box" x="32" y="160" width="238" height="58" rx="5"/>
+  <text class="b" x="44" y="180">Layout, panel sets, deep links</text>
+  <text class="s" x="44" y="197">panel-manager, layout-manager,</text>
+  <text class="s" x="44" y="211">session-manager, utils/deeplink.js</text>
+
+  <rect class="box" x="32" y="228" width="238" height="74" rx="5"/>
+  <text class="b" x="44" y="248">data-manager.js</text>
+  <text class="s" x="44" y="265">one request per URL in flight;</text>
+  <text class="s" x="44" y="280">later callers join it;</text>
+  <text class="s" x="44" y="295">numeric slices with format=f32</text>
+
+  <rect class="box" x="32" y="312" width="238" height="58" rx="5"/>
+  <text class="b" x="44" y="332">cache-manager.js</text>
+  <text class="s" x="44" y="349">decoded slices by URL: 1,000 entries,</text>
+  <text class="s" x="44" y="363">1 GB, 60 s each, oldest out first</text>
+
+  <rect class="box" x="32" y="380" width="238" height="58" rx="5"/>
+  <text class="b" x="44" y="400">utils/wire.js</text>
+  <text class="s" x="44" y="417">binary body + X-Annzarro-* headers</text>
+  <text class="s" x="44" y="431">to a Float32Array / Float64Array</text>
+
+  <rect class="box" x="32" y="448" width="238" height="58" rx="5"/>
+  <text class="b" x="44" y="468">Browser HTTP cache</text>
+  <text class="s" x="44" y="485">keeps replies, revalidates each reuse</text>
+  <text class="s" x="44" y="499">with If-None-Match (ETag)</text>
+
+  <text class="s" x="32" y="540">Holds only the vectors on screen.</text>
+
+  <!-- Server -->
+  <rect class="machine" x="366" y="16" width="370" height="568" rx="8"/>
+  <text class="h" x="382" y="42">AnnZarro server</text>
+  <text class="s" x="382" y="60">Flask app (annzarro start, or gunicorn via server/wsgi.py)</text>
+
+  <rect class="srv" x="382" y="76" width="338" height="50" rx="5"/>
+  <text class="b" x="394" y="96">Login and path confinement</text>
+  <text class="s" x="394" y="113">server/auth.py, confinement.py (hosted servers only)</text>
+
+  <rect class="srv" x="382" y="136" width="338" height="50" rx="5"/>
+  <text class="b" x="394" y="156">Revalidation  <tspan class="s" font-weight="400">server/http_cache.py</tspan></text>
+  <text class="s" x="394" y="173">ETag = URL + stat() of the store; match → 304, no read</text>
+
+  <rect class="srv" x="382" y="196" width="338" height="64" rx="5"/>
+  <text class="b" x="394" y="216">Size guard  <tspan class="s" font-weight="400">routes/data_routes.py</tspan></text>
+  <text class="s" x="394" y="233">slice over max_response_elements → 413, before any read;</text>
+  <text class="s" x="394" y="247">one full row or column always passes</text>
+
+  <rect class="srv" x="382" y="270" width="338" height="50" rx="5"/>
+  <text class="b" x="394" y="290">Result cache  <tspan class="s" font-weight="400">core/caching.py</tspan></text>
+  <text class="s" x="394" y="307">slices per dataset, LRU, cache_memory_mb (4,000 MB)</text>
+
+  <rect class="srv" x="382" y="330" width="338" height="64" rx="5"/>
+  <text class="b" x="394" y="350">Readers  <tspan class="s" font-weight="400">core/zarr_reader.py, h5ad_reader.py</tspan></text>
+  <text class="s" x="394" y="367">on a cache miss, slice only the overlapping chunks;</text>
+  <text class="s" x="394" y="381">CSC column, CSR row lazily; remote stores via fsspec</text>
+
+  <rect class="srv" x="382" y="404" width="338" height="64" rx="5"/>
+  <text class="b" x="394" y="424">Encoding  <tspan class="s" font-weight="400">core/array_response.py</tspan></text>
+  <text class="s" x="394" y="441">format=f32: little-endian float32 (float64 if not exact),</text>
+  <text class="s" x="394" y="455">dense or sparse; otherwise JSON, gzip level 1 when on</text>
+
+  <rect class="srv" x="382" y="478" width="338" height="42" rx="5"/>
+  <text class="b" x="394" y="497">Panel sets  <tspan class="s" font-weight="400">/api/v1/sessions/*</tspan></text>
+  <text class="s" x="394" y="512">the only thing the server writes</text>
+
+  <text class="s" x="382" y="545">Never writes datasets or runs user code.</text>
+  <text class="s" x="382" y="560">Memory follows the chunks being read, not the store.</text>
+
+  <path class="flow" d="M 551 126 L 551 136" marker-end="url(#ah)"/>
+  <path class="flow" d="M 551 186 L 551 196" marker-end="url(#ah)"/>
+  <path class="flow" d="M 551 260 L 551 270" marker-end="url(#ah)"/>
+  <path class="flow" d="M 551 320 L 551 330" marker-end="url(#ah)"/>
+  <path class="flow" d="M 551 394 L 551 404" marker-end="url(#ah)"/>
+
+  <!-- Storage -->
+  <rect class="machine" x="800" y="16" width="220" height="568" rx="8"/>
+  <text class="h" x="816" y="42">Storage</text>
+  <text class="s" x="816" y="60">read-only for AnnZarro</text>
+
+  <rect class="store" x="816" y="76" width="188" height="92" rx="5"/>
+  <text class="b" x="828" y="96">zarr stores</text>
+  <text class="m" x="828" y="114">&lt;data_dir&gt;/*.zarr</text>
+  <text class="s" x="828" y="131">compressed chunks;</text>
+  <text class="s" x="828" y="145">format 2 (and 3 with zarr 3);</text>
+  <text class="s" x="828" y="159">consolidated metadata</text>
+
+  <rect class="store" x="816" y="178" width="188" height="58" rx="5"/>
+  <text class="b" x="828" y="198">h5ad files</text>
+  <text class="s" x="828" y="215">local only; sparse matrices</text>
+  <text class="s" x="828" y="229">are loaded whole</text>
+
+  <rect class="store" x="816" y="246" width="188" height="74" rx="5"/>
+  <text class="b" x="828" y="266">remote zarr</text>
+  <text class="m" x="828" y="284">s3:// gs:// https://</text>
+  <text class="s" x="828" y="301">needs annzarro[remote];</text>
+  <text class="s" x="828" y="315">allowlist on hosted servers</text>
+
+  <rect class="store" x="816" y="478" width="188" height="42" rx="5"/>
+  <text class="m" x="828" y="497">&lt;data_dir&gt;/sessions/</text>
+  <text class="s" x="828" y="512">panel sets, JSON</text>
+
+  <!-- browser <-> server -->
+  <path class="flow" d="M 270 252 H 302 V 101 H 382" marker-end="url(#ah)"/>
+  <text class="lab" text-anchor="middle" transform="translate(295 176) rotate(-90)">GET one slice</text>
+  <path class="flow" d="M 382 161 H 334 V 477 H 270" marker-end="url(#ah)" stroke-dasharray="4 3"/>
+  <text class="lab" text-anchor="middle" transform="translate(327 330) rotate(-90)">304, no body</text>
+  <path class="flow" d="M 382 423 H 270" marker-end="url(#ah)"/>
+  <text class="lab" x="276" y="415">one vector</text>
+
+  <!-- storage -> server -->
+  <path class="flow" d="M 816 122 H 770 V 362"/>
+  <path class="flow" d="M 816 207 H 770"/>
+  <path class="flow" d="M 816 283 H 770"/>
+  <path class="flow" d="M 770 362 H 720" marker-end="url(#ah)"/>
+  <text class="lab" x="816" y="346">Readers fetch compressed</text>
+  <text class="lab" x="816" y="360">chunks, never whole arrays.</text>
+  <path class="flow" d="M 720 499 H 816" marker-end="url(#ah)" marker-start="url(#ah)"/>
+</svg>

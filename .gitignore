@@ -183,3 +183,4 @@ annzarro/desktop/downloads/
 !docs/data/
 !docs/_static/screens/data/
 docs/_static/screens/.server-*.log
+!docs/_tools/data/
