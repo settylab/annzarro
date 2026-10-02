@@ -64,7 +64,7 @@ def take_port_when_server_starts(port, stop):
     """Bind ``port`` as soon as a server process for it appears."""
     pattern = f"--port {port}"
     while not stop.is_set():
-        out = subprocess.run(["ps", "-axo", "command"], capture_output=True, text=True).stdout
+        out = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True).stdout
         if any("annzarro-server" in line and " start " in line and pattern in line
                for line in out.splitlines()):
             try:
