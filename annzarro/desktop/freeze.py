@@ -19,17 +19,16 @@ from annzarro.utils import paths
 #: the directory it sits in, inside the app's resources.
 SERVER_NAME = "annzarro-server"
 
-#: Packages that are dependencies of annzarro but are never imported by the
-#: server (numba/llvmlite and matplotlib alone are ~170 MB), and tooling that
-#: happens to be installed next to it. A test checks the server does not
-#: import them.
+#: Modules the server never imports, left out of the bundle. A test checks
+#: that the server still does not import any of them, after serving requests.
 EXCLUDES = [
+    # Installed next to annzarro (dependencies of dependencies, or tooling)
+    # but never imported by the server.
     "numba",
     "llvmlite",
     "matplotlib",
+    "pandas",
     "PIL",
-    "tkinter",
-    "_tkinter",
     "IPython",
     "jupyter_client",
     "notebook",
@@ -37,6 +36,43 @@ EXCLUDES = [
     "setuptools",
     "pip",
     "PyInstaller",
+    # werkzeug imports it only for ssl_context="adhoc", which the app never
+    # uses (it serves plain HTTP on 127.0.0.1).
+    "cryptography",
+    # The readers use scipy.sparse matrices only. scipy's other subpackages
+    # (and sparse.linalg/csgraph, which pull in linalg, optimize, special
+    # and their BLAS/LAPACK libraries) are about 60 MB.
+    "scipy.cluster",
+    "scipy.constants",
+    "scipy.datasets",
+    "scipy.differentiate",
+    "scipy.fft",
+    "scipy.fftpack",
+    "scipy.integrate",
+    "scipy.interpolate",
+    "scipy.io",
+    "scipy.linalg",
+    "scipy.misc",
+    "scipy.ndimage",
+    "scipy.odr",
+    "scipy.optimize",
+    "scipy.signal",
+    "scipy.sparse.csgraph",
+    "scipy.sparse.linalg",
+    "scipy.spatial",
+    "scipy.special",
+    "scipy.stats",
+    # Standard library parts with no use in a web server.
+    "tkinter",
+    "_tkinter",
+    "sqlite3",
+    "lib2to3",
+    "idlelib",
+    "ensurepip",
+    "venv",
+    "pydoc_data",
+    "curses",
+    "xmlrpc",
 ]
 
 #: Subpackages of annzarro that the server never imports.
