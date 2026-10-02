@@ -512,8 +512,14 @@ const GenePlotPanel = (function() {
                         throw error;
                     }
                     
-                    // Otherwise log and continue
+                    // Otherwise this plot shows its own failure instead of
+                    // the previous dataset's plot (issue #2)
                     console.error(`Error updating gene plot ${_id}:`, error);
+                    if (_plotContainer) {
+                        drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'genes' }), 'genes');
+                    }
                 }
             }
             

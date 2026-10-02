@@ -287,22 +287,34 @@ const CellTablePanel = (function() {
                     console.log(`CellTable ${_id}: Dataset changed, reinitializing table`);
                 }
                 
-                // For dataset changes, reinitialize the table only if columns are defined
-                if (_settings.columns && _settings.columns.length > 0) {
-                    try {
-                        // Pass the abort signal to refreshTable
-                        await refreshTable(signal);
-                        
-                        // If we get here, the operation completed successfully
-                        return;
-                    } catch (error) {
-                        // If this is an abort error, propagate it
-                        if (error && error.name === 'AbortError') {
-                            throw error;
-                        }
-                        
-                        // Otherwise log and continue
-                        console.error(`Error updating cell table ${_id}:`, error);
+                // Rebuild the column chooser from the NEW dataset, then the
+                // table. Reloading only the table (and only when it had
+                // columns) left the chooser offering the previous dataset's
+                // fields and, on a failure, the previous dataset's rows.
+                try {
+                    const datasetStructure = await DataManager.getDatasetStructure(updateData?.dataset);
+                    if (!datasetStructure) {
+                        throw new Error('Failed to load dataset structure');
+                    }
+                    // The chooser keeps only the columns it can tick in this
+                    // dataset; keep asking for the rest so the table says
+                    // which are missing instead of dropping them unannounced.
+                    const requested = Array.isArray(_settings.columns) ? _settings.columns.slice() : [];
+                    await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    _settings.columns = requested;
+                    await refreshTable(signal);
+                    return;
+                } catch (error) {
+                    // If this is an abort error, propagate it
+                    if (error && error.name === 'AbortError') {
+                        throw error;
+                    }
+                    // Otherwise this table shows its own failure (issue #2)
+                    console.error(`Error updating cell table ${_id}:`, error);
+                    if (_tableContainer) {
+                        drawPlaceholder(_tableContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'cells' }), 'cells');
                     }
                 }
             }
