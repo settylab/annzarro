@@ -3,6 +3,8 @@
  * Handles loading and processing data from the backend API
  */
 import { Config } from './config.js';
+import { subsetParam } from './utils/subset.js';
+import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 
 const DataManager = (function() {
@@ -14,6 +16,32 @@ const DataManager = (function() {
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
     let _datasetLoaded = false; // Track if a dataset has been loaded
+
+    // The cell subset in effect (utils/subset.js, annzarro/core/subset.py):
+    // the /data/subset reply plus the dataset it belongs to, or null when
+    // every cell is shown. Every cell-axis request for that dataset carries
+    // its key, so _cells, every index into it and every panel's arrays are
+    // the subset's. _subsetRequest is what the next dataset load applies:
+    // 'auto' (the server's default for the dataset's size; for a reload of
+    // the same dataset, keep the current one), null (every cell) or a spec.
+    let _subset = null;
+    let _subsetRequest = 'auto';
+    let _subsetReply = null;   // the last /data/subset reply, also when it was "every cell"
+
+    // Routes whose answer depends on which cells are shown.
+    const _CELL_AXIS_ROUTES = [Config.API.CELLS, Config.API.OBS, Config.API.X];
+    const _CELL_AXIS_PREFIXES = [Config.API.OBSM, Config.API.OBSP, Config.API.LAYER].map(u => `${u}/`);
+
+    /** `params` plus the subset key, for a cell-axis read of the subset's dataset. */
+    function _withSubset(url, params) {
+        if (!_subset || params.subset !== undefined || params.dataset_path !== _subset.datasetPath) {
+            return params;
+        }
+        if (_CELL_AXIS_ROUTES.includes(url) || _CELL_AXIS_PREFIXES.some(p => url.startsWith(p))) {
+            return { ...params, subset: _subset.key };
+        }
+        return params;
+    }
     
     // Selection history tracking
     let _cellHistory = []; // Array of previously selected cells
@@ -41,6 +69,7 @@ const DataManager = (function() {
     }
 
     async function _fetchWithCache(url, params = {}, signal = null) {
+        params = _withSubset(url, params);
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const cached = CacheManager.get(fullUrl);
         if (cached !== undefined && !signal?.aborted) return cached;
@@ -165,6 +194,7 @@ const DataManager = (function() {
         const previousDataset = _currentDataset;
         const previousCells = _cells;
         const previousGenes = _genes;
+        const previousSubset = _subset;
         
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
@@ -185,7 +215,10 @@ const DataManager = (function() {
             // Reset cells and genes before loading new ones
             _cells = null;
             _genes = null;
-            
+
+            // Decide which cells this dataset shows, before naming them
+            _subset = await _resolveSubset(datasetPath, previousSubset, signal);
+
             // Load cells and genes
             _cells = await loadCells(datasetPath, signal);
             
@@ -224,6 +257,7 @@ const DataManager = (function() {
                     _currentDataset = previousDataset;
                     _cells = previousCells;
                     _genes = previousGenes;
+                    _subset = previousSubset;
                     
                     // We're not dispatching datasetLoadError event here anymore
                     // since the error is already handled in _loadDataset function in main.js.
@@ -233,6 +267,7 @@ const DataManager = (function() {
                     _currentDataset = null;
                     _cells = null;
                     _genes = null;
+                    _subset = null;
                     
                     // Dispatch a datasetCleared event
                     if (!silent) {
@@ -252,6 +287,85 @@ const DataManager = (function() {
         }
     }
     
+    /**
+     * Ask the server which cells a dataset load shows (/data/subset).
+     * Consumes _subsetRequest: a later load of another dataset starts from
+     * its own default again.
+     * @returns {Promise<Object|null>} the subset in effect, null for every cell
+     * @private
+     */
+    async function _resolveSubset(datasetPath, previous, signal) {
+        let request = _subsetRequest;
+        _subsetRequest = 'auto';
+        if (request === 'auto' && previous && previous.datasetPath === datasetPath) {
+            request = previous.subset;   // a reload keeps the subset it had
+        }
+        let info;
+        try {
+            const param = request === 'auto' ? 'auto' : subsetParam(request);
+            info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: param }, signal);
+        } catch (error) {
+            if (request === 'auto' || (error && error.name === 'AbortError')) throw error;
+            // A link or panel set whose subset this dataset cannot apply (a
+            // column it lacks) still opens, on the default, and says so.
+            notify('Cell subset not applied',
+                `${error.message || error}\nShowing the default for this dataset instead.`, 'warning');
+            info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: 'auto' }, signal);
+        }
+        _subsetReply = info ? { ...info, datasetPath } : null;
+        return info && info.subset ? { ...info, datasetPath } : null;
+    }
+
+    /**
+     * Choose the cells the next dataset load shows.
+     * @param {'auto'|null|Object} request - 'auto' (the server's default for
+     *   the dataset's size), null (every cell) or a subset spec
+     */
+    function setSubsetRequest(request) {
+        _subsetRequest = request === undefined ? 'auto' : request;
+    }
+
+    /**
+     * The subset in effect: the /data/subset reply ({subset, key, n,
+     * n_total, n_eligible, groups?, defaults}), or null for every cell.
+     */
+    function getSubset() {
+        return _subset ? { ..._subset } : null;
+    }
+
+    /**
+     * The `subset` a share link or panel set records: the spec in effect;
+     * null (every cell) when every cell is shown of a dataset that would
+     * open on a subset; undefined (no opinion: the default) otherwise, so
+     * views of small datasets are unchanged.
+     */
+    function getSubsetForView() {
+        if (_subset) return _subset.subset;
+        const reply = _subsetReply;
+        if (reply && reply.datasetPath === _currentDataset && reply.defaults &&
+                reply.n_total > reply.defaults.threshold) {
+            return null;
+        }
+        return undefined;
+    }
+
+    /** The /data/subset reply for the open dataset (n_total, defaults), also without a subset. */
+    function getSubsetReply() {
+        return _subsetReply && _subsetReply.datasetPath === _currentDataset ? { ..._subsetReply } : null;
+    }
+
+    /** The `subset` request parameter in effect, or null for every cell. */
+    function getSubsetParam() {
+        return _subset ? _subset.key : null;
+    }
+
+    /** Cells of the dataset that are not loaded because of the subset. */
+    function getCellsNotInSubset() {
+        return _subset ? Math.max(0, _subset.n_total - _subset.n) : 0;
+    }
+
     /**
      * Load complete dataset structure
      * @param {string} [datasetPath] - Optional path to the dataset. Defaults to the current dataset.
@@ -1290,6 +1404,13 @@ const DataManager = (function() {
         getCellIndex,
         getGeneIndex,
         isDatasetLoaded,
+        // Cell subset
+        setSubsetRequest,
+        getSubset,
+        getSubsetParam,
+        getSubsetForView,
+        getSubsetReply,
+        getCellsNotInSubset,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,

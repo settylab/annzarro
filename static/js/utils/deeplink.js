@@ -44,6 +44,9 @@
  *     constants: {                           // global focus state (all optional)
  *       focusedGene, focusedCell, taxonomyId
  *     },
+ *     subset: { n, seed, balance?, where? }  // the cells shown (utils/subset.js);
+ *             | null                         //   null: every cell; absent: the
+ *                                            //   server's default for the dataset
  *     // ── preferred: a full layout tree ────────────────────────────────────
  *     layout: {                              // exactly what saveLayout() returns
  *       v: 1,
@@ -68,6 +71,8 @@
  * A link may carry `layout` OR `panels` (or neither — a bare dataset open).
  * If both are present, `layout` wins; `panels` is the simple/legacy shorthand.
  */
+
+import { normalizeViewSubset } from './subset.js';
 
 /** Current deep-link `view` schema version. Bump on a breaking change. */
 export const VIEW_SCHEMA_VERSION = 1;
@@ -265,6 +270,11 @@ export function normalizeView(view) {
     if (view.constants && typeof view.constants === 'object') {
         out.constants = view.constants;
     }
+
+    // Absent stays absent (the dataset's default); a malformed subset is
+    // dropped rather than failing the whole link.
+    const subset = normalizeViewSubset(view.subset);
+    if (subset !== undefined) out.subset = subset;
 
     // Prefer the layout tree. Only surface it if it actually opens a panel;
     // an empty/selector-only tree should fall through to the Welcome fallback.

@@ -17,11 +17,14 @@
  * Ask the server for names matching `query`.
  * @param {string} url - the /data/names endpoint
  * @param {{datasetPath:string, entity:'cells'|'genes', query:string,
- *          mode?:string, limit?:number, signal?:AbortSignal}} opts
+ *          mode?:string, limit?:number, signal?:AbortSignal, subset?:string|null}} opts
+ *   subset: the cell subset parameter in effect; cells outside it are not
+ *   matched, and indices are positions in it
  * @returns {Promise<{matches:Array<{name:string,index:number}>, truncated:boolean, total:number}>}
  */
-export async function fetchNameMatches(url, { datasetPath, entity, query, mode = 'substring', limit = 50, signal = null }) {
+export async function fetchNameMatches(url, { datasetPath, entity, query, mode = 'substring', limit = 50, signal = null, subset = null }) {
     const params = new URLSearchParams({ dataset_path: datasetPath, entity, q: query, mode, limit: String(limit) });
+    if (subset && entity === 'cells') params.set('subset', subset);
     const resp = await fetch(`${url}?${params}`, { signal });
     let body = null;
     try { body = await resp.json(); } catch { body = null; }

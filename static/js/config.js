@@ -46,6 +46,7 @@ const Config = (function() {
         CELLS: `${API_BASE}/data/cells`,
         GENES: `${API_BASE}/data/genes`,
         NAMES: `${API_BASE}/data/names`,
+        SUBSET: `${API_BASE}/data/subset`,
         OBS: `${API_BASE}/data/obs`,
         VAR: `${API_BASE}/data/var`,
         OBSM: `${API_BASE}/data/obsm`,
