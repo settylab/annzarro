@@ -6,6 +6,7 @@ including configuration, initialization, and routing.
 """
 
 import os
+import re
 import json
 import logging
 from pathlib import Path
@@ -14,7 +15,8 @@ from functools import wraps
 import time
 from urllib.parse import quote, urlsplit
 
-from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
+from flask import (Flask, request, jsonify, session, redirect, url_for, current_app,
+                   render_template, has_request_context)
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
 from flask.sessions import SecureCookieSessionInterface
@@ -99,25 +101,75 @@ def is_logged_in() -> bool:
     return True
 
 
-def safe_next(target: Optional[str]) -> str:
-    """``target`` if it is a path on this server, else ``/``.
+def safe_next(target: Optional[str], root: str = "") -> str:
+    """``target`` if it is a path in this app, else the app's front page.
 
     Only a relative path that starts with a single ``/`` is accepted, so a
     crafted ``/login?next=//evil.example`` or ``next=https://...`` cannot send
-    a user who just signed in to another site.
+    a user who just signed in to another site. ``root`` is the path the app is
+    mounted at (``request.script_root``, e.g. ``/explore``); ``target`` is the
+    path as the browser sees it, so it must lie under ``root``, which also
+    keeps a login from sending the user to another app on the same host.
     """
+    home = root + "/"
     if not target or not isinstance(target, str):
-        return "/"
+        return home
     if any(c in target for c in "\r\n\\") or any(ord(c) < 0x20 for c in target):
-        return "/"
+        return home
     if not target.startswith("/") or target.startswith("//"):
-        return "/"
+        return home
     parts = urlsplit(target)
     if parts.scheme or parts.netloc:
-        return "/"
-    if parts.path.startswith("/login") or parts.path.startswith("/logout"):
-        return "/"
+        return home
+    if parts.path != root and not parts.path.startswith(home):
+        return home
+    path = parts.path[len(root):]
+    if path.startswith("/login") or path.startswith("/logout"):
+        return home
     return target
+
+
+def normalize_url_prefix(value: Optional[str]) -> str:
+    """``server.url_prefix`` as a mount point: ``/explore/`` -> ``/explore``,
+    and ``None``, ``""`` or ``/`` -> ``""`` (the root).
+
+    Raises ValueError for anything but a plain path, since the prefix ends up
+    in every URL the app writes and in the login cookie's Path.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"server.url_prefix must be a path such as /explore, not {value!r}")
+    prefix = value.strip().strip("/")
+    if not prefix:
+        return ""
+    segments = prefix.split("/")
+    if (any(seg in ("", ".", "..") for seg in segments)
+            or not re.fullmatch(r"[A-Za-z0-9._~/-]+", prefix)):
+        raise ValueError(f"server.url_prefix must be a path such as /explore, not {value!r}")
+    return "/" + prefix
+
+
+class PrefixMiddleware:
+    """Mount the app at a fixed path (``server.url_prefix``).
+
+    Sets ``SCRIPT_NAME`` so every URL Flask builds (``url_for``, redirects,
+    ``request.script_root`` in the templates, the cookie Path) carries the
+    prefix. Works whether the proxy strips the prefix before forwarding
+    (``proxy_pass http://127.0.0.1:8766/;``) or passes the path through
+    unchanged (``proxy_pass http://127.0.0.1:8766;``).
+    """
+
+    def __init__(self, app, prefix: str):
+        self.app = app
+        self.prefix = prefix
+
+    def __call__(self, environ, start_response):
+        path = environ.get("PATH_INFO", "") or ""
+        if path == self.prefix or path.startswith(self.prefix + "/"):
+            environ["PATH_INFO"] = path[len(self.prefix):] or "/"
+        environ["SCRIPT_NAME"] = self.prefix
+        return self.app(environ, start_response)
 
 
 def safe_fragment(fragment: Optional[str]) -> str:
@@ -141,10 +193,11 @@ def login_required_response():
     """
     if request.path.startswith("/api/"):
         return jsonify({"error": "Authentication required"}), 401
-    target = request.full_path.rstrip("?") if request.query_string else request.path
-    if safe_next(target) == "/":
-        return redirect("/login")
-    return redirect("/login?next=" + quote(target, safe="/"))
+    root = request.script_root
+    target = root + (request.full_path.rstrip("?") if request.query_string else request.path)
+    if safe_next(target, root) == root + "/":
+        return redirect(root + "/login")
+    return redirect(root + "/login?next=" + quote(target, safe="/"))
 
 
 def require_auth(f):
@@ -179,7 +232,18 @@ def require_auth(f):
 class _LoginCookieInterface(SecureCookieSessionInterface):
     """Flask's signed-cookie sessions with ``cookie_secure: auto``: the login
     cookie is marked Secure exactly when the request came over HTTPS (as
-    reported by the trusted proxies, see ``proxy_count``)."""
+    reported by the trusted proxies, see ``proxy_count``).
+
+    The cookie's Path is the path the app is mounted at (``/explore`` behind a
+    proxy, see ``url_prefix``), so the browser does not send it to other apps
+    on the same host, and two AnnZarro servers under different paths keep
+    separate logins."""
+
+    def get_cookie_path(self, app):
+        configured = app.config.get("SESSION_COOKIE_PATH")
+        if configured:
+            return configured
+        return (request.script_root if has_request_context() else "") or "/"
 
     def get_cookie_secure(self, app):
         mode = app.config.get("cookie_secure", "auto")
@@ -384,13 +448,21 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}},
              supports_credentials=False)
     
-    # Enable proxy fix if needed
+    # A fixed mount point (server.url_prefix), e.g. /explore behind nginx
+    prefix = normalize_url_prefix(config.get("url_prefix"))
+    if prefix:
+        app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix)
+
+    # Enable proxy fix if needed. A trusted proxy may also say where it mounts
+    # the app with X-Forwarded-Prefix (and strip that prefix from the path);
+    # a configured url_prefix, applied inside, takes precedence.
     if config.get("proxy_count", 0) > 0:
         app.wsgi_app = ProxyFix(
             app.wsgi_app,
             x_for=config.get("proxy_count", 0),
             x_proto=config.get("proxy_count", 0),
-            x_host=config.get("proxy_count", 0)
+            x_host=config.get("proxy_count", 0),
+            x_prefix=config.get("proxy_count", 0)
         )
 
 def setup_logging(config: Dict[str, Any]) -> None:
@@ -490,14 +562,15 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     @app.route("/login", methods=["GET"])
     def login_page():
         """Login page"""
-        return render_login(next_url=safe_next(request.args.get("next")), fragment="")
+        return render_login(next_url=safe_next(request.args.get("next"), request.script_root),
+                            fragment="")
     
     @app.route("/login", methods=["POST"])
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
-        next_url = safe_next(request.form.get("next"))
+        next_url = safe_next(request.form.get("next"), request.script_root)
         fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
@@ -533,7 +606,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         # Clear session
         session.clear()
         # Redirect to login page
-        return redirect("/login")
+        return redirect(request.script_root + "/login")
     
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:

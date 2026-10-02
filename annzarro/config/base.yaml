@@ -19,6 +19,10 @@ server:
   
   # Proxy settings
   proxy_count: 0
+  # Path the app is served under behind a reverse proxy, e.g. "/explore"
+  # (empty = the root). Works whether the proxy strips the prefix or not.
+  # A trusted proxy (proxy_count > 0) can instead send X-Forwarded-Prefix.
+  url_prefix: ""
   
   # Data storage
   # Datasets and shared panel sets (sessions/). A relative path is taken
