@@ -17,6 +17,7 @@ runs (see ``RemotePolicy.from_config``).
 
 import os
 import logging
+from collections import OrderedDict
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -487,16 +488,13 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
     try:
         if _ZARR_V3:
             # zarr 3 reads consolidated metadata on its own when present.
-            from zarr.storage import FsspecStore
-            store = FsspecStore.from_url(target, storage_options=options, read_only=True,
-                                         allowed_exceptions=missing_key)
-            group = zarr.open_group(_with_chunk_cache(store, policy), mode="r")
+            store = _fsspec_store(target, options, missing_key, policy)
+            group = zarr.open_group(store, mode="r")
             consolidated = getattr(group.metadata, "consolidated_metadata", None) is not None
         else:
             # zarr 2's FSStore defaults to treating every IOError as absent.
             store = zarr.storage.FSStore(target, mode="r", exceptions=(KeyError,) + missing_key,
                                          **options)
-            store = _with_chunk_cache(store, policy)
             # zarr 2 must be asked for consolidated metadata. One .zmetadata
             # request replaces a request per member: ms versus seconds remotely.
             try:
@@ -522,30 +520,78 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
         raise error from exc
 
 
-def _with_chunk_cache(store, policy: RemotePolicy):
-    """Keep recently read raw bytes of a remote store in memory (LRU, bounded).
+def _fsspec_store(target: str, options: Dict[str, Any], missing_key: tuple,
+                  policy: RemotePolicy):
+    """The zarr 3 store for a remote open: plain, or with a chunk cache.
 
     The reader caches decoded RESULTS keyed by the exact request, so asking
     for gene 5 after gene 0 re-downloads every chunk both share -- for a CSR
-    X that is the whole indices/data arrays, every time. Caching the store's
-    bytes makes the second request local. Budget is per open store; the
-    reader keeps at most ``cache_dataset_limit`` remote roots open.
+    X that is the whole indices/data arrays, every time. ``_LRUFsspecStore``
+    keeps recently read raw bytes in memory instead, bounded per open store
+    by ``remote_chunk_cache_mb``; the reader keeps at most
+    ``cache_dataset_limit`` remote roots open, which bounds the total.
+
+    It is a small subclass of FsspecStore rather than zarr's own
+    ``zarr.experimental.cache_store.CacheStore`` because that only exists in
+    newer zarr 3 releases (absent in 3.1.3, for one), and this must behave
+    the same on every zarr 3 the package accepts. zarr 2 is not cached: its
+    LRUStoreCache around FSStore turned a timed-out chunk read back into a
+    missing chunk (zeros, HTTP 200).
     """
-    max_bytes = policy.chunk_cache_mb * 1024 * 1024
-    if max_bytes <= 0:
-        return store
-    if not _ZARR_V3:
-        # zarr 2's LRUStoreCache was tried and rejected: wrapped around FSStore
-        # it turned a timed-out chunk read back into a missing chunk (zeros,
-        # HTTP 200) and did not even serve the repeat read from memory.
-        return store
-    try:
-        from zarr.experimental.cache_store import CacheStore
-        from zarr.storage import MemoryStore
-    except ImportError:  # zarr 3 before the experimental cache store
-        logger.info("This zarr has no CacheStore; remote reads are not chunk-cached")
-        return store
-    return CacheStore(store, cache_store=MemoryStore(), max_size=max_bytes)
+    from zarr.storage import FsspecStore
+    cls = FsspecStore
+    if policy.chunk_cache_mb > 0:
+        global _LRUFsspecStore
+        if _LRUFsspecStore is None:
+            _LRUFsspecStore = _define_lru_store(FsspecStore)
+        cls = _LRUFsspecStore
+    store = cls.from_url(target, storage_options=options, read_only=True,
+                         allowed_exceptions=missing_key)
+    if cls is not FsspecStore:
+        store._lru_max = policy.chunk_cache_mb * 1024 * 1024
+    return store
+
+
+_LRUFsspecStore = None
+
+
+def _define_lru_store(base):
+    class LRUFsspecStore(base):
+        """FsspecStore with an in-memory LRU of whole-key reads.
+
+        Only successful, whole-key reads are kept: a missing key, a byte-range
+        read or any error (a timeout above all) is never cached, so a failed
+        read is retried next time rather than remembered. Every operation
+        runs on zarr's single event loop with no await between lookup and
+        update, so the OrderedDict needs no lock.
+        """
+
+        def _lru(self):
+            # Instances zarr derives from this one (with_read_only, ...) start
+            # with an empty cache rather than sharing state.
+            if "_lru_data" not in self.__dict__:
+                self._lru_data = OrderedDict()
+                self._lru_bytes = 0
+                self.__dict__.setdefault("_lru_max", 0)
+            return self._lru_data
+
+        async def get(self, key, prototype, byte_range=None):
+            cache = self._lru()
+            if byte_range is None and key in cache:
+                cache.move_to_end(key)
+                return cache[key]
+            value = await super().get(key, prototype, byte_range)
+            if byte_range is None and value is not None:
+                size = len(value)
+                if 0 < size <= self._lru_max:
+                    cache[key] = value
+                    self._lru_bytes += size
+                    while self._lru_bytes > self._lru_max:
+                        _, old = cache.popitem(last=False)
+                        self._lru_bytes -= len(old)
+            return value
+
+    return LRUFsspecStore
 
 
 def timeout_message(url: str, policy: Optional[RemotePolicy] = None) -> str:

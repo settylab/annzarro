@@ -50,7 +50,7 @@ def _array(group, name, values):
     if values.dtype.kind == "U":
         if _ZARR_V3:
             arr = group.create_array(name, shape=values.shape, dtype=str)
-            arr[:] = list(values)
+            arr[:] = [str(v) for v in values]  # zarr 3.0 rejects numpy.str_
             return arr
         import numcodecs
         return group.create_dataset(name, data=values.astype(object), dtype=object,
