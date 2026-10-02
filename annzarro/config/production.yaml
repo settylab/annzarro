@@ -7,7 +7,6 @@ server:
   # Never true in production: Flask debug mode runs the Werkzeug interactive
   # debugger and the reloader.
   debug: false
-  data_dir: "data"  # Data directory location
   
   # Security settings for production
   cors_enabled: false

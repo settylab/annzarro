@@ -198,14 +198,16 @@ to the server.
 
 ## Working with Data
 
-Add datasets by copying or linking .zarr directories to the data/ folder:
+Add datasets by copying or linking .zarr directories (or .h5ad files) into the
+data directory, `~/annzarro-data` unless `server.data_dir` or `--data-dir` says
+otherwise (the desktop app uses the same folder):
 
 ```bash
 # Copy a dataset
-cp -r /path/to/your-dataset.zarr data/
+cp -r /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Or create a symlink
-ln -s /path/to/your-dataset.zarr data/
+ln -s /path/to/your-dataset.zarr ~/annzarro-data/
 
 # Use a custom data directory
 ./annzarro-cli start --data-dir /path/to/datasets

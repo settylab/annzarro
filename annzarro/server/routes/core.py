@@ -35,7 +35,7 @@ def register_core_routes(app, api_version):
             JSON response with dataset list
         """
         # Get data directory from config
-        data_dir = app.config.get("data_dir", "data")
+        data_dir = app.config.get("data_dir")
         
         # Override from query parameter if provided
         if "dir" in request.args:
@@ -86,7 +86,7 @@ def register_core_routes(app, api_version):
                     filtered_config["port"] = filtered_config.get("server", {}).get("port", app.config.get("port", 8000))
                     
                 if "data_dir" not in filtered_config and "server" in filtered_config:
-                    filtered_config["data_dir"] = filtered_config.get("server", {}).get("data_dir", app.config.get("data_dir", "data"))
+                    filtered_config["data_dir"] = filtered_config.get("server", {}).get("data_dir", app.config.get("data_dir"))
                 
                 # Add environment flags
                 filtered_config["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
@@ -107,7 +107,7 @@ def register_core_routes(app, api_version):
             # Basic connectivity info the frontend needs
             "host": app.config.get("host", "127.0.0.1"),
             "port": app.config.get("port", 8000),
-            "data_dir": app.config.get("data_dir", "data"),
+            "data_dir": app.config.get("data_dir"),
             
             # UI/application information
             "app_name": app.config.get("app_name", "AnnZarro"),
@@ -202,7 +202,7 @@ def register_core_routes(app, api_version):
                 connections_count = 0
             
             # Check data directory
-            data_dir = app.config.get("data_dir", "data")
+            data_dir = app.config.get("data_dir")
             data_dir_exists = os.path.exists(data_dir)
             data_dir_is_readable = os.access(data_dir, os.R_OK)
             data_dir_is_writable = os.access(data_dir, os.W_OK)

@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from flask import Flask, current_app
 
 from .core import create_app, DEFAULT_CONFIG, load_config_from_file
+from annzarro.utils.paths import default_data_dir
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ def run_server(
     ctx.push()
     
     # Ensure data directory exists
-    data_dir = final_config.get("data_dir", "data")
+    data_dir = final_config.get("data_dir") or default_data_dir()
     os.makedirs(data_dir, exist_ok=True)
     
     # Log configuration with full details

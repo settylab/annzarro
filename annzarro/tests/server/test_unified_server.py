@@ -121,7 +121,7 @@ class TestServerConfiguration(unittest.TestCase):
         app = create_app()
         self.assertEqual(app.config.get("port"), 8000)
         self.assertEqual(app.config.get("host"), "127.0.0.1")
-        self.assertEqual(app.config.get("data_dir"), "data")
+        self.assertEqual(app.config.get("data_dir"), os.path.expanduser("~/annzarro-data"))
 
 if __name__ == '__main__':
     unittest.main()

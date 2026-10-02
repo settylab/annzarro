@@ -1119,7 +1119,7 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             return jsonify({
                 "directory": data_dir
@@ -1147,7 +1147,7 @@ def register_data_routes(app, api_version):
         
         try:
             # Get data directory from config for validation
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             # Verify the requested path is within the data directory or is an absolute path
             if not os.path.isabs(directory_path) and not directory_path.startswith(data_dir):
@@ -1239,7 +1239,7 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             # Only search in the "datasets" subdirectory if it exists
             datasets_dir = os.path.join(data_dir, "datasets")
@@ -1360,7 +1360,7 @@ def register_data_routes(app, api_version):
         Returns:
             Path to the sessions directory.
         """
-        sessions_dir = os.path.join(app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data")), "sessions")
+        sessions_dir = os.path.join(app.config.get("data_dir"), "sessions")
         os.makedirs(sessions_dir, exist_ok=True)
         return sessions_dir
         
