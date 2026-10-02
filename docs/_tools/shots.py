@@ -60,10 +60,11 @@ def encode_view(view: dict) -> str:
 
 
 def deep_link(base: str, view: dict | None, dataset: str | Path) -> str:
-    path = Path(dataset)
-    if not path.is_absolute():
-        path = DATA_DIR / path
-    url = f"{base}/?dataset_path={urllib.parse.quote(str(path))}"
+    target = str(dataset)
+    if "://" not in target:  # local store: relative names live in DATA_DIR
+        path = Path(target)
+        target = str(path if path.is_absolute() else DATA_DIR / path)
+    url = f"{base}/?dataset_path={urllib.parse.quote(target, safe='/:')}"
     return url + (f"#view={encode_view(view)}" if view else "")
 
 
