@@ -194,21 +194,14 @@ class TestH5ADReader(unittest.TestCase):
         self.assertIn('obsm_dataframes', metadata)
         self.assertIn('cell_markers', metadata['obsm_dataframes'])
         df_columns = metadata['obsm_dataframes']['cell_markers']['columns']
-        self.assertEqual(len(df_columns), 4)
-        self.assertIn('CD4', df_columns)
-        self.assertIn('CD8', df_columns)
-        self.assertIn('CD19', df_columns)
-        self.assertIn('_index', df_columns)
+        # the row index is not a column of values (#42)
+        self.assertEqual(sorted(df_columns), ['CD19', 'CD4', 'CD8'])
         
         # Check for dataframe metadata in varm
         self.assertIn('varm_dataframes', metadata)
         self.assertIn('differential_expression', metadata['varm_dataframes'])
         df_columns = metadata['varm_dataframes']['differential_expression']['columns']
-        self.assertEqual(len(df_columns), 4)
-        self.assertIn('cell type A', df_columns)
-        self.assertIn('cell type B', df_columns)
-        self.assertIn('cell type C', df_columns)
-        self.assertIn('_index', df_columns)
+        self.assertEqual(sorted(df_columns), ['cell type A', 'cell type B', 'cell type C'])
         
         # Verify encoding type and version are included
         self.assertEqual(metadata['obsm_dataframes']['cell_markers']['encoding_type'], 'dataframe')
@@ -341,10 +334,10 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(len(nonexistent), 0)
 
         # Test getting a non-existent column from dataframe
-        nonexistent_col = self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
-                                                     column_name="nonexistent")
-        # Should return empty array if column doesn't exist
-        self.assertTrue(len(nonexistent_col) == 0 or nonexistent_col is not None)
+        # A missing column of a listed key is a missing key (404), not [] (#42)
+        with self.assertRaises(KeyError):
+            self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
+                                      column_name="nonexistent")
 
     def test_get_varm(self):
         """Test getting variable multi-dimensional annotations."""
@@ -385,10 +378,10 @@ class TestH5ADReader(unittest.TestCase):
         self.assertEqual(len(nonexistent), 0)
 
         # Test getting a non-existent column from dataframe
-        nonexistent_col = self.reader.get_obsm_varm(entity="genes", key="differential_expression", dataset_path=self.h5ad_path,
-                                                     column_name="nonexistent")
-        # Should return empty array if column doesn't exist
-        self.assertTrue(len(nonexistent_col) == 0 or nonexistent_col is not None)
+        # A missing column of a listed key is a missing key (404), not [] (#42)
+        with self.assertRaises(KeyError):
+            self.reader.get_obsm_varm(entity="genes", key="differential_expression", dataset_path=self.h5ad_path,
+                                      column_name="nonexistent")
 
     def test_get_uns(self):
         """Test getting unstructured annotations using the get_uns method."""

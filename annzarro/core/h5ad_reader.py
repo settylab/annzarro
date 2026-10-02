@@ -20,6 +20,7 @@ from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 import scipy.sparse as sp
 from .caching import DatasetCache, cached_method
+from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError
 
 logger = logging.getLogger(__name__)
 
@@ -293,13 +294,25 @@ def _column(f: h5py.File, obj, indices=None) -> Tuple[np.ndarray, Optional[list]
             return values, None
         if "0" in obj:  # an array wrapped in a group (pre-0.7 obsm dataframes)
             return _values(obj["0"], indices), None
-        raise ValueError(f"Unsupported AnnData encoding '{enc}' at {obj.name} "
-                         f"(children: {list(obj.keys())})")
+        raise UnsupportedEncodingError(f"Unsupported AnnData encoding '{enc}' at {obj.name} "
+                                       f"(children: {list(obj.keys())})")
     ref = obj.attrs.get("categories")
     if isinstance(ref, h5py.Reference):
         categories = _values(f[ref])
         return _categorical(_values(obj, indices), categories), categories.tolist()
     return _values(obj, indices), None
+
+
+def _column_position(column_name, width, obj, key) -> int:
+    """The column index ``column_name`` names in a matrix ``width`` wide,
+    or MissingKeyError (404 key_not_found), as ZarrReader._column_position."""
+    try:
+        position = int(column_name)
+    except (TypeError, ValueError):
+        raise MissingKeyError(f"{obj} '{key}' has no column '{column_name}'") from None
+    if not 0 <= position < width:
+        raise MissingKeyError(f"{obj} '{key}' has no column {position} (it has {width})")
+    return position
 
 
 def _uns_value(node) -> Any:
@@ -483,10 +496,25 @@ class h5adReader:
         for key in file[type].keys():
             obj = file[type][key]
 
+            # A sparse matrix is a matrix, addressed by column position like
+            # a dense one; listing its data/indices/indptr as the columns of a
+            # "dataframe" offered them in the column picker (#42).
+            if isinstance(obj, h5py.Group) and _encoding(obj) in ("csr_matrix", "csc_matrix"):
+                shape = _sparse_group_shape(obj) or ()
+                info[key] = {"type": _encoding(obj), "shape": shape}
+                if len(shape) > 1:
+                    dataframes[key] = {"columns": [str(i) for i in range(shape[1])],
+                                       "is_array": True,
+                                       "array_shape": shape,
+                                       "array_dtype": str(obj["data"].dtype) if "data" in obj else _encoding(obj),
+                                       "sparse": _encoding(obj)}
+
             # If group, check for dataframe-like structure
-            if isinstance(obj, h5py.Group):
+            elif isinstance(obj, h5py.Group):
                 attrs = obj.attrs
-                columns = [c for c in obj.keys()]
+                # a DataFrame's row index is not a column of values
+                index = _index_name(obj)
+                columns = [c for c in obj.keys() if c not in (index, "_index")]
                 columns_info = {}
                 for column in columns:
                     col_obj = obj[column]
@@ -603,18 +631,33 @@ class h5adReader:
                     names, _ = _column(f, group[index], indices)
                     data['_index'] = names.tolist()
 
+            # A column the caller named that cannot be read is an error with
+            # its reason; listing every column, one bad column is reported
+            # under 'errors' beside its [] instead of sinking the rest, as in
+            # ZarrReader (#41).
+            explicit = column_names is not None
+            errors = {}
             for col_name in columns_to_get:
                 try:
                     values, cats = _column(f, group[col_name], indices)
                 except Exception as e:
+                    if isinstance(e, UnsupportedEncodingError):
+                        problem, reason = UnsupportedEncodingError(f"{layer} column '{col_name}': {e}"), "unsupported_type"
+                    else:
+                        problem, reason = StoreReadError(f"Reading {layer} column '{col_name}' failed: {e}"), "read_failed"
+                    if explicit:
+                        raise problem from e
                     logger.error(f"Error getting {layer} column {col_name}: {e}")
                     data[col_name] = []
+                    errors[col_name] = {"reason": reason, "error": str(problem)}
                     continue
                 data[col_name] = values.tolist()
                 if cats:
                     categories[col_name] = cats
 
             result = {'data': data}
+            if errors:
+                result['errors'] = errors
             if include_categories and categories:
                 result["categories"] = categories
         return result
@@ -659,36 +702,62 @@ class h5adReader:
             if obj not in root or key not in root[obj]:
                 return np.array([])
 
-            obsm_varm_obj = root[obj][key]
-            is_dataframe = self._is_dataframe(obsm_varm_obj)
+            # Every listed member reads or raises, as in ZarrReader (#42): a
+            # missing column is MissingKeyError (404), an encoding this
+            # reader cannot read UnsupportedEncodingError (400), never [].
+            member = root[obj][key]
 
-            if is_dataframe and column_name is not None:
-                if column_name not in obsm_varm_obj:
-                    logger.error(f"Column {column_name} not found in dataframe {obj}/{key}")
+            if self._is_dataframe(member):
+                columns = self._dataframe_columns(member)
+                if column_name is not None:
+                    name = column_name if column_name in columns else \
+                        columns[_column_position(column_name, len(columns), obj, key)]
+                    return self._dataframe_column(root, member, name, indices, obj, key)
+                names = [columns[i] for i in col_indices] if col_indices is not None else columns
+                stacked = [np.asarray(self._dataframe_column(root, member, n, indices, obj, key))
+                           for n in names]
+                if not stacked:
                     return np.array([])
-                try:
-                    values, _ = _column(root, obsm_varm_obj[column_name], indices)
-                    return values
-                except Exception as e:
-                    logger.error(f"Error getting dataframe column {column_name}: {e}")
-                    return np.array([])
+                if any(col.dtype.kind not in "biuf" for col in stacked):
+                    return np.column_stack([col.astype(object) for col in stacked])
+                return np.column_stack(stacked)
 
-            if not isinstance(obsm_varm_obj, h5py.Dataset):
-                logger.warning(f"{obj}/{key} is a Group but not recognized as a dataframe")
-                return np.array([])
+            if isinstance(member, h5py.Group):
+                enc = _encoding(member)
+                if enc in ("csr_matrix", "csc_matrix"):
+                    width = (_sparse_group_shape(member) or (0, 0))[1]
+                    if column_name is not None:
+                        position = _column_position(column_name, width, obj, key)
+                        return _matrix(member, indices, [position])[:, 0]
+                    return _matrix(member, indices, col_indices)
+                raise UnsupportedEncodingError(
+                    f"{obj} '{key}' uses an encoding this reader cannot read "
+                    f"('{enc or 'unknown'}', children: {list(member.keys())})")
 
-            # An integer column_name picks one column of an array, 1-D, as
-            # the zarr reader returns it; one out of range falls through to
-            # the whole selection, as there too.
-            if column_name is not None and len(obsm_varm_obj.shape) > 1:
-                try:
-                    col_idx = int(column_name)
-                    if 0 <= col_idx < obsm_varm_obj.shape[1]:
-                        return _dense(obsm_varm_obj, indices, [col_idx])[:, 0]
-                except ValueError as e:
-                    logger.error(f"Error extracting column {column_name} from array {obj}/{key}: {e}")
+            if column_name is not None:
+                if len(member.shape) < 2:
+                    _column_position(column_name, 1, obj, key)
+                    return _dense(member, indices)
+                position = _column_position(column_name, member.shape[1], obj, key)
+                return _dense(member, indices, [position])[:, 0]
 
-            return _dense(obsm_varm_obj, indices, col_indices)
+            return _dense(member, indices, col_indices)
+
+    def _dataframe_columns(self, group: h5py.Group) -> List[str]:
+        order = group.attrs.get("column-order")
+        if order is not None:
+            return [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in np.atleast_1d(order)]
+        index = _index_name(group)
+        return [c for c in group.keys() if c not in (index, "_index")]
+
+    def _dataframe_column(self, f, group, name, indices, obj, key):
+        if name not in group:
+            raise MissingKeyError(f"DataFrame '{obj}/{key}' has no column '{name}'")
+        try:
+            values, _ = _column(f, group[name], indices)
+        except UnsupportedEncodingError as e:
+            raise UnsupportedEncodingError(f"{obj} '{key}' column '{name}': {e}") from e
+        return values
 
     @cached_method
     def get_X(self, dataset_path: Optional[str] = None, row_indices: Optional[List[int]] = None, col_indices: Optional[List[int]] = None) -> np.ndarray:
