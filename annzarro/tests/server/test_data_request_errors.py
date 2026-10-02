@@ -89,3 +89,15 @@ def test_unparseable_indices_are_400_not_the_whole_axis(get):
 
 def test_json_index_lists_still_parse(get):
     assert get("/api/v1/data/X", rows="[0,1]", cols="[0]").status_code == 200
+
+
+@pytest.mark.parametrize("url,query", [
+    ("/api/v1/data/obsp/conn", {"rows": "-1", "cols": "0,1"}),
+    ("/api/v1/data/X", {"cols": "-1"}),
+    ("/api/v1/data/obs", {"rows": "0,-2", "columns": "leiden"}),
+    ("/api/v1/data/X", {"rows": "[-1]"}),
+])
+def test_negative_indices_are_refused_not_wrapped(get, url, query):
+    """numpy indexing wrapped -1 to the last row and answered 200."""
+    resp = get(url, **query)
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_indices"

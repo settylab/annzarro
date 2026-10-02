@@ -2120,6 +2120,10 @@ def _parse_indices(indices_str):
             # Unparseable used to mean "no selection", i.e. the WHOLE axis
             raise DataRequestError(400, "bad_indices",
                                    f"Indices must be comma-separated integers, got {indices_str!r}.")
+    if any(i < 0 for i in indices):
+        # numpy would wrap -1 to the last entry; an index is a position, not an offset
+        raise DataRequestError(400, "bad_indices",
+                               f"Indices must be 0 or greater, got {min(indices)}.")
     return indices
 
 def _parse_strings(strings_str):
