@@ -71,6 +71,14 @@ def test_production_defaults_do_not_run_the_flask_debugger(isolated):
     assert ConfigManager().load_config(env="development")["server"]["debug"] is True
 
 
+def test_default_start_trusts_no_proxy_headers(isolated):
+    # A plain `annzarro start` has no reverse proxy in front of it; trusting
+    # X-Forwarded-* there lets any client choose its own address, and remote
+    # stores refuse to run "behind a proxy" that does not exist.
+    for env in ("production", "development"):
+        assert ConfigManager().load_config(env=env)["server"]["proxy_count"] == 0
+
+
 def test_cli_flags_set_server_keys_and_nothing_else(isolated, tmp_path):
     mgr = ConfigManager()
     config = mgr.load_config(env="production", cli_args=_args(
