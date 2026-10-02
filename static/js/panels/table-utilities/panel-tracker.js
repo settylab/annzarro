@@ -312,6 +312,24 @@ export function getFixedGenes() {
 }
 
 /**
+ * The matrix names of an obsp/varp section of /data/dataset_structure.
+ *
+ * The server sends them as a list (`keys`, process_file.py get_keys); an
+ * older shape had a `matrices` object keyed by name. The varp code iterated
+ * Object.keys() of the list, so a gene table offered "0: Focused Gene",
+ * "1: Focused Gene" instead of the varp names, and a restored column
+ * {type: 'varp', key: 'spearman_fold_change'} matched nothing and was
+ * silently dropped. Both shapes give names here.
+ * @param {{keys?: string[]|Object, matrices?: string[]|Object}|undefined} section
+ * @returns {string[]}
+ */
+export function pairwiseKeys(section) {
+    const keys = section?.matrices ? section.matrices : section?.keys;
+    if (!keys) return [];
+    return Array.isArray(keys) ? keys : Object.keys(keys);
+}
+
+/**
  * Get obsp matrices for cell table with fixed cells
  * @param {Object} datasetStructure - The dataset structure
  * @returns {Array<Object>} - Array of obsp items for column selection
@@ -325,8 +343,7 @@ export function getObspColumnsForCellTable(datasetStructure) {
     // Add the focused cell entry for each obsp matrix
     const focusedCell = fixedCells.find(fc => fc.source === 'focused');
     if (focusedCell) {
-        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
-        for (const key of keys) {
+        for (const key of pairwiseKeys(datasetStructure.obsp)) {
             items.push({
                 type: 'obsp',
                 key,
@@ -341,8 +358,7 @@ export function getObspColumnsForCellTable(datasetStructure) {
     for (const fixedCell of fixedCells) {
         if (fixedCell.source === 'focused') continue; // Skip focused cell, already added
 
-        const keys = datasetStructure?.obsp?.matrices ? datasetStructure.obsp.matrices : datasetStructure.obsp.keys;
-        for (const key of keys) {
+        for (const key of pairwiseKeys(datasetStructure.obsp)) {
             items.push({
                 type: 'obsp',
                 key,
@@ -371,8 +387,7 @@ export function getVarpColumnsForGeneTable(datasetStructure) {
     // Add the focused gene entry for each varp matrix
     const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
     if (focusedGene) {
-        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
-        for (const key of Object.keys(keys)) {
+        for (const key of pairwiseKeys(datasetStructure.varp)) {
             items.push({
                 type: 'varp',
                 key,
@@ -387,8 +402,7 @@ export function getVarpColumnsForGeneTable(datasetStructure) {
     for (const fixedGene of fixedGenes) {
         if (fixedGene.source === 'focused') continue; // Skip focused gene, already added
         
-        const keys = datasetStructure?.varp?.matrices ? datasetStructure.varp.matrices : datasetStructure.varp.keys;
-        for (const key of Object.keys(keys)) {
+        for (const key of pairwiseKeys(datasetStructure.varp)) {
             items.push({
                 type: 'varp',
                 key,
