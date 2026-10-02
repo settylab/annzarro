@@ -10,7 +10,7 @@ AnnZarro is a modern single-cell data visualization tool for analyzing AnnData o
 - **Interactive Visualization** - Scatter plots, heatmaps and tables using plotly.js
 - **Comprehensive AnnData Support** - Access all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers)
 - **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
-- **Flexible Access** - Local files, HTTP, or S3 connectivity
+- **Flexible Access** - Local .zarr and .h5ad files; remote zarr stores over S3, GCS or HTTP(S) (optional extra, see [Remote datasets](#remote-datasets))
 - **Desktop Application** - Standalone cross-platform electron app
 
 ## Installation & Usage
@@ -188,6 +188,74 @@ compressed in the URL fragment (`?dataset_path=…#view=…`), so it never reach
 the server and long layouts do not hit request-line limits. Without clipboard
 access (e.g. plain http on a cluster node) the link is shown for manual copying.
 See [docs/deep-link-schema.md](docs/deep-link-schema.md) for the format.
+
+### Remote datasets
+
+A zarr store can also be opened by URL: type it into the dataset box instead
+of a local path.
+
+```
+s3://bucket/path/pbmc.zarr
+gs://bucket/path/pbmc.zarr
+https://data.example.org/pbmc.zarr
+```
+
+This needs the optional remote dependencies (`fsspec`, `s3fs`, `gcsfs`,
+`aiohttp`), which `./annzarro-cli install` includes unless `--no-extras` is
+given; with pip, `pip install 'annzarro[remote]'`. Without them, opening a URL
+fails with a message naming that extra.
+
+What works and what does not:
+
+- **zarr only.** `.h5ad` is read from local disk; a remote `.h5ad` URL is
+  refused. Convert with `adata.write_zarr(...)`.
+- **Anonymous by default.** Public buckets and plain HTTP need nothing. For
+  private buckets set `remote_credentials: environment`; the server then uses
+  the standard credential chain (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`,
+  `AWS_PROFILE` and `~/.aws`, instance roles; Google application default
+  credentials for `gs://`). Credentials are never accepted inside the URL
+  (`https://user:pass@...`), and query strings (pre-signed URLs) are refused.
+- **HTTP needs consolidated metadata.** HTTP cannot list a directory, so obs
+  columns and obsm/layers keys are only discoverable from `.zmetadata`
+  (written by `anndata`'s `write_zarr` by default; add one with
+  `zarr.consolidate_metadata(path)`). S3 and GCS list natively.
+- **Latency.** The store root, metadata and (with zarr 3) recently read
+  chunks are kept in memory per URL; anything else is fetched. Measured on
+  public Vitessce AnnData stores: first open with full structure 4 to 7 s;
+  then 0.1 to 0.7 s per gene, obs column or embedding (13k cells, `gs://`).
+  A CSR-encoded X must read the whole matrix for one gene: 4 s per gene
+  uncached, 1 to 1.5 s once its chunks are in the chunk cache (4k spots,
+  HTTPS).
+- **Caches assume the store does not change** while the server runs; restart
+  the server or `POST /api/v1/cache/reset` after rewriting a store.
+
+#### Who may open remote URLs
+
+A remote dataset path makes the *server* fetch a URL the *client* chose. On
+your own machine that is just you reading your data; on a shared server it
+would let any visitor point it at internal services or cloud metadata
+endpoints. So it is policy-controlled, in the `server:` section of the config
+(or the matching `ANNZARRO_REMOTE_*` environment variables, which win):
+
+```yaml
+server:
+  remote_stores: auto          # auto | allow | deny
+  remote_allowlist: []         # e.g. ["s3://lab-bucket/atlases/", "https://data.example.org/zarr/"]
+  remote_credentials: anonymous  # anonymous | environment
+  remote_connect_timeout_s: 10   # a store that does not answer in time
+  remote_read_timeout_s: 30      # fails the request with HTTP 504
+  remote_chunk_cache_mb: 256     # raw-bytes LRU per open remote store (zarr 3); 0 = off
+```
+
+- `auto` (default) allows any URL on a local single-user server (loopback
+  host, auth disabled, no reverse proxy). Otherwise remote stores are off
+  unless `remote_allowlist` is set, and then only URLs under those prefixes
+  open (matched on exact scheme and host and on whole path segments; HTTP
+  redirects are not followed).
+- `allow` turns them on regardless; with an allowlist it still restricts.
+- `deny` turns them off.
+
+A refused URL is answered with HTTP 403 and never fetched.
 
 ## Development
 

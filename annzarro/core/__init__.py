@@ -5,6 +5,7 @@ from pathlib import Path
 # Import zarr reader class
 from .zarr_reader import ZarrReader
 from .h5ad_reader import h5adReader
+from .remote import remote_scheme
 
 # Create a reader instance with default settings
 # This will be configured later by the server settings
@@ -12,6 +13,29 @@ zarr_reader = ZarrReader()
 h5ad_reader_obj = h5adReader()
 
 def get_reader(path):
+    """Pick the reader for a dataset path.
+
+    Remote URLs (s3://, gs://, http(s)://) are zarr-only: h5ad is read with
+    h5py from local disk. A remote URL goes to the zarr reader whether or not
+    it ends in ``.zarr`` -- a bucket prefix is a valid store root.
+
+    For a local path the existence check below is what turns "no such dataset"
+    into FileNotFoundError before any read. The remote equivalent is opening
+    the store root, so that is done here: the policy refusal (PermissionError),
+    a missing optional dependency (ImportError) and "no zarr group at this URL"
+    (FileNotFoundError) all surface here, typed, instead of as a generic
+    read failure halfway through a request. The reader keeps the opened root,
+    so the read that follows does not pay for the open again.
+    """
+    scheme = remote_scheme(path)
+    if scheme is not None:
+        if str(path).rstrip("/").lower().endswith(".h5ad"):
+            raise ValueError(
+                f"Remote .h5ad files are not supported ({scheme}://); h5ad is read from "
+                f"local disk. Convert it to zarr (adata.write_zarr) or download it first.")
+        zarr_reader._get_remote_root(path)
+        return zarr_reader
+
     dataset_path = Path(path)
 
     # Check if path exists

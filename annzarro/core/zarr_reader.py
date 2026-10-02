@@ -4,7 +4,7 @@ Zarr Reader - Handles loading AnnData in zarr format
 This module provides functionality for loading zarr data from various sources:
 - Local files (directory or archive)
 - URL (HTTP/HTTPS)
-- S3 bucket
+- S3 and GCS buckets (see ``remote.py`` for the access policy)
 
 Features:
 - Lazy loading support for efficient memory usage
@@ -18,13 +18,16 @@ Features:
 
 import os
 import logging
+import threading
 import numpy as np
 import zarr
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
 from pathlib import Path
+from collections import OrderedDict
 
 from .metadata_extraction import extract_metadata
 from .caching import DatasetCache, cached_method
+from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
 # Try to import optional dependencies
 try:
@@ -145,6 +148,10 @@ class ZarrReader:
         self.max_memory_mb = max_memory_mb
         self.enable_caching = enable_caching
         self.cache_limit = cache_limit
+
+        # url -> zarr root group for remote stores (see _get_remote_root)
+        self._remote_roots = OrderedDict()
+        self._remote_roots_lock = threading.Lock()
         
         # Optional initialization of backends
         self._check_backends()
@@ -202,6 +209,7 @@ class ZarrReader:
                 try:
                     dataset_path = urllib.parse.unquote(encoded_path)
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.warning(f"Error decoding dataset path from cache key: {e}")
                     dataset_path = encoded_path  # Use as-is as fallback
             
@@ -240,6 +248,11 @@ class ZarrReader:
         
         # Use the cache manager to clear cache
         result = self.cache.clear_cache(dataset_path=dataset_path)
+        with self._remote_roots_lock:
+            if dataset_path is None:
+                self._remote_roots.clear()
+            else:
+                self._remote_roots.pop(dataset_path, None)
                 
         logger.info(f"CLEAR_CACHE: Cache cleared with result: {result}")
         return result
@@ -302,11 +315,13 @@ class ZarrReader:
             
             return root, metadata_dict
             
-        except ValueError as e:
-            # For invalid paths, propagate the error with the detailed message
+        except (ValueError, ImportError, PermissionError, FileNotFoundError) as e:
+            # For invalid paths, refused or unreachable remote stores, and
+            # missing optional dependencies, propagate the error unchanged
             logger.error(f"Invalid dataset path or format: {dataset_path}: {e}")
             raise
         except Exception as e:
+            raise_if_timeout(e)
             # Log details for unexpected errors
             logger.error(f"Error opening dataset by path {dataset_path}: {e}")
             import traceback
@@ -344,25 +359,8 @@ class ZarrReader:
         
         # Look for the root using the path
         try:
-            if dataset_path.startswith("s3://"):
-                if not S3FS_AVAILABLE:
-                    raise ImportError("s3fs package required for S3 access")
-                
-                parts = dataset_path.replace("s3://", "").split("/", 1)
-                bucket = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
-                
-                fs = s3fs.S3FileSystem(anon=True)
-                store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
-                return zarr.open_group(store, mode='r')
-            
-            elif dataset_path.startswith(("http://", "https://")):
-                if FSSPEC_AVAILABLE:
-                    store = fsspec.filesystem('http').get_mapper(dataset_path)
-                else:
-                    store = dataset_path
-                return zarr.open_group(store, mode='r')
-            
+            if is_remote_path(dataset_path):
+                return self._get_remote_root(dataset_path)
             else:
                 # Local file access - do more thorough validation
                 path_obj = Path(dataset_path)
@@ -389,13 +387,20 @@ class ZarrReader:
                     # Use regular open_group for existing paths, which works better with various zarr formats
                     return zarr.open_group(dataset_path, mode='r')
                 except Exception as e:
+                    raise_if_timeout(e)
                     # Check the error message to identify specific error types
                     if "path not found" in str(e).lower():
                         raise ValueError(f"Not a valid zarr dataset: {dataset_path}")
                     else:
                         raise ValueError(f"Failed to open zarr dataset: {dataset_path}, error: {e}")
         
+        except (ValueError, ImportError, PermissionError, FileNotFoundError) as e:
+            # Typed errors already say what went wrong (bad path, policy refusal,
+            # missing optional dependency, no group at a URL); pass them through.
+            logger.error(f"Error with dataset path {dataset_path}: {e}")
+            raise
         except Exception as e:
+            raise_if_timeout(e)
             # Identify specific zarr errors by their message content
             error_msg = str(e).lower()
             if "path not found" in error_msg:
@@ -410,14 +415,35 @@ class ZarrReader:
                 err_msg = f"Path contains a group instead of an array: {dataset_path}"
                 logger.error(err_msg)
                 raise ValueError(err_msg) from e
-        except (ValueError, ImportError) as e:
-            # Re-raise ValueErrors and ImportErrors directly
-            logger.error(f"Error with dataset path {dataset_path}: {e}")
-            raise
-        except Exception as e:
             error_msg = f"Error opening dataset from path {dataset_path}: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
+
+    def _get_remote_root(self, url: str) -> zarr.Group:
+        """Open (or reuse) the root group of a remote store.
+
+        Local roots are cheap to re-open, so every data call re-opens them.
+        A remote open is several round trips (.zgroup, .zattrs, .zmetadata,
+        zarr.json probes), paid on EVERY request -- so remote roots are kept,
+        keyed by URL and bounded by ``cache_limit``. The policy is checked on
+        every call, including hits, so a cached root never outlives a refusal.
+        Like every other cache here, it assumes the store is not rewritten
+        while the server runs; ``clear_cache`` drops it.
+        """
+        check_remote_access(url)
+        with self._remote_roots_lock:
+            root = self._remote_roots.get(url)
+            if root is not None:
+                self._remote_roots.move_to_end(url)
+                return root
+        # Open outside the lock: a slow store must not stall the others.
+        logger.info(f"_get_remote_root: opening remote store {url}")
+        root = open_remote_group(url)
+        with self._remote_roots_lock:
+            self._remote_roots[url] = root
+            while len(self._remote_roots) > max(1, self.cache_limit):
+                self._remote_roots.popitem(last=False)
+        return root
     
     def _get_dataset_shape(self, root: zarr.Group) -> Optional[Tuple[int, int]]:
         """
@@ -438,6 +464,7 @@ class ZarrReader:
                 logger.info(f"Got shape from X.shape: {shape}")
                 return shape
             except Exception as e:
+                raise_if_timeout(e)
                 logger.debug(f"Could not get shape from X.shape: {e}")
         
         # Method 2: Get from X attributes (for sparse matrices)
@@ -447,6 +474,7 @@ class ZarrReader:
                 logger.info(f"Got shape from X.attrs: {shape}")
                 return shape
             except Exception as e:
+                raise_if_timeout(e)
                 logger.debug(f"Could not get shape from X.attrs: {e}")
         
         # Method 3: Infer from obs and var lengths
@@ -458,6 +486,7 @@ class ZarrReader:
                 logger.info(f"Inferred shape from obs and var: {shape}")
                 return shape
         except Exception as e:
+            raise_if_timeout(e)
             logger.debug(f"Could not infer shape from obs and var: {e}")
         
         # Method 4: Try other matrices (layers, etc.)
@@ -474,6 +503,7 @@ class ZarrReader:
                         logger.info(f"Got shape from layer {layer_name} attrs: {shape}")
                         return shape
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.debug(f"Could not get shape from layer {layer_name}: {e}")
         
         logger.warning("Could not determine dataset shape")
@@ -563,6 +593,7 @@ class ZarrReader:
         try:
             return list(group.attrs['column-order'])
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting dataframe columns: {e}")
             return []
     
@@ -604,6 +635,7 @@ class ZarrReader:
                 column_info[col_name] = col_info
         
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting dataframe column info: {e}")
         
         return column_info
@@ -673,6 +705,7 @@ class ZarrReader:
                 'gene_count': gene_count
             }
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting basic counts from {path}: {e}")
             raise
     
@@ -692,9 +725,14 @@ class ZarrReader:
       """
       # Use path-based extraction
       try:
+          if root is None and is_remote_path(dataset_path):
+              # extract_metadata would zarr.open_group() the bare URL: no
+              # policy check, no anonymous-access options, a fresh open.
+              root, dataset_path = self._get_root(dataset_path), None
           metadata = extract_metadata(dataset_path, root, detail_level=detail_level)
           return metadata
       except Exception as e:
+          raise_if_timeout(e)
           logger.error(f"Error in path-based metadata extraction: {e}")
           import traceback
           logger.error(traceback.print_exc())
@@ -727,6 +765,7 @@ class ZarrReader:
             return metadata
             
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"GET_METADATA: Error extracting metadata: {e}")
             import traceback
             logger.info(traceback.print_exc())
@@ -986,6 +1025,7 @@ class ZarrReader:
                 return None
                 
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error loading sparse matrix: {e}")
             return None
     
@@ -1030,6 +1070,7 @@ class ZarrReader:
             else:
                 return array[:]
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting dense array {path}: {e}")
             return np.array([])
     
@@ -1296,6 +1337,7 @@ class ZarrReader:
         except UnsupportedEncodingError:
             raise
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error processing encoded data: {e}")
             if return_categories:
                 return [], []
@@ -1348,6 +1390,7 @@ class ZarrReader:
                     cell_names = self._get_categorical_values(root[obj][obs_index_column], indices)
                     result['data']['_index'] = cell_names.tolist() if hasattr(cell_names, 'tolist') else list(cell_names)
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.error(f"Error getting cell names: {e}")
                     result['data']['_index'] = []
         
@@ -1374,6 +1417,7 @@ class ZarrReader:
                     # Convert to Python list for JSON serialization
                     result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
+                raise_if_timeout(e)
                 logger.error(f"Error getting obs column {col}: {e}")
                 result['data'][col] = []
         
@@ -1422,6 +1466,7 @@ class ZarrReader:
                 # an array and cannot be sliced directly.
                 return self._read_member(column, indices)
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting dataframe column {column_name}: {e}")
             return np.array([])
     
@@ -1510,6 +1555,7 @@ class ZarrReader:
             data = root[layer_to_get][key][row_sel, :][:, col_sel]
             return np.asarray(data)
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting obsp data with row_indices {row_indices} and col_indices {col_indices}: {e}")
             return np.array([])
     
@@ -1556,6 +1602,7 @@ class ZarrReader:
             return array[row_indices[:, np.newaxis], col_indices]
             
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error downsampling array {path} in dataset {dataset_path}: {e}")
             return np.array([])
     
@@ -1660,6 +1707,7 @@ class ZarrReader:
                 return array[:]
                 
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error loading chunked data for {path} in dataset {dataset_path}: {e}")
             return np.array([])
             
@@ -1726,6 +1774,7 @@ class ZarrReader:
                 return data
                 
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error loading data progressively from {path} for dataset {dataset_path}: {e}")
             return np.array([])
             
@@ -1765,6 +1814,7 @@ class ZarrReader:
             
             return paginated_data, pagination
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting paginated data: {e}")
             return np.array([]), {
                 "page": page,
@@ -1905,6 +1955,7 @@ class ZarrReader:
                 if hasattr(root[component][key], 'shape') and len(root[component][key].shape) > 1:
                     return [str(i) for i in range(root[component][key].shape[1])]
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error extracting column names directly from structure: {e}")
         
         return []
@@ -2045,6 +2096,7 @@ class ZarrReader:
                     uns_structure[key]["shape"] = root['uns'][key].shape
                 
             except Exception as e:
+                raise_if_timeout(e)
                 logger.error(f"Error getting encoding type for uns/{key}: {e}")
                 uns_structure[key] = {"encoding-type": "error", "error": str(e)}
         
@@ -2083,6 +2135,7 @@ class ZarrReader:
                                 value = root['uns'][key][subkey][subsubkey][:]
                                 subresult[subsubkey] = value.tolist() if hasattr(value, 'tolist') else value
                             except Exception as e:
+                                raise_if_timeout(e)
                                 logger.warning(f"Error converting uns/{key}/{subkey}/{subsubkey}: {e}")
                                 subresult[subsubkey] = str(root['uns'][key][subkey][subsubkey])
                         result[subkey] = subresult
@@ -2092,6 +2145,7 @@ class ZarrReader:
                             value = root['uns'][key][subkey][:]
                             result[subkey] = value.tolist() if hasattr(value, 'tolist') else value
                         except Exception as e:
+                            raise_if_timeout(e)
                             logger.warning(f"Error converting uns/{key}/{subkey}: {e}")
                             result[subkey] = str(root['uns'][key][subkey])
                 return result
@@ -2100,6 +2154,7 @@ class ZarrReader:
                 value = root['uns'][key][:]
                 return value.tolist() if hasattr(value, 'tolist') else value
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error getting uns data for {key}: {e}")
             return None
 
@@ -2127,6 +2182,7 @@ class ZarrReader:
             logger.error(f"Error opening dataset from path {dataset_path}: {e}")
             raise
         except Exception as e:
+            raise_if_timeout(e)
             # Wrap other exceptions in a RuntimeError with a descriptive message
             error_msg = f"Unexpected error opening dataset {dataset_path}: {e}"
             logger.error(error_msg)
@@ -2157,6 +2213,7 @@ class ZarrReader:
             names = self._get_categorical_values(root[obj][index_column])
             return names.tolist() if hasattr(names, 'tolist') else list(names)
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
             raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
     
@@ -2306,6 +2363,7 @@ class ZarrReader:
             
             return stats
         except Exception as e:
+            raise_if_timeout(e)
             logger.error(f"Error calculating statistics: {e}")
             return {
                 "error": str(e)
@@ -2355,6 +2413,7 @@ class ZarrReader:
                     var_names = self._get_categorical_values(root['var'][var_index_column], indices=list(range(preview_count)))
                     result["var_names"] = var_names.tolist() if hasattr(var_names, 'tolist') else list(var_names)
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.error(f"Error getting var names: {e}")
         
         # Add observation names
@@ -2371,6 +2430,7 @@ class ZarrReader:
                     obs_names = self._get_categorical_values(root['obs'][obs_index_column], indices=list(range(preview_count)))
                     result["obs_names"] = obs_names.tolist() if hasattr(obs_names, 'tolist') else list(obs_names)
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.error(f"Error getting obs names: {e}")
         
         # Add obs and var columns
@@ -2472,6 +2532,7 @@ class ZarrReader:
                         uns_structure[key]["shape"] = root['uns'][key].shape
                     
                 except Exception as e:
+                    raise_if_timeout(e)
                     logger.error(f"Error getting encoding type for uns/{key}: {e}")
                     uns_structure[key] = {"encoding-type": "error", "error": str(e)}
             
@@ -2499,6 +2560,9 @@ class ZarrReader:
     def validate_zarr_url(self, url: str) -> Tuple[bool, str]:
         """
         Validate if a URL points to a valid zarr archive.
+
+        Goes through the same policy-checked opener as every data read, so a
+        server that refuses remote stores refuses to probe them here too.
         
         Args:
             url: URL to validate
@@ -2506,14 +2570,10 @@ class ZarrReader:
         Returns:
             Tuple of (is_valid, message)
         """
+        if not is_remote_path(url):
+            return False, "Not a remote URL (expected s3://, gs://, http:// or https://)"
         try:
-            # Try to open the zarr store
-            if FSSPEC_AVAILABLE:
-                store = fsspec.filesystem('http').get_mapper(url)
-            else:
-                store = url
-            
-            root = zarr.open_group(store, mode='r')
+            root = open_remote_group(url)
             
             # Check if it has basic AnnData structure
             has_x = 'X' in root
@@ -2525,6 +2585,7 @@ class ZarrReader:
             else:
                 return False, "Zarr archive found but missing AnnData structure"
         except Exception as e:
+            raise_if_timeout(e)
             return False, f"Error validating zarr URL: {str(e)}"
 
 # Create a singleton instance

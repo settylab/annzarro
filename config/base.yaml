@@ -38,6 +38,27 @@ server:
   cache_memory_mb: 1000
   cache_dataset_limit: 10
 
+  # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])
+  # A remote dataset path makes the server fetch a URL chosen by the client.
+  #   auto  - allowed on a local single-user server (loopback host, no auth,
+  #           no proxy); otherwise only URLs under remote_allowlist
+  #   allow - always allowed (restricted to remote_allowlist if it is set)
+  #   deny  - never
+  remote_stores: auto
+  remote_allowlist: []  # e.g. ["s3://my-lab-bucket/atlases/", "https://data.example.org/zarr/"]
+  # anonymous   - unsigned requests (public buckets / plain HTTP)
+  # environment - backend credential chain: AWS_* env vars, AWS_PROFILE/~/.aws,
+  #               instance roles; Google application default credentials
+  remote_credentials: anonymous
+  # Seconds to establish a connection / to wait between bytes. A store that
+  # stops answering fails the request with HTTP 504 instead of holding it.
+  remote_connect_timeout_s: 10
+  remote_read_timeout_s: 30
+  # In-memory LRU of raw bytes per open remote store (zarr 3 only; 0 = off).
+  # The reader's result cache only answers identical requests; this one makes
+  # a different gene or column from already-fetched chunks local.
+  remote_chunk_cache_mb: 256
+
 # Authentication configuration
 auth:
   user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
