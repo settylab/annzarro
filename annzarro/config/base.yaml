@@ -29,11 +29,8 @@ server:
   log_file: null
   log_level: "INFO"
   
-  # Rate limiting and protection
+  # Response size protection
   max_response_elements: 10000000
-  max_cells_per_request: 10000000
-  max_genes_per_request: 1000000
-  max_embedding_dims: 200
   
   # Caching configuration
   cache_enabled: true

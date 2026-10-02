@@ -143,6 +143,24 @@ def _reader_error_response(exc, dataset_path):
     }), 500
 
 
+def _request_cap(name):
+    """The ``max_cells``/``max_genes`` cap a client asked for, or None.
+
+    It is the client's own guard against asking for more than it can draw
+    (the frontend sends ui.defaults.max_cells/max_genes). It is not a server
+    limit: a client can send any value. The server-side settings that used
+    to provide its default (max_cells_per_request, max_genes_per_request)
+    were removed for that reason.
+    """
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def _cap_error_response(requested, limit, unit, axis_hint):
     """A cap rejection that says it IS a cap, in a field a client can branch on.
 
@@ -249,7 +267,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with X matrix data
@@ -265,16 +284,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -297,7 +313,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with layer data
@@ -313,16 +330,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -342,7 +356,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             columns: Comma-separated list of column names to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with observation annotations
@@ -358,17 +373,14 @@ def register_data_routes(app, api_version):
         columns = request.args.get("columns")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows to integer list and columns to string list
         row_indices = _parse_indices(rows)
         column_names = _parse_strings(columns)
         
         # Check for too many cells
-        if row_indices and len(row_indices) > max_cells:
+        if max_cells is not None and row_indices and len(row_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices), max_cells, "cells",
                 "Please reduce the number of rows."
@@ -391,7 +403,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             cols: Comma-separated list of column indices to get.
             columns: Comma-separated list of column names to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with variable annotations
@@ -407,16 +420,13 @@ def register_data_routes(app, api_version):
         columns = request.args.get("columns")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert cols to integer list and columns to string list
         col_indices = _parse_indices(cols)
         column_names = _parse_strings(columns)
 
-        if col_indices and len(col_indices) > max_genes:
+        if max_genes is not None and col_indices and len(col_indices) > max_genes:
             return _cap_error_response(
                 len(col_indices), max_genes, "genes",
                 "Please reduce the number of columns."
@@ -442,7 +452,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             column_name: Optional column name for dataframe-encoded obsm matrices.
             
         Returns:
@@ -462,17 +473,14 @@ def register_data_routes(app, api_version):
         column_name = request.args.get("column_name")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
         # Check for too many genes
-        if row_indices and len(row_indices) > max_cells:
+        if max_cells is not None and row_indices and len(row_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices), max_cells, "cells",
                 "Please reduce the number of rows."
@@ -496,7 +504,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             column_name: Optional column name for dataframe-encoded varm matrices.
             
         Returns:
@@ -516,17 +525,14 @@ def register_data_routes(app, api_version):
         column_name = request.args.get("column_name")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
         # Check for too many genes
-        if row_indices and len(row_indices) > max_genes:
+        if max_genes is not None and row_indices and len(row_indices) > max_genes:
             return _cap_error_response(
                 len(row_indices), max_genes, "genes",
                 "Please reduce the number of rows."
@@ -549,7 +555,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_cells: Maximum number of cells to return (default: 10000).
+            max_cells: Optional client-side cap on the cells requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with obsp data
@@ -565,16 +572,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max cells
-        try:
-            max_cells = int(request.args.get("max_cells", app.config.get("max_cells_per_request", 10000)))
-        except ValueError:
-            max_cells = app.config.get("max_cells_per_request", 10000)
+        max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
+        if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_cells, "cells",
                 "Please reduce the number of rows or columns."
@@ -597,7 +601,8 @@ def register_data_routes(app, api_version):
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
             cols: Comma-separated list of column indices to get.
-            max_genes: Maximum number of genes to return (default: 10000).
+            max_genes: Optional client-side cap on the genes requested; a request
+                over it fails with reason cap_exceeded. No cap when omitted.
             
         Returns:
             JSON response with varp data
@@ -613,16 +618,13 @@ def register_data_routes(app, api_version):
         cols = request.args.get("cols")
         
         # Parse max genes
-        try:
-            max_genes = int(request.args.get("max_genes", app.config.get("max_genes_per_request", 10000)))
-        except ValueError:
-            max_genes = app.config.get("max_genes_per_request", 10000)
+        max_genes = _request_cap("max_genes")
         
         # Convert rows and cols to integer lists
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
 
-        if row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
+        if max_genes is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_genes:
             return _cap_error_response(
                 len(row_indices) * len(col_indices), max_genes, "genes",
                 "Please reduce the number of rows or columns."

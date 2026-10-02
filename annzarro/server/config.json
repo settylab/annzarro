@@ -23,8 +23,5 @@
     "behind_proxy": false,
     "max_upload_size": 100,
     "unified_server": true,
-    "max_response_elements": 10000000,
-    "max_cells_per_request": 10000000,
-    "max_genes_per_request": 10000000,
-    "max_embedding_dims": 200
+    "max_response_elements": 10000000
 }

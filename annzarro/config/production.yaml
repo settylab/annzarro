@@ -19,8 +19,6 @@ server:
   log_level: "INFO"
   
   # Resource limits for production
-  max_cells_per_request: 20000
-  max_genes_per_request: 20000
   cache_memory_mb: 4000
   cache_dataset_limit: 20
   

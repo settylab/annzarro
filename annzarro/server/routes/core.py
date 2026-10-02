@@ -121,10 +121,6 @@ def register_core_routes(app, api_version):
                 "custom_html": app.config.get("contact_info", {}).get("custom_html")
             },
             
-            # Feature flags and limits - only sharing safe values
-            "max_cells_per_request": app.config.get("max_cells_per_request", 10000),
-            "max_genes_per_request": app.config.get("max_genes_per_request", 10000),
-            
             # UI settings
             "ui_max_cells": app.config.get("ui_max_cells", None),
             "ui_max_genes": app.config.get("ui_max_genes", None),

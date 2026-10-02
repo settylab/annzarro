@@ -40,9 +40,6 @@ DEFAULT_CONFIG = {
     "user_file": "users.json",
     "unified_server": True,  # New flag to indicate we're using the unified server approach
     "max_response_elements": 1000000,  # Maximum number of elements in array responses
-    "max_cells_per_request": 10000,    # Maximum number of cells in a single request
-    "max_genes_per_request": 10000,    # Maximum number of genes in a single request
-    "max_embedding_dims": 50,          # Maximum number of dimensions in embedding requests
     "secret_key": None,                # Login cookie key; None = generated and stored beside user_file
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
