@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld(
   'api', {
     // App functions
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
-    checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
     restartServer: () => ipcRenderer.invoke('app:restartServer'),
     
     // File system dialog functions

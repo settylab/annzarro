@@ -557,15 +557,10 @@ def desktop_command(args: argparse.Namespace) -> int:
     elif args.desktop_command == "build":
         platform = args.platform
         rebuild = args.rebuild
-        bundle_venv = args.bundle_venv
-        venv_path = args.venv_path
-        
-        logger.info(f"Building desktop application for {platform or 'all platforms'}")
-        if bundle_venv:
-            logger.info(f"Will bundle Python virtual environment{' at ' + venv_path if venv_path else ''}")
-        
-        if build_desktop_app(platform, rebuild, icon_source=args.icon, 
-                             bundle_venv=bundle_venv, venv_path=venv_path):
+        logger.info(f"Building desktop application for {platform or 'this platform'}")
+
+        if build_desktop_app(platform, rebuild, icon_source=args.icon,
+                             build_server=args.build_server):
             logger.info("Desktop application built successfully")
             return 0
         else:
@@ -920,11 +915,9 @@ def main(argv: List[str] = None) -> int:
                                      help="Target platform (default: current platform)")
     desktop_build_parser.add_argument('--rebuild', action='store_true', help="Force rebuild dependencies")
     desktop_build_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
-    desktop_build_parser.add_argument('--bundle-venv', action='store_true', default=True, 
-                                     help="Bundle Python virtual environment with the application (default: True)")
-    desktop_build_parser.add_argument('--no-bundle-venv', action='store_false', dest='bundle_venv',
-                                     help="Don't bundle Python virtual environment")
-    desktop_build_parser.add_argument('--venv-path', type=str, help="Custom path for the Python virtual environment")
+    desktop_build_parser.add_argument('--no-build-server', action='store_false', dest='build_server',
+                                     help="Reuse the frozen server in annzarro/desktop/electron/server "
+                                          "instead of freezing it again")
     
     # Desktop icons command
     desktop_icons_parser = desktop_subparsers.add_parser('icons', help="Generate application icons")

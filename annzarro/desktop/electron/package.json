@@ -1,11 +1,11 @@
 {
   "name": "annzarro-desktop",
   "version": "0.1.1",
-  "description": "Desktop application for Annzarro",
+  "description": "AnnZarro desktop app: the AnnZarro single-cell viewer with its server bundled",
   "main": "main.js",
   "author": {
     "name": "Setty Lab",
-    "email": "noreply@example.com"
+    "email": "dotto@fredhutch.org"
   },
   "license": "MIT",
   "private": true,
@@ -15,19 +15,15 @@
   },
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "dist": "electron-builder --publish never",
+    "dist:dir": "electron-builder --dir --publish never"
   },
   "devDependencies": {
-    "electron": "^25.0.0",
-    "electron-builder": "^24.0.0"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
-    "electron-log": "^5.0.0",
-    "electron-updater": "^6.1.1",
-    "find-process": "^1.4.7"
+    "electron-log": "^5.4.4"
   },
   "build": {
     "appId": "com.annzarro.desktop",
@@ -35,88 +31,42 @@
     "directories": {
       "output": "dist"
     },
-    "publish": false,
     "files": [
-      "**/*",
-      "requirements.txt",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/.bin",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,__pycache__,thumbs.db,.gitignore,.gitattributes,.editorconfig,.idea,appveyor.yml,.travis.yml,circle.yml,npm-debug.log,.nyc_output,yarn.lock,yarn-error.log}"
-    ],
-    "asarUnpack": [
-      "requirements.txt",
-      "bin/${os}-${arch}/**/*",
-      "python/**/*"
-    ],
-    "extraFiles": [
-      {
-        "from": "bin/${os}-${arch}",
-        "to": "bin/${os}-${arch}",
-        "filter": [
-          "**/*"
-        ]
-      }
+      "main.js",
+      "preload.js",
+      "loading.html",
+      "error.html",
+      "icons/**/*",
+      "package.json"
     ],
     "extraResources": [
       {
-        "from": "../../../",
-        "to": "app",
-        "filter": [
-          "annzarro/**/*.py",
-          "annzarro/**/__init__.py",
-          "annzarro/data/**/*",
-          "annzarro/bin/**/*",
-          "annzarro/core/**/*",
-          "annzarro/server/**/*",
-          "annzarro/utils/**/*",
-          "annzarro/desktop/**/*",
-          "annzarro/ui/**/*",
-          "annzarro/config/*.yaml",
-          "annzarro/THIRD_PARTY_LICENSES/**/*",
-          "LICENSE",
-          "requirements.txt",
-          "annzarro-install.py",
-          "annzarro-cli",
-          "pyproject.toml",
-          "setup.py",
-          "css/**/*.css",
-          "js/**/*.js",
-          "templates/**/*.html",
-          "static/**/*",
-          "!**/node_modules/**/*",
-          "!**/.git/**/*",
-          "!data/**",
-          "!config/auth/**/*",
-          "!**/downloads/**/*",
-          "!**/venv/**/*",
-          "!**/desktop/electron/dist/**/*",
-          "!**/desktop/electron/node_modules/**/*",
-          "!**/desktop/electron/python/**/*",
-          "!**/logs/**/*",
-          "!**/__pycache__/**/*",
-          "!**/.pytest_cache/**/*",
-          "!**/.ipynb_checkpoints/**/*",
-          "!**/prototype_notebooks/**/*",
-          "!**/tests/**/*"
-        ]
-      },
-      {
-        "from": "python",
-        "to": "python",
+        "from": "server/annzarro-server",
+        "to": "server",
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../../../LICENSE",
+        "to": "LICENSE"
       }
     ],
+    "artifactName": "AnnZarro-${version}-${os}-${arch}.${ext}",
     "mac": {
-      "category": "public.app-category.science",
+      "category": "public.app-category.education",
       "target": [
         "dmg",
         "zip"
       ],
       "icon": "icons/icon.icns",
-      "darkModeSupport": true
+      "darkModeSupport": true,
+      "artifactName": "AnnZarro-${version}-macos-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "notarize": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "identity": "-"
     },
     "dmg": {
       "background": null,
@@ -140,9 +90,18 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "zip"
       ],
-      "icon": "icons/icon.ico"
+      "icon": "icons/icon.ico",
+      "artifactName": "AnnZarro-${version}-windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "AnnZarro-${version}-windows-${arch}-setup.${ext}"
     },
     "linux": {
       "target": [
@@ -151,13 +110,11 @@
       ],
       "category": "Science",
       "icon": "icons",
-      "publish": false,
-      "maintainer": "Dominik Otto <dotto@fredhutch.org>"
+      "synopsis": "Viewer for single-cell AnnData stored as zarr or h5ad",
+      "maintainer": "Dominik Otto <dotto@fredhutch.org>",
+      "artifactName": "AnnZarro-${version}-linux-${arch}.${ext}"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
-    }
-  }
+    "publish": null
+  },
+  "homepage": "https://github.com/settylab/annzarro"
 }
