@@ -256,7 +256,7 @@ const SubsetControl = (function() {
             const categories = (reply && reply.categories && reply.categories[col]) || [];
             datalist.innerHTML = categories.slice(0, 500)
                 .map(c => `<option value="${escapeHtml(String(c))}"></option>`).join('');
-        } catch (e) {
+        } catch {
             // suggestions only; typing values still works
         }
     }
@@ -366,7 +366,8 @@ const SubsetControl = (function() {
         let spec;
         try {
             spec = _spec();
-        } catch (error) {
+        } catch {
+            // _preview already shows why
             return;
         }
         _modal.hide();

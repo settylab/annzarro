@@ -105,7 +105,7 @@ export function normalizeViewSubset(value) {
     if (value === null || value === 'all') return null;
     try {
         return canonicalSubset(value);
-    } catch (e) {
+    } catch {
         return undefined;
     }
 }
