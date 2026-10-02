@@ -1,0 +1,51 @@
+{
+  "name": "fig4-d",
+  "timestamp": "2026-10-02T19:36:20+00:00",
+  "dataset": "bm_aging_showcase.zarr",
+  "datasetName": "bm_aging_showcase",
+  "constants": {
+    "focusedGene": "H2-Q7",
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "gene-plot-4d": {
+      "id": "gene-plot-4d",
+      "type": "gene-plot",
+      "title": "Focused gene's rows: smoothed (x) vs fold change (y)",
+      "config": {
+        "id": "gene-plot-4d",
+        "title": "Focused gene's rows: smoothed (x) vs fold change (y)",
+        "x": {
+          "type": "varp",
+          "key": "spearman_smoothed",
+          "column": "H2-Q7",
+          "locked": false
+        },
+        "y": {
+          "type": "varp",
+          "key": "spearman_fold_change",
+          "column": "H2-Q7",
+          "locked": false
+        },
+        "z": null,
+        "color": {
+          "type": "var",
+          "key": "fig4d_class",
+          "column": ""
+        },
+        "pointSize": 5,
+        "pointOpacity": 0.85,
+        "highlightFocusedGene": true,
+        "showZeroLines": true,
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ]
+      },
+      "isSelectionTile": false
+    }
+  }
+}
