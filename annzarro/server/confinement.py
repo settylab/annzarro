@@ -13,7 +13,8 @@ So when the server is *hosted* -- login enabled, or listening beyond
 localhost -- every local path in a request must resolve (``realpath``, so
 ``..`` and symlinks are followed to where they really lead) inside one of the
 allowed roots: ``data_dir`` plus any ``allowed_dirs`` from the configuration.
-Anything else is refused with a 403 that says which roots are allowed.
+Anything else is refused with a 403 (after the login check, and without
+naming the roots: absolute server paths stay in the server log).
 
 Local single-user mode (localhost, login disabled -- including the desktop
 app) is unchanged: free browsing.
@@ -126,19 +127,41 @@ def enforce():
     paths = _requested_paths()
     if not paths:
         return None
+    # Login comes first. This hook runs before the views' login check, so
+    # without this an anonymous client was told which paths exist outside
+    # the data directory (403 vs 401), and the 403 named the server's roots.
+    if config.get("auth_enabled", False):
+        from .core import is_logged_in, login_required_response
+        if not is_logged_in():
+            return login_required_response()
     roots = allowed_roots(config)
     for path in paths:
         if not is_inside(path, roots):
-            logger.warning(f"Refused path outside the data directory: {path!r} ({request.path})")
+            # The roots go to the log for the administrator, never to the
+            # client: absolute server paths are nobody else's business.
+            logger.warning(f"Refused path outside the data directory: {path!r} "
+                           f"({request.path}); allowed roots: {', '.join(roots)}")
             return jsonify({
                 "error": (f"'{path}' is outside the data directory this server "
-                          f"shares. Only datasets under {', '.join(roots)} can be "
-                          f"opened here. An administrator can add directories "
-                          f"with server.allowed_dirs."),
+                          f"shares, so it cannot be opened here. Open a dataset "
+                          f"from the dataset list, or ask an administrator to "
+                          f"add its directory to server.allowed_dirs."),
                 "reason": "outside_data_dir",
                 "path": path,
             }), 403
     return None
+
+
+def listable(config, path):
+    """Whether a directory listing may show ``path``.
+
+    A hosted server refuses to open a link whose target is outside every
+    allowed root, so listing it only offers a dataset that fails with 403
+    when clicked. Local single-user mode lists everything.
+    """
+    if not is_hosted(config):
+        return True
+    return is_inside(path, allowed_roots(config))
 
 
 def warn_about_escaping_links(config):

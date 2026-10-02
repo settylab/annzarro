@@ -28,6 +28,30 @@ logger = logging.getLogger(__name__)
 
 _MISSING = object()
 
+_TRUE = ("true", "yes", "1", "on")
+_FALSE = ("false", "no", "0", "off", "")
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    """Read an on/off environment variable the same way everywhere.
+
+    ``true/yes/1/on`` is True and ``false/no/0/off`` (or empty) is False,
+    case-insensitively. Anything else is ``default``, with a warning: a typo
+    in ``ANNZARRO_AUTH_DISABLED`` must not silently decide whether login is on.
+    Before this, the WSGI entry point disabled login for ANY non-empty value,
+    including ``ANNZARRO_AUTH_DISABLED=false``.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    logger.warning(f"Ignoring {name}={raw!r}: expected true/false, yes/no, 1/0 or on/off")
+    return default
+
 
 class ConfigManager:
     """
@@ -64,6 +88,36 @@ class ConfigManager:
     NON_CONFIG_ENV_VARS = {
         "ANNZARRO_HOME", "ANNZARRO_HEADLESS", "ANNZARRO_AUTH_DISABLED",
         "ANNZARRO_ELECTRON_APP", "ANNZARRO_ELECTRON_MODE", "ANNZARRO_LOCAL_MODE",
+        "ANNZARRO_ENV", "ANNZARRO_CONFIG",
+    }
+
+    # Keys an ANNZARRO_<SECTION>_<KEY> variable may set although the built-in
+    # defaults leave them out (their absence means something: ``auth.enabled``
+    # unset is derived from the host, ``auth.secret_key`` unset is generated).
+    # Without this, ANNZARRO_AUTH_ENABLED and ANNZARRO_AUTH_SECRET_KEY were
+    # silently ignored.
+    OPTIONAL_ENV_KEYS = (
+        ("auth", "enabled"),
+        ("auth", "secret_key"),
+        ("server", "hosted"),
+        ("server", "allowed_dirs"),
+        ("server", "workers"),
+    )
+
+    # Keys whose environment value is a comma-separated list.
+    LIST_ENV_KEYS = {("server", "allowed_dirs"), ("server", "remote_allowlist")}
+
+    # Variables whose names do not follow <SECTION>_<KEY>. The remote-store
+    # policy (annzarro.core.remote) reads them itself; mapping them here makes
+    # the merged configuration, and `config show`, say what will run instead
+    # of listing them as ignored.
+    ENV_ALIASES = {
+        "ANNZARRO_REMOTE_STORES": ("server", "remote_stores"),
+        "ANNZARRO_REMOTE_ALLOWLIST": ("server", "remote_allowlist"),
+        "ANNZARRO_REMOTE_CREDENTIALS": ("server", "remote_credentials"),
+        "ANNZARRO_REMOTE_CONNECT_TIMEOUT": ("server", "remote_connect_timeout_s"),
+        "ANNZARRO_REMOTE_READ_TIMEOUT": ("server", "remote_read_timeout_s"),
+        "ANNZARRO_REMOTE_CHUNK_CACHE_MB": ("server", "remote_chunk_cache_mb"),
     }
 
     # Command-line flag (argparse dest) -> configuration key path. Only these
@@ -287,27 +341,66 @@ class ConfigManager:
     def _apply_environment_variables(self) -> None:
         """Apply ``ANNZARRO_<SECTION>_<KEY>`` overrides to known keys.
 
-        ``ANNZARRO_SERVER_DATA_DIR`` sets ``server.data_dir``. A variable that
+        ``ANNZARRO_SERVER_DATA_DIR`` sets ``server.data_dir``; the keys in
+        ``OPTIONAL_ENV_KEYS`` and the ``ENV_ALIASES`` names count as known
+        although the defaults omit them. A variable that
         names no known key is ignored (and reported by ``config show``) rather
         than inventing a key nobody reads.
         """
         applied = []
+        known = deepcopy(self.config)
+        for path in list(self.OPTIONAL_ENV_KEYS) + self._schema_key_paths():
+            node = known
+            for part in path[:-1]:
+                node = node.setdefault(part, {}) if isinstance(node, dict) else None
+            if isinstance(node, dict):
+                node.setdefault(path[-1], None)
         for env_var in sorted(os.environ):
             if not env_var.startswith(self.ENV_PREFIX) or env_var in self.NON_CONFIG_ENV_VARS:
                 continue
-            tokens = env_var[len(self.ENV_PREFIX):].lower().split('_')
-            key_path = self._match_key_path(tokens, self.config)
+            if env_var in self.ENV_ALIASES:
+                key_path = list(self.ENV_ALIASES[env_var])
+            else:
+                tokens = env_var[len(self.ENV_PREFIX):].lower().split('_')
+                key_path = self._match_key_path(tokens, known)
             if key_path is None:
                 logger.debug(f"Ignoring {env_var}: it names no configuration key")
                 self._record("env", env_var, "ignored", "names no configuration key")
                 continue
-            self._set_override(key_path, self._convert_value(os.environ[env_var]), f"env:{env_var}")
+            raw = os.environ[env_var]
+            if tuple(key_path) in self.LIST_ENV_KEYS:
+                value = [item.strip() for item in raw.split(",") if item.strip()]
+            elif key_path == ["auth", "secret_key"]:
+                value = raw  # a key that looks like a number is still a string
+            else:
+                value = self._convert_value(raw)
+            self._set_override(key_path, value, f"env:{env_var}")
             self.sources[f"env_var_{'_'.join(key_path)}"] = env_var
             applied.append(env_var)
 
         if applied:
             self._record("env", ", ".join(applied), "loaded")
             logger.debug(f"Applied {len(applied)} environment variable overrides")
+
+    def _schema_key_paths(self) -> List[Tuple[str, ...]]:
+        """Every leaf key schema.yaml declares, as a path tuple, so a key the
+        schema knows but the defaults leave out (e.g. one whose absence means
+        "auto") can still be set from the environment."""
+        paths: List[Tuple[str, ...]] = []
+
+        def walk(node, prefix):
+            props = node.get("properties") if isinstance(node, dict) else None
+            if not isinstance(props, dict):
+                if prefix:
+                    paths.append(prefix)
+                return
+            for name, child in props.items():
+                walk(child, prefix + (name,))
+
+        for section, node in (self._load_schema() or {}).items():
+            if not section.startswith("__"):
+                walk(node, (section,))
+        return paths
 
     def _apply_cli_args(self, args: argparse.Namespace) -> None:
         """
@@ -375,8 +468,7 @@ class ConfigManager:
         # A server reachable from other machines requires login, unless
         # explicitly disabled with --auth-disabled or ANNZARRO_AUTH_DISABLED.
         host = server.get("host")
-        env_disabled = self._convert_value(os.environ.get("ANNZARRO_AUTH_DISABLED", "") or "false")
-        if env_disabled is True:
+        if env_flag("ANNZARRO_AUTH_DISABLED"):
             self._set_override(["auth", "enabled"], False, "env:ANNZARRO_AUTH_DISABLED")
         elif (host and str(host) not in ("127.0.0.1", "localhost", "::1")
               and self.origins.get("auth.enabled") != "cli:--auth-disabled"):
@@ -394,6 +486,7 @@ class ConfigManager:
         "user_file": ("auth", "user_file"),
         "secret_key": ("auth", "secret_key"),
         "session_timeout": ("auth", "session_timeout"),
+        "cookie_secure": ("auth", "cookie_secure"),
         "app_name": ("branding", "app_name"),
         "project_description": ("branding", "project_description"),
         "contact_info": ("branding", "contact_info"),
@@ -404,8 +497,8 @@ class ConfigManager:
         into the hierarchical form; anything already sectioned is returned as is.
 
         Without this a flat file merged its keys at the top level, where nothing
-        reads them -- e.g. ``"auth_enabled": true`` in production_config.json
-        was silently ignored.
+        reads them -- e.g. ``"auth_enabled": true`` in the former
+        production_config.json was silently ignored.
         """
         if not isinstance(data, dict) or any(k in data for k in self.SECTIONS):
             return data
@@ -588,11 +681,14 @@ class ConfigManager:
             flask_config["user_file"] = auth_config.get("user_file", "users.json")
             # None => a key is generated and stored beside the users file
             flask_config["secret_key"] = auth_config.get("secret_key")
+            for key in ("session_timeout", "cookie_secure"):
+                if key in auth_config:
+                    flask_config[key] = auth_config[key]
         
         # Branding section
         if "branding" in self.config:
             branding = self.config["branding"]
-            flask_config["app_name"] = branding.get("app_name", "Annzarro")
+            flask_config["app_name"] = branding.get("app_name", "AnnZarro")
             flask_config["project_description"] = branding.get(
                 "project_description", "Zarr-based AnnData Visualization Tool"
             )

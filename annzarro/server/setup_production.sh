@@ -14,9 +14,10 @@ fi
 INSTALL_DIR="/opt/annzarro"
 LOG_DIR="/var/log/annzarro"
 SERVICE_NAME="annzarro"
-CONFIG_DIR="$INSTALL_DIR/server"
-CONFIG_FILE="$CONFIG_DIR/production_config.json"
-DATA_DIR="$INSTALL_DIR/data"
+CONFIG_DIR="/etc/annzarro"
+CONFIG_FILE="$CONFIG_DIR/site.yaml"
+DATA_DIR="/srv/annzarro/data"
+USER_FILE="/srv/annzarro/users.json"
 USERNAME="www-data"
 
 # Colors for output
@@ -53,7 +54,10 @@ mkdir -p "$DATA_DIR"
 
 # Set permissions
 echo -e "${GREEN}Setting permissions...${NC}"
-chown -R "$USERNAME:$USERNAME" "$INSTALL_DIR"
+# The service account writes panel sets (data_dir/sessions), the users file
+# and the login key under /srv/annzarro, and its log; it never needs to
+# write the code in $INSTALL_DIR.
+chown -R "$USERNAME:$USERNAME" "/srv/annzarro"
 chown -R "$USERNAME:$USERNAME" "$LOG_DIR"
 chmod -R 755 "$INSTALL_DIR"
 chmod -R 755 "$LOG_DIR"
@@ -62,18 +66,26 @@ chmod -R 755 "$LOG_DIR"
 echo -e "${GREEN}Copying files to installation directory...${NC}"
 cp -R ./* "$INSTALL_DIR/"
 
+# Site configuration (YAML, layered over the built-in defaults). An existing
+# one is kept.
+if [ ! -f "$CONFIG_FILE" ]; then
+    cp "$INSTALL_DIR/annzarro/server/site.example.yaml" "$CONFIG_FILE"
+    echo -e "${YELLOW}Wrote $CONFIG_FILE from the example; review it.${NC}"
+fi
+
 # No secret key to set: on first start the server generates one and keeps it
 # (mode 0600) beside the users file as annzarro_secret_key.
 
 # Create systemd service
 echo -e "${GREEN}Setting up systemd service...${NC}"
-cp "$INSTALL_DIR/server/annzarro.service" "/etc/systemd/system/$SERVICE_NAME.service"
+cp "$INSTALL_DIR/annzarro/server/annzarro.service" "/etc/systemd/system/$SERVICE_NAME.service"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
-# Install Python dependencies
+# Install AnnZarro and gunicorn into the venv the systemd unit runs from
 echo -e "${GREEN}Installing Python dependencies...${NC}"
-pip3 install -r "$INSTALL_DIR/requirements.txt"
+python3 -m venv "$INSTALL_DIR/venv"
+"$INSTALL_DIR/venv/bin/pip" install "$INSTALL_DIR" gunicorn
 
 # Create admin user
 echo -e "${GREEN}Creating admin user...${NC}"
@@ -90,19 +102,14 @@ if [ "$ADMIN_PASS" != "$ADMIN_PASS_CONFIRM" ]; then
     exit 1
 fi
 
-# Create the user
+# Create the user in the users file the site configuration names
 cd "$INSTALL_DIR"
-python3 -c "
-import sys
-sys.path.append('.')
-from server.auth import AuthManager
-auth = AuthManager('$CONFIG_DIR/users.json')
-auth.create_user('$ADMIN_USER', '$ADMIN_PASS', is_admin=True)
-"
+ANNZARRO_CONFIG="$CONFIG_FILE" "$INSTALL_DIR/venv/bin/python" -m annzarro.cli --config "$CONFIG_FILE" \
+    user add --admin --username "$ADMIN_USER" --password "$ADMIN_PASS"
 
 # Set correct permissions for user file
-chown "$USERNAME:$USERNAME" "$CONFIG_DIR/users.json"
-chmod 600 "$CONFIG_DIR/users.json"
+chown "$USERNAME:$USERNAME" "$USER_FILE"
+chmod 600 "$USER_FILE"
 
 echo -e "${GREEN}Admin user '$ADMIN_USER' created successfully.${NC}"
 
@@ -121,11 +128,11 @@ echo -e "${YELLOW}Start the service with:${NC} sudo systemctl start $SERVICE_NAM
 echo -e "${YELLOW}Check status with:${NC} sudo systemctl status $SERVICE_NAME"
 echo -e "${YELLOW}View logs with:${NC} sudo journalctl -u $SERVICE_NAME"
 echo ""
-echo -e "${YELLOW}Access the web interface at:${NC} http://your-server-ip:8000"
+echo -e "${YELLOW}The server listens on 127.0.0.1:8000; reach it through your reverse proxy.${NC}"
 echo -e "${YELLOW}Username:${NC} $ADMIN_USER"
 echo ""
 echo -e "${RED}IMPORTANT: For production use, please configure HTTPS!${NC}"
-echo -e "${RED}Edit $CONFIG_FILE and set https_enabled to true${NC}"
-echo -e "${RED}and provide valid cert_file and key_file paths.${NC}"
+echo -e "${RED}Put a TLS reverse proxy (nginx, apache) in front and keep${NC}"
+echo -e "${RED}proxy_count: 1 in $CONFIG_FILE (see README).${NC}"
 echo ""
 echo "Thank you for using Annzarro!"

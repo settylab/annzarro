@@ -19,17 +19,16 @@ server:
   log_level: "INFO"
   
   # Resource limits for production
-  max_cells_per_request: 20000
-  max_genes_per_request: 20000
   cache_memory_mb: 4000
   cache_dataset_limit: 20
   
-  # Proxy configuration (if behind nginx/apache)
-  proxy_count: 1
+  # Number of reverse proxies in front of the server whose X-Forwarded-* headers are
+  # trusted. 0 by default: `annzarro start` on a laptop or HPC node has no proxy, and
+  # trusting the headers there would let any client set its own address. Set it to 1
+  # when the server runs behind nginx/apache (see docs/deployment/lab-server).
+  proxy_count: 0
 
 auth: {}
   # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
   # enabled: true
 
-# Proxy configuration is part of the server section above
-# proxy_count: 1 has been moved inside the main server configuration

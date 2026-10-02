@@ -8,6 +8,14 @@ import logging
 
 logger = logging.getLogger("data_routes")
 
+def _raise_if_store_error(exc):
+    """Let a failed read reach the route's error handler with its reason
+    (stale_metadata, read_failed) instead of a generic 500 here."""
+    from .zarr_reader import StoreReadError
+    if isinstance(exc, StoreReadError):
+        raise exc
+
+
 def get_keys(metadata, field):
     return list(metadata.get(field, {"keys": []}).get("keys", []))
 
@@ -34,6 +42,7 @@ def extract_metadata(dataset_path: str, reader: Reader):
         }), 400
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.exception(f"Error opening dataset at {dataset_path}")
         return jsonify({
             "status": "error",
@@ -62,8 +71,10 @@ def extract_metadata(dataset_path: str, reader: Reader):
                 "columns_info": metadata.get("var_columns_info", {})
             },
             "X": {
-                "available": True,
-                "shape": shape
+                # A store may have no X (anndata allows X=None); claiming one
+                # sent clients to /data/X for an empty answer.
+                "available": bool(metadata.get("has_X", True)),
+                "shape": shape if metadata.get("has_X", True) else None
             },
             "layers": {
                 "available": metadata.get("has_layers", False),
@@ -105,6 +116,7 @@ def extract_metadata(dataset_path: str, reader: Reader):
     
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.exception(f"Error building dataset structure for path {dataset_path}")
         return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
 
@@ -143,6 +155,7 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
         }), 500
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         # Handle unexpected errors
         error_message = str(e)
         logger.error(f"Unexpected error getting {'gene' if type == 'genes' else 'cell'} names for {dataset_path}: {e}")
@@ -182,6 +195,7 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
         return jsonify(response)
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting {'obs' if type == 'cells' else 'var'} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obs' if type == 'cells' else 'var'} data: {str(e)}"}), 500
     
@@ -224,6 +238,7 @@ def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_in
         return jsonify(response_data)
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting {'obsm' if entity_type == 'cells' else 'varm'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsm' if entity_type == 'cells' else 'varm'} data: {str(e)}"}), 500
 
@@ -232,6 +247,9 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_uns(uns_key, dataset_path)
+        if data is None and reader is h5ad_reader_obj:
+            # the h5ad reader answers None for a missing key
+            raise KeyError(f"No uns key '{uns_key}' in this dataset.")
         
         logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
@@ -240,8 +258,11 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
             "uns_key": uns_key,
             "dataset_path": dataset_path
         })
+    except KeyError:
+        raise
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
     
@@ -269,6 +290,7 @@ def extract_X(dataset_path: str, row_indices, col_indices, reader: Reader):
         })
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting X data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500
 
@@ -297,6 +319,7 @@ def extract_layer(dataset_path: str, layer_name: str, row_indices, col_indices, 
         })
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting layer {layer_name} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500
 
@@ -327,5 +350,6 @@ def extract_obsp_varp(dataset_path: str, key: str, row_indices, col_indices, ent
         })
     except Exception as e:
         raise_if_timeout(e)
+        _raise_if_store_error(e)
         logger.error(f"Error getting {'obsp' if entity_type == 'cells' else 'varp'}/{key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get {'obsp' if entity_type == 'cells' else 'varp'} data: {str(e)}"}), 500
