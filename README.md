@@ -136,8 +136,8 @@ GPL-3.0-or-later
 ### Third-party components
 
 The web interface bundles unmodified third-party libraries (Bootstrap, jQuery,
-DataTables and extensions, Plotly.js, Select2, chroma.js, Font Awesome Free and
-others) under `annzarro/static/vendor/`, each under its own permissive license
+DataTables and extensions, Plotly.js, Select2, chroma.js, Font Awesome Free)
+under `annzarro/static/vendor/`, each under its own permissive license
 (MIT, BSD-3-Clause, Apache-2.0, SIL OFL 1.1). Versions, sources, checksums and
 full license texts are listed in
 [`annzarro/THIRD_PARTY_LICENSES/`](annzarro/THIRD_PARTY_LICENSES/README.md).

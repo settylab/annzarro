@@ -20,9 +20,6 @@ header. The full license texts are in this directory.
 | [Select2](https://select2.org/) | 4.1.0-rc.0 | `MIT` | [select2.txt](select2.txt) |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` | [chroma.txt](chroma.txt), [Apache-2.0.txt](Apache-2.0.txt) |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` | [fontawesome.txt](fontawesome.txt) |
-| [JSZip](https://stuk.github.io/jszip/) | 3.10.1 | `MIT OR GPL-3.0-or-later` | [jszip.txt](jszip.txt), [pako.txt](pako.txt) |
-| [pdfmake](http://pdfmake.org/) | 0.2.7 | `MIT` | [pdfmake.txt](pdfmake.txt) |
-| [pdfmake Roboto font VFS](https://fonts.google.com/specimen/Roboto) | 0.2.7 | `Apache-2.0` | [Apache-2.0.txt](Apache-2.0.txt) |
 
 ## Files
 
@@ -42,7 +39,6 @@ bootstrap.bundle.min.js includes Popper (@popperjs/core ^2.11.6, MIT, Copyright 
 - `vendor/js/jquery.dataTables.min.js` (`MIT`), from <https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js>, sha256 `552bbd0c3eaf26eaeb697823c5026ff41bb379d19f266ed71203d041e84a065c`
 - `vendor/js/dataTables.bootstrap5.min.js` (`MIT`), from <https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js>, sha256 `079a1739cd9385bd77f12f4c7e42c70ece95eec295425e15f84bba1bbcc70d41`
 - `vendor/css/dataTables.bootstrap5.min.css` (`MIT`), from <https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css>, sha256 `18fd969de4b138549b71ff1826a9dc2d4d52f5532a89f11042183a507c8154ff`
-- `vendor/css/jquery.dataTables.min.css` (`MIT`), from <https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css>, sha256 `574812c14f532fd0bc80d2bf93c399e5114346e8869b3a48e1fb08d05ea2e9ac`
 
 ### DataTables Buttons 2.3.6
 
@@ -52,20 +48,17 @@ buttons.html5.min.js includes FileSaver.js 1.3.3 (MIT, Copyright (c) 2016 Eli Gr
 - `vendor/js/buttons.bootstrap5.min.js` (`MIT`), from <https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap5.min.js>, sha256 `ea0b6a6cedca0ecf6a7dce0fe57aab199cea6d355f299f6b66aba0eea74ce2fb`
 - `vendor/js/buttons.html5.min.js` (`MIT`), from <https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js>, sha256 `3afbfbcff9a8cea4fc9787c9494512082f27ddeee20179565c78fc14bba81b9f`
 - `vendor/css/buttons.bootstrap5.min.css` (`MIT`), from <https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css>, sha256 `5ac0e5193d42ca6713646b5185f1e0b6028221cc2ac72361e819ceabb3de3892`
-- `vendor/css/buttons.dataTables.min.css` (`MIT`), from <https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css>, sha256 `f4a7918d47b0b85e1e0c56ddba6813b005dc435e786bce71d30819145c204bd8`
 
 ### DataTables SearchBuilder 1.4.2
 
 - `vendor/js/dataTables.searchBuilder.min.js` (`MIT`), from <https://cdn.datatables.net/searchbuilder/1.4.2/js/dataTables.searchBuilder.min.js>, sha256 `25146fe5464477fbe9541d50d040049c049f7dbe4eda859d70d597cfd83934d8`
 - `vendor/js/searchBuilder.bootstrap5.min.js` (`MIT`), from <https://cdn.datatables.net/searchbuilder/1.4.2/js/searchBuilder.bootstrap5.min.js>, sha256 `39a7827403063fd02b6d0a2a7c9e50cb389b8cfc19f50d027fbe11c9e70f21c6`
 - `vendor/css/searchBuilder.bootstrap5.min.css` (`MIT`), from <https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.bootstrap5.min.css>, sha256 `3f9a722459d618215cf26406ce2fb2aaf64d6ed0e8135e9d1bab0f914285b9ea`
-- `vendor/css/searchBuilder.dataTables.min.css` (`MIT`), from <https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.dataTables.min.css>, sha256 `4e7c785acef04c6bed8fe06e8c472995f9ad3b55716a0051bc1daa4a9fd7cb1a`
 
 ### DataTables Select 1.6.2
 
 - `vendor/js/dataTables.select.min.js` (`MIT`), from <https://cdn.datatables.net/select/1.6.2/js/dataTables.select.min.js>, sha256 `fa727ff8f3abfeb0ef8ab8d0f0a0a59148c4bd5a0f8d7f584a7411008c80b296`
 - `vendor/css/select.bootstrap5.min.css` (`MIT`), from <https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css>, sha256 `fa38f67380b65745a552d9d2d21e2d965089ff2965eb0c1ac10dd8ba7deb1d54`
-- `vendor/css/select.dataTables.min.css` (`MIT`), from <https://cdn.datatables.net/select/1.6.2/css/select.dataTables.min.css>, sha256 `bbca98bcb6c6fc6c89ac373ef05425cdbc69c3924d4201b2648a1c4d12aec044`
 
 ### DataTables FixedHeader 3.3.2
 
@@ -98,19 +91,3 @@ Per Font Awesome's LICENSE.txt: CSS is MIT (code), the web font files are SIL OF
 - `vendor/webfonts/fa-regular-400.woff2` (`OFL-1.1`), from <https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2>, sha256 `8e7e5ea1b15f62ab14dbd41768e8fbcd21cc859a4ea5da812457ee714299fb35`
 - `vendor/webfonts/fa-solid-900.woff2` (`OFL-1.1`), from <https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2>, sha256 `7152a6933ee3d690ec2af3d09da9d701723d16aa3410a6d80f28ff8866f3b880`
 - `vendor/webfonts/fa-v4compatibility.woff2` (`OFL-1.1`), from <https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-v4compatibility.woff2>, sha256 `694a17c3d9d6c05f8aac63c544615552a4b220e9a4de863d87341a6bcfc1bc8d`
-
-### JSZip 3.10.1
-
-Dual licensed; redistributed here under MIT. Includes pako 1.0.x (MIT AND Zlib).
-
-- `vendor/js/jszip.min.js` (`MIT OR GPL-3.0-or-later`), from <https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js>, sha256 `acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e`
-
-### pdfmake 0.2.7
-
-- `vendor/js/pdfmake.min.js` (`MIT`), from <https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js>, sha256 `21af5bb8ba1561f9f99d4125aa6d3cd08fa6d2351eaf4ec8d1097e69ecc00828`
-
-### pdfmake Roboto font VFS 0.2.7
-
-vfs_fonts.js embeds the Roboto font family (Apache-2.0) for pdfmake.
-
-- `vendor/js/vfs_fonts.js` (`Apache-2.0`), from <https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js>, sha256 `271e1b64fb048b408b5731f298c3d80c18fe6a51854e08072c3763862691ee5c`

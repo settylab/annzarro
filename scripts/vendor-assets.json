@@ -74,12 +74,6 @@
           "url": "https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css",
           "sha256": "18fd969de4b138549b71ff1826a9dc2d4d52f5532a89f11042183a507c8154ff",
           "size": 11770
-        },
-        {
-          "path": "css/jquery.dataTables.min.css",
-          "url": "https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css",
-          "sha256": "574812c14f532fd0bc80d2bf93c399e5114346e8869b3a48e1fb08d05ea2e9ac",
-          "size": 19553
         }
       ]
     },
@@ -117,12 +111,6 @@
           "url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css",
           "sha256": "5ac0e5193d42ca6713646b5185f1e0b6028221cc2ac72361e819ceabb3de3892",
           "size": 9221
-        },
-        {
-          "path": "css/buttons.dataTables.min.css",
-          "url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css",
-          "sha256": "f4a7918d47b0b85e1e0c56ddba6813b005dc435e786bce71d30819145c204bd8",
-          "size": 13280
         }
       ]
     },
@@ -152,12 +140,6 @@
           "url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.bootstrap5.min.css",
           "sha256": "3f9a722459d618215cf26406ce2fb2aaf64d6ed0e8135e9d1bab0f914285b9ea",
           "size": 6018
-        },
-        {
-          "path": "css/searchBuilder.dataTables.min.css",
-          "url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.dataTables.min.css",
-          "sha256": "4e7c785acef04c6bed8fe06e8c472995f9ad3b55716a0051bc1daa4a9fd7cb1a",
-          "size": 7196
         }
       ]
     },
@@ -181,12 +163,6 @@
           "url": "https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css",
           "sha256": "fa38f67380b65745a552d9d2d21e2d965089ff2965eb0c1ac10dd8ba7deb1d54",
           "size": 1706
-        },
-        {
-          "path": "css/select.dataTables.min.css",
-          "url": "https://cdn.datatables.net/select/1.6.2/css/select.dataTables.min.css",
-          "sha256": "bbca98bcb6c6fc6c89ac373ef05425cdbc69c3924d4201b2648a1c4d12aec044",
-          "size": 1632
         }
       ]
     },
@@ -318,60 +294,6 @@
           "sha256": "694a17c3d9d6c05f8aac63c544615552a4b220e9a4de863d87341a6bcfc1bc8d",
           "size": 4564,
           "license": "OFL-1.1"
-        }
-      ]
-    },
-    {
-      "name": "JSZip",
-      "version": "3.10.1",
-      "license": "MIT OR GPL-3.0-or-later",
-      "homepage": "https://stuk.github.io/jszip/",
-      "license_files": [
-        "jszip.txt",
-        "pako.txt"
-      ],
-      "notes": "Dual licensed; redistributed here under MIT. Includes pako 1.0.x (MIT AND Zlib).",
-      "files": [
-        {
-          "path": "js/jszip.min.js",
-          "url": "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
-          "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
-          "size": 97630
-        }
-      ]
-    },
-    {
-      "name": "pdfmake",
-      "version": "0.2.7",
-      "license": "MIT",
-      "homepage": "http://pdfmake.org/",
-      "license_files": [
-        "pdfmake.txt"
-      ],
-      "files": [
-        {
-          "path": "js/pdfmake.min.js",
-          "url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js",
-          "sha256": "21af5bb8ba1561f9f99d4125aa6d3cd08fa6d2351eaf4ec8d1097e69ecc00828",
-          "size": 1357654
-        }
-      ]
-    },
-    {
-      "name": "pdfmake Roboto font VFS",
-      "version": "0.2.7",
-      "license": "Apache-2.0",
-      "homepage": "https://fonts.google.com/specimen/Roboto",
-      "license_files": [
-        "Apache-2.0.txt"
-      ],
-      "notes": "vfs_fonts.js embeds the Roboto font family (Apache-2.0) for pdfmake.",
-      "files": [
-        {
-          "path": "js/vfs_fonts.js",
-          "url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js",
-          "sha256": "271e1b64fb048b408b5731f298c3d80c18fe6a51854e08072c3763862691ee5c",
-          "size": 798324
         }
       ]
     }

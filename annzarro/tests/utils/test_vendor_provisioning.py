@@ -68,6 +68,25 @@ def test_every_referenced_vendor_file_is_in_install_manifest():
     )
 
 
+def test_manifest_ships_nothing_the_ui_does_not_load():
+    """The reverse direction: every pinned file is referenced by index.html,
+    or is a web font that a referenced stylesheet loads. Unused bundles cost
+    every install megabytes (pdfmake + vfs_fonts alone were 2.1 MB) and add
+    licenses to track for nothing."""
+    referenced = _referenced_vendor_files()
+    fonts = {p for p in _manifest_paths() if p.startswith("webfonts/")}
+    css_text = ""
+    for rel in referenced:
+        if rel.endswith(".css"):
+            css_text += open(os.path.join(REPO_ROOT, "static", "vendor", rel)).read() \
+                if os.path.isfile(os.path.join(REPO_ROOT, "static", "vendor", rel)) else ""
+    unused = sorted(_manifest_paths() - referenced - fonts)
+    assert not unused, f"pinned but never loaded by index.html: {unused}"
+    if css_text:  # provisioned: the fonts must actually be loaded by some CSS
+        orphans = sorted(f for f in fonts if os.path.basename(f) not in css_text)
+        assert not orphans, f"pinned web fonts no stylesheet loads: {orphans}"
+
+
 def test_manifest_entries_are_pinned_and_licensed():
     """Every vendored file has a URL, a SHA-256 and an SPDX license, and every
     license text the manifest cites ships in THIRD_PARTY_LICENSES."""
