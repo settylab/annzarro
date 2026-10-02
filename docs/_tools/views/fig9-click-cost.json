@@ -1,0 +1,113 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-P1",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-plot-P2",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-P1": false,
+   "gene-plot-P2": false
+  },
+  "panelConfigs": {
+   "cell-plot-P1": {
+    "id": "cell-plot-P1",
+    "title": "fold change of the focused gene (H2-Q7)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ],
+    "colorScale": "RdBu",
+    "centeringActive": true
+   },
+   "gene-plot-P2": {
+    "id": "gene-plot-P2",
+    "title": "volcano, colour = fold change in the focused cell",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "colorScale": "RdBu",
+    "centeringActive": true
+   }
+  }
+ }
+}
