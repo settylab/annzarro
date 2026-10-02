@@ -87,3 +87,12 @@ def test_axis_lock_buttons_have_no_shared_ids():
         assert "id: `lock-${axis}`" not in src and "id: `refocus-${axis}`" not in src, name
         assert "#refocus-${axis}" not in src and "#lock-${axis}" not in src, name
         assert 'id^="lock-"' not in src and 'id^="refocus-"' not in src, name
+
+
+def test_csv_export_uses_data_not_display():
+    """CSV export wrote the displayed values (z-score '10.2103'); headless
+    after: '10.210302257599338'. The button must ask for orthogonal data."""
+    src = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "js", "panels", "table-utilities",
+                            "table-data.js"), encoding="utf-8").read()
+    block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 600]
+    assert "exportOptions: { orthogonal: 'export' }" in block

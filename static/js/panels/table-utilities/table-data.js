@@ -619,6 +619,10 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     extend: 'csv',
                     text: 'CSV',
                     className: 'd-none', // Hidden button for programmatic use
+                    // Export the data, not the display: the display rounds
+                    // numbers to 4 decimals and wraps ids in HTML. The column
+                    // renders return the raw value for any type but 'display'.
+                    exportOptions: { orthogonal: 'export' },
                     filename: function() {
                         // 'this' here refers to the DataTable API instance.
                         // Return the dynamically set property or fallback to a default name.
