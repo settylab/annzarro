@@ -134,3 +134,14 @@ test('a 3D plot (scene, no xaxis title) gets its highlight without a page error'
     assert.equal(calls[0][1][1].type, 'scatter3d');
     assert.deepEqual(calls[1][1][1]['scene.camera'], { eye: { x: 1, y: 2, z: 3 } });
 });
+
+test('a size/opacity step is two restyles, not a highlight rebuild (#8)', async () => {
+    const { restyleMarkers } = await import('../../../static/js/panels/plot-utilities/plot-update.js');
+    failMode = null;
+    calls.length = 0;
+    const gd = { data: [{ name: 'HSC' }, { name: 'GMP' }, { name: 'Focused Cell' }, { name: 'LMPP' }] };
+    await restyleMarkers(gd, { pointSize: 4, pointOpacity: 0.3 });
+    assert.deepEqual(calls.map(c => c[0]), ['restyle', 'restyle']);
+    assert.deepEqual(calls[0][1].slice(1), [{ 'marker.size': 4, 'marker.opacity': 0.3 }, [0, 1, 3]]);
+    assert.deepEqual(calls[1][1].slice(1), [{ 'marker.size': 8 }, [2]]);
+});

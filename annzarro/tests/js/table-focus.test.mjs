@@ -11,7 +11,11 @@
  * moved. The gene table had the mirror image for varp "focused gene" columns.
  *
  * This drives the REAL setupTableEventListeners -> updateTableOnFocusChange
- * chain and counts the refreshes it causes.
+ * chain and counts what it does to the table.
+ *
+ * Issue #9: such a column is reloaded IN PLACE (its cells and header), never
+ * by rebuilding the whole table, and a column picked from the focus now names
+ * its entity and does not follow the focus at all.
  *
  * Run:  node --test annzarro/tests/js/table-focus.test.mjs
  */
@@ -29,21 +33,57 @@ globalThis.CustomEvent = class extends Event {
 
 const { DataManager } = await import('../../../static/js/data-manager.js');
 const { setupTableEventListeners } = await import('../../../static/js/panels/table-utilities/listeners.js');
-const { focusChangeAffectsColumns } = await import('../../../static/js/panels/table-utilities/table-data.js');
+const { focusChangeAffectsColumns, getColumnKey } = await import('../../../static/js/panels/table-utilities/table-data.js');
 
 DataManager.getCurrentDataset = () => '/fixture.zarr';
 DataManager.getDatasetStructure = async () => ({});
+const CELLS = ['c0', 'c1', 'c2'];
+const GENES = ['g0', 'g1'];
+DataManager.getCells = () => CELLS;
+DataManager.getGenes = () => GENES;
+DataManager.getCellIndex = (c) => CELLS.indexOf(c);
+DataManager.getGeneIndex = (g) => GENES.indexOf(g);
+DataManager.getFocusedCell = () => 'c1';
+DataManager.getFocusedGene = () => 'g1';
+// one row of the requested matrix, sized for the table that asked
+DataManager.loadObsp = async () => ({ data: [[0.1, 0.2, 0.3]] });
+DataManager.loadVarp = async () => ({ data: [[0.4, 0.5]] });
+DataManager.loadLayer = async ({ rows }) => ({ data: rows ? [7, 8] : [1, 2, 3] });
 
 const settle = () => new Promise(r => setTimeout(r, 20));
 
-/** Refreshes caused by one focus change, for a table holding `columns`. */
-async function refreshesAfter(tableEntityType, columns, changed) {
+/** A DataTables stand-in holding `columns`, recording what is done to it. */
+function fakeDataTable(settings, nRows, { inTable = true } = {}) {
+    const rowsData = Array.from({ length: nRows }, (_, i) => ({ _index: `e${i}` }));
+    const headers = [{ textContent: 'ID' }];
+    const aoColumns = [{ mData: '_index' }];
+    if (inTable) {
+        for (const col of settings.columns) {
+            aoColumns.push({ mData: getColumnKey(col) });
+            headers.push({ textContent: 'old' });
+        }
+    }
+    const log = { draws: 0, rowsData, headers };
+    const dt = {
+        settings: () => [{ _panelSettings: settings, aoColumns }],
+        rows: () => ({
+            count: () => rowsData.length,
+            every(fn) { rowsData.forEach((row, i) => fn.call({ data: () => row }, i)); },
+            invalidate: () => ({ draw: () => { log.draws++; } })
+        }),
+        column: (i) => ({ header: () => headers[i] })
+    };
+    return { dt, log };
+}
+
+/** What one focus change does to a table holding `columns`. */
+async function afterFocusChange(tableEntityType, columns, changed, opts) {
     const id = `t-${Math.random()}`;
     let refreshes = 0;
     const settings = { id, columns };
-    const dataTable = { settings: () => [{ _panelSettings: settings }] };
+    const { dt, log } = fakeDataTable(settings, tableEntityType === 'cells' ? CELLS.length : GENES.length, opts);
     const cleanup = setupTableEventListeners({
-        id, settings, tableContainer: null, dataTable, entityType: tableEntityType,
+        id, settings, tableContainer: null, dataTable: dt, entityType: tableEntityType,
         title: 't', refreshTable: () => { refreshes++; }
     });
     if (changed === 'cells') {
@@ -53,7 +93,14 @@ async function refreshesAfter(tableEntityType, columns, changed) {
     }
     await settle();
     cleanup();
-    return refreshes;
+    return { refreshes, inPlace: log.draws, log };
+}
+
+/** Column reloads caused by one focus change (in place; never a rebuild). */
+async function refreshesAfter(tableEntityType, columns, changed) {
+    const { refreshes, inPlace } = await afterFocusChange(tableEntityType, columns, changed);
+    assert.equal(refreshes, 0, 'the whole table must not be rebuilt');
+    return inPlace;
 }
 
 const CASES = [
@@ -78,6 +125,23 @@ for (const [table, column, [onCell, onGene]] of CASES) {
         assert.equal(await refreshesAfter(table, [column], 'genes'), onGene);
     });
 }
+
+test('the reloaded column gets the new values and header; other columns are untouched', async () => {
+    const cols = [{ type: 'obs', key: 'celltype' }, { type: 'obsp', key: 'connectivities', column: 'focused_cell' }];
+    const { log } = await afterFocusChange('cells', cols, 'cells');
+    const key = getColumnKey(cols[1]);
+    assert.deepEqual(log.rowsData.map(r => r[key]), [0.1, 0.2, 0.3]);
+    assert.equal(log.headers[2].textContent, 'connectivities: c1 (follows focus)');
+    assert.equal(log.headers[1].textContent, 'old');
+    assert.ok(log.rowsData.every(r => !(getColumnKey(cols[0]) in r)));
+});
+
+test('a following column missing from the table falls back to one rebuild', async () => {
+    const { refreshes, inPlace } = await afterFocusChange('cells',
+        [{ type: 'obsp', key: 'connectivities', column: 'focused_cell' }], 'cells', { inTable: false });
+    assert.equal(refreshes, 1);
+    assert.equal(inPlace, 0);
+});
 
 test('focusChangeAffectsColumns tolerates junk input', () => {
     assert.equal(focusChangeAffectsColumns(undefined, 'cells'), false);

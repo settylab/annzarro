@@ -101,3 +101,32 @@ def test_negative_indices_are_refused_not_wrapped(get, url, query):
     """numpy indexing wrapped -1 to the last row and answered 200."""
     resp = get(url, **query)
     assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_indices"
+
+
+@pytest.mark.parametrize("url,query", [
+    ("/api/v1/data/layer/counts", {"cols": "1"}),
+    ("/api/v1/data/obsp/conn", {"rows": "1"}),
+    ("/api/v1/data/varp/corr", {"rows": "1"}),
+])
+def test_key_in_an_absent_group_is_404(tmp_path, url, query):
+    """A dataset with no layers/obsp/varp group at all: every key is missing.
+
+    Switching a panel set to such a dataset requested keys from the previous
+    one; the answer was 200 with empty data, which the client reads as a
+    listed key that failed to read.
+    """
+    import shutil
+    import zarr
+    path = make_rich_store(tmp_path / "bare.zarr")
+    for group in ("layers", "obsp", "varp"):
+        shutil.rmtree(f"{path}/{group}")
+    zarr.consolidate_metadata(path)
+    zarr_reader.clear_cache()
+    client = create_app({"TESTING": True, "data_dir": str(tmp_path),
+                         "log_file": str(tmp_path / "l.log")}).test_client()
+    try:
+        resp = client.get(url, query_string={"dataset_path": path, **query})
+        assert resp.status_code == 404, resp.get_data(as_text=True)
+        assert resp.get_json()["reason"] == "key_not_found"
+    finally:
+        zarr_reader.clear_cache()

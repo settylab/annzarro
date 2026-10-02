@@ -86,7 +86,8 @@ async function incrementalAxisUpdate({ staleCoverage }) {
         },
         z: null, color: null, colorType: null, colorCategories: null, colorCoverage: null,
         tableEntities: null, tableFilterMask: null,
-        coverage: staleCoverage                       // NOT recomputed on this path
+        coverage: staleCoverage,                      // NOT recomputed on this path
+        generation: DataManager.getDatasetGeneration() // stamped by a finished load
     };
     created.length = 0;
     let refreshed = false;

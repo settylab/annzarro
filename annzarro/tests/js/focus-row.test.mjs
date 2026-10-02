@@ -113,7 +113,8 @@ test('incremental colour update rewrites data.colorCoverage (refocus path)', asy
         z: null,
         color: healthy.values, colorType: 'numerical', colorCategories: null,
         colorCoverage: healthy.coverage,                  // the PREVIOUS colour
-        tableEntities: null, tableFilterMask: null
+        tableEntities: null, tableFilterMask: null,
+        generation: DataManager.getDatasetGeneration()    // stamped by a finished load
     };
     const settings = {
         x: { type: 'var', key: 'a' }, y: { type: 'var', key: 'b' }, z: null,

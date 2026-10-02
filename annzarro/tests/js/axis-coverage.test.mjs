@@ -165,6 +165,19 @@ const CONDITIONS = [
         patch: { loadObsp: async () => ({ data: [Array(N).fill(1)] }) }
     },
     {
+        // What the server answers today for a column the dataset does not have
+        // (data_routes.py: KeyError -> 404 {"reason": "key_not_found"}). The
+        // table called it "failed to read" after a dataset switch (PR #53).
+        name: 'obs: 404 key_not_found -- the column is not in this dataset',
+        reason: GAP.UNAVAILABLE,
+        settings: { type: 'obs', key: 'highres_celltype' },
+        tableColumn: { type: 'obs', key: 'highres_celltype' },
+        patch: { loadObs: async () => { throw Object.assign(
+            new Error("No obs column 'highres_celltype' in this dataset."),
+            { status: 404, data: { reason: 'key_not_found',
+                                   error: "No obs column 'highres_celltype' in this dataset." } }); } }
+    },
+    {
         name: 'layer: the named gene is not in this dataset',
         reason: GAP.UNAVAILABLE,
         entityIndex: -1,
@@ -500,3 +513,24 @@ test('nothing outside the try can throw unclassified', async () => {
         );
     } finally { restore(); }
 });
+
+for (const type of ['obsp', 'varp']) {
+    test(`${type} on a dataset with no ${type} matrix: "not in this dataset", no request`, async () => {
+        const restore = stubDataManager({ entityIndex: 3 });
+        const requests = [];
+        try {
+            DataManager.loadObsp = async (o) => { requests.push(o); return { data: [] }; };
+            DataManager.loadVarp = async (o) => { requests.push(o); return { data: [] }; };
+            // what the key selector leaves when the dataset offers no keys
+            const out = await loadAxisData({ type, key: '', column: 'c3' }, 'cells', null);
+            assert.equal(requests.length, 0, 'no /data/obsp/ request with an empty key');
+            assert.equal(out.values.length, N, 'a full-length blank series keeps the plot drawable');
+            assert.ok(out.values.every(Number.isNaN));
+            assert.ok(out.coverage.gaps.some(g => g.reason === GAP.UNAVAILABLE),
+                JSON.stringify(out.coverage));
+            assert.ok(!out.coverage.gaps.some(g => g.reason === GAP.FAILED));
+        } finally {
+            restore();
+        }
+    });
+}

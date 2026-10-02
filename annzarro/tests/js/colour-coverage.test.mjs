@@ -226,7 +226,8 @@ test('#40: switching from a failed colour column to a healthy one drops the old 
         z: null,
         color: Array(N).fill(1), colorType: 'constant', colorCategories: null,
         colorCoverage: failed,                       // the PREVIOUS colour column
-        tableEntities: null, tableFilterMask: null
+        tableEntities: null, tableFilterMask: null,
+        generation: DataManager.getDatasetGeneration() // stamped by a finished load
     };
     const settings = {
         x: { type: 'obs', key: 'a' }, y: { type: 'obs', key: 'b' }, z: null,
@@ -269,7 +270,8 @@ test('#38/#46: switching to a categorical colour with Hide NaN on draws only wha
         x: { values: CELLS.map((_, i) => i), coverage: complete },
         y: { values: CELLS.map((_, i) => i), coverage: complete },
         z: null, color: CELLS.map((_, i) => i), colorType: 'numerical', colorCategories: null,
-        colorCoverage: complete, tableEntities: null, tableFilterMask: null
+        colorCoverage: complete, tableEntities: null, tableFilterMask: null,
+        generation: DataManager.getDatasetGeneration() // stamped by a finished load
     };
     const settings = {
         x: { type: 'obs', key: 'a' }, y: { type: 'obs', key: 'b' }, z: null,

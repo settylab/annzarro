@@ -133,6 +133,25 @@ function updateFilterWidget(plotContainer, filterStats) {
 }
 
 /**
+ * Whether `data` is a complete load for the dataset that is loaded now.
+ *
+ * loadDataAndCreatePlot clears the series and rebuilds them asynchronously.
+ * During a dataset switch a table reloads and fires tableChanged, and the
+ * focus is re-resolved, while the plot's own reload is still in flight; the
+ * incremental update those trigger then read `data.x` / `data.color` as null
+ * (TypeError in createFilterMask / processCategories, caught, and a second
+ * full redraw). Data is current only once a load has stamped it with the
+ * dataset generation it was read under, and that generation is still live.
+ * @param {Object} data - A plot panel's data cache
+ * @returns {boolean}
+ */
+export function isPlotDataCurrent(data) {
+    return !!(data && data.generation !== null && data.generation !== undefined
+        && data.generation === DataManager.getDatasetGeneration()
+        && data.x && data.y && data.x.values && data.y.values);
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
@@ -177,6 +196,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
     if (!plotContainer.data || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) {
         console.warn("No Plotly plot found in the container, recreating plot");
         refreshPlot();
+        return;
+    }
+
+    // A reload is rebuilding the series (or they are from the previous
+    // dataset): leave the plot to that reload, which draws current settings.
+    if (!isPlotDataCurrent(data)) {
         return;
     }
     
@@ -1171,6 +1196,36 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   });
   plotContainer.__focusHighlightAdding = adding;
   return adding;
+}
+
+
+/**
+ * Apply the point size and opacity to an existing plot in at most two restyles.
+ *
+ * The slider path used to run updatePlotElements({styling: true}), which
+ * removes and re-adds the focus highlight trace and re-applies every
+ * aesthetic setting: ~38 Plotly calls and ~320 ms per slider step on
+ * bm_aging. Size and opacity need none of that: they are marker properties
+ * of the data traces, plus the highlight's size (always twice the points).
+ *
+ * @param {HTMLElement} plotContainer - The Plotly plot.
+ * @param {Object} settings - Plot settings (pointSize, pointOpacity).
+ * @returns {Promise<void>} Resolves once Plotly has applied both restyles.
+ */
+export async function restyleMarkers(plotContainer, settings) {
+    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
+    const isHighlight = (trace) => trace && typeof trace.name === 'string'
+        && /^focused (cell|gene)$/i.test(trace.name.trim());
+    const dataIdx = [];
+    const highlightIdx = [];
+    plotContainer.data.forEach((trace, i) => (isHighlight(trace) ? highlightIdx : dataIdx).push(i));
+    if (dataIdx.length) {
+        await Plotly.restyle(plotContainer,
+            { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
+    }
+    if (highlightIdx.length) {
+        await Plotly.restyle(plotContainer, { 'marker.size': settings.pointSize * 2 }, highlightIdx);
+    }
 }
 
 
