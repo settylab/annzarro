@@ -312,15 +312,18 @@ class TestH5ADReader(unittest.TestCase):
         umap_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path, indices=indices)
         self.assertEqual(umap_subset.shape, (3, 2))
 
-        # Test getting a subset of columns for X_umap
+        # Test getting a subset of columns for X_umap: n x 1, as the zarr
+        # reader answers (column_name, below, is the 1-D form)
         col_indices = [0]
         umap_col_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path, col_indices=col_indices)
-        self.assertEqual(umap_col_subset.shape, (100,))
+        self.assertEqual(umap_col_subset.shape, (100, 1))
+        umap_by_name = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path, column_name="0")
+        np.testing.assert_array_equal(umap_by_name, umap[:, 0])
 
         # Test getting both row and column subsets
         umap_both_subset = self.reader.get_obsm_varm(entity="cells", key="X_umap", dataset_path=self.h5ad_path,
                                                       indices=indices, col_indices=col_indices)
-        self.assertEqual(umap_both_subset.shape, (3,))
+        self.assertEqual(umap_both_subset.shape, (3, 1))
 
         # Test getting a dataframe-encoded obsm (cell_markers)
         cd4_column = self.reader.get_obsm_varm(entity="cells", key="cell_markers", dataset_path=self.h5ad_path,
@@ -415,9 +418,10 @@ class TestH5ADReader(unittest.TestCase):
         self.assertIn('method', analysis)
         self.assertEqual(len(analysis['explained_variance']), 10)
 
-        # Test getting non-existent key
-        nonexistent = self.reader.get_uns('nonexistent', dataset_path=self.h5ad_path)
-        self.assertIsNone(nonexistent)
+        # A missing key raises KeyError, as in the zarr reader (the route
+        # answers 404 key_not_found)
+        with self.assertRaises(KeyError):
+            self.reader.get_uns('nonexistent', dataset_path=self.h5ad_path)
 
         # Verify metadata includes uns
         metadata = self.reader.get_metadata(dataset_path=self.h5ad_path)

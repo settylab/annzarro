@@ -1,4 +1,3 @@
-from . import h5ad_reader_obj
 from flask import jsonify
 from pathlib import Path
 from .reader import Reader
@@ -247,9 +246,6 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_uns(uns_key, dataset_path)
-        if data is None and reader is h5ad_reader_obj:
-            # the h5ad reader answers None for a missing key
-            raise KeyError(f"No uns key '{uns_key}' in this dataset.")
         
         logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
