@@ -7,7 +7,8 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView,
+    sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
@@ -383,7 +384,9 @@ const App = (function() {
         if (!target) {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
-        if (current && target !== current) {
+        // the same store named relative vs absolute is not a switch
+        const listing = await DataManager.loadDatasets().catch(() => []);
+        if (current && !sameDatasetPath(target, current, listing)) {
             if (_sessionModal) _sessionModal.hide();
             const choice = await _askNotification(
                 'Switch dataset?',
@@ -405,7 +408,9 @@ const App = (function() {
         PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
         incoming.forEach(id => PanelManager.removePanel(id));
 
-        await _applyView({ datasetPath: target, view: plan.view });
+        // keep the open store's own path when the set names it differently
+        const sameStore = current && sameDatasetPath(target, current, listing);
+        await _applyView({ datasetPath: sameStore ? current : target, view: plan.view });
 
         // Panels that were closed when the set was saved come back closed.
         const idMap = new Map();
