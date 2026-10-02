@@ -349,10 +349,12 @@ class ConfigManager:
         """
         applied = []
         known = deepcopy(self.config)
-        for path in self.OPTIONAL_ENV_KEYS:
-            section = known.setdefault(path[0], {})
-            if isinstance(section, dict):
-                section.setdefault(path[1], None)
+        for path in list(self.OPTIONAL_ENV_KEYS) + self._schema_key_paths():
+            node = known
+            for part in path[:-1]:
+                node = node.setdefault(part, {}) if isinstance(node, dict) else None
+            if isinstance(node, dict):
+                node.setdefault(path[-1], None)
         for env_var in sorted(os.environ):
             if not env_var.startswith(self.ENV_PREFIX) or env_var in self.NON_CONFIG_ENV_VARS:
                 continue
@@ -379,6 +381,26 @@ class ConfigManager:
         if applied:
             self._record("env", ", ".join(applied), "loaded")
             logger.debug(f"Applied {len(applied)} environment variable overrides")
+
+    def _schema_key_paths(self) -> List[Tuple[str, ...]]:
+        """Every leaf key schema.yaml declares, as a path tuple, so a key the
+        schema knows but the defaults leave out (e.g. one whose absence means
+        "auto") can still be set from the environment."""
+        paths: List[Tuple[str, ...]] = []
+
+        def walk(node, prefix):
+            props = node.get("properties") if isinstance(node, dict) else None
+            if not isinstance(props, dict):
+                if prefix:
+                    paths.append(prefix)
+                return
+            for name, child in props.items():
+                walk(child, prefix + (name,))
+
+        for section, node in (self._load_schema() or {}).items():
+            if not section.startswith("__"):
+                walk(node, (section,))
+        return paths
 
     def _apply_cli_args(self, args: argparse.Namespace) -> None:
         """

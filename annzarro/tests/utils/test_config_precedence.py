@@ -371,3 +371,24 @@ def test_server_logging_writes_to_the_state_dir(isolated, tmp_path):
         for h in saved[0]:
             root.addHandler(h)
         root.setLevel(saved[1])
+
+
+def test_env_vars_reach_keys_only_the_schema_declares(isolated, monkeypatch, tmp_path):
+    """A key in schema.yaml but not in base.yaml (its absence meaning a default
+    like "auto") can be set from the environment too."""
+    schema = tmp_path / "schema.yaml"
+    schema.write_text(yaml.safe_dump({
+        "server": {"type": "object", "properties": {
+            "compress_responses": {"type": "string", "default": "auto"}}}}))
+    monkeypatch.setattr(ConfigManager, "SCHEMA_PATH", str(schema))
+    monkeypatch.setenv("ANNZARRO_SERVER_COMPRESS_RESPONSES", "false")
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production")["server"]["compress_responses"] is False
+    assert not [l for l in mgr.layers if l["status"] == "ignored"]
+
+
+def test_every_shipped_schema_key_is_settable_from_env(isolated):
+    mgr = ConfigManager()
+    paths = mgr._schema_key_paths()
+    assert ("server", "max_response_elements") in paths and ("auth", "session_timeout") in paths
+
