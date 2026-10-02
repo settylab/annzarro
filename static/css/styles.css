@@ -114,9 +114,26 @@ body {
     z-index: 100;
 }
 
-/* Clipboard-less fallback for the Share Link button: the link, ready to copy */
+/* Clipboard-less fallback for the Share Link button: the link, ready to copy.
+   Floats under the header, right-aligned and wide, instead of squeezing into
+   the button column (it was ~190 px and made the header one row taller). */
+.app-header {
+    position: relative;
+}
+
 .share-link-fallback {
-    max-width: 36rem;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0.5rem;
+    width: min(48rem, calc(100vw - 1rem));
+    z-index: 1050;
+    background: #fff;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.share-link-fallback[hidden] {
+    display: none;
 }
 
 .app-title {

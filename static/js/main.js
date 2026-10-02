@@ -212,11 +212,25 @@ const App = (function() {
             console.debug('Clipboard unavailable, showing share link inline:', error);
             field.value = link;
             fallback.hidden = false;
-            field.focus();
-            field.select();
+            field.focus();   // selects it all, start in view (see _selectShowingStart)
         }
     }
     let _shareLabelTimer = null;
+
+    /**
+     * Select all of an input's text with the caret at the start, so the
+     * beginning stays visible (a plain select() scrolls to the end).
+     * @param {HTMLInputElement} input
+     * @private
+     */
+    function _selectShowingStart(input) {
+        try {
+            input.setSelectionRange(0, input.value.length, 'backward');
+        } catch (e) {
+            input.select();
+        }
+        input.scrollLeft = 0;
+    }
 
     /**
      * Apply a parsed deep-link: load the dataset, restore the focused gene, and
@@ -596,6 +610,14 @@ const App = (function() {
         const shareLinkBtn = document.getElementById('btn-share-link');
         if (shareLinkBtn) {
             shareLinkBtn.addEventListener('click', _shareCurrentView);
+        }
+        // The share field selects its whole link on focus, ready to copy, but
+        // keeps the START in view (host and dataset_path), not the tail of a
+        // 1,300-character #view= payload.
+        const shareLinkField = document.getElementById('share-link-field');
+        if (shareLinkField) {
+            shareLinkField.addEventListener('focus', () => _selectShowingStart(shareLinkField));
+            shareLinkField.addEventListener('mouseup', (e) => e.preventDefault());
         }
         const shareLinkClose = document.getElementById('share-link-close');
         if (shareLinkClose) {
