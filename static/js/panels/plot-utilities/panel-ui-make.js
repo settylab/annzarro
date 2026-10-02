@@ -6,6 +6,7 @@ import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
+import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -60,15 +61,7 @@ export function createPanelStructure(container, id, settings) {
   
   $container.html(`
     <div class="plot-panel">
-      <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
-        <div class="loading-content">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-          <h4 class="mt-3">No dataset loaded</h4>
-          <p>Please select a dataset to begin visualization</p>
-        </div>
-      </div>
+      ${noDatasetScreenHtml(id)}
       <div class="plot-controls">
         <!-- X and Y Axis Selectors -->
         ${['x', 'y'].map(axis => `
