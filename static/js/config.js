@@ -1,6 +1,7 @@
 /**
  * Configuration module for AnnZarro
  */
+import { appUrl } from './utils/app-url.js';
 
 /**
  * The ui.* settings in /api/v1/config, nested (ui: {defaults, cache,
@@ -35,8 +36,8 @@ export function readUiSettings(server) {
     };
 }
 const Config = (function() {
-    // API endpoints
-    const API_BASE = '/api/v1';
+    // API endpoints, under the path the app is mounted at (see utils/app-url.js)
+    const API_BASE = appUrl('/api/v1');
     
     const API = {
         CONFIG: `${API_BASE}/config`,

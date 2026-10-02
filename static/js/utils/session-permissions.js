@@ -10,6 +10,7 @@
  *
  * Pure functions, no DOM, so they run under `node --test`.
  */
+import { appUrl } from './app-url.js';
 
 /**
  * Escape text for interpolation into an HTML template string. Panel-set names,
@@ -103,7 +104,7 @@ export function authIndicator(me) {
                 ? `Signed in as ${me.username}, an admin: you can delete or overwrite any panel set. Click to log out.`
                 : `Signed in as ${me.username}: you can delete or overwrite the panel sets you saved. Click to log out.`,
             variant: 'user',
-            href: '/logout',
+            href: appUrl('/logout'),
         };
     }
     return null;
