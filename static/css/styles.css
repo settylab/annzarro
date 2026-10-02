@@ -103,7 +103,10 @@ html, body {
 body {
     display: flex;
     flex-direction: column;
-    min-height: 100vh; /* Minimum viewport height */
+    /* Exactly the window: the tile area below the header takes the rest and
+       scrolls inside itself. With min-height the page grew with its content
+       (a tall table tile pushed a 2x2 layout below the fold). */
+    height: 100vh;
 }
 
 /* Header */
@@ -159,7 +162,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 300px; /* Ensure minimum height */
+    min-height: 0; /* take what the header leaves, scroll inside */
     position: relative;
     overflow: auto;
 }
@@ -230,6 +233,18 @@ body {
     flex: 1;
     overflow: auto;
     position: relative;
+    /* The panel inside fills the tile. 'height: 100%' on the panel did not
+       resolve here (the tile's height is a flex result), so a lone plot tile
+       drew Plotly's default 450 px and left the rest of the tile empty. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.tile-content > .plot-panel,
+.tile-content > .table-panel {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Split Tiles */
