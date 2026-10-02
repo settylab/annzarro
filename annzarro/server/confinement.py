@@ -27,7 +27,7 @@ import os
 
 from flask import current_app, jsonify, request
 
-from .permissions import LOCAL_HOSTS
+from .permissions import is_shared
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,9 @@ DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
 
 
 def is_hosted(config):
-    """True when other people can reach this server: login on, or a network host."""
-    host = config.get("host") or "127.0.0.1"
-    return bool(config.get("auth_enabled", False)) or host not in LOCAL_HOSTS
+    """True when other people can reach this server: login on, or shared
+    (explicit ``server.hosted``, else a network bind host)."""
+    return bool(config.get("auth_enabled", False)) or is_shared(config)
 
 
 def allowed_roots(config):

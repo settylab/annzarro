@@ -131,7 +131,20 @@ def stamp_session(session_data, existing=None):
     return session_data
 
 
-def is_exposed(config):
-    """True when the server listens beyond this machine with login disabled."""
+def is_shared(config):
+    """Whether people other than the operator can reach this server.
+
+    An explicit ``hosted`` setting (``server.hosted``) decides. The WSGI entry
+    point sets it True by default because gunicorn, not the app, owns the
+    bind address. Without it, ``annzarro start`` judges by its own bind host.
+    """
+    hosted = config.get("hosted")
+    if hosted is not None:
+        return bool(hosted)
     host = config.get("host") or "127.0.0.1"
-    return host not in LOCAL_HOSTS and not config.get("auth_enabled", False)
+    return host not in LOCAL_HOSTS
+
+
+def is_exposed(config):
+    """True when the server is shared with login disabled."""
+    return is_shared(config) and not config.get("auth_enabled", False)

@@ -3,8 +3,11 @@
 # Run Annzarro with Gunicorn for production
 #
 
-# Set default configuration file
-CONFIG_FILE=${ANNZARRO_CONFIG:-"/opt/annzarro/server/production_config.json"}
+# Configuration: the same merged config as `annzarro start` (config/*.yaml,
+# then this file, then ANNZARRO_* variables). Login is ON and dataset paths are
+# confined to the data directory unless the configuration says otherwise.
+export ANNZARRO_CONFIG=${ANNZARRO_CONFIG:-"/opt/annzarro/server/production_config.json"}
+CONFIG_FILE=$ANNZARRO_CONFIG
 
 # Set Python path to include project directory
 export PYTHONPATH=$(pwd):$PYTHONPATH
@@ -19,4 +22,6 @@ echo "Starting Annzarro with Gunicorn..."
 echo "Using config file: $CONFIG_FILE"
 
 # Run Gunicorn with config
-gunicorn -c server/gunicorn_config.py "annzarro.server:create_app()"
+# (The old target "annzarro.server:create_app()" did not exist, and create_app()
+# without a config ran with login off; use the hosted WSGI factory.)
+gunicorn -c annzarro/server/gunicorn_config.py "annzarro.server.wsgi:create_wsgi_app()"

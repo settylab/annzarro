@@ -102,6 +102,58 @@ server.
   `POST /api/v1/sessions/owner` with `{"name": "<set>", "owner": "<user>"}`
   (the owner must be an existing user; this also reassigns any other set).
 
+### Deploying on a Lab Server
+
+Run gunicorn on loopback behind a TLS-terminating reverse proxy, using the
+hosted WSGI factory:
+
+```bash
+cd /opt/annzarro                      # config/*.yaml are read from here
+export ANNZARRO_CONFIG=/etc/annzarro/site.yaml
+gunicorn -w 4 -b 127.0.0.1:8000 "annzarro.server.wsgi:create_wsgi_app()"
+# or: annzarro/server/run_gunicorn.sh, or the systemd unit annzarro/server/annzarro.service
+```
+
+`create_wsgi_app()` loads the same merged configuration as `annzarro start`
+and, because it cannot know where gunicorn binds, treats the server as
+**hosted**: login is on and datasets are confined to `data_dir` (plus
+`server.allowed_dirs`) unless the config says otherwise. `auth.enabled: false`
+is still honoured but logs a `SECURITY` banner and shows "No login" in the
+header. Do not use `create_app()` directly as a gunicorn target: with no
+configuration it runs with laptop defaults (no login, no confinement).
+
+A minimal `site.yaml`:
+
+```yaml
+server:
+  data_dir: /srv/annzarro/data
+  proxy_count: 1          # trust X-Forwarded-* from the one proxy in front
+auth:
+  user_file: /srv/annzarro/users.json   # the login key is generated beside it
+```
+
+TLS belongs in the proxy, e.g. nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name annzarro.example.org;
+    ssl_certificate     /etc/letsencrypt/live/annzarro.example.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/annzarro.example.org/privkey.pem;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Without TLS, login passwords and session cookies cross the network in clear
+text. Share links carry the dataset path and the view state in the URL itself
+(`?dataset_path=...&view=...`), so they appear in proxy and gunicorn access
+logs; treat those logs as revealing which datasets people look at.
+
 ### Desktop Application
 
 ```bash

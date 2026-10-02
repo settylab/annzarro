@@ -2,24 +2,20 @@
 Gunicorn configuration for Annzarro production server.
 """
 
-import json
 import multiprocessing
 import os
 
-# Try to load config file
-config_file = os.environ.get('ANNZARRO_CONFIG', '/opt/annzarro/server/production_config.json')
-config = {}
+# Read the SAME merged configuration the app will run with (base/env YAML,
+# then $ANNZARRO_CONFIG, then ANNZARRO_* variables), so the bind address and
+# the app's own settings cannot disagree.
+from annzarro.server.wsgi import load_hosted_config
 
-try:
-    if os.path.exists(config_file):
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-except Exception as e:
-    print(f"Warning: Could not load config file {config_file}: {e}")
-    print("Using default configuration.")
+config_file = os.environ.get('ANNZARRO_CONFIG', '(none: built-in configs only)')
+config = load_hosted_config()
 
-# Server socket
-bind = f"{config.get('host', '0.0.0.0')}:{config.get('port', 8000)}"
+# Server socket. Default to loopback: put a TLS-terminating reverse proxy in
+# front (see README, "Deploying on a Lab Server") rather than exposing gunicorn.
+bind = f"{config.get('host', '127.0.0.1')}:{config.get('port', 8000)}"
 
 # Worker processes
 workers = config.get('workers', multiprocessing.cpu_count() * 2 + 1)

@@ -170,6 +170,11 @@ class ConfigManager:
             if not config_data:
                 logger.warning(f"Empty configuration file: {config_path}")
                 return
+            
+            # The shipped server/*.json files are FLAT Flask configs; nest them
+            # so their keys land where the rest of the stack reads them
+            if config_path.endswith('.json'):
+                config_data = self._nest_flat_config(config_data)
                 
             # Merge configuration
             self._deep_update(self.config, config_data)
@@ -236,6 +241,35 @@ class ConfigManager:
             
         logger.debug(f"Applied {len(args_dict)} command line argument overrides")
     
+    #: Top-level sections of the hierarchical configuration.
+    SECTIONS = ("server", "auth", "branding", "ui")
+    #: Flat (Flask-style) keys that belong outside the ``server`` section.
+    FLAT_KEY_MAP = {
+        "auth_enabled": ("auth", "enabled"),
+        "user_file": ("auth", "user_file"),
+        "secret_key": ("auth", "secret_key"),
+        "session_timeout": ("auth", "session_timeout"),
+        "app_name": ("branding", "app_name"),
+        "project_description": ("branding", "project_description"),
+        "contact_info": ("branding", "contact_info"),
+    }
+
+    def _nest_flat_config(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Turn a flat Flask-style config (``{"host": ..., "auth_enabled": ...}``)
+        into the hierarchical form; anything already sectioned is returned as is.
+
+        Without this a flat file merged its keys at the top level, where nothing
+        reads them -- e.g. ``"auth_enabled": true`` in production_config.json
+        was silently ignored.
+        """
+        if not isinstance(data, dict) or any(k in data for k in self.SECTIONS):
+            return data
+        nested: Dict[str, Any] = {}
+        for key, value in data.items():
+            section, name = self.FLAT_KEY_MAP.get(key, ("server", key))
+            nested.setdefault(section, {})[name] = value
+        return nested
+
     def _deep_update(self, target: Dict[str, Any], source: Dict[str, Any]) -> None:
         """
         Recursively update a dictionary with another dictionary.

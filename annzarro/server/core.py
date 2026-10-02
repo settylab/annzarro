@@ -182,6 +182,13 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     return app
 
+def _exposure_where(config: Dict[str, Any]) -> str:
+    """How we know the server is shared, for the warning text."""
+    if config.get("hosted") is not None:
+        return "server.hosted is set"
+    return f"listening on {config.get('host')}"
+
+
 def warn_about_exposure(config: Dict[str, Any]) -> None:
     """Say loudly, at startup, when the server is reachable by people it can't tell apart.
 
@@ -197,7 +204,8 @@ def warn_about_exposure(config: Dict[str, Any]) -> None:
     problems = []
     if is_exposed(config):
         problems.append(
-            f"Listening on {config.get('host')} with login DISABLED. Anyone who can "
+            f"Serving as a shared server ({_exposure_where(config)}) with login "
+            "DISABLED. Anyone who can "
             "reach this port can open every dataset under the data directory "
             "and edit or delete every shared panel set. Remove --auth-disabled / "
             "ANNZARRO_AUTH_DISABLED and add users with `annzarro user add`, or "
