@@ -149,6 +149,7 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # A shared server only opens paths inside its data directory (see confinement.py)
     from annzarro.server import confinement
     confinement.warn_about_escaping_links(app.config)
+    app.before_request(confinement.resolve_relative_dataset_paths)
     app.before_request(confinement.enforce)
 
     # Initialize zarr reader with cache settings from config
