@@ -7,7 +7,7 @@ name = "annzarro"
 version = "0.1.1"
 description = "Python-based Single-Cell Data Visualization Tool"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"  # list[str] annotations are evaluated at import
 license = "MIT"
 license-files = ["LICENSE", "annzarro/THIRD_PARTY_LICENSES/*"]
 authors = [
@@ -19,9 +19,12 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "flask>=2.0.0",
@@ -104,7 +107,7 @@ good-names = ["i", "j", "k", "e", "f", "id", "_", "X"]
 
 [tool.black]
 line-length = 100
-target-version = ["py38"]
+target-version = ["py39"]
 include = '\.pyi?$'
 
 [tool.isort]

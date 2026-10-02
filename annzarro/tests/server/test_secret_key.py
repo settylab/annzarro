@@ -83,11 +83,10 @@ def test_a_forged_cookie_from_a_placeholder_is_rejected(tmp_path):
 def test_shipped_configs_carry_no_placeholder():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     shipped = [
-        "annzarro/server/config.json",
-        "annzarro/server/production_config.json",
-        "config/base.yaml",
-        "config/production.yaml",
-        "config/development.yaml",
+        "annzarro/server/site.example.yaml",
+        "annzarro/config/base.yaml",
+        "annzarro/config/production.yaml",
+        "annzarro/config/development.yaml",
     ]
     for rel in shipped:
         path = os.path.join(root, rel)

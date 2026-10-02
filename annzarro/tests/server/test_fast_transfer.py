@@ -160,10 +160,12 @@ def test_numeric_obs_column_binary_but_boolean_stays_json(client, ds):
     assert r.get_json()["data"]["flag"][:2] == [True, False]
 
 
-def test_missing_key_binary_is_empty(client, ds):
+def test_missing_key_binary_is_404(client, ds):
+    """A missing key is an error in either format, not an empty 200 body
+    (merged from dominik/protocol-integration: reason key_not_found)."""
     r = get(client, "layer/nope", ds, cols="0", format="f32")
-    assert r.status_code == 200
-    assert decode(r).size == 0
+    assert r.status_code == 404
+    assert r.get_json()["reason"] == "key_not_found"
 
 
 # --- JSON ----------------------------------------------------------------------

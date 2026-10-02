@@ -17,6 +17,27 @@ from typing import Optional, List, Dict, Any, Union
 
 logger = logging.getLogger(__name__)
 
+#: Where the desktop commands send someone running from a pip install.
+RELEASES_URL = "https://github.com/settylab/annzarro/releases"
+
+
+def electron_project_problem(app_root=None) -> Optional[str]:
+    """Why ``annzarro desktop`` cannot work here, or None.
+
+    The Electron project (annzarro/desktop/electron) lives in the source
+    repository only; a pip-installed annzarro has this module but not the
+    project it drives, and used to fail deep inside npm with a missing
+    package.json.
+    """
+    root = Path(app_root) if app_root else Path(__file__).parent.parent.parent
+    if (root / "annzarro" / "desktop" / "electron" / "package.json").is_file():
+        return None
+    return ("`annzarro desktop` builds and runs the desktop app from a source checkout "
+            "(git clone https://github.com/settylab/annzarro), and this annzarro is an "
+            "installed package without the Electron project. Download a ready-built "
+            f"desktop app from {RELEASES_URL}, or run the commands from a checkout.")
+
+
 class ElectronBuilder:
     """Builder for Electron-based desktop applications."""
     

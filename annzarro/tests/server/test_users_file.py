@@ -88,3 +88,19 @@ def test_write_is_atomic_and_leaves_no_temp_files(app):
     leftovers = [n for n in os.listdir(directory) if n.startswith(".users_")]
     assert leftovers == []
     _on_disk(app)  # parses
+
+
+def test_login_never_logs_the_password_hash(tmp_path, caplog):
+    """authenticate() logged the first 20 characters of the stored hash at INFO."""
+    import logging
+    from annzarro.server.auth import AuthManager
+    manager = AuthManager(user_file=str(tmp_path / "users.json"))
+    manager.create_user("alice", "correct horse")
+    stored = manager.get_user("alice").password_hash
+    with caplog.at_level(logging.DEBUG):
+        manager.authenticate("alice", "correct horse")
+        manager.authenticate("alice", "wrong")
+    text = caplog.text
+    assert "correct horse" not in text and "wrong" not in text.replace("Invalid password", "")
+    for part in stored.split("$"):
+        assert part[:8] not in text, "part of the password hash reached the log"

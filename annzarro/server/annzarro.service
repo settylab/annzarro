@@ -11,8 +11,9 @@ WorkingDirectory=/opt/annzarro
 # Binds where the config says (default 127.0.0.1:8000); put a TLS reverse
 # proxy in front. (This unit used to run /opt/annzarro/run_annzarro.py,
 # which does not exist in the repository.)
-Environment=ANNZARRO_CONFIG=/opt/annzarro/server/production_config.json
-ExecStart=/opt/annzarro/venv/bin/gunicorn -c annzarro/server/gunicorn_config.py "annzarro.server.wsgi:create_wsgi_app()"
+# Site settings (start from annzarro/server/site.example.yaml)
+Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
+ExecStart=/opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
