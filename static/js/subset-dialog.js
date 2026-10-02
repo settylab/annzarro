@@ -323,6 +323,9 @@ const SubsetControl = (function() {
                 box.className = 'subset-preview small text-danger';
                 lines.push('No cell passes the filter.');
                 apply.disabled = true;
+            } else if (body.defaults && shown > body.defaults.threshold) {
+                box.className = 'subset-preview small text-warning-emphasis';
+                lines.push('Drawing this many points can make the browser slow or unresponsive.');
             }
             box.textContent = lines.join(' ');
         } catch (error) {

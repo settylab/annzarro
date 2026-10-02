@@ -315,9 +315,12 @@ const App = (function() {
                 if (DataManager.getCellIndex(constants.focusedCell) >= 0) {
                     DataManager.setFocusedCell(constants.focusedCell);
                 } else if (DataManager.getSubset()) {
-                    _showNotification('Focused cell not in the subset',
-                        `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
-                        'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                    // Said once: loading the dataset may already have said it
+                    if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
+                        _showNotification('Focused cell not in the subset',
+                            `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
+                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                    }
                 } else {
                     DataManager.setFocusedCell(constants.focusedCell);
                 }
@@ -1039,6 +1042,10 @@ const App = (function() {
      * @param {'cells'|'genes'} entity
      * @private
      */
+    // The last focused cell a notice said was outside the subset, so a view
+    // restore does not say it a second time.
+    let _focusOutsideSubsetNoticed = null;
+
     async function _resolveFocusForDataset(entity) {
         const picker = _pickers[entity];
         if (picker) picker.reset();
@@ -1062,6 +1069,7 @@ const App = (function() {
                     const outside = await fetchNameMatches(Config.API.NAMES, {
                         datasetPath, entity, query: current, mode: 'exact', limit: 1 });
                     if (outside.matches.length && outside.matches[0].name === current) {
+                        _focusOutsideSubsetNoticed = current;
                         _showNotification('Focused cell not in the subset',
                             `${current} is not among the cells shown, so another cell is focused. ` +
                             'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
