@@ -61,3 +61,83 @@ export function arrayMinMax(arr) {
   }
   return { min, max };
 }
+
+/**
+ * A colour-range bound as the Min/Max boxes show it: three significant
+ * digits, whole numbers from 1000 up. The boxes used toFixed(2), so a range
+ * ending at 0.012 read "0.01", and one inside [0, 0.004] read "0.00".
+ * Display only: the range itself is never rounded.
+ * @param {number} v
+ * @returns {string}
+ */
+export function formatRangeValue(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (n === 0) return '0';
+  if (Math.abs(n) >= 1000) return String(Math.round(n));
+  return String(Number(n.toPrecision(3)));
+}
+
+/**
+ * Whether a column of values is numerical or categorical.
+ *
+ * Judged on PRESENT values (null, undefined and NaN are missing, not
+ * evidence), sampled across the whole array. It used to look at the first
+ * 100 values including missing ones, so a numeric column that is mostly
+ * missing (a rank defined for 190 of 16,285 genes) was called categorical:
+ * 190 categories, and Hide NaN did nothing. Server-declared categoricals are
+ * decided before this is asked. Booleans count as categorical.
+ * @param {ArrayLike<*>} arr
+ * @param {number} [maxSample=1000]
+ * @returns {'numerical'|'categorical'}
+ */
+export function inferValueType(arr, maxSample = 1000) {
+  const n = arr ? arr.length : 0;
+  if (!n) return 'categorical';
+  let present = 0, numeric = 0, bool = 0;
+  const step = Math.max(1, Math.floor(n / (maxSample * 4)));
+  for (let i = 0; i < n && present < maxSample; i += step) {
+    const v = arr[i];
+    if (v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v))) continue;
+    present++;
+    if (v === true || v === false) bool++;
+    else if (!Number.isNaN(parseFloat(v))) numeric++;
+  }
+  if (present === 0) return 'categorical';
+  if (bool / present >= 0.8) return 'categorical';
+  return numeric / present >= 0.8 ? 'numerical' : 'categorical';
+}
+
+/**
+ * log10 colour values with a floor, for kernel rows and probabilities that
+ * span orders of magnitude (on a linear scale everything but the top decade
+ * is one colour). Values at or below the floor (zeros, negatives) are drawn
+ * at log10(floor); missing values stay missing. Without an explicit floor
+ * the smallest positive value is used.
+ * @param {ArrayLike<number>} values
+ * @param {number|null} [floor]
+ * @returns {{values: number[], floor: number|null}}
+ */
+export function logColorValues(values, floor = null) {
+  let f = typeof floor === 'number' && floor > 0 ? floor : null;
+  if (f === null) {
+    let min = Infinity;
+    for (const v of values) if (typeof v === 'number' && v > 0 && v < min) min = v;
+    f = Number.isFinite(min) ? min : null;
+  }
+  if (f === null) return { values: Array.from(values, () => NaN), floor: null };
+  const lf = Math.log10(f);
+  return {
+    values: Array.from(values, v => (typeof v === 'number' && !Number.isNaN(v) ? (v > f ? Math.log10(v) : lf) : NaN)),
+    floor: f
+  };
+}
+
+/** Colour-bar ticks at whole decades, labelled with the original values. */
+export function logColorbarTicks(logMin, logMax) {
+  const lo = Math.ceil(logMin), hi = Math.floor(logMax);
+  const tickvals = [];
+  for (let k = lo; k <= hi; k++) tickvals.push(k);
+  if (tickvals.length < 2) return null;
+  return { tickvals, ticktext: tickvals.map(k => (k >= -3 && k <= 3 ? String(Number((10 ** k).toPrecision(1))) : `1e${k}`)) };
+}

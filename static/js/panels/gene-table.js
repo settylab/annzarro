@@ -10,6 +10,8 @@ import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTab
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
+import { syncControlsWithDataset } from '../utils/controls-visibility.js';
+import { assignKnownSettings } from '../utils/panel-settings.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -60,9 +62,7 @@ const GeneTablePanel = (function() {
                 if (loadingScreen) {
                     loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
                 }
-                if (controlsContainer) {
-                    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
-                }
+                syncControlsWithDataset(controlsContainer, isDatasetLoaded);
                 
                 // If a dataset is already loaded, initialize the panel
                 if (isDatasetLoaded) {
@@ -369,12 +369,9 @@ const GeneTablePanel = (function() {
                 _title = config.title;
             }
             
-            // Update other settings if needed
-            Object.keys(config).forEach(key => {
-                if (key !== 'title' && _settings[key] !== undefined) {
-                    _settings[key] = config[key];
-                }
-            });
+            // Update other settings; never the read-only views of the live
+            // DataTable (searchBuilderConfig, currentEntries)
+            assignKnownSettings(_settings, config);
         }
         
         // Public API

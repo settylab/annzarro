@@ -221,7 +221,8 @@ class h5adReader(CacheSettings):
                     else:
                         metadata[key] = {'keys': list(file[key].keys()) if key in file else []}
 
-                metadata['embeddings'] = [k for k in file['obsm'].keys() if k.startswith("X_")] if "obsm" in file else []
+                # every obsm key (not only X_*), as the axis menus offer
+                metadata['embeddings'] = list(file['obsm'].keys()) if "obsm" in file else []
                 metadata['obs_columns_info'] = self._get_obs_var_columns_metadata(file, "obs") if metadata['has_obs'] else {}
                 metadata['var_columns_info'] = self._get_obs_var_columns_metadata(file, "var") if metadata['has_var'] else {}
                 metadata['layers_info'] = self._get_h5ad_layers_metadata(file) if metadata['has_layers'] else {}
@@ -668,6 +669,13 @@ class h5adReader(CacheSettings):
         Returns:
             numpy.ndarray: The layer data, or empty array if layer doesn't exist
         """
+        # 'X' is offered as a layer; without a layer of that name it is X
+        with h5py.File(dataset_path, "r") as root:
+            use_x = layer_name == "X" and "X" in root and \
+                ("layers" not in root or "X" not in root["layers"])
+        if use_x:
+            return self.get_X(dataset_path=dataset_path, row_indices=row_indices, col_indices=col_indices)
+
         with h5py.File(dataset_path, "r") as root:
             if "layers" not in root:
                 return np.array([])

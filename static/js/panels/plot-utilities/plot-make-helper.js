@@ -18,6 +18,17 @@ import { generateDiscreteColors } from './colors.js';
  *
  * @returns {Object} layout - The Plotly layout configuration.
  */
+/**
+ * Equal aspect: one unit on x is as long as one on y (settings.equalAspect,
+ * kept in panel configs and links), so spatial coordinates are not
+ * stretched to the tile's shape. 2D only.
+ * @returns {Object} relayout keys
+ */
+export function aspectUpdate(settings) {
+  const on = !!settings.equalAspect && !settings.z;
+  return { 'yaxis.scaleanchor': on ? 'x' : null, 'yaxis.scaleratio': on ? 1 : null };
+}
+
 export function createLayout(settings) {
   // Base axis settings for both 2D and 3D axes.
   const baseAxis = {
@@ -33,6 +44,9 @@ export function createLayout(settings) {
     autosize: true,
     margin: { l: 40, r: 40, t: 40, b: 40 },
     hovermode: 'closest',
+    // Legend symbols at a readable size, not the plot's point size (3 px by
+    // default made the category colours hard to match to their labels)
+    legend: { itemsizing: 'constant' },
     // For 2D plots, xaxis and yaxis are defined.
     xaxis: {
       ...baseAxis,
@@ -46,7 +60,8 @@ export function createLayout(settings) {
       title: {
         text: `${settings.y.type}.${settings.y.key}` + (settings.y.column ? `.${settings.y.column}` : ''),
         font: {}
-      }
+      },
+      ...(settings.equalAspect && !settings.z ? { scaleanchor: 'x', scaleratio: 1 } : {})
     }
   };
 
@@ -102,8 +117,56 @@ export function createLayout(settings) {
   * @param {Object} data - The data object containing cell or gene names.
   * @param {Object} settings - The settings object for the plot.
 */
+/**
+ * The entity a click should focus, given points that overlap on screen.
+ *
+ * Plotly reports the point drawn on top, so a cell under a neighbour could
+ * not be clicked (the paper's example monocyte). Candidates are all data
+ * points within `radiusPx` of the mouse (the focused-cell marker excluded),
+ * nearest to the mouse first. The first click focuses the nearest one; a
+ * click on the same spot while one of them is focused moves to the next, so
+ * repeated clicks reach every point there. 2D only.
+ * @param {Object} [mouse] - {x, y} in plot-area pixels; defaults to the point
+ * @returns {string} entity name to focus
+ */
+export function nextOverlappingEntity(gd, point, clicked, current, mouse = null, radiusPx = 4) {
+  const fl = gd && gd._fullLayout;
+  const xa = fl && fl.xaxis, ya = fl && fl.yaxis;
+  if (!xa || !ya || typeof xa.c2p !== 'function' || !point || point.x === undefined) return clicked;
+  if (gd.data.some(t => t && t.type === 'scatter3d')) return clicked;
+  const mx = mouse ? mouse.x : xa.c2p(point.x), my = mouse ? mouse.y : ya.c2p(point.y);
+  const found = new Map();
+  for (const t of gd.data) {
+    if (!t || !Array.isArray(t.x) || (typeof t.name === 'string' && t.name.includes('Focused'))) continue;
+    const names = Array.isArray(t.customdata) ? t.customdata : t.text;
+    if (!Array.isArray(names)) continue;
+    for (let i = 0; i < t.x.length; i++) {
+      const dx = xa.c2p(t.x[i]) - mx, dy = ya.c2p(t.y[i]) - my;
+      if (Math.abs(dx) <= radiusPx && Math.abs(dy) <= radiusPx) {
+        const d = dx * dx + dy * dy;
+        if (!found.has(names[i]) || d < found.get(names[i])) found.set(names[i], d);
+      }
+    }
+  }
+  if (found.size < 2) return clicked;
+  const ordered = [...found.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1)).map(e => e[0]);
+  const at = ordered.indexOf(current);
+  return at >= 0 ? ordered[(at + 1) % ordered.length] : ordered[0];
+}
+
 export function attachClickHandler(plotContainer, traces, data, settings) {
-    plotContainer.on('plotly_click', (e) => {
+    if (!plotContainer.__pointerTracked && plotContainer.addEventListener) {
+      plotContainer.__pointerTracked = true;
+      plotContainer.addEventListener('pointerdown', (ev) => {
+        plotContainer.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
+      }, true);
+    }
+    // One click handler per graph: every redraw used to add another, so a
+    // click ran setFocusedCell once per redraw so far.
+    if (plotContainer.__azClickHandler && typeof plotContainer.removeListener === 'function') {
+      plotContainer.removeListener('plotly_click', plotContainer.__azClickHandler);
+    }
+    const onClick = (e) => {
       if (!e || !e.points || e.points.length === 0) return;
   
       const point = e.points[0];
@@ -128,12 +191,26 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
         return;
       }
       
+      // Points drawn under a neighbour could not be clicked: Plotly reports
+      // the one on top. Clicking the same spot again now steps through every
+      // point within a few pixels of it.
+      const current = isGenePlot ? DataManager.getFocusedGene() : DataManager.getFocusedCell();
+      const area = plotContainer.querySelector && plotContainer.querySelector('.nsewdrag');
+      const box = area && area.getBoundingClientRect ? area.getBoundingClientRect() : null;
+      // scattergl click events carry no mouse event; use the last pointer
+      // position recorded on the graph div
+      const ev = plotContainer.__lastPointer || ((e.event && Number.isFinite(e.event.clientX)) ? e.event : null);
+      const mouse = box && ev ? { x: ev.clientX - box.left, y: ev.clientY - box.top } : null;
+      entityName = nextOverlappingEntity(plotContainer, point, entityName, current, mouse);
+
       if (isGenePlot) {
         DataManager.setFocusedGene(entityName, false);
       } else {
         DataManager.setFocusedCell(entityName, false);
       }
-    });
+    };
+    plotContainer.__azClickHandler = onClick;
+    plotContainer.on('plotly_click', onClick);
     
     // Set up viewport state tracking
     attachViewportTracking(plotContainer, settings);

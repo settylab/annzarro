@@ -91,6 +91,35 @@ def _requested_paths():
     return [p for p in paths if p and not is_remote(p)]
 
 
+def resolve_relative_dataset_paths():
+    """``before_request`` hook: a relative ``dataset_path`` names a dataset in
+    the data directory.
+
+    A share link written by hand or by another tool (``?dataset_path=
+    bm_aging_showcase.zarr``) named a path relative to the server's working
+    directory, so it opened nothing (500 from /data/info). When the path does
+    not exist there but does under ``data_dir``, the request is rewritten to
+    that absolute path, before confinement checks it.
+    """
+    data_dir = current_app.config.get("data_dir")
+    if not data_dir:
+        return None
+    args = None
+    for name in ("dataset_path", "dataset_id"):
+        value = request.args.get(name)
+        if not value or is_remote(value) or os.path.isabs(os.path.expanduser(value)):
+            continue
+        candidate = os.path.join(os.path.expanduser(data_dir), value)
+        if not os.path.exists(value) and os.path.exists(candidate):
+            if args is None:
+                args = request.args.copy()
+            args[name] = os.path.abspath(candidate)
+    if args is not None:
+        from werkzeug.datastructures import ImmutableMultiDict
+        request.args = ImmutableMultiDict(args)
+    return None
+
+
 def enforce():
     """``before_request`` hook: refuse local paths outside the allowed roots."""
     config = current_app.config

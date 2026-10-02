@@ -1,3 +1,4 @@
+import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
@@ -238,7 +239,9 @@ const GenePlotPanel = (function() {
                 await Promise.all(updatePromises);
                 // If any axis was updated and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
-                if (updatePromises.length > 1 && _settings.highlightFocusedGene) {
+                // Always: a LOCKED axis is not refocused, so nothing else moves the
+                // highlight to the new focus (it stayed on the old cell)
+                if (_settings.highlightFocusedGene) {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
@@ -261,10 +264,13 @@ const GenePlotPanel = (function() {
                 return;
             }
             // Update the label of the first option in the select element
+            // A locked axis keeps showing the entity it is locked to
+            const locked = !!(_settings[axis] && _settings[axis].locked && _settings[axis].column);
+            if (locked) focusedEntity = _settings[axis].column;
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'cells') {
-                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity, locked);
             } else if (_settings[axis] && _settings[axis].type === 'varp' && endityType === 'genes') {
-                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity, locked);
             }
         }
 

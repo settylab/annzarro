@@ -1173,6 +1173,12 @@ class ZarrReader(CacheSettings):
         """
         root = self._get_root(dataset_path=dataset_path)
         
+        # 'X' is offered as a layer (the axis/column menus list it first): a
+        # store without a layer of that name means the X matrix itself.
+        if layer_name == 'X' and root is not None and 'X' in root and \
+                ('layers' not in root or 'X' not in root['layers']):
+            return self.get_X(dataset_path=dataset_path, row_indices=row_indices, col_indices=col_indices)
+
         if root is None or 'layers' not in root or layer_name not in root['layers']:
             return np.array([])
         
@@ -1510,20 +1516,20 @@ class ZarrReader(CacheSettings):
         try:
             column = group[column_name]
             
-            # In zarr, the actual data is often stored in a dataset named '0'
-            if '0' in column:
+            # A column is an array, or an encoded GROUP (categorical: codes +
+            # categories; nullable: values + mask). Reading a categorical one
+            # through _read_member sliced the group itself, which zarr refuses
+            # with 'path=slice(None, None, None) is not a string': every
+            # categorical column of an obsm/varm DataFrame came back empty and
+            # logged that error (38 times in the live service's log).
+            # _get_categorical_values decodes all three shapes.
+            #
+            # Only a group can hold a '0' child; asking an Array "'0' in
+            # column" walks it element by element under zarr 3 (see _is_group).
+            if self._is_group(column) and '0' in column:
                 data_array = column['0']
-                
-                # Handle subsetting with indices
-                if indices is not None:
-                    return data_array[indices]
-                else:
-                    return data_array[:]
-            else:
-                # Fallback to direct access if '0' is not found. The column
-                # may use a nullable encoding, which is a group rather than
-                # an array and cannot be sliced directly.
-                return self._read_member(column, indices)
+                return data_array[indices] if indices is not None else data_array[:]
+            return self._get_categorical_values(column, indices)
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error getting dataframe column {column_name}: {e}")

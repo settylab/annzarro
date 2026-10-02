@@ -64,11 +64,11 @@
     <header id="app-header" class="app-header">
         <div class="container-fluid">
             <div class="row align-items-center">
-                <div class="col-md-2">
+                <div class="col-auto">
                     <h1 class="app-title">{{ app_name|default('AnnZarro') }}</h1>
                     <a id="auth-indicator" class="auth-indicator" hidden></a>
                 </div>
-                <div class="col-md-10">
+                <div class="col">
                     <div class="global-controls">
                         <div class="row align-items-center">
                             <div class="col">
@@ -96,7 +96,7 @@
                                             <i class="fas fa-chevron-right"></i>
                                         </button>
                                     </div>
-                                    <select id="focused-gene" class="form-select flex-grow-1"></select>
+                                    <div class="flex-grow-1"><input id="focused-gene" class="form-control" type="text" placeholder="Search genes" aria-label="Focused gene"></div>
                                 </div>
                             </div>
                             <div class="col">
@@ -110,14 +110,14 @@
                                             <i class="fas fa-chevron-right"></i>
                                         </button>
                                     </div>
-                                    <select id="focused-cell" class="form-select flex-grow-1"></select>
+                                    <div class="flex-grow-1"><input id="focused-cell" class="form-control" type="text" placeholder="Search cells" aria-label="Focused cell"></div>
                                 </div>
                             </div>
-                            <div class="col">
+                            <div class="col-auto header-actions">
                                 <div class="btn-group">
-                                    <button id="btn-save-session" class="btn btn-primary"><i class="fas fa-save"></i> Save Panel Set</button>
-                                    <button id="btn-load-session" class="btn btn-secondary"><i class="fas fa-folder-open"></i> Load Panel Set</button>
-                                    <button id="btn-share-link" class="btn btn-outline-secondary" title="Copy a link that reopens this dataset, layout and focus"><i class="fas fa-link"></i> <span class="btn-share-label">Share Link</span></button>
+                                    <button id="btn-save-session" class="btn btn-primary" title="Save Panel Set"><i class="fas fa-save"></i> <span class="btn-label">Save Panel Set</span></button>
+                                    <button id="btn-load-session" class="btn btn-secondary" title="Load Panel Set"><i class="fas fa-folder-open"></i> <span class="btn-label">Load Panel Set</span></button>
+                                    <button id="btn-share-link" class="btn btn-outline-secondary" title="Copy a link that reopens this dataset, layout and focus"><i class="fas fa-link"></i> <span class="btn-label btn-share-label">Share Link</span></button>
                                 </div>
                                 <!-- Shown only when the clipboard is unavailable (e.g. plain http on a cluster node) -->
                                 <div id="share-link-fallback" class="share-link-fallback input-group input-group-sm mt-1" hidden>
@@ -163,8 +163,8 @@
                 <input type="text" class="tile-title" value="New Tile">
                 <div class="tile-controls">
                     <button class="btn btn-sm btn-light tile-toggle-controls" title="Toggle Controls"><i class="fas fa-chevron-up"></i></button>
-                    <button class="btn btn-sm btn-light tile-split-h" title="Split Horizontally"><i class="fas fa-columns"></i></button>
-                    <button class="btn btn-sm btn-light tile-split-v" title="Split Vertically"><i class="fas fa-columns fa-rotate-90"></i></button>
+                    <button class="btn btn-sm btn-light tile-split-h" title="Split side by side" aria-label="Split side by side"><svg class="split-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                    <button class="btn btn-sm btn-light tile-split-v" title="Split top and bottom" aria-label="Split top and bottom"><svg class="split-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/></svg></button>
                     <button class="btn btn-sm btn-light tile-close tile-closable" title="Close"><i class="fas fa-times"></i></button>
                 </div>
             </div>
@@ -263,11 +263,14 @@
             }
             
             // Check if DataTables extensions are loaded
-            const extensions = ['buttons', 'searchBuilder'];
+            // Extensions register on $.fn.dataTable (lower-case d) under their class
+            // names; the capitalised DataTable object has neither, so the old
+            // check logged a false error on every load.
+            const extensions = ['Buttons', 'SearchBuilder'];
             let allExtensionsLoaded = true;
             
             for (const ext of extensions) {
-                if (!$.fn.DataTable[ext]) {
+                if (!$.fn.dataTable[ext]) {
                     console.error(`ERROR: DataTables ${ext} extension not available!`);
                     allExtensionsLoaded = false;
                 }
@@ -310,10 +313,10 @@
                 { name: 'Bootstrap', test: function() { return typeof bootstrap !== 'undefined'; } },
                 { name: 'Plotly', test: function() { return typeof Plotly !== 'undefined'; } },
                 { name: 'DataTables', test: function() { return typeof $.fn.DataTable !== 'undefined'; } },
-                { name: 'DataTables.Buttons', test: function() { return typeof $.fn.DataTable.Buttons !== 'undefined'; } },
-                { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.DataTable.SearchBuilder !== 'undefined'; } },
-                { name: 'DataTables.Select', test: function() { return typeof $.fn.DataTable.select !== 'undefined'; } },
-                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.DataTable.FixedHeader !== 'undefined'; } }
+                { name: 'DataTables.Buttons', test: function() { return typeof $.fn.dataTable.Buttons !== 'undefined'; } },
+                { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.dataTable.SearchBuilder !== 'undefined'; } },
+                { name: 'DataTables.Select', test: function() { return typeof $.fn.dataTable.select !== 'undefined'; } },
+                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.dataTable.FixedHeader !== 'undefined'; } }
             ];
             
             let allLoaded = true;
