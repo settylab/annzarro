@@ -2132,7 +2132,7 @@ class ZarrReader:
                         subresult = {}
                         for subsubkey in root['uns'][key][subkey].keys():
                             try:
-                                value = root['uns'][key][subkey][subsubkey][:]
+                                value = root['uns'][key][subkey][subsubkey][()]
                                 subresult[subsubkey] = value.tolist() if hasattr(value, 'tolist') else value
                             except Exception as e:
                                 raise_if_timeout(e)
@@ -2142,7 +2142,7 @@ class ZarrReader:
                     else:
                         # It's a dataset
                         try:
-                            value = root['uns'][key][subkey][:]
+                            value = root['uns'][key][subkey][()]
                             result[subkey] = value.tolist() if hasattr(value, 'tolist') else value
                         except Exception as e:
                             raise_if_timeout(e)
@@ -2150,8 +2150,10 @@ class ZarrReader:
                             result[subkey] = str(root['uns'][key][subkey])
                 return result
             else:
-                # It's a dataset, get the data
-                value = root['uns'][key][:]
+                # It's a dataset, get the data. [()] reads every shape,
+                # including 0-d: a scalar (e.g. a README string) cannot be
+                # sliced with [:], and that error made the whole key null.
+                value = root['uns'][key][()]
                 return value.tolist() if hasattr(value, 'tolist') else value
         except Exception as e:
             raise_if_timeout(e)
