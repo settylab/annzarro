@@ -17,7 +17,7 @@ from ...core.zarr_reader import ZarrFormatError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
-from .. import permissions
+from .. import confinement, permissions
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -1063,6 +1063,10 @@ def register_data_routes(app, api_version):
                 # Skip if not a directory
                 if not os.path.isdir(entry_path):
                     continue
+
+                # A link a hosted server would refuse to open is not offered
+                if not confinement.listable(app.config, entry_path):
+                    continue
                 
                 # Enhanced zarr store detection
                 is_zarr = False
@@ -1147,6 +1151,10 @@ def register_data_routes(app, api_version):
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
+                        continue
+
+                    # A link a hosted server would refuse to open is not offered
+                    if not confinement.listable(app.config, entry_path):
                         continue
 
                     # H5AD files are served directly by the h5ad reader (no zarr

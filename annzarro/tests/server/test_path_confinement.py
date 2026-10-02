@@ -157,3 +157,50 @@ def test_is_inside(layout):
     assert not is_inside(str(layout / "data" / "link.zarr"), roots)
     assert not is_inside(str(layout / "data" / ".." / "outside"), roots)
     assert not is_inside("/", roots)
+
+
+# --- listings do not offer what would be refused ------------------------------
+
+def _names(resp):
+    data = resp.get_json()
+    return {d["name"] for d in data} if isinstance(data, list) else data
+
+
+FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "data", "fixture_small.zarr")
+
+
+@pytest.fixture
+def listing_layout(tmp_path):
+    import shutil
+    data, outside = tmp_path / "data", tmp_path / "outside"
+    data.mkdir()
+    outside.mkdir()
+    shutil.copytree(FIXTURE, data / "inside.zarr")
+    shutil.copytree(FIXTURE, outside / "secret.zarr")
+    os.symlink(outside / "secret.zarr", data / "link.zarr")
+    os.symlink(data / "inside.zarr", data / "alias.zarr")  # link that stays inside
+    os.symlink(outside, data / "linkdir")
+    return tmp_path
+
+
+def test_hosted_listing_omits_links_that_escape(listing_layout):
+    client = _app(listing_layout, host="0.0.0.0").test_client()
+    names = _names(client.get("/api/v1/datasets"))
+    assert "inside.zarr" in names and "alias.zarr" in names
+    assert "link.zarr" not in names
+    listed = client.get("/api/v1/directories/list", query_string={"path": str(listing_layout / "data")}).get_json()
+    shown = {e["name"] for e in listed["zarr_stores"] + listed["directories"]}
+    assert "link.zarr" not in shown and "linkdir" not in shown and "inside.zarr" in shown
+
+
+def test_hosted_legacy_listing_omits_links_that_escape(listing_layout):
+    client = _app(listing_layout, host="0.0.0.0").test_client()
+    found = client.get("/api/v1/core/datasets").get_json()["datasets"]
+    paths = [d["path"] for d in found]
+    assert not any("link.zarr" in p or "linkdir" in p for p in paths), paths
+
+
+def test_local_listing_keeps_links(listing_layout):
+    names = _names(_app(listing_layout).test_client().get("/api/v1/datasets"))
+    assert {"inside.zarr", "alias.zarr", "link.zarr"} <= names

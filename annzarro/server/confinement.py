@@ -123,6 +123,18 @@ def enforce():
     return None
 
 
+def listable(config, path):
+    """Whether a directory listing may show ``path``.
+
+    A hosted server refuses to open a link whose target is outside every
+    allowed root, so listing it only offers a dataset that fails with 403
+    when clicked. Local single-user mode lists everything.
+    """
+    if not is_hosted(config):
+        return True
+    return is_inside(path, allowed_roots(config))
+
+
 def warn_about_escaping_links(config):
     """Name datasets in data_dir that a hosted server will refuse.
 

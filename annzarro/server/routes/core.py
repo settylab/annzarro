@@ -53,6 +53,10 @@ def register_core_routes(app, api_version):
         
         # List datasets with new options
         datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
+        # Not offered when hosted: anything a link leads to outside the roots
+        from ..confinement import listable
+        datasets = [d for d in datasets
+                    if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
         
         return jsonify({"datasets": datasets})
 
