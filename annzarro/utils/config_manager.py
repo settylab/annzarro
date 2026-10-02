@@ -88,6 +88,36 @@ class ConfigManager:
     NON_CONFIG_ENV_VARS = {
         "ANNZARRO_HOME", "ANNZARRO_HEADLESS", "ANNZARRO_AUTH_DISABLED",
         "ANNZARRO_ELECTRON_APP", "ANNZARRO_ELECTRON_MODE", "ANNZARRO_LOCAL_MODE",
+        "ANNZARRO_ENV", "ANNZARRO_CONFIG",
+    }
+
+    # Keys an ANNZARRO_<SECTION>_<KEY> variable may set although the built-in
+    # defaults leave them out (their absence means something: ``auth.enabled``
+    # unset is derived from the host, ``auth.secret_key`` unset is generated).
+    # Without this, ANNZARRO_AUTH_ENABLED and ANNZARRO_AUTH_SECRET_KEY were
+    # silently ignored.
+    OPTIONAL_ENV_KEYS = (
+        ("auth", "enabled"),
+        ("auth", "secret_key"),
+        ("server", "hosted"),
+        ("server", "allowed_dirs"),
+        ("server", "workers"),
+    )
+
+    # Keys whose environment value is a comma-separated list.
+    LIST_ENV_KEYS = {("server", "allowed_dirs"), ("server", "remote_allowlist")}
+
+    # Variables whose names do not follow <SECTION>_<KEY>. The remote-store
+    # policy (annzarro.core.remote) reads them itself; mapping them here makes
+    # the merged configuration, and `config show`, say what will run instead
+    # of listing them as ignored.
+    ENV_ALIASES = {
+        "ANNZARRO_REMOTE_STORES": ("server", "remote_stores"),
+        "ANNZARRO_REMOTE_ALLOWLIST": ("server", "remote_allowlist"),
+        "ANNZARRO_REMOTE_CREDENTIALS": ("server", "remote_credentials"),
+        "ANNZARRO_REMOTE_CONNECT_TIMEOUT": ("server", "remote_connect_timeout_s"),
+        "ANNZARRO_REMOTE_READ_TIMEOUT": ("server", "remote_read_timeout_s"),
+        "ANNZARRO_REMOTE_CHUNK_CACHE_MB": ("server", "remote_chunk_cache_mb"),
     }
 
     # Command-line flag (argparse dest) -> configuration key path. Only these
@@ -311,21 +341,38 @@ class ConfigManager:
     def _apply_environment_variables(self) -> None:
         """Apply ``ANNZARRO_<SECTION>_<KEY>`` overrides to known keys.
 
-        ``ANNZARRO_SERVER_DATA_DIR`` sets ``server.data_dir``. A variable that
+        ``ANNZARRO_SERVER_DATA_DIR`` sets ``server.data_dir``; the keys in
+        ``OPTIONAL_ENV_KEYS`` and the ``ENV_ALIASES`` names count as known
+        although the defaults omit them. A variable that
         names no known key is ignored (and reported by ``config show``) rather
         than inventing a key nobody reads.
         """
         applied = []
+        known = deepcopy(self.config)
+        for path in self.OPTIONAL_ENV_KEYS:
+            section = known.setdefault(path[0], {})
+            if isinstance(section, dict):
+                section.setdefault(path[1], None)
         for env_var in sorted(os.environ):
             if not env_var.startswith(self.ENV_PREFIX) or env_var in self.NON_CONFIG_ENV_VARS:
                 continue
-            tokens = env_var[len(self.ENV_PREFIX):].lower().split('_')
-            key_path = self._match_key_path(tokens, self.config)
+            if env_var in self.ENV_ALIASES:
+                key_path = list(self.ENV_ALIASES[env_var])
+            else:
+                tokens = env_var[len(self.ENV_PREFIX):].lower().split('_')
+                key_path = self._match_key_path(tokens, known)
             if key_path is None:
                 logger.debug(f"Ignoring {env_var}: it names no configuration key")
                 self._record("env", env_var, "ignored", "names no configuration key")
                 continue
-            self._set_override(key_path, self._convert_value(os.environ[env_var]), f"env:{env_var}")
+            raw = os.environ[env_var]
+            if tuple(key_path) in self.LIST_ENV_KEYS:
+                value = [item.strip() for item in raw.split(",") if item.strip()]
+            elif key_path == ["auth", "secret_key"]:
+                value = raw  # a key that looks like a number is still a string
+            else:
+                value = self._convert_value(raw)
+            self._set_override(key_path, value, f"env:{env_var}")
             self.sources[f"env_var_{'_'.join(key_path)}"] = env_var
             applied.append(env_var)
 

@@ -177,6 +177,53 @@ def test_env_vars_map_onto_keys_with_underscores(isolated, tmp_path, monkeypatch
     assert [l["path"] for l in ignored] == ["ANNZARRO_NOT_A_KEY"]
 
 
+def test_env_vars_reach_auth_keys_the_defaults_leave_unset(isolated, monkeypatch):
+    """auth.enabled / auth.secret_key are absent from base.yaml on purpose;
+    their variables used to be silently ignored."""
+    monkeypatch.setenv("ANNZARRO_AUTH_ENABLED", "true")
+    monkeypatch.setenv("ANNZARRO_AUTH_SECRET_KEY", "0123456789")
+    monkeypatch.setenv("ANNZARRO_SERVER_ALLOWED_DIRS", "/srv/a, /srv/b")
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production")
+    assert config["auth"]["enabled"] is True
+    assert config["auth"]["secret_key"] == "0123456789"
+    assert config["server"]["allowed_dirs"] == ["/srv/a", "/srv/b"]
+    assert mgr.origins["auth.enabled"] == "env:ANNZARRO_AUTH_ENABLED"
+    assert not [l for l in mgr.layers if l["status"] == "ignored"]
+    assert mgr.to_flask_config()["auth_enabled"] is True
+
+
+def test_remote_env_vars_are_reported_as_used_not_ignored(isolated, monkeypatch):
+    """core/remote.py reads ANNZARRO_REMOTE_*; `config show` called them ignored."""
+    from annzarro.core import remote
+    names = [remote.ENV_MODE, remote.ENV_ALLOWLIST, remote.ENV_CREDENTIALS,
+             remote.ENV_CONNECT_TIMEOUT, remote.ENV_READ_TIMEOUT, remote.ENV_CHUNK_CACHE]
+    assert set(names) == set(ConfigManager.ENV_ALIASES)
+    monkeypatch.setenv(remote.ENV_MODE, "allow")
+    monkeypatch.setenv(remote.ENV_ALLOWLIST, "s3://a/,https://b/")
+    monkeypatch.setenv(remote.ENV_CONNECT_TIMEOUT, "5")
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production")
+    assert not [l for l in mgr.layers if l["status"] == "ignored"]
+    assert config["server"]["remote_stores"] == "allow"
+    assert config["server"]["remote_allowlist"] == ["s3://a/", "https://b/"]
+    assert config["server"]["remote_connect_timeout_s"] == 5
+    assert mgr.origins["server.remote_stores"] == "env:ANNZARRO_REMOTE_STORES"
+    # the merged config alone gives the policy the variables give
+    flat = mgr.to_flask_config()
+    from_config = remote.RemotePolicy.from_config(flat, environ={})
+    from_env = remote.RemotePolicy.from_config(flat)
+    assert from_config == from_env
+
+
+def test_entry_point_switches_are_not_reported_as_ignored(isolated, monkeypatch):
+    monkeypatch.setenv("ANNZARRO_ENV", "production")
+    monkeypatch.setenv("ANNZARRO_CONFIG", "/nonexistent.yaml")
+    mgr = ConfigManager()
+    mgr.load_config(env="production")
+    assert not [l for l in mgr.layers if l["status"] == "ignored"]
+
+
 def test_auth_disabled_env_var(isolated, monkeypatch):
     monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", "1")
     mgr = ConfigManager()
