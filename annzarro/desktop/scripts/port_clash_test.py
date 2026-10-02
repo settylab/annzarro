@@ -57,7 +57,33 @@ def occupy(port):
             held.append(conn)  # keep it open, say nothing
 
     threading.Thread(target=accept, daemon=True).start()
-    return sock
+
+    class Occupier:
+        def close(self):
+            # The accepted connections too: left open, they keep the port
+            # looking busy to the next case on Linux.
+            for conn in held:
+                conn.close()
+            sock.close()
+
+    return Occupier()
+
+
+def wait_until_free(port, timeout=60):
+    """Wait until the app would see ``port`` as free (as its probe does)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        probe = socket.socket()
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+            probe.listen(1)
+            return
+        except OSError:
+            time.sleep(0.5)
+        finally:
+            probe.close()
+    print(f"warning: 127.0.0.1:{port} still busy after {timeout}s", flush=True)
 
 
 def take_port_when_server_starts(port, stop):
@@ -125,6 +151,7 @@ def main(argv):
         sock.close()
 
     if os.name != "nt":
+        wait_until_free(PORT)
         stop = threading.Event()
         box = {}
         watcher = threading.Thread(
