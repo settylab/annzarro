@@ -99,10 +99,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         Configured Flask application
     """
     # Create Flask app with custom template folder
-    template_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
+    from annzarro.utils.paths import frontend_dir
+    template_folder = str(frontend_dir("templates"))
     
     # Check for static folder with favicon
-    static_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    static_folder = str(frontend_dir("static"))
     if os.path.exists(static_folder) and (
         os.path.exists(os.path.join(static_folder, "favicon.ico")) or
         os.path.exists(os.path.join(static_folder, "favicon.png"))
