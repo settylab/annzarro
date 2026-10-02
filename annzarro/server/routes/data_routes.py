@@ -17,6 +17,7 @@ from ...core.zarr_reader import ZarrFormatError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
+from .. import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -1230,13 +1231,16 @@ def register_data_routes(app, api_version):
         """
         if sessions_dir is None:
             sessions_dir = _get_sessions_dir()
-            
-        # Resolve to absolute paths for comparison
-        sessions_dir = os.path.abspath(sessions_dir)
-        file_path = os.path.abspath(file_path)
-        
-        # Check if the file path is within the sessions directory
-        return file_path.startswith(sessions_dir)
+
+        # A string-prefix test is not containment: "/data/sessions_old/x.json"
+        # starts with "/data/sessions". Resolve symlinks and require the file
+        # to sit DIRECTLY in the sessions directory -- sessions are never
+        # nested -- and to be a .json file, since delete honours a
+        # caller-supplied ``file`` and must not remove anything else.
+        sessions_dir = os.path.realpath(sessions_dir)
+        file_path = os.path.realpath(file_path)
+        return (os.path.dirname(file_path) == sessions_dir
+                and file_path.endswith(".json"))
     
     def _sanitize_session_name(name):
         """
@@ -1252,6 +1256,25 @@ def register_data_routes(app, api_version):
         sanitized = name.replace('/', '_').replace('\\', '_').replace('..', '_')
         # Allow only alphanumeric characters, underscore, hyphen, and space
         return ''.join(c for c in sanitized if c.isalnum() or c in ' _-')
+
+    def _read_stored_session(file_path):
+        """
+        Read a stored panel set for a permission check.
+
+        Returns None when the file does not exist. A file that exists but
+        cannot be parsed is returned as an empty dict: it has no recorded
+        owner, so it is treated like a legacy set (admin-only), never as
+        absent -- absent would let anyone overwrite it.
+        """
+        if not os.path.exists(file_path):
+            return None
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"Unreadable session file {file_path}: {e}")
+            return {}
 
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
     def save_session():
@@ -1296,6 +1319,12 @@ def register_data_routes(app, api_version):
             # Verify the file is within the sessions directory
             if not _is_safe_session_path(session_file, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
+            
+            # Saving over an existing set replaces it: same rule as delete
+            existing = _read_stored_session(session_file)
+            if not permissions.can_modify(existing):
+                return permissions.forbidden("overwrite", session_data["name"], existing)
+            permissions.stamp_session(session_data, existing)
             
             # Save session file
             with open(session_file, 'w') as f:
@@ -1349,7 +1378,11 @@ def register_data_routes(app, api_version):
                                 "dataset": session_data.get("dataset", ""),
                                 "timestamp": session_data.get("timestamp", ""),
                                 "datasetName": session_data.get("datasetName", ""),
-                                "file": session_path
+                                "file": session_path,
+                                "owner": session_data.get("owner"),
+                                "created_at": session_data.get("created_at"),
+                                "modified_at": session_data.get("modified_at"),
+                                "can_modify": permissions.can_modify(session_data)
                             })
                     except Exception as e:
                         logger.warning(f"Error reading session file {entry}: {e}")
@@ -1450,6 +1483,11 @@ def register_data_routes(app, api_version):
             # Verify again that file is within sessions directory (belt and suspenders)
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
+            
+            existing = _read_stored_session(file_path)
+            if not permissions.can_modify(existing):
+                display_name = session_name or os.path.basename(file_path)[:-len(".json")]
+                return permissions.forbidden("delete", display_name, existing)
                 
             # Delete the file
             os.remove(file_path)
@@ -1547,12 +1585,15 @@ def register_data_routes(app, api_version):
             
             # Check if file exists
             file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
-            exists = os.path.exists(file_path)
+            existing = _read_stored_session(file_path)
+            exists = existing is not None
             
             return jsonify({
                 "exists": exists,
                 "file": file_path if exists else None,
-                "sanitized_name": sanitized_name
+                "sanitized_name": sanitized_name,
+                "owner": existing.get("owner") if exists else None,
+                "can_modify": permissions.can_modify(existing)
             })
         except Exception as e:
             logger.error(f"Error checking session existence: {e}")
@@ -1607,8 +1648,14 @@ def register_data_routes(app, api_version):
             with open(old_file_path, 'r') as f:
                 session_data = json.load(f)
             
+            # Renaming removes the set from under its old name: same rule as delete
+            if not permissions.can_modify(session_data):
+                return permissions.forbidden("rename", sanitized_old_name, session_data)
+            
             # Update session name
-            session_data["name"] = new_name
+            # Store the SANITIZED name: list_sessions hands "name" to a client
+            # that renders it as HTML, and save/import already store it this way.
+            session_data["name"] = sanitized_new_name
             
             # Create new file path
             new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
@@ -1623,6 +1670,9 @@ def register_data_routes(app, api_version):
                     "status": "conflict",
                     "message": f"Session with name '{new_name}' already exists."
                 }), 409
+            
+            # Ownership and creation time travel with the set
+            permissions.stamp_session(session_data, existing=dict(session_data))
             
             # Write session data to new file
             with open(new_file_path, 'w') as f:
@@ -1645,6 +1695,74 @@ def register_data_routes(app, api_version):
             logger.error(f"Error renaming session: {e}")
             return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
     
+    @app.route(f"/api/{api_version}/sessions/owner", methods=["POST"])
+    def set_session_owner():
+        """
+        Assign a panel set to a user. Admins only.
+
+        This is how a set saved before owners were recorded -- admin-only to
+        change until then -- is handed back to the person who made it. It can
+        also reassign any set, e.g. when someone leaves.
+
+        Expected JSON input:
+        {
+            "name": "Session name",
+            "owner": "existing username"
+        }
+
+        Returns:
+            JSON response with the updated owner
+        """
+        if not permissions.auth_enabled():
+            return jsonify({
+                "error": "Owners only matter when login is enabled; this server runs without login.",
+                "reason": "auth_disabled",
+            }), 400
+        _, is_admin = permissions.current_user()
+        if not is_admin:
+            return jsonify({
+                "error": "Only an admin can assign a panel set's owner.",
+                "reason": "admin_only",
+            }), 403
+
+        data = request.json or {}
+        name = data.get("name")
+        owner = data.get("owner")
+        if not name or not owner:
+            return jsonify({"error": "Both name and owner are required"}), 400
+        if app.auth_manager.get_user(owner) is None:
+            return jsonify({"error": f"No such user: {owner}", "reason": "unknown_user"}), 400
+
+        try:
+            sessions_dir = _get_sessions_dir()
+            sanitized_name = _sanitize_session_name(name)
+            file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
+            if not _is_safe_session_path(file_path, sessions_dir):
+                return jsonify({"error": "Invalid session name"}), 400
+            existing = _read_stored_session(file_path)
+            if existing is None:
+                return jsonify({"error": f"Session not found: {name}"}), 404
+            if not existing and os.path.getsize(file_path) > 0:
+                return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
+
+            previous = existing.get("owner")
+            permissions.stamp_session(existing, existing=dict(existing))
+            existing["owner"] = owner
+            with open(file_path, 'w') as f:
+                json.dump(existing, f, indent=2)
+            logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
+
+            return jsonify({
+                "status": "success",
+                "message": f"Panel set '{sanitized_name}' now belongs to {owner}",
+                "name": sanitized_name,
+                "owner": owner,
+                "previous_owner": previous,
+            })
+        except Exception as e:
+            logger.error(f"Error assigning session owner: {e}")
+            return jsonify({"error": f"Failed to assign owner: {str(e)}"}), 500
+
     @app.route(f"/api/{api_version}/sessions/duplicate", methods=["POST"])
     def duplicate_session():
         """
@@ -1695,7 +1813,9 @@ def register_data_routes(app, api_version):
                 session_data = json.load(f)
             
             # Update session name and timestamp
-            session_data["name"] = new_name
+            # Store the SANITIZED name: list_sessions hands "name" to a client
+            # that renders it as HTML, and save/import already store it this way.
+            session_data["name"] = sanitized_new_name
             from datetime import datetime
             session_data["timestamp"] = datetime.now().isoformat()
             
@@ -1712,6 +1832,9 @@ def register_data_routes(app, api_version):
                     "status": "conflict",
                     "message": f"Session with name '{new_name}' already exists."
                 }), 409
+            
+            # A copy is a new set: it belongs to whoever made it
+            permissions.stamp_session(session_data, existing=None)
             
             # Write session data to new file
             with open(new_file_path, 'w') as f:
@@ -1795,12 +1918,19 @@ def register_data_routes(app, api_version):
                 return jsonify({"error": "Invalid session name in imported file"}), 400
             
             # Check if session with this name already exists
-            if os.path.exists(file_path) and not overwrite:
+            existing = _read_stored_session(file_path)
+            if existing is not None and not overwrite:
                 return jsonify({
                     "status": "conflict",
                     "message": f"Session with name '{session_data['name']}' already exists.",
                     "exists": True
                 }), 409
+            
+            # Importing over an existing set replaces it: same rule as delete.
+            # Any owner recorded INSIDE the uploaded file is discarded.
+            if not permissions.can_modify(existing):
+                return permissions.forbidden("overwrite", session_data["name"], existing)
+            permissions.stamp_session(session_data, existing)
             
             # Add timestamp if not present
             if "timestamp" not in session_data:

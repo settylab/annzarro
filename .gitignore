@@ -163,6 +163,10 @@ auth/*.json
 .auth/
 *.auth
 config/auth/*.json
+# Generated login cookie key (annzarro/server/secret_key.py)
+annzarro_secret_key
+# Lock file guarding users.json writes (annzarro/server/auth.py)
+*.json.lock
 # Keep the config/auth directory, but not its contents
 !config/auth/.gitkeep
 annzarro/desktop/downloads/

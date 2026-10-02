@@ -41,7 +41,7 @@ DEFAULT_CONFIG = {
     "max_cells_per_request": 10000,    # Maximum number of cells in a single request
     "max_genes_per_request": 10000,    # Maximum number of genes in a single request
     "max_embedding_dims": 50,          # Maximum number of dimensions in embedding requests
-    "secret_key": "change-this-in-production",  # Secret key for sessions
+    "secret_key": None,                # Login cookie key; None = generated and stored beside user_file
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
     "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
@@ -137,7 +137,13 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Setup logging
     setup_logging(app.config)
+    warn_about_exposure(app.config)
     
+    # A shared server only opens paths inside its data directory (see confinement.py)
+    from annzarro.server import confinement
+    confinement.warn_about_escaping_links(app.config)
+    app.before_request(confinement.enforce)
+
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
     configure_zarr_reader(app.config)
@@ -153,14 +159,18 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Set up authentication if enabled
     if app.config.get("auth_enabled", False):
-        # Set up Flask session secret key
-        app.secret_key = app.config.get("secret_key", os.urandom(24))
-        
         # Import after app is created to avoid circular imports
-        from annzarro.server.auth import AuthManager
+        from annzarro.server.auth import AuthManager, resolve_user_file
+        from annzarro.server.secret_key import resolve_secret_key
         
         # Create auth manager with proper path handling
         user_file = app.config.get("user_file", "users.json")
+        
+        # Sign login cookies with a key nobody else has: the configured one
+        # unless it is a shipped placeholder, else one generated and kept
+        # beside the users file (see secret_key.py)
+        app.secret_key = resolve_secret_key(app.config.get("secret_key"),
+                                            resolve_user_file(user_file))
 
         auth_manager = AuthManager(user_file=user_file)
         
@@ -171,6 +181,44 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     register_routes(app)
     
     return app
+
+def _exposure_where(config: Dict[str, Any]) -> str:
+    """How we know the server is shared, for the warning text."""
+    if config.get("hosted") is not None:
+        return "server.hosted is set"
+    return f"listening on {config.get('host')}"
+
+
+def warn_about_exposure(config: Dict[str, Any]) -> None:
+    """Say loudly, at startup, when the server is reachable by people it can't tell apart.
+
+    Listening beyond localhost with login disabled looks fine from the
+    outside and is not: anyone who can reach the port can edit or delete
+    every shared panel set. It is logged at WARNING inside a banner, because
+    an INFO line in a scrolling log is exactly how a deployment ran
+    unprotected unnoticed. (A placeholder ``secret_key`` is no longer a
+    risk to warn about: it is never used, see ``secret_key.py``.)
+    """
+    from .permissions import is_exposed
+
+    problems = []
+    if is_exposed(config):
+        problems.append(
+            f"Serving as a shared server ({_exposure_where(config)}) with login "
+            "DISABLED. Anyone who can "
+            "reach this port can open every dataset under the data directory "
+            "and edit or delete every shared panel set. Remove --auth-disabled / "
+            "ANNZARRO_AUTH_DISABLED and add users with `annzarro user add`, or "
+            "bind to 127.0.0.1."
+        )
+    if not problems:
+        return
+    bar = "!" * 78
+    logger.warning(bar)
+    for problem in problems:
+        logger.warning("SECURITY: %s", problem)
+    logger.warning(bar)
+
 
 def configure_app(app: Flask, config: Dict[str, Any]) -> None:
     """

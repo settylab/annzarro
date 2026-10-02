@@ -762,7 +762,11 @@ def main(argv: List[str] = None) -> int:
     start_parser.add_argument('--development', action='store_true', help="Run in development mode (less secure)")
     start_parser.add_argument('--config', help="Path to configuration file")
     start_parser.add_argument('--venv-path', help="Path to Python virtual environment")
-    start_parser.add_argument('--auth-disabled', action='store_true', help="Disable authentication")
+    start_parser.add_argument(
+        '--auth-disabled', action='store_true',
+        help="Disable login. Login is otherwise required when --host is not localhost; "
+             "disabling it there lets anyone who can reach the port read datasets and "
+             "delete every shared panel set (a warning is logged at startup).")
     start_parser.add_argument('--no-browser', action='store_true', help="Don't open a browser automatically")
     start_parser.set_defaults(func=start_server)
     
@@ -778,7 +782,12 @@ def main(argv: List[str] = None) -> int:
     user_add_parser = user_subparsers.add_parser('add', help="Add a new user")
     user_add_parser.add_argument('--username', help="Username")
     user_add_parser.add_argument('--password', help="Password")
-    user_add_parser.add_argument('--admin', action='store_true', help="Make user an admin")
+    user_add_parser.add_argument(
+        '--admin', action='store_true',
+        help="Make user an admin: may delete, rename or overwrite ANY shared panel set "
+             "(others may only change sets they saved; sets saved before owners were "
+             "recorded are admin-only). Grants nothing else. A running server picks it up "
+             "without a restart.")
     
     # User remove command
     user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")

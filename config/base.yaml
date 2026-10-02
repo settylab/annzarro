@@ -41,7 +41,7 @@ server:
 # Authentication configuration
 auth:
   user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
-  secret_key: "change-this-in-production"  # Will be overridden in production
+  # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
   #enabled: true
 
 # Application branding

@@ -126,7 +126,7 @@ auth:
     secret_key:
       type: string
       description: Secret key for sessions
-      default: change-this-in-production
+      default: null  # generated and stored beside user_file; shipped placeholders are refused
       security: sensitive
   required:
     - enabled

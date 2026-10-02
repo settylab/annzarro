@@ -49,7 +49,7 @@ server:
 auth:
   enabled: false
   user_file: users.json
-  secret_key: change-this-in-production
+  # secret_key: leave unset; generated and stored beside user_file
 ```
 
 ### Application Branding
@@ -118,7 +118,7 @@ Examples:
 ## Security Best Practices
 
 1. **Production Mode**: Use `--production` flag to load production configuration
-2. **Secret Key**: Always change the `auth.secret_key` in production
+2. **Secret Key**: Leave `auth.secret_key` unset and a random key is generated once and stored (mode 0600) beside the users file as `annzarro_secret_key`; or set your own long random value. The old placeholder values are refused
 3. **Sensitive Data**: Avoid storing sensitive information in configuration files
 4. **Environment Variables**: Use environment variables for sensitive settings
 5. **File Permissions**: Restrict access to configuration files with sensitive information

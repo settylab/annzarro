@@ -28,7 +28,8 @@ const Config = (function() {
         SESSIONS_LOAD: `${API_BASE}/sessions/load`,
         SESSIONS_DELETE: `${API_BASE}/sessions/delete`,
         SESSIONS_EXPORT: `${API_BASE}/sessions/export`,
-        SESSIONS_IMPORT: `${API_BASE}/sessions/import`
+        SESSIONS_IMPORT: `${API_BASE}/sessions/import`,
+        AUTH_ME: `${API_BASE}/auth/me`
     };
     
     // Panel types definition

@@ -141,6 +141,28 @@ def register_core_routes(app, api_version):
         # Never share sensitive values
         return jsonify(client_config)
         
+    @app.route(f"/api/{api_version}/auth/me", methods=["GET"])
+    def get_current_user():
+        """
+        Who the requester is and what they may change.
+
+        Registered whether or not login is enabled, so the client can ask one
+        question in both modes. ``exposed`` is true when the server listens
+        beyond this machine with login disabled -- anyone who can reach it can
+        then edit and delete every shared panel set.
+
+        Returns:
+            JSON ``{auth_enabled, username, is_admin, exposed}``
+        """
+        from .. import permissions
+        username, is_admin = permissions.current_user()
+        return jsonify({
+            "auth_enabled": permissions.auth_enabled(),
+            "username": username,
+            "is_admin": is_admin,
+            "exposed": permissions.is_exposed(app.config),
+        })
+
     @app.route(f"/api/{api_version}/status", methods=["GET"])
     def get_status():
         """

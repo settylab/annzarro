@@ -9,6 +9,7 @@ import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
     parseDeepLinkLocation, buildDeepLinkUrl
 } from './utils/deeplink.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator } from './utils/session-permissions.js';
 
 const App = (function() {
     // Private variables
@@ -40,6 +41,10 @@ const App = (function() {
             
             // Setup custom event listeners for error handling
             _setupErrorHandlers();
+            
+            // Say who is signed in, or that nobody needs to be (not awaited:
+            // the header must not hold up the first render)
+            _loadAuthIndicator();
             
             // Check for autosave session before initializing panel manager.
             //
@@ -1290,7 +1295,9 @@ const App = (function() {
         
         // Get existing sessions for suggestions
         const sessions = await SessionManager.listSessions();
-        const sessionNames = sessions.map(s => s.name);
+        // Suggest only sets this user may overwrite; offering someone else's
+        // name would lead straight to a refusal.
+        const sessionNames = sessions.filter(canModify).map(s => s.name);
         
         // Get DOM elements
         const sessionNameInput = document.getElementById('session-name');
@@ -1411,7 +1418,7 @@ const App = (function() {
                 if (!noResultsMsg) {
                     const msg = document.createElement('div');
                     msg.className = 'no-search-results no-sessions-message';
-                    msg.innerHTML = `No sessions found matching "<strong>${searchTerm}</strong>"`;
+                    msg.innerHTML = `No sessions found matching "<strong>${escapeHtml(searchTerm)}</strong>"`;
                     document.getElementById('session-grid').appendChild(msg);
                 }
             } else {
@@ -1597,6 +1604,11 @@ const App = (function() {
                     card.className = 'session-card';
                     card.dataset.sessionName = session.name;
                     card.dataset.isAutosave = isAutosave;
+                    // Names, dataset labels and owners come from files any user
+                    // can upload; escape before they reach innerHTML.
+                    const safeName = escapeHtml(session.name);
+                    const locked = !isAutosave && !canModify(session);
+                    const lockText = locked ? lockReason(session) : '';
                     
                     // Format date nicely
                     let dateObj = new Date(session.timestamp);
@@ -1604,13 +1616,13 @@ const App = (function() {
                     const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     
                     // Determine dataset display
-                    const datasetDisplay = session.datasetName || 
-                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset');
+                    const datasetDisplay = escapeHtml(session.datasetName || 
+                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset'));
                     
                     // Prepare title with autosave badge if needed
                     const titleHTML = isAutosave ? 
-                        `${session.name} <span class="autosave-indicator"><i class="fas fa-sync-alt me-1"></i> Auto</span>` : 
-                        session.name;
+                        `${safeName} <span class="autosave-indicator"><i class="fas fa-sync-alt me-1"></i> Auto</span>` : 
+                        safeName;
                     
                     // Format last saved time for autosave
                     const autosaveTimeInfo = isAutosave ?
@@ -1634,7 +1646,7 @@ const App = (function() {
                     // Panel configurations might not be included in the session list API
                     // We'll add a placeholder that will be populated asynchronously
                     
-                    let panelPreview = `<div class="session-card-preview" data-session-name="${session.name}">
+                    let panelPreview = `<div class="session-card-preview" data-session-name="${safeName}">
                         <div class="panel-preview-loading">
                             <i class="fas fa-spinner fa-pulse"></i>
                         </div>
@@ -1645,9 +1657,13 @@ const App = (function() {
                             <h5 class="session-card-title">${titleHTML}</h5>
                             <div class="session-card-subtitle">${datasetDisplay}</div>
                             <div class="session-card-actions">
+                                ${locked ? `
+                                <span class="session-lock session-action-button" title="${escapeHtml(lockText)}" aria-label="${escapeHtml(lockText)}">
+                                    <i class="fas fa-lock"></i>
+                                </span>` : `
                                 <button class="btn btn-sm btn-outline-danger session-delete session-action-button" title="Delete">
                                     <i class="fas fa-trash-alt"></i>
-                                </button>
+                                </button>`}
                             </div>
                         </div>
                         ${panelPreview}
@@ -1656,6 +1672,7 @@ const App = (function() {
                         ${!isAutosave ? `
                         <div class="session-card-date">
                             <i class="far fa-calendar-alt"></i> ${dateStr} ${timeStr}
+                            ${session.owner ? `<span class="session-card-owner"><i class="far fa-user"></i> ${escapeHtml(session.owner)}</span>` : ''}
                         </div>
                         ` : ''}
                         <div class="session-card-footer">
@@ -1715,7 +1732,8 @@ const App = (function() {
                                         `;
                                     }
                                 } else {
-                                    _showNotification('Failed to delete panel set', result.message, 'error');
+                                    const { title, type } = describeFailure(result, 'Failed to delete panel set');
+                                    _showNotification(title, result.message, type);
                                 }
                             }
                         }
@@ -1951,6 +1969,14 @@ const App = (function() {
             // Check for name collision
             const sessions = await SessionManager.listSessions();
             const existingNames = new Set(sessions.map(s => s.name.toLowerCase()));
+            const existing = sessions.find(s => !s.isAutosave && s.name.toLowerCase() === sanitizedName.toLowerCase());
+            
+            if (existing && !canModify(existing)) {
+                // The server would refuse the overwrite; say so before asking
+                // anything, and leave the dialog open so a new name can be typed.
+                _showNotification('Choose another name', `"${sanitizedName}": ${lockReason(existing)}`, 'warning');
+                return;
+            }
             
             if (existingNames.has(sanitizedName.toLowerCase())) {
                 // If name collision, ask for confirmation
@@ -1965,7 +1991,8 @@ const App = (function() {
                 _sessionModal.hide();
                 //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
-                _showNotification('Failed to save panel set', result.message, 'error');
+                const { title, type } = describeFailure(result, 'Failed to save panel set');
+                _showNotification(title, result.message, type);
             }
         } else if (modalType === 'load') {
             // Check if we're in file upload mode
@@ -1998,7 +2025,8 @@ const App = (function() {
                             _showNotification('Failed to load imported panel set', loadResult.message, 'error');
                         }
                     } else {
-                        _showNotification('Failed to import panel set', result.message, 'error');
+                        const { title, type } = describeFailure(result, 'Failed to import panel set');
+                        _showNotification(title, result.message, type);
                     }
                 } catch (error) {
                     _showNotification('Error', error.message, 'error');
@@ -2026,6 +2054,30 @@ const App = (function() {
                     _showNotification('Failed to load panel set', result.message, 'error');
                 }
             }
+        }
+    }
+    
+    /**
+     * Fill the header badge from `auth/me`: the signed-in user (a logout
+     * link), or a warning when the server is on the network without login.
+     * Silent on failure -- an older server simply has no such endpoint.
+     * @private
+     */
+    async function _loadAuthIndicator() {
+        const el = document.getElementById('auth-indicator');
+        if (!el) return;
+        try {
+            const response = await fetch(Config.API.AUTH_ME);
+            if (!response.ok) return;
+            const badge = authIndicator(await response.json());
+            if (!badge) return;
+            el.textContent = badge.text;
+            el.title = badge.title;
+            el.classList.add(`auth-indicator--${badge.variant}`);
+            if (badge.href) el.href = badge.href;
+            el.hidden = false;
+        } catch (error) {
+            console.warn('Could not load sign-in status:', error);
         }
     }
     

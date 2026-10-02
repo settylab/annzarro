@@ -33,6 +33,11 @@ SUITES = {
     "axis-coverage.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make.js"
     ),
+    # What the panel-set dialog offers and says when the server refuses a
+    # delete/overwrite (owner/admin rule in annzarro/server/permissions.py).
+    "session-permissions.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "utils", "session-permissions.js"
+    ),
 }
 
 
