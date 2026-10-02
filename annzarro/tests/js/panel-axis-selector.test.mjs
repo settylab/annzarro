@@ -130,3 +130,21 @@ test('cell plot keeps preferring X_umap in obsm', () => {
 test('nothing usable yields null rather than a half-built axis', () => {
     assert.equal(chooseDefaultAxes('genes', { var: { columns: ['_index'] } }), null);
 });
+
+// ---------------------------------------------------------------------------
+// One label for an axis column that follows the focus. The menu said
+// "Focused cell to cell_7" when built and "Focused cell cell_7" after a focus
+// change (cell-plot.js / gene-plot.js relabel with focusedOptionLabel).
+// ---------------------------------------------------------------------------
+const { focusedOptionLabel } = await import('../../../static/js/panels/plot-utilities/panel-ui-update.js');
+
+for (const [type, plotType, entity, name] of [
+    ['obsp', 'cells', 'cells', 'cell_7'], ['varp', 'genes', 'genes', 'GENE_A'],
+    ['layer', 'cells', 'genes', 'GENE_A'], ['layer', 'genes', 'cells', 'cell_7']]) {
+    test(`${type} (${plotType}) focus option reads like its relabel after a focus change`, () => {
+        const sel = fakeSelect();
+        populateColumnSelector({ type, key: 'k', column: '', locked: false }, sel, 'x', plotType, {});
+        assert.equal(sel.options[0].text, focusedOptionLabel(entity, name));
+        assert.equal(sel.options[0].text, `Focused ${entity === 'cells' ? 'cell' : 'gene'} ${name}`);
+    });
+}

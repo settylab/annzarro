@@ -93,6 +93,18 @@ export function chooseDefaultAxes(plotType, datasetStructure) {
 }
 
 /**
+ * The label of an axis column option that follows the focused cell or gene.
+ * One wording everywhere: the menus said "Focused cell to X" when built and
+ * "Focused cell X" after a focus change (cell-plot.js / gene-plot.js).
+ * @param {'cells'|'genes'} entity
+ * @param {string} name
+ * @returns {string}
+ */
+export function focusedOptionLabel(entity, name) {
+  return `Focused ${entity === 'cells' ? 'cell' : 'gene'} ${name}`;
+}
+
+/**
  * Populates only the key selector for a given axis.
  * @param {Object} settings - Axis settings object (will be updated)
  * @param {HTMLSelectElement} keySelect - The key select dropdown
@@ -352,7 +364,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
         settings.column = focused;
       }
       columnOptions = focused ? 
-        [{ value: focused, text: `Focused cell to ${focused}` }] : 
+        [{ value: focused, text: focusedOptionLabel('cells', focused) }] : 
         [{ value: '', text: 'Select a focused cell first' }];
       break;
     }
@@ -368,7 +380,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
         settings.column = focused;
       }
       columnOptions = focused ? 
-        [{ value: focused, text: `Focused gene to ${focused}` }] : 
+        [{ value: focused, text: focusedOptionLabel('genes', focused) }] : 
         [{ value: '', text: 'Select a focused gene first' }];
       break;
     }
@@ -385,7 +397,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
           settings.column = focused;
         }
         columnOptions = focused ? 
-          [{ value: focused, text: `Focused gene ${focused}` }] : 
+          [{ value: focused, text: focusedOptionLabel('genes', focused) }] : 
           [{ value: '', text: 'Select a focused gene first' }];
       } else if (plotType === 'genes') {
         if (settings.column && settings.type === 'layer' && settings.locked) {
@@ -398,7 +410,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
           settings.column = focused;
         }
         columnOptions = focused ? 
-          [{ value: focused, text: `Focused cell ${focused}` }] : 
+          [{ value: focused, text: focusedOptionLabel('cells', focused) }] : 
           [{ value: '', text: 'Select a focused cell first' }];
       }
       break;

@@ -5,7 +5,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
-import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
+import { setupAxisSelector, focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { drawPlaceholder } from '../utils/panel-surface.js';
 
@@ -255,9 +255,9 @@ const CellPlotPanel = (function() {
             }
             // Update the label of the first option in the select element
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'genes') {
-                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity);
             } else if (_settings[axis] && _settings[axis].type === 'obsp' && endityType === 'cells') {
-                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity);
             }
         }
 

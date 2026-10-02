@@ -1,3 +1,4 @@
+import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
@@ -262,9 +263,9 @@ const GenePlotPanel = (function() {
             }
             // Update the label of the first option in the select element
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'cells') {
-                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity);
             } else if (_settings[axis] && _settings[axis].type === 'varp' && endityType === 'genes') {
-                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity);
             }
         }
 
