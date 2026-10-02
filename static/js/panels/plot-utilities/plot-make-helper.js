@@ -18,6 +18,17 @@ import { generateDiscreteColors } from './colors.js';
  *
  * @returns {Object} layout - The Plotly layout configuration.
  */
+/**
+ * Equal aspect: one unit on x is as long as one on y (settings.equalAspect,
+ * kept in panel configs and links), so spatial coordinates are not
+ * stretched to the tile's shape. 2D only.
+ * @returns {Object} relayout keys
+ */
+export function aspectUpdate(settings) {
+  const on = !!settings.equalAspect && !settings.z;
+  return { 'yaxis.scaleanchor': on ? 'x' : null, 'yaxis.scaleratio': on ? 1 : null };
+}
+
 export function createLayout(settings) {
   // Base axis settings for both 2D and 3D axes.
   const baseAxis = {
@@ -49,7 +60,8 @@ export function createLayout(settings) {
       title: {
         text: `${settings.y.type}.${settings.y.key}` + (settings.y.column ? `.${settings.y.column}` : ''),
         font: {}
-      }
+      },
+      ...(settings.equalAspect && !settings.z ? { scaleanchor: 'x', scaleratio: 1 } : {})
     }
   };
 

@@ -10,6 +10,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
+import { aspectUpdate } from './plot-make-helper.js';
 import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
 
 export function setupPlotEventListeners({
@@ -589,6 +590,18 @@ export function setupColorControls(
         const v = parseFloat(e.target.value);
         settings.color.logFloor = Number.isFinite(v) && v > 0 ? v : null;
         if (settings.color.log) _reapplyLog();
+    });
+
+    // --- Equal aspect (settings.equalAspect) ---
+    const $equalAspectButton = $container.find(`#equal-aspect-${id}`);
+    $.updateButtonState($equalAspectButton, !!settings.equalAspect);
+    $equalAspectButton.on('click', () => {
+        settings.equalAspect = !settings.equalAspect;
+        $.updateButtonState($equalAspectButton, settings.equalAspect);
+        // refit both axes for the new constraint (unless hiding pins them)
+        const refit = (settings.hideNaN || settings.hideOutliers) ? {} : { 'xaxis.autorange': true, 'yaxis.autorange': true };
+        Promise.resolve().then(() => Plotly.relayout(plotContainer, { ...aspectUpdate(settings), ...refit }))
+            .catch(err => console.warn('Aspect not changed:', err && err.message));
     });
 
     // --- Hide NaN button ---
