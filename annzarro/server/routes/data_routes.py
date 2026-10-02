@@ -105,6 +105,9 @@ def _reader_error_response(exc, dataset_path):
     """
     if isinstance(exc, DataRequestError):
         return _data_request_error_response(exc)
+    if isinstance(exc, KeyError):
+        return jsonify({"error": exc.args[0] if exc.args else "Key not found",
+                        "reason": "key_not_found"}), 404
     if is_timeout(exc):
         return jsonify({
             "error": (timeout_message(dataset_path) if is_remote_path(dataset_path)

@@ -2102,61 +2102,58 @@ class ZarrReader:
         
         return uns_structure
     
+    @staticmethod
+    def _uns_value(node) -> Any:
+        """A uns member as plain JSON-able Python.
+
+        Arrays are read whole with ``[()]``, which also works for the 0-d
+        arrays anndata writes for scalars (``[:]`` fails on those, and the
+        old code then returned the array's repr). Strings come back as str
+        whether stored as bytes, object or numpy StringDType; groups become
+        dicts, to any depth.
+        """
+        if hasattr(node, 'keys'):
+            return {name: ZarrReader._uns_value(node[name]) for name in node.keys()}
+        value = node[()]
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind in ('S', 'O', 'U', 'T'):
+                flat = [v.decode('utf-8') if isinstance(v, bytes) else
+                        (v if v is None or isinstance(v, (int, float, bool)) else str(v))
+                        for v in value.ravel().tolist()]
+                if value.ndim == 0:
+                    return flat[0]
+                return np.array(flat, dtype=object).reshape(value.shape).tolist()
+            return value.tolist()
+        if isinstance(value, bytes):
+            return value.decode('utf-8')
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
+
     @cached_method
     def get_uns(self, key: str, dataset_path: Optional[str] = None) -> Any:
         """
         Get data from the uns section.
         
         Args:
-            key: Key in uns to get
+            key: Key in uns to get; ``a/b`` reaches into nested dicts
             dataset_path: Path to the dataset (stateless operation)
-            disable_caching: If True, don't use cache even if enabled
             
         Returns:
-            The data from the uns section. Could be a numpy array, dict, or other structure.
+            Plain Python: dict for a group, str/int/float/bool for a scalar,
+            (nested) lists for an array.
+
+        Raises:
+            KeyError: ``key`` is not in uns. (It used to return None, which
+                the route served as ``200 {"data": null}``.)
         """
         root = self._get_root(dataset_path=dataset_path)
-        
-        if root is None or 'uns' not in root or key not in root['uns']:
-            return None
-        
-        try:
-            # Check if it's a group (dict-like)
-            if hasattr(root['uns'][key], 'keys'):
-                # Create a dictionary representation
-                result = {}
-                for subkey in root['uns'][key].keys():
-                    # Recursively convert zarr object to Python native type
-                    if hasattr(root['uns'][key][subkey], 'keys'):
-                        # It's a nested group
-                        subresult = {}
-                        for subsubkey in root['uns'][key][subkey].keys():
-                            try:
-                                value = root['uns'][key][subkey][subsubkey][:]
-                                subresult[subsubkey] = value.tolist() if hasattr(value, 'tolist') else value
-                            except Exception as e:
-                                raise_if_timeout(e)
-                                logger.warning(f"Error converting uns/{key}/{subkey}/{subsubkey}: {e}")
-                                subresult[subsubkey] = str(root['uns'][key][subkey][subsubkey])
-                        result[subkey] = subresult
-                    else:
-                        # It's a dataset
-                        try:
-                            value = root['uns'][key][subkey][:]
-                            result[subkey] = value.tolist() if hasattr(value, 'tolist') else value
-                        except Exception as e:
-                            raise_if_timeout(e)
-                            logger.warning(f"Error converting uns/{key}/{subkey}: {e}")
-                            result[subkey] = str(root['uns'][key][subkey])
-                return result
-            else:
-                # It's a dataset, get the data
-                value = root['uns'][key][:]
-                return value.tolist() if hasattr(value, 'tolist') else value
-        except Exception as e:
-            raise_if_timeout(e)
-            logger.error(f"Error getting uns data for {key}: {e}")
-            return None
+        node = root['uns'] if root is not None and 'uns' in root else None
+        for part in key.strip('/').split('/'):
+            if node is None or not hasattr(node, 'keys') or part not in node:
+                raise KeyError(f"No uns key '{key}' in this dataset.")
+            node = node[part]
+        return self._uns_value(node)
 
     def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:
         """

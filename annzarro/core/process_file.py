@@ -234,6 +234,9 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_uns(uns_key, dataset_path)
+        if data is None and reader is h5ad_reader_obj:
+            # the h5ad reader answers None for a missing key
+            raise KeyError(f"No uns key '{uns_key}' in this dataset.")
         
         logger.info(f"Successfully loaded uns/{uns_key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
@@ -242,6 +245,8 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
             "uns_key": uns_key,
             "dataset_path": dataset_path
         })
+    except KeyError:
+        raise
     except Exception as e:
         raise_if_timeout(e)
         logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")

@@ -375,19 +375,13 @@ def register_zarr_routes(app, api_version):
             # Get the uns data
             data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
             
-            if data is None:
-                return jsonify({
-                    "dataset_path": dataset_path,
-                    "uns_key": uns_key,
-                    "data": None,
-                    "message": f"Uns key '{uns_key}' not found or contains no data"
-                })
-            
             return jsonify({
                 "dataset_path": dataset_path,
                 "uns_key": uns_key,
                 "data": data
             })
+        except KeyError as e:
+            return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
@@ -420,19 +414,13 @@ def register_zarr_routes(app, api_version):
             # Get the uns data
             data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
             
-            if data is None:
-                return jsonify({
-                    "dataset_path": dataset_path,
-                    "uns_key": uns_key,
-                    "data": None,
-                    "message": f"Uns key '{uns_key}' not found or contains no data"
-                })
-            
             return jsonify({
                 "dataset_path": dataset_path,
                 "uns_key": uns_key,
                 "data": data
             })
+        except KeyError as e:
+            return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

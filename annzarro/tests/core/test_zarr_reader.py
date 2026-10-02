@@ -978,8 +978,8 @@ class TestZarrReader(unittest.TestCase):
         self.assertEqual(len(analysis['explained_variance']), 10)
 
         # Test getting non-existent key
-        nonexistent = self.reader.get_uns('nonexistent', dataset_path=self.zarr_path)
-        self.assertIsNone(nonexistent)
+        with self.assertRaises(KeyError):
+            self.reader.get_uns('nonexistent', dataset_path=self.zarr_path)
 
         # Verify metadata includes uns
         metadata = self.reader.get_metadata(dataset_path=self.zarr_path)
