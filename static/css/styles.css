@@ -1494,14 +1494,78 @@ button.dtsb-button.dtsb-clear:hover {
     line-height: 38px;
 }
 
-/* Ensure consistent width for gene and cell selectors */
+/* Focused gene / cell typeaheads (static/js/utils/name-picker.js) */
 #focused-gene {
-    width: 160px !important;
+    width: 160px;
 }
 
 #focused-cell {
-    width: 220px !important;
-    text-overflow: ellipsis !important;
+    width: 220px;
+}
+
+.name-picker {
+    position: relative;
+}
+
+.name-picker > input {
+    text-overflow: ellipsis;
+}
+
+.name-picker-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 9999;
+    width: max(100%, 320px);
+    margin-top: 2px;
+    background: #fff;
+    border: 1px solid #adb5bd;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.name-picker-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.name-picker-regex {
+    font-family: monospace;
+    padding: 0 6px;
+    line-height: 1.4;
+}
+
+.name-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.name-picker-option {
+    padding: 6px 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.name-picker-option.selected {
+    font-weight: bold;
+}
+
+.name-picker-option.active,
+.name-picker-option:hover {
+    background-color: #0d6efd;
+    color: #fff;
 }
 
 /* Dataset selector should have a moderate width */

@@ -12,6 +12,7 @@ const Config = (function() {
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         CELLS: `${API_BASE}/data/cells`,
         GENES: `${API_BASE}/data/genes`,
+        NAMES: `${API_BASE}/data/names`,
         OBS: `${API_BASE}/data/obs`,
         VAR: `${API_BASE}/data/var`,
         OBSM: `${API_BASE}/data/obsm`,
