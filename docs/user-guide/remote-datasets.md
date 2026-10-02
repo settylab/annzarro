@@ -88,6 +88,32 @@ the server fetch any URL, including addresses on your internal network. Always s
 stores are open to any URL.
 ```
 
+## Limits
+
+- **Zarr only.** An `.h5ad` file is read from local disk only; a remote `.h5ad` URL is refused.
+  Convert it once with `adata.write_zarr(...)` ({doc}`../data/preparing-a-store`).
+- **No credentials or query strings in the URL.** `https://user:pass@…` and pre-signed URLs
+  (anything with `?…`) are refused; private buckets use `remote_credentials: environment`.
+- **HTTP needs consolidated metadata.** A web server cannot list a directory, so obs columns and
+  the keys of obsm, layers and the other groups are found only through `.zmetadata`. `anndata`'s
+  `write_zarr` writes it by default; add it to an existing store with
+  `zarr.consolidate_metadata(path)`. S3 and GCS list natively.
+- **Caches assume the store does not change** while the server runs. After rewriting a remote
+  store, restart the server or send `POST /api/v1/cache/reset`.
+- **Not in the desktop app.** The desktop app ships without the remote readers; use
+  `pip install 'annzarro[remote]'` and `annzarro start` instead.
+
+## Latency
+
+The store root, its metadata and (with Zarr 3) recently read raw chunks are kept in memory per
+URL; everything else is fetched on demand. Measured on public Vitessce AnnData stores:
+
+- First open, with the full structure: 4 to 7 s. After that, 0.1 to 0.7 s per gene, obs column or
+  embedding (13k cells, `gs://`).
+- A store whose X is CSR-encoded must read the whole matrix to return one gene: 4 s per gene
+  uncached, 1 to 1.5 s once its chunks are in the chunk cache (4k spots, HTTPS). Dense chunked
+  layers avoid this ({doc}`../data/chunking`).
+
 ## What was tested for this page
 
 There was no public HTTPS AnnData Zarr store at hand, so this page was checked with a local web

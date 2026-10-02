@@ -13,7 +13,7 @@ chunks it needs, so the data never have to be copied to the viewer's machine.
 | How the browser reaches it | inside the app | SSH tunnel to `127.0.0.1` | HTTPS through a reverse proxy |
 | Login | off | off (the server is bound to loopback) | on |
 | Which paths can be opened | any on your disk | any the server process can read | only the data directory and `allowed_dirs` |
-| Remote stores (`s3://`, ...) | allowed (`auto`, needs the `remote` extra) | allowed on loopback without login; with login only from `remote_allowlist` | only from `remote_allowlist` |
+| Remote stores (`s3://`, ...) | not supported (the app ships without the remote readers) | allowed on loopback without login; with login only from `remote_allowlist` | only from `remote_allowlist` |
 | Panel sets | yours | yours | shared by all users, with owners |
 | Set-up page | {doc}`../getting-started/desktop-app` | {doc}`personal-server` | {doc}`lab-server`, {doc}`authentication` |
 

@@ -74,7 +74,32 @@ already contains these files.
 The repository also has a wrapper script, `./annzarro-cli`, that creates a virtual environment
 in `./venv` and runs `annzarro` inside it (`./annzarro-cli install`, then
 `./annzarro-cli start`). It is a convenience for working in the checkout; the `pip` route above
-gives you the same command.
+gives you the same command. Its installer, `annzarro-install.py` (also runnable directly with
+`python annzarro-install.py`), takes options the `annzarro` command of a pip install does not:
+
+| Option | Meaning |
+|---|---|
+| `--no-venv` | Install into the current interpreter instead of `./venv`. |
+| `--clean` | Remove an existing `./venv` first (the wrapper adds this unless `--no-venv` is given). |
+| `--no-extras` | Skip the optional dependencies, including the remote-store readers. |
+| `--upgrade` | Upgrade packages that are already installed. |
+
+### Running the tests
+
+The test suite covers Python, every JavaScript suite (`annzarro/tests/js/*.test.mjs`) and ESLint,
+so it needs Node.js 22 or later in addition to Python:
+
+```bash
+pip install -e .
+npm ci              # once: installs the pinned ESLint from package-lock.json
+python -m pytest    # Python, JS and lint; CI runs exactly this
+npm run lint        # or the JS side alone
+npm test
+```
+
+Without `node` or `npm ci`, the JS and lint tests fail rather than being skipped.
+`annzarro start --development` runs the server in development mode
+({doc}`../reference/configuration`).
 
 ## Check the installation
 

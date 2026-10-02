@@ -104,7 +104,9 @@ The bundled gunicorn configuration `annzarro.server.gunicorn_config` reads the s
 configuration as the app: it binds to `server.host:server.port`, starts `server.workers`
 workers (default: twice the CPUs plus one, at most 4), sets a 60 s worker timeout and sends
 gunicorn's own logs, including the access log, to standard error. Options given on the
-command line, such as `--limit-request-line` here, override it.
+command line, such as `--limit-request-line` here, override it. In a source checkout,
+`annzarro/server/run_gunicorn.sh` runs this command without `--limit-request-line`, with `ANNZARRO_CONFIG` defaulting to
+`/etc/annzarro/site.yaml` and stops if that file is missing.
 
 `create_wsgi_app()` loads the same layered configuration as `annzarro start` (built-in
 defaults, `/etc/annzarro/config.yaml`, the user and project files, then the file named by
