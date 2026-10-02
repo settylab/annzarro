@@ -50,7 +50,7 @@ Only step 6 touches the data, and only one chunk column of it.
 | `server/auth.py`, `permissions.py`, `confinement.py` | users and login, panel-set ownership, keeping a hosted server inside its data directory |
 | `core/__init__.py` | `get_reader`: `.zarr` and remote URLs to the zarr reader, `.h5ad` to the h5ad reader |
 | `core/zarr_reader.py` | opens stores (consolidated metadata, zarr format 2, and 3 under zarr 3), slices dense arrays, CSR/CSC/COO groups, dataframes, categoricals and nullable encodings |
-| `core/h5ad_reader.py` | the same interface over h5py for local h5ad files; sparse matrices are loaded whole |
+| `core/h5ad_reader.py` | the same interface over h5py for local h5ad files; sparse rows and columns are read lazily, each request opens and closes the file |
 | `core/remote.py` | remote-store policy (allowlist, timeouts, credentials) and fsspec access |
 | `core/caching.py` | per-dataset result cache with LRU eviction under `cache_memory_mb` |
 | `core/array_response.py` | the wire format ({doc}`wire-format`) |
@@ -71,6 +71,12 @@ which is what makes several gunicorn workers behind one proxy work
 | remote chunk cache | server, per remote store (zarr 3) | chunk key | `remote_chunk_cache_mb` (256) | restart |
 | page cache | operating system | file | free RAM | the OS |
 
+The result cache is safe under concurrent threads (the threaded `annzarro start` server serves
+every request thread from one cache; each gunicorn worker process has its own); each entry's size is recorded when it is
+added and exactly that is freed on eviction, so `memory_usage_mb` in `GET /api/v1/cache/info` is
+what the cache holds. `cache_memory_mb`, `cache_enabled` and `cache_dataset_limit` take effect
+when the app is configured, also for modules that imported the reader earlier.
+
 All server caches assume a store does not change while the server runs. After rewriting a
 store in place, call `POST /api/v1/cache/reset` or restart. On a shared server the reset is
 admins only, and under gunicorn it clears only the worker that answers, so restart there.
@@ -80,10 +86,11 @@ admins only, and under gunicorn it clears only the worker that answers, so resta
 Server memory follows the chunks being read, not the store. The paper's lab deployment served
 33 datasets totalling 2.2 TiB on disk with three server processes of 0.58-0.75 GB resident
 memory each. On the paper's HPC benchmark, serving one row of a 160 GB dense matrix peaked at
-109 MB. The exceptions are the access patterns that load a whole matrix: a gene column of a
-CSR matrix, a cell row of a CSC matrix, a cell row of a layer stored in whole-gene chunks
-(12 GB at 1M × 5,000 in the paper's laptop sweep), and any sparse matrix in an h5ad file.
-See {doc}`performance`.
+109 MB. A selection on a sparse matrix's other axis (a gene column of CSR, a cell row of CSC),
+in zarr and in h5ad, is a bounded scan that holds at most one block of stored indices, not the
+whole matrix; it still decompresses every chunk, so it stays slow. The one pattern that still
+needs memory on the order of the matrix is a cell row of a dense layer stored in whole-gene
+chunks (12 GB at 1M × 5,000 in the paper's laptop sweep). See {doc}`performance`.
 
 ## Browser
 

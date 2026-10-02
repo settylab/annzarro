@@ -42,7 +42,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Colour range looks wrong after loading a view (Steps 22-23) | Range restored from another focus | Toggle Lock Range or reset min and max |
 | Each gene click takes seconds (Steps 15, 22) | The layer is CSR (whole-matrix load per gene), or dense and chunked wide in genes | Store it CSC, or rechunk by the aspect rule ({doc}`../data/chunking`) |
 | First click on a new cell in a cell-row plot takes over 20 s (Steps 25-27) | Layer chunked as whole gene columns (all cells × a few genes), so one cell row decompresses the entire layer | Rechunk; repeat clicks are faster but still decompress the layer |
-| Cell rows of X are slow (215 ms here, more at scale) | X stored CSC: cell rows load the whole matrix | Expected trade-off; use a dense layer for cell-row views |
+| Cell rows of X are slow (215 ms here, more at scale) | X stored CSC: a cell row scans every chunk of the matrix (in bounded blocks, so memory stays small) | Expected trade-off; use a dense layer for cell-row views |
 
 ## Sharing and hosting
 

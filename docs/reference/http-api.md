@@ -17,6 +17,10 @@ from those calls; long paths are shortened to `$DS`.
 
 ## Conventions
 
+Paths
+: Every route below is under `/api/v1`. On a server mounted under a path
+  (`server.url_prefix`, {doc}`../deployment/lab-server`) they are under `<prefix>/api/v1`.
+
 `dataset_path`
 : Every data route takes the dataset as a query parameter: an absolute local path to a
   `.zarr` directory or `.h5ad` file, or a remote zarr URL (`s3://`, `gs://`, `https://`; see
@@ -64,7 +68,7 @@ These are the routes one click uses. All are `GET`, all accept `If-None-Match` a
 | `/data/X` | `X` | `cols=<gene>` or `rows=<cell>` | none |
 | `/data/obsp/<key>` | `obsp[key]` | `rows=<cell>` | obsp key |
 | `/data/varp/<key>` | `varp[key]` | `rows=<gene>` | varp key |
-| `/data/obsm/<key>` | `obsm[key]` | `column_name=0` (one axis; the web client names the column, which also works for dataframe-valued keys) or `cols=0` | obsm key |
+| `/data/obsm/<key>` | `obsm[key]` | `column_name=0` (one axis; the web client names the column, which also works for dataframe-valued keys) or `cols=0`. Sparse obsm matrices are read with positional columns `0..n-1` | obsm key |
 | `/data/varm/<key>` | `varm[key]` | `cols=<i>`; `column_name=` | varm key |
 | `/data/obs` | `obs` columns | `columns=<name>[,<name>...]`, optional `rows=`, `include_categories=false` | none |
 | `/data/var` | `var` columns | `columns=<name>[,...]`, optional `cols=` (gene indices) | none |
@@ -148,6 +152,57 @@ Age (categorical, JSON fallback): dict ['Young', 'Young', 'Young']
 `DM_Kernel` is stored as float64 and its values do not survive a round trip through float32,
 so it travels as float64; the 31 non-zeros arrive as 372 bytes.
 
+### When a column cannot be read
+
+- `/data/obs` and `/data/var` with named `columns`: a column the dataset does not have is `404
+  key_not_found`; a listed column that cannot be read is `400 unsupported_type` (the error names
+  the column and its encoding) or `500 read_failed` / `stale_metadata`. A failed read is never
+  answered `200` with an empty list.
+- `/data/obs` and `/data/var` **without** `columns` (every column): one unreadable column does
+  not fail the request. The reply then carries `"errors": {"<column>": {"reason": ..., "error":
+  ...}}` next to `data`.
+- `/data/obsm/<key>` and `/data/varm/<key>`: an unknown `column_name` is `404 key_not_found`
+  (`obsm 'X_umap' has no column 'nope'`); an encoding the server cannot read is `400
+  unsupported_type`.
+- A request for a layer, obsp or varp key on a dataset that has no `layers`, `obsp` or `varp`
+  group at all is `404 key_not_found`, like any other missing key.
+
+## Cell subsets
+
+Datasets with more cells than `ui.defaults.subset_threshold` (200,000) open on a reproducible
+subset of `subset_size` cells (100,000, seed 0); the user can change it in the app. The design,
+including the selection function, is in {doc}`../design/subsetting`.
+
+A subset is described by a spec, sent as the `subset=` query parameter (compact JSON, at most
+2,000 characters), or the words `all` and `auto`:
+
+```json
+{"n": 1000, "seed": 0}
+{"n": 300, "seed": 0, "balance": "Age"}
+{"n": null, "seed": 0, "where": [{"col": "Age", "op": "in", "values": ["Old"]}]}
+```
+
+`n: null` means every cell that passes `where`, an AND of conditions on obs columns (`in`,
+`not_in`, `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`). The same spec selects the same cells on
+every machine and release.
+
+`GET /data/subset?dataset_path=&subset=` resolves a spec and describes it:
+
+```console
+$ curl -s "http://127.0.0.1:8812/api/v1/data/subset?dataset_path=$DS&subset=%7B%22n%22%3A300%2C%22seed%22%3A0%2C%22balance%22%3A%22Age%22%7D"
+{"defaults":{"seed":0,"size":100000,"threshold":200000},"groups":{"Mid":{"shown":100,"total":2057},"Old":{"shown":100,"total":3116},"Young":{"shown":100,"total":2917}},"key":"{\"n\":300,\"seed\":0,\"balance\":\"Age\"}","n":300,"n_eligible":8090,"n_total":8090,"subset":{"balance":"Age","n":300,"seed":0}}
+```
+
+With `subset=` the cell-axis routes (`/data/cells`, `/data/obs`, `/data/obsm`, `/data/obsp`,
+`/data/X`, `/data/layer`, `/data/names`, `/data/dataset_structure`) answer for the subset only:
+cell positions in requests and replies are positions within the subset, and whole-axis reads are
+cut to it. Gene-axis routes are unchanged. JSON and `format=f32` both work; a fold-change gene
+column for `{"n":1000,"seed":0}` came back as `X-Annzarro-Shape: 1000,1`, 4,000 bytes, with its
+own `ETag`. `/data/paginated`, `/data/statistics` and `/data/by_path` cannot apply a subset and
+refuse one with `400 subset_unsupported`. A malformed spec is `400 bad_subset` (it never falls
+back to every cell); a `where` or `balance` column the dataset does not have is `404
+key_not_found`.
+
 ## Dataset discovery and structure
 
 | Route | Returns |
@@ -202,7 +257,7 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `GET /auth/me` | `{auth_enabled, username, is_admin, exposed}`; `exposed` is true when the server listens beyond localhost with login off |
 | `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks |
-| `GET /cache/info` | the server's result cache: datasets, items, `memory_usage_mb`, `max_memory_mb` |
+| `GET /cache/info` | the server's result cache of the process that answers: datasets, items, `memory_usage_mb` (exactly what the cache holds), `max_memory_mb` |
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`. On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache; this clears only the worker that answers |
 | `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
@@ -223,14 +278,15 @@ one that is not a dataset `400 unsupported_type`.
 | 400 | `bad_indices` | `rows`/`cols` present but not a list of non-negative integers, in JSON and `format=f32` alike; the message quotes the value: `Indices must be comma-separated non-negative integers, got 'abc'` (`got ''` for an empty parameter) |
 | 400 | `index_out_of_range` | an index at or beyond the length of its axis |
 | 400 | `cap_exceeded` | more indices than the client's own `max_cells=` / `max_genes=` parameter (below) |
-| 400 | `unsupported_type` | not a `.zarr`/`.h5ad`, or a zarr format the server's zarr cannot read |
+| 400 | `unsupported_type` | not a `.zarr`/`.h5ad`, a zarr format the server's zarr cannot read, an h5ad written by anndata older than 0.7, or a named obs/var column or obsm/varm key whose encoding cannot be read |
+| 400 | `bad_subset`, `subset_unsupported` | a malformed `subset=` spec; a route that cannot apply a subset |
 | 400 | (none) | a required parameter is missing, e.g. `{"error":"dataset_path parameter is required"}` |
 | 401 | (none) | login on, no session; checked first |
 | 403 | `outside_data_dir` | hosted server, local path outside the data directory and `allowed_dirs` (the message names no server directories) |
 | 403 | `access_denied` | remote store refused by the remote-store policy |
 | 403 | `not_owner`, `legacy_admin_only`, `admin_only` | panel-set permissions; `admin_only` also for `POST /cache/reset` on a shared server |
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
-| 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, or an obs/var column, that the dataset does not have; `X` in a store without `X` |
+| 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. Re-consolidate (`zarr.consolidate_metadata(path)`), then `POST /cache/reset` or restart |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |

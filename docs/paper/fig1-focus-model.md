@@ -48,5 +48,6 @@ your server's ({doc}`../user-guide/share-links`).
 
 Panel set: {download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`;
 view JSON: {download}`fig1-focus-model.view.json <../_tools/views/fig1-focus-model.json>`.
-Loading a panel set registers its panels under **Add New Panel** > "Duplicate or Reopen Panel"
-but does not restore focus or layout; the link does ({ref}`tut-tour-load-file`).
+This panel set was saved without the split layout that current panel sets store: loading it
+opens the dataset and the saved focus, with the panels in rows of two; the link restores the exact layout
+({ref}`tut-tour-load-file`).

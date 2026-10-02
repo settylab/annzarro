@@ -68,7 +68,8 @@ Panel sets: {download}`fig2-overview.json <../_static/panelsets/paper/fig2-overv
 View JSON: {download}`fig2-overview.view.json <../_tools/views/fig2-overview.json>`,
 {download}`fig2-focus-sequence.view.json <../_tools/views/fig2-focus-sequence.json>`,
 {download}`fig2-table-filter.view.json <../_tools/views/fig2-table-filter.json>`.
-Loading a panel set registers its panels under **Add New Panel** > "Duplicate or Reopen Panel"
-but does not restore focus or layout; the links do ({ref}`tut-tour-load-file`).
+These panel sets were saved without the split layout that current panel sets store: loading one
+opens the dataset and the saved focus, with the panels in rows of two; the links restore the
+exact layout ({ref}`tut-tour-load-file`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`.

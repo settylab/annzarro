@@ -189,8 +189,49 @@ you are in depends on the environment.
 scanned. An entry is listed when it is a
 `.h5ad` file or a directory that looks like a zarr store (a `.zarr` name, a `.zgroup`, or `X`,
 `obs`, `var`, `obsm`, `layers` inside) and opens as AnnData. Symbolic links are followed, so
-`ln -s /big/disk/atlas.zarr DIR/` works. h5ad files are served directly, but their sparse
-matrices are loaded whole on first access; convert anything large to zarr.
+`ln -s /big/disk/atlas.zarr DIR/` works. h5ad files are served directly; see below for when to
+convert them.
+
+## h5ad files
+
+An `.h5ad` file opens like a zarr store: every route the web client uses (obs, var, obsm, varm,
+obsp and varp rows, X and layers by gene or by cell, uns including nested keys, the dataset
+structure) gives the same answers for an h5ad as for the same data in zarr, including the
+`format=f32` binary replies. AnnZarro only reads the file; each request opens and closes it, so
+gunicorn workers and threads never share an HDF5 handle. Remote `.h5ad` URLs are not supported.
+
+What decides speed is the layout `write_h5ad` leaves:
+
+- **X as CSR** (the usual `write_h5ad` output). A cell row is cheap; a gene column has to scan
+  every stored index. On the demonstration data (5.6 GB h5ad) a gene column of X took 167 ms
+  from the page cache, and about 1 GB of I/O per gene from a cold disk. **CSC** reverses this.
+- **Dense layers** are written contiguous, without chunks. A gene column is then one strided read
+  per row: 20 ms for 8,090 x 16,285 and 60 ms for 1M x 200 from the page cache, against 10 ms for
+  the same 1M x 200 column stored in chunks. From a cold or network disk a column touches nearly
+  every page of the array.
+
+So: h5ad is fine for small data on a local disk. For large data, or data on a network file
+system, convert to zarr with X as CSC (as `bm_aging.zarr` is; see the [general recipe](#general-recipe)), or at least write the h5ad with X as CSC and a compression setting, which
+makes h5py store dense arrays in chunks:
+
+```python
+adata.X = adata.X.tocsc()
+adata.write_h5ad("atlas.h5ad", compression="gzip")
+```
+
+These numbers were measured on the h5ad written from the demonstration data, in the pull
+request that made h5ad reads lazy (settylab/annzarro#51). On this branch, a gene column of X from
+`murine_bone_marrow_aging_processed.h5ad` (CSR) took 190-220 ms per request and a cell row 2 ms,
+from the page cache.
+
+Two more cases:
+
+- An `.h5ad` written by anndata older than 0.7 (obs and var as compound datasets) is refused with
+  `400 unsupported_type` and the message "This .h5ad was written by anndata older than 0.7 …
+  Re-save it with a current anndata: anndata.read_h5ad(path).write_h5ad(new_path)."
+- On file systems that refuse HDF5's file locks (some Lustre and NFS mounts: "unable to lock
+  file, errno = 38"), AnnZarro opens the file again without locking. It never writes, so this is
+  safe.
 
 ## The Procedure's steps for the demonstration data
 

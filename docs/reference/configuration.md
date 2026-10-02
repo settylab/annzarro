@@ -45,6 +45,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 |---|---|---|
 | `host` | `127.0.0.1` | Bind address for `annzarro start`. Any other value than `127.0.0.1`, `localhost`, `::1` makes the server shared and turns login on. Also the bind address of the bundled gunicorn configuration (`-b` on the gunicorn command line overrides it). |
 | `port` | `8000` | Port for `annzarro start` and the bundled gunicorn configuration. |
+| `url_prefix` | `""` | Path the app is served under behind a reverse proxy, e.g. `/explore`; empty means the root. A value that is not a plain path (`..`, `//`, `?`, `#`, spaces, a URL) stops the server at startup. Env `ANNZARRO_SERVER_URL_PREFIX`. See {doc}`../deployment/lab-server`. |
 | `workers` * | 2 x CPUs + 1, at most 4 | gunicorn worker processes, read by `annzarro.server.gunicorn_config`. Each has its own cache. |
 | `data_dir` | `~/annzarro-data` | Data directory: the datasets offered in the picker (stores at its top level and in its `datasets/` subdirectory), and `sessions/` for panel sets. A configured relative path is taken from the working directory; `~` is expanded. |
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
@@ -100,6 +101,8 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.color_scale` | `Portland` | Initial continuous colour scale. |
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
+| `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
+| `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
 
@@ -110,7 +113,7 @@ or inherited from its section; a key without one is `internal`.
 
 | Tier | Keys | Where the value appears |
 |---|---|---|
-| `public` | `server.host`, `server.port`, `server.https_enabled`, `server.unified_server`, `auth.enabled`, all of `branding`, `ui` and `integrations` | sent to every browser by `GET /api/v1/config`; printed by `config show` |
+| `public` | `server.host`, `server.port`, `server.https_enabled`, `server.unified_server`, `server.url_prefix`, `auth.enabled`, all of `branding`, `ui` and `integrations` | sent to every browser by `GET /api/v1/config`; printed by `config show` |
 | `internal` | the default for any key without a tier: every other key, including `server.data_dir`, `allowed_dirs`, `log_file`, the cache, limit and remote-store keys, `auth.user_file`, `session_timeout`, `cookie_secure` | printed by `config show`; never sent to the browser |
 | `sensitive` | `auth.secret_key`, `server.cert_file`, `server.key_file` | masked as `********` by `config show` and `config info`; never sent |
 

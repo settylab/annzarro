@@ -180,6 +180,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Prefix "";   # see "Serving under a path"
         proxy_read_timeout 90s;
     }
 }
@@ -205,6 +206,65 @@ JSON replies on a shared server; if nginx compresses `application/json` too, set
 Any other proxy (Apache, Caddy, Traefik, an institutional gateway) works the same way: forward
 to `127.0.0.1:8000`, pass the `X-Forwarded-For`, `-Proto` and `-Host` headers, and allow long
 request lines.
+
+## Serving under a path
+
+To serve AnnZarro at `https://host.example.org/explore/` next to other applications on the same
+host, give it the path in one of two ways. Both were tested end to end (login, share links and
+logout stay under the path) in the pull request that added them.
+
+**Option 1: AnnZarro knows the path, the proxy passes it through.** Simplest; it does not depend
+on proxy headers.
+
+```yaml
+# site.yaml
+server:
+  url_prefix: /explore        # or ANNZARRO_SERVER_URL_PREFIX=/explore
+  proxy_count: 1
+```
+
+```nginx
+location = /explore { return 301 /explore/; }
+location /explore/ {
+    proxy_pass http://127.0.0.1:8000;           # no trailing slash: path passed as is
+    proxy_set_header Host               $host;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-Prefix "";      # never pass a client's value on
+}
+```
+
+**Option 2: the proxy strips the path and says where it mounted the app.** No AnnZarro setting
+beyond `proxy_count: 1`.
+
+```nginx
+location = /explore { return 301 /explore/; }
+location /explore/ {
+    proxy_pass http://127.0.0.1:8000/;          # trailing slash: /explore/x -> /x
+    proxy_set_header Host               $host;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-Prefix /explore;
+}
+```
+
+- A configured `url_prefix` wins over `X-Forwarded-Prefix`. The header is only trusted when
+  `proxy_count` is above 0.
+- nginx forwards a client's own `X-Forwarded-Prefix` unless the configuration sets it. Always
+  set it (option 2) or blank it (option 1 and the root configuration above).
+- The login cookie's `Path` becomes the mount point (`/explore`), so two AnnZarro servers under
+  different paths on one host keep separate logins. After moving an existing server under a
+  path, everyone signs in once again.
+- Redirects to and from the login page, the `next` target and share links all stay under the
+  path; a `next` that points outside it falls back to the start page.
+- `annzarro start` with a `url_prefix` opens the browser at `http://127.0.0.1:<port>/explore/`.
+
+We checked this branch with `ANNZARRO_SERVER_URL_PREFIX=/explore`: `/explore/?dataset_path=…`
+signed out redirects to `/explore/login?next=/explore/%3Fdataset_path%3D…`, the login form posts
+to `/explore/login`, and the cookie is `Path=/explore; HttpOnly; SameSite=Lax`. In the strip mode
+(`proxy_count: 1`, header `X-Forwarded-Prefix: /explore`) the redirects and the cookie path are
+the same. `url_prefix: /a/../b` stops the server with "server.url_prefix must be a path such as
+/explore".
 
 ## Deep links and URL length
 

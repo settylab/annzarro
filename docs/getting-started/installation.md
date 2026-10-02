@@ -9,6 +9,9 @@ your own computer and do not want to install Python, use the {doc}`desktop-app` 
 
 - Python 3.9 or later. The package has been installed and its server started on Python 3.9,
   3.10, 3.11, 3.12, 3.13 and 3.14 (macOS, arm64). Python 3.8 and older cannot import it.
+  Apple's Xcode Python 3.9 (`/usr/bin/python3` on macOS) works, but its `hashlib` has no scrypt,
+  so login passwords created there are stored as `pbkdf2:sha256`; a users file made with another
+  Python may need `annzarro user passwd` ({doc}`../deployment/authentication`).
 - A current browser (Chrome, Firefox, Safari or Edge).
 - For the server: read access to the zarr stores you want to view. Memory depends on the chunks
   being read, not on dataset size; see {doc}`../reference/performance`.
@@ -127,7 +130,7 @@ AnnZarro never writes to datasets. It writes only:
 | Server log | `~/.annzarro/logs/annzarro_server.log` |
 | PID file of `annzarro start --detach` | `~/.annzarro/server.pid` |
 | Users file and login key (only when login is enabled) | `~/.annzarro/auth/users.json`, `~/.annzarro/auth/annzarro_secret_key` |
-| Saved panel sets | `<data directory>/sessions/` |
+| Saved panel sets | `<data directory>/sessions/` (by default `~/annzarro-data/sessions/`) |
 
 Set `ANNZARRO_HOME` to move `~/.annzarro` elsewhere, for example to a project directory on a
 cluster where the home directory is small.

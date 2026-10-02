@@ -41,8 +41,9 @@ The signed-in badge. Its tooltip says what this user may change.
 ## Managing users
 
 Users live in one JSON file, `auth.user_file` (default `~/.annzarro/auth/users.json` of the
-account running the server). Passwords are stored as salted hashes (Werkzeug's default, scrypt
-in current versions); the file is created with mode 0600. Run the `user` commands as the account
+account running the server). Passwords are stored as salted hashes: scrypt, or `pbkdf2:sha256`
+on a Python whose `hashlib` has no scrypt (Apple's Xcode Python 3.9, built against LibreSSL). The
+file is created with mode 0600. Run the `user` commands as the account
 that runs the server, with the same configuration, so they edit the same file. The `user`
 commands read the same `production` configuration as `annzarro start`, including the file named
 by `ANNZARRO_CONFIG`; on a lab server set it once as for gunicorn:
@@ -72,6 +73,14 @@ admin rights take effect without a restart, including for sessions that are alre
 (admin status is looked up on every request, not trusted from the cookie). Changing a password
 or removing a user ends that user's existing logins. Panel sets keep their owner, which is
 stored by username.
+
+**A hash this Python cannot check.** A scrypt hash written on one Python cannot be verified on a
+Python without scrypt (for example after moving the users file, or switching the server to
+Apple's Xcode Python). Login then fails with "This server cannot check your password on its
+current Python installation. Please tell the administrator (the server log says why)." and is
+not counted as a failed attempt. Fix it by running `annzarro user passwd --username <name>` with
+the server's own Python (the new hash is then `pbkdf2:sha256`), or by running the server on a
+Python built against OpenSSL.
 
 **Lockout.** After 5 failed sign-ins from one client address, that username is locked for that
 address for 15 minutes, even for the correct password. The count is kept in the users file, so

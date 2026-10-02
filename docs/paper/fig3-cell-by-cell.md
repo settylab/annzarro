@@ -63,8 +63,9 @@ Panel sets: {download}`fig3-walk.json <../_static/panelsets/paper/fig3-walk.json
 {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`.
 View JSON: {download}`fig3-walk.view.json <../_tools/views/fig3-walk.json>`,
 {download}`fig3-umap-vs-diffusion.view.json <../_tools/views/fig3-umap-vs-diffusion.json>`.
-Loading a panel set registers its panels under **Add New Panel** > "Duplicate or Reopen Panel"
-but does not restore focus or layout; the links do ({ref}`tut-tour-load-file`).
+These panel sets were saved without the split layout that current panel sets store: loading one
+opens the dataset and the saved focus, with the panels in rows of two; the links restore the
+exact layout ({ref}`tut-tour-load-file`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
 `figures/numbers/fig2.json` of the paper repository.

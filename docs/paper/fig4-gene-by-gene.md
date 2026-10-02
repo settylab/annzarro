@@ -82,9 +82,9 @@ directory that holds the store; the path must be absolute):
 
 Panel sets: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`,
 {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
-{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. Loading one registers its panels
-under **Add New Panel** > "Duplicate or Reopen Panel" but does not restore focus or layout; the
-links do ({doc}`../user-guide/panel-sets`).
+{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. They were saved without the split
+layout that current panel sets store: loading one opens the dataset and the saved focus, with
+the panels in rows of two; the links restore the exact layout ({doc}`../user-guide/panel-sets`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
 `figures/numbers/fig3.json` of the paper repository.

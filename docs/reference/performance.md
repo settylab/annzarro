@@ -38,8 +38,45 @@ revalidation answers it; median of 10. Script: `docs/_tools/bench_api.py`; data:
 
 At this size the zarr read dominates and binary transfer saves a few milliseconds. Two rows
 stand out, and both are storage layout, not transfer: a gene column of a CSR layer and a cell
-row of a CSC matrix each load the whole matrix (73 ms and 215 ms). Every other interaction is
-under 25 ms. See {doc}`../data/preparing-a-store` for the CSR/CSC choice.
+row of a CSC matrix each have to decompress every chunk of the matrix (73 ms and 215 ms). Every
+other interaction is under 25 ms. See {doc}`../data/preparing-a-store` for the CSR/CSC choice.
+
+### Sparse reads on the other axis
+
+A selection along the axis a sparse matrix is not compressed by (a cell row of CSC X, a gene
+column of a CSR layer) used to load the whole matrix into memory. It is now a bounded scan of
+the stored indices, 4M entries at a time, reading only the data between hits; a block of rows
+and columns slices the compressed axis first. Latency stays about the same, because every chunk
+is still decompressed; peak memory and small blocks change (settylab/annzarro#55, one click per
+fresh process, median of 3, growth of peak RSS):
+
+| Store | Click | Before | After |
+|---|---|---|---|
+| `bm_aging.zarr` (8,090 × 16,285) | X cell row (CSC) | 295 ms, 1,081 MB | 282 ms, 133 MB |
+| | X, 3 rows × 2 columns | 298 ms, 1,075 MB | 20 ms, 4 MB |
+| | `raw_counts` gene column (CSR) | 97 ms, 225 MB | 101 ms, 105 MB |
+| 1M × 2,000 synthetic, 100M stored values | X cell row (CSC) | 303 ms, 870 MB | 233 ms, 98 MB |
+| | CSR layer gene column | 233 ms, 866 MB | 270 ms, 116 MB |
+
+On this branch, seven cell rows of X from `bm_aging.zarr` took 224-238 ms each after the first
+(380 ms), and the server's resident memory grew from 103 MB to 244 MB over them.
+
+### h5ad files
+
+Measured on the 5.6 GB h5ad of the demonstration data (CSR X), app caches cleared before each
+cold request (settylab/annzarro#51):
+
+| Click | Cold | Warm (repeat) |
+|---|---|---|
+| gene column from X | 167 ms | 3.1 ms |
+| cell row from X | 5.2 ms | 4.5 ms |
+| gene column, sparse layer | 35 ms | 1.4 ms |
+| gene column, dense layer | 20 ms | 1.5 ms |
+| obs column | 2.3 ms | 0.9 ms |
+
+Peak memory per click fell from 1,005 MB (whole sparse matrix) to 1.2 MB for an X cell row and
+48 MB for an X gene column. A CSR gene column from a cold disk still reads about 1 GB; see
+{doc}`../data/preparing-a-store` for the layout advice.
 
 ## At one million cells: binary against JSON
 
@@ -128,6 +165,7 @@ for 30,000 genes took 0.13 s.
 | one row of a 10-160 GB dense pairwise matrix (HPC, provisional) | 85-117 MiB |
 | gene column of a 20 GB layer at 1M cells, JSON (laptop) | 326 MB median, 388 MB max |
 | cell row at any size (laptop) | 93-95 MB |
+| cell row of CSC X, `bm_aging.zarr` / 1M cells (laptop, settylab/annzarro#55) | 133 MB / 98 MB growth |
 | cell row with whole-gene chunks at 1M (laptop) | 12.1 GB |
 | lab deployment, 33 datasets, 2.2 TiB on disk, three processes | 0.58-0.75 GB each, peak 0.92 GB |
 
