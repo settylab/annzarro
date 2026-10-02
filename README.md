@@ -11,7 +11,7 @@ AnnZarro is a modern single-cell data visualization tool for analyzing AnnData o
 - **Comprehensive AnnData Support** - Access all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers)
 - **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
 - **Flexible Access** - Local .zarr and .h5ad files; remote zarr stores over S3, GCS or HTTP(S) (optional extra, see [Remote datasets](#remote-datasets))
-- **Desktop Application** - Standalone cross-platform electron app
+- **Desktop Application** - Standalone app for Windows, macOS and Linux, server included (no Python needed)
 
 ## Installation & Usage
 
@@ -188,13 +188,17 @@ to the server.
 
 ### Desktop Application
 
-```bash
-# Run desktop app
-./annzarro-cli desktop run
+The desktop app bundles its own server: no Python installation is needed.
+Download it from the [releases page](https://github.com/settylab/annzarro/releases)
+(see [Download](#download)). To run or build it from a source checkout
+(needs Node.js and npm):
 
-# Build for distribution
-./annzarro-cli desktop build --platform [windows|mac|linux]
+```bash
+./annzarro-cli desktop run      # development mode, uses this checkout's Python
+./annzarro-cli desktop build    # freezes the server, then packages for this platform
 ```
+
+Details: [`annzarro/desktop/README.md`](annzarro/desktop/README.md).
 
 ## Working with Data
 
@@ -302,26 +306,57 @@ python -m pytest
 
 - **Frontend**: Pure JavaScript with plotly.js and DataTables
 - **Backend**: Flask-based REST API with comprehensive zarr support
-- **Desktop**: Electron application with integrated Python server
+- **Desktop**: Electron window around the server, frozen with PyInstaller
 
 ## Download
 
-Desktop apps are published with each release on the
-[releases page](https://github.com/settylab/annzarro/releases): macOS (Apple
-silicon `.dmg`) and Linux (`.AppImage`, `.deb`). There is no Windows build
-yet.
+Each release on the [releases page](https://github.com/settylab/annzarro/releases)
+carries the desktop app for every platform (`<version>` is the release, e.g. `0.2.0`):
+
+| System | File | What it is |
+|---|---|---|
+| macOS, Apple silicon (M1 and later) | `AnnZarro-<version>-macos-arm64.dmg` | disk image: drag AnnZarro to Applications |
+| | `AnnZarro-<version>-macos-arm64.zip` | the same app, zipped |
+| macOS, Intel | `AnnZarro-<version>-macos-x64.dmg` / `.zip` | as above |
+| Windows 10/11, 64-bit | `AnnZarro-<version>-windows-x64-setup.exe` | installer (per user, no admin rights needed) |
+| | `AnnZarro-<version>-windows-x64.zip` | portable: unzip and run `AnnZarro.exe` |
+| Linux x86-64 | `AnnZarro-<version>-linux-x86_64.AppImage` | single file: `chmod +x` it and run |
+| Debian/Ubuntu | `AnnZarro-<version>-linux-amd64.deb` | `sudo apt install ./AnnZarro-<version>-linux-amd64.deb` |
+| | `SHA256SUMS.txt` | checksums: `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` |
+
+The builds are not code-signed yet, so the first launch needs one extra step:
+
+- **macOS**: opening it says Apple cannot check it for malicious software.
+  Open **System Settings > Privacy & Security**, scroll to the message about
+  AnnZarro and click **Open Anyway** (once). Or, in a terminal:
+  `xattr -dr com.apple.quarantine /Applications/AnnZarro.app`.
+- **Windows**: SmartScreen says "Windows protected your PC". Click
+  **More info**, then **Run anyway**.
+- **Linux**: no extra step (AppImage needs `chmod +x`; on Ubuntu 24.04 and
+  later an AppImage may need `--no-sandbox` if it fails to start).
+
+The very first start can take up to a minute while the system scans the
+bundled server; later starts take a few seconds. The app starts its server on
+`127.0.0.1` only (first free port from 39487), with login off, and uses
+`~/annzarro-data` as its data directory: put or link datasets into
+`~/annzarro-data/datasets`, or open any `.zarr` folder with the folder button.
+Saved panel sets go to `~/annzarro-data/sessions`. Remote (s3/gs/http) stores
+are not supported in the desktop app; use `pip install "annzarro[remote]"`.
 
 ### Creating a new release
 
-To create a new release with desktop apps for all platforms:
+The app version is the Python package version (`pyproject.toml`);
+`bump_version.py` writes it to `annzarro/__init__.py` and
+`annzarro/desktop/electron/package.json`, and CI refuses a build where they differ.
 
-1. Update version in `annzarro/desktop/electron/package.json`
-2. Create and push a new tag:
-   ```bash
-   git tag v0.1.1
-   git push origin v0.1.1
-   ```
-3. GitHub Actions will automatically build the desktop apps and create a release
+1. `python bump_version.py 0.2.0`, commit, merge.
+2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+3. `.github/workflows/build.yml` builds and smoke-tests macOS (arm64, x64),
+   Windows and Linux, then creates a **draft** release with all files and
+   `SHA256SUMS.txt`. Review it and publish.
+
+Run the workflow by hand (Actions > Desktop apps > Run workflow, or
+`gh workflow run build.yml --ref <branch>`) to build without releasing.
 
 ## License
 
