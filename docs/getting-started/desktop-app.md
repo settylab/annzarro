@@ -29,7 +29,14 @@ Python package ({doc}`installation`).
 ```
 
 The app contains its own AnnZarro server, frozen with PyInstaller together with Python, numpy,
-zarr, h5py, Flask and the web interface (about 100 MB). You do not need Python on the computer.
+zarr, h5py, Flask and the web interface (57 to 98 MB installed, depending on the platform). The
+downloads are 122 to 132 MB: the .dmg 125 MB (Apple silicon) or 132 MB (Intel), the Windows
+installer 127 MB, the AppImage and .deb 123 MB. You do not need Python on the computer.
+
+The app works fully offline. Python, the server and every script, style and font of the
+interface are in the download; nothing is fetched at install, at first launch or later, and no
+page loads anything from the internet. Remote stores (S3, GCS, HTTP) are not supported in the
+app; use the Python package with the `remote` extra for those ({doc}`installation`).
 
 ## First launch
 
