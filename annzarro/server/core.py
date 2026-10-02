@@ -188,6 +188,34 @@ class _LoginCookieInterface(SecureCookieSessionInterface):
         return bool(mode)
 
 
+def resolve_dataset_segment(endpoint, values):
+    """``/datasets/<path>`` names a dataset RELATIVE TO data_dir.
+
+    The routes used to hand the segment to the readers as is, so it was
+    resolved against the server's working directory, and an absolute path
+    lost its leading "/" in the URL. Resolved here, before the confinement
+    check sees it. (``?dataset_path=`` keeps accepting absolute paths.)
+    """
+    if not values or not values.get("dataset_path"):
+        return
+    segment = values["dataset_path"]
+    if "://" in segment:
+        return
+    data_dir = current_app.config.get("data_dir") or "data"
+    values["dataset_path"] = os.path.join(data_dir, segment)
+
+
+def require_dataset_segment():
+    """404 for a ``/datasets/<path>`` that does not exist, instead of the
+    routes' 200-with-an-error-body, 400 or 500."""
+    path = (request.view_args or {}).get("dataset_path")
+    if path and "://" not in path and not os.path.exists(path):
+        return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
+                                 "to the server's data directory.",
+                        "reason": "not_found"}), 404
+    return None
+
+
 def create_app(config: Dict[str, Any] = None) -> Flask:
     """
     Create and configure the Flask application.
@@ -250,7 +278,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # A shared server only opens paths inside its data directory (see confinement.py)
     from annzarro.server import confinement
     confinement.warn_about_escaping_links(app.config)
+    app.url_value_preprocessor(resolve_dataset_segment)
     app.before_request(confinement.enforce)
+    app.before_request(require_dataset_segment)
 
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader

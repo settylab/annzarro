@@ -278,5 +278,8 @@ def register_core_routes(app, api_version):
         """
         # Get dataset info
         info = data_manager.get_dataset_info(dataset_path)
+        if isinstance(info, dict) and "error" in info:
+            # It exists (checked before the route) but cannot be opened
+            return jsonify(dict(info, reason="unsupported_type")), 400
         
         return jsonify(info)

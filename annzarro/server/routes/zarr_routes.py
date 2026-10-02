@@ -336,6 +336,8 @@ def register_zarr_routes(app, api_version):
                 "dataset_path": dataset_path,
                 "uns_structure": uns_structure
             })
+        except ValueError as e:
+            return jsonify({"error": f"Cannot open dataset: {e}", "reason": "unsupported_type"}), 400
         except Exception as e:
             logger.error(f"Error getting uns structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
