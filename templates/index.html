@@ -263,11 +263,14 @@
             }
             
             // Check if DataTables extensions are loaded
-            const extensions = ['buttons', 'searchBuilder'];
+            // Extensions register on $.fn.dataTable (lower-case d) under their class
+            // names; the capitalised DataTable object has neither, so the old
+            // check logged a false error on every load.
+            const extensions = ['Buttons', 'SearchBuilder'];
             let allExtensionsLoaded = true;
             
             for (const ext of extensions) {
-                if (!$.fn.DataTable[ext]) {
+                if (!$.fn.dataTable[ext]) {
                     console.error(`ERROR: DataTables ${ext} extension not available!`);
                     allExtensionsLoaded = false;
                 }
@@ -310,10 +313,10 @@
                 { name: 'Bootstrap', test: function() { return typeof bootstrap !== 'undefined'; } },
                 { name: 'Plotly', test: function() { return typeof Plotly !== 'undefined'; } },
                 { name: 'DataTables', test: function() { return typeof $.fn.DataTable !== 'undefined'; } },
-                { name: 'DataTables.Buttons', test: function() { return typeof $.fn.DataTable.Buttons !== 'undefined'; } },
-                { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.DataTable.SearchBuilder !== 'undefined'; } },
-                { name: 'DataTables.Select', test: function() { return typeof $.fn.DataTable.select !== 'undefined'; } },
-                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.DataTable.FixedHeader !== 'undefined'; } }
+                { name: 'DataTables.Buttons', test: function() { return typeof $.fn.dataTable.Buttons !== 'undefined'; } },
+                { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.dataTable.SearchBuilder !== 'undefined'; } },
+                { name: 'DataTables.Select', test: function() { return typeof $.fn.dataTable.select !== 'undefined'; } },
+                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.dataTable.FixedHeader !== 'undefined'; } }
             ];
             
             let allLoaded = true;
