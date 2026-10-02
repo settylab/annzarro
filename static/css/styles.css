@@ -43,6 +43,15 @@ html, body {
 
 .notification-message {
     word-wrap: break-word;
+    white-space: pre-line; /* messages put paths on their own lines */
+}
+
+/* A notice that asks (main.js _askNotification): buttons instead of a modal */
+.notification-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 10px;
 }
 
 .notification-error {

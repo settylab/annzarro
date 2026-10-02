@@ -7,7 +7,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
@@ -63,6 +63,9 @@ const App = (function() {
 
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
+
+            // Loading a panel set restores its whole view through _applyView
+            SessionManager.setViewApplier(_applyPanelSet);
 
             // Load available datasets
             await _loadDatasets();
@@ -166,15 +169,8 @@ const App = (function() {
      */
     async function _buildShareView(datasetPath) {
         const path = datasetPath || _lastLoadedDatasetPath || '';
-        const view = {
-            v: VIEW_SCHEMA_VERSION,
-            constants: {
-                focusedGene: DataManager.getFocusedGene(),
-                focusedCell: DataManager.getFocusedCell(),
-                taxonomyId: DataManager.getTaxonomyId()
-            },
-            layout: PanelManager.saveLayout()
-        };
+        // The same capture a saved panel set stores (SessionManager.captureView)
+        const view = SessionManager.captureView();
         return buildDeepLinkUrl(window.location.origin + window.location.pathname,
             path, await encodeViewPayload(view));
     }
@@ -231,7 +227,27 @@ const App = (function() {
      * @private
      */
     async function _applyDeepLink(deepLink) {
-        const { datasetPath, view } = deepLink;
+        await _applyView(deepLink);
+
+        // Rewrite the URL to a clean form so the opened view is itself
+        // re-shareable and a refresh re-applies it (state currently lives only
+        // in localStorage otherwise).
+        try {
+            history.replaceState(null, '', window.location.href);
+        } catch (e) {
+            // replaceState can throw in sandboxed iframes — non-fatal.
+            console.debug('history.replaceState skipped:', e);
+        }
+    }
+
+    /**
+     * Load a dataset, then restore a view on it: focus constants, then the
+     * layout tree (or the legacy flat panel list). Shared by deep links and
+     * loaded panel sets, so both restore exactly the same way.
+     * @param {{datasetPath: string, view: Object|null}} target
+     * @private
+     */
+    async function _applyView({ datasetPath, view }) {
 
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
@@ -287,16 +303,112 @@ const App = (function() {
                 });
             }
         }
+    }
 
-        // 4. Rewrite the URL to a clean form so the opened view is itself
-        //    re-shareable and a refresh re-applies it (state currently lives only
-        //    in localStorage otherwise).
-        try {
-            history.replaceState(null, '', window.location.href);
-        } catch (e) {
-            // replaceState can throw in sandboxed iframes — non-fatal.
-            console.debug('history.replaceState skipped:', e);
+    /**
+     * Apply a loaded panel set (SessionManager hands every load to this; see
+     * setViewApplier). A panel set restores what a share link restores: its
+     * dataset, the focused cell and gene, and the split layout with each
+     * panel's settings. Panel ids are kept, so a plot's tableFilter still
+     * names its table.
+     *
+     * A set saved on another dataset than the open one asks first, in a
+     * notice that does not block the page; nothing changes unless the user
+     * agrees.
+     * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
+     * @param {Object} panelSet - the stored panel set
+     * @returns {Promise<{status: string, message: string}>}
+     * @private
+     */
+    async function _applyPanelSet(plan, panelSet) {
+        const name = (panelSet && panelSet.name) || 'panel set';
+        const current = DataManager.getCurrentDataset();
+        const target = plan.datasetPath || current;
+        if (!target) {
+            return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
+        if (current && target !== current) {
+            if (_sessionModal) _sessionModal.hide();
+            const choice = await _askNotification(
+                'Switch dataset?',
+                `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
+                [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
+            );
+            if (choice !== 'switch') {
+                return { status: 'cancelled', message: `Kept ${current}; "${name}" was not loaded.` };
+            }
+        }
+
+        // The set replaces the open view. Open panels are closed (they stay
+        // available to reopen); a panel with an id the set brings is removed,
+        // so the set's panel gets that id back unchanged.
+        const incoming = new Set([
+            ...(plan.view && plan.view.layout ? collectTileIds(plan.view.layout.hierarchy) : []),
+            ...plan.closedPanels.map(p => p.id)
+        ]);
+        PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+        incoming.forEach(id => PanelManager.removePanel(id));
+
+        await _applyView({ datasetPath: target, view: plan.view });
+
+        // Panels that were closed when the set was saved come back closed.
+        const idMap = new Map();
+        const closedConfigs = plan.closedPanels.map(p => {
+            const config = JSON.parse(JSON.stringify(p.config));
+            PanelManager.registerClosedPanel(p.type, config);
+            if (config.id !== p.id) idMap.set(p.id, config.id);
+            return config;
+        });
+        if (idMap.size) remapPanelReferences(closedConfigs, idMap);
+
+        PanelManager.updateSourcePanelSelection();
+        PanelManager.ensureWelcomeFallback();
+        return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    /**
+     * A notice that asks: like _showNotification, but it stays until one of
+     * its buttons (or the close cross) is clicked. Never a modal dialog.
+     * @param {string} title
+     * @param {string} message
+     * @param {Array<{key: string, label: string, primary?: boolean}>} actions
+     * @returns {Promise<string|null>} the chosen key, null if dismissed
+     * @private
+     */
+    function _askNotification(title, message, actions) {
+        return new Promise(resolve => {
+            const id = _showNotification(title, message, 'warning', 24 * 3600 * 1000);
+            const el = document.getElementById(id);
+            if (!el) { resolve(null); return; }
+            el.classList.add('notification-ask');
+            el.setAttribute('role', 'alertdialog');
+            let done = false;
+            const finish = (key) => {
+                if (done) return;
+                done = true;
+                // answered: not clickable while it fades out
+                el.classList.remove('notification-ask');
+                el.querySelectorAll('.notification-actions button').forEach(btn => { btn.disabled = true; });
+                _removeNotification(id);
+                resolve(key);
+            };
+            const bar = document.createElement('div');
+            bar.className = 'notification-actions';
+            actions.forEach(action => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `btn btn-sm ${action.primary ? 'btn-primary' : 'btn-outline-secondary'}`;
+                btn.textContent = action.label;
+                btn.dataset.action = action.key;
+                btn.addEventListener('click', () => finish(action.key));
+                bar.appendChild(btn);
+            });
+            el.appendChild(bar);
+            const close = el.querySelector('.notification-close');
+            if (close) close.addEventListener('click', () => finish(null));
+            const primary = bar.querySelector('.btn-primary');
+            if (primary) primary.focus();
+        });
     }
 
     /**
@@ -1602,6 +1714,8 @@ const App = (function() {
                         if (loadResult.status === 'success') {
                             _sessionModal.hide();
                             _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
+                        } else if (loadResult.status === 'cancelled') {
+                            _showNotification('Panel set imported, not loaded', loadResult.message, 'info', 5000);
                         } else {
                             _showNotification('Failed to load imported panel set', loadResult.message, 'error');
                         }
@@ -1621,7 +1735,7 @@ const App = (function() {
                 const selectedCard = document.querySelector('.session-card.selected');
                 
                 if (!selectedCard) {
-                    alert('Please select a panel set to load or switch to upload mode');
+                    _showNotification('No panel set selected', 'Select a panel set to load, or switch to upload mode.', 'warning', 4000);
                     return;
                 }
                 
@@ -1631,6 +1745,8 @@ const App = (function() {
                 
                 if (result.status === 'success') {
                     _sessionModal.hide();
+                } else if (result.status === 'cancelled') {
+                    _showNotification('Panel set not loaded', result.message, 'info', 5000);
                 } else {
                     _showNotification('Failed to load panel set', result.message, 'error');
                 }
