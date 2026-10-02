@@ -4,6 +4,10 @@
  */
 import { Config } from './config.js';
 import { CacheManager } from './cache-manager.js';
+import { BINARY_FORMAT, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
+
+// Marks a cached body that is a decoded binary slice, not parsed JSON.
+const BINARY_RESULT = Symbol('binarySlice');
 
 const DataManager = (function() {
     // Private variables
@@ -40,6 +44,89 @@ const DataManager = (function() {
         }
     }
 
+    // One network request per URL at a time. On a deep-link boot every panel
+    // asked for the same slices at once: 30 requests (19.5 MB) for 13 unique
+    // ones (6.2 MB). A second caller for a URL that is already in flight now
+    // joins that request instead of starting another; the short-lived
+    // CacheManager entry then serves later callers.
+    const _inflight = new Map();
+
+    async function _readResponse(response) {
+        if (!response.ok) {
+            // Parse the error response to get the detailed error message
+            const text = await response.text();
+            let errorData;
+            try {
+                errorData = _safeJSONParse(text);
+            } catch (e) {
+                // If JSON parsing fails, use the raw text
+                errorData = { error: "Unknown error", message: text };
+            }
+
+            // Create a custom error with the error details from the server
+            const error = new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
+            error.status = response.status;
+            error.data = errorData;
+            throw error;
+        }
+        if (isBinaryResponse(response)) {
+            // Kept decoded (typed, dense) in the cache; loaders turn it into
+            // the JSON-shaped arrays the views expect, one copy per call.
+            return { [BINARY_RESULT]: true, ...decodeVector(await response.arrayBuffer(), response.headers) };
+        }
+        // Use the safer JSON parsing approach
+        return _safeJSONParse(await response.text());
+    }
+
+    function _startShared(fullUrl) {
+        const controller = new AbortController();
+        const entry = { controller, waiters: 0, settled: false, promise: null };
+        entry.promise = (async () => {
+            try {
+                const data = await _readResponse(await fetch(fullUrl, { signal: controller.signal }));
+                CacheManager.set(fullUrl, data);
+                return data;
+            } finally {
+                entry.settled = true;
+                if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
+            }
+        })();
+        // Every waiter attaches its own handlers; this one only keeps a
+        // request that all of its waiters abandoned from being "unhandled".
+        entry.promise.catch(() => {});
+        _inflight.set(fullUrl, entry);
+        return entry;
+    }
+
+    /** Wait for a shared request, honouring THIS caller's abort signal only. */
+    function _join(fullUrl, entry, signal) {
+        entry.waiters += 1;
+        return new Promise((resolve, reject) => {
+            let done = false;
+            const leave = () => {
+                done = true;
+                entry.waiters -= 1;
+                if (signal) signal.removeEventListener('abort', onAbort);
+            };
+            const onAbort = () => {
+                if (done) return;
+                leave();
+                if (entry.waiters === 0 && !entry.settled) {
+                    // Nobody wants it any more: cancel it, and let the next
+                    // caller start afresh rather than join a dying request.
+                    if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
+                    entry.controller.abort();
+                }
+                reject(new DOMException("Fetch request was aborted", "AbortError"));
+            };
+            if (signal) signal.addEventListener('abort', onAbort, { once: true });
+            entry.promise.then(
+                value => { if (!done) { leave(); resolve(value); } },
+                error => { if (!done) { leave(); reject(error); } }
+            );
+        });
+    }
+
     async function _fetchWithCache(url, params = {}, signal = null) {
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const cached = CacheManager.get(fullUrl);
@@ -50,39 +137,8 @@ const DataManager = (function() {
             if (signal && signal.aborted) {
                 throw new DOMException("Fetch request was aborted", "AbortError");
             }
-            
-            // Use the abort signal with the fetch request
-            const response = await fetch(fullUrl, { signal });
-            
-            // Check if the response is OK (status code in the range 200-299)
-            if (!response.ok) {
-                // Parse the error response to get the detailed error message
-                const text = await response.text();
-                let errorData;
-                try {
-                    errorData = _safeJSONParse(text);
-                } catch (e) {
-                    // If JSON parsing fails, use the raw text
-                    errorData = { error: "Unknown error", message: text };
-                }
-                
-                // Create a custom error with the error details from the server
-                const error = new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
-                error.status = response.status;
-                error.data = errorData;
-                throw error;
-            }
-            
-            // Use the safer JSON parsing approach
-            const text = await response.text();
-            const data = _safeJSONParse(text);
-            
-            // Cache the result (if not aborted during the fetch)
-            if (!signal?.aborted) {
-                CacheManager.set(fullUrl, data);
-            }
-            
-            return data;
+            const entry = _inflight.get(fullUrl) || _startShared(fullUrl);
+            return await _join(fullUrl, entry, signal);
         } catch (error) {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
@@ -97,6 +153,23 @@ const DataManager = (function() {
             }
             throw error;
         }
+    }
+
+    /**
+     * Fetch one numeric slice in the binary encoding (`format=f32`) and give
+     * back the body the JSON route would have: `{data, ...meta}`.
+     *
+     * The server answers JSON instead whenever the slice is not numeric
+     * (categorical, strings, booleans); that body is returned as is.
+     * @param {boolean} flatten  `data` as one flat array for a single row or
+     *                           column, which is what every loader made of it
+     * @param {string|null} column  obs/var: `data` is `{[column]: values}`
+     */
+    async function _fetchVector(url, params, meta, flatten, column = null) {
+        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+        if (!body || !body[BINARY_RESULT]) return body;
+        const values = toJSONShape(body, flatten);
+        return { ...meta, data: column === null ? values : { [column]: values } };
     }
 
     function refreshCacheForDataset(datasetPath = _currentDataset) {
@@ -387,6 +460,11 @@ const DataManager = (function() {
         }
         
         try {
+            if (columns && columns.length === 1) {
+                const column = columns[0];
+                return await _fetchVector(Config.API.OBS, params,
+                    { dataset_path: params.dataset_path }, true, column);
+            }
             const data = await _fetchWithCache(Config.API.OBS, params);
             return data;
         } catch (error) {
@@ -424,6 +502,11 @@ const DataManager = (function() {
         }
         
         try {
+            if (columns && columns.length === 1) {
+                const column = columns[0];
+                return await _fetchVector(Config.API.VAR, params,
+                    { dataset_path: params.dataset_path }, true, column);
+            }
             const data = await _fetchWithCache(Config.API.VAR, params);
             return data;
         } catch (error) {
@@ -458,10 +541,10 @@ const DataManager = (function() {
             params.cols = cols.join(',');
         }
         
-        if (columnName) {
-            params.column_name = columnName;
+        if (columnName !== undefined && columnName !== null && columnName !== '') {
+            params.column_name = String(columnName);
         }
-        
+
         if (maxCells) {
             params.max_cells = maxCells;
         }
@@ -473,9 +556,16 @@ const DataManager = (function() {
             
             // Fix the URL format to match the API specification from BACKEND_API_REFERENCE.md
             // GET /api/v1/data/obsm/{obsm_key} is the correct format
+            if (columnName === '') {
+                // No column chosen: nothing to read. This used to fetch the
+                // WHOLE matrix and then return [] from the column extraction.
+                return { data: [], obsm_key: obsmKey, dataset_path: datasetPath };
+            }
             const url = `${Config.API.OBSM}/${obsmKey}`;
             console.log(`Requesting obsm data from: ${url} with params:`, params);
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { obsm_key: obsmKey, dataset_path: params.dataset_path },
+                params.column_name !== undefined);
             
             console.log(`Full response data from obsm endpoint:`, data);
             
@@ -583,17 +673,22 @@ const DataManager = (function() {
             params.cols = cols.join(',');
         }
         
-        if (columnName) {
-            params.column_name = columnName;
+        if (columnName !== undefined && columnName !== null && columnName !== '') {
+            params.column_name = String(columnName);
         }
-        
+
         if (maxGenes) {
             params.max_genes = maxGenes;
         }
         
         try {
+            if (columnName === '') {
+                return { data: [], varm_key: varmKey, dataset_path: datasetPath };
+            }
             const url = `${Config.API.VARM}/${varmKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { varm_key: varmKey, dataset_path: params.dataset_path },
+                params.column_name !== undefined);
             return data;
         } catch (error) {
             console.error(`Error loading varm.${varmKey} data:`, error);
@@ -634,7 +729,8 @@ const DataManager = (function() {
             console.log(`Obsp request params: dataset_path=${params.dataset_path}, rows=${params.rows}`);
             
             const url = `${Config.API.OBSP}/${obspKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { obsp_key: obspKey, dataset_path: params.dataset_path }, false);
             
             // Log and debug the data structure
             console.log(`Obsp data format for ${obspKey} (cell: ${focusedCell}, index: ${focusedCellIndex}):`,
@@ -697,7 +793,8 @@ const DataManager = (function() {
         
         try {
             const url = `${Config.API.VARP}/${varpKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { varp_key: varpKey, dataset_path: params.dataset_path }, false);
             return data;
         } catch (error) {
             console.error(`Error loading varp.${varpKey} data:`, error);
@@ -745,7 +842,8 @@ const DataManager = (function() {
                 console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
-                const data = await _fetchWithCache(url, params);
+                const data = await _fetchVector(url, params,
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
@@ -799,7 +897,8 @@ const DataManager = (function() {
                 console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
-                const data = await _fetchWithCache(url, params);
+                const data = await _fetchVector(url, params,
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedCell}, index: ${focusedCellIndex}):`, 
@@ -877,7 +976,8 @@ const DataManager = (function() {
         }
         
         try {
-            const data = await _fetchWithCache(Config.API.X, params);
+            const data = await _fetchVector(Config.API.X, params,
+                { dataset_path: params.dataset_path }, false);
             return data;
         } catch (error) {
             console.error('Error loading X matrix data:', error);
