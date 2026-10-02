@@ -5,7 +5,8 @@ import {
   applyFilterMask, 
   updateTableEntities,
   panelLoadCoverage,
-  stableAxisRanges
+  stableAxisRanges,
+  applyHoverInfo
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -814,6 +815,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 }
             }
         }
+
+        // hover labels for whatever traces the update left
+        await applyHoverInfo(plotContainer, data, settings);
 
         // bring back the focused entity if enabled
         highlightFocusedEntity(plotContainer, data, settings, entityType);
