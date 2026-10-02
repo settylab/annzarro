@@ -1041,7 +1041,9 @@ export function createFilterMask(data, settings) {
     filtered: 0,
     hideNaNActive: settings.hideNaN === true,
     hideOutliersActive: settings.hideOutliers === true,
-    tableFilterActive: settings.tableFilter && settings.tableFilter !== 'none'
+    tableFilterActive: settings.tableFilter && settings.tableFilter !== 'none',
+    // Cells of the dataset that were never loaded: outside the cell subset
+    notInSubset: data.entities === 'cells' ? DataManager.getCellsNotInSubset() : 0
   };
 
   const totalPts = data.x.values.length;
@@ -1413,12 +1415,25 @@ function updateFilterWidget(plotContainer, filterStats) {
     `;
   }
   
+  // Cells outside the subset count as hidden too, so the total accounts
+  // for every cell of the dataset
+  const notInSubset = filterStats.notInSubset || 0;
+  if (notInSubset > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item" title="Not loaded: outside the cell subset (Cells, above the panels)">
+        <span class="filter-reason">Not in cell subset:</span>
+        <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+
   // Update total count and percentage
-  const percentage = filterStats.total > 0 
-    ? Math.round((filterStats.filtered / filterStats.total) * 100) 
-    : 0;
+  const hidden = filterStats.filtered + notInSubset;
+  const all = filterStats.total + notInSubset;
+  const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
   
-  totalCount.textContent = `${filterStats.filtered} (${percentage}%)`;
+  totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
   
   // Show/hide the widget based on whether there are any filters
   if (hasFilters) {
