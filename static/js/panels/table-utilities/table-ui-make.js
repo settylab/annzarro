@@ -557,8 +557,11 @@ function createCheckboxList(container, items, id, settings) {
         checkboxList.appendChild(checkboxDiv);
     });
     
-    // Add search functionality
-    const searchInput = container.querySelector('.column-search');
+    // Add search functionality. The search box sits on the TAB pane; the
+    // obsm/varm lists are inside an accordion in that pane, so look upward
+    // (querySelector from the accordion found nothing and the box was inert).
+    const searchInput = container.querySelector('.column-search')
+        || container.closest?.('.tab-pane')?.querySelector('.column-search');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             const searchText = e.target.value.toLowerCase();
