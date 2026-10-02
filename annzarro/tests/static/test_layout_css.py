@@ -142,3 +142,22 @@ def test_bottom_chooser_keeps_a_usable_height():
     wrap = _rule(css, ".tile-container > .panel-wrapper")
     assert "flex-shrink: 0" in wrap
     assert re.search(r"max-height:\s*calc\(100% - [\d.]+rem\)", wrap)
+
+
+def test_header_is_one_row_down_to_tablet_width():
+    """At 1000 px (and anything from 769 to 1099 px) the header wrapped: the
+    Save/Load/Share icons dropped under the dataset picker and the header
+    grew to 117 px (141 at 900). Headless after: one 79 px row at 800, 900,
+    1000, 1050 and up, the pickers shrinking instead, no horizontal scroll,
+    and the cell typeahead menu inside the window. At 768 px and below the
+    existing mobile rule still stacks the controls."""
+    css = open(CSS, encoding="utf-8").read()
+    block = css[css.index("@media (min-width: 768.02px) {"):]
+    block = block[:block.index("\n}\n")]
+    assert ".global-controls > .row {" in block or ".global-controls > .row," in block
+    assert "flex-wrap: nowrap" in block
+    for sel in (".global-controls > .row > .col", ".global-controls .select2-container", ".global-controls .name-picker"):
+        assert sel in block, sel
+    assert "min-width: 0" in block
+    assert re.search(r"#focused-cell \{\s*max-width: 100%", block)
+    assert ".name-picker:has(#focused-cell) .name-picker-menu" in css

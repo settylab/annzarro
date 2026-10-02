@@ -131,6 +131,38 @@ body {
     }
 }
 
+/* Above 768 px the header is one row: the dataset / gene / cell columns
+   shrink (their inputs scroll their text) instead of pushing the actions
+   onto a second row. At 1000 px the actions used to drop under the dataset
+   picker as bare icons and the header grew from 79 to 117 px. */
+@media (min-width: 768.02px) {
+    .app-header > .container-fluid > .row,
+    .global-controls > .row {
+        flex-wrap: nowrap;
+    }
+    .app-header > .container-fluid > .row > .col,
+    .global-controls > .row > .col,
+    .global-controls .d-flex > .flex-grow-1,
+    .global-controls .select2-container,
+    .global-controls .name-picker {
+        min-width: 0;
+    }
+    .global-controls .name-picker,
+    .global-controls #focused-gene,
+    .global-controls #focused-cell {
+        max-width: 100%;
+    }
+}
+
+/* The cell picker sits near the right edge in a narrow window: open its
+   320 px menu leftwards so it stays inside the window. */
+@media (min-width: 768.02px) and (max-width: 1099.98px) {
+    .name-picker:has(#focused-cell) .name-picker-menu {
+        left: auto;
+        right: 0;
+    }
+}
+
 /* Clipboard-less fallback for the Share Link button: the link, ready to copy.
    Floats under the header, right-aligned and wide, instead of squeezing into
    the button column (it was ~190 px and made the header one row taller). */
