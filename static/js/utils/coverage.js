@@ -299,11 +299,29 @@ export class Coverage {
      * rows -- every entity is on screen, so `shown` is the total. The gaps
      * still travel, so the reason is stated; only the false count is gone.
      *
+     * That is a different condition from "something restricts and did not say
+     * how much": a restricting contributor with `shown === null`
+     * (`Coverage.unreported()` is one by construction). It used to vanish from
+     * the minimum and land in the same `: total` arm, so a panel whose only
+     * statement was that a read failed came out as "every entity is on
+     * screen" (settylab/annzarro#37). A minimum over the contributors that
+     * spoke is only an UPPER bound when one did not, so `shown` is then
+     * unknown -- `null`, except at zero, which no count is below -- and a gap
+     * says so if no contributor already does.
+     *
+     * `total` stays the maximum over ALL contributors, describing ones
+     * included. A colour or table column that expected more entities than any
+     * restricting series counted is the only evidence that the difference is
+     * missing; taking the total over the restrictors alone would drop that
+     * evidence and report the panel complete. The disagreement is stated as a
+     * gap rather than left as a bare count with no reason under it.
+     *
      * `UNREPORTED` survives merging (it is a gap like any other), so combining
      * a described series with an undescribed one does not launder the latter.
      *
-     * The merged value RESTRICTS: its `shown` is a real entity count, so a
-     * panel coverage re-merged with a filter mask bounds correctly.
+     * The merged value RESTRICTS: its `shown` is a real entity count (or
+     * `null`), so a panel coverage re-merged with a filter mask bounds
+     * correctly.
      */
     static merge(coverages, unit = null) {
         const list = coverages.filter(Boolean);
@@ -311,7 +329,9 @@ export class Coverage {
 
         const restricting = list.filter(c => c.role !== ROLE.DESCRIBES);
         const shownVals = restricting.map(c => c.shown).filter(v => typeof v === 'number');
+        const declined = restricting.length - shownVals.length;
         const totalVals = list.map(c => c.total).filter(v => typeof v === 'number');
+        const restrictTotals = restricting.map(c => c.total).filter(v => typeof v === 'number');
         const gaps = [];
         // Element-by-element, not `push(...c.gaps)`: spreading an identifier
         // into a call is the stack-overflow idiom this repo guards against
@@ -326,11 +346,42 @@ export class Coverage {
         // These arrays are short today, but writing the banned shape in the
         // module that exists to stop a defect class recurring is precisely the
         // mistake worth not making.
-        const total = totalVals.length ? totalVals.reduce((a, b) => (b > a ? b : a)) : null;
+        const max = (vals) => vals.reduce((a, b) => (b > a ? b : a));
+        const total = totalVals.length ? max(totalVals) : null;
+        const resolvedUnit = unit || list[0].unit;
+        let shown;
+        if (restricting.length === 0) {
+            shown = total;
+        } else if (declined > 0) {
+            // ... unless the contributors that spoke already bound it at zero:
+            // no count is below that, so "nothing is shown" stays exact.
+            shown = (shownVals.length && shownVals.some(v => v === 0)) ? 0 : null;
+            // A contributor that declined AND gave no reason would leave the
+            // panel with an unknown count and nothing saying so.
+            if (restricting.some(c => typeof c.shown !== 'number' && c.gaps.length === 0)) {
+                gaps.push({
+                    reason: GAP.UNREPORTED,
+                    detail: `how many ${resolvedUnit} are on screen was not reported`,
+                    source: '', count: null
+                });
+            }
+        } else {
+            shown = shownVals.reduce((a, b) => (b < a ? b : a));
+            const counted = restrictTotals.length ? max(restrictTotals) : null;
+            if (counted !== null && total !== null && total > counted) {
+                gaps.push({
+                    reason: GAP.UNREPORTED,
+                    detail: `the series on this panel disagree about how many ${resolvedUnit} `
+                        + `there are (${fmt(counted)} drawn from, ${fmt(total)} expected); `
+                        + 'nothing reports why the rest are missing',
+                    source: '', count: total - counted
+                });
+            }
+        }
         return new Coverage({
-            shown: shownVals.length ? shownVals.reduce((a, b) => (b < a ? b : a)) : total,
+            shown,
             total,
-            unit: unit || list[0].unit,
+            unit: resolvedUnit,
             gaps,
             role: ROLE.RESTRICTS
         });
