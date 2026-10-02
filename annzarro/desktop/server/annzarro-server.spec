@@ -3,7 +3,6 @@
 # virtual environment holding annzarro and nothing else it does not need.
 # -*- mode: python -*-
 import os
-import sys
 
 from PyInstaller.utils.hooks import copy_metadata
 
@@ -20,10 +19,10 @@ a = Analysis(
     excludes=freeze.EXCLUDES,
     noarchive=False,
 )
-# Debug symbols: the manylinux wheels ship unstripped shared libraries
-# (strip removes ~1/3 of the Linux bundle). Not on macOS, where stripping
-# breaks code signatures, nor Windows, where symbols are not in the DLLs.
-STRIP = sys.platform.startswith("linux")
+# No strip: the manylinux wheels' bundled libraries (OpenBLAS, HDF5) are
+# rewritten by auditwheel/patchelf, and strip breaks them ("ELF load command
+# address/offset not page-aligned"). Not on macOS either (code signatures).
+STRIP = False
 
 pyz = PYZ(a.pure)
 exe = EXE(
