@@ -116,3 +116,48 @@ def test_split_buttons_have_distinct_unambiguous_icons():
     v = re.search(r'<button[^>]*tile-split-v[^>]*>.*?</button>', html, re.S).group(0)
     assert "fa-rotate-90" not in v and "<svg" in h and "<svg" in v
     assert 'x1="8" y1="2" x2="8" y2="14"' in h and 'x1="2" y1="8" x2="14" y2="8"' in v
+
+
+def test_filter_box_lists_every_reason_above_the_plot():
+    """The Removed Datapoints box showed only 'Total' (its per-reason list was
+    shown on hover only) and sat on the x-axis labels. Headless on the docs'
+    colour-range view after: 'Color outliers: 6,540  Total: 6,540 (81%)',
+    in the margin above the plotting area, clear of the modebar."""
+    css = open(CSS, encoding="utf-8").read()
+    box = _rule(css, ".datapoint-filter-widget")
+    assert "top: 2px" in box and "bottom:" not in box
+    assert "display: none" not in _rule(css, ".datapoint-filter-widget .filter-stats-list")
+    assert ".datapoint-filter-widget:hover .filter-stats-list" not in css
+
+
+def test_bottom_chooser_keeps_a_usable_height():
+    """Add a cell plot, split it, close one tile: the page-level chooser
+    under the panels was 2 px tall, so closed panels could only be reached
+    through a split. Headless after (1600x1000): chooser 320 px, its heading
+    visible under the panel; the panel 811 px (the tile area less 5rem), not
+    squeezed to make room for the chooser (a first fix gave it 567 px)."""
+    css = open(CSS, encoding="utf-8").read()
+    sel = _rule(css, ".tile-container > .tile-selector")
+    assert re.search(r"min-height:\s*3\d\dpx", sel) and "flex-shrink: 0" in sel
+    wrap = _rule(css, ".tile-container > .panel-wrapper")
+    assert "flex-shrink: 0" in wrap
+    assert re.search(r"max-height:\s*calc\(100% - [\d.]+rem\)", wrap)
+
+
+def test_header_is_one_row_down_to_tablet_width():
+    """At 1000 px (and anything from 769 to 1099 px) the header wrapped: the
+    Save/Load/Share icons dropped under the dataset picker and the header
+    grew to 117 px (141 at 900). Headless after: one 79 px row at 800, 900,
+    1000, 1050 and up, the pickers shrinking instead, no horizontal scroll,
+    and the cell typeahead menu inside the window. At 768 px and below the
+    existing mobile rule still stacks the controls."""
+    css = open(CSS, encoding="utf-8").read()
+    block = css[css.index("@media (min-width: 768.02px) {"):]
+    block = block[:block.index("\n}\n")]
+    assert ".global-controls > .row {" in block or ".global-controls > .row," in block
+    assert "flex-wrap: nowrap" in block
+    for sel in (".global-controls > .row > .col", ".global-controls .select2-container", ".global-controls .name-picker"):
+        assert sel in block, sel
+    assert "min-width: 0" in block
+    assert re.search(r"#focused-cell \{\s*max-width: 100%", block)
+    assert ".name-picker:has(#focused-cell) .name-picker-menu" in css

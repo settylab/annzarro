@@ -1,3 +1,4 @@
+import { exportWithCoverage } from '../../utils/panel-surface.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -1726,7 +1727,7 @@ export async function exportPlot(plotContainer, format, settings) {
 
   const popoverContainer = showNotification("Preparing Image", false);
   try {
-    await Plotly.downloadImage(plotContainer, config);
+    await exportWithCoverage(plotContainer, () => Plotly.downloadImage(plotContainer, config));
   } catch (err) {
     console.error('Error exporting plot:', err);
     alert('Failed to export plot. Please try again.');
@@ -1774,9 +1775,9 @@ async function copyPlotToClipboard(plotContainer, settings) {
   
     try {
       // 1) Render plot to a data‐URL
-      const dataUrl = await Plotly.toImage(plotContainer, {
+      const dataUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, {
         format: 'png', width, height, scale: 1
-      });
+      }));
   
       // 2) Convert the data‐URL to a Blob
       const blob = await fetch(dataUrl).then(res => res.blob());
@@ -1796,7 +1797,7 @@ async function copyPlotToClipboard(plotContainer, settings) {
       
       try {
         // Fallback: render to canvas, use canvas.toBlob() API
-        const imgUrl = await Plotly.toImage(plotContainer, { format:'png', width, height });
+        const imgUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, { format:'png', width, height }));
         const img = new Image();
         
         img.onload = function() {

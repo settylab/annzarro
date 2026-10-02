@@ -1,5 +1,6 @@
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType } from './panel-ui-update.js';
-import { loadAxisData, updateTableEntities, applyLogColor } from './plot-make.js';
+import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel } from './panel-ui-update.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo } from './plot-make.js';
+import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
@@ -204,6 +205,19 @@ export function setupPlotControlListeners(
       redrawStyling();
     });
     
+    // --- Hover columns: reload only those columns and relabel the traces ---
+    const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);
+    let hoverGeneration = 0;
+    $hoverSelect.on('change', async (e) => {
+      const selected = Array.from(e.target.selectedOptions, o => o.value);
+      settings.hoverInfo = hoverInfoFromSelection(plotType, selected, settings.hoverInfo);
+      const mine = ++hoverGeneration;
+      const extra = await loadHoverColumns(settings, plotType);
+      if (mine !== hoverGeneration) return;   // a newer selection is loading
+      data.hoverExtra = extra;
+      await applyHoverInfo(plotContainer, data, settings);
+    });
+
     const $existingBtn = $controlsContainer.find(`#aesthetics-menu-btn-${id}`);
     const cleanupAesthetics = createAestheticsMenu(id, $existingBtn[0], controlsContainer, plotContainer, settings);
     plotContainer._aestheticsCleanup = cleanupAesthetics;
@@ -1056,6 +1070,23 @@ function setupAxisSelectorListeners(
 }
 
 /**
+ * The column-menu label right after the padlock is clicked: 'Locked cell X'
+ * for the cell the axis is now locked to, 'Focused cell Y' for the current
+ * focus once unlocked. It used to keep the old wording until the panel was
+ * rebuilt from a link.
+ * @param {string} dataType - 'obsp' | 'varp' | 'layer'
+ * @param {string} plotType - 'cells' | 'genes'
+ * @param {Object} axisSettings - {column, locked}
+ * @param {string|null} currentFocus
+ * @returns {string|null}
+ */
+export function lockOptionLabel(dataType, plotType, axisSettings, currentFocus) {
+  const entity = ((dataType === 'layer' && plotType === 'cells') || dataType === 'varp') ? 'genes' : 'cells';
+  const shown = axisSettings.locked ? axisSettings.column : currentFocus;
+  return shown ? focusedOptionLabel(entity, shown, !!axisSettings.locked) : null;
+}
+
+/**
  * Sets up event listeners for the special buttons (lock and refocus)
  * @param {HTMLElement} controlsContainer - The container element
  * @param {Object} settings - The settings object for the plot
@@ -1096,6 +1127,11 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
     if (buttonType === 'lock' && settings[axis]) {
       // Handle lock button click
       settings[axis].locked = !settings[axis].locked;
+      // Relabel the column menu now: it kept saying 'Focused cell ...' after
+      // the padlock was clicked until the panel was rebuilt from a link
+      const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+      const label = lockOptionLabel(dataType, plotType, settings[axis], currentFocus);
+      if (columnSelect && columnSelect.options[0] && label) columnSelect.options[0].text = label;
       // Tables offer every locked cell and gene as a column (panel-tracker.js)
       document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', {
         detail: { axis, locked: settings[axis].locked, entity: settings[axis].column }

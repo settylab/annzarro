@@ -426,3 +426,35 @@ export function serializableConfig(config) {
     }
     return out;
 }
+
+/**
+ * Whether two dataset paths name the same store.
+ *
+ * A panel set or link may name the store relative to the server's data
+ * directory ('bm_aging.zarr') while the open one is absolute
+ * ('/data/bm_aging.zarr'); comparing the strings asked "Switch dataset?"
+ * for the dataset already open. Paths are resolved through the /datasets
+ * listing (path, rel_path, name) and otherwise compared after normalising
+ * slashes, a relative path matching the end of an absolute one.
+ * @param {string} a
+ * @param {string} b
+ * @param {Array<{path: string, rel_path?: string, name?: string}>} [listing]
+ * @returns {boolean}
+ */
+export function sameDatasetPath(a, b, listing = []) {
+    if (!a || !b) return false;
+    const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+    const resolve = (p) => {
+        const n = norm(p);
+        const hit = (listing || []).find(d => d && (norm(d.path || '') === n || norm(d.rel_path || '') === n || (d.name && norm(d.name) === n)));
+        return hit ? norm(hit.path) : n;
+    };
+    const ra = resolve(a), rb = resolve(b);
+    if (ra === rb) return true;
+    const isAbs = (p) => p.startsWith('/') || /^[A-Za-z]:\//.test(p) || p.includes('://');
+    if (isAbs(ra) !== isAbs(rb)) {
+        const [abs, rel] = isAbs(ra) ? [ra, rb] : [rb, ra];
+        return !rel.includes('://') && abs.endsWith('/' + rel);
+    }
+    return false;
+}

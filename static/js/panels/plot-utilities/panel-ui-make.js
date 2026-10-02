@@ -5,6 +5,7 @@ import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
+import { populateHoverSelect } from './hover-columns.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -140,6 +141,13 @@ export function createPanelStructure(container, id, settings) {
                   <i class="fas fa-eye-slash"></i>
                 </button>
               </div>
+            </div>
+
+            <div class="hover-columns-controls mb-2">
+              <label class="me-2 mb-0" for="hover-columns-${id}">Hover:</label>
+              <select multiple size="3" class="form-select form-select-sm hover-columns-select" id="hover-columns-${id}"
+                      aria-label="Columns listed in the hover label" title="Columns listed in the hover label (Ctrl/Cmd-click for several)">
+              </select>
             </div>
 
             <div class="point-controls">
@@ -472,6 +480,9 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   const $pointOpacitySlider = jQuery(`#point-opacity-${id}`);
   if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
   
+  // Hover columns picker (settings.hoverInfo)
+  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo);
+
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);
   
