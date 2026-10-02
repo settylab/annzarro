@@ -233,6 +233,19 @@ body {
     flex: 1; /* Use all available space */
 }
 
+/* The page-level chooser under the panels ("Create New Panel / Duplicate or
+   Reopen") keeps a usable height: below panels that fill the window it was
+   squeezed to 2 px, so closed panels could only be reached through a split.
+   Panels shrink to fit down to 360 px; below that the tile area scrolls. */
+.tile-container > .tile-selector {
+    min-height: 320px;
+    flex-shrink: 0;
+}
+
+.tile-container > .panel-wrapper {
+    min-height: 360px;
+}
+
 .tile-header {
     display: flex;
     justify-content: space-between;
