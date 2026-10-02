@@ -109,6 +109,12 @@ ui:
     point_opacity: 1.0
     color_scale: "Portland"
     taxonomy_id: "9606"  # Homo sapiens
+    # Datasets with more cells than subset_threshold open on a reproducible
+    # subset of subset_size cells (seed subset_seed); the header shows it and
+    # its dialog changes or removes it. Every panel shows the same cells.
+    subset_threshold: 200000
+    subset_size: 100000
+    subset_seed: 0
 
   # Client-side cache configuration
   cache:
