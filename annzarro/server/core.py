@@ -494,7 +494,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
+        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
             # A fresh session: nothing from before login carries over
             session.clear()
             session["user_id"] = username
@@ -526,7 +526,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         password = request.json.get("password")
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
+        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
             # Create authentication token
             token = app.auth_manager.create_token(username)
             return jsonify({"token": token})

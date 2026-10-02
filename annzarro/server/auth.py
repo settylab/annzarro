@@ -58,6 +58,8 @@ class User:
         self.last_login = None
         self.login_attempts = 0
         self.locked_until = None
+        # Failed logins per client address: {ip: [count, locked_until, last_failure]}
+        self.failed_logins = {}
         # When the password last changed; logins from before it are void
         self.password_changed_at = None
     
@@ -72,6 +74,7 @@ class User:
             'last_login': self.last_login,
             'login_attempts': self.login_attempts,
             'locked_until': self.locked_until,
+            'failed_logins': self.failed_logins,
             'password_changed_at': self.password_changed_at
         }
     
@@ -89,6 +92,7 @@ class User:
         user.login_attempts = data.get('login_attempts', 0)
         user.locked_until = data.get('locked_until')
         user.password_changed_at = data.get('password_changed_at')
+        user.failed_logins = data.get('failed_logins') or {}
         return user
 
 def resolve_user_file(user_file):
@@ -258,13 +262,21 @@ class AuthManager:
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
     
-    def authenticate(self, username, password):
+    def authenticate(self, username, password, client_ip=None):
         """
         Authenticate a user with username and password
+
+        Failed attempts are counted per (user, client address): after
+        ``max_login_attempts`` failures from one address, that address is
+        locked out of that account for ``lockout_time`` seconds. Counting per
+        user alone let anyone who knew a user name lock its owner out by
+        failing on purpose; now they only lock themselves out.
         
         Args:
             username (str): Username
             password (str): Password
+            client_ip (str, optional): The client's address (``None`` for
+                callers without one, e.g. the CLI)
             
         Returns:
             bool: Authentication success
@@ -277,36 +289,46 @@ class AuthManager:
             return False
             
         user = self.users[username]
+        source = client_ip or "unknown"
+        now = time.time()
+        # Forget lockouts that ran out and failures older than lockout_time,
+        # so the record does not grow without bound
+        def live(rec):
+            count, locked_until, last = (list(rec) + [None, None, None])[:3]
+            if locked_until:
+                return float(locked_until) > now
+            return last is not None and now - float(last) < self.lockout_time
+        user.failed_logins = {ip: rec for ip, rec in user.failed_logins.items() if live(rec)}
+        count, locked_until = (list(user.failed_logins.get(source, [0, None])) + [None])[:2]
         
-        # Check if account is locked
-        if user.locked_until and float(user.locked_until) > time.time():
-            lock_remaining = int(float(user.locked_until) - time.time())
-            logging.warning(f"Authentication failed: Account {username} is locked for {lock_remaining} seconds")
+        # Check if this address is locked out of the account
+        if locked_until and float(locked_until) > now:
+            lock_remaining = int(float(locked_until) - now)
+            logging.warning(f"Authentication failed: {username} is locked for {source} "
+                            f"for {lock_remaining} seconds")
             return False
         
         # Verify password
         is_valid = self._verify_password(password, user.password_hash)
         
         if is_valid:
-            # Reset login attempts on success
-            user.login_attempts = 0
+            # Reset this address's failures on success
+            user.failed_logins.pop(source, None)
             user.last_login = datetime.now().isoformat()
             self._save_users(changed=[username])
             logging.info(f"User {username} authenticated successfully")
             return True
         else:
-            # Increment failed attempts
-            user.login_attempts += 1
-            
-            # Lock account if too many failed attempts
-            if user.login_attempts >= self.max_login_attempts:
-                user.locked_until = time.time() + self.lockout_time
-                logging.warning(f"Account {username} locked for {self.lockout_time} seconds after "
-                               f"{user.login_attempts} failed attempts")
-            
+            count = (count or 0) + 1
+            locked_until = None
+            if count >= self.max_login_attempts:
+                locked_until = now + self.lockout_time
+                logging.warning(f"Account {username} locked for {source} for {self.lockout_time} "
+                                f"seconds after {count} failed attempts")
+            user.failed_logins[source] = [count, locked_until, now]
             self._save_users(changed=[username])
-            logging.warning(f"Authentication failed for user {username}: Invalid password "
-                           f"(attempt {user.login_attempts}/{self.max_login_attempts})")
+            logging.warning(f"Authentication failed for user {username} from {source}: Invalid password "
+                           f"(attempt {count}/{self.max_login_attempts})")
             return False
     
     def create_token(self, username):
@@ -482,6 +504,7 @@ class AuthManager:
         user.password_hash = self._new_hash(password)
         user.login_attempts = 0
         user.locked_until = None
+        user.failed_logins = {}
         user.tokens = {}
         user.password_changed_at = time.time()
         self._save_users(changed=[username])
