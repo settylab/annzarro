@@ -1323,8 +1323,11 @@ export function createFilterMask(data, settings) {
         });
       }
       
-      // Count all NaNs for statistics
-      filterStats.colorNaN = data.color.filter(v => v == null || isNaN(v)).length;
+      // Count what the mask REMOVES, not every NaN in the array. With a table
+      // filter the mask only applies to table entities, and counting the
+      // whole array printed "2 filtered out" under "5 of 6 shown"
+      // (settylab/annzarro#37).
+      filterStats.colorNaN = colorValidMask.filter(keep => !keep).length;
     }
 
     // b) "in-range" mask for outliers
@@ -1355,10 +1358,8 @@ export function createFilterMask(data, settings) {
         });
       }
       
-      // Count all outliers for statistics
-      filterStats.colorOutliers = data.color.filter(v => 
-        v != null && !isNaN(v) && (v < cmin || v > cmax)
-      ).length;
+      // Count what the mask removes; see colorNaN above.
+      filterStats.colorOutliers = colorRangeMask.filter(keep => !keep).length;
     }
   }
 
