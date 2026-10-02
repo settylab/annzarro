@@ -172,7 +172,7 @@ branding:
     app_name:
       type: string
       description: Application name
-      default: Annzarro
+      default: AnnZarro
       security: public
     project_description:
       type: string
