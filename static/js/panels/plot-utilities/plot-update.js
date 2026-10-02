@@ -8,7 +8,9 @@ import {
   stableAxisRanges,
   applyHoverInfo,
   sortTracesByColor,
-  unsortTraces
+  unsortTraces,
+  applyLogColor,
+  applyLogColorbar
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -822,6 +824,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
 
         // hover labels for whatever traces the update left
         await applyHoverInfo(plotContainer, data, settings);
+        await applyLogColorbar(plotContainer, data, settings);
         await sortTracesByColor(plotContainer, settings);
 
         // bring back the focused entity if enabled
@@ -938,6 +941,7 @@ export async function loadColorDataAndUpdatePlot(
             // Update the data cache with new color information.
             data.color = colorData.values;
             data.colorType = colorData.type;
+            applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on

@@ -87,3 +87,18 @@ test("labels, booleans and empty columns stay categorical", async () => {
   assert.equal(inferValueType([]), "categorical");
   assert.equal(inferValueType(["1.5", "2", null]), "numerical");
 });
+
+// --- log colour scale with a floor -----------------------------------------
+test("log colour: floor clamps zeros and negatives, missing stays missing", async () => {
+  const { logColorValues, logColorbarTicks } = await import(pathToFileURL(MODULE_PATH).href);
+  const { values, floor } = logColorValues([0, 1e-6, 1e-3, -2, NaN, 0.1], 1e-5);
+  assert.equal(floor, 1e-5);
+  assert.deepEqual(values.map(v => (Number.isNaN(v) ? "NaN" : Math.round(v * 1000) / 1000)), [-5, -5, -3, -5, "NaN", -1]);
+  // no floor given: the smallest positive value
+  assert.equal(logColorValues([0, 0.004, 0.012]).floor, 0.004);
+  // nothing positive: nothing to draw
+  assert.equal(logColorValues([0, -1]).floor, null);
+  // ticks at whole decades in original units (view A walk row: 1e-6 .. 0.0126)
+  assert.deepEqual(logColorbarTicks(-6, -1.9), { tickvals: [-6, -5, -4, -3, -2], ticktext: ["1e-6", "1e-5", "1e-4", "0.001", "0.01"] });
+  assert.equal(logColorbarTicks(-2.3, -1.9), null);
+});

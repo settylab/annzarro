@@ -3,7 +3,7 @@ import { createLayout, processCategories, attachClickHandler } from './plot-make
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
-import { arrayMin, arrayMax, inferValueType } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, classifyFocusRow
@@ -768,6 +768,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           }
           data.color = colorData.values;
           data.colorType = colorData.type;
+          applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
@@ -834,6 +835,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       await applyHoverInfo(plotContainer, data, settings);
+      await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
@@ -1105,7 +1107,7 @@ export function hoverTemplateFor(trace, settings, data) {
   let t = '%{text}<br>x: %{x:.4~g}<br>y: %{y:.4~g}';
   if (settings.z) t += '<br>z: %{z:.4~g}';
   if (trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale !== undefined) {
-    t += '<br>c: %{marker.color:.4~g}';
+    t += data.colorLog ? '<br>log10 c: %{marker.color:.4~g}' : '<br>c: %{marker.color:.4~g}';
   } else if (data.colorType === 'categorical' && trace.name && trace.name !== 'Not in table') {
     t += `<br>${trace.name}`;
   }
@@ -1202,6 +1204,41 @@ export async function unsortTraces(gd) {
     } catch (err) {
       console.warn('Colour unsort skipped:', err && err.message);
     }
+  }
+}
+
+/**
+ * Log colour scale (settings.color.log, floor settings.color.logFloor): the
+ * colour values are replaced by log10(max(v, floor)), the raw ones kept in
+ * data.colorRaw, and the colour bar is labelled in original units.
+ */
+export function applyLogColor(data, settings) {
+  data.colorLog = null;
+  if (!settings.color || !settings.color.log || data.colorType !== 'numerical' || !Array.isArray(data.color)) return;
+  data.colorRaw = data.color;
+  const { values, floor } = logColorValues(data.color, settings.color.logFloor ?? null);
+  data.color = values;
+  data.colorLog = { floor };
+}
+
+export async function applyLogColorbar(gd, data, settings) {
+  if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
+  const idx = gd.data.findIndex(t => t && t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+  if (idx < 0) return;
+  const update = {};
+  if (data.colorLog) {
+    const finite = data.color.filter(v => Number.isFinite(v));
+    const ticks = finite.length ? logColorbarTicks(arrayMin(finite), arrayMax(finite)) : null;
+    update['marker.colorbar.tickvals'] = [ticks ? ticks.tickvals : null];
+    update['marker.colorbar.ticktext'] = [ticks ? ticks.ticktext : null];
+  } else {
+    update['marker.colorbar.tickvals'] = [null];
+    update['marker.colorbar.ticktext'] = [null];
+  }
+  try {
+    await Plotly.restyle(gd, update, [idx]);
+  } catch (err) {
+    console.warn('Log colour bar not updated:', err && err.message);
   }
 }
 

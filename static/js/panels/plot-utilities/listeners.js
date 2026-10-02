@@ -1,5 +1,5 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType } from './panel-ui-update.js';
-import { loadAxisData, updateTableEntities } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor } from './plot-make.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
@@ -565,6 +565,30 @@ export function setupColorControls(
         settings.sortByColor = settings.sortByColor === false;
         $.updateButtonState($sortByColorButton, settings.sortByColor);
         _updatePlotElements({ colors: true });
+    });
+
+    // --- Log colour scale with a floor (settings.color.log / logFloor) ---
+    const $logColorButton = $container.find(`#log-color-${id}`);
+    const $logFloorInput = $container.find(`#log-floor-${id}`);
+    $.updateButtonState($logColorButton, !!(settings.color && settings.color.log));
+    if (settings.color && settings.color.logFloor != null) $logFloorInput.val(settings.color.logFloor);
+    const _reapplyLog = () => {
+        if (data.colorRaw && data.colorLog) data.color = data.colorRaw;   // back to linear values
+        applyLogColor(data, settings);
+        if (!settings.lockColorRange) { settings.colorMin = null; settings.colorMax = null; }
+        _updatePlotElements({ colors: true, colorRange: true });
+    };
+    $logColorButton.on('click', () => {
+        if (!settings.color) return;
+        settings.color.log = !settings.color.log;
+        $.updateButtonState($logColorButton, settings.color.log);
+        _reapplyLog();
+    });
+    $logFloorInput.on('change', (e) => {
+        if (!settings.color) return;
+        const v = parseFloat(e.target.value);
+        settings.color.logFloor = Number.isFinite(v) && v > 0 ? v : null;
+        if (settings.color.log) _reapplyLog();
     });
 
     // --- Hide NaN button ---

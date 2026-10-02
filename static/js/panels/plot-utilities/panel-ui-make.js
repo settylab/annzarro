@@ -191,6 +191,8 @@ export function createPanelStructure(container, id, settings) {
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="sort-by-color-${id}" title="Draw the largest |colour| values on top">Strong on top</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="log-color-${id}" title="log10 colour scale; values at or below the floor share its colour">Log</button>
+                  <input type="number" class="form-control form-control-sm log-floor-input" id="log-floor-${id}" placeholder="floor: auto" title="Floor for the log colour scale (empty: smallest positive value)" style="width: 7.5rem">
                 </div>
               </div>
             </div>
