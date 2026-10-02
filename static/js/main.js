@@ -9,7 +9,7 @@ import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
     parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 
@@ -590,12 +590,15 @@ const App = (function() {
                 document.getElementById('gene-count').textContent = 'Loading..';
 
                 // Reset backend cache for the current dataset (if one is selected)
-                try {
-                    // Reset backend cache for this specific dataset
-                    await DataManager.resetBackendCache(datasetPath);
-                } catch (e) {
-                    console.warn('Error resetting backend cache:', e);
-                    // Continue even if backend cache reset fails
+                // Only an admin may clear a hosted server's shared cache; for
+                // everyone else Refresh reloads in this browser only, and a
+                // refusal (403 admin_only) is expected, not an error.
+                if (_refreshPlan.resetServerCache) {
+                    try {
+                        await DataManager.resetBackendCache(datasetPath);
+                    } catch (e) {
+                        console.warn('Server cache not cleared:', e && e.message);
+                    }
                 }
                 
                 // Reload available datasets
@@ -1796,13 +1799,21 @@ const App = (function() {
      * Silent on failure -- an older server simply has no such endpoint.
      * @private
      */
+    // What Refresh may do for this user (utils/session-permissions.js refreshPlan);
+    // until auth/me answers, try the server reset and tolerate a refusal
+    let _refreshPlan = refreshPlan(null);
+
     async function _loadAuthIndicator() {
         const el = document.getElementById('auth-indicator');
         if (!el) return;
         try {
             const response = await fetch(Config.API.AUTH_ME);
             if (!response.ok) return;
-            const badge = authIndicator(await response.json());
+            const me = await response.json();
+            _refreshPlan = refreshPlan(me);
+            const refreshBtn = document.getElementById('refresh-dataset');
+            if (refreshBtn) refreshBtn.title = _refreshPlan.title;
+            const badge = authIndicator(me);
             if (!badge) return;
             el.textContent = badge.text;
             el.title = badge.title;
