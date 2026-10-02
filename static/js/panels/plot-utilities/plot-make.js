@@ -1911,7 +1911,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.yanchor = posConfig.legendYanchor;
       
       // Create the plot with categorical traces
-      drawPlot(
+      await drawPlot(
         plotContainer,
         categoricalTraces,
         layout,
@@ -1937,7 +1937,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       // Fallback: process without custom colors
       const categoricalTraces = processCategories(settings, filteredData, catValues);
       
-      drawPlot(
+      await drawPlot(
         plotContainer,
         categoricalTraces,
         layout,
@@ -2116,7 +2116,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         traces.push(tableTrace);
       }
       
-      drawPlot(
+      await drawPlot(
         plotContainer,
         traces,
         layout,
@@ -2184,7 +2184,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.colorbar.titleside = posConfig.titleside;
       baseTrace.marker.colorbar.orientation = posConfig.orientation;
   
-      drawPlot(
+      await drawPlot(
         plotContainer,
         [baseTrace],
         layout,
@@ -2301,7 +2301,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         traces.push(tableTrace);
       }
       
-      drawPlot(
+      await drawPlot(
         plotContainer,
         traces,
         layout,
@@ -2324,7 +2324,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       delete baseTrace.marker.colorscale;
       console.log('Using constant color for all points');
       
-      drawPlot(
+      await drawPlot(
         plotContainer,
         [baseTrace],
         layout,
