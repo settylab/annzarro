@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from functools import wraps
 import time
+from urllib.parse import quote, urlsplit
 
 from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
 from ..utils.json_utils import NumpyJSONEncoder
@@ -66,12 +67,52 @@ def is_logged_in() -> bool:
     return "user_id" in session
 
 
+def safe_next(target: Optional[str]) -> str:
+    """``target`` if it is a path on this server, else ``/``.
+
+    Only a relative path that starts with a single ``/`` is accepted, so a
+    crafted ``/login?next=//evil.example`` or ``next=https://...`` cannot send
+    a user who just signed in to another site.
+    """
+    if not target or not isinstance(target, str):
+        return "/"
+    if any(c in target for c in "\r\n\\") or any(ord(c) < 0x20 for c in target):
+        return "/"
+    if not target.startswith("/") or target.startswith("//"):
+        return "/"
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc:
+        return "/"
+    if parts.path.startswith("/login") or parts.path.startswith("/logout"):
+        return "/"
+    return target
+
+
+def safe_fragment(fragment: Optional[str]) -> str:
+    """A URL fragment (``#view=...``) to re-attach after login, or ``""``."""
+    if not fragment or not isinstance(fragment, str):
+        return ""
+    fragment = fragment.lstrip("#")
+    if not fragment or any(ord(c) < 0x20 for c in fragment):
+        return ""
+    return "#" + fragment
+
+
 def login_required_response():
     """What a request that needs login gets without one: 401 for the API,
-    a redirect to the login page for everything else."""
+    a redirect to the login page for everything else.
+
+    The redirect carries the page asked for (path and query) as ``next``, so
+    a shared link survives signing in. Its ``#view=`` fragment never reaches
+    the server; the browser keeps it across this redirect and the login page
+    posts it back (see templates/login.html).
+    """
     if request.path.startswith("/api/"):
         return jsonify({"error": "Authentication required"}), 401
-    return redirect("/login")
+    target = request.full_path.rstrip("?") if request.query_string else request.path
+    if safe_next(target) == "/":
+        return redirect("/login")
+    return redirect("/login?next=" + quote(target, safe="/"))
 
 
 def require_auth(f):
@@ -347,50 +388,43 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
+    def render_login(**extra):
+        return render_template(
+            "login.html",
+            app_name=app.config.get("app_name", "AnnZarro"),
+            project_description=app.config.get("project_description", ""),
+            contact_info=app.config.get("contact_info", {}),
+            **extra
+        )
+
     @app.route("/login", methods=["GET"])
     def login_page():
         """Login page"""
-        # Pass the config variables to the template
-        app_name = app.config.get("app_name", "Annzarro")
-        project_description = app.config.get("project_description", "")
-        contact_info = app.config.get("contact_info", {})
-        
-        return render_template(
-            "login.html",
-            app_name=app_name,
-            project_description=project_description,
-            contact_info=contact_info
-        )
+        return render_login(next_url=safe_next(request.args.get("next")), fragment="")
     
     @app.route("/login", methods=["POST"])
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
+        next_url = safe_next(request.form.get("next"))
+        fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
         if app.auth_manager.authenticate(username, password):
-            # Set session variables
+            # A fresh session: nothing from before login carries over
+            session.clear()
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
             session["last_activity"] = time.time()
             
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            
-            # Redirect to home page
-            return redirect("/")
+            # Back to the page that asked for login, view included
+            return redirect(next_url + fragment)
         else:
-            # Return login page with error
-            app_name = app.config.get("app_name", "Annzarro")
-            project_description = app.config.get("project_description", "")
-            contact_info = app.config.get("contact_info", {})
-            
-            return render_template(
-                "login.html",
-                app_name=app_name,
-                project_description=project_description,
-                contact_info=contact_info,
+            # Return login page with error, keeping where to go afterwards
+            return render_login(
+                next_url=next_url,
+                fragment=fragment,
                 error="Invalid username or password. Please try again."
             )
     

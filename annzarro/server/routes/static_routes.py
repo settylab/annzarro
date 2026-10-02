@@ -46,10 +46,10 @@ def register_static_routes(app, api_version):
         # Authentication check for static files except login page
         if path != "login" and app.config.get("auth_enabled", False):
             # Import functions rather than decorating to avoid circular import
-            from flask import session, redirect
-            if "user_id" not in session:
+            from annzarro.server.core import is_logged_in, login_required_response
+            if not is_logged_in():
                 logger.warning(f"Unauthenticated access attempt to /{path}")
-                return redirect("/login")
+                return login_required_response()
         
         # Get static directory from config
         static_dir = app.config.get("static_dir")

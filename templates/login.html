@@ -101,6 +101,12 @@
         <div class="error-message">{{ error }}</div>
         {% endif %}
         <form action="/login" method="POST">
+            <!-- Where to go after signing in. The #view fragment of a shared
+                 link never reaches the server, so the script below copies it
+                 from the address bar; after a failed attempt the server
+                 renders it back here. -->
+            <input type="hidden" name="next" value="{{ next_url|default('/') }}">
+            <input type="hidden" name="fragment" id="login-fragment" value="{{ fragment|default('') }}">
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" required autofocus>
@@ -144,5 +150,10 @@
         </div>
         {% endif %}
     </div>
+    <script>
+        if (window.location.hash) {
+            document.getElementById('login-fragment').value = window.location.hash;
+        }
+    </script>
 </body>
 </html>
