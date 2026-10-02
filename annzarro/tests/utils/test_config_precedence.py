@@ -1,0 +1,224 @@
+"""Configuration layering: where defaults come from and who overrides whom.
+
+Regression net for the startup bug where `annzarro start --data-dir D --port P`
+run from any directory but the checkout died with "Missing required
+configuration: server.host / server.port / server.data_dir": the defaults were
+read relative to the CWD, and --data-dir/--host were written to `data.dir` and
+`host` instead of `server.*`.
+
+Every test runs from an empty temporary CWD with HOME, XDG_CONFIG_HOME,
+ANNZARRO_HOME and the system config path pointed into tmp, so nothing on the
+developer's machine leaks in.
+"""
+import argparse
+import os
+
+import pytest
+import yaml
+
+from annzarro import cli
+from annzarro.utils.config_manager import ConfigManager
+
+
+@pytest.fixture
+def isolated(tmp_path, monkeypatch):
+    """Empty CWD, private HOME/XDG/state dir, no system config, no ANNZARRO_* vars."""
+    for var in list(os.environ):
+        if var.startswith("ANNZARRO_"):
+            monkeypatch.delenv(var)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("ANNZARRO_HOME", str(home / ".annzarro"))
+    monkeypatch.setattr(ConfigManager, "SYSTEM_CONFIG_PATH", str(tmp_path / "etc" / "config.yaml"))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    return tmp_path
+
+
+def _write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data))
+    return path
+
+
+def _args(**kw):
+    base = dict(host=None, port=None, data_dir=None, auth_disabled=False,
+                detach=False, no_browser=True, development=False, venv_path=None)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def _user_config(tmp):
+    return tmp / "home" / ".config" / "annzarro" / "config.yaml"
+
+
+@pytest.mark.parametrize("env", ["production", "development"])
+def test_defaults_load_from_an_unrelated_cwd(isolated, env):
+    mgr = ConfigManager()
+    config = mgr.load_config(env=env)
+    assert config["server"]["host"] == "127.0.0.1"
+    assert isinstance(config["server"]["port"], int)
+    assert config["server"]["data_dir"]
+    assert mgr.validate_config() == (True, [])
+    assert mgr.sources["defaults:base"].endswith(os.path.join("annzarro", "config", "base.yaml"))
+
+
+def test_cli_flags_set_server_keys_and_nothing_else(isolated, tmp_path):
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production", cli_args=_args(
+        host="127.0.0.1", port=8010, data_dir=str(tmp_path / "d"), auth_disabled=True))
+    assert config["server"]["port"] == 8010
+    assert config["server"]["data_dir"] == str(tmp_path / "d")
+    assert config["auth"]["enabled"] is False
+    # The old generic mapping produced these; nothing reads them.
+    for stray in ("host", "port", "data", "no", "detach", "auth_disabled", "development"):
+        assert stray not in config, stray
+    assert mgr.origins["server.port"] == "cli:--port"
+    assert mgr.origins["server.data_dir"] == "cli:--data-dir"
+
+
+def test_start_flags_survive_validation_without_any_config_file(isolated, tmp_path, monkeypatch):
+    """The reported failure, at the CLI layer: only flags, no files, from a temp CWD."""
+    seen = {}
+
+    def fake_run_server(config_file, detach, no_browser, detach_args):
+        seen.update(config_file=config_file, no_browser=no_browser)
+
+    monkeypatch.setattr(cli, "run_server", fake_run_server)
+    data = tmp_path / "data"
+    rc = cli.main(["start", "--data-dir", str(data), "--port", "8010",
+                   "--no-browser", "--auth-disabled"])
+    assert rc == 0
+    flat = seen["config_file"]
+    assert flat["port"] == 8010
+    assert flat["data_dir"] == str(data)
+    assert flat["host"] == "127.0.0.1"
+    assert flat["auth_enabled"] is False
+    assert seen["no_browser"] is True
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "10.1.2.3"])
+def test_non_loopback_host_forces_auth_unless_disabled(isolated, host):
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production", cli_args=_args(host=host))["auth"]["enabled"] is True
+    assert mgr.origins["auth.enabled"] == "derived:non-loopback host"
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production", cli_args=_args(host=host, auth_disabled=True))
+    assert config["auth"]["enabled"] is False
+
+
+def test_precedence_cli_over_env_over_config_file_over_user_over_defaults(isolated, tmp_path, monkeypatch):
+    default_port = ConfigManager().load_config(env="production")["server"]["port"]
+
+    _write(_user_config(tmp_path), {"server": {"port": 9001, "log_level": "WARNING"}})
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production")["server"]["port"] == 9001
+    assert mgr.origins["server.port"] == "user"
+    assert default_port != 9001
+
+    explicit = _write(tmp_path / "explicit.yaml", {"server": {"port": 9002}})
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production", config_path=str(explicit))
+    assert config["server"]["port"] == 9002
+    assert mgr.origins["server.port"] == "--config"
+    # Keys the --config file does not mention keep their lower-layer value.
+    assert config["server"]["log_level"] == "WARNING"
+
+    monkeypatch.setenv("ANNZARRO_SERVER_PORT", "9003")
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production", config_path=str(explicit))["server"]["port"] == 9003
+    assert mgr.origins["server.port"] == "env:ANNZARRO_SERVER_PORT"
+
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production", config_path=str(explicit), cli_args=_args(port=9004))
+    assert config["server"]["port"] == 9004
+    assert mgr.origins["server.port"] == "cli:--port"
+    names = [layer["name"] for layer in mgr.layers]
+    assert names == ["defaults:base", "defaults:production", "system", "user",
+                     "project", "--config", "env", "cli"]
+
+
+def test_project_file_sits_between_user_and_explicit(isolated, tmp_path):
+    _write(_user_config(tmp_path), {"server": {"port": 9001}})
+    _write(tmp_path / "cwd" / "config.yaml", {"server": {"port": 9005}})
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production")["server"]["port"] == 9005
+    assert mgr.origins["server.port"] == "project"
+
+
+def test_env_vars_map_onto_keys_with_underscores(isolated, tmp_path, monkeypatch):
+    monkeypatch.setenv("ANNZARRO_SERVER_DATA_DIR", str(tmp_path / "envdata"))
+    monkeypatch.setenv("ANNZARRO_UI_DEFAULTS_MAX_CELLS", "42")
+    monkeypatch.setenv("ANNZARRO_NOT_A_KEY", "x")
+    monkeypatch.setenv("ANNZARRO_HEADLESS", "1")
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production")
+    assert config["server"]["data_dir"] == str(tmp_path / "envdata")
+    assert config["ui"]["defaults"]["max_cells"] == 42
+    assert "data" not in config["server"]
+    assert "not" not in config and "headless" not in config
+    ignored = [l for l in mgr.layers if l["status"] == "ignored"]
+    assert [l["path"] for l in ignored] == ["ANNZARRO_NOT_A_KEY"]
+
+
+def test_auth_disabled_env_var(isolated, monkeypatch):
+    monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", "1")
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production", cli_args=_args(host="0.0.0.0"))["auth"]["enabled"] is False
+    monkeypatch.setenv("ANNZARRO_AUTH_DISABLED", "0")
+    mgr = ConfigManager()
+    assert mgr.load_config(env="production", cli_args=_args(host="0.0.0.0"))["auth"]["enabled"] is True
+
+
+def test_missing_or_broken_explicit_config_is_an_error(isolated, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        ConfigManager().load_config(env="production", config_path=str(tmp_path / "nope.yaml"))
+    broken = tmp_path / "broken.yaml"
+    broken.write_text("server: [unclosed\n")
+    with pytest.raises(ValueError):
+        ConfigManager().load_config(env="production", config_path=str(broken))
+
+
+def test_cli_exits_nonzero_on_missing_config_file(isolated, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["config", "show", "--config", str(tmp_path / "nope.yaml")])
+    assert exc.value.code == 1
+
+
+def test_validation_sees_the_merged_result(isolated, tmp_path):
+    bad = _write(tmp_path / "bad.yaml", {"server": {"port": "eighty"}})
+    mgr = ConfigManager()
+    mgr.load_config(env="production", config_path=str(bad))
+    ok, errors = mgr.validate_config()
+    assert not ok and any("server.port" in e for e in errors)
+    # ...and a CLI flag that fixes it is applied before validation runs.
+    mgr = ConfigManager()
+    mgr.load_config(env="production", config_path=str(bad), cli_args=_args(port=8010))
+    assert mgr.validate_config() == (True, [])
+
+
+def test_reloading_starts_from_scratch(isolated):
+    mgr = ConfigManager()
+    mgr.load_config(env="production", cli_args=_args(port=8010))
+    assert mgr.load_config(env="production")["server"]["port"] != 8010
+    assert "server.port" not in mgr.origins or mgr.origins["server.port"].startswith("defaults")
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["--config", "a.yaml", "start"], "a.yaml"),
+    (["start", "--config", "b.yaml"], "b.yaml"),
+    (["start"], None),
+])
+def test_config_flag_before_or_after_subcommand(isolated, monkeypatch, argv, expected):
+    seen = {}
+
+    def fake_start(args):
+        seen["config"] = args.config
+        return 0
+
+    monkeypatch.setattr(cli, "start_server", fake_start)
+    assert cli.main(argv) == 0
+    assert seen["config"] == expected

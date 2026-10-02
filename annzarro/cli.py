@@ -46,8 +46,14 @@ def load_config(
     Returns:
         Configuration dictionary
     """
-    # Load configuration using the manager
-    config = config_manager.load_config(env=env, config_path=config_path, cli_args=cli_args)
+    # Load configuration using the manager. Every override (--config file,
+    # environment, CLI flags) is merged BEFORE validation, so a flag can supply
+    # a value that no file provides.
+    try:
+        config = config_manager.load_config(env=env, config_path=config_path, cli_args=cli_args)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
     
     # Validate configuration
     is_valid, errors = config_manager.validate_config()
@@ -85,43 +91,28 @@ def start_server(args: argparse.Namespace) -> int:
     # Load configuration - default to production for security, use development only when explicitly requested
     env = "development" if getattr(args, "development", False) else "production"
     logger.info(f"Starting server in {env} mode")
+    # CLI flags (--host, --port, --data-dir, --auth-disabled) are applied by
+    # the configuration manager, before validation. It also forces
+    # authentication on for a non-loopback host unless --auth-disabled or
+    # ANNZARRO_AUTH_DISABLED says otherwise.
     config = load_config(
         config_path=args.config,
         env=env,
         cli_args=args
     )
-    
-    # Override with command-line arguments
-    if args.host:
-        config.setdefault('server', {})['host'] = args.host
-    if args.port:
-        config.setdefault('server', {})['port'] = args.port
-    if args.data_dir:
-        config.setdefault('server', {})['data_dir'] = args.data_dir
-    
-    # Determine if authentication should be enabled
-    host = args.host or config.get('server', {}).get('host')
-    is_non_localhost = host and host not in ('127.0.0.1', 'localhost', '::1')
-    
-    # Enable auth by default for non-localhost or when auth is explicitly configured
-    if is_non_localhost:
-        config.setdefault('auth', {})['enabled'] = True
-        logger.info("Authentication enabled by default for non-localhost host")
-    
-    # Explicit command line flag takes precedence
-    if getattr(args, 'auth_disabled', False):
-        config.setdefault('auth', {})['enabled'] = False
-        logger.info("Authentication disabled by command line flag")
-    
-    # Environment variable also takes precedence
-    if os.environ.get('ANNZARRO_AUTH_DISABLED'):
-        config.setdefault('auth', {})['enabled'] = False
-        logger.info("Authentication disabled by ANNZARRO_AUTH_DISABLED environment variable")
+    if not config.get('auth', {}).get('enabled'):
+        logger.info("Authentication disabled")
     
     # Convert to flat structure for the server
-    logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
     flask_config = config_manager.to_flask_config()
-    logger.info(flask_config)
+    
+    # A detached server re-runs this command in a child process; hand it the
+    # same configuration inputs, not just host/port/data-dir.
+    detach_args = []
+    if args.config:
+        detach_args += ['--config', os.path.abspath(os.path.expanduser(args.config))]
+    if getattr(args, 'development', False):
+        detach_args.append('--development')
     
     # Check explicit user preference
     no_browser = getattr(args, 'no_browser', False)
@@ -136,7 +127,8 @@ def start_server(args: argparse.Namespace) -> int:
     run_server(
         config_file=flask_config, 
         detach=args.detach,
-        no_browser=no_browser
+        no_browser=no_browser,
+        detach_args=detach_args
     )
     
     return 0
@@ -605,7 +597,7 @@ def config_command(args: argparse.Namespace) -> int:
     if args.config_command == "show":
         # Load and show configuration
         env = args.env  # Default already set to production
-        config = load_config(config_path=args.config, env=env)
+        config = load_config(config_path=args.config, env=env, cli_args=args)
         
         # Print configuration
         if args.format == "json":
@@ -690,7 +682,7 @@ def config_command(args: argparse.Namespace) -> int:
         else:
             # Validate full configuration
             env = args.env  # Default already set to production
-            config = load_config(config_path=args.config, env=env)
+            config = load_config(config_path=args.config, env=env, cli_args=args)
             
             # Check validation result
             is_valid, errors = config_manager.validate_config()
@@ -707,7 +699,7 @@ def config_command(args: argparse.Namespace) -> int:
     elif args.config_command == "info":
         # Show configuration source information
         env = args.env  # Default already set to production
-        load_config(config_path=args.config, env=env)
+        load_config(config_path=args.config, env=env, cli_args=args)
         
         # Get configuration info
         config_info = config_manager.get_config_info()
@@ -746,19 +738,26 @@ def main(argv: List[str] = None) -> int:
     parser.add_argument('--config', help="Path to configuration file")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
     
+    # Flags that override configuration keys. Shared by `start` and the
+    # `config` subcommands, so `config show --port 9000` shows what
+    # `start --port 9000` would run with. SUPPRESS keeps a subcommand from
+    # resetting a value given before the subcommand (`annzarro --config x start`).
+    overrides = argparse.ArgumentParser(add_help=False)
+    overrides.add_argument('--config', default=argparse.SUPPRESS,
+                           help="Path to configuration file (overrides user/system config files)")
+    overrides.add_argument('--host', help="Host to bind to (server.host)")
+    overrides.add_argument('--port', type=int, help="Port to bind to (server.port)")
+    overrides.add_argument('--data-dir', help="Data directory (server.data_dir)")
+    overrides.add_argument('--auth-disabled', action='store_true', help="Disable authentication (auth.enabled=false)")
+    
     # Create subcommands
     subparsers = parser.add_subparsers(dest='command', help="Command to run")
     
     # Start command
-    start_parser = subparsers.add_parser('start', help="Start the Annzarro server")
-    start_parser.add_argument('--host', help="Host to bind to")
-    start_parser.add_argument('--port', type=int, help="Port to bind to")
-    start_parser.add_argument('--data-dir', help="Data directory")
+    start_parser = subparsers.add_parser('start', parents=[overrides], help="Start the Annzarro server")
     start_parser.add_argument('--detach', action='store_true', help="Run server in background")
     start_parser.add_argument('--development', action='store_true', help="Run in development mode (less secure)")
-    start_parser.add_argument('--config', help="Path to configuration file")
     start_parser.add_argument('--venv-path', help="Path to Python virtual environment")
-    start_parser.add_argument('--auth-disabled', action='store_true', help="Disable authentication")
     start_parser.add_argument('--no-browser', action='store_true', help="Don't open a browser automatically")
     start_parser.set_defaults(func=start_server)
     
@@ -800,7 +799,7 @@ def main(argv: List[str] = None) -> int:
     config_subparsers = config_parser.add_subparsers(dest='config_command', help="Configuration command")
     
     # Config show command
-    config_show_parser = config_subparsers.add_parser('show', help="Show current configuration")
+    config_show_parser = config_subparsers.add_parser('show', parents=[overrides], help="Show the effective configuration and where each value came from")
     config_show_parser.add_argument('--format', choices=['json', 'yaml'], default='yaml', help="Output format")
     config_show_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
@@ -810,12 +809,12 @@ def main(argv: List[str] = None) -> int:
     config_init_parser.add_argument('--force', action='store_true', help="Overwrite existing file")
     
     # Config validate command
-    config_validate_parser = config_subparsers.add_parser('validate', help="Validate configuration")
+    config_validate_parser = config_subparsers.add_parser('validate', parents=[overrides], help="Validate configuration")
     config_validate_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     config_validate_parser.add_argument('--file', help="Validate a specific configuration file")
     
     # Config info command
-    config_info_parser = config_subparsers.add_parser('info', help="Show configuration source information")
+    config_info_parser = config_subparsers.add_parser('info', parents=[overrides], help="Show configuration source information")
     config_info_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     config_parser.set_defaults(func=config_command)

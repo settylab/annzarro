@@ -11,7 +11,7 @@ import sys
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 from flask import Flask, current_app
 
@@ -32,7 +32,8 @@ def run_server(
     data_dir: Optional[str] = None,
     static_dir: Optional[str] = None,
     detach: bool = False,
-    no_browser: bool = False
+    no_browser: bool = False,
+    detach_args: Optional[List[str]] = None
 ) -> None:
     """
     Run the Annzarro server.
@@ -47,6 +48,7 @@ def run_server(
         static_dir: Directory containing static files (optional)
         detach: Run server in detached mode (optional)
         no_browser: Don't open a browser automatically (optional)
+        detach_args: Extra CLI arguments (e.g. --config) for the detached child
     """
     global _app_instance
     
@@ -122,7 +124,7 @@ def run_server(
             "--host", host,
             "--port", str(port),
             "--data-dir", data_dir
-        ]
+        ] + list(detach_args or [])
         
         # Pass debug flag if enabled
         if final_config.get("debug", False):

@@ -103,23 +103,36 @@ integrations:
 
 Annzarro uses a layered configuration system with the following precedence (highest to lowest):
 
-1. **Command line arguments**
+1. **Command line arguments**: `--host` (`server.host`), `--port` (`server.port`),
+   `--data-dir` (`server.data_dir`), `--auth-disabled` (`auth.enabled: false`)
 2. **Environment variables** (prefixed with `ANNZARRO_`)
-3. **User-provided configuration file** (specified with `--config`)
-4. **Local configuration file** (`config.yaml` in current directory)
-5. **User configuration file** (`~/.config/annzarro/config.yaml`)
+3. **User-provided configuration file** (specified with `--config`; it is an error if it does not exist)
+4. **Local configuration file** (`config.yaml` in the directory annzarro is started from)
+5. **User configuration file** (`~/.config/annzarro/config.yaml`, or `$XDG_CONFIG_HOME/annzarro/config.yaml`)
 6. **System-wide configuration file** (`/etc/annzarro/config.yaml`)
-7. **Environment-specific configuration** (`development.yaml` or `production.yaml`)
-8. **Base configuration** (`base.yaml`)
+7. **Environment-specific defaults** (`annzarro/config/production.yaml`, or `development.yaml` with `--development`)
+8. **Base defaults** (`annzarro/config/base.yaml`)
+
+Files 4-6 are optional. Validation runs once, on the merged result.
+
+`annzarro config show` prints the effective configuration together with every
+source that was considered and which one set each value. It accepts the same
+override flags as `start`, so `annzarro config show --port 9000` shows exactly
+what `annzarro start --port 9000` would run with.
 
 ## Environment Variables
 
 Environment variables override configuration values. Use the prefix `ANNZARRO_` followed by the configuration key with underscores.
+Keys that contain underscores themselves work as expected (`ANNZARRO_SERVER_DATA_DIR` sets `server.data_dir`).
+A variable that does not name an existing key is ignored and listed as such by `config show`.
 
 Examples:
 - `ANNZARRO_SERVER_HOST=0.0.0.0`
 - `ANNZARRO_SERVER_PORT=8080`
+- `ANNZARRO_SERVER_DATA_DIR=/srv/datasets`
 - `ANNZARRO_AUTH_ENABLED=true`
+
+`ANNZARRO_AUTH_DISABLED=1` is a switch equivalent to `--auth-disabled`.
 
 ## Security Best Practices
 
