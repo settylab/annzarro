@@ -9,6 +9,7 @@ import {
     getVarpColumnsForGeneTable,
     getLayerColumnsForGeneTable
 } from './panel-tracker.js';
+import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 
 /**
  * Creates the basic table panel HTML structure.
@@ -118,9 +119,7 @@ export function checkDatasetLoadingStatus(id) {
     const tablePanel = document.getElementById(`table-container-${id}`)?.closest('.table-panel');
     const controlsContainer = tablePanel?.querySelector('.table-controls');
     
-    if (controlsContainer) {
-        controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
-    }
+    syncControlsWithDataset(controlsContainer, isDatasetLoaded);
     
     return isDatasetLoaded;
 }

@@ -4,6 +4,7 @@ import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
+import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -254,9 +255,8 @@ export function checkDatasetLoadingStatus(id) {
     $loadingScreen.toggle(!isDatasetLoaded);
   }
   
-  if ($controlsContainer.length) {
-    $controlsContainer.toggle(isDatasetLoaded);
-  }
+  // Shows controls only if the user (or a restored view) has not hidden them
+  syncControlsWithDataset($controlsContainer[0], isDatasetLoaded);
   
   // Also update the loading status of all select elements
   if ($plotPanel.length) {

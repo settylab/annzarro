@@ -12,6 +12,7 @@ import { LayoutManager } from './layout-manager.js';
 import { SelectionTile } from './selection-tile.js';
 import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds } from './utils/deeplink.js';
+import { setControlsVisible } from './utils/controls-visibility.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -264,30 +265,7 @@ const PanelManager = (function() {
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
-            const plotControls = contentContainer.querySelector('.plot-controls');
-            const tableControls = contentContainer.querySelector('.table-controls');
-            const controlsElement = plotControls || tableControls;
-            
-            if (controlsElement) {
-                controlsElement.style.display = config.controlsVisible ? 'flex' : 'none';
-                
-                // Update toggle button
-                const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
-                if (toggleBtn) {
-                    const icon = toggleBtn.querySelector('i');
-                    if (icon) {
-                        if (config.controlsVisible) {
-                            icon.classList.remove('fa-chevron-down');
-                            icon.classList.add('fa-chevron-up');
-                            toggleBtn.title = 'Hide Controls';
-                        } else {
-                            icon.classList.remove('fa-chevron-up');
-                            icon.classList.add('fa-chevron-down');
-                            toggleBtn.title = 'Show Controls';
-                        }
-                    }
-                }
-            }
+            _applyControlsVisible(tileElement, config.controlsVisible);
         }
         
         // Scroll the new panel into view
@@ -480,9 +458,9 @@ const PanelManager = (function() {
         const controlsElement = plotControls || tableControls;
         if (!controlsElement) return;
         
-        // Toggle controls visibility
+        // Toggle controls visibility (recorded, so dataset loading keeps it)
         const isVisible = controlsElement.style.display !== 'none';
-        controlsElement.style.display = isVisible ? 'none' : (plotControls ? 'flex' : 'flex');
+        setControlsVisible(controlsElement, !isVisible);
         
         // Store state in the panel's config for session saving
         const config = panel.getConfig() || {};
@@ -814,95 +792,59 @@ const PanelManager = (function() {
                     continue;
                 }
                 
+                // Get the panel config from the layout
+                const savedConfig = layout.panelConfigs && layout.panelConfigs[id];
+                const panelConfig = savedConfig ? savedConfig : { id };
+
+                // A saved config describes this panel exactly; an existing
+                // instance with the same id (the same set loaded twice, or a
+                // panel still around from before) would otherwise be reused
+                // with ITS settings. Replace it so the saved view comes back.
+                if (savedConfig && _panels.has(id)) {
+                    removePanel(id);
+                }
+
                 // Get existing panel or create a new one
                 let panel = _panels.get(id);
                 let promise;
-                
-                // Get the panel config from the layout
-                const panelConfig = layout.panelConfigs && layout.panelConfigs[id] ? layout.panelConfigs[id] : { id };
-                
-                if (panel) {
-                    // Update title
-                    const titleInput = tileElement.querySelector('.tile-title');
-                    if (titleInput && panel.getTitle) {
-                        titleInput.value = panel.getTitle();
-                    }
-                    
-                    // Apply control panel visibility state if available
-                    if (layout.controlState && layout.controlState[id] !== undefined) {
-                        const isVisible = layout.controlState[id];
-                        const plotControls = contentContainer.querySelector('.plot-controls');
-                        const tableControls = contentContainer.querySelector('.table-controls');
-                        const controlsElement = plotControls || tableControls;
-                        
-                        if (controlsElement) {
-                            controlsElement.style.display = isVisible ? 'flex' : 'none';
-                            
-                            // Update toggle button
-                            const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
-                            if (toggleBtn) {
-                                const icon = toggleBtn.querySelector('i');
-                                if (icon) {
-                                    if (isVisible) {
-                                        icon.classList.remove('fa-chevron-down');
-                                        icon.classList.add('fa-chevron-up');
-                                        toggleBtn.title = 'Hide Controls';
-                                    } else {
-                                        icon.classList.remove('fa-chevron-up');
-                                        icon.classList.add('fa-chevron-down');
-                                        toggleBtn.title = 'Show Controls';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Initialize asynchronously
-                    promise = new Promise(resolve => {
-                        // Use a microtask to ensure DOM is ready
-                        Promise.resolve().then(() => {
-                            try {
-                                // Pass the complete panel configuration to avoid reinitializing with default settings
-                                return panel.init();
-                            } catch (error) {
-                                console.error(`Error initializing restored panel ${id}:`, error);
-                            }
-                        }).then(resolve);
-                    });
-                    
-                    // Add to active panels
-                    _activePanels.add(panel);
-                } else {
-                    // Create a new panel instance
+
+                if (!panel) {
                     const Constructor = _panelTypes.get(type);
-                    
-                    // Create new panel with saved config
                     panel = new Constructor(contentContainer, panelConfig);
-                    
-                    // Using timestamp-based IDs and automatic title generation
-                    
-                    // Store reference to the panel
                     _panels.set(id, panel);
                     _panelsByType.get(type).add(panel);
-                    _activePanels.add(panel);
-                    
-                    // Update title in the DOM
-                    const titleInput = tileElement.querySelector('.tile-title');
-                    if (titleInput && panel.getTitle) {
-                        titleInput.value = panel.getTitle();
-                    }
-                    
-                    // Initialize asynchronously
-                    promise = new Promise(resolve => {
-                        Promise.resolve().then(() => {
-                            try {
-                                return panel.init();
-                            } catch (error) {
-                                console.error(`Error initializing new panel ${id}:`, error);
-                            }
-                        }).then(resolve);
-                    });
                 }
+                _activePanels.add(panel);
+
+                const titleInput = tileElement.querySelector('.tile-title');
+                if (titleInput && panel.getTitle) {
+                    titleInput.value = panel.getTitle();
+                }
+
+                // Controls shown or hidden as saved. controlState is what
+                // saveLayout records (plot AND table controls); a config's own
+                // controlsVisible is the fallback. Applied right after init
+                // builds the controls (synchronously, before its first await),
+                // so the first draw already has the saved plot area: a plot
+                // drawn under controls that should be hidden can be squeezed
+                // to nothing, which Plotly reports by throwing.
+                const savedVisible = layout.controlState && layout.controlState[id] !== undefined
+                    ? layout.controlState[id]
+                    : panelConfig.controlsVisible;
+                promise = new Promise(resolve => {
+                    Promise.resolve().then(() => {
+                        try {
+                            const pending = panel.init();
+                            if (savedVisible !== undefined) _applyControlsVisible(tileElement, savedVisible);
+                            return pending;
+                        } catch (error) {
+                            console.error(`Error initializing restored panel ${id}:`, error);
+                        }
+                    }).then(resolve, error => {
+                        console.error(`Error initializing restored panel ${id}:`, error);
+                        resolve();
+                    });
+                });
                 
                 initializationPromises.push(promise);
             }
@@ -982,6 +924,57 @@ const PanelManager = (function() {
         if (toggleControlsBtn) {
             toggleControlsBtn.addEventListener('click', () => _togglePanelControls(id, toggleControlsBtn));
         }
+    }
+
+    /**
+     * Show or hide a panel's control bar and keep its toggle button in step.
+     * @param {HTMLElement} tileElement
+     * @param {boolean} visible
+     * @private
+     */
+    function _applyControlsVisible(tileElement, visible) {
+        const contentContainer = tileElement && tileElement.querySelector('.tile-content');
+        if (!contentContainer) return;
+        const controlsElement = contentContainer.querySelector('.plot-controls')
+            || contentContainer.querySelector('.table-controls');
+        if (!controlsElement) return;
+        setControlsVisible(controlsElement, visible);
+        const pane = tileElement.closest && tileElement.closest('.split-pane');
+        if (pane) pane.dataset.controlsVisible = String(!!visible);
+        const toggleBtn = tileElement.querySelector('.tile-toggle-controls');
+        const icon = toggleBtn && toggleBtn.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-up', !!visible);
+            icon.classList.toggle('fa-chevron-down', !visible);
+            toggleBtn.title = visible ? 'Hide Controls' : 'Show Controls';
+        }
+    }
+
+    /**
+     * Forget a panel entirely (not just close it): its tile, its listeners
+     * and its entry in every registry. Used when a loaded panel set brings a
+     * panel with the same id, so the id, and every reference to it (a plot's
+     * tableFilter), keeps meaning the panel from the set.
+     * @param {string} id
+     */
+    function removePanel(id) {
+        const panel = _panels.get(id);
+        if (!panel) return;
+        const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        if (tile && _activePanels.has(panel)) {
+            LayoutManager.closePanel(tile);
+        }
+        _activePanels.delete(panel);
+        try {
+            if (typeof panel.destroy === 'function') panel.destroy();
+            else if (typeof panel.cleanup === 'function') panel.cleanup();
+        } catch (error) {
+            console.warn(`removePanel: cleanup of ${id} failed:`, error);
+        }
+        _panels.delete(id);
+        const byType = _panelsByType.get(panelTypeFromTileId(id));
+        if (byType) byType.delete(panel);
+        _panelsByType.forEach(set => set.delete(panel));
     }
 
     /**
@@ -1066,6 +1059,7 @@ const PanelManager = (function() {
         saveLayout,
         restoreLayout,
         registerClosedPanel,
+        removePanel,
         updateSourcePanelSelection
     };
 })();

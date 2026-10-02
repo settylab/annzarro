@@ -10,6 +10,7 @@ import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTab
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
+import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -60,9 +61,7 @@ const GeneTablePanel = (function() {
                 if (loadingScreen) {
                     loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
                 }
-                if (controlsContainer) {
-                    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
-                }
+                syncControlsWithDataset(controlsContainer, isDatasetLoaded);
                 
                 // If a dataset is already loaded, initialize the panel
                 if (isDatasetLoaded) {

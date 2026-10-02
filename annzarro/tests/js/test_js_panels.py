@@ -27,7 +27,11 @@ SUITES = {
     "focus-highlight.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-update.js"
     ),
+    "controls-visibility.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "utils", "controls-visibility.js"
+    ),
     "name-picker.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "name-picker.js"),
+    "panelset-view.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "deeplink.js"),
     "panel-axis-selector.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
     ),
