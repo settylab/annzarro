@@ -4,7 +4,7 @@ Zarr Reader - Handles loading AnnData in zarr format
 This module provides functionality for loading zarr data from various sources:
 - Local files (directory or archive)
 - URL (HTTP/HTTPS)
-- S3 bucket
+- S3 and GCS buckets (see ``remote.py`` for the access policy)
 
 Features:
 - Lazy loading support for efficient memory usage
@@ -18,13 +18,16 @@ Features:
 
 import os
 import logging
+import threading
 import numpy as np
 import zarr
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
 from pathlib import Path
+from collections import OrderedDict
 
 from .metadata_extraction import extract_metadata
 from .caching import DatasetCache, cached_method
+from .remote import is_remote_path, check_remote_access, open_remote_group
 
 # Try to import optional dependencies
 try:
@@ -103,6 +106,10 @@ class ZarrReader:
         self.max_memory_mb = max_memory_mb
         self.enable_caching = enable_caching
         self.cache_limit = cache_limit
+
+        # url -> zarr root group for remote stores (see _get_remote_root)
+        self._remote_roots = OrderedDict()
+        self._remote_roots_lock = threading.Lock()
         
         # Optional initialization of backends
         self._check_backends()
@@ -198,6 +205,11 @@ class ZarrReader:
         
         # Use the cache manager to clear cache
         result = self.cache.clear_cache(dataset_path=dataset_path)
+        with self._remote_roots_lock:
+            if dataset_path is None:
+                self._remote_roots.clear()
+            else:
+                self._remote_roots.pop(dataset_path, None)
                 
         logger.info(f"CLEAR_CACHE: Cache cleared with result: {result}")
         return result
@@ -260,8 +272,9 @@ class ZarrReader:
             
             return root, metadata_dict
             
-        except ValueError as e:
-            # For invalid paths, propagate the error with the detailed message
+        except (ValueError, ImportError, PermissionError, FileNotFoundError) as e:
+            # For invalid paths, refused or unreachable remote stores, and
+            # missing optional dependencies, propagate the error unchanged
             logger.error(f"Invalid dataset path or format: {dataset_path}: {e}")
             raise
         except Exception as e:
@@ -293,25 +306,8 @@ class ZarrReader:
         
         # Look for the root using the path
         try:
-            if dataset_path.startswith("s3://"):
-                if not S3FS_AVAILABLE:
-                    raise ImportError("s3fs package required for S3 access")
-                
-                parts = dataset_path.replace("s3://", "").split("/", 1)
-                bucket = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
-                
-                fs = s3fs.S3FileSystem(anon=True)
-                store = zarr.storage.FSStore(f'{bucket}/{key}', fs=fs)
-                return zarr.open_group(store, mode='r')
-            
-            elif dataset_path.startswith(("http://", "https://")):
-                if FSSPEC_AVAILABLE:
-                    store = fsspec.filesystem('http').get_mapper(dataset_path)
-                else:
-                    store = dataset_path
-                return zarr.open_group(store, mode='r')
-            
+            if is_remote_path(dataset_path):
+                return self._get_remote_root(dataset_path)
             else:
                 # Local file access - do more thorough validation
                 path_obj = Path(dataset_path)
@@ -342,6 +338,11 @@ class ZarrReader:
                     else:
                         raise ValueError(f"Failed to open zarr dataset: {dataset_path}, error: {e}")
         
+        except (ValueError, ImportError, PermissionError, FileNotFoundError) as e:
+            # Typed errors already say what went wrong (bad path, policy refusal,
+            # missing optional dependency, no group at a URL); pass them through.
+            logger.error(f"Error with dataset path {dataset_path}: {e}")
+            raise
         except Exception as e:
             # Identify specific zarr errors by their message content
             error_msg = str(e).lower()
@@ -357,14 +358,35 @@ class ZarrReader:
                 err_msg = f"Path contains a group instead of an array: {dataset_path}"
                 logger.error(err_msg)
                 raise ValueError(err_msg) from e
-        except (ValueError, ImportError) as e:
-            # Re-raise ValueErrors and ImportErrors directly
-            logger.error(f"Error with dataset path {dataset_path}: {e}")
-            raise
-        except Exception as e:
             error_msg = f"Error opening dataset from path {dataset_path}: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
+
+    def _get_remote_root(self, url: str) -> zarr.Group:
+        """Open (or reuse) the root group of a remote store.
+
+        Local roots are cheap to re-open, so every data call re-opens them.
+        A remote open is several round trips (.zgroup, .zattrs, .zmetadata,
+        zarr.json probes), paid on EVERY request -- so remote roots are kept,
+        keyed by URL and bounded by ``cache_limit``. The policy is checked on
+        every call, including hits, so a cached root never outlives a refusal.
+        Like every other cache here, it assumes the store is not rewritten
+        while the server runs; ``clear_cache`` drops it.
+        """
+        check_remote_access(url)
+        with self._remote_roots_lock:
+            root = self._remote_roots.get(url)
+            if root is not None:
+                self._remote_roots.move_to_end(url)
+                return root
+        # Open outside the lock: a slow store must not stall the others.
+        logger.info(f"_get_remote_root: opening remote store {url}")
+        root = open_remote_group(url)
+        with self._remote_roots_lock:
+            self._remote_roots[url] = root
+            while len(self._remote_roots) > max(1, self.cache_limit):
+                self._remote_roots.popitem(last=False)
+        return root
     
     def _get_dataset_shape(self, root: zarr.Group) -> Optional[Tuple[int, int]]:
         """
@@ -636,6 +658,10 @@ class ZarrReader:
       """
       # Use path-based extraction
       try:
+          if root is None and is_remote_path(dataset_path):
+              # extract_metadata would zarr.open_group() the bare URL: no
+              # policy check, no anonymous-access options, a fresh open.
+              root, dataset_path = self._get_root(dataset_path), None
           metadata = extract_metadata(dataset_path, root, detail_level=detail_level)
           return metadata
       except Exception as e:
@@ -2443,6 +2469,9 @@ class ZarrReader:
     def validate_zarr_url(self, url: str) -> Tuple[bool, str]:
         """
         Validate if a URL points to a valid zarr archive.
+
+        Goes through the same policy-checked opener as every data read, so a
+        server that refuses remote stores refuses to probe them here too.
         
         Args:
             url: URL to validate
@@ -2450,14 +2479,10 @@ class ZarrReader:
         Returns:
             Tuple of (is_valid, message)
         """
+        if not is_remote_path(url):
+            return False, "Not a remote URL (expected s3://, gs://, http:// or https://)"
         try:
-            # Try to open the zarr store
-            if FSSPEC_AVAILABLE:
-                store = fsspec.filesystem('http').get_mapper(url)
-            else:
-                store = url
-            
-            root = zarr.open_group(store, mode='r')
+            root = open_remote_group(url)
             
             # Check if it has basic AnnData structure
             has_x = 'X' in root

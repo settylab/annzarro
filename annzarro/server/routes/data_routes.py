@@ -16,6 +16,7 @@ from ...core import zarr_reader
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
+from ...core.remote import is_remote_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +35,30 @@ def _reader_error_response(exc, dataset_path):
     ``reason`` is a machine-readable code the front end maps onto a coverage
     state (``static/js/utils/coverage.js``); ``error`` stays the human sentence.
     Both are additive, so a client reading only ``error`` is unaffected.
+
+    Remote stores add two causes that are neither "not found" nor "bad type":
+    the server's remote-store policy (or the store itself) refusing access,
+    and the optional remote dependencies not being installed. The exception
+    text is returned as-is for those because it names the fix (the config key,
+    the pip extra); it never contains credentials, which are not accepted in
+    URLs (``core/remote.py``).
     """
+    if isinstance(exc, PermissionError):
+        return jsonify({
+            "error": str(exc),
+            "reason": "access_denied",
+            "exception": type(exc).__name__,
+        }), 403
+    if isinstance(exc, ImportError):
+        return jsonify({
+            "error": str(exc),
+            "reason": "missing_dependency",
+            "exception": type(exc).__name__,
+        }), 501
     if isinstance(exc, FileNotFoundError):
         return jsonify({
-            "error": f"Dataset not found: {dataset_path}",
+            # A remote miss may also mean "needs credentials"; its text says so.
+            "error": str(exc) if is_remote_path(dataset_path) else f"Dataset not found: {dataset_path}",
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
@@ -125,6 +146,8 @@ def register_data_routes(app, api_version):
             }
                 
             return jsonify(info)
+        except (PermissionError, ImportError, FileNotFoundError) as e:
+            return _reader_error_response(e, dataset_path)
         except Exception as e:
             logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500

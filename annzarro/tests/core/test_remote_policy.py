@@ -7,6 +7,7 @@ the opener. The HTTP round trip is covered by
 
 import pytest
 
+import annzarro.core as core
 from annzarro.core import remote
 from annzarro.core.remote import (
     RemoteAccessDenied,
@@ -47,6 +48,66 @@ def _restore_policy():
 def test_remote_scheme(path, scheme):
     assert remote_scheme(path) == scheme
     assert is_remote_path(path) == (scheme is not None)
+
+
+# --------------------------------------------------------------------------
+# get_reader dispatch
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def opened(monkeypatch):
+    """Record remote opens instead of making them."""
+    calls = []
+    monkeypatch.setattr(core.zarr_reader, "_get_remote_root",
+                        lambda url: calls.append(url) or object())
+    return calls
+
+
+@pytest.mark.parametrize("url", [
+    "s3://bucket/pbmc.zarr",
+    "gs://bucket/pbmc.zarr",
+    "http://127.0.0.1:9/pbmc.zarr",
+    "https://data.example.org/atlas/pbmc.zarr/",
+    # a bucket prefix with no .zarr suffix is still a valid store root
+    "s3://bucket/some/prefix",
+])
+def test_get_reader_sends_remote_urls_to_zarr_without_local_check(url, opened):
+    assert core.get_reader(url) is core.zarr_reader
+    assert opened == [url]
+
+
+@pytest.mark.parametrize("url", [
+    "s3://bucket/pbmc.h5ad",
+    "https://data.example.org/pbmc.H5AD",
+    "http://host/pbmc.h5ad/",
+])
+def test_get_reader_refuses_remote_h5ad(url, opened):
+    with pytest.raises(ValueError, match="Remote .h5ad files are not supported"):
+        core.get_reader(url)
+    assert opened == []
+
+
+def test_get_reader_local_paths_unchanged(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        core.get_reader(str(tmp_path / "missing.zarr"))
+    store = tmp_path / "ok.zarr"
+    store.mkdir()
+    assert core.get_reader(str(store)) is core.zarr_reader
+    h5 = tmp_path / "ok.h5ad"
+    h5.write_bytes(b"")
+    assert core.get_reader(str(h5)) is core.h5ad_reader_obj
+
+
+def test_get_reader_enforces_policy_before_any_request(monkeypatch):
+    remote.configure_remote_policy({"host": "0.0.0.0"}, environ={})
+
+    def boom(*a, **k):  # pragma: no cover - must not be reached
+        raise AssertionError("a refused URL must not be opened")
+
+    monkeypatch.setattr(remote.zarr, "open_group", boom)
+    monkeypatch.setattr(remote.zarr, "open_consolidated", boom, raising=False)
+    with pytest.raises(RemoteAccessDenied):
+        core.get_reader("https://169.254.169.254/latest/meta-data.zarr")
 
 
 # --------------------------------------------------------------------------
