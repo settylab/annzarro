@@ -60,10 +60,11 @@ server's configuration *before* `user` so the same file is edited:
 |---|---|
 | `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user delete, rename or overwrite any shared panel set and grants nothing else. Exit 1 if the user exists. |
 | `user list` | Print each username and whether it is an admin. |
+| `user passwd [--username NAME] [--password PW]` | Change a password (prompted for if omitted). Ends the user's existing logins. |
+| `user set-admin [--username NAME] [--no-admin]` | Grant admin, or revoke it with `--no-admin`. |
 | `user remove [--username NAME]` | Remove a user. Exit 1 if there is no such user. |
 
-A running server sees changes without a restart. There is no command to change a password or
-admin flag in place; remove and add the user.
+A running server sees every change without a restart.
 
 ## `annzarro config`
 
@@ -71,7 +72,7 @@ admin flag in place; remove and add the user.
 |---|---|
 | `config show [--format yaml\|json] [--env production\|development] [override flags]` | Print the merged configuration, every source considered (loaded, not found, ignored) and, at the end, each value not taken from the built-in defaults with its origin. Secrets are masked. Exit 1 if the result is invalid, but it is printed anyway. The YAML output can be saved and used with `--config`. |
 | `config validate [--file FILE] [--env ...] [override flags]` | Validate the merged configuration, or with `--file` one file layered over the built-in defaults. Exit 1 on errors. |
-| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables and the command line. |
+| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables (values unmasked) and the command line. |
 | `config init [--output FILE] [--force]` | Write a copy of the built-in `base.yaml` (default `./config.yaml`; refuses to overwrite without `--force`). Comments are not kept. |
 
 The override flags are those of `start`: `--config`, `--host`, `--port`, `--data-dir` and
@@ -95,6 +96,7 @@ uses it); with pip or uv you do not need it.
 ## `annzarro desktop`
 
 Build and run the Electron desktop app. Works only from a source checkout with Node.js and npm
+(from a pip installation the command stops with an error saying so)
 ({doc}`../getting-started/desktop-app`).
 
 | Command | Meaning |
@@ -107,9 +109,9 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 
 | Variable | Effect |
 |---|---|
-| `ANNZARRO_<SECTION>_<KEY>` | Sets a configuration key that exists in the defaults, e.g. `ANNZARRO_SERVER_PORT=9000`, `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`. Variables that name no existing key are ignored (`config show` lists them as "ignored"); this includes keys with no default such as `auth.enabled` and `auth.secret_key`. |
-| `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys. They take effect, although `config show` lists them as "ignored". |
-| `ANNZARRO_AUTH_DISABLED` | `true` (or `yes`, `1`): login off, as `--auth-disabled`. Under gunicorn **any non-empty value**, including `false`, disables login; leave it unset. |
+| `ANNZARRO_<SECTION>_<KEY>` | Sets any configuration key, e.g. `ANNZARRO_SERVER_PORT=9000`, `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`, `ANNZARRO_AUTH_ENABLED=true`, `ANNZARRO_AUTH_SECRET_KEY=...`, `ANNZARRO_SERVER_HOSTED=true`, `ANNZARRO_SERVER_WORKERS=2`, `ANNZARRO_SERVER_ALLOWED_DIRS=/a,/b` (comma-separated list). Variables that name no key are listed as "ignored" by `config show`. |
+| `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys. |
+| `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
 | `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
 | `ANNZARRO_CONFIG` | Configuration file for the WSGI entry point (gunicorn). Not read by `annzarro start`. |

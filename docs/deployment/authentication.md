@@ -9,8 +9,8 @@ who can reach the server at all and who may change which panel set.
 | How the server is started | Login |
 |---|---|
 | `annzarro start` on `127.0.0.1`, `localhost` or `::1` | off, unless `auth.enabled: true` is configured |
-| `annzarro start --host <anything else>` | **on**, unless `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` |
-| gunicorn with `annzarro.server.wsgi:create_wsgi_app()` | **on**, unless `auth.enabled: false` or `ANNZARRO_AUTH_DISABLED` is set |
+| `annzarro start --host <anything else>` | **on**, unless `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` (only `true`, `yes`, `1` or `on` count) |
+| gunicorn with `annzarro.server.wsgi:create_wsgi_app()` | **on**, unless `auth.enabled: false` or `ANNZARRO_AUTH_DISABLED=true` |
 | desktop app | off |
 
 With login on, every page and API route except `/login`, `/logout` and static files requires a
@@ -25,11 +25,8 @@ The sign-in page. The title, the line under the form and the contact block come 
 `branding.app_name`, `branding.project_description` and `branding.contact_info`.
 ```
 
-```{note}
-After signing in, the browser always lands on the start page. A share link opened while signed
-out therefore loses its dataset and view on the way through the login page: sign in first,
-then open the link again.
-```
+After signing in, the browser returns to the address that was asked for. A share link opened
+while signed out keeps its dataset and its view (the `#view=` fragment) through the login page.
 
 Once signed in, the header shows the username under the app name; it reads "alice (admin)" for
 an admin. Click it to log out.
@@ -59,20 +56,30 @@ annzarro --config site.yaml user remove --username bob
 subcommand. `--password` exists, but it puts the password into your shell history and the
 process list; leave it out and type the password at the prompt.
 
+Change a user later without removing them:
+
+```bash
+annzarro --config site.yaml user passwd --username bob             # prompts for the new password
+annzarro --config site.yaml user set-admin --username bob          # grant admin
+annzarro --config site.yaml user set-admin --username bob --no-admin
+```
+
 A running server re-reads the users file when it changes: added and removed users and changed
 admin rights take effect without a restart, including for sessions that are already signed in
-(admin status is looked up on every request, not trusted from the cookie).
+(admin status is looked up on every request, not trusted from the cookie). Changing a password
+or removing a user ends that user's existing logins. Panel sets keep their owner, which is
+stored by username.
 
-There is no command to change a password or to grant or revoke admin rights in place. Remove
-the user and add them again; their panel sets keep their owner, because ownership is stored by
-username.
+**Lockout.** After 5 failed sign-ins from one client address, that username is locked for that
+address for 15 minutes, even for the correct password. The count is kept in the users file, so
+every gunicorn worker sees it.
 
-**Lockout.** After 5 failed sign-ins an account is locked for 15 minutes, even for the correct
-password. The lock is per username, so anyone who can reach the login page can lock out a known
-username for that long.
-
-**How long a login lasts.** The session lives in a browser cookie that ends when the browser is
-closed. There is currently no idle timeout.
+**How long a login lasts.** A login expires after `auth.session_timeout` seconds without a
+request (28,800, i.e. 8 hours, by default; `0` means never). The session cookie is `HttpOnly`
+and `SameSite=Lax`; with `auth.cookie_secure: auto` (the default) it is also marked `Secure`
+whenever the request arrived over HTTPS, directly or as reported by `X-Forwarded-Proto` from the
+`server.proxy_count` trusted proxies. `true` forces the flag (login over plain `http://` then
+stops working), `false` never sets it.
 
 ## Who may change a panel set
 
@@ -88,8 +95,9 @@ closed. There is currently no idle timeout.
   for them, so ownership cannot be claimed by editing a JSON file and importing it.
 - A refused change is answered with HTTP 403 naming the owner, and the app shows it as a
   permission notice, suggesting to save under a new name instead.
-- **Admins** (`user add --admin`) may change any panel set. Admin grants nothing else: no file
-  access, no dataset writes, no user management through the browser.
+- **Admins** (`user add --admin`) may change any panel set and, on a shared server, clear the
+  server's dataset cache. Admin grants nothing else: no file access, no dataset writes, no user
+  management through the browser.
 - Panel sets saved **before owners were recorded** have no owner and can only be changed by an
   admin. An admin can hand one to a user:
 
@@ -118,8 +126,8 @@ that key can forge a cookie for any user, admins included.
 - If the directory is not writable, the server falls back to a random in-memory key and warns:
   logins then end at every restart and fail across workers.
 - To set a key yourself (for example to share one across hosts), put a long random value in
-  `auth.secret_key` in a configuration file readable only by the service account. The
-  environment variable `ANNZARRO_AUTH_SECRET_KEY` is **not** read.
+  `auth.secret_key` in a configuration file readable only by the service account, or in the
+  environment variable `ANNZARRO_AUTH_SECRET_KEY`.
 
 ## Paths: what a signed-in user can open
 
@@ -131,8 +139,8 @@ else is refused with HTTP 403 and the reason `outside_data_dir`.
 - `allowed_dirs` grants a whole directory tree, not single datasets. Listing `/lab/atlases`
   lets every user open any store under `/lab/atlases` by typing its path, whether or not it is
   linked into the data directory.
-- A symlink in the data directory whose target is outside every allowed root is still listed in
-  the Dataset picker, but opening it is refused. The startup log names every such link.
+- A symlink in the data directory whose target is outside every allowed root is left out of the
+  Dataset picker and refused if opened by path. The startup log names every such link.
 - On a local single-user server (loopback, no login) there is no confinement: you can open any
   path your account can read.
 

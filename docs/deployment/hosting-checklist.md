@@ -10,7 +10,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Login is on.** `curl -s -o /dev/null -w '%{http_code}\n' https://<host>/api/v1/datasets`
   returns `401`. The startup log contains no `SECURITY` banner.
 - **No "No login" badge.** If the header shows it, the server is shared with login off
-  (`--auth-disabled`, `ANNZARRO_AUTH_DISABLED` or `auth.enabled: false`). Anyone who reaches the
+  (`--auth-disabled`, `ANNZARRO_AUTH_DISABLED=true` or `auth.enabled: false`). Anyone who reaches the
   port can then open every dataset under the data directory and delete every panel set.
 
   ```{figure} ../_static/screens/deployment/header-no-login.png
@@ -35,12 +35,15 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
   bucket or URL prefixes you serve. Never `allow` without an allowlist on a shared server (the
   server logs a warning if you do). Use `remote_credentials: environment` only if the service
   account's cloud credentials may be read by every user.
-- **`proxy_count` matches the number of proxies** in front (1 for nginx alone). A higher
-  value lets clients forge `X-Forwarded-For` and `X-Forwarded-Host`.
-- **Session cookie flags.** AnnZarro's `session` cookie is `HttpOnly` but not `Secure` or
-  `SameSite`; add them in the proxy (`proxy_cookie_flags ~ secure samesite=lax;` in nginx).
+- **`proxy_count` matches the number of proxies** in front (1 for nginx alone). It is 0 by
+  default; without it the login cookie is not marked `Secure` behind a TLS proxy. A higher value
+  lets clients forge `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`.
+- **Secure login cookie.** Signed in over HTTPS, the browser's `session` cookie shows the
+  `Secure`, `HttpOnly` and `SameSite=Lax` flags (developer tools, Application or Storage tab).
+  Leave `auth.cookie_secure` at `auto`.
+- **Session timeout.** `auth.session_timeout` (default 28,800 s, 8 hours idle) suits your users.
 - **Branding.** `branding.contact_info` names your lab and a contact who answers questions
-  about accounts. The built-in default names the Setty Lab.
+  about accounts. Without it the login page shows no contact.
 - **Memory.** `gunicorn workers x cache_memory_mb` fits the host, with room for the chunks
   being read.
 - **Long URLs.** gunicorn `--limit-request-line 8190` and nginx
@@ -55,7 +58,8 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 | read every slot of those datasets (X, layers, obs/var, obsm/varm, obsp/varp, uns), one vector or a bounded slice at a time | download a whole matrix: a reply larger than `max_response_elements` is refused with 413 |
 | save, load, export, duplicate and import panel sets | change or delete another user's panel set (admins can) |
 | open remote stores under `remote_allowlist` | make the server fetch any other URL |
-| clear the server's dataset cache (`POST /api/v1/cache/reset`) | write to, convert or delete datasets |
+| | clear the server's dataset cache (admins can) |
+| | write to, convert or delete datasets |
 | | run code on the server, add users or change the configuration |
 
 Things to know:
@@ -67,10 +71,8 @@ Things to know:
 - **Access logs show which datasets are opened** (the `dataset_path` query parameter). The view
   in a share link is in the URL fragment and never reaches the server or its logs.
 - **Logs name usernames** of failed and successful sign-ins.
-- **Pre-login error messages reveal paths.** A request with a path outside the allowed roots is
-  refused with a message listing the allowed directories, before login is checked. Do not rely
-  on the directory layout being secret.
-- **Lockout can be triggered by others.** Five wrong passwords lock a username for 15 minutes.
+- **Lockout.** Five wrong passwords from one client address lock that username for that
+  address for 15 minutes.
 
 ## After changes
 

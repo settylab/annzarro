@@ -43,15 +43,19 @@ warning at startup.
 
 ## 3. Configure
 
-`/etc/annzarro/site.yaml`, a minimal configuration:
+`/etc/annzarro/site.yaml`, a minimal configuration. The package ships a commented template,
+`annzarro/server/site.example.yaml`, to start from.
 
 ```yaml
 server:
+  host: 127.0.0.1             # gunicorn binds here
+  port: 8000
   data_dir: /srv/annzarro/data
   allowed_dirs:
     - /lab/atlases            # targets of the links above
   proxy_count: 1              # one reverse proxy in front: trust its X-Forwarded-* headers
-  cache_memory_mb: 1000       # per gunicorn worker, see below
+  workers: 4                  # gunicorn worker processes
+  cache_memory_mb: 1000       # per worker, see below
   log_file: /var/lib/annzarro/logs/annzarro_server.log
 auth:
   user_file: /var/lib/annzarro/auth/users.json   # the login key is generated beside it
@@ -74,10 +78,8 @@ sudo -u annzarro ANNZARRO_HOME=/var/lib/annzarro \
 Every key is listed in {doc}`../reference/configuration`. Login does not need to be switched
 on: the WSGI entry point enables it unless the configuration says `auth.enabled: false`.
 
-```{important}
-Set `branding.contact_info`. The built-in defaults name the Setty Lab and a Setty Lab email
-address on the login page of every server that does not override them.
-```
+The contact block on the login page appears only when `branding.contact_info` is set; set it
+to the people who answer questions about accounts.
 
 ## 4. Add users
 
@@ -86,16 +88,22 @@ sudo -u annzarro ANNZARRO_HOME=/var/lib/annzarro \
   /opt/annzarro/venv/bin/annzarro --config /etc/annzarro/site.yaml user add --username alice --admin
 ```
 
-The command prompts for the password twice. Details, including admins and what they may do, are
-in {doc}`authentication`.
+The command prompts for the password twice. `user passwd` and `user set-admin` change a user
+later. Details, including admins and what they may do, are in {doc}`authentication`.
 
 ## 5. Run gunicorn
 
 ```bash
 sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
-  /opt/annzarro/venv/bin/gunicorn -w 4 --timeout 60 --limit-request-line 8190 \
-  -b 127.0.0.1:8000 "annzarro.server.wsgi:create_wsgi_app()"
+  /opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config \
+  --limit-request-line 8190 "annzarro.server.wsgi:create_wsgi_app()"
 ```
+
+The bundled gunicorn configuration `annzarro.server.gunicorn_config` reads the same AnnZarro
+configuration as the app: it binds to `server.host:server.port`, starts `server.workers`
+workers (default: twice the CPUs plus one, at most 4), sets a 60 s worker timeout and sends
+gunicorn's own logs, including the access log, to standard error. Options given on the
+command line, such as `--limit-request-line` here, override it.
 
 `create_wsgi_app()` loads the same layered configuration as `annzarro start` (built-in
 defaults, `/etc/annzarro/config.yaml`, the user and project files, then the file named by
@@ -105,27 +113,22 @@ directory, remote stores only from `remote_allowlist`. Do not point gunicorn at
 `annzarro.server.core:create_app()`: without a configuration it runs with laptop defaults (no
 login, no confinement).
 
-```{warning}
-The repository's `annzarro/server/gunicorn_config.py`, `run_gunicorn.sh` and
-`annzarro.service` do not start in their current form: gunicorn reads the module-level
-variable `config` in `gunicorn_config.py` as its own setting and exits with "Error: Not a
-string". Use the command line above or the unit below until that is fixed.
-```
-
 **Workers and memory.** Each gunicorn worker is a separate process with its own result cache,
 so memory grows with `workers x cache_memory_mb`. The production default for
 `cache_memory_mb` is 4,000 MB; with four workers that allows 16 GB of cache, which is why the
-example sets 1,000. On the paper's lab deployment, three server processes used 0.58 to 0.92 GB
+example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. On the paper's lab deployment, three server processes used 0.58 to 0.92 GB
 resident each while serving 33 datasets (2.2 TiB on disk). Logins work across workers because
 the session cookie is signed with one key stored beside the users file.
 
-**Timeouts.** gunicorn kills a worker whose request takes longer than `--timeout` (30 s by
-default). A remote store that stalls fails after `remote_read_timeout_s` (30 s) with HTTP 504; a
-`--timeout` above that lets the 504 reach the user instead of a dropped connection.
+**Timeouts.** gunicorn kills a worker whose request takes longer than its timeout (60 s in the
+bundled configuration, 30 s in gunicorn's own default). A remote store that stalls fails after
+`remote_read_timeout_s` (30 s) with HTTP 504; a worker timeout above that lets the 504 reach the
+user instead of a dropped connection.
 
 ### As a systemd service
 
-`/etc/systemd/system/annzarro.service`:
+`/etc/systemd/system/annzarro.service` (the repository's `annzarro/server/annzarro.service` is
+the same idea with `User=www-data` and paths under `/opt/annzarro`):
 
 ```ini
 [Unit]
@@ -137,8 +140,8 @@ User=annzarro
 Group=annzarro
 Environment=ANNZARRO_HOME=/var/lib/annzarro
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-ExecStart=/opt/annzarro/venv/bin/gunicorn -w 4 --timeout 60 --limit-request-line 8190 \
-    -b 127.0.0.1:8000 --access-logfile - "annzarro.server.wsgi:create_wsgi_app()"
+ExecStart=/opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config \
+    --limit-request-line 8190 "annzarro.server.wsgi:create_wsgi_app()"
 Restart=on-failure
 RestartSec=5
 
@@ -175,8 +178,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
         proxy_read_timeout 90s;
-        # AnnZarro does not mark its session cookie Secure or SameSite; add both here.
-        proxy_cookie_flags ~ secure samesite=lax;    # nginx 1.19.3 or later
     }
 }
 
@@ -191,8 +192,8 @@ server {
 It is required: the built-in default is 0, because a plain `annzarro start` has no proxy in front
 and trusting the headers there would let any client set its own address. Set it in the
 configuration file as above or with `ANNZARRO_SERVER_PROXY_COUNT=1` in the service environment.
-(The repository's flat `annzarro/server/production_config.json`, used by the shipped
-systemd/gunicorn files, keeps `proxy_count: 1`.)
+The trusted hop count applies to `X-Forwarded-For` (client address), `X-Forwarded-Proto` (whether
+the login cookie is marked `Secure`, see {doc}`authentication`) and `X-Forwarded-Host`.
 With two proxies in a row (say a load balancer and nginx) set it to 2; never set it higher than
 the number of proxies you run, or clients can forge their address. AnnZarro already compresses
 JSON replies on a shared server; if nginx compresses `application/json` too, set
@@ -230,15 +231,17 @@ limits; otherwise ask them to re-share with the current **Share Link**.
 
 The server caches store metadata and results and assumes a store does not change while it
 runs. After rewriting or replacing a store, restart the service
-(`sudo systemctl restart annzarro`). `POST /api/v1/cache/reset` clears only the worker that
-happens to answer it, so with several workers a restart is the reliable way. Adding a new
+(`sudo systemctl restart annzarro`). `POST /api/v1/cache/reset` (admins only on a shared
+server) clears only the worker that happens to answer it, so with several workers a restart is
+the reliable way. Adding a new
 dataset (a new link in the data directory) needs no restart; it appears after the Dataset
 picker's refresh button is clicked.
 
 ## Logs
 
 - The AnnZarro log goes to `server.log_file` (and to standard error, which systemd collects).
-- `--access-logfile -` sends gunicorn's access log to the journal. It records each request's
+- The bundled gunicorn configuration sends gunicorn's access log to standard error, so to the
+  journal under systemd. It records each request's
   path and query string, so it shows which datasets people open; view state in the fragment
   never reaches it.
 - A refused path is logged as `Refused path outside the data directory`. Failed logins and
