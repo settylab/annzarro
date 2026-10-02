@@ -32,6 +32,8 @@ html_theme = "furo"
 html_title = "AnnZarro"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+html_logo = "_static/logo.png"
+html_favicon = "_static/favicon.png"
 html_theme_options = {
     "source_repository": "https://github.com/settylab/annzarro/",
     "source_branch": "main",
