@@ -103,6 +103,8 @@ def _reader_error_response(exc, dataset_path):
     A remote store that stops answering is a 504: the failure is upstream of
     this server, and retrying later may well succeed, unlike a 500.
     """
+    if isinstance(exc, DataRequestError):
+        return _data_request_error_response(exc)
     if is_timeout(exc):
         return jsonify({
             "error": (timeout_message(dataset_path) if is_remote_path(dataset_path)
@@ -176,6 +178,78 @@ def _cap_error_response(requested, limit, unit, axis_hint):
         "unit": unit,
     }), 400
 
+class DataRequestError(Exception):
+    """A request the dataset cannot answer: a key it does not have, an index
+    outside an axis. Answered as ``status`` with a ``reason`` code instead of
+    ``200`` and empty data, which looked like a dataset with nothing in it."""
+
+    def __init__(self, status, reason, message):
+        super().__init__(message)
+        self.status, self.reason, self.message = status, reason, message
+
+
+def _data_request_error_response(exc):
+    return jsonify({"error": exc.message, "reason": exc.reason}), exc.status
+
+
+#: For each route: (metadata field holding its keys or None, row axis, col axis).
+#: An axis is "obs" / "var" (length n_obs / n_vars), "key" (the second
+#: dimension of the requested matrix) or None (no such index).
+_SLOTS = {
+    "X": (None, "obs", "var"),
+    "layers": ("layers", "obs", "var"),
+    "obs": (None, "obs", None),
+    "var": (None, None, "var"),
+    "obsm": ("obsm", "obs", "key"),
+    "varm": ("varm", "var", "key"),
+    "obsp": ("obsp", "obs", "obs"),
+    "varp": ("varp", "var", "var"),
+    "uns": ("uns", None, None),
+}
+
+
+def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, columns=None):
+    """Refuse what the dataset cannot answer, before reading anything.
+
+    Raises DataRequestError: 404 ``key_not_found`` for a missing layer,
+    obsm/varm/obsp/varp/uns key, obs/var column or X; 400
+    ``index_out_of_range`` for an index at or beyond the axis length. Uses
+    the (cached) metadata the routes already rely on; when the reader cannot
+    say (no metadata), nothing is refused here.
+    """
+    metadata = reader.get_metadata(dataset_path)
+    if not metadata:
+        return
+    field, row_axis, col_axis = _SLOTS[slot]
+    if slot == "X" and metadata.get("has_X") is False:
+        raise DataRequestError(404, "key_not_found", "This dataset has no X matrix.")
+    if field and key is not None:
+        keys = (metadata.get(field) or {}).get("keys")
+        top = key.split("/", 1)[0] if slot == "uns" else key
+        if keys is not None and top not in keys:
+            raise DataRequestError(404, "key_not_found", f"No {field} key '{key}' in this dataset.")
+    if columns and slot in ("obs", "var"):
+        known = metadata.get(f"{slot}_columns")
+        missing = [c for c in columns if known is not None and c not in known]
+        if missing:
+            raise DataRequestError(404, "key_not_found",
+                                   f"No {slot} column {', '.join(repr(c) for c in missing)} in this dataset.")
+    shape = metadata.get("shape") or ()
+    lengths = {"obs": shape[0] if len(shape) > 0 else None,
+               "var": shape[1] if len(shape) > 1 else None}
+    if field in ("obsm", "varm") and key is not None:
+        key_shape = ((metadata.get(f"{field}_info") or {}).get(key) or {}).get("shape")
+        lengths["key"] = key_shape[1] if key_shape and len(key_shape) > 1 else None
+    for name, indices, axis in (("rows", rows, row_axis), ("cols", cols, col_axis)):
+        length = lengths.get(axis) if axis else None
+        if indices and length is not None:
+            bad = [i for i in indices if i >= length]
+            if bad:
+                raise DataRequestError(
+                    400, "index_out_of_range",
+                    f"{name} index {bad[0]} is out of range: this axis has {length} entries (0-{length - 1}).")
+
+
 def register_data_routes(app, api_version):
     """
     Register data access routes with the Flask app.
@@ -184,6 +258,7 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
+    app.register_error_handler(DataRequestError, _data_request_error_response)
     
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
     def get_data_info():
@@ -297,7 +372,9 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_X(dataset_path_str, row_indices, col_indices, get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "X", rows=row_indices, cols=col_indices)
+            return process_file.extract_X(dataset_path_str, row_indices, col_indices, reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -343,7 +420,9 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "layers", key=layer_name, rows=row_indices, cols=col_indices)
+            return process_file.extract_layer(dataset_path_str, layer_name, row_indices, col_indices, reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -390,7 +469,9 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), row_indices, column_names, include_categories, "cells")
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
+            return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells")
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -436,7 +517,9 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            return process_file.extract_obs_var(dataset_path_str, get_reader(dataset_path_str), col_indices, column_names, include_categories, "genes")
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
+            return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes")
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -487,7 +570,9 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), obsm_key, row_indices, col_indices, column_name, "cells")
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obsm", key=obsm_key, rows=row_indices, cols=col_indices)
+            return process_file.extract_obsm_varm(dataset_path_str, reader, obsm_key, row_indices, col_indices, column_name, "cells")
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
         
@@ -539,7 +624,9 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsm_varm(dataset_path_str, get_reader(dataset_path_str), varm_key, row_indices, col_indices, column_name, "genes")
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "varm", key=varm_key, rows=row_indices, cols=col_indices)
+            return process_file.extract_obsm_varm(dataset_path_str, reader, varm_key, row_indices, col_indices, column_name, "genes")
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -585,7 +672,9 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
+            return process_file.extract_obsp_varp(dataset_path_str, obsp_key, row_indices, col_indices, "cells", reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -631,7 +720,9 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "varp", key=varp_key, rows=row_indices, cols=col_indices)
+            return process_file.extract_obsp_varp(dataset_path_str, varp_key, row_indices, col_indices, "genes", reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
              
@@ -656,7 +747,9 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_uns(uns_key, dataset_path_str, get_reader(dataset_path_str))
+            reader = get_reader(dataset_path_str)
+            _check_request(dataset_path_str, reader, "uns", key=uns_key)
+            return process_file.extract_uns(uns_key, dataset_path_str, reader)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
         
@@ -2013,15 +2106,21 @@ def _parse_indices(indices_str):
     """
     if not indices_str:
         return None
-    
+
     try:
-        return [int(i) for i in indices_str.split(",")]
+        indices = [int(i) for i in indices_str.split(",")]
     except ValueError:
         # Handle case where the input might be JSON-encoded
         try:
-            return json.loads(indices_str)
+            indices = json.loads(indices_str)
         except (ValueError, TypeError):
-            return None
+            indices = None
+        if not isinstance(indices, list) or not all(
+                isinstance(i, int) and not isinstance(i, bool) for i in indices):
+            # Unparseable used to mean "no selection", i.e. the WHOLE axis
+            raise DataRequestError(400, "bad_indices",
+                                   f"Indices must be comma-separated integers, got {indices_str!r}.")
+    return indices
 
 def _parse_strings(strings_str):
     """
