@@ -239,7 +239,9 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
     if field and key is not None:
         keys = (metadata.get(field) or {}).get("keys")
         top = key.split("/", 1)[0] if slot == "uns" else key
-        if keys is not None and top not in keys:
+        # layer 'X' is the X matrix when no layer has that name (readers' get_layer)
+        x_as_layer = slot == "layers" and key == "X" and metadata.get("has_X") is not False
+        if keys is not None and top not in keys and not x_as_layer:
             raise DataRequestError(404, "key_not_found", f"No {field} key '{key}' in this dataset.")
     if columns and slot in ("obs", "var"):
         known = metadata.get(f"{slot}_columns")

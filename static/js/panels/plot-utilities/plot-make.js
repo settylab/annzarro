@@ -3,7 +3,7 @@ import { createLayout, processCategories, attachClickHandler } from './plot-make
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
-import { arrayMin, arrayMax, inferValueType } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, classifyFocusRow
@@ -768,6 +768,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           }
           data.color = colorData.values;
           data.colorType = colorData.type;
+          applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
@@ -831,7 +832,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
       console.log(`Creating plot with ${data.x.values.length} data points`);
+      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
+      await applyHoverInfo(plotContainer, data, settings);
+      await applyLogColorbar(plotContainer, data, settings);
+      await sortTracesByColor(plotContainer, settings);
       updateColorControlsVisibility(container, data.colorType, id);
     } else {
       console.error('Insufficient data for plotting');
@@ -1028,6 +1033,215 @@ export function panelLoadCoverage(data, settings, unit) {
   return Coverage.merge(axisCoverages, unit);
 }
 
+/**
+ * Axis ranges that do not move when Hide NaN / Hide Outliers drop points.
+ *
+ * Those options REMOVE points, and Plotly's autorange then fitted the axes
+ * to what was left, so toggling Hide Outliers zoomed the plot. While either
+ * is on, the 2D axes are pinned to the extent of ALL points (with Plotly-
+ * like 5% padding); with both off, autorange is back.
+ * @param {Object} data - plot data (x.values, y.values)
+ * @param {Object} settings
+ * @returns {Object|null} relayout keys, or null for 3D plots
+ */
+export function stableAxisRanges(data, settings) {
+  if (settings.z) return null;
+  if (!(settings.hideNaN || settings.hideOutliers)) {
+    return { 'xaxis.autorange': true, 'yaxis.autorange': true };
+  }
+  const extent = (values) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of values || []) {
+      if (typeof v === 'number' && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+    if (lo === Infinity) return null;
+    const pad = hi > lo ? (hi - lo) * 0.05 : (Math.abs(lo) * 0.05 || 0.5);
+    return [lo - pad, hi + pad];
+  };
+  const out = {};
+  const x = extent(data.x && data.x.values);
+  const y = extent(data.y && data.y.values);
+  if (x) out['xaxis.range'] = x;
+  if (y) out['yaxis.range'] = y;
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Hover labels: the configured hoverInfo columns, numbers to 4 significant
+ * digits.
+ *
+ * `hoverInfo` ([{type, key, column?}], saved in configs and links) was never
+ * read: every trace had a hard-coded name / x / y / c template, and c came
+ * out raw (3.347795285435495e-8). Now each data trace gets one template
+ * (x, y, z and colour as %{..:.4~g}, the category for categorical traces)
+ * plus a per-point `hovertext` with the hoverInfo columns. Points are matched
+ * to rows by their name (trace.text), so any trace split works.
+ */
+export async function loadHoverColumns(settings, plotType) {
+  const wanted = (Array.isArray(settings.hoverInfo) ? settings.hoverInfo : [])
+    .filter(h => h && h.type && h.key && h.key !== '_index');
+  const out = [];
+  for (const h of wanted) {
+    try {
+      const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType);
+      if (loaded && Array.isArray(loaded.values)) {
+        out.push({ label: h.column ? `${h.key}.${h.column}` : h.key, values: loaded.values });
+      }
+    } catch (err) {
+      console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
+    }
+  }
+  return out;
+}
+
+export function formatHoverValue(v) {
+  if (v === null || v === undefined) return 'NA';
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return 'NA';
+    return Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(4)));
+  }
+  return String(v);
+}
+
+export function hoverTemplateFor(trace, settings, data) {
+  let t = '%{text}<br>x: %{x:.4~g}<br>y: %{y:.4~g}';
+  if (settings.z) t += '<br>z: %{z:.4~g}';
+  if (trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale !== undefined) {
+    t += data.colorLog ? '<br>log10 c: %{marker.color:.4~g}' : '<br>c: %{marker.color:.4~g}';
+  } else if (data.colorType === 'categorical' && trace.name && trace.name !== 'Not in table') {
+    t += `<br>${trace.name}`;
+  }
+  if (data.hoverExtra && data.hoverExtra.length) t += '%{hovertext}';
+  return t + '<extra></extra>';
+}
+
+export async function applyHoverInfo(plotContainer, data, settings) {
+  if (!plotContainer || !Array.isArray(plotContainer.data) || typeof Plotly === 'undefined') return;
+  const names = data[data.entities] || [];
+  const extra = data.hoverExtra || [];
+  const rowOf = extra.length ? new Map(names.map((n, i) => [n, i])) : null;
+  const templates = [], hovertexts = [], indices = [];
+  plotContainer.data.forEach((trace, i) => {
+    if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
+    indices.push(i);
+    templates.push(hoverTemplateFor(trace, settings, data));
+    hovertexts.push(rowOf ? trace.text.map(name => {
+      const r = rowOf.get(name);
+      return r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join('');
+    }) : null);
+  });
+  if (!indices.length) return;
+  const update = { hovertemplate: templates };
+  if (rowOf) update.hovertext = hovertexts;
+  try {
+    await Plotly.restyle(plotContainer, update, indices);
+  } catch (err) {
+    console.warn('Hover labels not updated:', err && err.message);
+  }
+}
+
+/**
+ * Draw the strongest colour values on top.
+ *
+ * scattergl draws points in array order, so in a dense core a few large
+ * values were buried under hundreds of small ones. For continuously
+ * coloured traces the point arrays are reordered by |colour| ascending
+ * (missing values first, so they sit at the bottom). On by default;
+ * settings.sortByColor = false keeps data order.
+ *
+ * Incremental updates write arrays in DATA order, so updatePlotElements
+ * calls unsortTraces first and sortTracesByColor last; the permutation lives
+ * on the trace (_azOrder) only in between.
+ */
+const SORTED_ATTRS = ['x', 'y', 'z', 'text', 'customdata', 'hovertext', 'marker.color'];
+
+function _get(trace, attr) {
+  return attr === 'marker.color' ? (trace.marker && trace.marker.color) : trace[attr];
+}
+
+function _permuted(trace, order) {
+  const update = {};
+  for (const attr of SORTED_ATTRS) {
+    const arr = _get(trace, attr);
+    if (Array.isArray(arr) && arr.length === order.length) update[attr] = [order.map(i => arr[i])];
+  }
+  return update;
+}
+
+export function colorSortOrder(colors) {
+  const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
+  return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+}
+
+export async function sortTracesByColor(gd, settings) {
+  if (!gd || !Array.isArray(gd.data) || settings.sortByColor === false || typeof Plotly === 'undefined') return;
+  for (let i = 0; i < gd.data.length; i++) {
+    const t = gd.data[i];
+    const colors = t && t.marker && t.marker.color;
+    if (!Array.isArray(colors) || t.marker.colorscale === undefined || t._azOrder) continue;
+    const order = colorSortOrder(colors);
+    if (order.every((v, k) => v === k)) continue;
+    try {
+      await Plotly.restyle(gd, _permuted(t, order), [i]);
+      gd.data[i]._azOrder = order;
+    } catch (err) {
+      console.warn('Colour sort skipped:', err && err.message);
+    }
+  }
+}
+
+export async function unsortTraces(gd) {
+  if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
+  for (let i = 0; i < gd.data.length; i++) {
+    const t = gd.data[i];
+    if (!t || !t._azOrder) continue;
+    const order = t._azOrder;
+    const inverse = new Array(order.length);
+    order.forEach((orig, pos) => { inverse[orig] = pos; });
+    delete t._azOrder;
+    try {
+      await Plotly.restyle(gd, _permuted(t, inverse), [i]);
+    } catch (err) {
+      console.warn('Colour unsort skipped:', err && err.message);
+    }
+  }
+}
+
+/**
+ * Log colour scale (settings.color.log, floor settings.color.logFloor): the
+ * colour values are replaced by log10(max(v, floor)), the raw ones kept in
+ * data.colorRaw, and the colour bar is labelled in original units.
+ */
+export function applyLogColor(data, settings) {
+  data.colorLog = null;
+  if (!settings.color || !settings.color.log || data.colorType !== 'numerical' || !Array.isArray(data.color)) return;
+  data.colorRaw = data.color;
+  const { values, floor } = logColorValues(data.color, settings.color.logFloor ?? null);
+  data.color = values;
+  data.colorLog = { floor };
+}
+
+export async function applyLogColorbar(gd, data, settings) {
+  if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
+  const idx = gd.data.findIndex(t => t && t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+  if (idx < 0) return;
+  const update = {};
+  if (data.colorLog) {
+    const finite = data.color.filter(v => Number.isFinite(v));
+    const ticks = finite.length ? logColorbarTicks(arrayMin(finite), arrayMax(finite)) : null;
+    update['marker.colorbar.tickvals'] = [ticks ? ticks.tickvals : null];
+    update['marker.colorbar.ticktext'] = [ticks ? ticks.ticktext : null];
+  } else {
+    update['marker.colorbar.tickvals'] = [null];
+    update['marker.colorbar.ticktext'] = [null];
+  }
+  try {
+    await Plotly.restyle(gd, update, [idx]);
+  } catch (err) {
+    console.warn('Log colour bar not updated:', err && err.message);
+  }
+}
+
 export function createFilterMask(data, settings) {
   // Initialize filter statistics
   const filterStats = {
@@ -1148,6 +1362,18 @@ export function createFilterMask(data, settings) {
         v != null && !isNaN(v) && (v < cmin || v > cmax)
       ).length;
     }
+  }
+
+  // Categorical colour: Hide NaN hides points with no category. It used to
+  // act on numerical colours only, so on a categorical colour it did nothing.
+  if (data.colorType === 'categorical' && Array.isArray(data.color) && settings.hideNaN) {
+    const missing = v => v === null || v === undefined || v === ''
+      || (typeof v === 'number' && Number.isNaN(v))
+      || (typeof v === 'string' && v.toLowerCase() === 'nan');
+    const applyToAll = !hasTableFilter || !tableEntities;
+    colorValidMask = data.color.map((v, i) =>
+      !missing(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
+    filterStats.colorNaN = data.color.filter(missing).length;
   }
 
   // 5. Gather only the masks we need for explicit filtering
@@ -1577,6 +1803,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Build layout with our pure helper
   const layout = createLayout(settings);
+  // Hide NaN / Hide Outliers remove points; keep the axes where all points are
+  const pinned = stableAxisRanges(data, settings);
+  if (pinned && pinned['xaxis.range']) layout.xaxis = { ...layout.xaxis, range: pinned['xaxis.range'], autorange: false };
+  if (pinned && pinned['yaxis.range']) layout.yaxis = { ...layout.yaxis, range: pinned['yaxis.range'], autorange: false };
   
   // Ensure font and color settings are applied to the layout globally
   layout.font = {

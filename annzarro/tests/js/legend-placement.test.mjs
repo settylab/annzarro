@@ -48,3 +48,17 @@ test('legend symbols are drawn at a constant size', () => {
     const layout = createLayout({ x: { type: 'obsm', key: 'X_umap', column: 0 }, y: { type: 'obsm', key: 'X_umap', column: 1 }, z: null, showGrid: true });
     assert.equal(layout.legend.itemsizing, 'constant');
 });
+
+// Equal aspect (settings.equalAspect): spatial coordinates are not stretched.
+// Headless on view A's UMAP: 7.39 px per unit on both axes when on.
+test('equal aspect anchors y to x, in 2D only', async () => {
+    const { aspectUpdate } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
+    const axes = { x: { type: 'obsm', key: 'spatial', column: 0 }, y: { type: 'obsm', key: 'spatial', column: 1 }, showGrid: true };
+    const on = createLayout({ ...axes, z: null, equalAspect: true });
+    assert.equal(on.yaxis.scaleanchor, 'x');
+    assert.equal(on.yaxis.scaleratio, 1);
+    assert.equal(createLayout({ ...axes, z: null }).yaxis.scaleanchor, undefined);
+    assert.deepEqual(aspectUpdate({ equalAspect: true, z: null }), { 'yaxis.scaleanchor': 'x', 'yaxis.scaleratio': 1 });
+    assert.deepEqual(aspectUpdate({ equalAspect: false, z: null }), { 'yaxis.scaleanchor': null, 'yaxis.scaleratio': null });
+    assert.equal(aspectUpdate({ equalAspect: true, z: { key: 'z' } })['yaxis.scaleanchor'], null);
+});

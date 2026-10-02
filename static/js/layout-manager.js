@@ -73,6 +73,18 @@ const LayoutManager = (function() {
      * @returns {Object} - A layout node representing this element and its children
      */
     function buildLayoutHierarchy(element) {
+        // A panel made from a selection tile (the welcome screen's "Cell Plot",
+        // or a pane's chooser) sits in a sized .panel-wrapper. This walk did not
+        // know that element, so the panel was left out and a share link or panel
+        // set made right after held only {type: 'selector'}: the opened link
+        // showed the welcome screen.
+        if (element.classList.contains('panel-wrapper') || (element.dataset && element.dataset.panelWrapper === 'true')) {
+            // its content: the panel's tile, or the split it was turned into
+            const child = [...element.children].find(c =>
+                c.classList.contains('split-container') || c.classList.contains('tile'));
+            return child ? buildLayoutHierarchy(child) : null;
+        }
+
         // Base case: element is a tile
         if (element.classList.contains('tile')) {
             const id = element.dataset.tileId;

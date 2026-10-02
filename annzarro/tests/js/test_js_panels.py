@@ -38,6 +38,22 @@ SUITES = {
     "plot-titles.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "plot-titles.js"),
     "search-builder.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "search-builder.js"),
     "ui-config.test.mjs": os.path.join(REPO_ROOT, "static", "js", "config.js"),
+    "layout-hierarchy.test.mjs": os.path.join(REPO_ROOT, "static", "js", "layout-manager.js"),
+    "column-names.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "table-utilities", "table-ui-make.js"
+    ),
+    "click-overlap.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make-helper.js"
+    ),
+    "color-sort.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make.js"
+    ),
+    "hover-info.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make.js"
+    ),
+    "hide-filters.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make.js"
+    ),
     "panelset-view.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "deeplink.js"),
     "subset.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "subset.js"),
     "panel-settings.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "panel-settings.js"),
