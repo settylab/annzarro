@@ -12,7 +12,7 @@ WorkingDirectory=/opt/annzarro
 # proxy in front. (This unit used to run /opt/annzarro/run_annzarro.py,
 # which does not exist in the repository.)
 Environment=ANNZARRO_CONFIG=/opt/annzarro/server/production_config.json
-ExecStart=/opt/annzarro/venv/bin/gunicorn -c annzarro/server/gunicorn_config.py "annzarro.server.wsgi:create_wsgi_app()"
+ExecStart=/opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

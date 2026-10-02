@@ -24,4 +24,4 @@ echo "Using config file: $CONFIG_FILE"
 # Run Gunicorn with config
 # (The old target "annzarro.server:create_app()" did not exist, and create_app()
 # without a config ran with login off; use the hosted WSGI factory.)
-gunicorn -c annzarro/server/gunicorn_config.py "annzarro.server.wsgi:create_wsgi_app()"
+gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
