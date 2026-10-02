@@ -254,6 +254,12 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
         raise DataRequestError(404, "key_not_found", "This dataset has no X matrix.")
     if field and key is not None:
         keys = (metadata.get(field) or {}).get("keys")
+        # A dataset WITHOUT the group (no obsp/varp/layers at all) lists no
+        # keys rather than "unknown": every key is missing. It used to fall
+        # through to the reader and answer 200 {"data": []}, which the client
+        # must read as "listed but unreadable" and showed as "failed to read".
+        if keys is None and metadata.get(f"has_{field}") is False:
+            keys = []
         top = key.split("/", 1)[0] if slot == "uns" else key
         # layer 'X' is the X matrix when no layer has that name (readers' get_layer)
         x_as_layer = slot == "layers" and key == "X" and metadata.get("has_X") is not False
