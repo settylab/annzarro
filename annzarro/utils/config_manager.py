@@ -379,6 +379,36 @@ class ConfigManager:
                 self._set_override(["auth", "enabled"], True, "derived:non-loopback host")
                 logger.info("Authentication enabled by default for non-localhost host")
 
+        # Sessions are signed with auth.secret_key. The shipped defaults are
+        # public placeholders; signing with one lets anyone forge a login.
+        if auth.get("enabled") and str(auth.get("secret_key") or "") in self.PLACEHOLDER_SECRETS:
+            path = paths.user_state_dir() / "secret_key"
+            self._set_override(["auth", "secret_key"], self._load_or_create_secret(path),
+                               f"generated:{path}")
+            logger.info(f"auth.secret_key is unset or a placeholder; using the generated key in {path}")
+
+    PLACEHOLDER_SECRETS = {"", "change-this-in-production", "__CHANGE_THIS_TO_A_RANDOM_STRING__"}
+
+    @staticmethod
+    def _load_or_create_secret(path: Path) -> str:
+        """Read the per-user session secret, creating it (mode 0600) on first use."""
+        try:
+            secret = path.read_text().strip()
+            if secret:
+                return secret
+        except FileNotFoundError:
+            pass
+        import secrets
+        path.parent.mkdir(parents=True, exist_ok=True)
+        secret = secrets.token_hex(32)
+        try:
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:  # another process won the race; use its key
+            return path.read_text().strip()
+        with os.fdopen(fd, "w") as f:
+            f.write(secret + "\n")
+        return secret
+
     def _deep_update(self, target: Dict[str, Any], source: Dict[str, Any]) -> None:
         """
         Recursively update a dictionary with another dictionary.

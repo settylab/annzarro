@@ -229,6 +229,33 @@ def test_config_flag_before_or_after_subcommand(isolated, monkeypatch, argv, exp
     assert seen["config"] == expected
 
 
+# --- Session secret ----------------------------------------------------------
+
+def test_placeholder_secret_is_replaced_when_auth_is_on(isolated, tmp_path):
+    key_file = tmp_path / "home" / ".annzarro" / "secret_key"
+    mgr = ConfigManager()
+    config = mgr.load_config(env="production", cli_args=_args(host="0.0.0.0"))
+    secret = config["auth"]["secret_key"]
+    assert secret not in ConfigManager.PLACEHOLDER_SECRETS and len(secret) == 64
+    assert key_file.read_text().strip() == secret
+    assert oct(key_file.stat().st_mode & 0o777) == "0o600"
+    assert mgr.origins["auth.secret_key"] == f"generated:{key_file}"
+    # Stable across restarts, so sessions survive them.
+    again = ConfigManager().load_config(env="production", cli_args=_args(host="0.0.0.0"))
+    assert again["auth"]["secret_key"] == secret
+
+
+def test_configured_secret_is_kept_and_no_key_file_without_auth(isolated, tmp_path):
+    key_file = tmp_path / "home" / ".annzarro" / "secret_key"
+    ConfigManager().load_config(env="production")  # auth off: nothing generated
+    assert not key_file.exists()
+    explicit = _write(tmp_path / "c.yaml", {"auth": {"secret_key": "s3cr3t-from-ops"}})
+    config = ConfigManager().load_config(env="production", config_path=str(explicit),
+                                         cli_args=_args(host="0.0.0.0"))
+    assert config["auth"]["secret_key"] == "s3cr3t-from-ops"
+    assert not key_file.exists()
+
+
 # --- `annzarro config show` --------------------------------------------------
 
 def test_config_show_reports_effective_values_and_sources(isolated, tmp_path, capsys):

@@ -130,6 +130,8 @@ relative path, into the directory it was started from. Runtime state lives in
 - `server.pid` for `annzarro start --detach` / `annzarro stop`
 - `auth/users.json` when `auth.user_file` is unset (a source checkout that
   already has `config/auth/users.json` keeps using it)
+- `secret_key` (mode 0600), generated on first use when authentication is on
+  and `auth.secret_key` is unset or still one of the shipped placeholders
 
 Relative `server.log_file` and `server.data_dir` values are taken relative to
 the working directory; a relative `auth.user_file` relative to the state
