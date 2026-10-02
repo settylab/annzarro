@@ -277,7 +277,7 @@ The same panels as panel-set files:
 {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
 {download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. **Load Panel Set** > upload
 registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen Panel"; it
-does not restore the focus or the layout, so prefer the links ({ref}`fig2-load-panel-set`, {doc}`../user-guide/panel-sets`).
+does not restore the focus or the layout, so prefer the links ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned
 

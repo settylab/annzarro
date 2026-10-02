@@ -265,7 +265,7 @@ The same panels as panel-set files:
 {download}`fig5-d-noise.json <../_static/panelsets/paper/fig5-d-noise.json>`. **Load Panel Set** >
 upload registers their panels as closed cards under **Add New Panel** > "Duplicate or Reopen
 Panel"; it does not restore the focus or the layout, so prefer the links
-({ref}`fig2-load-panel-set`, {doc}`../user-guide/panel-sets`).
+({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned
 
