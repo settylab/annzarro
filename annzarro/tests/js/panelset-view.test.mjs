@@ -128,3 +128,17 @@ test('derived table state is not serialized into links or panel sets', async () 
     assert.deepEqual(out.columns, live.columns);
     assert.deepEqual(out.searchBuilderConfig, { criteria: [], logic: 'AND' });
 });
+
+test('the same store named relative and absolute is not a dataset switch', async () => {
+    // The docs' fig1 panel set names 'bm_aging.zarr'; with the absolute path
+    // open, loading it asked "Switch dataset?" (strings were compared).
+    const { sameDatasetPath } = await import('../../../static/js/utils/deeplink.js');
+    const listing = [{ path: '/data/bm_aging.zarr', rel_path: 'bm_aging.zarr', name: 'bm_aging.zarr' }];
+    assert.equal(sameDatasetPath('bm_aging.zarr', '/data/bm_aging.zarr', listing), true);
+    assert.equal(sameDatasetPath('bm_aging.zarr', '/data/bm_aging.zarr'), true, 'without a listing: suffix match');
+    assert.equal(sameDatasetPath('./sub//x.zarr/', '/data/sub/x.zarr'), true);
+    assert.equal(sameDatasetPath('other.zarr', '/data/bm_aging.zarr', listing), false);
+    assert.equal(sameDatasetPath('/a/x.zarr', '/b/x.zarr'), false);
+    assert.equal(sameDatasetPath('s3://bucket/x.zarr', 's3://bucket/x.zarr'), true);
+    assert.equal(sameDatasetPath('', '/data/x.zarr'), false);
+});

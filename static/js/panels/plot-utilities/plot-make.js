@@ -1608,7 +1608,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">X-axis NaN:</span>
-        <span class="filter-count">${filterStats.xNaN}</span>
+        <span class="filter-count">${filterStats.xNaN.toLocaleString('en-US')}</span>
       </li>
     `;
   }
@@ -1618,7 +1618,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">Y-axis NaN:</span>
-        <span class="filter-count">${filterStats.yNaN}</span>
+        <span class="filter-count">${filterStats.yNaN.toLocaleString('en-US')}</span>
       </li>
     `;
   }
@@ -1628,7 +1628,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">Z-axis NaN:</span>
-        <span class="filter-count">${filterStats.zNaN}</span>
+        <span class="filter-count">${filterStats.zNaN.toLocaleString('en-US')}</span>
       </li>
     `;
   }
@@ -1639,7 +1639,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">Color NaN:</span>
-        <span class="filter-count">${filterStats.colorNaN}</span>
+        <span class="filter-count">${filterStats.colorNaN.toLocaleString('en-US')}</span>
       </li>
     `;
   }
@@ -1650,7 +1650,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">Color outliers:</span>
-        <span class="filter-count">${filterStats.colorOutliers}</span>
+        <span class="filter-count">${filterStats.colorOutliers.toLocaleString('en-US')}</span>
       </li>
     `;
   }
@@ -1662,7 +1662,7 @@ function updateFilterWidget(plotContainer, filterStats) {
     statsList.innerHTML += `
       <li class="filter-stats-item">
         <span class="filter-reason">Table filtered:</span>
-        <span class="filter-count">${filterStats.tableFiltered}</span>
+        <span class="filter-count">${filterStats.tableFiltered.toLocaleString('en-US')}</span>
       </li>
     `;
   }
