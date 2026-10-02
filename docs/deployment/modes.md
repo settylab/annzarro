@@ -13,7 +13,7 @@ chunks it needs, so the data never have to be copied to the viewer's machine.
 | How the browser reaches it | inside the app | SSH tunnel to `127.0.0.1` | HTTPS through a reverse proxy |
 | Login | off | off (the server is bound to loopback) | on |
 | Which paths can be opened | any on your disk | any the server process can read | only the data directory and `allowed_dirs` |
-| Remote stores (`s3://`, ...) | off unless configured (see below) | off unless configured (see below) | only from `remote_allowlist` |
+| Remote stores (`s3://`, ...) | allowed (`auto`, needs the `remote` extra) | allowed on loopback without login; with login only from `remote_allowlist` | only from `remote_allowlist` |
 | Panel sets | yours | yours | shared by all users, with owners |
 | Set-up page | {doc}`../getting-started/desktop-app` | {doc}`personal-server` | {doc}`lab-server`, {doc}`authentication` |
 
@@ -41,10 +41,7 @@ logs a `SECURITY` banner and shows a "No login" badge in the header
 ({doc}`hosting-checklist`).
 
 ```{note}
-`annzarro start` runs with the `production` defaults, which set `server.proxy_count: 1`. The
-remote-store policy `auto` reads that as "behind a reverse proxy" and switches remote stores
-off, even on your own laptop, and the desktop app inherits the same default. To open remote
-stores without a proxy in front, set `server.proxy_count: 0` (then `auto` allows them on a
-loopback server without login), or `server.remote_stores: allow`, or a `remote_allowlist`; see
-{doc}`../reference/configuration`.
+`annzarro start` trusts no `X-Forwarded-*` headers (`server.proxy_count: 0`). A server behind a
+reverse proxy must say so with `proxy_count: 1` (or `ANNZARRO_SERVER_PROXY_COUNT=1`), see
+{doc}`lab-server`. Any value above 0 also counts as "shared" for the remote-store policy.
 ```

@@ -48,7 +48,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `data_dir` | `data` | Data directory: the datasets offered in the picker (its `datasets/` subdirectory instead, if that exists), and `sessions/` for panel sets. Relative paths are taken from the working directory; `~` is expanded. |
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
 | `hosted` * | unset | `true` forces shared-server behaviour (path confinement, remote policy, compression, exposure warning) whatever the host; `false` forces local behaviour. Unset: decided by login and host. The gunicorn entry point sets `true` unless you set `false`. |
-| `proxy_count` | `1` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. `0` when nothing is in front. Any value above 0 also counts as "shared" for the remote-store policy `auto`. |
+| `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. |
 | `debug` | `false` | Flask debug mode (reloader and interactive debugger). `true` only in the `development` layer; never on a reachable server. |
 | `log_file` | `~/.annzarro/logs/annzarro_server.log` | Server log. Relative paths are taken from the working directory. |
 | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
@@ -110,11 +110,11 @@ auth:
   enabled: true
 ```
 
-Laptop server that may open public remote stores:
+Any server behind one reverse proxy:
 
 ```yaml
 server:
-  proxy_count: 0          # nothing in front; remote_stores: auto then allows remote URLs
+  proxy_count: 1          # trust X-Forwarded-* from the proxy in front
 ```
 
 Lab server behind nginx: see {doc}`../deployment/lab-server`.

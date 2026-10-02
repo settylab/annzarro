@@ -6,27 +6,20 @@ separate Python installation and no login. It is the "Desktop app" arrangement o
 
 ## Download
 
-Builds are attached to the
-[GitHub releases](https://github.com/settylab/annzarro/releases) of `settylab/annzarro`. Choose
-the file for your system:
-
-| System | File |
-|---|---|
-| macOS (Apple silicon) | `AnnZarro-<version>-arm64.dmg` (or the `-mac.zip`) |
-| Linux | `AnnZarro-<version>.AppImage`, or `annzarro-desktop_<version>_amd64.deb` |
-| Windows | `AnnZarro Setup <version>.exe` (NSIS installer), when the release has one |
+Standalone apps for macOS, Windows and Linux will be published with the preprint release on the
+[GitHub releases page](https://github.com/settylab/annzarro/releases) of `settylab/annzarro`.
+Download the file for your operating system from the newest release there.
 
 ```{important}
-Check the release date against the version of this documentation. At the time of writing the
-newest release on GitHub (v0.1.1, April 2025) predates most features described here (login,
-panel-set ownership, share links, remote datasets, the binary transfer format) and has no
-Windows or Intel-Mac build. Until a newer release is published, use the Python package
-({doc}`installation`) for current features.
+Releases on that page that predate the preprint release do not have the features described in
+this documentation (login, panel-set ownership, share links, remote datasets, the binary
+transfer format). Until the new release is out, use the Python package
+({doc}`installation`).
 ```
 
-The macOS build is not signed with an Apple Developer ID, so Gatekeeper refuses the first
-launch. Open it once with right-click (or Control-click) on the app, then **Open**. On Linux,
-make the AppImage executable first: `chmod +x AnnZarro-*.AppImage`.
+If your system refuses to open an app downloaded from the internet, allow it once through the
+system's own prompt (on macOS: Control-click the app, then **Open**). On Linux, make an AppImage
+executable first with `chmod +x`.
 
 ## First start
 

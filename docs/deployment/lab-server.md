@@ -188,6 +188,11 @@ server {
 ```
 
 `proxy_count: 1` in the configuration tells AnnZarro to trust exactly one `X-Forwarded-*` hop.
+It is required: the built-in default is 0, because a plain `annzarro start` has no proxy in front
+and trusting the headers there would let any client set its own address. Set it in the
+configuration file as above or with `ANNZARRO_SERVER_PROXY_COUNT=1` in the service environment.
+(The repository's flat `annzarro/server/production_config.json`, used by the shipped
+systemd/gunicorn files, keeps `proxy_count: 1`.)
 With two proxies in a row (say a load balancer and nginx) set it to 2; never set it higher than
 the number of proxies you run, or clients can forge their address. AnnZarro already compresses
 JSON replies on a shared server; if nginx compresses `application/json` too, set
