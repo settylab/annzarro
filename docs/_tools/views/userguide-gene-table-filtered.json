@@ -1,0 +1,200 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-G",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-table-T",
+      "controlsVisible": true
+     }
+    ],
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-G": false,
+   "gene-table-T": false
+  },
+  "panelConfigs": {
+   "gene-plot-G": {
+    "id": "gene-plot-G",
+    "title": "Volcano, colour = Spearman (fold change) to the focused gene",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false,
+     "history": {
+      "varp": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "categoryPalette": "uns",
+    "colorMin": -1,
+    "colorMax": 1,
+    "colorReversed": false,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "subsettedGenes": null,
+    "hideNonSubset": false,
+    "showGrid": true,
+    "lockColorRange": true,
+    "highlightFocusedGene": true,
+    "exportWidth": 1200,
+    "exportHeight": 800,
+    "hideNaN": false,
+    "showAxisTitles": true,
+    "showAxisLabels": true,
+    "showAxisLines": true,
+    "showZeroLines": false,
+    "showLegend": true,
+    "bgColor": "#ffffff",
+    "gridColor": "#e6e6e6",
+    "axisColor": "#000000",
+    "textColor": "#000000",
+    "zeroLineColor": "#cccccc",
+    "backdropColor": "#f0f0f0",
+    "axisLineWidth": 1,
+    "gridLineWidth": 1,
+    "zeroLineWidth": 1,
+    "tickDensity": "auto",
+    "fontSize": 12,
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "margins": {
+     "l": 80,
+     "r": 80,
+     "t": 80,
+     "b": 60,
+     "pad": 4
+    },
+    "scaleExport": false,
+    "legendPosition": "right",
+    "enableZoom": true,
+    "enablePan": true,
+    "showHoverInfo": true,
+    "tableFilter": "gene-table-T",
+    "removeNonTableEntries": false,
+    "viewport2D": null,
+    "centeringActive": false
+   },
+   "gene-table-T": {
+    "id": "gene-table-T",
+    "title": "Gene table",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     },
+     {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "H2-Q7"
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "responsive": false,
+    "fixedHeader": true,
+    "filteredGenes": null,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": ">",
+       "data": "kompot_de_Young_to_Old_mahalanobis",
+       "origData": "var_kompot_de_Young_to_Old_mahalanobis_main",
+       "type": "num",
+       "value": [
+        "5"
+       ]
+      },
+      {
+       "criteria": [
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_mean_lfc",
+         "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
+         "type": "num",
+         "value": [
+          "0.05"
+         ]
+        },
+        {
+         "condition": "<",
+         "data": "kompot_de_Young_to_Old_mean_lfc",
+         "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
+         "type": "num",
+         "value": [
+          "-0.05"
+         ]
+        }
+       ],
+       "logic": "OR"
+      }
+     ],
+     "logic": "AND"
+    }
+   }
+  }
+ }
+}

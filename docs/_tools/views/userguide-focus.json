@@ -1,0 +1,109 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-W",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-F",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-W": false,
+   "cell-plot-F": false
+  },
+  "panelConfigs": {
+   "cell-plot-W": {
+    "id": "cell-plot-W",
+    "title": "5-step diffusion walk from the focused cell",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "diffusion_walk_t5",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Blues",
+    "colorReversed": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     },
+     {
+      "type": "obs",
+      "key": "Age"
+     }
+    ]
+   },
+   "cell-plot-F": {
+    "id": "cell-plot-F",
+    "title": "Fold change (Young to Old) of the focused gene",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "centeringActive": true
+   }
+  }
+ }
+}

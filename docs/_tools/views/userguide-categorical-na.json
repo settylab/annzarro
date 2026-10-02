@@ -1,0 +1,45 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "gene-plot-M",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "gene-plot-M": false
+  },
+  "panelConfigs": {
+   "gene-plot-M": {
+    "id": "gene-plot-M",
+    "title": "Volcano coloured by var fig4_module_k3 (NaN for non-DE genes)",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "fig4_module_k3",
+     "column": ""
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8
+   }
+  }
+ }
+}
