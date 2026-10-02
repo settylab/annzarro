@@ -33,7 +33,8 @@ logger = logging.getLogger("annzarro")
 def load_config(
     config_path: Optional[str] = None,
     env: str = "development",
-    cli_args: Optional[argparse.Namespace] = None
+    cli_args: Optional[argparse.Namespace] = None,
+    exit_on_invalid: bool = True
 ) -> Dict[str, Any]:
     """
     Load configuration using the configuration manager.
@@ -57,7 +58,7 @@ def load_config(
     
     # Validate configuration
     is_valid, errors = config_manager.validate_config()
-    if not is_valid:
+    if not is_valid and exit_on_invalid:
         for error in errors:
             logger.error(f"Configuration error: {error}")
         logger.error("Configuration is invalid. Exiting.")
@@ -585,6 +586,42 @@ def desktop_command(args: argparse.Namespace) -> int:
         logger.error(f"Unknown desktop command: {args.desktop_command}")
         return 1
 
+def format_effective_config(manager, fmt: str = "yaml", errors: Optional[List[str]] = None) -> str:
+    """Render the merged configuration with the sources it was assembled from.
+
+    Secrets are masked. ``yaml`` prints the sources as comments around a plain
+    YAML document (so the output can be saved and used with --config); ``json``
+    returns one object with ``config``, ``sources`` and ``origins``.
+    """
+    info = manager.get_config_info()
+    config = manager.masked_config()
+    errors = errors or []
+    if fmt == "json":
+        return json.dumps({
+            "environment": info["environment"],
+            "valid": not errors,
+            "errors": errors,
+            "config": config,
+            "sources": info["layers"],
+            "origins": info["origins"],
+        }, indent=2)
+
+    lines = [f"# Effective AnnZarro configuration (environment: {info['environment']})",
+             "# Sources, lowest to highest precedence:"]
+    width = max((len(layer["name"]) for layer in info["layers"]), default=0)
+    for layer in info["layers"]:
+        detail = f" ({layer['detail']})" if layer["detail"] else ""
+        lines.append(f"#   {layer['name']:<{width}}  {layer['status']:<9}  {layer['path']}{detail}")
+    for error in errors:
+        lines.append(f"# INVALID: {error}")
+    body = yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+    overridden = sorted((k, v) for k, v in info["origins"].items() if not v.startswith("defaults:"))
+    tail = ["", "# Values not taken from the built-in defaults, and where they came from:"]
+    key_width = max((len(k) for k, _ in overridden), default=0)
+    tail += [f"#   {k:<{key_width}}  <- {v}" for k, v in overridden]
+    return "\n".join(lines) + "\n" + body + "\n".join(tail)
+
+
 def config_command(args: argparse.Namespace) -> int:
     """
     Handle configuration-related commands
@@ -596,21 +633,14 @@ def config_command(args: argparse.Namespace) -> int:
         Exit code
     """
     if args.config_command == "show":
-        # Load and show configuration
+        # Show the configuration even when it is invalid: that is when you
+        # need to see where a value came from. The exit code still says so.
         env = args.env  # Default already set to production
-        config = load_config(config_path=args.config, env=env, cli_args=args)
-        
-        # Print configuration
-        if args.format == "json":
-            print(json.dumps(config, indent=2))
-        else:  # yaml
-            if 'yaml' not in sys.modules:
-                logger.warning("PyYAML is not installed. Falling back to JSON output.")
-                print(json.dumps(config, indent=2))
-            else:
-                import yaml
-                print(yaml.dump(config, default_flow_style=False))
-            
+        load_config(config_path=args.config, env=env, cli_args=args, exit_on_invalid=False)
+        is_valid, errors = config_manager.validate_config()
+        print(format_effective_config(config_manager, args.format, errors))
+        return 0 if is_valid else 1
+
     elif args.config_command == "init":
         # Initialize a new configuration file
         output_path = args.output
@@ -660,8 +690,10 @@ def config_command(args: argparse.Namespace) -> int:
                 from annzarro.utils.config_manager import ConfigManager
                 validator = ConfigManager()
                 
-                # Load just the file to validate
-                validator._load_yaml_config(args.file, "file_to_validate")
+                # Validate the file as it would be used: on top of the
+                # built-in defaults. A partial file (just `server.port`, say)
+                # is valid; validating it alone reported every key it omits.
+                validator.load_config(env=args.env, config_path=args.file)
                 
                 # Check for validation errors
                 is_valid, errors = validator.validate_config()

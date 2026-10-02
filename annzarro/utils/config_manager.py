@@ -510,6 +510,24 @@ class ConfigManager:
 
         return len(errors) == 0, errors
 
+    MASK = "********"
+
+    def masked_config(self) -> Dict[str, Any]:
+        """The merged configuration with sensitive values replaced by a mask.
+
+        A value is sensitive when the schema says so or its key names a secret.
+        """
+        if not self._security_metadata:
+            self._load_schema()
+        masked = deepcopy(self.config)
+        for key, value in self._flatten_config(self.config).items():
+            leaf = key.rsplit(".", 1)[-1]
+            sensitive = (self._security_metadata.get(key) == "sensitive"
+                         or "secret" in leaf or "password" in leaf)
+            if sensitive and value:
+                self._set_nested_value(masked, key.split("."), self.MASK)
+        return masked
+
     def to_flask_config(self) -> Dict[str, Any]:
         """
         Convert hierarchical configuration to flat Flask configuration.

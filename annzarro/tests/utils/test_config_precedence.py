@@ -224,6 +224,36 @@ def test_config_flag_before_or_after_subcommand(isolated, monkeypatch, argv, exp
     assert seen["config"] == expected
 
 
+# --- `annzarro config show` --------------------------------------------------
+
+def test_config_show_reports_effective_values_and_sources(isolated, tmp_path, capsys):
+    _write(_user_config(tmp_path), {"server": {"log_level": "WARNING"}})
+    explicit = _write(tmp_path / "explicit.yaml", {"server": {"port": 9002}})
+    rc = cli.main(["config", "show", "--config", str(explicit), "--data-dir", "/srv/d"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    body = yaml.safe_load(out)  # the comments must not break the YAML document
+    assert body["server"]["port"] == 9002
+    assert body["server"]["data_dir"] == "/srv/d"
+    assert body["auth"]["secret_key"] == ConfigManager.MASK
+    assert "# Sources, lowest to highest precedence:" in out
+    assert "defaults:base" in out and "not found" in out
+    assert "server.port" in out and "<- --config" in out
+    assert "server.log_level" in out and "<- user" in out
+    assert "<- cli:--data-dir" in out
+
+
+def test_config_show_json_and_invalid_exit_code(isolated, tmp_path, capsys):
+    import json
+    bad = _write(tmp_path / "bad.yaml", {"server": {"port": 0}})
+    rc = cli.main(["config", "show", "--format", "json", "--config", str(bad)])
+    doc = json.loads(capsys.readouterr().out)
+    assert rc == 1 and doc["valid"] is False
+    assert doc["origins"]["server.port"] == "--config"
+    assert [s["name"] for s in doc["sources"]][:2] == ["defaults:base", "defaults:production"]
+    assert doc["config"]["auth"]["secret_key"] == ConfigManager.MASK
+
+
 # --- Where runtime state goes ------------------------------------------------
 
 def test_log_file_defaults_to_the_user_state_dir(isolated, tmp_path):
