@@ -8,17 +8,14 @@ import os
 import numpy as np
 import pytest
 import scipy.sparse as sp
-import zarr
-
 from annzarro.server.core import create_app
+from annzarro.tests.zarr_compat import open_group, write_array
 
 N_OBS, N_VAR = 40, 6
 
 
 def _array(group, name, values, chunks=None):
-    z = group.create_array(name, shape=values.shape, dtype=values.dtype,
-                           chunks=chunks or values.shape)
-    z[:] = values
+    z = write_array(group, name, values, chunks=chunks or values.shape)
     z.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
     return z
 
@@ -29,8 +26,7 @@ def _sparse(group, name, mat, encoding):
                     "shape": list(mat.shape)})
     for comp in ("data", "indices", "indptr"):
         arr = getattr(mat, comp)
-        group_arr = g.create_array(comp, shape=arr.shape, dtype=arr.dtype)
-        group_arr[:] = arr
+        write_array(g, comp, arr)
     return g
 
 
@@ -38,8 +34,7 @@ def _dataframe(group, name, index, columns):
     g = group.create_group(name)
     g.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0",
                     "_index": "_index", "column-order": list(columns)})
-    idx = g.create_array("_index", shape=(len(index),), dtype=str)
-    idx[:] = np.array(index)
+    write_array(g, "_index", np.array(index))
     for col, values in columns.items():
         _array(g, col, values)
     return g
@@ -49,7 +44,7 @@ def _dataframe(group, name, index, columns):
 def ds(tmp_path):
     rng = np.random.default_rng(3)
     path = str(tmp_path / "data" / "fast.zarr")
-    root = zarr.open_group(path, mode="w", zarr_format=2)
+    root = open_group(path)
     root.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
     X = rng.standard_normal((N_OBS, N_VAR)).astype(np.float32)
     X[0, 0] = 0.1

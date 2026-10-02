@@ -7,21 +7,20 @@ built from the bound signature, so the calling convention does not matter.
 """
 import numpy as np
 import pytest
-import zarr
-
 from annzarro.core.zarr_reader import ZarrReader
+from annzarro.tests.zarr_compat import open_group, write_array
 
 
 @pytest.fixture
 def store(tmp_path):
     path = str(tmp_path / "t.zarr")
-    root = zarr.open_group(path, mode="w", zarr_format=2)
+    root = open_group(path)
     rng = np.random.default_rng(0)
     X = rng.random((30, 8)).astype(np.float32)
-    root.create_array("X", shape=X.shape, dtype=X.dtype, chunks=(10, 4))[:] = X
+    write_array(root, "X", X, chunks=(10, 4))
     layers = root.create_group("layers")
     L = rng.random((30, 8)).astype(np.float32)
-    layers.create_array("fc", shape=L.shape, dtype=L.dtype, chunks=(10, 4))[:] = L
+    write_array(layers, "fc", L, chunks=(10, 4))
     return path, X, L
 
 
@@ -81,11 +80,11 @@ def test_disable_caching_still_bypasses(store, monkeypatch):
 def test_obsm_key_is_the_key_not_the_entity(store, tmp_path):
     """get_obsm_varm(entity, key, ...) used to key on args[0] -- the ENTITY."""
     path = str(tmp_path / "m.zarr")
-    root = zarr.open_group(path, mode="w", zarr_format=2)
+    root = open_group(path)
     obsm = root.create_group("obsm")
     a = np.arange(20, dtype=np.float32).reshape(10, 2)
-    obsm.create_array("A", shape=a.shape, dtype=a.dtype)[:] = a
-    obsm.create_array("B", shape=a.shape, dtype=a.dtype)[:] = a + 100
+    write_array(obsm, "A", a)
+    write_array(obsm, "B", a + 100)
     reader = ZarrReader()
     ra = reader.get_obsm_varm("cells", "A", dataset_path=path)
     rb = reader.get_obsm_varm("cells", "B", dataset_path=path)
