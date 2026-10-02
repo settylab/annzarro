@@ -1,3 +1,157 @@
-# Authentication
+# Login, users and permissions
 
-*Being written.*
+AnnZarro never writes datasets. The only thing users create on a server is **panel sets**,
+saved as JSON in `<data_dir>/sessions/` and listed for every user of that server. Login decides
+who can reach the server at all and who may change which panel set.
+
+## When login is on
+
+| How the server is started | Login |
+|---|---|
+| `annzarro start` on `127.0.0.1`, `localhost` or `::1` | off, unless `auth.enabled: true` is configured |
+| `annzarro start --host <anything else>` | **on**, unless `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` |
+| gunicorn with `annzarro.server.wsgi:create_wsgi_app()` | **on**, unless `auth.enabled: false` or `ANNZARRO_AUTH_DISABLED` is set |
+| desktop app | off |
+
+With login on, every page and API route except `/login`, `/logout` and static files requires a
+signed-in session. A browser without one is redirected to `/login`; an API client gets
+`401 {"error": "Authentication required"}`.
+
+```{figure} ../_static/screens/deployment/login.png
+:class: screenshot
+:alt: The AnnZarro sign-in page with lab name and contact address
+
+The sign-in page. The title, the line under the form and the contact block come from
+`branding.app_name`, `branding.project_description` and `branding.contact_info`.
+```
+
+```{note}
+After signing in, the browser always lands on the start page. A share link opened while signed
+out therefore loses its dataset and view on the way through the login page: sign in first,
+then open the link again.
+```
+
+Once signed in, the header shows the username under the app name; it reads "alice (admin)" for
+an admin. Click it to log out.
+
+```{figure} ../_static/screens/deployment/header-signed-in.png
+:class: screenshot
+:alt: Header badge showing the signed-in user alice as admin
+
+The signed-in badge. Its tooltip says what this user may change.
+```
+
+## Managing users
+
+Users live in one JSON file, `auth.user_file` (default `~/.annzarro/auth/users.json` of the
+account running the server). Passwords are stored as salted hashes (Werkzeug's default, scrypt
+in current versions); the file is created with mode 0600. Run the `user` commands as the account
+that runs the server, with the same configuration, so they edit the same file:
+
+```bash
+annzarro --config site.yaml user add --username alice --admin   # prompts for the password
+annzarro --config site.yaml user add --username bob
+annzarro --config site.yaml user list
+annzarro --config site.yaml user remove --username bob
+```
+
+`--config` goes **before** `user`; the `user` subcommands do not accept it after the
+subcommand. `--password` exists, but it puts the password into your shell history and the
+process list; leave it out and type the password at the prompt.
+
+A running server re-reads the users file when it changes: added and removed users and changed
+admin rights take effect without a restart, including for sessions that are already signed in
+(admin status is looked up on every request, not trusted from the cookie).
+
+There is no command to change a password or to grant or revoke admin rights in place. Remove
+the user and add them again; their panel sets keep their owner, because ownership is stored by
+username.
+
+**Lockout.** After 5 failed sign-ins an account is locked for 15 minutes, even for the correct
+password. The lock is per username, so anyone who can reach the login page can lock out a known
+username for that long.
+
+**How long a login lasts.** The session lives in a browser cookie that ends when the browser is
+closed. There is currently no idle timeout.
+
+## Who may change a panel set
+
+| Action | Without login | With login: any user | With login: owner | With login: admin |
+|---|---|---|---|---|
+| List, load, export, duplicate | yes | yes | yes | yes |
+| Save a new panel set | yes | yes | | |
+| Save over, import over, rename, delete | yes | no | yes | yes |
+| Reassign the owner | | no | no | yes |
+
+- The **owner** is the user who first saved the panel set. The server records `owner`,
+  `created_at`, `modified_at` and `modified_by` itself and discards any values a client sends
+  for them, so ownership cannot be claimed by editing a JSON file and importing it.
+- A refused change is answered with HTTP 403 naming the owner, and the app shows it as a
+  permission notice, suggesting to save under a new name instead.
+- **Admins** (`user add --admin`) may change any panel set. Admin grants nothing else: no file
+  access, no dataset writes, no user management through the browser.
+- Panel sets saved **before owners were recorded** have no owner and can only be changed by an
+  admin. An admin can hand one to a user:
+
+  ```bash
+  curl -b cookies.txt -H 'Content-Type: application/json' \
+       -d '{"name": "<panel set>", "owner": "<username>"}' \
+       https://annzarro.example.org/api/v1/sessions/owner
+  ```
+
+  where `cookies.txt` holds an admin's signed-in session. The new owner must be an existing user.
+
+See {doc}`../user-guide/panel-sets` for the panel-set dialogs themselves.
+
+## The login key
+
+Flask keeps the signed-in username in a cookie signed with `auth.secret_key`. Anyone who knows
+that key can forge a cookie for any user, admins included.
+
+- **Leave `auth.secret_key` unset.** On first start with login on, AnnZarro generates a random
+  64-character key and stores it as `annzarro_secret_key`, mode 0600, in the same directory as the
+  users file. Every later start and every gunicorn worker that uses the same users file reads it,
+  so logins survive restarts and work across workers.
+- Deleting that file signs everyone out (a new key is generated at the next start).
+- The placeholder values that earlier versions shipped (`change-this-in-production` and
+  similar) are ignored with a `SECURITY` warning.
+- If the directory is not writable, the server falls back to a random in-memory key and warns:
+  logins then end at every restart and fail across workers.
+- To set a key yourself (for example to share one across hosts), put a long random value in
+  `auth.secret_key` in a configuration file readable only by the service account. The
+  environment variable `ANNZARRO_AUTH_SECRET_KEY` is **not** read.
+
+## Paths: what a signed-in user can open
+
+On a shared server (login on, a network address, or the WSGI entry point) every local path a
+request names (`dataset_path`, the directory browser, the dataset routes) must resolve, after
+following symlinks and `..`, inside `server.data_dir` or one of `server.allowed_dirs`. Anything
+else is refused with HTTP 403 and the reason `outside_data_dir`.
+
+- `allowed_dirs` grants a whole directory tree, not single datasets. Listing `/lab/atlases`
+  lets every user open any store under `/lab/atlases` by typing its path, whether or not it is
+  linked into the data directory.
+- A symlink in the data directory whose target is outside every allowed root is still listed in
+  the Dataset picker, but opening it is refused. The startup log names every such link.
+- On a local single-user server (loopback, no login) there is no confinement: you can open any
+  path your account can read.
+
+## Remote stores
+
+Opening `s3://`, `gs://` or `http(s)://` stores makes the *server* fetch a URL the *user* chose.
+On a shared server that would let any user point it at internal services, so the policy
+`server.remote_stores` (`auto`, `allow`, `deny`) and `server.remote_allowlist` decide:
+
+- `auto` (default) allows any URL only on a local single-user server: loopback host, login off
+  and `proxy_count` 0. Otherwise remote stores are off unless `remote_allowlist` is set, and then
+  only URLs under those prefixes open (matched on scheme, host and whole path segments; HTTP
+  redirects are not followed).
+- `allow` turns them on regardless; with an allowlist it still restricts. `allow` without an
+  allowlist on a server with login logs a warning.
+- `deny` turns them off.
+
+A refused URL gets HTTP 403 and is never fetched. Credentials are never accepted inside the URL,
+and query strings (pre-signed URLs) are refused. Each connection is bounded by
+`remote_connect_timeout_s` (10 s) and `remote_read_timeout_s` (30 s); a store that stops answering
+fails the request with 504. Details and credential options are in
+{doc}`../user-guide/remote-datasets` and {doc}`../reference/configuration`.
