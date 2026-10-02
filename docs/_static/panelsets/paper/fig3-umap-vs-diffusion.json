@@ -1,0 +1,93 @@
+{
+  "name": "fig3-umap-vs-diffusion",
+  "timestamp": "2026-10-02T19:43:11+00:00",
+  "dataset": "bm_aging_showcase.zarr",
+  "datasetName": "bm_aging_showcase",
+  "constants": {
+    "focusedCell": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+    "focusedGene": "S100a9",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "cell-plot-D1": {
+      "id": "cell-plot-D1",
+      "type": "cell-plot",
+      "title": "UMAP distance (x) vs diffusion distance (y) to the focused cell",
+      "config": {
+        "id": "cell-plot-D1",
+        "title": "UMAP distance (x) vs diffusion distance (y) to the focused cell",
+        "x": {
+          "type": "obsp",
+          "key": "umap_distance",
+          "column": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+          "locked": false
+        },
+        "y": {
+          "type": "obsp",
+          "key": "diffusion_distance",
+          "column": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+          "locked": false
+        },
+        "z": null,
+        "color": {
+          "type": "obs",
+          "key": "fig3_plasma_groups",
+          "column": ""
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ]
+      },
+      "isSelectionTile": false
+    },
+    "cell-plot-D2": {
+      "id": "cell-plot-D2",
+      "type": "cell-plot",
+      "title": "The same groups on the UMAP",
+      "config": {
+        "id": "cell-plot-D2",
+        "title": "The same groups on the UMAP",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obs",
+          "key": "fig3_plasma_groups",
+          "column": ""
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ]
+      },
+      "isSelectionTile": false
+    }
+  }
+}

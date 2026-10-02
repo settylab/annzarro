@@ -1,3 +1,448 @@
-# tour
+(tut-tour)=
+# A first tour: one focused cell, one focused gene
 
-*Being written.*
+AnnZarro shows big matrices one slice at a time. There is always one **focused cell** and one
+**focused gene**. The focused cell picks its row of every cells × cells matrix (obsp) and of
+every cells × genes layer; the focused gene picks its column of every layer and its row of every
+genes × genes matrix (varp). Each plot is coloured, or placed, by whichever slice its controls
+name. Clicking a point moves the focus, and every panel that depends on it fetches its one new
+slice.
+
+This tour builds that model in the app, then uses it: it walks a diffusion kernel along
+haematopoiesis, filters cells with a two-condition table, and saves and shares the result.
+Along the way you rebuild the paper's Fig. 1 as a live layout and its Fig. 2 screenshots
+({doc}`../paper/fig1-focus-model`, {doc}`../paper/fig2-interface`).
+
+## What you need
+
+- AnnZarro with `bm_aging.zarr` in its data directory ({doc}`../getting-started/quickstart`,
+  {doc}`../data/demo-data`). `bm_aging_showcase.zarr` works too; it contains the same fields.
+- These fields:
+
+| Slot | Key | What it is | Selected by |
+|---|---|---|---|
+| `obsm` | `X_umap` | cell axes | |
+| `obs` | `highres_celltype`, `Age`, `kompot_da_Young_to_Old_lfc_zscore` | cell type (31 levels), age group, Kompot differential abundance z-score (Young to Old) | |
+| `obsp` | `diffusion_walk_t5` | five-step diffusion walk, dense 8,090 × 8,090 | the focused cell's row |
+| `layers` | `kompot_de_Young_to_Old_fold_change` | Kompot fold change, Old minus Young smoothed log expression | the focused gene's column, or the focused cell's row |
+| `varp` | `spearman_fold_change` | Spearman ρ of two genes' fold changes across cells | the focused gene's row |
+| `var` | `kompot_de_Young_to_Old_mean_lfc`, `kompot_de_Young_to_Old_mahalanobis` | volcano axes | |
+
+- Cells and genes used: the old haematopoietic stem cell (HSC) `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`
+  and the gene `H2-Q7`, the paper's examples.
+
+(tut-tour-focus)=
+## 1. Open the data and set the focus
+
+1. In the header choose `bm_aging.zarr` in **Dataset**.
+2. Click the **Focused Gene** box, type `H2-Q7`, press Enter. Click the **Focused Cell** box,
+   type or paste `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`, press Enter. Both lists stay open after
+   Enter; press Esc to close them.
+
+The arrows left of each box ("Previous cell", "Next cell") step through the history of the
+focus.
+
+(tut-tour-cell-row)=
+## 2. One cell, one row
+
+3. In the Welcome tile, under "Create New Panel", click **Cell Plot**. A new panel opens with
+   its controls showing. Set:
+   - **X-Axis** `obsm` · `X_umap` · `0`; **Y-Axis** `obsm` · `X_umap` · `1`.
+   - **Color** `obsp` · `diffusion_walk_t5`. The third dropdown now reads "Focused cell to
+     HSPC_Old_1#…": the colour is that cell's row.
+   - **Color Map** `Blues`, then click **Reverse Colormap**, so that a cell the walk does not
+     reach is light grey and the outline of the UMAP stays visible.
+
+   ```{figure} ../_static/screens/paper/fig1-controls-walk.png
+   :class: screenshot
+   :alt: Cell plot controls. X-Axis obsm X_umap 0, Y-Axis obsm X_umap 1, Color obsp diffusion_walk_t5 "Focused cell to HSPC_Old_1#", Color Map Blues with Reverse Colormap active.
+   :width: 70%
+
+   The open padlock beside the third Color dropdown means the panel follows the focused cell.
+   ```
+
+4. Click the title in the tile header and rename the panel "5-step diffusion walk from the
+   focused cell". Close the controls with the chevron ("Toggle Controls") in the header.
+
+Each cell's colour is the probability that a five-step random walk on the diffusion kernel,
+started at the focused HSC, ends in that cell. The walk stays among the HSCs: the row's
+largest value is 0.0126, and 90.7% of its mass is on HSCs (`figures/NOTES.md` of the paper).
+
+(tut-tour-clicks)=
+## 3. Click to move the focus
+
+To see where each click lands, put a cell-type map beside the walk.
+
+5. Click "Split Horizontally" (the first of the two split icons in the tile header). In the
+   new "Add New Panel" tile choose **Cell Plot**: UMAP axes as before, **Color** `obs` ·
+   `highres_celltype`, **Color Palette** "As stored in adata.uns if available". Close its
+   controls.
+6. Hover over cells in the walk panel: the label shows the cell ID and `highres_celltype`.
+   Click a GMP in the middle of the central cluster, near UMAP (12, 3). The paper clicked
+   `HSPC_Old_3#GGGTATTAGGCCGCTT-1`. The header's **Focused Cell** changes, and the walk panel
+   fetches that cell's row (8,090 numbers) and recolours.
+7. Click a cMoP near (12.5, 8), for example `Mature_Young_1#CAAGGGATCCCGTAAA-1`.
+8. Click a monocyte near (10, 7.5), for example `Mature_Young_1#CAACCAAGTATACCCA-1`.
+
+::::{grid} 2 2 4 4
+:gutter: 2
+
+:::{grid-item}
+```{figure} ../_static/screens/paper/fig2-b-1-HSC.png
+:class: screenshot
+:alt: Walk from the HSC, confined to the HSC cluster at the lower right of the UMAP.
+
+1 · HSC
+```
+:::
+:::{grid-item}
+```{figure} ../_static/screens/paper/fig2-b-2-GMP.png
+:class: screenshot
+:alt: Walk from a GMP, spread widely over the central progenitor cluster.
+
+2 · GMP
+```
+:::
+:::{grid-item}
+```{figure} ../_static/screens/paper/fig2-b-3-cMoP.png
+:class: screenshot
+:alt: Walk from a cMoP, concentrated at the top of the central cluster.
+
+3 · cMoP
+```
+:::
+:::{grid-item}
+```{figure} ../_static/screens/paper/fig2-b-4-Monocyte.png
+:class: screenshot
+:alt: Walk from a monocyte, concentrated in the monocyte cluster at the top of the central cluster.
+
+4 · monocyte
+```
+:::
+::::
+
+Each colour bar is scaled to its own row: the HSC's walk peaks at 0.0126, the GMP's at 0.0047,
+because a progenitor's walk spreads over more cells. The colour-bar title ends with the ID of
+the cell whose row is shown. The arrows beside **Focused Cell** replay the sequence.
+
+:::{note}
+**Paper Fig. 2b.** These four frames are panel b of the paper figure.
+:::
+
+{doc}`cell-similarity` uses this panel to ask what a kernel row says that the UMAP does not.
+
+(tut-tour-four-arrows)=
+## 4. The four slices of the focus model
+
+The walk panel uses one of four kinds of slice. This section puts all four on screen: a 2 × 2
+grid whose left column holds cell scatters and right column gene scatters, with the top row
+driven by the focused cell and the bottom row by the focused gene.
+
+9. Close the cell-type panel (× in its header), then focus the HSC again (step 2).
+10. **Top right: the focused cell's row of a layer.** Click "Split Horizontally" on the walk
+    tile and choose **Gene Plot**. Set **X-Axis** `var` · `kompot_de_Young_to_Old_mean_lfc`
+    and **Y-Axis** `var` · `kompot_de_Young_to_Old_mahalanobis` (a volcano), **Color**
+    `layer` · `kompot_de_Young_to_Old_fold_change`. The third dropdown reads "Focused cell …".
+    Choose **Color Map** `RdBu` and click **Center at 0**.
+11. **Bottom left: the focused gene's column of the same layer.** Click "Split Vertically"
+    (the second split icon) on the walk tile, choose **Cell Plot**, UMAP axes, **Color**
+    `layer` · `kompot_de_Young_to_Old_fold_change` (third dropdown "Focused gene H2-Q7"),
+    **Color Map** `RdBu`, **Center at 0**.
+12. **Bottom right: the focused gene's row of varp.** Click "Split Vertically" on the gene
+    plot, choose **Gene Plot**, volcano axes, **Color** `varp` · `spearman_fold_change` (third
+    dropdown "Focused gene to H2-Q7"). Choose **Color Map** `RdBu`, type `-1` in **Min** and `1`
+    in **Max**, and click **Lock Range**, so that a colour means the same ρ for every gene you
+    focus.
+
+    ```{figure} ../_static/screens/paper/fig1-controls-varp.png
+    :class: screenshot
+    :alt: Gene plot controls. X-Axis var kompot_de_Young_to_Old_mean_lfc, Y-Axis var kompot_de_Young_to_Old_mahalanobis, Color varp spearman_fold_change "Focused gene to H2-Q7", RdBu from -1 to 1 with Lock Range active.
+    :width: 70%
+
+    Controls of the bottom-right panel.
+    ```
+
+13. Close all controls.
+
+```{figure} ../_static/screens/paper/fig1-1-start.png
+:class: screenshot
+:alt: Four panels. Top left, UMAP with a small blue patch around the focused HSC. Top right, volcano coloured red and blue by the HSC's fold change per gene. Bottom left, UMAP coloured by H2-Q7's fold change, red in most cells. Bottom right, volcano coloured by Spearman rho with H2-Q7.
+:width: 100%
+
+Focused cell HSC, focused gene H2-Q7. Top left: the HSC's row of the walk. Top right: the
+HSC's fold change for each gene. Bottom left: H2-Q7's fold change in each cell. Bottom right:
+each gene's ρ with H2-Q7; H2-Q7 itself is the large dot at the top right (mean log₂ fold
+change 0.37, Mahalanobis distance 15.2).
+```
+
+14. Click a monocyte in the top-left panel, near (10, 7.5). The screenshot below clicked
+    `Mature_Young_1#AGAGAATCACTTCATT-1`.
+
+```{figure} ../_static/screens/paper/fig1-2-cell-click.png
+:class: screenshot
+:alt: After clicking a monocyte. Top left shows a blue patch around the monocyte cluster; top right shows a weaker fold-change pattern. The bottom row is unchanged.
+:width: 100%
+
+One click on a cell recolours the top row only: the walk now spreads over the monocytes, and
+the gene scatter shows this monocyte's fold changes, from −0.39 to +0.40 against −1.35 to
++1.11 for the HSC. The bottom row depends only on the focused gene and did not change.
+```
+
+15. Click `H2-Aa` in the bottom-right volcano: mean log₂ fold change 0.14, Mahalanobis
+    distance 12.6, below and left of H2-Q7. Hover to confirm the name.
+
+```{figure} ../_static/screens/paper/fig1-3-gene-click.png
+:class: screenshot
+:alt: After clicking H2-Aa. Bottom left shows H2-Aa's fold change, blue in the naive B cells and red in the memory B cells below them; bottom right shows H2-Aa's correlation row. The top row is unchanged.
+:width: 100%
+
+One click on a gene recolours the bottom row only: H2-Aa's fold change in every cell (median
+−0.60 in naive B cells, +1.41 in memory B cells, the two clusters at the left) and its ρ with
+every gene, where the MHC class II genes near it turn red ({doc}`gene-similarity` follows this
+module). In both gene scatters the large dot moved to H2-Aa.
+```
+
+:::{note}
+**Paper Fig. 1.** The four panels are the four arrows of the focus-model diagram, each ending
+in a scatter.
+:::
+
+(tut-tour-lock)=
+## 5. Lock a panel and move the focus past it
+
+A lock pins one panel's slice to the cell or gene it shows now, while the other panels keep
+following the focus. This is how you compare two cells or two genes side by side
+({doc}`cells-and-genes` compares two cells gene by gene this way).
+
+16. Open the top-left panel's controls and click the padlock right of the third **Color**
+    dropdown. It turns blue and its tooltip reads "Unlock (follow focused element)".
+
+    ```{figure} ../_static/screens/paper/fig1-4-lock-button.png
+    :class: screenshot
+    :alt: The Color selector of the walk panel with the padlock closed and blue.
+    :width: 70%
+    ```
+
+17. Close the controls and focus the HSC again from the header.
+
+```{figure} ../_static/screens/paper/fig1-4-locked.png
+:class: screenshot
+:alt: Focus is the HSC again. Top left still shows the monocyte's walk; top right shows the HSC's fold-change row; bottom left marks the HSC in the bottom right of the UMAP.
+:width: 100%
+
+The header names the HSC and the top-right panel shows its fold changes again. The locked walk
+panel still shows the monocyte's row; its colour-bar title names the cell it is locked to.
+```
+
+While a panel is locked and the focus differs, a crosshair button ("Refocus to current
+selection") appears beside the padlock and moves the lock to the current focus. Click the
+padlock again to follow the focus.
+
+```{note}
+In the locked walk panel the dark "focused cell" dot stays on the monocyte instead of moving to
+the HSC (compare the bottom-left panel). The colour is right; only the marker is stale. This is
+a display bug in the current version, reported for a fix.
+```
+
+(tut-tour-overview)=
+## 6. Four linked panels with a table
+
+The paper's overview screenshot combines a walk, a volcano, a fold-change map and a cell
+table. From the grid of section 4:
+
+18. Unlock the walk panel, and focus `H2-Q7` and the HSC again.
+19. In the top-right gene plot (the cell's row of the layer), change **Color** to `varp` ·
+    `spearman_fold_change` with **Color Map** `RdBu`, **Min** `-1`, **Max** `1` and **Lock
+    Range**, as in step 12. Close the bottom-right volcano with × in its header; the top-right
+    one now holds the same view.
+20. Click "Split Vertically" on the top-right volcano and choose **Cell Table**. In its
+    controls, under "Available Columns" on the `obs` tab, tick `Age`, `highres_celltype` and
+    `kompot_da_Young_to_Old_lfc_zscore` (type in "Search obs..." to find them) and click
+    **Apply Changes**. In "Advanced Search" click **Add Condition** and set
+    `highres_celltype` · `Equals` · `HSC`.
+21. Close all controls.
+
+```{figure} ../_static/screens/paper/fig2-a-overview.png
+:class: screenshot
+:alt: The AnnZarro window with four panels and the header showing Focused Gene H2-Q7 and Focused Cell HSPC_Old_1#GAAG.
+:width: 100%
+
+The table reads "Showing 1 to 25 of 319 entries (filtered from 8,090 total entries)": all 319
+HSCs. Click a cell ID in the table and it becomes the focused cell.
+```
+
+:::{note}
+**Paper Fig. 2a.** This layout is panel a of the paper figure.
+:::
+
+(tut-tour-filter)=
+## 7. Filter cells with two conditions and mask a plot
+
+A cell table's "Advanced Search" holds any number of conditions combined with AND or OR,
+nested if needed. A plot can take the rows that pass as a mask ("Filter by Table"). The mask
+needs no new data from the server, because the plot already holds every cell.
+
+22. Start a new layout (or split any tile) with a **Cell Table**: tick `Age`,
+    `highres_celltype` and `kompot_da_Young_to_Old_lfc_zscore`, **Apply Changes**.
+23. **Add Condition**: `highres_celltype` · `Equals` · `HSC`.
+24. **Add Condition** again: `kompot_da_Young_to_Old_lfc_zscore` · `Greater Than` · type `2`.
+    The vertical **AND** button left of the conditions combines them; click it to switch to OR.
+    The footer reads "Showing 1 to 25 of 290 entries (filtered from 8,090 total entries)".
+
+    ```{figure} ../_static/screens/paper/fig2-table-controls.png
+    :class: screenshot
+    :alt: Cell table with its controls open. Available Columns tabs obs, obsm, obsp, layers; Selected Columns Age, highres_celltype, kompot_da_Young_to_Old_lfc_zscore; Advanced Search (2) with highres_celltype Equals HSC AND kompot_da_Young_to_Old_lfc_zscore Greater Than 2; 290 of 8,090 entries.
+    :width: 80%
+
+    The table with its controls open (column chooser at the top) and the two conditions.
+    ```
+
+25. Click "Split Horizontally" on the table and add a **Cell Plot**: UMAP axes, **Color**
+    `obs` · `kompot_da_Young_to_Old_lfc_zscore`, **Color Map** `RdBu`, **Center at 0**.
+26. In the plot's controls set **Filter by Table** to the table (it is listed by its title).
+    Cells the filter removes turn grey; the eye button beside it ("Toggle between coloring
+    non-table entries in gray or completely removing them") hides them instead.
+
+```{figure} ../_static/screens/paper/fig2-c-filter.png
+:class: screenshot
+:alt: Left, the filtered cell table with two conditions. Right, the UMAP with only the HSC cluster coloured red and all other cells grey.
+:width: 100%
+
+290 cells "In table" and 7,800 "Not in table" (grey): the 290 of 319 HSCs whose abundance
+z-score is above 2, all in the HSC cluster. Edit a condition and the mask follows at once.
+```
+
+:::{note}
+**Paper Fig. 2c.** This view is panel c of the paper figure.
+:::
+
+(tut-tour-save)=
+## 8. Save and share the view
+
+**Save Panel Set** stores the panel settings under a name on the server. Every user of the same
+server can load it, so a lab can keep a shared library of views ({doc}`../user-guide/panel-sets`).
+
+27. Click **Save Panel Set** in the header, type a name, click **Save**.
+
+    ```{figure} ../_static/screens/paper/fig2-save-panel-set.png
+    :class: screenshot
+    :alt: Save Panel Set dialog with the name fig2-table-filter.
+    :width: 60%
+    ```
+
+28. To reopen it, click **Load Panel Set**, click its card and click **Load**. Each card shows
+    the dataset and one icon per panel; **Export** downloads the set as a JSON file.
+
+    ```{figure} ../_static/screens/paper/fig2-load-panel-set.png
+    :class: screenshot
+    :alt: Load Panel Set dialog with five saved panel sets of bm_aging, each with Export and delete buttons, and an Upload file button.
+    :width: 60%
+
+    The panel sets on the server used for these screenshots (the paper's five protocol views).
+    ```
+
+(tut-tour-load-file)=
+(fig2-load-panel-set)=
+### Load a panel set file
+
+The tutorials and paper-figure pages offer their views as panel set files. To load one:
+
+1. Click **Load Panel Set**, then **Upload file** (bottom left), **Browse files**, pick the
+   file, and click **Load**. A toast reads "Panel set was imported and loaded successfully."
+
+   ```{figure} ../_static/screens/paper/fig2-upload-panel-set.png
+   :class: screenshot
+   :alt: Load Panel Set dialog in upload mode with fig1-focus-model.json selected.
+   :width: 60%
+   ```
+
+2. Nothing on screen changes yet: loading registers the panels as closed. Click a split button
+   on any tile; in the "Add New Panel" tile the loaded panels are listed under "Duplicate or
+   Reopen Panel" with a "Closed" badge. Click each to open it.
+
+   ```{figure} ../_static/screens/paper/fig2-reopen-panels.png
+   :class: screenshot
+   :alt: Duplicate or Reopen Panel section listing the two open panels and the four loaded panels of section 4 marked Closed.
+   :width: 70%
+
+   After loading the panel set of section 4: its four panels wait under "Duplicate or Reopen
+   Panel".
+   ```
+
+```{important}
+A panel set restores panel settings only: not the split layout, not the focused cell and gene,
+not the dataset. Open the right dataset first and set the focus from the header. An uploaded
+file also becomes a saved panel set on that server, visible to its other users. To restore
+everything at once, use a share link.
+```
+
+(tut-tour-share)=
+### Share link
+
+29. Click **Share Link**. The link is copied to the clipboard. Where the browser does not allow
+    that (a plain `http` address on a cluster node, for example), the link appears in a field
+    under the button, already selected; copy it with Ctrl+C or Cmd+C.
+
+    ```{figure} ../_static/screens/paper/fig2-share-link.png
+    :class: screenshot
+    :alt: Header with the Share Link field open below the buttons, holding a link that starts with the server address and dataset_path.
+    :width: 100%
+    ```
+
+The link holds the dataset path, the whole layout, every panel's settings and the focus, in the
+URL fragment after `#view=` (about 2,400 characters for the view of section 7). Anyone who can
+reach the same server and dataset path opens exactly this view ({doc}`../user-guide/share-links`,
+{doc}`../reference/deep-links`).
+
+(tut-tour-views)=
+## Open the views
+
+Each view of this tour is a share link. Replace `/path/to/annzarro-data` with the absolute path
+of your data directory and `127.0.0.1:8000` with your server's address
+({doc}`../user-guide/share-links`). `dataset_path` must be absolute; a bare file name is not
+found.
+
+::::{dropdown} Sections 4 and 5: the four slices of the focus model
+```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+:language: text
+```
+::::
+
+::::{dropdown} Section 3: walk and cell types (four clicks)
+```{literalinclude} ../_static/panelsets/paper/fig2-focus-sequence.url.txt
+:language: text
+```
+::::
+
+::::{dropdown} Section 6: four linked panels
+```{literalinclude} ../_static/panelsets/paper/fig2-overview.url.txt
+:language: text
+```
+::::
+
+::::{dropdown} Section 7: two-condition filter masking a UMAP
+```{literalinclude} ../_static/panelsets/paper/fig2-table-filter.url.txt
+:language: text
+```
+::::
+
+The same panels as panel set files ({ref}`tut-tour-load-file`):
+{download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`,
+{download}`fig2-focus-sequence.json <../_static/panelsets/paper/fig2-focus-sequence.json>`,
+{download}`fig2-overview.json <../_static/panelsets/paper/fig2-overview.json>`,
+{download}`fig2-table-filter.json <../_static/panelsets/paper/fig2-table-filter.json>`.
+
+## What you learned
+
+- The focused cell picks rows (obsp, a layer's cell row); the focused gene picks columns and rows
+  (a layer's gene column, varp). Any panel can be coloured by any of them.
+- A click on a point moves the focus; every panel that follows it reads one new slice.
+- A lock pins a panel to its current cell or gene, so two states can be compared.
+- A table filter combines conditions with AND or OR and masks linked plots without new reads.
+- Panel sets keep panel settings on the server; share links keep everything.
+
+Next: {doc}`cell-similarity` asks how similar cells really are, reading a kernel or distance row
+instead of trusting the UMAP.
+
+Screenshots and views are made by `docs/_tools/shoot_figs13.py`, which follows the paper's
+`figures/screenshots.py`.
