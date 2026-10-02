@@ -270,6 +270,30 @@ def manage_users(args: argparse.Namespace) -> int:
         auth_manager.remove_user(username)
         logger.info(f"User '{username}' removed successfully")
         
+    elif args.user_command == "passwd":
+        username = args.username or input("Username: ").strip()
+        if not auth_manager.get_user(username):
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        password = args.password
+        if not password:
+            password = getpass.getpass("New password: ")
+            if password != getpass.getpass("Confirm new password: "):
+                logger.error("Passwords do not match")
+                return 1
+        if not password:
+            logger.error("Empty password refused")
+            return 1
+        auth_manager.set_password(username, password)
+        logger.info(f"Password of '{username}' changed; their existing logins are signed out")
+
+    elif args.user_command == "set-admin":
+        username = args.username or input("Username: ").strip()
+        if not auth_manager.set_admin(username, not args.no_admin):
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        logger.info(f"User '{username}' is {'no longer ' if args.no_admin else 'now '}an admin")
+
     elif args.user_command == "list":
         # List users
         users = auth_manager.get_users()
@@ -823,6 +847,19 @@ def main(argv: List[str] = None) -> int:
     
     # User list command
     user_list_parser = user_subparsers.add_parser('list', help="List users")
+
+    # Change a password in place
+    user_passwd_parser = user_subparsers.add_parser(
+        'passwd', help="Change a user's password (signs out their existing logins)")
+    user_passwd_parser.add_argument('--username', help="Username")
+    user_passwd_parser.add_argument('--password', help="New password (prompted for if omitted)")
+
+    # Grant or revoke admin in place
+    user_admin_parser = user_subparsers.add_parser(
+        'set-admin', help="Make a user an admin, or with --no-admin revoke it "
+                          "(a running server picks it up without a restart)")
+    user_admin_parser.add_argument('--username', help="Username")
+    user_admin_parser.add_argument('--no-admin', action='store_true', help="Revoke admin instead")
     
     user_parser.set_defaults(func=manage_users)
     

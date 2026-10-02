@@ -92,6 +92,7 @@ def test_every_path_carrying_parameter_is_checked(hosted, layout):
 
 
 def _logged_in(app):
+    app.auth_manager.create_user("alice", "pw")
     client = app.test_client()
     with client.session_transaction() as sess:
         sess["user_id"] = "alice"

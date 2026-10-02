@@ -87,6 +87,14 @@ def is_logged_in() -> bool:
         logger.info(f"Login session of {session.get('user_id')!r} expired after {timeout}s idle")
         session.clear()
         return False
+    # A removed user, or a login from before a password change, no longer counts
+    manager = getattr(current_app, "auth_manager", None)
+    if manager is not None and not manager.session_is_current(
+            session["user_id"], session.get("login_at", 0)):
+        logger.info(f"Login session of {session.get('user_id')!r} revoked "
+                    "(user removed or password changed)")
+        session.clear()
+        return False
     if now - last > 60:
         session["last_activity"] = now
     return True
@@ -464,7 +472,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             session.clear()
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
-            session["last_activity"] = time.time()
+            session["last_activity"] = session["login_at"] = time.time()
             
             # Back to the page that asked for login, view included
             return redirect(next_url + fragment)

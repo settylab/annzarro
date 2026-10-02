@@ -58,6 +58,8 @@ class User:
         self.last_login = None
         self.login_attempts = 0
         self.locked_until = None
+        # When the password last changed; logins from before it are void
+        self.password_changed_at = None
     
     def to_dict(self):
         """Convert user to dictionary for storage"""
@@ -69,7 +71,8 @@ class User:
             'tokens': self.tokens,
             'last_login': self.last_login,
             'login_attempts': self.login_attempts,
-            'locked_until': self.locked_until
+            'locked_until': self.locked_until,
+            'password_changed_at': self.password_changed_at
         }
     
     @classmethod
@@ -85,6 +88,7 @@ class User:
         user.last_login = data.get('last_login')
         user.login_attempts = data.get('login_attempts', 0)
         user.locked_until = data.get('locked_until')
+        user.password_changed_at = data.get('password_changed_at')
         return user
 
 def resolve_user_file(user_file):
@@ -248,17 +252,8 @@ class AuthManager:
             logging.warning(f"Cannot create user: Username {username} already exists")
             return False
             
-        # Hash password using Werkzeug's method
-        try:
-            from werkzeug.security import generate_password_hash
-            password_hash = generate_password_hash(password)
-        except ImportError:
-            # Fallback to custom hash
-            salt = secrets.token_hex(8)
-            password_hash = f"pbkdf2:sha256:150000${salt}${self._hash_password(password, salt)}"
-            
         # Create user
-        self.users[username] = User(username, password_hash, is_admin)
+        self.users[username] = User(username, self._new_hash(password), is_admin)
         self._save_users(created=[username])
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
@@ -460,6 +455,65 @@ class AuthManager:
         """
         return self.create_user(username, password, is_admin)
         
+    def _new_hash(self, password):
+        """Hash a new password (Werkzeug's default method, else PBKDF2)."""
+        try:
+            from werkzeug.security import generate_password_hash
+            return generate_password_hash(password)
+        except ImportError:
+            salt = secrets.token_hex(8)
+            return f"pbkdf2:sha256:150000${salt}${self._hash_password(password, salt)}"
+
+    def set_password(self, username, password):
+        """Replace a user's password in place.
+
+        Clears a lockout and failed attempts, and records the time so that
+        logins made with the old password stop working (see
+        ``session_is_current``).
+
+        Returns:
+            bool: False if the user does not exist
+        """
+        self._reload_if_changed()
+        user = self.users.get(username)
+        if user is None:
+            logging.warning(f"Cannot change password: User {username} not found")
+            return False
+        user.password_hash = self._new_hash(password)
+        user.login_attempts = 0
+        user.locked_until = None
+        user.tokens = {}
+        user.password_changed_at = time.time()
+        self._save_users(changed=[username])
+        logging.info(f"Changed password of user: {username}")
+        return True
+
+    def set_admin(self, username, is_admin):
+        """Grant or revoke admin in place. Returns False if the user does not exist."""
+        self._reload_if_changed()
+        user = self.users.get(username)
+        if user is None:
+            logging.warning(f"Cannot change admin flag: User {username} not found")
+            return False
+        user.is_admin = bool(is_admin)
+        self._save_users(changed=[username])
+        logging.info(f"User {username} admin: {user.is_admin}")
+        return True
+
+    def session_is_current(self, username, logged_in_at):
+        """Whether a login of ``username`` made at ``logged_in_at`` still counts:
+        the user exists and has not changed password since."""
+        user = self.get_user(username)
+        if user is None:
+            return False
+        changed = user.password_changed_at
+        if changed is None:
+            return True
+        try:
+            return float(logged_in_at) >= float(changed)
+        except (TypeError, ValueError):
+            return False
+
     def remove_user(self, username):
         """
         Remove a user
