@@ -85,6 +85,8 @@ FIG7 = {
         {"type": "varp", "key": "spearman_fold_change", "column": GENE, "locked": False},
         colorScale="RdBu", colorMin=-1, colorMax=1, lockColorRange=True),
 }
+# Output names are referenced by docs/data/slot-map.md (slot-obsp, slot-layer-gene, slot-varp,
+# slot-varp-controls) as well as docs/paper/fig7-slot-map.md; keep them stable.
 # shots that also crop the panel's controls, to show the three dropdowns
 WITH_CONTROLS = ["slot-obsp", "slot-layer-cell", "slot-varp"]
 
