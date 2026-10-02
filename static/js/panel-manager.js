@@ -462,10 +462,10 @@ const PanelManager = (function() {
         const isVisible = controlsElement.style.display !== 'none';
         setControlsVisible(controlsElement, !isVisible);
         
-        // Store state in the panel's config for session saving
-        const config = panel.getConfig() || {};
-        config.controlsVisible = !isVisible;
-        panel.updateConfig && panel.updateConfig(config);
+        // Store state in the panel's config for session saving (only this
+        // key: handing a whole getConfig() back hit the tables' read-only
+        // searchBuilderConfig)
+        panel.updateConfig && panel.updateConfig({ controlsVisible: !isVisible });
         
         // Store state in the DOM for immediate reference
         const parentPane = tileElement.closest('.split-pane');
