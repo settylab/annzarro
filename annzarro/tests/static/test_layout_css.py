@@ -52,3 +52,18 @@ def test_small_selects_keep_room_for_their_arrow():
     m = re.search(r"padding-right:\s*([\d.]+)rem", rule)
     assert m and float(m.group(1)) >= 1.5
     assert css.index(".form-select.form-select-sm {") > css.index(".form-control-sm, .form-select-sm {")
+
+
+def test_header_actions_stay_on_one_row():
+    """At 1100-1400 px the Save/Load/Share buttons wrapped ('Save / Panel /
+    Set', 110 px tall) or dropped to a second header row. Headless after:
+    one 79 px header row from 1100 px up. Pinned: the action column sizes
+    to its buttons, labels never wrap, and narrow windows show icons."""
+    css = open(CSS, encoding="utf-8").read()
+    assert "white-space: nowrap" in _rule(css, ".header-actions .btn")
+    assert ".header-actions .btn:not(.show-label) .btn-label" in css
+    html = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "..", "templates", "index.html"), encoding="utf-8").read()
+    assert 'class="col-auto header-actions"' in html
+    for button in ("btn-save-session", "btn-load-session", "btn-share-link"):
+        tag = re.search(r'<button id="%s"[^>]*>' % button, html).group(0)
+        assert "title=" in tag, f"{button} needs a tooltip when its label is hidden"

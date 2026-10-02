@@ -117,6 +117,20 @@ body {
     z-index: 100;
 }
 
+/* Header actions keep one row: the column takes the buttons' natural width,
+   labels never wrap inside a button, and below 1400 px the buttons show
+   their icons only (the label stays as the tooltip). They used to wrap into
+   'Save / Panel / Set' at 1200-1400 px and onto a second row below 1200. */
+.header-actions .btn {
+    white-space: nowrap;
+}
+
+@media (max-width: 1399.98px) {
+    .header-actions .btn:not(.show-label) .btn-label {
+        display: none;
+    }
+}
+
 /* Clipboard-less fallback for the Share Link button: the link, ready to copy.
    Floats under the header, right-aligned and wide, instead of squeezing into
    the button column (it was ~190 px and made the header one row taller). */

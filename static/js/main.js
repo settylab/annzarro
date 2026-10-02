@@ -214,7 +214,8 @@ const App = (function() {
             const label = button.querySelector('.btn-share-label');
             label.textContent = 'Copied!';
             clearTimeout(_shareLabelTimer);
-            _shareLabelTimer = setTimeout(() => { label.textContent = 'Share Link'; }, 2000);
+            button.classList.add('show-label');   // visible even when the header shows icons only
+            _shareLabelTimer = setTimeout(() => { label.textContent = 'Share Link'; button.classList.remove('show-label'); }, 2000);
         } catch (error) {
             console.debug('Clipboard unavailable, showing share link inline:', error);
             field.value = link;
