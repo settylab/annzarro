@@ -282,7 +282,6 @@ class AuthManager:
             return False
             
         user = self.users[username]
-        logging.info(f"Found user in database: {username}")
         
         # Check if account is locked
         if user.locked_until and float(user.locked_until) > time.time():
@@ -290,12 +289,8 @@ class AuthManager:
             logging.warning(f"Authentication failed: Account {username} is locked for {lock_remaining} seconds")
             return False
         
-        # Log password hash information for debugging
-        logging.info(f"Password hash type for {username}: {user.password_hash[:20]}...")
-            
         # Verify password
         is_valid = self._verify_password(password, user.password_hash)
-        logging.info(f"Password verification result for {username}: {is_valid}")
         
         if is_valid:
             # Reset login attempts on success
@@ -526,18 +521,15 @@ class AuthManager:
         Returns:
             bool: True if password matches
         """
-        logging.info(f"Verifying password with hash type: {stored_hash.split(':')[0] if ':' in stored_hash else 'unknown'}")
-        
         try:
             from werkzeug.security import check_password_hash
             result = check_password_hash(stored_hash, password)
-            logging.info(f"Werkzeug password check result: {result}")
             return result
         except ImportError as e:
             logging.warning(f"Werkzeug not available for password verification: {e}")
             # Fallback to custom verification
             if not stored_hash.startswith('pbkdf2:sha256:'):
-                logging.warning(f"Hash format not recognized: {stored_hash[:10]}...")
+                logging.warning("Password hash format not recognized")
                 return False
                 
             parts = stored_hash.split('$')
@@ -550,7 +542,6 @@ class AuthManager:
             
             calculated_hash = self._hash_password(password, salt)
             result = hash_value == calculated_hash
-            logging.info(f"Custom password verification result: {result}")
             return result
         except Exception as e:
             logging.error(f"Unexpected error in password verification: {e}")
