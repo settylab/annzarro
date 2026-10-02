@@ -155,6 +155,26 @@ text. Share links carry the dataset path in the query string
 open; the view state itself sits in the URL fragment, which browsers never send
 to the server.
 
+#### What the data routes send
+
+- **Binary vectors.** The browser asks for each gene column, cell row,
+  embedding axis, kNN row and numeric obs/var column with `format=f32` and
+  gets little-endian values (float32 when exact, else float64; only the
+  non-zeros when that is smaller) with shape and dtype in `X-Annzarro-*`
+  headers. JSON stays the default for other clients. The protocol is
+  documented in `annzarro/core/array_response.py`.
+- **Size guard.** A reply larger than `server.max_response_elements`
+  (default 1,000,000) is refused with `413 {"reason": "response_too_large"}`
+  before anything is read. One full row or column is always allowed, at any
+  dataset size; whole matrices and multi-vector blocks are not.
+- **Revalidation.** Dataset reads carry a weak `ETag` (request URL plus a
+  `stat()` fingerprint of the store) and `Cache-Control: private, no-cache`,
+  so a browser repeat is a `304` with no body and no read.
+- **Compression.** `server.compress_responses` (`auto`, `true`, `false`)
+  gzips JSON replies at level 1. `auto` turns it on only for a shared server;
+  on loopback it costs more CPU than it saves in transfer. If the reverse
+  proxy already compresses `application/json`, set it to `false`.
+
 ### Desktop Application
 
 ```bash
