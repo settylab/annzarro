@@ -43,26 +43,28 @@ The signed-in badge. Its tooltip says what this user may change.
 Users live in one JSON file, `auth.user_file` (default `~/.annzarro/auth/users.json` of the
 account running the server). Passwords are stored as salted hashes (Werkzeug's default, scrypt
 in current versions); the file is created with mode 0600. Run the `user` commands as the account
-that runs the server, with the same configuration, so they edit the same file:
+that runs the server, with the same configuration, so they edit the same file. The `user`
+commands read the same `production` configuration as `annzarro start`, including the file named
+by `ANNZARRO_CONFIG`; on a lab server set it once as for gunicorn:
 
 ```bash
-annzarro --config site.yaml user add --username alice --admin   # prompts for the password
-annzarro --config site.yaml user add --username bob
-annzarro --config site.yaml user list
-annzarro --config site.yaml user remove --username bob
+export ANNZARRO_CONFIG=/etc/annzarro/site.yaml
+annzarro user add --username alice --admin   # prompts for the password
+annzarro user add --username bob
+annzarro user list
+annzarro user remove --username bob
 ```
 
-Instead of `--config` you can set `ANNZARRO_CONFIG=site.yaml`, as for gunicorn. `--config`
-may also follow `user` (`annzarro user --config site.yaml list`), but not the final subcommand (`add`, `list`, ...). The `user` commands read the same `production`
-configuration as `annzarro start`. `--password` exists, but it puts the password into your shell history and the
-process list; leave it out and type the password at the prompt.
+Without `ANNZARRO_CONFIG`, pass the file with `--config` (`annzarro --config site.yaml user ...`
+or `annzarro user --config site.yaml ...`). `--password` exists, but it puts the password into
+your shell history and the process list; leave it out and type the password at the prompt.
 
 Change a user later without removing them:
 
 ```bash
-annzarro --config site.yaml user passwd --username bob             # prompts for the new password
-annzarro --config site.yaml user set-admin --username bob          # grant admin
-annzarro --config site.yaml user set-admin --username bob --no-admin
+annzarro user passwd --username bob             # prompts for the new password
+annzarro user set-admin --username bob          # grant admin
+annzarro user set-admin --username bob --no-admin
 ```
 
 A running server re-reads the users file when it changes: added and removed users and changed

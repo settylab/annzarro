@@ -68,13 +68,12 @@ branding:
     email: annzarro-admin@example.org
 ```
 
-Every `annzarro` command reads `ANNZARRO_CONFIG` when `--config` is not given, so with
-`export ANNZARRO_CONFIG=/etc/annzarro/site.yaml` the commands below work without `--config`.
-Check what the server will run with, as the service user:
+Every `annzarro` command reads the file named by `ANNZARRO_CONFIG` (unless `--config` is
+given), as gunicorn does. Check what the server will run with, as the service user:
 
 ```bash
-sudo -u annzarro ANNZARRO_HOME=/var/lib/annzarro \
-  /opt/annzarro/venv/bin/annzarro config show --config /etc/annzarro/site.yaml
+sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
+  /opt/annzarro/venv/bin/annzarro config show
 ```
 
 Every key is listed in {doc}`../reference/configuration`. Login does not need to be switched
@@ -86,8 +85,8 @@ to the people who answer questions about accounts.
 ## 4. Add users
 
 ```bash
-sudo -u annzarro ANNZARRO_HOME=/var/lib/annzarro \
-  /opt/annzarro/venv/bin/annzarro --config /etc/annzarro/site.yaml user add --username alice --admin
+sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
+  /opt/annzarro/venv/bin/annzarro user add --username alice --admin
 ```
 
 The command prompts for the password twice. `user passwd` and `user set-admin` change a user

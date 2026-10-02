@@ -200,7 +200,7 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | Route | Returns |
 |---|---|
 | `GET /auth/me` | `{auth_enabled, username, is_admin, exposed}`; `exposed` is true when the server listens beyond localhost with login off |
-| `GET /config` | the keys of the `public` tier only: host and port, `auth.enabled`, branding, UI defaults ({doc}`configuration`); no server paths |
+| `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks |
 | `GET /cache/info` | the server's result cache: datasets, items, `memory_usage_mb`, `max_memory_mb` |
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`. On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache; this clears only the worker that answers |
@@ -220,7 +220,7 @@ one that is not a dataset `400 unsupported_type`.
 |---|---|---|
 | 200 | | the slice, as JSON or binary |
 | 304 | | `If-None-Match` matched: same URL, store unchanged |
-| 400 | `bad_indices` | `rows`/`cols` present but not a list of non-negative integers |
+| 400 | `bad_indices` | `rows`/`cols` present but not a list of non-negative integers, in JSON and `format=f32` alike; the message quotes the value: `Indices must be comma-separated non-negative integers, got 'abc'` (`got ''` for an empty parameter) |
 | 400 | `index_out_of_range` | an index at or beyond the length of its axis |
 | 400 | `cap_exceeded` | more indices than the client's own `max_cells=` / `max_genes=` parameter (below) |
 | 400 | `unsupported_type` | not a `.zarr`/`.h5ad`, or a zarr format the server's zarr cannot read |
@@ -243,7 +243,7 @@ $ curl -s -w "\nHTTP %{http_code}\n" "http://127.0.0.1:8812/api/v1/data/layer/ko
 HTTP 413
 
 $ curl -s -w "\nHTTP %{http_code}\n" "http://127.0.0.1:8812/api/v1/data/X?dataset_path=$DS&rows=&cols=1"
-{"error":"Invalid index list '': expected comma-separated integers","reason":"bad_indices"}
+{"error":"Indices must be comma-separated non-negative integers, got ''","reason":"bad_indices"}
 HTTP 400
 
 $ curl -s -w "\nHTTP %{http_code}\n" "http://127.0.0.1:8812/api/v1/data/obs?dataset_path=/nope/nothing.zarr"

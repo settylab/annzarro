@@ -55,8 +55,9 @@ is nothing to stop.
 
 Manage the users file named by `auth.user_file` ({doc}`../deployment/authentication`). The
 `user` commands read the same configuration as `annzarro start` (the `production` defaults plus
-your files), so pass the server's configuration file to edit the same users file:
-`annzarro user --config site.yaml add ...` or `annzarro --config site.yaml user add ...`.
+your files, including `ANNZARRO_CONFIG`). With `ANNZARRO_CONFIG` set as for the server they edit
+its users file directly; otherwise pass the file: `annzarro user --config site.yaml add ...` or
+`annzarro --config site.yaml user add ...`.
 
 | Command | Meaning |
 |---|---|

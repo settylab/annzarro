@@ -110,8 +110,8 @@ or inherited from its section; a key without one is `internal`.
 
 | Tier | Keys | Where the value appears |
 |---|---|---|
-| `public` | `server.host`, `server.port`, `server.https_enabled`, `server.unified_server`, `auth.enabled`, all of `branding`, `ui` and `integrations` | sent to the browser by `GET /api/v1/config`; printed by `config show` |
-| `internal` | every other key, including `server.data_dir`, `allowed_dirs`, `log_file`, the cache, limit and remote-store keys, `auth.user_file`, `session_timeout`, `cookie_secure` | printed by `config show`; never sent to the browser |
+| `public` | `server.host`, `server.port`, `server.https_enabled`, `server.unified_server`, `auth.enabled`, all of `branding`, `ui` and `integrations` | sent to every browser by `GET /api/v1/config`; printed by `config show` |
+| `internal` | the default for any key without a tier: every other key, including `server.data_dir`, `allowed_dirs`, `log_file`, the cache, limit and remote-store keys, `auth.user_file`, `session_timeout`, `cookie_secure` | printed by `config show`; never sent to the browser |
 | `sensitive` | `auth.secret_key`, `server.cert_file`, `server.key_file` | masked as `********` by `config show` and `config info`; never sent |
 
 `GET /api/v1/config` serves exactly the public keys (plus two flags for the desktop app), so
