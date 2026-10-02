@@ -8,6 +8,7 @@ import os
 import shutil
 
 import numpy as np
+import pytest
 import zarr
 
 FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -22,6 +23,8 @@ def _encode(node, kind, version="0.2.0"):
 
 def make_rich_store(path):
     """Write the store at ``path`` (replacing it) and return ``str(path)``."""
+    if int(zarr.__version__.split(".")[0]) < 3:
+        pytest.skip("builds the store with the zarr 3 API")
     path = str(path)
     shutil.rmtree(path, ignore_errors=True)
     shutil.copytree(FIXTURE, path)
