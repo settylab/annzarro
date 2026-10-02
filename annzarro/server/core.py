@@ -519,20 +519,6 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         # Redirect to login page
         return redirect("/login")
     
-    @app.route(f"/api/{api_version}/auth/token", methods=["POST"])
-    def get_auth_token():
-        """API endpoint to get an authentication token"""
-        username = request.json.get("username")
-        password = request.json.get("password")
-        
-        # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            return jsonify({"token": token})
-        else:
-            return jsonify({"error": "Invalid credentials"}), 401
-    
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:
         if not endpoint.startswith("login") and not endpoint.startswith("logout") and not endpoint.startswith("static"):

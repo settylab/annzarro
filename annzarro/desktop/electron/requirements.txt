@@ -9,7 +9,6 @@ numpy>=1.20.0         # Array handling
 pandas>=1.3.0         # DataFrame handling
 matplotlib>=3.4.0     # Visualization
 werkzeug>=2.0.0       # Used by Flask
-pyjwt>=2.0.0          # Authentication
 cryptography>=35.0.0  # Security
 numba>=0.53.0         # Performance optimization
 psutil>=5.9.0         # Process monitoring
