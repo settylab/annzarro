@@ -1,6 +1,7 @@
 /**
  * Utilities for loading and processing table data
  */
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import {
@@ -40,6 +41,7 @@ export async function loadTableData(settings, entityType, signal = null) {
         // list has not been classified, and Coverage.merge turns that into a
         // visible UNREPORTED rather than an absence nobody notices.
         const columnCoverages = [];
+        const booleanColumns = [];   // data keys of Yes/No columns (search-builder.js)
         
         // Check if aborted after fetching entity index
         if (signal && signal.aborted) {
@@ -94,6 +96,20 @@ export async function loadTableData(settings, entityType, signal = null) {
                     
                     // Add column definition
                     const displayName = getColumnDisplayName(column);
+                    if (isBooleanColumn(columnData)) {
+                        // Yes/No for display, filtering and type detection, so
+                        // a SearchBuilder "Equals Yes" matches (it saw raw
+                        // booleans, typed the column num, and kept 0 rows)
+                        booleanColumns.push(columnKey);
+                        columnDefinitions.push({
+                            title: displayName,
+                            data: columnKey,
+                            className: 'dt-center',
+                            type: 'string',
+                            render: renderBoolean
+                        });
+                        continue;
+                    }
                     columnDefinitions.push({
                         title: displayName,
                         data: columnKey,
@@ -145,6 +161,7 @@ export async function loadTableData(settings, entityType, signal = null) {
             ),
             data: data,
             columns: columnDefinitions,
+            booleanColumns: booleanColumns,
             entityIndex: entityIndex
         };
         
@@ -611,7 +628,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-                preDefined: { criteria: settings.searchBuilderConfig?.criteria || [] },
+                // criteria AND top-level logic (an OR came back as AND), with
+                // boolean conditions saved as num 'true' translated to Yes/No
+                preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
