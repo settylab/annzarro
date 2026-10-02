@@ -14,7 +14,7 @@ import json
 import re
 
 from ...core import zarr_reader
-from ...core.zarr_reader import ZarrFormatError
+from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
@@ -136,6 +136,14 @@ def _reader_error_response(exc, dataset_path):
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
+    if isinstance(exc, UnsupportedEncodingError):
+        # One member of a readable dataset, not the dataset's type: the text
+        # names the member and the encoding.
+        return jsonify({
+            "error": str(exc),
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
     if isinstance(exc, ValueError):
         return jsonify({
             "error": f"Unsupported dataset type for {dataset_path}: {exc}",
