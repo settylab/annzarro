@@ -3,7 +3,7 @@ import { createLayout, processCategories, attachClickHandler } from './plot-make
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
-import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { arrayMin, arrayMax, inferValueType } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, classifyFocusRow
@@ -285,19 +285,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
      * @returns {string} - 'numerical' or 'categorical'.
      */
     function determineDataType(arr) {
-      const sample = sampleArray(arr);
-      if (sample.length === 0) return 'categorical';
-      let boolCount = 0, numCount = 0;
-      sample.forEach(v => {
-        if (v === true || v === false) {
-          boolCount++;
-        } else if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
-          numCount++;
-        }
-      });
-      if (boolCount / sample.length >= 0.8) return 'categorical';
-      if (numCount / sample.length >= 0.8) return 'numerical';
-      return 'categorical';
+      return inferValueType(arr);
     }
 
     // Convert non-null booleans to strings.

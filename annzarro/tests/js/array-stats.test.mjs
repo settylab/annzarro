@@ -67,3 +67,23 @@ test("the naive spread really does overflow at this size (bug is real)", () => {
   // Documents *why* the helpers exist: the old idiom throws here.
   assert.throws(() => Math.min(...a), RangeError);
 });
+
+// --- inferValueType: numerical vs categorical from PRESENT values -----------
+test("a mostly-missing numeric column is numerical, not 190 categories", async () => {
+  const { inferValueType } = await import(pathToFileURL(MODULE_PATH).href);
+  // a rank defined for 190 of 16,285 genes, the rest missing (null from JSON)
+  const col = Array.from({ length: 16285 }, (_, i) => (i % 85 === 0 ? i / 85 : null));
+  assert.equal(inferValueType(col), "numerical");
+  // and when the defined values only start after the first 100 rows
+  const late = Array.from({ length: 5000 }, (_, i) => (i > 4000 ? i * 0.5 : NaN));
+  assert.equal(inferValueType(late), "numerical");
+});
+
+test("labels, booleans and empty columns stay categorical", async () => {
+  const { inferValueType } = await import(pathToFileURL(MODULE_PATH).href);
+  assert.equal(inferValueType(["HSC", "GMP", null, "HSC"]), "categorical");
+  assert.equal(inferValueType([true, false, null, true]), "categorical");
+  assert.equal(inferValueType([null, undefined, NaN]), "categorical");
+  assert.equal(inferValueType([]), "categorical");
+  assert.equal(inferValueType(["1.5", "2", null]), "numerical");
+});

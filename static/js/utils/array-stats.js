@@ -77,3 +77,33 @@ export function formatRangeValue(v) {
   if (Math.abs(n) >= 1000) return String(Math.round(n));
   return String(Number(n.toPrecision(3)));
 }
+
+/**
+ * Whether a column of values is numerical or categorical.
+ *
+ * Judged on PRESENT values (null, undefined and NaN are missing, not
+ * evidence), sampled across the whole array. It used to look at the first
+ * 100 values including missing ones, so a numeric column that is mostly
+ * missing (a rank defined for 190 of 16,285 genes) was called categorical:
+ * 190 categories, and Hide NaN did nothing. Server-declared categoricals are
+ * decided before this is asked. Booleans count as categorical.
+ * @param {ArrayLike<*>} arr
+ * @param {number} [maxSample=1000]
+ * @returns {'numerical'|'categorical'}
+ */
+export function inferValueType(arr, maxSample = 1000) {
+  const n = arr ? arr.length : 0;
+  if (!n) return 'categorical';
+  let present = 0, numeric = 0, bool = 0;
+  const step = Math.max(1, Math.floor(n / (maxSample * 4)));
+  for (let i = 0; i < n && present < maxSample; i += step) {
+    const v = arr[i];
+    if (v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v))) continue;
+    present++;
+    if (v === true || v === false) bool++;
+    else if (!Number.isNaN(parseFloat(v))) numeric++;
+  }
+  if (present === 0) return 'categorical';
+  if (bool / present >= 0.8) return 'categorical';
+  return numeric / present >= 0.8 ? 'numerical' : 'categorical';
+}
