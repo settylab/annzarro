@@ -27,6 +27,13 @@ try:
 except ImportError:  # Windows: the desktop app is single-process
     fcntl = None
 
+class UnsupportedPasswordHash(RuntimeError):
+    """A stored password hash this Python cannot verify (scrypt without
+    hashlib.scrypt). Not a wrong password, so it does not count toward the
+    lockout, and the login page says what to do instead of 'invalid
+    password'."""
+
+
 class User:
     """User class for authentication"""
     
@@ -376,10 +383,17 @@ class AuthManager:
         return self.create_user(username, password, is_admin)
         
     def _new_hash(self, password):
-        """Hash a new password (Werkzeug's default method, else PBKDF2)."""
+        """Hash a new password: Werkzeug's default (scrypt) where this Python's
+        hashlib has scrypt, else Werkzeug's pbkdf2:sha256.
+
+        hashlib.scrypt needs Python built against OpenSSL; Apple's Xcode
+        Python (LibreSSL) lacks it, and creating a user or logging in there
+        failed with AttributeError."""
         try:
             from werkzeug.security import generate_password_hash
-            return generate_password_hash(password)
+            if hasattr(hashlib, "scrypt"):
+                return generate_password_hash(password)
+            return generate_password_hash(password, method="pbkdf2:sha256")
         except ImportError:
             salt = secrets.token_hex(8)
             return f"pbkdf2:sha256:150000${salt}${self._hash_password(password, salt)}"
@@ -485,6 +499,12 @@ class AuthManager:
         Returns:
             bool: True if password matches
         """
+        if stored_hash.startswith("scrypt:") and not hasattr(hashlib, "scrypt"):
+            raise UnsupportedPasswordHash(
+                "This password was stored with scrypt, which this Python cannot compute "
+                "(its hashlib has no scrypt, e.g. Apple's Xcode Python built against "
+                "LibreSSL). Run the server with a Python built against OpenSSL, or reset "
+                "the password here with `annzarro user passwd` (it then uses pbkdf2:sha256).")
         try:
             from werkzeug.security import check_password_hash
             result = check_password_hash(stored_hash, password)

@@ -13,6 +13,9 @@ const DataManager = (function() {
     // Private variables
     let _currentDataset = null;
     let _cells = null;
+    // Bumped whenever the loaded cells/genes change (switch, revert, clear).
+    // Plot data built under an older generation belongs to another dataset.
+    let _datasetGeneration = 0;
     let _genes = null;
     let _focusedCell = null;
     let _focusedGene = null;
@@ -37,7 +40,7 @@ const DataManager = (function() {
         } catch (err) {
         // only replace tokens that aren’t inside quotes:
         // lookbehind (?<=[\[:,\s]) and lookahead (?=[,\]\}\s])
-        const FIX_SPECIAL = /(?<=[\[\{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
+        const FIX_SPECIAL = /(?<=[[{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
         const cleaned = text.replace(FIX_SPECIAL, 'null');
         // second chance
         return JSON.parse(cleaned);
@@ -198,6 +201,10 @@ const DataManager = (function() {
                 method: 'POST'
             });
             
+            if (response.status === 403) {
+                // admin-only on a hosted server: an expected refusal, not an error
+                return { status: 'forbidden', reason: 'admin_only' };
+            }
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
             }
@@ -256,6 +263,7 @@ const DataManager = (function() {
             }
             
             // Reset cells and genes before loading new ones
+            _datasetGeneration++;
             _cells = null;
             _genes = null;
             
@@ -297,6 +305,7 @@ const DataManager = (function() {
                     _currentDataset = previousDataset;
                     _cells = previousCells;
                     _genes = previousGenes;
+                    _datasetGeneration++;
                     
                     // We're not dispatching datasetLoadError event here anymore
                     // since the error is already handled in _loadDataset function in main.js.
@@ -306,6 +315,7 @@ const DataManager = (function() {
                     _currentDataset = null;
                     _cells = null;
                     _genes = null;
+                    _datasetGeneration++;
                     
                     // Dispatch a datasetCleared event
                     if (!silent) {
@@ -832,12 +842,16 @@ const DataManager = (function() {
         }
         
         try {
-            const focusedGene = cols && cols.length === 1 ? _genes[cols[0]] : null;
-            const focusedGeneIndex = focusedGene ? cols[0] : -1;
-            const focusedCell = rows && rows.length === 1 ? _cells[rows[0]] : null;
-            const focusedCellIndex = focusedCell ? rows[0] : -1;
+            // Branch on the request (one column = one gene), not on whether
+            // the index resolves to a name: _genes/_cells are null after a
+            // cleared or failed load, and indexing them threw a TypeError
+            // (or, guarded alone, sent a gene request down the cell path).
+            const focusedGeneIndex = cols && cols.length === 1 ? cols[0] : -1;
+            const focusedGene = focusedGeneIndex >= 0 && _genes ? _genes[focusedGeneIndex] : null;
+            const focusedCellIndex = rows && rows.length === 1 ? rows[0] : -1;
+            const focusedCell = focusedCellIndex >= 0 && _cells ? _cells[focusedCellIndex] : null;
 
-            if (focusedGene) {
+            if (focusedGeneIndex >= 0) {
                 console.log(`Loading layer data: ${layerName}, gene: ${focusedGene}, index: ${focusedGeneIndex}`);
                 console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
                 
@@ -1378,6 +1392,7 @@ const DataManager = (function() {
         setFocusedGene,
         setTaxonomyId,
         getCurrentDataset,
+        getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,
         getSortedCells,

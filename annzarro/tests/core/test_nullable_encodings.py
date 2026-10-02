@@ -546,3 +546,44 @@ def test_unattributed_column_survives_the_public_api(tmp_path):
         f"empty column under zarr {zarr.__version__} -- the silent-empty class "
         "#26 exists to eliminate, reached through the structural fallback")
     assert column == [10, None, 30, 40, 50, 60]
+
+
+# --------------------------------------------------------------------------
+# obsm / varm DataFrame columns that are encoded groups
+# --------------------------------------------------------------------------
+
+def test_categorical_dataframe_column_is_decoded_not_sliced(tmp_path, caplog):
+    """An obsm DataFrame's categorical column reads as its labels.
+
+    _get_dataframe_column read every non-'0' column through _read_member,
+    which slices the member; a categorical column is a GROUP, and zarr
+    refuses ``group[:]`` with ``path=slice(None, None, None) is not a
+    string``. The column came back empty and the error was logged on each
+    request (38 times in the live service's log, then worded 'Error
+    processing categorical data'). Nullable and plain columns must keep
+    working through the same path.
+    """
+    path = tmp_path / "df.zarr"
+    root, obs, _ = _skeleton(path)
+    _strarr(obs, "_index", CELLS)
+    obsm = root.create_group("obsm")
+    df = obsm.create_group("meta")
+    df.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0",
+                     "_index": "_index", "column-order": ["label", "score", "count"]})
+    _strarr(df, "_index", CELLS)
+    _categorical(df, "label", CODES, lambda g: _strarr(g, "categories", LABELS))
+    _numarr(df, "score", np.arange(len(CELLS), dtype=np.float32))
+    _nullable_int(df, "count", [1, 2, 3, 4, 5, 6], [False, False, True, False, False, False])
+
+    reader = _reader()
+    with caplog.at_level("ERROR"):
+        labels = reader.get_data_by_path("obsm/meta/label", dataset_path=str(path))
+        subset = reader.get_data_by_path("obsm/meta/label", dataset_path=str(path), indices=[1, 2])
+        score = reader.get_data_by_path("obsm/meta/score", dataset_path=str(path))
+        count = reader.get_data_by_path("obsm/meta/count", dataset_path=str(path))
+    assert list(labels) == EXPANDED
+    assert list(subset) == EXPANDED[1:3]
+    assert list(score) == list(range(len(CELLS)))
+    assert list(count) == [1, 2, None, 4, 5, 6]
+    assert "is not a string" not in caplog.text
+    assert "Error getting dataframe column" not in caplog.text

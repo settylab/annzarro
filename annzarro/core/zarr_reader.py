@@ -26,7 +26,7 @@ from pathlib import Path
 from collections import OrderedDict
 
 from .metadata_extraction import extract_metadata
-from .caching import DatasetCache, cached_method
+from .caching import CacheSettings, DatasetCache, cached_method
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
 # Try to import optional dependencies
@@ -100,6 +100,16 @@ class StoreReadError(RuntimeError):
         self.reason = reason
 
 
+class MissingKeyError(KeyError):
+    """
+    A key the request named is not in a member that does exist -- a column of
+    an obsm/varm DataFrame, a column index past a matrix's width. A KeyError,
+    so the routes answer it ``404 key_not_found`` like a missing slot key; its
+    own type so an unrelated KeyError from a bug does not read as "not in this
+    dataset".
+    """
+
+
 def _metadata_mismatch(node) -> Optional[str]:
     """How ``node`` (opened through consolidated metadata) differs from its
     own metadata on disk, or None. Only arrays are compared; for a sparse
@@ -166,7 +176,7 @@ def zarr_format_problem(dataset_path) -> Optional[str]:
     return None
 
 
-class ZarrReader:
+class ZarrReader(CacheSettings):
     """
     Class for reading AnnData objects from zarr sources with lazy loading.
     
@@ -198,11 +208,6 @@ class ZarrReader:
         self.cache = DatasetCache(max_memory_mb=max_memory_mb, 
                                  enable_caching=enable_caching, 
                                  cache_limit=cache_limit)
-        
-        # Keep reference to cache settings for backwards compatibility
-        self.max_memory_mb = max_memory_mb
-        self.enable_caching = enable_caching
-        self.cache_limit = cache_limit
 
         # url -> zarr root group for remote stores (see _get_remote_root)
         self._remote_roots = OrderedDict()
@@ -1257,6 +1262,12 @@ class ZarrReader:
         """
         root = self._get_root(dataset_path=dataset_path)
         
+        # 'X' is offered as a layer (the axis/column menus list it first): a
+        # store without a layer of that name means the X matrix itself.
+        if layer_name == 'X' and root is not None and 'X' in root and \
+                ('layers' not in root or 'X' not in root['layers']):
+            return self.get_X(dataset_path=dataset_path, row_indices=row_indices, col_indices=col_indices)
+
         if root is None or 'layers' not in root or layer_name not in root['layers']:
             return np.array([])
         
@@ -1472,15 +1483,12 @@ class ZarrReader:
             raise
         except Exception as e:
             raise_if_timeout(e)
-            # Stale consolidated metadata is an error to report; anything
-            # else keeps the old per-column degradation (an empty column)
-            problem = store_read_error(group, e)
-            if problem.reason == "stale_metadata":
-                raise problem from e
+            # A failed read is an error to report, not an empty column: an
+            # empty list served at 200 cannot be told apart from a column that
+            # legitimately has no values (settylab/annzarro#41). Callers that
+            # want one bad column not to sink the rest catch this themselves.
             logger.error(f"Error processing encoded data: {e}")
-            if return_categories:
-                return [], []
-            return []
+            raise store_read_error(group, e) from e
 
     @cached_method
     def get_obs_var(self, entity = Literal["cells", "genes"], dataset_path: Optional[str] = None,
@@ -1535,8 +1543,17 @@ class ZarrReader:
                     logger.error(f"Error getting cell names: {e}")
                     result['data']['_index'] = []
         
-        # Get each column
+        # Get each column. A column the caller NAMED that cannot be read is an
+        # error for the route to answer with its reason (unsupported_type,
+        # read_failed, stale_metadata). This used to be caught here and served
+        # as `[]` at 200 -- the shape settylab/annzarro#29 was written about,
+        # and the reason `UnsupportedEncodingError` never reached a client
+        # (settylab/annzarro#41). When listing EVERY column, one unreadable
+        # column must not sink the others, so it is recorded under `errors`
+        # beside its empty list instead of passing as a legitimately empty one.
+        explicit = column_names is not None
         for col in columns_to_get:
+            col_data = None
             try:
                 # Check if it's a categorical
                 col_data = root[obj][col]
@@ -1559,10 +1576,19 @@ class ZarrReader:
                     result['data'][col] = values.tolist() if hasattr(values, 'tolist') else list(values)
             except Exception as e:
                 raise_if_timeout(e)
-                if isinstance(e, StoreReadError):
-                    raise
-                logger.error(f"Error getting obs column {col}: {e}")
+                if isinstance(e, UnsupportedEncodingError):
+                    problem = UnsupportedEncodingError(f"{obj} column '{col}': {e}")
+                    reason = "unsupported_type"
+                elif isinstance(e, StoreReadError):
+                    problem, reason = e, e.reason
+                else:
+                    problem = store_read_error(col_data, e)
+                    reason = problem.reason
+                if explicit or reason == "stale_metadata":
+                    raise problem from e
+                logger.error(f"Error getting {obj} column {col}: {e}")
                 result['data'][col] = []
+                result.setdefault('errors', {})[col] = {"reason": reason, "error": str(problem)}
         
         # Add categories if any were found
         if categories_dict and include_categories:
@@ -1584,34 +1610,36 @@ class ZarrReader:
         """
         if not self._is_dataframe(group):
             return np.array([])
-            
-        # Check if column exists
+
+        # A missing column is a missing key, and a failed read is a failed
+        # read; neither is an empty column (settylab/annzarro#42).
         if column_name not in group:
-            logger.error(f"Column {column_name} not found in dataframe")
-            return np.array([])
-            
+            raise MissingKeyError(f"DataFrame {getattr(group, 'path', '')!r} has no column '{column_name}'")
+
         # Get the column data
         try:
             column = group[column_name]
             
-            # In zarr, the actual data is often stored in a dataset named '0'
-            if '0' in column:
+            # A column is an array, or an encoded GROUP (categorical: codes +
+            # categories; nullable: values + mask). Reading a categorical one
+            # through _read_member sliced the group itself, which zarr refuses
+            # with 'path=slice(None, None, None) is not a string': every
+            # categorical column of an obsm/varm DataFrame came back empty and
+            # logged that error (38 times in the live service's log).
+            # _get_categorical_values decodes all three shapes.
+            #
+            # Only a group can hold a '0' child; asking an Array "'0' in
+            # column" walks it element by element under zarr 3 (see _is_group).
+            if self._is_group(column) and '0' in column:
                 data_array = column['0']
-                
-                # Handle subsetting with indices
-                if indices is not None:
-                    return data_array[indices]
-                else:
-                    return data_array[:]
-            else:
-                # Fallback to direct access if '0' is not found. The column
-                # may use a nullable encoding, which is a group rather than
-                # an array and cannot be sliced directly.
-                return self._read_member(column, indices)
+                return data_array[indices] if indices is not None else data_array[:]
+            return self._get_categorical_values(column, indices)
+        except (StoreReadError, UnsupportedEncodingError):
+            raise
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error getting dataframe column {column_name}: {e}")
-            return np.array([])
+            raise store_read_error(group, e) from e
     
     @cached_method
     def get_obsm_varm(self, entity: Literal["cells", "genes"], key: str, dataset_path: Optional[str] = None,
@@ -1635,28 +1663,77 @@ class ZarrReader:
         
         if root is None or obj not in root or key not in root[obj]:
             return np.array([])
-        
-        # Check if this is a dataframe and column_name is specified
-        is_dataframe = self._is_dataframe(root[obj][key])
-        
-        if is_dataframe and column_name is not None:
-            # Get specific column from dataframe
-            return self._get_dataframe_column(root[obj][key], column_name, indices)
-        
-        # Check if we're dealing with a regular array but requested a specific column
-        if not is_dataframe and column_name is not None and hasattr(root[obj][key], 'shape'):
-            # Try to interpret column_name as an integer index
-            try:
-                col_idx = int(column_name)
-                arr = self._get_dense_array(f'{obj}/{key}', root, indices, None)
-                if len(arr.shape) > 1 and col_idx < arr.shape[1]:
-                    # Return specific column from the array
-                    return arr[:, col_idx]
-            except (ValueError, IndexError) as e:
-                logger.error(f"Error extracting column {column_name} from array {obj}/{key}: {e}")
-        
+
+        # Every LISTED member either reads or raises. An encoded group used to
+        # reach `_get_dense_array`, whose `size == 0` test is true for any
+        # group, and come back as `[]` at 200: 15 obsm keys across 10 served
+        # datasets (sparse `X_cnv`, cell2location DataFrames) were listed by
+        # `dataset_structure` and then read as empty, which the client could
+        # only call "not in this dataset" (settylab/annzarro#42).
+        member = root[obj][key]
+
+        if self._is_dataframe(member):
+            columns = self._get_dataframe_columns(member)
+            if column_name is not None:
+                name = column_name if column_name in columns else None
+                if name is None:
+                    position = self._column_position(column_name, len(columns), obj, key)
+                    name = columns[position]
+                return self._get_dataframe_column(member, name, indices)
+            names = [columns[i] for i in col_indices] if col_indices is not None else columns
+            stacked = [np.asarray(self._get_dataframe_column(member, n, indices)) for n in names]
+            if not stacked:
+                return np.array([])
+            if any(col.dtype.kind not in 'biuf' for col in stacked):
+                return np.column_stack([col.astype(object) for col in stacked])
+            return np.column_stack(stacked)
+
+        is_sparse, sparse_format = self._is_sparse_matrix(member)
+        if is_sparse:
+            width = tuple(member.attrs.get('shape', (0, 0)))[1]
+            position = None
+            if column_name is not None:
+                position = self._column_position(column_name, width, obj, key)
+                col_indices = [position]
+            matrix = self._load_sparse_matrix(member, indices, col_indices)
+            if matrix is None:
+                raise UnsupportedEncodingError(
+                    f"{obj} '{key}' is a {sparse_format} this reader cannot load "
+                    f"(children: {list(member.keys())})")
+            dense = matrix.toarray() if hasattr(matrix, 'toarray') else np.asarray(matrix)
+            return dense[:, 0] if position is not None else dense
+
+        if self._is_group(member):
+            encoding = member.attrs.get('encoding-type', 'unknown') if hasattr(member, 'attrs') else 'unknown'
+            raise UnsupportedEncodingError(
+                f"{obj} '{key}' uses an encoding this reader cannot read "
+                f"('{encoding}', children: {list(member.keys())})")
+
+        if column_name is not None:
+            # A plain matrix addressed by column position: read that column
+            # only, rather than the whole matrix and slicing afterwards.
+            width = member.shape[1] if len(member.shape) > 1 else 1
+            position = self._column_position(column_name, width, obj, key)
+            if len(member.shape) < 2:
+                return self._get_dense_array(f'{obj}/{key}', root, indices, None)
+            arr = self._get_dense_array(f'{obj}/{key}', root, indices, [position])
+            return np.asarray(arr)[:, 0]
+
         # Get the obsm data as a regular array
         return self._get_dense_array(f'{obj}/{key}', root, indices, col_indices)
+
+    @staticmethod
+    def _column_position(column_name, width, obj, key) -> int:
+        """The column index ``column_name`` names in a matrix ``width`` wide,
+        or MissingKeyError (answered 404 key_not_found)."""
+        try:
+            position = int(column_name)
+        except (TypeError, ValueError):
+            raise MissingKeyError(f"{obj} '{key}' has no column '{column_name}'") from None
+        if not 0 <= position < width:
+            raise MissingKeyError(
+                f"{obj} '{key}' has no column {position} (it has {width})")
+        return position
     
     @cached_method
     def get_obsp_varp(self, key: str, entity: Literal["cells", "genes"],
@@ -2298,6 +2375,7 @@ class ZarrReader:
             node = node[part]
         return self._uns_value(node)
 
+    @cached_method
     def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:
         """
         Get list of gene names.

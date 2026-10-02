@@ -10,6 +10,8 @@ import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTab
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
+import { syncControlsWithDataset } from '../utils/controls-visibility.js';
+import { assignKnownSettings } from '../utils/panel-settings.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -60,9 +62,7 @@ const GeneTablePanel = (function() {
                 if (loadingScreen) {
                     loadingScreen.style.display = isDatasetLoaded ? 'none' : 'flex';
                 }
-                if (controlsContainer) {
-                    controlsContainer.style.display = isDatasetLoaded ? 'flex' : 'none';
-                }
+                syncControlsWithDataset(controlsContainer, isDatasetLoaded);
                 
                 // If a dataset is already loaded, initialize the panel
                 if (isDatasetLoaded) {
@@ -288,22 +288,34 @@ const GeneTablePanel = (function() {
                     console.log(`GeneTable ${_id}: Dataset changed, reinitializing table`);
                 }
                 
-                // For dataset changes, reinitialize the table only if columns are defined
-                if (_settings.columns && _settings.columns.length > 0) {
-                    try {
-                        // Pass the abort signal to refreshTable
-                        await refreshTable(signal);
-                        
-                        // If we get here, the operation completed successfully
-                        return;
-                    } catch (error) {
-                        // If this is an abort error, propagate it
-                        if (error && error.name === 'AbortError') {
-                            throw error;
-                        }
-                        
-                        // Otherwise log and continue
-                        console.error(`Error updating gene table ${_id}:`, error);
+                // Rebuild the column chooser from the NEW dataset, then the
+                // table. Reloading only the table (and only when it had
+                // columns) left the chooser offering the previous dataset's
+                // fields and, on a failure, the previous dataset's rows.
+                try {
+                    const datasetStructure = await DataManager.getDatasetStructure(updateData?.dataset);
+                    if (!datasetStructure) {
+                        throw new Error('Failed to load dataset structure');
+                    }
+                    // The chooser keeps only the columns it can tick in this
+                    // dataset; keep asking for the rest so the table says
+                    // which are missing instead of dropping them unannounced.
+                    const requested = Array.isArray(_settings.columns) ? _settings.columns.slice() : [];
+                    await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    _settings.columns = requested;
+                    await refreshTable(signal);
+                    return;
+                } catch (error) {
+                    // If this is an abort error, propagate it
+                    if (error && error.name === 'AbortError') {
+                        throw error;
+                    }
+                    // Otherwise this table shows its own failure (issue #2)
+                    console.error(`Error updating gene table ${_id}:`, error);
+                    if (_tableContainer) {
+                        drawPlaceholder(_tableContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'genes' }), 'genes');
                     }
                 }
             }
@@ -369,12 +381,9 @@ const GeneTablePanel = (function() {
                 _title = config.title;
             }
             
-            // Update other settings if needed
-            Object.keys(config).forEach(key => {
-                if (key !== 'title' && _settings[key] !== undefined) {
-                    _settings[key] = config[key];
-                }
-            });
+            // Update other settings; never the read-only views of the live
+            // DataTable (searchBuilderConfig, currentEntries)
+            assignKnownSettings(_settings, config);
         }
         
         // Public API

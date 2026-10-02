@@ -15,6 +15,55 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+def _scalar_bytes(item) -> int:
+    """Bytes one Python scalar in a cached list or dict costs (object + slot).
+
+    This used to be a flat 1 KB per element, ~30x a float's real size, so one
+    obs column of a million cells was costed at 977 MB of the default 1000 MB
+    cache_memory_mb: caching it evicted nearly everything else, and a column
+    of 1.03M cells or more was evicted the moment it was added.
+    """
+    if isinstance(item, str):
+        return 57 + len(item)
+    if isinstance(item, bytes):
+        return 41 + len(item)
+    return 32
+
+
+class CacheSettings:
+    """``max_memory_mb``, ``enable_caching`` and ``cache_limit`` on a reader,
+    read from and written to its ``self.cache`` (a DatasetCache).
+
+    The readers used to copy these at construction, so setting one on the
+    reader changed nothing the cache used, and /cache/reset reported the
+    stale copy.
+    """
+
+    @property
+    def max_memory_mb(self):
+        return self.cache.max_memory_mb
+
+    @max_memory_mb.setter
+    def max_memory_mb(self, value):
+        self.cache.max_memory_mb = value
+
+    @property
+    def enable_caching(self):
+        return self.cache.enable_caching
+
+    @enable_caching.setter
+    def enable_caching(self, value):
+        self.cache.enable_caching = value
+
+    @property
+    def cache_limit(self):
+        return self.cache.cache_limit
+
+    @cache_limit.setter
+    def cache_limit(self, value):
+        self.cache.cache_limit = value
+
+
 class DatasetCache:
     """
     Cache manager for dataset access operations.
@@ -51,7 +100,7 @@ class DatasetCache:
 
         # What each key was charged when added, so removing it uncharges
         # exactly that (a flat 1 MB per metadata entry used to drift).
-        self._sizes = {}
+        self._sizes_mb = {}
 
         # One reader, and so one cache, serves every request thread of a
         # threaded server. Every read and write of the dicts above and of
@@ -65,7 +114,7 @@ class DatasetCache:
         return (('matrix', self._matrix_cache), ('dataframe', self._dataframe_cache),
                 ('metadata', self._metadata_cache))
 
-    def _drop(self, key: str) -> Tuple[Optional[str], float]:
+    def _forget(self, key: str) -> Tuple[Optional[str], float]:
         """Remove ``key`` from its bucket and the accounting (not from the
         dataset tracking); return (bucket name or None, MB uncharged). Call
         with the lock held."""
@@ -75,7 +124,7 @@ class DatasetCache:
                 del bucket[key]
                 found = name
                 break
-        size = self._sizes.pop(key, 0)
+        size = self._sizes_mb.pop(key, 0)
         self.memory_usage_mb = max(0, self.memory_usage_mb - size)
         self._cache_access_times.pop(key, None)
         return found, size
@@ -109,7 +158,7 @@ class DatasetCache:
             self._metadata_cache = {}
             self._dataset_caches = {}
             self._cache_access_times = {}
-            self._sizes = {}
+            self._sizes_mb = {}
             self.memory_usage_mb = 0
             return result
 
@@ -140,7 +189,7 @@ class DatasetCache:
                 return result
             memory_freed = 0
             for key in self._dataset_caches.pop(dataset_path):
-                bucket, size = self._drop(key)
+                bucket, size = self._forget(key)
                 if bucket is not None:
                     result["items_removed"][bucket] += 1
                 memory_freed += size
@@ -165,7 +214,7 @@ class DatasetCache:
             # Over the memory limit: drop the least recently used items
             if self.memory_usage_mb > self.max_memory_mb:
                 for key, _ in sorted(self._cache_access_times.items(), key=lambda kv: kv[1]):
-                    bucket, size = self._drop(key)
+                    bucket, size = self._forget(key)
                     logger.debug(f"Evicted {bucket} {key} from cache (freed {size}MB)")
                     for path, keys in list(self._dataset_caches.items()):
                         if key in keys:
@@ -194,10 +243,10 @@ class DatasetCache:
         with self._lock:
             # A key added again (two threads computed it at once) replaces
             # the old entry instead of being charged twice.
-            self._drop(key)
+            self._forget(key)
             dict(self._buckets()).get(cache_type, self._matrix_cache)[key] = data
             self._cache_access_times[key] = time.time()
-            self._sizes[key] = memory_mb
+            self._sizes_mb[key] = memory_mb
             self.memory_usage_mb += memory_mb
             if dataset_path is not None:
                 keys = self._dataset_caches.setdefault(dataset_path, [])
@@ -253,9 +302,10 @@ class DatasetCache:
                     size += item.nbytes
                 elif hasattr(item, 'nbytes'):
                     size += item.nbytes
+                elif isinstance(item, (list, tuple, dict)):
+                    size += self._estimate_memory_usage(item) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(item)
             return size / (1024 * 1024)
         
         # Dictionaries
@@ -278,8 +328,7 @@ class DatasetCache:
                     # Recursive approximation (simplified)
                     size += self._estimate_memory_usage(value) * (1024 * 1024)
                 else:
-                    # Rough estimate for other types
-                    size += 1024  # 1KB per item
+                    size += _scalar_bytes(value)
             return size / (1024 * 1024)
         
         # For other types, use a fixed estimate
@@ -428,6 +477,9 @@ def cached_method(func):
         elif method_name == 'get_uns':
             cache_key = f"path:{encoded_path}:uns:{arg.get('key')}"
 
+        elif method_name == 'get_cell_gene_names':
+            cache_key = f"path:{encoded_path}:names:{arg.get('entity')}"
+
         elif method_name == 'open_dataset_by_path':
             cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"
                          f"{arg.get('metadata_level', 'full')}")
@@ -466,11 +518,11 @@ def cached_method(func):
         elif method_name == 'open_dataset_by_path':
             # Store the root and metadata in the metadata cache
             cache_type = 'metadata'
-        elif method_name == 'get_uns':
-            # This is a special case, could be any type
-            # Use a heuristic: if it returns a dict, use dataframe; otherwise matrix
-            pass
-        
+        # get_uns stays in 'matrix' whatever it returns: the lookup below
+        # must use the same bucket as the write, and a write chosen by the
+        # result's type (dict -> dataframe, str -> metadata) was never read
+        # back, so a uns group or string was re-read on every request.
+
         # Check if result is already cached
         cached_result = self.cache._get_from_cache(cache_key, cache_type=cache_type)
         if cached_result is not None:
@@ -490,17 +542,7 @@ def cached_method(func):
         # Cache the result
         if result is not None:
             logger.debug(f"CACHE[{method_name}]: Method execution took {elapsed_time:.4f}s")
-            
-            # For get_uns, determine cache type based on result
-            if method_name == 'get_uns':
-                if isinstance(result, dict):
-                    cache_type = 'dataframe'
-                elif isinstance(result, np.ndarray) or hasattr(result, 'nbytes'):
-                    cache_type = 'matrix'
-                else:
-                    # For other types, use a basic type
-                    cache_type = 'metadata'
-            
+
             # Cache the result with dataset_path
             logger.debug(f"CACHE[{method_name}]: Caching result with dataset_path='{dataset_path}'")
             self.cache._add_to_cache(cache_key, result, dataset_path=dataset_path, cache_type=cache_type)

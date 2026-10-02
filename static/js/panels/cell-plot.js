@@ -5,7 +5,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
-import { setupAxisSelector } from './plot-utilities/panel-ui-update.js';
+import { setupAxisSelector, focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { drawPlaceholder } from '../utils/panel-surface.js';
 
@@ -231,7 +231,9 @@ const CellPlotPanel = (function() {
                 await Promise.all(updatePromises);
                 // If more than one axis was updated and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
-                if (updatePromises.length > 1 && _settings.highlightFocusedCell) {
+                // Always: a LOCKED axis is not refocused, so nothing else moves the
+                // highlight to the new focus (it stayed on the old cell)
+                if (_settings.highlightFocusedCell) {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
@@ -254,10 +256,13 @@ const CellPlotPanel = (function() {
                 return;
             }
             // Update the label of the first option in the select element
+            // A locked axis keeps showing the entity it is locked to
+            const locked = !!(_settings[axis] && _settings[axis].locked && _settings[axis].column);
+            if (locked) focusedEntity = _settings[axis].column;
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'genes') {
-                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity, locked);
             } else if (_settings[axis] && _settings[axis].type === 'obsp' && endityType === 'cells') {
-                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity, locked);
             }
         }
 
@@ -414,8 +419,6 @@ const CellPlotPanel = (function() {
                 // Clean up any loading indicators before purging the plot
                 if (window.loadingIndicator && typeof window.loadingIndicator.cleanupContainer === 'function') {
                     window.loadingIndicator.cleanupContainer(_plotContainer);
-                } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
-                    loadingIndicator.cleanupContainer(_plotContainer);
                 }
                 
                 // Clean up aesthetics menu event listeners
@@ -525,8 +528,14 @@ const CellPlotPanel = (function() {
                         throw error;
                     }
                     
-                    // Otherwise log and continue
+                    // Otherwise this plot shows its own failure instead of
+                    // the previous dataset's plot (issue #2)
                     console.error(`Error updating cell plot ${_id}:`, error);
+                    if (_plotContainer) {
+                        drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'cells' }), 'cells');
+                    }
                 }
             } 
             

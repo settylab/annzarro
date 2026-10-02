@@ -4,7 +4,13 @@ import {
   createFilterMask, 
   applyFilterMask, 
   updateTableEntities,
-  panelLoadCoverage 
+  panelLoadCoverage,
+  stableAxisRanges,
+  applyHoverInfo,
+  sortTracesByColor,
+  unsortTraces,
+  applyLogColor,
+  applyLogColorbar
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories } from './plot-make-helper.js';
@@ -127,6 +133,25 @@ function updateFilterWidget(plotContainer, filterStats) {
 }
 
 /**
+ * Whether `data` is a complete load for the dataset that is loaded now.
+ *
+ * loadDataAndCreatePlot clears the series and rebuilds them asynchronously.
+ * During a dataset switch a table reloads and fires tableChanged, and the
+ * focus is re-resolved, while the plot's own reload is still in flight; the
+ * incremental update those trigger then read `data.x` / `data.color` as null
+ * (TypeError in createFilterMask / processCategories, caught, and a second
+ * full redraw). Data is current only once a load has stamped it with the
+ * dataset generation it was read under, and that generation is still live.
+ * @param {Object} data - A plot panel's data cache
+ * @returns {boolean}
+ */
+export function isPlotDataCurrent(data) {
+    return !!(data && data.generation !== null && data.generation !== undefined
+        && data.generation === DataManager.getDatasetGeneration()
+        && data.x && data.y && data.x.values && data.y.values);
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
@@ -173,9 +198,24 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         refreshPlot();
         return;
     }
+
+    // A reload is rebuilding the series (or they are from the previous
+    // dataset): leave the plot to that reload, which draws current settings.
+    if (!isPlotDataCurrent(data)) {
+        return;
+    }
     
     try {
         removeHighlight(plotContainer); // One trace less to take care of
+        // back to data order: the updates below write arrays in data order
+        await unsortTraces(plotContainer);
+
+        // The axes as shown before this update, so hiding points can keep them
+        const fl = plotContainer._fullLayout;
+        const axesBefore = fl && fl.xaxis && fl.yaxis && Array.isArray(fl.xaxis.range) ? {
+            auto: fl.xaxis.autorange !== false && fl.yaxis.autorange !== false,
+            x: [...fl.xaxis.range], y: [...fl.yaxis.range]
+        } : null;
 
         const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
@@ -458,8 +498,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     }
                 }
                 
-                // Process categories to create traces for each category
-                const categoricalTraces = processCategories(settings, data, catValues, customColors);
+                // Process categories to create traces for each category, from
+                // the same masked points as the full render: with Hide NaN on,
+                // the points it counted as hidden must not be drawn under NA.
+                const shownData = (settings.hideNaN || settings.hideOutliers)
+                    ? applyFilterMask(data, indexMask) : data;
+                const categoricalTraces = processCategories(settings, shownData, catValues, customColors);
                 
                 // Remove all existing traces
                 while (plotContainer.data.length > 0) {
@@ -787,6 +831,31 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             }
         }
 
+        // Filtering removed or restored points: keep the axes on all points
+        if (updateOptions.filter) {
+            const pinned = stableAxisRanges(data, settings);
+            // Hiding switched on while the axes were auto-fitted to all points:
+            // keep exactly those ranges (no jump from a different padding)
+            if (pinned && pinned['xaxis.range'] && axesBefore && axesBefore.auto) {
+                pinned['xaxis.range'] = axesBefore.x;
+                pinned['yaxis.range'] = axesBefore.y;
+            }
+            if (pinned) {
+                // awaited: the highlight below snapshots the layout and puts it
+                // back, which would otherwise undo this
+                try {
+                    await Plotly.relayout(plotContainer, pinned);
+                } catch (err) {
+                    console.warn('Axis range update skipped:', err && err.message);
+                }
+            }
+        }
+
+        // hover labels for whatever traces the update left
+        await applyHoverInfo(plotContainer, data, settings);
+        await applyLogColorbar(plotContainer, data, settings);
+        await sortTracesByColor(plotContainer, settings);
+
         // bring back the focused entity if enabled
         highlightFocusedEntity(plotContainer, data, settings, entityType);
         
@@ -901,6 +970,7 @@ export async function loadColorDataAndUpdatePlot(
             // Update the data cache with new color information.
             data.color = colorData.values;
             data.colorType = colorData.type;
+            applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on
@@ -1077,38 +1147,85 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
     trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
   
-  // To avoid any layout disruption, use different approach based on whether highlight exists
+  // Plotly reports a degenerate plot area (a panel squeezed to nothing,
+  // e.g. while a restored layout is still sizing itself) by THROWING from
+  // update/relayout, synchronously or from the returned promise. Inside a
+  // focus-change handler that surfaced as an unhandled promise rejection on
+  // every focus change. The highlight is cosmetic: log it and move on; the
+  // next resize or focus change redraws it.
+  const settle = (what, run) => Promise.resolve()
+    .then(run)
+    .catch(error => console.warn(`Focused-${entityType === 'cells' ? 'cell' : 'gene'} highlight ${what} skipped:`, error && error.message ? error.message : error));
+
   if (existingIdx >= 0) {
-    // We have a highlight trace already - use a one-step update operation
-    // that updates JUST the trace data while preserving layout exactly
-    const update = {
-      // Trace data updates
-      'x': [highlightTrace.x],
-      'y': [highlightTrace.y]
-    };
-    
-    // For 3D plots, include z coordinates
-    if (is3D) {
-      update.z = [highlightTrace.z];
-    }
-    
-    // Only update the focused trace
-    const indices = [existingIdx];
-    
-    // Preserve the entire existing layout - don't modify anything
-    Plotly.update(plotContainer, update, currentLayout, indices);
-  } else {
-    // No existing highlight trace - first add one, then restore layout completely
-    Plotly.addTraces(plotContainer, highlightTrace)
-      .then(() => {
-        if (currentLayout) {
-          // Restore the ENTIRE layout to maintain all settings exactly as they were
-          currentLayout.xaxis.title.text = settings.showAxisTitles ? newXTitle : "";
-          currentLayout.yaxis.title.text = settings.showAxisTitles ? newYTitle : "";
-          Plotly.relayout(plotContainer, currentLayout);
-        }
-      });
+    // Move the existing highlight marker. restyle touches only that trace;
+    // the layout is unchanged, so it is not re-sent (re-sending a deep copy
+    // of it is what made Plotly redo the axis scaling here).
+    const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
+    if (is3D) update.z = [highlightTrace.z];
+    return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
   }
+
+  // A second call while the first add is still in flight would see no
+  // highlight trace either and add another one (seen after a restore: two
+  // 'Focused Cell' traces). Wait for that add, then move its marker.
+  if (plotContainer.__focusHighlightAdding) {
+    return plotContainer.__focusHighlightAdding
+      .then(() => highlightFocusedEntity(plotContainer, data, settings, entityType));
+  }
+
+  // No highlight trace yet: add one, then put back the view the user had
+  // (adding a trace must not reset zoom), with the configured axis titles.
+  const adding = settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
+    if (!currentLayout) return undefined;
+    // Put back only the VIEW (zoom, camera) and the axis titles. Re-sending
+    // the whole layout snapshot taken before the add undid any layout change
+    // made meanwhile, e.g. the legend moved off the colour bar.
+    const restore = {};
+    for (const axis of ['xaxis', 'yaxis']) {
+      const ax = currentLayout[axis];
+      if (!ax) continue;
+      if (Array.isArray(ax.range)) restore[`${axis}.range`] = ax.range;
+      if (ax.autorange !== undefined) restore[`${axis}.autorange`] = ax.autorange;
+      if (ax.title) restore[`${axis}.title.text`] = settings.showAxisTitles ? (axis === 'xaxis' ? newXTitle : newYTitle) : "";
+    }
+    if (currentLayout.scene && currentLayout.scene.camera) restore['scene.camera'] = currentLayout.scene.camera;
+    return Object.keys(restore).length ? Plotly.relayout(plotContainer, restore) : undefined;
+  })).finally(() => {
+    if (plotContainer.__focusHighlightAdding === adding) plotContainer.__focusHighlightAdding = null;
+  });
+  plotContainer.__focusHighlightAdding = adding;
+  return adding;
+}
+
+
+/**
+ * Apply the point size and opacity to an existing plot in at most two restyles.
+ *
+ * The slider path used to run updatePlotElements({styling: true}), which
+ * removes and re-adds the focus highlight trace and re-applies every
+ * aesthetic setting: ~38 Plotly calls and ~320 ms per slider step on
+ * bm_aging. Size and opacity need none of that: they are marker properties
+ * of the data traces, plus the highlight's size (always twice the points).
+ *
+ * @param {HTMLElement} plotContainer - The Plotly plot.
+ * @param {Object} settings - Plot settings (pointSize, pointOpacity).
+ * @returns {Promise<void>} Resolves once Plotly has applied both restyles.
+ */
+export async function restyleMarkers(plotContainer, settings) {
+    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
+    const isHighlight = (trace) => trace && typeof trace.name === 'string'
+        && /^focused (cell|gene)$/i.test(trace.name.trim());
+    const dataIdx = [];
+    const highlightIdx = [];
+    plotContainer.data.forEach((trace, i) => (isHighlight(trace) ? highlightIdx : dataIdx).push(i));
+    if (dataIdx.length) {
+        await Plotly.restyle(plotContainer,
+            { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
+    }
+    if (highlightIdx.length) {
+        await Plotly.restyle(plotContainer, { 'marker.size': settings.pointSize * 2 }, highlightIdx);
+    }
 }
 
 
@@ -1178,7 +1295,7 @@ export async function refocusAxisOnEntity(
       updateMenueLabelsForFocus,
     }
   ) {
-    const refocusButton = controlsContainer.querySelector(`#refocus-${axis}`);
+    const refocusButton = controlsContainer.querySelector(`.axis-refocus-btn[data-axis="${axis}"]`);
   
     if (axis === 'color') {
       if (settings.color.locked) {

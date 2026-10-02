@@ -27,6 +27,7 @@
  */
 
 import { Coverage, GAP } from './coverage.js';
+import { keepTitlesFitted } from './plot-titles.js';
 
 /** Class prefix for the notice element; styled in static/css/styles.css. */
 const NOTICE_CLASS = 'coverage-notice';
@@ -176,9 +177,13 @@ export function coverageAnnotation(coverage) {
         // without disturbing any annotation a future feature may add.
         name: 'coverage-notice',
         text,
+        // Above the plotting area, right-aligned, in the top margin (which
+        // withCoverageAnnotation makes tall enough). Inside the plot at
+        // (0.01, 0.99) it covered the top-left points.
         xref: 'paper', yref: 'paper',
-        x: 0.01, y: 0.99,
-        xanchor: 'left', yanchor: 'top',
+        x: 1, y: 1,
+        xanchor: 'right', yanchor: 'bottom',
+        yshift: 4,
         showarrow: false,
         align: 'left',
         font: { size: 11, color: ANNOTATION_COLOR[severity] || '#8a6d3b' },
@@ -199,6 +204,14 @@ export function withCoverageAnnotation(layout, coverage) {
     const kept = (next.annotations || []).filter(a => !a || a.name !== 'coverage-notice');
     const ann = coverageAnnotation(coverage);
     next.annotations = ann ? [...kept, ann] : kept;
+    if (ann) {
+        // room above the plot for the annotation's lines (about 15 px each)
+        const lines = String(ann.text).split('<br>').length;
+        const needed = 15 * lines + 16;
+        const margin = { ...(next.margin || {}) };
+        if (!(margin.t >= needed)) margin.t = needed;
+        next.margin = margin;
+    }
     return next;
 }
 
@@ -220,6 +233,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         plotContainer, traces, withCoverageAnnotation(layout, cov), config
     );
     renderCoverageNotice(plotContainer, cov, unit);
+    // long axis / colour-bar titles: shortened to fit, full text on hover
+    keepTitlesFitted(plotContainer);
     return result;
 }
 

@@ -2,20 +2,63 @@
  * Panel Set Manager module for AnnZarro
  * Handles saving, loading, and managing panel sets
  * 
- * Functionality:
- * 1. Saves panel configurations but not layout information
- * 2. When loading, adds panels to available panels as closed panels
- * 3. Maintains unique panel names to avoid conflicts
+ * A panel set stores the same view a share link carries (dataset, focus and
+ * the PanelManager.saveLayout() tree, see utils/deeplink.js panelSetToView),
+ * plus the legacy panelConfigs older readers and the list previews use.
+ * Loading one hands the view to the applier main.js registers, which runs it
+ * through the deep-link path; sets saved before views existed still load.
  */
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
 import { errorFromResponse } from './utils/session-permissions.js';
+import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 
 const SessionManager = (function() {
     // Private variables
     let _currentSession = null; // Stores the current panel set
     let _autosaveTimer = null; // Timer for autosave
+    // main.js registers how a view is applied (dataset switch, focus, layout);
+    // see setViewApplier. Without one, loading falls back to closed panels.
+    let _viewApplier = null;
+
+    /**
+     * Let the app apply a loaded panel set through its deep-link path.
+     * @param {(plan: {datasetPath, view, closedPanels, legacy}, panelSet: Object) => Promise<Object>} fn
+     */
+    function setViewApplier(fn) {
+        _viewApplier = typeof fn === 'function' ? fn : null;
+    }
+
+    /**
+     * The current view, in exactly the form a share link encodes.
+     * @returns {{v: number, constants: Object, layout: Object}}
+     */
+    function captureView() {
+        return {
+            v: VIEW_SCHEMA_VERSION,
+            constants: {
+                focusedGene: DataManager.getFocusedGene(),
+                focusedCell: DataManager.getFocusedCell(),
+                taxonomyId: DataManager.getTaxonomyId()
+            },
+            layout: PanelManager.saveLayout()
+        };
+    }
+
+    /**
+     * Apply a stored panel set (any version).
+     * @private
+     */
+    async function _applyPanelSet(sessionData) {
+        const plan = panelSetToView(sessionData);
+        if (!plan) throw new Error('Not a panel set');
+        if (_viewApplier) {
+            return await _viewApplier(plan, sessionData);
+        }
+        await _applySessionPanels(sessionData);
+        return { status: 'success', message: 'Panels added (closed)' };
+    }
     
     /**
      * Load list of available panel sets including the autosave if available
@@ -117,7 +160,7 @@ const SessionManager = (function() {
                 
                 try {
                     // Get panel configuration and associated data
-                    const config = panel.getConfig() || {};
+                    const config = serializableConfig(panel.getConfig() || {});
                     const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
                     
                     // For each panel, store only its configuration
@@ -137,6 +180,10 @@ const SessionManager = (function() {
             
             // Store only the panel configurations in the session data
             sessionData.panelConfigs = panelConfigs;
+
+            // The full view (focus + split layout + every panel's config), the
+            // same object a share link encodes; what loading restores.
+            sessionData.view = captureView();
             
             // Save to server
             console.log('Saving panel set:', sessionData);
@@ -181,6 +228,13 @@ const SessionManager = (function() {
                 
                 if (!autosaveData) {
                     throw new Error('Autosave data not found');
+                }
+
+                if (autosaveData.view && _viewApplier) {
+                    const applied = await _applyPanelSet(autosaveData);
+                    return applied && applied.status
+                        ? applied
+                        : { status: 'success', message: 'Autosaved session loaded successfully' };
                 }
                 
                 await _applySessionPanels(autosaveData);
@@ -244,7 +298,8 @@ const SessionManager = (function() {
             }
             
             const sessionData = await response.json();
-            _applySessionPanels(sessionData);
+            const applied = await _applyPanelSet(sessionData);
+            if (applied && applied.status && applied.status !== 'success') return applied;
             
             return { status: 'success', message: `Session ${name} loaded successfully` };
         } catch (error) {
@@ -398,89 +453,6 @@ const SessionManager = (function() {
      * @returns {Promise<void>}
      * @private
      */
-    async function _applySessionData(sessionData) {
-        try {
-            console.log('Applying panel set data...', sessionData);
-            
-            // 1. Load the dataset first, if not already loaded or if different
-            const currentDataset = DataManager.getCurrentDataset();
-            if (sessionData.dataset && (!currentDataset || currentDataset !== sessionData.dataset)) {
-                console.log('Loading dataset without destroying UI:', sessionData.dataset);
-                
-                // We'll manually update dataset info without calling methods that might reset the UI
-                // Get dataset structure first
-                const datasetStructure = await DataManager.getDatasetStructure(sessionData.dataset);
-                
-                // Only if dataset structure is successfully loaded, we'll update the current dataset
-                if (datasetStructure) {
-                    // Use DataManager to update the dataset reference but avoid triggering panel notifications
-                    // Pass true for silent mode to prevent UI resets
-                    await DataManager.setCurrentDataset(sessionData.dataset, true);
-                    
-                    // 2. Update UI dataset info manually
-                    const datasetNameEl = document.getElementById('dataset-path');
-                    if (datasetNameEl) {
-                        datasetNameEl.textContent = sessionData.datasetName || sessionData.dataset;
-                    }
-                    
-                    const cellCountEl = document.getElementById('cell-count');
-                    const geneCountEl = document.getElementById('gene-count');
-                    
-                    if (cellCountEl) cellCountEl.textContent = datasetStructure.n_obs || 0;
-                    if (geneCountEl) geneCountEl.textContent = datasetStructure.n_vars || 0;
-                }
-                
-                // 3. Restore constants
-                if (sessionData.constants) {
-                    const { focusedCell, focusedGene, taxonomyId } = sessionData.constants;
-                    
-                    if (focusedCell) DataManager.setFocusedCell(focusedCell);
-                    if (focusedGene) DataManager.setFocusedGene(focusedGene);
-                    if (taxonomyId) DataManager.setTaxonomyId(taxonomyId);
-                    
-                    // Update UI elements
-                    const focusedCellSelect = document.getElementById('focused-cell');
-                    const focusedGeneSelect = document.getElementById('focused-gene');
-                    const taxonomyIdSelect = document.getElementById('taxonomy-id');
-                    
-                    if (focusedCellSelect && focusedCell) focusedCellSelect.value = focusedCell;
-                    if (focusedGeneSelect && focusedGene) focusedGeneSelect.value = focusedGene;
-                    if (taxonomyIdSelect && taxonomyId) taxonomyIdSelect.value = taxonomyId;
-                }
-            }
-            
-            // 4. Get panel configurations and register them as closed panels
-            const panelConfigs = sessionData.panelConfigs || {};
-            
-            Object.values(panelConfigs)
-                .filter(panel => !panel.isSelectionTile)
-                .forEach(panel => {
-                    if (PanelManager.registerClosedPanel) {
-                        PanelManager.registerClosedPanel(panel.type, panel.config);
-                    }
-                });
-            
-            // 5. Ensure the source panel selection is updated to show the newly added panels
-            if (PanelManager.updateSourcePanelSelection) {
-                PanelManager.updateSourcePanelSelection();
-            }
-            
-            // 6. Trigger a window resize to ensure all plots are properly sized if needed
-            setTimeout(() => {
-                window.dispatchEvent(new Event('resize'));
-            }, 200);
-        } catch (error) {
-            console.error('Error applying panel set data:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Apply loaded panel set data to the application state
-     * @param {Object} sessionData - Panel set data
-     * @returns {Promise<void>}
-     * @private
-     */
     async function _applySessionPanels(sessionData) {
         try {
             console.log('Applying panel set data...', sessionData);
@@ -489,15 +461,26 @@ const SessionManager = (function() {
             // Get panel configurations and register them as closed panels
             const panelConfigs = JSON.parse(JSON.stringify(sessionData.panelConfigs || {}));
 
-
-            // Process each closed panel configuration
-            Object.values(panelConfigs)
-            .filter(panel => !panel.isSelectionTile)
-            .forEach(panel => {
+            // registerClosedPanel gives a panel a new id when its id is taken;
+            // a plot's tableFilter must then follow its table to the new id.
+            const panels = Object.values(panelConfigs).filter(panel => !panel.isSelectionTile && panel.config);
+            const idMap = new Map();
+            panels.forEach(panel => {
+                const before = panel.config.id;
                 if (PanelManager.registerClosedPanel) {
                     PanelManager.registerClosedPanel(panel.type, panel.config);
                 }
+                if (before && panel.config.id !== before) idMap.set(before, panel.config.id);
             });
+            if (idMap.size) {
+                remapPanelReferences(panels.map(panel => panel.config), idMap);
+                panels.forEach(panel => {
+                    const live = PanelManager.getPanel(panel.config.id);
+                    if (live && live.setConfig && panel.config.tableFilter !== undefined) {
+                        live.setConfig({ tableFilter: panel.config.tableFilter });
+                    }
+                });
+            }
             
             // Ensure the source panel selection is updated to show the newly added panels
             if (PanelManager.updateSourcePanelSelection) {
@@ -580,7 +563,7 @@ const SessionManager = (function() {
                 
                 try {
                     // Get panel configuration and associated data
-                    const config = panel.getConfig() || {};
+                    const config = serializableConfig(panel.getConfig() || {});
                     const title = panel.getTitle() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
                     
                     // For each panel, store only its configuration
@@ -598,6 +581,7 @@ const SessionManager = (function() {
             
             // Store only the panel configurations in the autosave data
             autosaveData.panelConfigs = panelConfigs;
+            autosaveData.view = captureView();
             
             // Save to localStorage
             try {
@@ -697,7 +681,9 @@ const SessionManager = (function() {
         stopAutosave,
         getAutosaveSession,
         clearAutosave,
-        notifyPanelUpdate
+        notifyPanelUpdate,
+        setViewApplier,
+        captureView
     };
 })();
 

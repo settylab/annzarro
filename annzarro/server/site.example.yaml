@@ -17,6 +17,9 @@ server:
   # Reverse proxies in front whose X-Forwarded-* headers are trusted
   # (client address, and https for the Secure login cookie). 0 without one.
   proxy_count: 1
+  # Served under a path, e.g. https://lab.example.org/explore/ (empty = the root).
+  # The proxy may strip the prefix or pass it on; see the nginx example in the docs.
+  # url_prefix: /explore
   # Each gunicorn worker keeps its own cache of up to cache_memory_mb
   workers: 4
   log_file: /var/log/annzarro/server.log

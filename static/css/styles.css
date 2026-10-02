@@ -43,6 +43,15 @@ html, body {
 
 .notification-message {
     word-wrap: break-word;
+    white-space: pre-line; /* messages put paths on their own lines */
+}
+
+/* A notice that asks (main.js _askNotification): buttons instead of a modal */
+.notification-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 10px;
 }
 
 .notification-error {
@@ -94,7 +103,10 @@ html, body {
 body {
     display: flex;
     flex-direction: column;
-    min-height: 100vh; /* Minimum viewport height */
+    /* Exactly the window: the tile area below the header takes the rest and
+       scrolls inside itself. With min-height the page grew with its content
+       (a tall table tile pushed a 2x2 layout below the fold). */
+    height: 100vh;
 }
 
 /* Header */
@@ -105,9 +117,40 @@ body {
     z-index: 100;
 }
 
-/* Clipboard-less fallback for the Share Link button: the link, ready to copy */
+/* Header actions keep one row: the column takes the buttons' natural width,
+   labels never wrap inside a button, and below 1400 px the buttons show
+   their icons only (the label stays as the tooltip). They used to wrap into
+   'Save / Panel / Set' at 1200-1400 px and onto a second row below 1200. */
+.header-actions .btn {
+    white-space: nowrap;
+}
+
+@media (max-width: 1399.98px) {
+    .header-actions .btn:not(.show-label) .btn-label {
+        display: none;
+    }
+}
+
+/* Clipboard-less fallback for the Share Link button: the link, ready to copy.
+   Floats under the header, right-aligned and wide, instead of squeezing into
+   the button column (it was ~190 px and made the header one row taller). */
+.app-header {
+    position: relative;
+}
+
 .share-link-fallback {
-    max-width: 36rem;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0.5rem;
+    width: min(48rem, calc(100vw - 1rem));
+    z-index: 1050;
+    background: #fff;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.share-link-fallback[hidden] {
+    display: none;
 }
 
 .app-title {
@@ -133,7 +176,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 300px; /* Ensure minimum height */
+    min-height: 0; /* take what the header leaves, scroll inside */
     position: relative;
     overflow: auto;
 }
@@ -204,6 +247,18 @@ body {
     flex: 1;
     overflow: auto;
     position: relative;
+    /* The panel inside fills the tile. 'height: 100%' on the panel did not
+       resolve here (the tile's height is a flex result), so a lone plot tile
+       drew Plotly's default 450 px and left the rest of the tile empty. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.tile-content > .plot-panel,
+.tile-content > .table-panel {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Split Tiles */
@@ -301,7 +356,10 @@ body {
 
 .plot-container {
     flex: 1;
-    min-height: 0;
+    /* Never squeezed below a drawable height: with the controls open in a
+       short window it shrank to 94 px or 0 px and Plotly threw 'Something
+       went wrong with axis scaling'. The tile scrolls instead. */
+    min-height: 260px;
     position: relative;
 }
 
@@ -940,6 +998,13 @@ button.dtsb-button.dtsb-clear:hover {
     font-size: 0.875rem;
 }
 
+/* The shorthand above also cleared Bootstrap's right padding that keeps a
+   select's arrow clear of its text ("X_umap" read "X_umaφ"). */
+.form-select.form-select-sm {
+    padding-right: 1.75rem;
+    text-overflow: ellipsis;
+}
+
 .custom-dropdown-menu {
     max-height: 300px;
     overflow-y: auto;
@@ -1417,8 +1482,8 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .file-name.has-file::before {
-    content: '\\f15b';
-    font-family: 'Font Awesome 5 Free';
+    content: '\f15b';   /* one backslash: a CSS escape, not a literal '\f15b' */
+    font-family: 'Font Awesome 6 Free', 'Font Awesome 5 Free';
     font-weight: 400;
     margin-right: 8px;
     color: #007bff;
@@ -1494,14 +1559,78 @@ button.dtsb-button.dtsb-clear:hover {
     line-height: 38px;
 }
 
-/* Ensure consistent width for gene and cell selectors */
+/* Focused gene / cell typeaheads (static/js/utils/name-picker.js) */
 #focused-gene {
-    width: 160px !important;
+    width: 160px;
 }
 
 #focused-cell {
-    width: 220px !important;
-    text-overflow: ellipsis !important;
+    width: 220px;
+}
+
+.name-picker {
+    position: relative;
+}
+
+.name-picker > input {
+    text-overflow: ellipsis;
+}
+
+.name-picker-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 9999;
+    width: max(100%, 320px);
+    margin-top: 2px;
+    background: #fff;
+    border: 1px solid #adb5bd;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.name-picker-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.name-picker-regex {
+    font-family: monospace;
+    padding: 0 6px;
+    line-height: 1.4;
+}
+
+.name-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.name-picker-option {
+    padding: 6px 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.name-picker-option.selected {
+    font-weight: bold;
+}
+
+.name-picker-option.active,
+.name-picker-option:hover {
+    background-color: #0d6efd;
+    color: #fff;
 }
 
 /* Dataset selector should have a moderate width */
@@ -2089,7 +2218,7 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Ensure refocus button is hidden by default */
-[id^="refocus-"] {
+.axis-refocus-btn {
     display: none;
 }
 
@@ -2389,10 +2518,13 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Datapoint filter info widget */
+/* Bottom-left corner, under the x tick labels, one line (title and total);
+   the per-reason list shows on hover. At bottom/left 10px with its list open
+   it sat on the x tick labels and the lowest points. */
 .datapoint-filter-widget {
     position: absolute;
-    bottom: 10px;
-    left: 10px;
+    bottom: 2px;
+    left: 2px;
     background-color: rgba(248, 249, 250, 0.85);
     border: 1px solid #dee2e6;
     border-radius: 4px;
@@ -2402,8 +2534,21 @@ button.dtsb-button.dtsb-clear:hover {
     max-width: 200px;
     z-index: 10;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    pointer-events: none;
     transition: opacity 0.3s ease;
+    display: flex;
+    flex-direction: column-reverse; /* the list opens upward */
+}
+
+.datapoint-filter-widget .filter-stats-list {
+    display: none;
+}
+
+.datapoint-filter-widget:hover .filter-stats-list {
+    display: block;
+}
+
+.datapoint-filter-widget.hidden {
+    pointer-events: none;
 }
 
 .datapoint-filter-widget.hidden {

@@ -1,9 +1,43 @@
 /**
  * Configuration module for AnnZarro
  */
+import { appUrl } from './utils/app-url.js';
+
+/**
+ * The ui.* settings in /api/v1/config, nested (ui: {defaults, cache,
+ * autosave, enabled_panel_types}, what the server sends) or flat (ui_max_cells,
+ * ui_autosave_enabled, ... from older servers). Nested wins. Unset values are
+ * null; booleans stay booleans, so false is a setting, not "unset".
+ * @param {Object} server - the parsed /api/v1/config response
+ * @returns {Object}
+ */
+export function readUiSettings(server) {
+    const cfg = server || {};
+    const ui = cfg.ui && typeof cfg.ui === 'object' ? cfg.ui : {};
+    const d = ui.defaults || {}, c = ui.cache || {}, a = ui.autosave || {};
+    const pick = (nested, flat) => (nested !== undefined && nested !== null ? nested
+        : (cfg[flat] !== undefined && cfg[flat] !== null ? cfg[flat] : null));
+    return {
+        maxCells: pick(d.max_cells, 'ui_max_cells'),
+        maxGenes: pick(d.max_genes, 'ui_max_genes'),
+        pointSize: pick(d.point_size, 'ui_point_size'),
+        pointOpacity: pick(d.point_opacity, 'ui_point_opacity'),
+        colorScale: pick(d.color_scale, 'ui_color_scale'),
+        taxonomyId: pick(d.taxonomy_id, 'ui_taxonomy_id'),
+        enabledPanelTypes: pick(ui.enabled_panel_types, 'enabled_panel_types'),
+        cacheMaxEntries: pick(c.max_entries, 'ui_cache_max_entries'),
+        cacheMaxSizeMb: pick(c.max_size_mb, 'ui_cache_max_size_mb'),
+        autosaveEnabled: pick(a.enabled, 'ui_autosave_enabled'),
+        autosaveIntervalMs: pick(a.interval_ms, 'ui_autosave_interval_ms'),
+        autosaveStorageKey: pick(a.storage_key, 'ui_autosave_storage_key'),
+        autosaveSessionName: pick(a.session_name, 'ui_autosave_session_name'),
+        autosaveShowInList: pick(a.show_in_list, 'ui_autosave_show_in_list'),
+        autosaveAutoRestore: pick(a.auto_restore, 'ui_autosave_auto_restore')
+    };
+}
 const Config = (function() {
-    // API endpoints
-    const API_BASE = '/api/v1';
+    // API endpoints, under the path the app is mounted at (see utils/app-url.js)
+    const API_BASE = appUrl('/api/v1');
     
     const API = {
         CONFIG: `${API_BASE}/config`,
@@ -12,6 +46,7 @@ const Config = (function() {
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         CELLS: `${API_BASE}/data/cells`,
         GENES: `${API_BASE}/data/genes`,
+        NAMES: `${API_BASE}/data/names`,
         OBS: `${API_BASE}/data/obs`,
         VAR: `${API_BASE}/data/var`,
         OBSM: `${API_BASE}/data/obsm`,
@@ -240,31 +275,27 @@ const Config = (function() {
                     }
                 });
                 
-                // Override local defaults with server-provided values
-                if (SERVER_CONFIG.ui_max_cells) DEFAULTS.MAX_CELLS = SERVER_CONFIG.ui_max_cells;
-                if (SERVER_CONFIG.ui_max_genes) DEFAULTS.MAX_GENES = SERVER_CONFIG.ui_max_genes;
-                if (SERVER_CONFIG.ui_point_size) DEFAULTS.POINT_SIZE = SERVER_CONFIG.ui_point_size;
-                if (SERVER_CONFIG.ui_point_opacity) DEFAULTS.POINT_OPACITY = SERVER_CONFIG.ui_point_opacity;
-                if (SERVER_CONFIG.ui_color_scale) DEFAULTS.COLOR_SCALE = SERVER_CONFIG.ui_color_scale;
-                if (SERVER_CONFIG.ui_taxonomy_id) DEFAULTS.TAXONOMY_ID = SERVER_CONFIG.ui_taxonomy_id;
-                
-                // Override panel types if provided
-                if (SERVER_CONFIG.enabled_panel_types) {
-                    DEFAULTS.ENABLED_PANEL_TYPES = SERVER_CONFIG.enabled_panel_types;
-                }
-                
-                // Override cache settings if provided
-                if (SERVER_CONFIG.ui_cache_max_entries) CACHE.MAX_ENTRIES = SERVER_CONFIG.ui_cache_max_entries;
-                if (SERVER_CONFIG.ui_cache_max_size_mb) CACHE.MAX_SIZE_BYTES = SERVER_CONFIG.ui_cache_max_size_mb * 1024 * 1024;
-                
-                // Override autosave settings if provided
-                if (SERVER_CONFIG.ui_autosave_enabled !== null) AUTOSAVE.ENABLED = SERVER_CONFIG.ui_autosave_enabled;
-                if (SERVER_CONFIG.ui_autosave_interval_ms) AUTOSAVE.INTERVAL = SERVER_CONFIG.ui_autosave_interval_ms;
-                if (SERVER_CONFIG.ui_autosave_storage_key) AUTOSAVE.STORAGE_KEY = SERVER_CONFIG.ui_autosave_storage_key;
-                if (SERVER_CONFIG.ui_autosave_session_name) AUTOSAVE.SESSION_NAME = SERVER_CONFIG.ui_autosave_session_name;
-                if (SERVER_CONFIG.ui_autosave_show_in_list !== null) AUTOSAVE.SHOW_IN_LIST = SERVER_CONFIG.ui_autosave_show_in_list;
-                if (SERVER_CONFIG.ui_autosave_auto_restore !== null) AUTOSAVE.AUTO_RESTORE = SERVER_CONFIG.ui_autosave_auto_restore;
-                
+                // Apply the server's ui.* settings. The server sends them
+                // nested (ui: {defaults, cache, autosave, enabled_panel_types},
+                // as in config/base.yaml); this read only flat ui_* keys, so
+                // every ui setting was ignored. readUiSettings takes either.
+                const ui = readUiSettings(SERVER_CONFIG);
+                if (ui.maxCells) DEFAULTS.MAX_CELLS = ui.maxCells;
+                if (ui.maxGenes) DEFAULTS.MAX_GENES = ui.maxGenes;
+                if (ui.pointSize) DEFAULTS.POINT_SIZE = ui.pointSize;
+                if (ui.pointOpacity) DEFAULTS.POINT_OPACITY = ui.pointOpacity;
+                if (ui.colorScale) DEFAULTS.COLOR_SCALE = ui.colorScale;
+                if (ui.taxonomyId) DEFAULTS.TAXONOMY_ID = ui.taxonomyId;
+                if (ui.enabledPanelTypes) DEFAULTS.ENABLED_PANEL_TYPES = ui.enabledPanelTypes;
+                if (ui.cacheMaxEntries) CACHE.MAX_ENTRIES = ui.cacheMaxEntries;
+                if (ui.cacheMaxSizeMb) CACHE.MAX_SIZE_BYTES = ui.cacheMaxSizeMb * 1024 * 1024;
+                if (ui.autosaveEnabled !== null) AUTOSAVE.ENABLED = ui.autosaveEnabled;
+                if (ui.autosaveIntervalMs) AUTOSAVE.INTERVAL = ui.autosaveIntervalMs;
+                if (ui.autosaveStorageKey) AUTOSAVE.STORAGE_KEY = ui.autosaveStorageKey;
+                if (ui.autosaveSessionName) AUTOSAVE.SESSION_NAME = ui.autosaveSessionName;
+                if (ui.autosaveShowInList !== null) AUTOSAVE.SHOW_IN_LIST = ui.autosaveShowInList;
+                if (ui.autosaveAutoRestore !== null) AUTOSAVE.AUTO_RESTORE = ui.autosaveAutoRestore;
+
                 // Override StringDB settings if provided
                 if (SERVER_CONFIG.integrations && SERVER_CONFIG.integrations.string_db) {
                     const stringDbConfig = SERVER_CONFIG.integrations.string_db;

@@ -1,0 +1,147 @@
+/* global Plotly -- stubbed on globalThis below */
+/**
+ * Moving the focused-cell highlight must never leave an unhandled rejection.
+ *
+ * Reproduced headless on the demo view C (three UMAPs, two in a vertical
+ * split squeezed by their control bars): every focus change logged
+ *   Unhandled promise rejection: Something went wrong with axis scaling
+ * from plot-update.js highlightFocusedEntity. It called
+ * Plotly.update(plot, traceUpdate, <deep copy of the whole layout>), which
+ * re-ran the axis scaling; on a degenerate plot area Plotly THROWS from
+ * there (synchronously), inside a focus-change event handler, so nobody
+ * could catch it. The first highlight after a restore took the other branch,
+ * addTraces(...).then(() => relayout(layout)), where the same throw became a
+ * rejection of a promise nobody held.
+ *
+ * Now the existing marker moves with restyle (no layout re-sent), and both
+ * branches settle into a promise that resolves after logging a warning.
+ *
+ * Run:  node --test annzarro/tests/js/focus-highlight.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+globalThis.window = { addEventListener() {}, location: { href: 'http://localhost/' }, Config: {} };
+globalThis.document = {
+    createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, appendChild() {}, setAttribute() {} }),
+    getElementById: () => null, addEventListener() {}, dispatchEvent() {}
+};
+
+const calls = [];
+let failMode = null;     // 'sync' | 'async' | null
+const fail = (fn) => {
+    if (failMode === 'sync') throw new Error('Something went wrong with axis scaling');
+    if (failMode === 'async') return Promise.reject(new Error('Something went wrong with axis scaling'));
+    return Promise.resolve();
+};
+globalThis.Plotly = {
+    update: (...a) => { calls.push(['update', a]); return fail(); },
+    restyle: (...a) => { calls.push(['restyle', a]); return fail(); },
+    relayout: (...a) => { calls.push(['relayout', a]); return fail(); },
+    addTraces: (...a) => { calls.push(['addTraces', a]); return Promise.resolve(); },
+    deleteTraces: () => Promise.resolve(),
+    setPlotConfig: () => {}
+};
+
+const { DataManager } = await import('../../../static/js/data-manager.js');
+const { highlightFocusedEntity } = await import('../../../static/js/panels/plot-utilities/plot-update.js');
+DataManager.getFocusedCell = () => 'c1';
+
+const settings = {
+    x: { type: 'obsm', key: 'X_umap', column: '0' }, y: { type: 'obsm', key: 'X_umap', column: '1' },
+    z: null, pointSize: 3, highlightFocusedCell: true, showAxisTitles: true
+};
+const data = { entities: 'cells', cells: ['c0', 'c1', 'c2'], x: { values: [0, 1, 2] }, y: { values: [5, 6, 7] }, colorType: 'numerical' };
+const plot = (withHighlight) => ({
+    data: withHighlight ? [{ name: 'data' }, { name: 'Focused Cell', x: [0], y: [5] }] : [{ name: 'data' }],
+    layout: { xaxis: { title: { text: '' }, range: [0, 2] }, yaxis: { title: { text: '' }, range: [5, 7] }, legend: { x: 1.05 } }
+});
+
+let unhandled = [];
+process.on('unhandledRejection', (e) => unhandled.push(e));
+const quiet = console.warn;
+
+async function run(withHighlight, mode) {
+    calls.length = 0; unhandled = []; failMode = mode;
+    const warnings = [];
+    console.warn = (...a) => warnings.push(a.join(' '));
+    try {
+        const p = highlightFocusedEntity(plot(withHighlight), data, settings, 'cells');
+        await p;
+        await new Promise(r => setTimeout(r, 10));
+    } finally { console.warn = quiet; }
+    return { warnings, unhandled: unhandled.slice() };
+}
+
+for (const mode of ['sync', 'async']) {
+    test(`moving an existing highlight survives a ${mode} Plotly failure`, async () => {
+        const { warnings, unhandled } = await run(true, mode);
+        assert.equal(unhandled.length, 0, 'unhandled rejection escaped');
+        assert.match(warnings.join('\n'), /highlight update skipped: Something went wrong with axis scaling/);
+    });
+    test(`adding the first highlight survives a ${mode} relayout failure`, async () => {
+        const { warnings, unhandled } = await run(false, mode);
+        assert.equal(unhandled.length, 0, 'unhandled rejection escaped');
+        assert.match(warnings.join('\n'), /highlight add skipped/);
+    });
+}
+
+test('moving the highlight restyles only that trace and does not resend the layout', async () => {
+    await run(true, null);
+    assert.deepEqual(calls.map(c => c[0]), ['restyle']);
+    const [, [, update, indices]] = calls[0];
+    assert.deepEqual(update, { x: [[1]], y: [[6]] });
+    assert.deepEqual(indices, [1]);
+});
+
+test('the first highlight is added at the focused cell and the view is restored', async () => {
+    await run(false, null);
+    assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout']);
+    assert.deepEqual(calls[0][1][1].x, [1]);
+    assert.deepEqual(calls[1][1][1]['xaxis.range'], [0, 2]);
+    assert.equal(calls[1][1][1].legend, undefined, 'the rest of the layout is not re-sent');
+});
+
+test('two focus changes during the first add leave ONE highlight trace', async () => {
+    calls.length = 0; failMode = null;
+    const gd = plot(false);
+    const realAdd = Plotly.addTraces;
+    Plotly.addTraces = (container, trace) => {
+        calls.push(['addTraces']);
+        return new Promise(r => setTimeout(() => { container.data.push(trace); r(); }, 20));
+    };
+    try {
+        await Promise.all([
+            highlightFocusedEntity(gd, data, settings, 'cells'),
+            highlightFocusedEntity(gd, data, settings, 'cells')
+        ]);
+    } finally { Plotly.addTraces = realAdd; }
+    assert.equal(gd.data.filter(t => t.name === 'Focused Cell').length, 1);
+    assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout', 'restyle']);
+});
+
+test('a 3D plot (scene, no xaxis title) gets its highlight without a page error', async () => {
+    // protocol-integration threw "Cannot set properties of undefined (setting
+    // 'text')" here for every new gene plot (3D on varm PCs by default)
+    calls.length = 0; failMode = null; unhandled = [];
+    const s3 = { ...settings, z: { type: 'obsm', key: 'X_pca', column: '2' } };
+    const d3 = { ...data, z: { values: [9, 8, 7] } };
+    const gd = { data: [{ name: 'data' }], layout: { scene: { camera: { eye: { x: 1, y: 2, z: 3 } } } } };
+    await highlightFocusedEntity(gd, d3, s3, 'cells');
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(unhandled.length, 0);
+    assert.deepEqual(calls.map(c => c[0]), ['addTraces', 'relayout']);
+    assert.equal(calls[0][1][1].type, 'scatter3d');
+    assert.deepEqual(calls[1][1][1]['scene.camera'], { eye: { x: 1, y: 2, z: 3 } });
+});
+
+test('a size/opacity step is two restyles, not a highlight rebuild (#8)', async () => {
+    const { restyleMarkers } = await import('../../../static/js/panels/plot-utilities/plot-update.js');
+    failMode = null;
+    calls.length = 0;
+    const gd = { data: [{ name: 'HSC' }, { name: 'GMP' }, { name: 'Focused Cell' }, { name: 'LMPP' }] };
+    await restyleMarkers(gd, { pointSize: 4, pointOpacity: 0.3 });
+    assert.deepEqual(calls.map(c => c[0]), ['restyle', 'restyle']);
+    assert.deepEqual(calls[0][1].slice(1), [{ 'marker.size': 4, 'marker.opacity': 0.3 }, [0, 1, 3]]);
+    assert.deepEqual(calls[1][1].slice(1), [{ 'marker.size': 8 }, [2]]);
+});

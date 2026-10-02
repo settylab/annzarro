@@ -317,8 +317,16 @@ A refused URL is answered with HTTP 403 and never fetched.
 ## Development
 
 ```bash
-# Run tests
+# Once: install the pinned ESLint (needs Node.js 22+)
+npm ci
+
+# Run every test: Python, all JS suites (annzarro/tests/js/*.test.mjs) and ESLint.
+# CI runs exactly this; without node or `npm ci` the JS and lint tests fail.
 python -m pytest
+
+# Or the JS side alone
+npm run lint
+npm test
 
 # Start in development mode
 ./annzarro-cli start --development
