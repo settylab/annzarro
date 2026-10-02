@@ -178,3 +178,9 @@ annzarro/desktop/downloads/
 !annzarro/tests/data/fixture_small.zarr/X/data/
 !annzarro/tests/data/fixture_small_v3.zarr/var/
 !annzarro/tests/data/fixture_small_v3.zarr/X/data/
+
+# Desktop app build outputs (annzarro/desktop/scripts/build_server.py, electron-builder)
+annzarro/desktop/build/
+annzarro/desktop/electron/server/
+annzarro/desktop/electron/dist/
+!annzarro/desktop/electron/package-lock.json
