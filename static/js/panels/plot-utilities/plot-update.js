@@ -1195,7 +1195,7 @@ export async function refocusAxisOnEntity(
       updateMenueLabelsForFocus,
     }
   ) {
-    const refocusButton = controlsContainer.querySelector(`#refocus-${axis}`);
+    const refocusButton = controlsContainer.querySelector(`.axis-refocus-btn[data-axis="${axis}"]`);
   
     if (axis === 'color') {
       if (settings.color.locked) {

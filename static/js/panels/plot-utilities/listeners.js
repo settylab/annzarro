@@ -1020,13 +1020,13 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
   const $container = jQuery(controlsContainer);
   
   // Event delegation for button clicks
-  $container.on('click', 'button[id^="lock-"], button[id^="refocus-"]', function(e) {
+  $container.on('click', 'button.axis-lock-btn, button.axis-refocus-btn', function(e) {
     e.preventDefault();
     e.stopPropagation();
     
     // Extract axis and button type
-    const buttonId = jQuery(this).attr('id');
-    const [buttonType, axis] = buttonId.split('-');
+    const buttonType = jQuery(this).hasClass('axis-lock-btn') ? 'lock' : 'refocus';
+    const axis = jQuery(this).attr('data-axis');
     const dataType = jQuery(this).data('type');
 
     let currentFocus;
@@ -1056,7 +1056,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
         jQuery(this).attr('title', 'Unlock (follow focused element)');
         
         // Check if refocus button should be visible
-        const $refocusButton = $container.find(`#refocus-${axis}`);
+        const $refocusButton = $container.find(`.axis-refocus-btn[data-axis="${axis}"]`);
         const shouldShow = currentFocus && currentFocus !== settings[axis].column;
         $refocusButton.toggle(shouldShow);
       } else {
@@ -1066,7 +1066,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
         jQuery(this).attr('title', 'Lock (keep current selection)');
         
         // Hide refocus button
-        $container.find(`#refocus-${axis}`).hide();
+        $container.find(`.axis-refocus-btn[data-axis="${axis}"]`).hide();
         
         executeFocusChange(currentFocus);
       }

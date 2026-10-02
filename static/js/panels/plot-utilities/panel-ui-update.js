@@ -508,9 +508,10 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         });
         
         // Create refocus button
+        // Classes + data-axis, not ids: 'refocus-x' / 'lock-color' repeated in
+        // every plot panel on the page (duplicate DOM ids)
         const $refocusButton = $.createElement('button', {
-          id: `refocus-${axis}`,
-          class: 'btn btn-sm btn-outline-secondary',
+          class: 'btn btn-sm btn-outline-secondary axis-refocus-btn',
           title: 'Refocus to current selection',
           'data-axis': axis,
           'data-type': settings.type
@@ -519,8 +520,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         
         // Create lock button
         const $lockButton = $.createElement('button', {
-          id: `lock-${axis}`,
-          class: 'btn btn-sm btn-outline-secondary',
+          class: 'btn btn-sm btn-outline-secondary axis-lock-btn',
           'data-axis': axis,
           'data-type': settings.type
         });
@@ -538,8 +538,8 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
         }
         
         // Get references to buttons
-        const $refocusButton = $buttonsContainer.find(`#refocus-${axis}`);
-        const $lockButton = $buttonsContainer.find(`#lock-${axis}`);
+        const $refocusButton = $buttonsContainer.find('.axis-refocus-btn');
+        const $lockButton = $buttonsContainer.find('.axis-lock-btn');
         
         // Update data type attribute for both buttons
         if ($refocusButton.length) {

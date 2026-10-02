@@ -2215,7 +2215,7 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Ensure refocus button is hidden by default */
-[id^="refocus-"] {
+.axis-refocus-btn {
     display: none;
 }
 

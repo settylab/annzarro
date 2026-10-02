@@ -75,3 +75,15 @@ def test_icon_content_is_a_css_escape_not_literal_text():
     css = open(CSS, encoding="utf-8").read()
     assert not re.search(r"content:\s*'\\\\\\\\", css), "double backslash in a content: string"
     assert "content: '\\f15b'" in css
+
+
+def test_axis_lock_buttons_have_no_shared_ids():
+    """'lock-color' / 'refocus-x' ids repeated in every plot panel on the
+    page (two panels: 2 x refocus-color, 2 x lock-color, seen headless).
+    The buttons are found by class and data-axis now."""
+    js_dir = os.path.join(os.path.dirname(os.path.dirname(CSS)), "js", "panels", "plot-utilities")
+    for name in ("panel-ui-update.js", "listeners.js", "plot-update.js"):
+        src = open(os.path.join(js_dir, name), encoding="utf-8").read()
+        assert "id: `lock-${axis}`" not in src and "id: `refocus-${axis}`" not in src, name
+        assert "#refocus-${axis}" not in src and "#lock-${axis}" not in src, name
+        assert 'id^="lock-"' not in src and 'id^="refocus-"' not in src, name
