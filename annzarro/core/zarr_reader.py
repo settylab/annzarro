@@ -1123,6 +1123,12 @@ class ZarrReader:
         """
         root = self._get_root(dataset_path=dataset_path)
         
+        # 'X' is offered as a layer (the axis/column menus list it first): a
+        # store without a layer of that name means the X matrix itself.
+        if layer_name == 'X' and root is not None and 'X' in root and \
+                ('layers' not in root or 'X' not in root['layers']):
+            return self.get_X(dataset_path=dataset_path, row_indices=row_indices, col_indices=col_indices)
+
         if root is None or 'layers' not in root or layer_name not in root['layers']:
             return np.array([])
         

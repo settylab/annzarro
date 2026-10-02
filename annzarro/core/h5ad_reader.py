@@ -674,6 +674,13 @@ class h5adReader:
         Returns:
             numpy.ndarray: The layer data, or empty array if layer doesn't exist
         """
+        # 'X' is offered as a layer; without a layer of that name it is X
+        with h5py.File(dataset_path, "r") as root:
+            use_x = layer_name == "X" and "X" in root and \
+                ("layers" not in root or "X" not in root["layers"])
+        if use_x:
+            return self.get_X(dataset_path=dataset_path, row_indices=row_indices, col_indices=col_indices)
+
         with h5py.File(dataset_path, "r") as root:
             if "layers" not in root:
                 return np.array([])

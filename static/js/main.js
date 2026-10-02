@@ -11,6 +11,7 @@ import {
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
+import { NOTIFY_EVENT } from './utils/notify.js';
 
 const App = (function() {
     // Private variables
@@ -66,6 +67,12 @@ const App = (function() {
 
             // Loading a panel set restores its whole view through _applyView
             SessionManager.setViewApplier(_applyPanelSet);
+
+            // Notices raised by modules that cannot import main.js (utils/notify.js)
+            document.addEventListener(NOTIFY_EVENT, (e) => {
+                const { title, message, type } = e.detail || {};
+                _showNotification(title || 'Notice', message || '', type || 'warning');
+            });
 
             // Load available datasets
             await _loadDatasets();

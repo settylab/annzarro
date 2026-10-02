@@ -6,6 +6,7 @@
  */
 import { PanelManager } from '../../panel-manager.js';
 import { DataManager } from '../../data-manager.js';
+import { layerKeys } from '../../utils/structure-keys.js';
 
 /**
  * Get fixed cells from all active panels
@@ -423,17 +424,13 @@ export function getVarpColumnsForGeneTable(datasetStructure) {
  * @returns {Array<Object>} - Array of layer items for column selection
  */
 export function getLayerColumnsForCellTable(datasetStructure) {
-    if (!datasetStructure?.layers) return [];
+    if (!datasetStructure?.layers && !datasetStructure?.X) return [];
     
     const items = [];
     const fixedGenes = getFixedGenes();
     
-    // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
-        datasetStructure.layers.keys : 
-        (typeof datasetStructure.layers.keys === 'object' ? 
-            Object.keys(datasetStructure.layers.keys) : 
-            []);
+    // X first, then the layers, as in the plot menus
+    const layersArray = layerKeys(datasetStructure);
     
     // Add the focused gene entry for each layer
     const focusedGene = fixedGenes.find(fg => fg.source === 'focused');
@@ -475,17 +472,13 @@ export function getLayerColumnsForCellTable(datasetStructure) {
  * @returns {Array<Object>} - Array of layer items for column selection
  */
 export function getLayerColumnsForGeneTable(datasetStructure) {
-    if (!datasetStructure?.layers) return [];
+    if (!datasetStructure?.layers && !datasetStructure?.X) return [];
     
     const items = [];
     const fixedCells = getFixedCells();
     
-    // Make sure layers is an array
-    const layersArray = Array.isArray(datasetStructure.layers.keys) ? 
-        datasetStructure.layers.keys : 
-        (typeof datasetStructure.layers.keys === 'object' ? 
-            Object.keys(datasetStructure.layers.keys) : 
-            []);
+    // X first, then the layers, as in the plot menus
+    const layersArray = layerKeys(datasetStructure);
     
     // Add the focused cell entry for each layer
     const focusedCell = fixedCells.find(fc => fc.source === 'focused');

@@ -2,6 +2,8 @@ import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
+import { notify } from '../../utils/notify.js';
 
 // Annotation columns that are numeric in a typical scanpy/anndata object, in
 // the order we would rather plot them. Used only when the matrix source is
@@ -146,7 +148,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         break;
       }
       case 'layer': {
-        let keys = datasetStructure.layers?.details?.keys || datasetStructure.layers?.keys || [];
+        // X first, then the layers (layerKeys): X was not offered at all
+        let keys = layerKeys(datasetStructure);
         // Sort keys alphabetically if there are more than 10
         if (keys.length > 10) {
           keys = [...keys].sort((a, b) => a.localeCompare(b));
@@ -198,12 +201,22 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     } 
     // Last resort: use first available key, but avoid _index if possible
     else {
+      const wanted = settings.key;
       if (type === 'obs' || type === 'var') {
         // For obs and var types, avoid using _index if there are other options
         const nonIndexKey = keyValues.find(k => k !== '_index');
         settings.key = nonIndexKey || keyValues[0] || '';
       } else {
         settings.key = keyValues[0] || '';
+      }
+      // A key the dataset does not have at all (a deep link or panel set
+      // from another dataset) is replaced, and the user is told so. A key
+      // that exists under another type is just the user switching the type
+      // menu, which needs no notice.
+      if (wanted && wanted !== settings.key && !keyExistsInStructure(datasetStructure, wanted)) {
+        notify('Plot source not found',
+          `${type} "${wanted}" is not in this dataset; showing ${type} "${settings.key || 'nothing'}" instead.`,
+          'warning');
       }
     }
     
