@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--port", type=int, help="Port to run the server on")
     parser.add_argument("--data-dir", type=str, help="Directory to use for data storage")
-    parser.add_argument("--static-dir", type=str, help="Directory containing static files (default: repository root)")
+    parser.add_argument("--static-dir", type=str, help="Directory containing static files (default: the bundled frontend static/)")
     
     args = parser.parse_args()
     

@@ -24,7 +24,9 @@ server:
   data_dir: "data"
   
   # Logging configuration
-  log_file: "logs/annzarro_server.log"
+  # null = ~/.annzarro/logs/annzarro_server.log (or $ANNZARRO_HOME/logs/...).
+  # A relative path is taken relative to the directory annzarro is started from.
+  log_file: null
   log_level: "INFO"
   
   # Rate limiting and protection
@@ -61,9 +63,13 @@ server:
 
 # Authentication configuration
 auth:
-  user_file: "config/auth/users.json"  # Dedicated auth directory in config - visible but protected
+  # enabled: leave unset. Unset means off for a loopback `annzarro start`, on for a
+  # non-loopback host and for the WSGI (gunicorn) entry point. Setting it to false
+  # on a shared server is honoured but logs a security warning.
+  # null = ~/.annzarro/auth/users.json; a source checkout keeps using an existing
+  # <checkout>/config/auth/users.json.
+  user_file: null
   # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
-  #enabled: true
 
 # Application branding
 branding:

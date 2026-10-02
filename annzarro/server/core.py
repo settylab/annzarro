@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     "cert_file": None,
     "key_file": None,
     "data_dir": "data",
-    "static_dir": None,  # Will default to project root directory
-    "log_file": "annzarro_server.log",
+    "static_dir": None,  # None = the frontend static directory (paths.frontend_dir)
+    "log_file": None,  # None = ~/.annzarro/logs/annzarro_server.log
     "log_level": "INFO",
     "auth_enabled": False,
     "user_file": "users.json",
@@ -105,10 +105,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         Configured Flask application
     """
     # Create Flask app with custom template folder
-    template_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
+    from annzarro.utils.paths import frontend_dir
+    template_folder = str(frontend_dir("templates"))
     
     # Check for static folder with favicon
-    static_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    static_folder = str(frontend_dir("static"))
     if os.path.exists(static_folder) and (
         os.path.exists(os.path.join(static_folder, "favicon.ico")) or
         os.path.exists(os.path.join(static_folder, "favicon.png"))
@@ -259,7 +260,8 @@ def setup_logging(config: Dict[str, Any]) -> None:
     Args:
         config: Configuration dictionary
     """
-    log_file = config.get("log_file", "annzarro_server.log")
+    from annzarro.utils.paths import default_log_file
+    log_file = str(config.get("log_file") or default_log_file())
     log_level_str = config.get("log_level", "INFO")
     
     # Convert string log level to numeric value
@@ -267,8 +269,8 @@ def setup_logging(config: Dict[str, Any]) -> None:
     
     # Create logs directory if it doesn't exist
     log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
     
     # Reset the root logger to avoid duplicate handlers
     root_logger = logging.getLogger("")

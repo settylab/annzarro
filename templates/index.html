@@ -251,9 +251,6 @@
     <script src="{{ url_for('static', filename='vendor/js/searchBuilder.bootstrap5.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/js/dataTables.select.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/js/dataTables.fixedHeader.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/jszip.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/pdfmake.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/vfs_fonts.js') }}"></script>
     
     <!-- DataTables initialization verification -->
     <script>
@@ -316,9 +313,7 @@
                 { name: 'DataTables.Buttons', test: function() { return typeof $.fn.DataTable.Buttons !== 'undefined'; } },
                 { name: 'DataTables.SearchBuilder', test: function() { return typeof $.fn.DataTable.SearchBuilder !== 'undefined'; } },
                 { name: 'DataTables.Select', test: function() { return typeof $.fn.DataTable.select !== 'undefined'; } },
-                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.DataTable.FixedHeader !== 'undefined'; } },
-                { name: 'JSZip', test: function() { return typeof JSZip !== 'undefined'; } },
-                { name: 'pdfMake', test: function() { return typeof pdfMake !== 'undefined'; } }
+                { name: 'DataTables.FixedHeader', test: function() { return typeof $.fn.DataTable.FixedHeader !== 'undefined'; } }
             ];
             
             let allLoaded = true;

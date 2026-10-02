@@ -4,7 +4,9 @@
 server:
   host: 127.0.0.1 # 0.0.0.0  # Listen on all interfaces
   port: 8000
-  debug: true
+  # Never true in production: Flask debug mode runs the Werkzeug interactive
+  # debugger and the reloader.
+  debug: false
   data_dir: "data"  # Data directory location
   
   # Security settings for production
@@ -15,7 +17,6 @@ server:
   
   # Production logging
   log_level: "INFO"
-  log_file: "logs/annzarro_server.log"
   
   # Resource limits for production
   max_cells_per_request: 20000
@@ -26,10 +27,9 @@ server:
   # Proxy configuration (if behind nginx/apache)
   proxy_count: 1
 
-auth:
-  user_file: "config/auth/users.json"  # Use the same file as development by default
+auth: {}
   # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
-  #enabled: true
+  # enabled: true
 
 # Proxy configuration is part of the server section above
 # proxy_count: 1 has been moved inside the main server configuration

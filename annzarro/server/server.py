@@ -11,7 +11,7 @@ import sys
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 from flask import Flask, current_app
 
@@ -32,7 +32,8 @@ def run_server(
     data_dir: Optional[str] = None,
     static_dir: Optional[str] = None,
     detach: bool = False,
-    no_browser: bool = False
+    no_browser: bool = False,
+    detach_args: Optional[List[str]] = None
 ) -> None:
     """
     Run the Annzarro server.
@@ -47,6 +48,7 @@ def run_server(
         static_dir: Directory containing static files (optional)
         detach: Run server in detached mode (optional)
         no_browser: Don't open a browser automatically (optional)
+        detach_args: Extra CLI arguments (e.g. --config) for the detached child
     """
     global _app_instance
     
@@ -96,7 +98,7 @@ def run_server(
     
     logger.info(f"Starting Annzarro server on {host}:{port}")
     logger.info(f"Data directory: {data_dir}")
-    logger.info(f"Static directory: {final_config.get('static_dir', 'project root')}")
+    logger.info(f"Static directory: {final_config.get('static_dir') or 'frontend static/'}")
     logger.info(f"Debug mode: {debug}")
     
     # Show the full server configuration section for debugging
@@ -122,12 +124,12 @@ def run_server(
             "--host", host,
             "--port", str(port),
             "--data-dir", data_dir
-        ]
+        ] + list(detach_args or [])
         
-        # Pass debug flag if enabled
-        if final_config.get("debug", False):
-            cmd.append("--debug")
-            
+        # server.debug reaches the child through the same configuration
+        # (--config / --development in detach_args). Appending `--debug` here
+        # was a parse error: it is a global option and cannot follow `start`.
+
         # Pass auth settings to detached process
         if "auth_enabled" in final_config:
             if not final_config.get("auth_enabled"):
@@ -163,10 +165,11 @@ def run_server(
         
         # Store PID for later management
         # Standard location in home directory with a fallback if access fails
-        pid_dir = Path.home() / ".annzarro"
+        from annzarro.utils.paths import pid_file
+        pid_dir = pid_file().parent
         try:
             # Create the directory if it doesn't exist
-            pid_dir.mkdir(exist_ok=True)
+            pid_dir.mkdir(parents=True, exist_ok=True)
             
             # Try to write the PID file
             with open(pid_dir / "server.pid", "w") as f:

@@ -55,8 +55,11 @@ def register_static_routes(app, api_version):
         static_dir = app.config.get("static_dir")
         
         if not static_dir:
-            # Use repository root as default
-            static_dir = Path(__file__).resolve().parent.parent.parent.parent
+            # The frontend's own static directory. NOT the directory above the
+            # package: in a checkout that is the repository (configs, source),
+            # in a pip install it is site-packages (every installed package).
+            from annzarro.utils.paths import frontend_dir
+            static_dir = frontend_dir("static")
         
         # Normalize the path
         static_dir = os.path.abspath(static_dir)

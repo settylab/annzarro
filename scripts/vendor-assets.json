@@ -1,0 +1,301 @@
+{
+  "_comment": [
+    "Pinned third-party frontend assets, installed into static/vendor/ and shipped",
+    "inside the wheel as annzarro/static/vendor/. Paths are relative to static/vendor/.",
+    "Maintained with scripts/vendor_assets.py; never edit a sha256 by hand without",
+    "re-downloading and reviewing the file. License texts: annzarro/THIRD_PARTY_LICENSES/."
+  ],
+  "components": [
+    {
+      "name": "Bootstrap",
+      "version": "5.2.3",
+      "license": "MIT",
+      "homepage": "https://getbootstrap.com/",
+      "license_files": [
+        "bootstrap.txt",
+        "popper.txt"
+      ],
+      "notes": "bootstrap.bundle.min.js includes Popper (@popperjs/core ^2.11.6, MIT, Copyright (c) 2019 Federico Zivolo).",
+      "files": [
+        {
+          "path": "css/bootstrap.min.css",
+          "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css",
+          "sha256": "c0bcf7898fdc3b87babca678cd19a8e3ef570e931c80a3afbffcc453738c951a",
+          "size": 194901
+        },
+        {
+          "path": "js/bootstrap.bundle.min.js",
+          "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js",
+          "sha256": "9520018fa5d81f4e4dc9d06afb576f90cbbaba209cfcc6cb60e1464647f7890b",
+          "size": 80420
+        }
+      ]
+    },
+    {
+      "name": "jQuery",
+      "version": "3.6.4",
+      "license": "MIT",
+      "homepage": "https://jquery.com/",
+      "license_files": [
+        "jquery.txt"
+      ],
+      "files": [
+        {
+          "path": "js/jquery-3.6.4.min.js",
+          "url": "https://code.jquery.com/jquery-3.6.4.min.js",
+          "sha256": "a0fe8723dcf55da64d06b25446d0a8513e52527c45afcb37073465f9c6f352af",
+          "size": 89795
+        }
+      ]
+    },
+    {
+      "name": "DataTables",
+      "version": "1.13.4",
+      "license": "MIT",
+      "homepage": "https://datatables.net/",
+      "license_files": [
+        "datatables.txt"
+      ],
+      "files": [
+        {
+          "path": "js/jquery.dataTables.min.js",
+          "url": "https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js",
+          "sha256": "552bbd0c3eaf26eaeb697823c5026ff41bb379d19f266ed71203d041e84a065c",
+          "size": 86839
+        },
+        {
+          "path": "js/dataTables.bootstrap5.min.js",
+          "url": "https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js",
+          "sha256": "079a1739cd9385bd77f12f4c7e42c70ece95eec295425e15f84bba1bbcc70d41",
+          "size": 2360
+        },
+        {
+          "path": "css/dataTables.bootstrap5.min.css",
+          "url": "https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css",
+          "sha256": "18fd969de4b138549b71ff1826a9dc2d4d52f5532a89f11042183a507c8154ff",
+          "size": 11770
+        }
+      ]
+    },
+    {
+      "name": "DataTables Buttons",
+      "version": "2.3.6",
+      "license": "MIT",
+      "homepage": "https://datatables.net/extensions/buttons/",
+      "license_files": [
+        "datatables.txt",
+        "filesaver.txt"
+      ],
+      "notes": "buttons.html5.min.js includes FileSaver.js 1.3.3 (MIT, Copyright (c) 2016 Eli Grey).",
+      "files": [
+        {
+          "path": "js/dataTables.buttons.min.js",
+          "url": "https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js",
+          "sha256": "749896e15fee3ce201c59530d93c13c70d5e482ab0cd40d9228da30c5c8a04bc",
+          "size": 25559
+        },
+        {
+          "path": "js/buttons.bootstrap5.min.js",
+          "url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap5.min.js",
+          "sha256": "ea0b6a6cedca0ecf6a7dce0fe57aab199cea6d355f299f6b66aba0eea74ce2fb",
+          "size": 1585
+        },
+        {
+          "path": "js/buttons.html5.min.js",
+          "url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js",
+          "sha256": "3afbfbcff9a8cea4fc9787c9494512082f27ddeee20179565c78fc14bba81b9f",
+          "size": 25209
+        },
+        {
+          "path": "css/buttons.bootstrap5.min.css",
+          "url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css",
+          "sha256": "5ac0e5193d42ca6713646b5185f1e0b6028221cc2ac72361e819ceabb3de3892",
+          "size": 9221
+        }
+      ]
+    },
+    {
+      "name": "DataTables SearchBuilder",
+      "version": "1.4.2",
+      "license": "MIT",
+      "homepage": "https://datatables.net/extensions/searchbuilder/",
+      "license_files": [
+        "datatables.txt"
+      ],
+      "files": [
+        {
+          "path": "js/dataTables.searchBuilder.min.js",
+          "url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/dataTables.searchBuilder.min.js",
+          "sha256": "25146fe5464477fbe9541d50d040049c049f7dbe4eda859d70d597cfd83934d8",
+          "size": 66544
+        },
+        {
+          "path": "js/searchBuilder.bootstrap5.min.js",
+          "url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/searchBuilder.bootstrap5.min.js",
+          "sha256": "39a7827403063fd02b6d0a2a7c9e50cb389b8cfc19f50d027fbe11c9e70f21c6",
+          "size": 1216
+        },
+        {
+          "path": "css/searchBuilder.bootstrap5.min.css",
+          "url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.bootstrap5.min.css",
+          "sha256": "3f9a722459d618215cf26406ce2fb2aaf64d6ed0e8135e9d1bab0f914285b9ea",
+          "size": 6018
+        }
+      ]
+    },
+    {
+      "name": "DataTables Select",
+      "version": "1.6.2",
+      "license": "MIT",
+      "homepage": "https://datatables.net/extensions/select/",
+      "license_files": [
+        "datatables.txt"
+      ],
+      "files": [
+        {
+          "path": "js/dataTables.select.min.js",
+          "url": "https://cdn.datatables.net/select/1.6.2/js/dataTables.select.min.js",
+          "sha256": "fa727ff8f3abfeb0ef8ab8d0f0a0a59148c4bd5a0f8d7f584a7411008c80b296",
+          "size": 14174
+        },
+        {
+          "path": "css/select.bootstrap5.min.css",
+          "url": "https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css",
+          "sha256": "fa38f67380b65745a552d9d2d21e2d965089ff2965eb0c1ac10dd8ba7deb1d54",
+          "size": 1706
+        }
+      ]
+    },
+    {
+      "name": "DataTables FixedHeader",
+      "version": "3.3.2",
+      "license": "MIT",
+      "homepage": "https://datatables.net/extensions/fixedheader/",
+      "license_files": [
+        "datatables.txt"
+      ],
+      "files": [
+        {
+          "path": "js/dataTables.fixedHeader.min.js",
+          "url": "https://cdn.datatables.net/fixedheader/3.3.2/js/dataTables.fixedHeader.min.js",
+          "sha256": "880e3451acd0a763ffbe2b973f7d49f29449d495be906ae6f110e9a5582d5eff",
+          "size": 11944
+        },
+        {
+          "path": "css/fixedHeader.bootstrap5.min.css",
+          "url": "https://cdn.datatables.net/fixedheader/3.3.2/css/fixedHeader.bootstrap5.min.css",
+          "sha256": "fead67cf341e0d3a9483538b75293ec8309784a552b5deb8114942cd2d0dc7f2",
+          "size": 265
+        }
+      ]
+    },
+    {
+      "name": "Plotly.js",
+      "version": "2.20.0",
+      "license": "MIT AND BSD-3-Clause",
+      "homepage": "https://plotly.com/javascript/",
+      "license_files": [
+        "plotly.txt",
+        "plotly-bundled.txt"
+      ],
+      "notes": "The minified bundle includes third-party modules listed in plotly-bundled.txt (upstream plotly-2.20.0.min.js.LICENSE.txt): all MIT except ieee754 (BSD-3-Clause).",
+      "files": [
+        {
+          "path": "js/plotly-2.20.0.min.js",
+          "url": "https://cdn.plot.ly/plotly-2.20.0.min.js",
+          "sha256": "d908ccb86ab3c39f41a0196ca0d59ed4e54e76885bb32904a8c937aec963f394",
+          "size": 3579005
+        }
+      ]
+    },
+    {
+      "name": "Select2",
+      "version": "4.1.0-rc.0",
+      "license": "MIT",
+      "homepage": "https://select2.org/",
+      "license_files": [
+        "select2.txt"
+      ],
+      "files": [
+        {
+          "path": "js/select2.min.js",
+          "url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js",
+          "sha256": "f7244fff610595b944f76bf3080d74e3af42b5dd234f8f079e698cc39ac966b0",
+          "size": 73163
+        },
+        {
+          "path": "css/select2.min.css",
+          "url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css",
+          "sha256": "cda4a81c187015d95ed2c71f1841540b08203cdec5fa2a7d5d1825a3c2166f8c",
+          "size": 16264
+        }
+      ]
+    },
+    {
+      "name": "chroma.js",
+      "version": "2.4.2",
+      "license": "BSD-3-Clause AND Apache-2.0",
+      "homepage": "https://gka.github.io/chroma.js/",
+      "license_files": [
+        "chroma.txt",
+        "Apache-2.0.txt"
+      ],
+      "notes": "chroma.js is BSD-3-Clause; the ColorBrewer palettes it includes are Apache-2.0 (Copyright (c) 2002 Cynthia Brewer, Mark Harrower, and The Pennsylvania State University).",
+      "files": [
+        {
+          "path": "js/chroma.min.js",
+          "url": "https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js",
+          "sha256": "a19aa0df3b7974028724b2666d8311a226acedc65a90947c7bc56eecb9a367ad",
+          "size": 46174
+        }
+      ]
+    },
+    {
+      "name": "Font Awesome Free",
+      "version": "6.4.0",
+      "license": "MIT AND OFL-1.1",
+      "homepage": "https://fontawesome.com/",
+      "license_files": [
+        "fontawesome.txt"
+      ],
+      "notes": "Per Font Awesome's LICENSE.txt: CSS is MIT (code), the web font files are SIL OFL 1.1. CC BY 4.0 covers the SVG/JS icon packages, which are not redistributed here.",
+      "files": [
+        {
+          "path": "css/all.min.css",
+          "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css",
+          "sha256": "1edb1725a9ea8ca4dcf2f5508cee183218aa1685e47c1b23056717f754f58ebf",
+          "size": 102025,
+          "license": "MIT"
+        },
+        {
+          "path": "webfonts/fa-brands-400.woff2",
+          "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.woff2",
+          "sha256": "748332090c4b8e20f95d0ff59f0be20fa9c889359d3b36d4b886d73376054207",
+          "size": 108020,
+          "license": "OFL-1.1"
+        },
+        {
+          "path": "webfonts/fa-regular-400.woff2",
+          "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2",
+          "sha256": "8e7e5ea1b15f62ab14dbd41768e8fbcd21cc859a4ea5da812457ee714299fb35",
+          "size": 24948,
+          "license": "OFL-1.1"
+        },
+        {
+          "path": "webfonts/fa-solid-900.woff2",
+          "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2",
+          "sha256": "7152a6933ee3d690ec2af3d09da9d701723d16aa3410a6d80f28ff8866f3b880",
+          "size": 150124,
+          "license": "OFL-1.1"
+        },
+        {
+          "path": "webfonts/fa-v4compatibility.woff2",
+          "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-v4compatibility.woff2",
+          "sha256": "694a17c3d9d6c05f8aac63c544615552a4b220e9a4de863d87341a6bcfc1bc8d",
+          "size": 4564,
+          "license": "OFL-1.1"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# setup.py reads the vendor manifest and tool at build time, including when a
+# wheel is built from the sdist. Package data (frontend, vendored bundles,
+# config defaults, third-party licenses) is added from setup.py's package_data.
+include scripts/vendor_assets.py scripts/vendor-assets.json
+prune annzarro/tests
