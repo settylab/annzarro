@@ -1,4 +1,20 @@
-name: Build Desktop Apps
+name: Desktop apps
+
+# Builds the AnnZarro desktop app for Windows, macOS (Apple silicon and Intel)
+# and Linux, each on its own platform: the bundled server is frozen with
+# PyInstaller, which only targets the system it runs on.
+#
+# - workflow_dispatch: build and smoke-test; the files are kept as workflow
+#   artifacts. Nothing is released.
+# - push of a tag v*: the same, then a DRAFT GitHub release with every file
+#   and SHA256SUMS.txt. A maintainer reviews and publishes it.
+#
+# Code signing is off by default. To turn it on, add these repository
+# secrets (none are read unless present):
+#   macOS:   CSC_LINK, CSC_KEY_PASSWORD (Developer ID Application .p12, base64),
+#            APPLE_SIGNING_IDENTITY ("Developer ID Application: Name (TEAMID)"),
+#            APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID (notarisation)
+#   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD (Authenticode .pfx, base64)
 
 on:
   push:
@@ -6,77 +22,157 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
-      fail-fast: false  # Continue with other platforms even if one fails
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: mac
-    
+          - name: macos-arm64
+            os: macos-14
+            target: --mac
+            arch: --arm64
+          - name: macos-x64
+            os: macos-15-intel
+            target: --mac
+            arch: --x64
+          - name: windows-x64
+            os: windows-latest
+            target: --win
+            arch: --x64
+          - name: linux-x64
+            # The oldest supported Ubuntu: the frozen server needs a glibc at
+            # least as new as the one it was built against.
+            os: ubuntu-22.04
+            target: --linux
+            arch: --x64
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: '16'
-          
-      - name: Install Python dependencies
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: annzarro/desktop/electron/package-lock.json
+
+      - name: Check the app version follows the Python package
         run: |
-          pip install -e .
-          
-      - name: Make CLI executable (Unix)
-        if: runner.os != 'Windows'
-        run: chmod +x ./annzarro-cli
-          
-      - name: Install dependencies via CLI
+          py=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          js=$(node -p "require('./annzarro/desktop/electron/package.json').version")
+          echo "pyproject.toml: $py, package.json: $js"
+          test "$py" = "$js" || { echo "::error::package.json version $js != pyproject.toml $py (run bump_version.py)"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test "${GITHUB_REF#refs/tags/v}" = "$py" || { echo "::error::tag $GITHUB_REF != version $py"; exit 1; }
+          fi
+          echo "VERSION=$py" >> "$GITHUB_ENV"
+
+      - name: Freeze the server
+        run: python annzarro/desktop/scripts/build_server.py
+
+      - name: Smoke-test the frozen server
         run: |
-          ./annzarro-cli install
-          
-      - name: Build desktop app using CLI
+          exe=annzarro/desktop/electron/server/annzarro-server/annzarro-server
+          [[ "$RUNNER_OS" == Windows ]] && exe="$exe.exe"
+          du -sh annzarro/desktop/electron/server/annzarro-server
+          python annzarro/desktop/scripts/smoke_server.py "$exe" --dataset annzarro/tests/data/fixture_small.zarr
+          python annzarro/desktop/scripts/smoke_server.py "$exe" --dataset annzarro/tests/data/fixture_small_v3.zarr
+
+      - name: Install Electron toolchain
+        working-directory: annzarro/desktop/electron
+        run: npm ci
+
+      - name: Build the app
+        working-directory: annzarro/desktop/electron
         env:
-          # Set environment variables to disable publishing
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-          ELECTRON_BUILDER_PUBLISH: never
+          # Signing hooks, inactive while the secrets are unset.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
-          ./annzarro-cli desktop build --platform ${{ matrix.platform }}
-          
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          args=(${{ matrix.target }} ${{ matrix.arch }} --publish never)
+          if [[ "$RUNNER_OS" == macOS && -n "$APPLE_SIGNING_IDENTITY" ]]; then
+            # package.json signs ad-hoc ("-"); a Developer ID replaces that.
+            args+=(-c.mac.identity="$APPLE_SIGNING_IDENTITY")
+            [[ -n "$APPLE_ID" ]] && args+=(-c.mac.notarize=true)
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          [[ -z "$CSC_LINK" ]] && unset CSC_LINK CSC_KEY_PASSWORD
+          [[ -z "$WIN_CSC_LINK" ]] && unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          npx electron-builder "${args[@]}"
+          ls -la dist
+
+      - name: Smoke-test the app
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   app=$(ls -d annzarro/desktop/electron/dist/mac*/AnnZarro.app)/Contents/MacOS/AnnZarro
+                     python annzarro/desktop/scripts/smoke_app.py "$app" ;;
+            Windows) python annzarro/desktop/scripts/smoke_app.py annzarro/desktop/electron/dist/win-unpacked/AnnZarro.exe ;;
+            Linux)   app=$(find annzarro/desktop/electron/dist/linux-unpacked -maxdepth 1 -type f -name 'annzarro*' -perm -u+x | head -1)
+                     # Unprivileged CI user: Chromium's setuid sandbox is not installed here.
+                     xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$app" --no-sandbox ;;
+          esac
+
+      - name: Collect release files
+        run: |
+          mkdir -p out
+          cp annzarro/desktop/electron/dist/AnnZarro-"$VERSION"-* out/
+          rm -f out/*.blockmap
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: annzarro-${{ matrix.platform }}
-          path: annzarro/desktop/electron/dist/*
-          
+          name: AnnZarro-${{ env.VERSION }}-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+          compression-level: 0
+
   release:
+    name: Draft release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    # Continue with release even if some builds fail
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
-      
-      - name: List downloaded artifacts
-        run: |
-          find . -type f | sort
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
         with:
-          files: annzarro-*/*
-          # Don't fail if there are no artifacts to upload
-          fail_on_unmatched_files: false
+          path: assets
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: assets
+        run: |
+          sha256sum AnnZarro-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "AnnZarro ${GITHUB_REF_NAME#v}" \
+            --notes "Desktop apps for Windows, macOS and Linux. The builds are not code-signed: see the first-launch notes in README.md (Desktop app). Verify downloads against SHA256SUMS.txt."
