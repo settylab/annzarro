@@ -283,6 +283,26 @@ def test_allowlisted_host_cannot_redirect_the_server(http_store, make_client):
 
 
 # --------------------------------------------------------------------------
+# chunk cache: a different slice of an already-fetched chunk stays local
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cache_mb,fetches", [(64, 1), (0, 2)])
+def test_chunk_cache_serves_overlapping_reads(http_store, make_client, cache_mb, fetches):
+    if cache_mb and not _ZARR_V3:
+        pytest.skip("the chunk cache is zarr 3 only")
+    base, handler = http_store
+    client = make_client(remote_chunk_cache_mb=cache_mb)
+    before = len(handler.requests)
+    # Two DIFFERENT genes, so the reader's per-request result cache cannot
+    # answer the second; both need all of a CSR X's data/indices chunks.
+    for col in ("1", "3"):
+        resp = _get(client, "X", f"{base}/toy.zarr", cols=col)
+        assert resp.status_code == 200, resp.get_json()
+    made = handler.requests[before:]
+    assert made.count("/toy.zarr/X/data/0") == fetches, made
+
+
+# --------------------------------------------------------------------------
 # timeouts: a store that goes quiet is a 504, never a hang or a zero-fill
 # --------------------------------------------------------------------------
 

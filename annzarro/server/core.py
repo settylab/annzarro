@@ -50,6 +50,7 @@ DEFAULT_CONFIG = {
     "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
     "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
     "remote_read_timeout_s": 30,       # seconds between bytes before a 504
+    "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
     "app_name": "Annzarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page

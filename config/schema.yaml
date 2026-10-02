@@ -132,6 +132,11 @@ server:
       description: Seconds to wait between bytes from a remote store before failing with 504
       default: 30
       security: internal
+    remote_chunk_cache_mb:
+      type: integer
+      description: In-memory LRU of raw chunk bytes per open remote store (zarr 3 only); 0 disables
+      default: 256
+      security: internal
   required:
     - host
     - port

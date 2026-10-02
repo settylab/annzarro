@@ -123,10 +123,13 @@ What works and what does not:
   columns and obsm/layers keys are only discoverable from `.zmetadata`
   (written by `anndata`'s `write_zarr` by default; add one with
   `zarr.consolidate_metadata(path)`). S3 and GCS list natively.
-- **Latency.** The store root and metadata are cached per URL, but every new
-  slice is fetched from the network. Measured on public Vitessce AnnData
-  stores (13k cells, `gs://`): first open with full structure 4 to 7 s, then
-  0.2 to 0.7 s per gene, obs column or embedding.
+- **Latency.** The store root, metadata and (with zarr 3) recently read
+  chunks are kept in memory per URL; anything else is fetched. Measured on
+  public Vitessce AnnData stores: first open with full structure 4 to 7 s;
+  then 0.1 to 0.7 s per gene, obs column or embedding (13k cells, `gs://`).
+  A CSR-encoded X must read the whole matrix for one gene: 4 s per gene
+  uncached, 1 to 1.5 s once its chunks are in the chunk cache (4k spots,
+  HTTPS).
 - **Caches assume the store does not change** while the server runs; restart
   the server or `POST /api/v1/cache/reset` after rewriting a store.
 
@@ -145,6 +148,7 @@ server:
   remote_credentials: anonymous  # anonymous | environment
   remote_connect_timeout_s: 10   # a store that does not answer in time
   remote_read_timeout_s: 30      # fails the request with HTTP 504
+  remote_chunk_cache_mb: 256     # raw-bytes LRU per open remote store (zarr 3); 0 = off
 ```
 
 - `auto` (default) allows any URL on a local single-user server (loopback

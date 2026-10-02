@@ -266,6 +266,15 @@ def test_timeout_environment_override_and_validation():
             _policy(**LOCAL, remote_read_timeout_s=bad)
 
 
+def test_chunk_cache_budget():
+    assert _policy(**LOCAL).chunk_cache_mb == 256
+    assert _policy(**LOCAL, remote_chunk_cache_mb=0).chunk_cache_mb == 0
+    assert _policy({"ANNZARRO_REMOTE_CHUNK_CACHE_MB": "64"}, **LOCAL).chunk_cache_mb == 64
+    for bad in (-1, "lots"):
+        with pytest.raises(ValueError, match="remote_chunk_cache_mb"):
+            _policy(**LOCAL, remote_chunk_cache_mb=bad)
+
+
 def test_is_timeout_sees_through_wrapping():
     class ReadTimeoutError(Exception):  # botocore's is not a TimeoutError
         pass

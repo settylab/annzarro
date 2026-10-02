@@ -50,9 +50,11 @@ ENV_ALLOWLIST = "ANNZARRO_REMOTE_ALLOWLIST"
 ENV_CREDENTIALS = "ANNZARRO_REMOTE_CREDENTIALS"
 ENV_CONNECT_TIMEOUT = "ANNZARRO_REMOTE_CONNECT_TIMEOUT"
 ENV_READ_TIMEOUT = "ANNZARRO_REMOTE_READ_TIMEOUT"
+ENV_CHUNK_CACHE = "ANNZARRO_REMOTE_CHUNK_CACHE_MB"
 
 DEFAULT_CONNECT_TIMEOUT_S = 10.0
 DEFAULT_READ_TIMEOUT_S = 30.0
+DEFAULT_CHUNK_CACHE_MB = 256
 
 
 class RemoteAccessDenied(PermissionError):
@@ -238,6 +240,7 @@ class RemotePolicy:
     reason: str = "library default"
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT_S
     read_timeout: float = DEFAULT_READ_TIMEOUT_S
+    chunk_cache_mb: int = DEFAULT_CHUNK_CACHE_MB
 
     @property
     def restricted(self) -> bool:
@@ -260,9 +263,12 @@ class RemotePolicy:
         ``remote_credentials``  ``anonymous`` (default) | ``environment``
         ``remote_connect_timeout_s`` / ``remote_read_timeout_s``  seconds
             (default 10 / 30) to establish a connection / between bytes read
+        ``remote_chunk_cache_mb``  in-memory LRU of raw store bytes, per open
+            remote store (default 256; 0 disables)
 
         ``ANNZARRO_REMOTE_STORES``, ``_ALLOWLIST``, ``_CREDENTIALS``,
-        ``_CONNECT_TIMEOUT`` and ``_READ_TIMEOUT`` override the config keys.
+        ``_CONNECT_TIMEOUT``, ``_READ_TIMEOUT`` and ``_CHUNK_CACHE_MB``
+        override the config keys.
         """
         config = config or {}
         environ = os.environ if environ is None else environ
@@ -276,6 +282,13 @@ class RemotePolicy:
             raise ValueError(f"remote_credentials must be one of {_CREDENTIALS}, got {credentials!r}")
         connect_timeout = _seconds(environ.get(ENV_CONNECT_TIMEOUT, config.get(
             "remote_connect_timeout_s", DEFAULT_CONNECT_TIMEOUT_S)), "remote_connect_timeout_s")
+        try:
+            chunk_cache_mb = int(environ.get(ENV_CHUNK_CACHE, config.get(
+                "remote_chunk_cache_mb", DEFAULT_CHUNK_CACHE_MB)))
+        except (TypeError, ValueError):
+            raise ValueError("remote_chunk_cache_mb must be a whole number of MB")
+        if chunk_cache_mb < 0:
+            raise ValueError("remote_chunk_cache_mb must be >= 0 (0 disables it)")
         read_timeout = _seconds(environ.get(ENV_READ_TIMEOUT, config.get(
             "remote_read_timeout_s", DEFAULT_READ_TIMEOUT_S)), "remote_read_timeout_s")
 
@@ -293,14 +306,16 @@ class RemotePolicy:
                 enabled, reason = False, (f"remote_stores: auto ({', '.join(hosted)}; "
                                           f"set remote_allowlist or remote_stores: allow)")
         return cls(enabled=enabled, allowlist=allowlist, credentials=credentials,
-                   reason=reason, connect_timeout=connect_timeout, read_timeout=read_timeout)
+                   reason=reason, connect_timeout=connect_timeout, read_timeout=read_timeout,
+                   chunk_cache_mb=chunk_cache_mb)
 
     def describe(self) -> str:
         if not self.enabled:
             return f"remote stores disabled [{self.reason}]"
         scope = ", ".join(str(p) for p in self.allowlist) if self.allowlist else "any URL"
         return (f"remote stores allowed for {scope}; credentials={self.credentials}; "
-                f"timeouts connect={self.connect_timeout:g}s read={self.read_timeout:g}s "
+                f"timeouts connect={self.connect_timeout:g}s read={self.read_timeout:g}s; "
+                f"chunk cache {self.chunk_cache_mb} MB/store "
                 f"[{self.reason}]")
 
     def check(self, url: str) -> urllib.parse.SplitResult:
@@ -469,12 +484,13 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
             from zarr.storage import FsspecStore
             store = FsspecStore.from_url(target, storage_options=options, read_only=True,
                                          allowed_exceptions=missing_key)
-            group = zarr.open_group(store, mode="r")
+            group = zarr.open_group(_with_chunk_cache(store, policy), mode="r")
             consolidated = getattr(group.metadata, "consolidated_metadata", None) is not None
         else:
             # zarr 2's FSStore defaults to treating every IOError as absent.
             store = zarr.storage.FSStore(target, mode="r", exceptions=(KeyError,) + missing_key,
                                          **options)
+            store = _with_chunk_cache(store, policy)
             # zarr 2 must be asked for consolidated metadata. One .zmetadata
             # request replaces a request per member: ms versus seconds remotely.
             try:
@@ -498,6 +514,32 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
         if error is exc:
             raise
         raise error from exc
+
+
+def _with_chunk_cache(store, policy: RemotePolicy):
+    """Keep recently read raw bytes of a remote store in memory (LRU, bounded).
+
+    The reader caches decoded RESULTS keyed by the exact request, so asking
+    for gene 5 after gene 0 re-downloads every chunk both share -- for a CSR
+    X that is the whole indices/data arrays, every time. Caching the store's
+    bytes makes the second request local. Budget is per open store; the
+    reader keeps at most ``cache_dataset_limit`` remote roots open.
+    """
+    max_bytes = policy.chunk_cache_mb * 1024 * 1024
+    if max_bytes <= 0:
+        return store
+    if not _ZARR_V3:
+        # zarr 2's LRUStoreCache was tried and rejected: wrapped around FSStore
+        # it turned a timed-out chunk read back into a missing chunk (zeros,
+        # HTTP 200) and did not even serve the repeat read from memory.
+        return store
+    try:
+        from zarr.experimental.cache_store import CacheStore
+        from zarr.storage import MemoryStore
+    except ImportError:  # zarr 3 before the experimental cache store
+        logger.info("This zarr has no CacheStore; remote reads are not chunk-cached")
+        return store
+    return CacheStore(store, cache_store=MemoryStore(), max_size=max_bytes)
 
 
 def timeout_message(url: str, policy: Optional[RemotePolicy] = None) -> str:

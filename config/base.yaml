@@ -54,6 +54,10 @@ server:
   # stops answering fails the request with HTTP 504 instead of holding it.
   remote_connect_timeout_s: 10
   remote_read_timeout_s: 30
+  # In-memory LRU of raw bytes per open remote store (zarr 3 only; 0 = off).
+  # The reader's result cache only answers identical requests; this one makes
+  # a different gene or column from already-fetched chunks local.
+  remote_chunk_cache_mb: 256
 
 # Authentication configuration
 auth:
