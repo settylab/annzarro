@@ -12,16 +12,28 @@ import zarr
 from annzarro.core.zarr_reader import ZarrReader
 
 
+# zarr 2 (the Python 3.9 CI job) has neither zarr_format= nor create_array
+_ZARR3 = int(zarr.__version__.split(".")[0]) >= 3
+
+
+def _open_v2(path):
+    return zarr.open_group(path, mode="w", zarr_format=2) if _ZARR3 else zarr.open_group(path, mode="w")
+
+
+def _array(group, name, a, chunks=None):
+    make = group.create_array if _ZARR3 else group.create_dataset
+    make(name, shape=a.shape, dtype=a.dtype, **({"chunks": chunks} if chunks else {}))[:] = a
+
+
 @pytest.fixture
 def store(tmp_path):
     path = str(tmp_path / "t.zarr")
-    root = zarr.open_group(path, mode="w", zarr_format=2)
     rng = np.random.default_rng(0)
     X = rng.random((30, 8)).astype(np.float32)
-    root.create_array("X", shape=X.shape, dtype=X.dtype, chunks=(10, 4))[:] = X
-    layers = root.create_group("layers")
     L = rng.random((30, 8)).astype(np.float32)
-    layers.create_array("fc", shape=L.shape, dtype=L.dtype, chunks=(10, 4))[:] = L
+    root = _open_v2(path)
+    _array(root, "X", X, chunks=(10, 4))
+    _array(root.create_group("layers"), "fc", L, chunks=(10, 4))
     return path, X, L
 
 
@@ -81,11 +93,10 @@ def test_disable_caching_still_bypasses(store, monkeypatch):
 def test_obsm_key_is_the_key_not_the_entity(store, tmp_path):
     """get_obsm_varm(entity, key, ...) used to key on args[0] -- the ENTITY."""
     path = str(tmp_path / "m.zarr")
-    root = zarr.open_group(path, mode="w", zarr_format=2)
-    obsm = root.create_group("obsm")
+    obsm = _open_v2(path).create_group("obsm")
     a = np.arange(20, dtype=np.float32).reshape(10, 2)
-    obsm.create_array("A", shape=a.shape, dtype=a.dtype)[:] = a
-    obsm.create_array("B", shape=a.shape, dtype=a.dtype)[:] = a + 100
+    _array(obsm, "A", a)
+    _array(obsm, "B", a + 100)
     reader = ZarrReader()
     ra = reader.get_obsm_varm("cells", "A", dataset_path=path)
     rb = reader.get_obsm_varm("cells", "B", dataset_path=path)
