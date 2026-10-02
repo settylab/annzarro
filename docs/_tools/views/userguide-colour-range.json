@@ -1,0 +1,147 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 34,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 66,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-A",
+      "controlsVisible": false
+     },
+     {
+      "type": "split",
+      "direction": "horizontal",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-B",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-O",
+        "controlsVisible": false
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-A": false,
+   "cell-plot-B": false,
+   "cell-plot-O": false
+  },
+  "panelConfigs": {
+   "cell-plot-A": {
+    "id": "cell-plot-A",
+    "title": "Range from the data (-1.03 to 1.03)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "centeringActive": true
+   },
+   "cell-plot-B": {
+    "id": "cell-plot-B",
+    "title": "Range fixed at -0.25 to 0.25: values beyond take the end colours",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -0.25,
+    "colorMax": 0.25,
+    "lockColorRange": true
+   },
+   "cell-plot-O": {
+    "id": "cell-plot-O",
+    "title": "Same range with Hide Outliers",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -0.25,
+    "colorMax": 0.25,
+    "lockColorRange": true,
+    "hideOutliers": true
+   }
+  }
+ }
+}

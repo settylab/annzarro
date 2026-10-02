@@ -1,0 +1,76 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-G",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-table-T",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-G": false,
+   "gene-table-T": false
+  },
+  "panelConfigs": {
+   "gene-plot-G": {
+    "id": "gene-plot-G",
+    "title": "Volcano, colour = Spearman (fold change) to the focused gene",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true
+   },
+   "gene-table-T": {
+    "id": "gene-table-T",
+    "title": "Gene table"
+   }
+  }
+ }
+}

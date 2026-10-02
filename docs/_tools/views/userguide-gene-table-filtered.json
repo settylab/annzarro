@@ -1,0 +1,355 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-G",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-table-T",
+      "controlsVisible": true
+     }
+    ],
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-G": false,
+   "gene-table-T": false
+  },
+  "panelConfigs": {
+   "gene-plot-G": {
+    "id": "gene-plot-G",
+    "title": "Volcano, colour = Spearman (fold change) to the focused gene",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false,
+     "history": {
+      "varp": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "categoryPalette": "uns",
+    "colorMin": -1,
+    "colorMax": 1,
+    "colorReversed": false,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "subsettedGenes": null,
+    "hideNonSubset": false,
+    "showGrid": true,
+    "lockColorRange": true,
+    "highlightFocusedGene": true,
+    "exportWidth": 1200,
+    "exportHeight": 800,
+    "hideNaN": false,
+    "showAxisTitles": true,
+    "showAxisLabels": true,
+    "showAxisLines": true,
+    "showZeroLines": false,
+    "showLegend": true,
+    "bgColor": "#ffffff",
+    "gridColor": "#e6e6e6",
+    "axisColor": "#000000",
+    "textColor": "#000000",
+    "zeroLineColor": "#cccccc",
+    "backdropColor": "#f0f0f0",
+    "axisLineWidth": 1,
+    "gridLineWidth": 1,
+    "zeroLineWidth": 1,
+    "tickDensity": "auto",
+    "fontSize": 12,
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "margins": {
+     "l": 80,
+     "r": 80,
+     "t": 80,
+     "b": 60,
+     "pad": 4
+    },
+    "scaleExport": false,
+    "legendPosition": "right",
+    "enableZoom": true,
+    "enablePan": true,
+    "showHoverInfo": true,
+    "tableFilter": "gene-table-T",
+    "removeNonTableEntries": false,
+    "centeringActive": false
+   },
+   "gene-table-T": {
+    "id": "gene-table-T",
+    "title": "Gene table",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "responsive": false,
+    "fixedHeader": true,
+    "currentEntries": [
+     14400,
+     15035,
+     14337,
+     14336,
+     14339,
+     15426,
+     2551,
+     7011,
+     14399,
+     15475,
+     7010,
+     7009,
+     11484,
+     11298,
+     16257,
+     6200,
+     6002,
+     9234,
+     9254,
+     778,
+     9043,
+     14316,
+     2223,
+     7459,
+     14221,
+     11385,
+     10048,
+     6842,
+     712,
+     6132,
+     2311,
+     12980,
+     5194,
+     14427,
+     13075,
+     3336,
+     14330,
+     5195,
+     2769,
+     2644,
+     4558,
+     7402,
+     165,
+     14137,
+     12475,
+     14398,
+     5005,
+     3537,
+     346,
+     159,
+     9026,
+     12933,
+     12948,
+     9863,
+     14188,
+     636,
+     971,
+     5680,
+     4356,
+     15453,
+     7823,
+     8669,
+     405,
+     3020,
+     14331,
+     3255,
+     5338,
+     12189,
+     16026,
+     5725,
+     7846,
+     558,
+     5721,
+     6467,
+     5261,
+     9045,
+     7861,
+     15028,
+     15790,
+     1768,
+     13176,
+     11811,
+     7621,
+     14387,
+     4525,
+     10802,
+     7564,
+     16284,
+     9865,
+     8132,
+     3119,
+     14426,
+     6078,
+     7942,
+     13587,
+     11390,
+     13348,
+     2986,
+     8128,
+     12325,
+     819,
+     14408,
+     5266,
+     713,
+     13111,
+     6800,
+     8653,
+     9172,
+     4985,
+     14332,
+     3865,
+     6409,
+     2948,
+     5271,
+     10115,
+     14553,
+     7545,
+     1942,
+     14887,
+     13164,
+     15359,
+     5651,
+     13759,
+     9515,
+     347,
+     12819,
+     4597,
+     8521,
+     11580,
+     1314,
+     14395,
+     13446,
+     7048,
+     11369,
+     10442,
+     3708,
+     5669,
+     13655,
+     7563,
+     9678,
+     1696,
+     10116,
+     7795,
+     15287,
+     5632,
+     10304,
+     4780,
+     5703,
+     13482,
+     9513,
+     7431,
+     12947,
+     1715,
+     771,
+     10398,
+     6366,
+     9241,
+     10363,
+     8854
+    ],
+    "filteredGenes": null,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": ">",
+       "data": "kompot_de_Young_to_Old_mahalanobis",
+       "origData": "var_kompot_de_Young_to_Old_mahalanobis_main",
+       "type": "num",
+       "value": [
+        "5"
+       ]
+      },
+      {
+       "criteria": [
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_mean_lfc",
+         "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
+         "type": "num",
+         "value": [
+          "0.05"
+         ]
+        },
+        {
+         "condition": "<",
+         "data": "kompot_de_Young_to_Old_mean_lfc",
+         "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
+         "type": "num",
+         "value": [
+          "-0.05"
+         ]
+        }
+       ],
+       "logic": "OR"
+      }
+     ],
+     "logic": "AND"
+    }
+   }
+  }
+ }
+}
