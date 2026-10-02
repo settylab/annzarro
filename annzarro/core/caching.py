@@ -12,6 +12,40 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+class CacheSettings:
+    """``max_memory_mb``, ``enable_caching`` and ``cache_limit`` on a reader,
+    read from and written to its ``self.cache`` (a DatasetCache).
+
+    The readers used to copy these at construction, so setting one on the
+    reader changed nothing the cache used, and /cache/reset reported the
+    stale copy.
+    """
+
+    @property
+    def max_memory_mb(self):
+        return self.cache.max_memory_mb
+
+    @max_memory_mb.setter
+    def max_memory_mb(self, value):
+        self.cache.max_memory_mb = value
+
+    @property
+    def enable_caching(self):
+        return self.cache.enable_caching
+
+    @enable_caching.setter
+    def enable_caching(self, value):
+        self.cache.enable_caching = value
+
+    @property
+    def cache_limit(self):
+        return self.cache.cache_limit
+
+    @cache_limit.setter
+    def cache_limit(self, value):
+        self.cache.cache_limit = value
+
+
 class DatasetCache:
     """
     Cache manager for dataset access operations.
