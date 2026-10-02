@@ -18,6 +18,11 @@ SUITES = {
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"
     ),
     "focus-row.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "coverage.js"),
+    # Every categorical point drawn once or counted (#38); colour filter counts
+    # match the mask (#37); the incremental colour path replaces its coverage (#40).
+    "colour-coverage.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make-helper.js"
+    ),
     "table-focus.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "table-data.js"
     ),
