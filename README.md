@@ -36,6 +36,10 @@ Then open http://localhost:8000 in your browser if using server mode.
 
 ### Installation Options
 
+These are options of the checkout's `./annzarro-cli` wrapper and
+`annzarro-install.py`; the `annzarro` command a pip install provides does not
+take them.
+
 ```bash
 # Install without virtual environment
 ./annzarro-cli install --no-venv
@@ -214,7 +218,7 @@ the same split layout, panel settings and focused cell/gene. The view travels
 compressed in the URL fragment (`?dataset_path=…#view=…`), so it never reaches
 the server and long layouts do not hit request-line limits. Without clipboard
 access (e.g. plain http on a cluster node) the link is shown for manual copying.
-See [docs/deep-link-schema.md](docs/deep-link-schema.md) for the format.
+See the [deep-link reference](https://annzarro.readthedocs.io/en/latest/reference/deep-links.html) for the format.
 
 ### Remote datasets
 
