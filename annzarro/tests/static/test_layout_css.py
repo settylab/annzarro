@@ -133,8 +133,12 @@ def test_filter_box_lists_every_reason_above_the_plot():
 def test_bottom_chooser_keeps_a_usable_height():
     """Add a cell plot, split it, close one tile: the page-level chooser
     under the panels was 2 px tall, so closed panels could only be reached
-    through a split. Headless after: 320 px, the plot shrinks to fit."""
+    through a split. Headless after (1600x1000): chooser 320 px, its heading
+    visible under the panel; the panel 811 px (the tile area less 5rem), not
+    squeezed to make room for the chooser (a first fix gave it 567 px)."""
     css = open(CSS, encoding="utf-8").read()
     sel = _rule(css, ".tile-container > .tile-selector")
     assert re.search(r"min-height:\s*3\d\dpx", sel) and "flex-shrink: 0" in sel
-    assert re.search(r"min-height:\s*\d+px", _rule(css, ".tile-container > .panel-wrapper"))
+    wrap = _rule(css, ".tile-container > .panel-wrapper")
+    assert "flex-shrink: 0" in wrap
+    assert re.search(r"max-height:\s*calc\(100% - [\d.]+rem\)", wrap)

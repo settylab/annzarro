@@ -236,13 +236,18 @@ body {
 /* The page-level chooser under the panels ("Create New Panel / Duplicate or
    Reopen") keeps a usable height: below panels that fill the window it was
    squeezed to 2 px, so closed panels could only be reached through a split.
-   Panels shrink to fit down to 360 px; below that the tile area scrolls. */
+   A panel keeps its own height (1000 px, or what its handle was dragged to)
+   but at most the visible tile area less 5rem, so the chooser's heading
+   shows at the bottom and the rest is a scroll away; the panel itself is
+   not squeezed to make room. */
 .tile-container > .tile-selector {
     min-height: 320px;
     flex-shrink: 0;
 }
 
 .tile-container > .panel-wrapper {
+    flex-shrink: 0;
+    max-height: calc(100% - 5rem);
     min-height: 360px;
 }
 
