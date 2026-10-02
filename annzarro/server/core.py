@@ -498,7 +498,16 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password, client_ip=request.remote_addr):
+        from annzarro.server.auth import UnsupportedPasswordHash
+        try:
+            ok = app.auth_manager.authenticate(username, password, client_ip=request.remote_addr)
+        except UnsupportedPasswordHash as exc:
+            logger.error(f"Login of {username!r} impossible on this Python: {exc}")
+            return render_login(next_url=next_url, fragment=fragment,
+                                error="This server cannot check your password on its current "
+                                      "Python installation. Please tell the administrator "
+                                      "(the server log says why)."), 500
+        if ok:
             # A fresh session: nothing from before login carries over
             session.clear()
             session["user_id"] = username
