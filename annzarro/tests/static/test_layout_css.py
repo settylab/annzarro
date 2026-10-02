@@ -105,3 +105,14 @@ def test_plot_area_keeps_a_drawable_height():
     css = open(CSS, encoding="utf-8").read()
     m = re.search(r"min-height:\s*(\d+)px", _rule(css, ".plot-container"))
     assert m and int(m.group(1)) >= 200
+
+
+def test_split_buttons_have_distinct_unambiguous_icons():
+    """The vertical split used a rotated 'columns' icon that read as a
+    floppy-disk Save. Both buttons now draw a box with a vertical or a
+    horizontal divider and say what they do."""
+    html = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "..", "templates", "index.html"), encoding="utf-8").read()
+    h = re.search(r'<button[^>]*tile-split-h[^>]*>.*?</button>', html, re.S).group(0)
+    v = re.search(r'<button[^>]*tile-split-v[^>]*>.*?</button>', html, re.S).group(0)
+    assert "fa-rotate-90" not in v and "<svg" in h and "<svg" in v
+    assert 'x1="8" y1="2" x2="8" y2="14"' in h and 'x1="2" y1="8" x2="14" y2="8"' in v
