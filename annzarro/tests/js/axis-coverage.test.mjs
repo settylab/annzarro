@@ -17,8 +17,8 @@
  * every plot-axis error not already carrying a `.coverage` threw
  * `ReferenceError: coverage is not defined` -- on exactly the paths
  * `classifyError` exists for. It shipped in four commits through two review
- * rounds. `node --check` passes on it; the repo's own `.eslintrc.js` catches it
- * (`no-undef`) and nothing runs ESLint.
+ * rounds. `node --check` passes on it; ESLint's `no-undef` catches it, and
+ * `npm run lint` / annzarro/tests/static/test_eslint.py now run ESLint.
  *
  * The reason no test caught it is structural: `plot-make.js` touched `window`
  * at module scope, so the module threw on import under `node` and no test could
