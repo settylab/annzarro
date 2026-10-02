@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -370,52 +370,23 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
   // Try to set default axes from data collection if they're undefined
   function trySetDefaultAxes() {
-    // Auto-set default axes from appropriate collection based on plot type
-    const collection = isGenePlot ? 'varm' : 'obsm';
-    const dataframeCollection = isGenePlot ? datasetStructure?.varm?.dataframes : datasetStructure?.obsm?.dataframes;
-    
-    if (!dataframeCollection || Object.keys(dataframeCollection).length === 0) {
-      console.warn(`No ${collection} dataframes available`);
-      return false;
-    }
-    
-    const dataframeKeys = Object.keys(dataframeCollection);
-    // Try UMAP first, then look for a key starting with "X_umap", then try PCA, then use the first available key
-    let defaultKey =
-      dataframeKeys.includes("X_umap") ? "X_umap" :
-      dataframeKeys.find(k => k.startsWith("X_umap")) ||
-      (dataframeKeys.includes("X_pca") ? "X_pca" : dataframeKeys[0]);
-
-    const defaultFrame = dataframeCollection[defaultKey];
-    if (!defaultFrame?.columns?.length || defaultFrame.columns.length < 2) {
-      console.warn(`No usable columns in ${collection} dataframe "${defaultKey}"`);
+    const defaults = chooseDefaultAxes(plotType, datasetStructure);
+    if (!defaults) {
       return false;
     }
 
     // Only set default x and y if they're not already defined
     if (!settings.x || !settings.x.type) {
-      settings.x = { 
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[0]
-      };
+      settings.x = defaults.x;
     }
 
     if (!settings.y || !settings.y.type) {
-      settings.y = { 
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[1]
-      };
+      settings.y = defaults.y;
     }
 
     // Only suggest z-axis if there's a third column available and z is undefined
-    if (defaultFrame.columns.length >= 3 && settings.z === undefined) {
-      settings.z = {
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[2]
-      };
+    if (defaults.z && settings.z === undefined) {
+      settings.z = defaults.z;
     }
     
     return true;

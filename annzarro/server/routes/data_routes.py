@@ -13,11 +13,67 @@ from flask import jsonify, request, current_app as app
 import json
 
 from ...core import zarr_reader
+from ...core.zarr_reader import ZarrFormatError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
 
 logger = logging.getLogger(__name__)
+
+
+# Per-entry result of probing a dataset for the /datasets listing, keyed by
+# path and validated against a cheap stat signature. Listing used to OPEN every
+# store on every call (1.3-4.9 s for 33 datasets on the live service); with
+# this, a repeat listing costs a handful of stat() calls per entry and only a
+# new or rewritten store is opened again. A value of None records "not a
+# readable AnnData" so a broken entry is not re-probed on every listing either.
+_LISTING_PROBE_CACHE = {}
+
+# Members whose stat changes when a store is (re)written. anndata recreates
+# groups on write, so their directory mtimes move; zarr.json covers v3 stores.
+_LISTING_SIGNATURE_MEMBERS = (".zgroup", ".zattrs", "zarr.json", "obs", "var", "X")
+
+
+def _listing_signature(entry_path):
+    """Cheap fingerprint of a dataset entry: stat() only, never opens it."""
+    st = os.stat(entry_path)
+    if not os.path.isdir(entry_path):
+        return (st.st_mtime_ns, st.st_size)
+    parts = [st.st_mtime_ns]
+    for member in _LISTING_SIGNATURE_MEMBERS:
+        try:
+            mst = os.stat(os.path.join(entry_path, member))
+            parts.append((member, mst.st_mtime_ns, mst.st_size))
+        except OSError:
+            parts.append((member, None))
+    return tuple(parts)
+
+
+def _probe_dataset_counts(entry_path, probe):
+    """
+    (cells, genes) for a listing entry, None if it is not a readable
+    dataset, or the ZarrFormatError when it is one in a zarr format this
+    server cannot read. `probe` does the expensive open; it runs only when the entry's
+    stat signature differs from the cached one.
+    """
+    try:
+        signature = _listing_signature(entry_path)
+    except OSError:
+        return None
+    cached = _LISTING_PROBE_CACHE.get(entry_path)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    try:
+        counts = probe(entry_path)
+    except ZarrFormatError as exc:
+        # A real dataset this server cannot read. Listing it, with the
+        # reason, beats dropping it: a store that silently vanishes from the
+        # list is as unexplained as one that silently reads as empty.
+        counts = exc
+    except Exception:
+        counts = None
+    _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
+    return counts
 
 
 def _reader_error_response(exc, dataset_path):
@@ -1064,14 +1120,17 @@ def register_data_routes(app, api_version):
                     # plain .h5ad datasets are browsable. isfile() follows
                     # symlinks, so symlinked .h5ad entries are picked up too.
                     if entry.endswith(".h5ad") and os.path.isfile(entry_path):
-                        try:
+                        def _h5ad_counts(path):
                             # get_metadata reads only the file's structure (not
                             # the matrices), so this is a cheap shape probe.
-                            shape = h5ad_reader_obj.get_metadata(entry_path).get("shape", (0, 0))
-                            cells, genes = int(shape[0]), int(shape[1])
-                        except Exception:
+                            shape = h5ad_reader_obj.get_metadata(path).get("shape", (0, 0))
+                            return int(shape[0]), int(shape[1])
+
+                        counts = _probe_dataset_counts(entry_path, _h5ad_counts)
+                        if counts is None:
                             # Not a readable AnnData h5ad — skip it.
                             continue
+                        cells, genes = counts
 
                         zarr_stores.append({
                             "name": entry,
@@ -1106,14 +1165,27 @@ def register_data_routes(app, api_version):
                         
                     if is_zarr:
                         # Try to get basic info about the zarr store
-                        try:
+                        def _zarr_counts(path):
                             # Use the fast method to get only cell and gene counts
-                            counts = zarr_reader.get_basic_counts(entry_path)
-                            cells = counts['cell_count']
-                            genes = counts['gene_count']
-                        except Exception:
+                            c = zarr_reader.get_basic_counts(path)
+                            return c['cell_count'], c['gene_count']
+
+                        counts = _probe_dataset_counts(entry_path, _zarr_counts)
+                        if counts is None:
                             # If we can't open the zarr store or it's not a valid AnnData structure, skip it
                             continue
+                        if isinstance(counts, ZarrFormatError):
+                            zarr_stores.append({
+                                "name": entry,
+                                "path": entry_path,
+                                "is_link": os.path.islink(entry_path),
+                                "cells": None,
+                                "genes": None,
+                                "error": str(counts),
+                                "rel_path": os.path.relpath(entry_path, data_dir)
+                            })
+                            continue
+                        cells, genes = counts
                         
                         zarr_stores.append({
                             "name": entry,

@@ -62,6 +62,24 @@ const CacheManager = (function() {
     return get(key) !== undefined;
   }
 
+  /**
+   * Live (unexpired) keys, oldest first. Expired entries are dropped on the
+   * way, exactly as `get` would drop them.
+   * @returns {string[]}
+   */
+  function keys() {
+    const now = Date.now();
+    const live = [];
+    for (const [key, entry] of [..._cache]) {
+      if (entry.expires && entry.expires <= now) {
+        _remove(key);
+      } else {
+        live.push(key);
+      }
+    }
+    return live;
+  }
+
   function _notifyChange(key) {
     for (const cb of _listeners) {
       try {
@@ -82,6 +100,7 @@ const CacheManager = (function() {
     set,
     clear,
     has,
+    keys,
     onChange
   };
 })();

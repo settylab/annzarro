@@ -605,13 +605,16 @@ function getColumnDisplayName(column) {
         if (column.column === 'focused_gene' || column.column === '_focused_gene') {
             return `${column.key}: ${focusedGene}`;
         } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedGene}`;
+            return `${column.key}: ${focusedCell}`;
         } else {
             return `${column.key}: ${column.column}`;
         }
     }
     return `${column.type}:${column.key}:${column.column}`;
 }
+
+/** Per-panel AbortController for the listeners setupColumnSelectionEvents adds. */
+const _columnSelectionControllers = new Map();
 
 /**
  * Setup event listeners for column selection
@@ -623,6 +626,15 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
     // Find container more safely
     const tablePanel = document.getElementById(`table-container-${id}`)?.closest('.table-panel');
     if (!tablePanel) return;
+
+    // This runs again on every focus change (updateTableOnFocusChange), but the
+    // option controls below are NOT rebuilt in between. Without dropping the
+    // previous registration, N focus changes meant N listeners on each control:
+    // one Export click dispatched N export requests. Abort the previous set.
+    _columnSelectionControllers.get(id)?.abort();
+    const controller = new AbortController();
+    _columnSelectionControllers.set(id, controller);
+    const signal = controller.signal;
     
     const checkboxes = tablePanel.querySelectorAll('.column-checkbox');
     const selectedColumnsList = document.getElementById(`selected-columns-list-${id}`);
@@ -631,7 +643,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
     checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', () => {
             updateSelectedColumnsList(id, settings);
-        });
+        }, { signal });
     });
     
     // Handle apply button
@@ -663,7 +675,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
                 detail: { id, enabled: e.target.checked }
             });
             document.dispatchEvent(event);
-        });
+        }, { signal });
     }
     
     // Handle responsive table toggle
@@ -676,7 +688,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
                 detail: { id, option: 'responsive', value: e.target.checked }
             });
             document.dispatchEvent(event);
-        });
+        }, { signal });
     }
     
     // Handle fixed header toggle
@@ -689,7 +701,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
                 detail: { id, option: 'fixedHeader', value: e.target.checked }
             });
             document.dispatchEvent(event);
-        });
+        }, { signal });
     }
     
     // Handle export CSV button
@@ -700,7 +712,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
                 detail: { id }
             });
             document.dispatchEvent(event);
-        });
+        }, { signal });
     }
     
     // Handle table length selector
@@ -712,7 +724,7 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
                 detail: { id, option: 'pageLength', value: parseInt(e.target.value) }
             });
             document.dispatchEvent(event);
-        });
+        }, { signal });
         
         // Set initial value from settings
         if (settings.pageLength) {

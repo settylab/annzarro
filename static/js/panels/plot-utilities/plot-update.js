@@ -902,6 +902,13 @@ export async function loadColorDataAndUpdatePlot(
             data.color = colorData.values;
             data.colorType = colorData.type;
             data.colorCategories = colorData.categories;
+            // Colour DESCRIBES the points (see ROLE). Without this the panel
+            // kept announcing the PREVIOUS colour column's coverage -- and, on
+            // a refocus, said nothing about a varp/obsp/layer row that came back
+            // all blank for the newly focused entity (settylab/annzarro#40).
+            data.colorCoverage = colorData.coverage
+                ? colorData.coverage.asDescribing()
+                : null;
 
             // Update UI controls within the container.
             updateColorControlsVisibility(container, data.colorType, id);
