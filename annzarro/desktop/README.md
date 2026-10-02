@@ -116,6 +116,15 @@ missing page or asset, a 5xx or a page error, and it first checks that a CDN
 fetch really is cancelled. `report.json` lists every static file the UI
 loaded. `scripts/size_report.py` prints the size of each component.
 
+Two start-up tests guard against an app that never gets past a spinner:
+
+- `scripts/port_clash_test.py <app>`: port 39487 held by a program that
+  accepts connections and never answers, and (macOS/Linux) the port taken
+  while the server starts. The app must come up on another port.
+- `node electron/test/dataset-gone.js <app> <dataset>`: open a copy of a
+  dataset, delete it, start again with the same profile; five seconds later
+  nothing may still be spinning and new panels can be added.
+
 ## Versions and releases
 
 The app version is the Python package version: `bump_version.py` writes

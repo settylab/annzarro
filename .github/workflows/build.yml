@@ -155,6 +155,20 @@ jobs:
           run=(node annzarro/desktop/electron/test/offline-session.js "$app" annzarro/tests/data/fixture_small.zarr offline-report.json)
           if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a "${run[@]}"; else "${run[@]}"; fi
 
+      - name: Port clash and restart tests
+        # The default port held by a program that never answers, the port
+        # taken while the server starts (macOS/Linux), and a restart after
+        # the last dataset was deleted: each must reach a usable window, never
+        # an endless spinner.
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   app=$(ls -d annzarro/desktop/electron/dist/mac*/AnnZarro.app)/Contents/MacOS/AnnZarro; x=() ; flags=() ;;
+            Windows) app=annzarro/desktop/electron/dist/win-unpacked/AnnZarro.exe; x=() ; flags=() ;;
+            Linux)   app=$(find annzarro/desktop/electron/dist/linux-unpacked -maxdepth 1 -type f -name 'annzarro*' -perm -u+x | head -1); x=(xvfb-run -a); flags=(--no-sandbox) ;;
+          esac
+          "${x[@]}" python annzarro/desktop/scripts/port_clash_test.py "$app" "${flags[@]}"
+          "${x[@]}" node annzarro/desktop/electron/test/dataset-gone.js "$app" annzarro/tests/data/fixture_small.zarr
+
       - name: Size report
         if: always()
         run: |
