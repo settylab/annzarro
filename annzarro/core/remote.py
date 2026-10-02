@@ -148,6 +148,24 @@ class _Prefix:
         return f"{self.scheme}://{self.netloc}{self.path}"
 
 
+def hosted_reasons(config: Mapping[str, Any]) -> Tuple[str, ...]:
+    """Why this server is NOT a local single-user instance; empty if it is.
+
+    The one place ``remote_stores: auto`` decides "desktop or hosted". Keep it
+    the only one: an explicit hosted-mode setting, when the server grows one,
+    should be read here and nowhere else.
+    """
+    reasons = []
+    if config.get("auth_enabled", False):
+        reasons.append("auth is enabled")
+    host = str(config.get("host", "127.0.0.1")).strip().lower()
+    if host not in _LOOPBACK_HOSTS and not host.startswith("127."):
+        reasons.append(f"host {host} is not loopback")
+    if int(config.get("proxy_count", 0) or 0) > 0:
+        reasons.append("server is behind a proxy")
+    return tuple(reasons)
+
+
 @dataclass(frozen=True)
 class RemotePolicy:
     """Effective remote-store policy: whether, which, and with what credentials.
@@ -203,14 +221,7 @@ class RemotePolicy:
         elif mode == "allow":
             enabled, reason = True, "remote_stores: allow"
         else:
-            hosted = []
-            if config.get("auth_enabled", False):
-                hosted.append("auth is enabled")
-            host = str(config.get("host", "127.0.0.1")).strip().lower()
-            if host not in _LOOPBACK_HOSTS and not host.startswith("127."):
-                hosted.append(f"host {host} is not loopback")
-            if int(config.get("proxy_count", 0) or 0) > 0:
-                hosted.append("server is behind a proxy")
+            hosted = hosted_reasons(config)
             if not hosted:
                 enabled, reason = True, "remote_stores: auto (local single-user server)"
             elif allowlist:
