@@ -67,3 +67,11 @@ def test_header_actions_stay_on_one_row():
     for button in ("btn-save-session", "btn-load-session", "btn-share-link"):
         tag = re.search(r'<button id="%s"[^>]*>' % button, html).group(0)
         assert "title=" in tag, f"{button} needs a tooltip when its label is hidden"
+
+
+def test_icon_content_is_a_css_escape_not_literal_text():
+    """The upload dialog showed a literal '\\f15b' before the file name:
+    `content: '\\\\f15b'` is a backslash followed by text, not the icon."""
+    css = open(CSS, encoding="utf-8").read()
+    assert not re.search(r"content:\s*'\\\\\\\\", css), "double backslash in a content: string"
+    assert "content: '\\f15b'" in css

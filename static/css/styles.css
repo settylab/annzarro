@@ -1479,8 +1479,8 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .file-name.has-file::before {
-    content: '\\f15b';
-    font-family: 'Font Awesome 5 Free';
+    content: '\f15b';   /* one backslash: a CSS escape, not a literal '\f15b' */
+    font-family: 'Font Awesome 6 Free', 'Font Awesome 5 Free';
     font-weight: 400;
     margin-right: 8px;
     color: #007bff;
