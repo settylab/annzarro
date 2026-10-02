@@ -35,10 +35,10 @@ Focus, lock, panels, tables, panel sets, share links and export.
 Which slot drives which view, chunking, Kompot outputs and the demonstration data.
 :::
 
-:::{grid-item-card} Paper figures, step by step
-:link: paper/index
+:::{grid-item-card} Tutorials
+:link: tutorials/index
 :link-type: doc
-Reproduce every figure of the protocol paper inside AnnZarro.
+Cell similarity beyond the UMAP, gene programmes beyond clusters, and where a gene changes.
 :::
 
 :::{grid-item-card} Deployment
@@ -59,10 +59,18 @@ CLI, configuration, HTTP API, deep links, wire format and architecture.
 :maxdepth: 2
 
 getting-started/index
+tutorials/index
 user-guide/index
 data/index
-paper/index
 deployment/index
 reference/index
+```
+
+```{toctree}
+:hidden:
+:caption: Appendix
+:maxdepth: 1
+
+paper/index
 references
 ```
