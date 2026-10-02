@@ -101,3 +101,22 @@ def test_negative_indices_are_refused_not_wrapped(get, url, query):
     """numpy indexing wrapped -1 to the last row and answered 200."""
     resp = get(url, **query)
     assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_indices"
+
+
+@pytest.mark.parametrize("param,value", [
+    ("rows", ""), ("cols", "abc"), ("rows", "-1"), ("cols", "0,-2"),
+    ("rows", "[-1]"), ("cols", "[\"a\"]"), ("rows", "1.5"),
+])
+@pytest.mark.parametrize("fmt", [None, "f32"])
+def test_one_bad_indices_answer_for_every_kind_of_bad_list(get, param, value, fmt):
+    """Unparseable, empty and negative lists share one message and code path,
+    in JSON and binary requests alike."""
+    query = {param: value}
+    if fmt:
+        query["format"] = fmt
+    resp = get("/api/v1/data/X", **query)
+    assert resp.status_code == 400
+    assert resp.get_json() == {
+        "error": f"Indices must be comma-separated non-negative integers, got {value!r}",
+        "reason": "bad_indices",
+    }

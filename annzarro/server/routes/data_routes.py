@@ -194,10 +194,6 @@ def _cap_error_response(requested, limit, unit, axis_hint):
 DEFAULT_MAX_RESPONSE_ELEMENTS = 10_000_000
 
 
-class IndexParseError(ValueError):
-    """A ``rows``/``cols`` parameter that is present but not a list of indices."""
-
-
 def _matrix_shape(reader, dataset_path, kind, key=None):
     """(rows, cols) of the matrix a route would slice, from cached metadata.
 
@@ -347,10 +343,6 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
-
-    @app.errorhandler(IndexParseError)
-    def _bad_indices(exc):
-        return jsonify({"error": str(exc), "reason": "bad_indices"}), 400
 
     http_cache.install_gzip(app)
 
@@ -2281,14 +2273,20 @@ def _parse_indices(indices_str):
             parsed = None
         if not isinstance(parsed, list) or not all(
                 isinstance(i, int) and not isinstance(i, bool) for i in parsed):
-            raise IndexParseError(
-                f"Invalid index list {indices_str[:80]!r}: expected comma-separated integers")
+            raise _bad_indices(indices_str)
         indices = parsed
     if any(i < 0 for i in indices):
         # numpy would wrap -1 to the last entry; an index is a position, not an offset
-        raise DataRequestError(400, "bad_indices",
-                               f"Indices must be 0 or greater, got {min(indices)}.")
+        raise _bad_indices(indices_str)
     return indices
+
+
+def _bad_indices(indices_str):
+    """The one 400 ``bad_indices`` answer, for an unparseable, empty or
+    negative index list alike."""
+    return DataRequestError(
+        400, "bad_indices",
+        f"Indices must be comma-separated non-negative integers, got {indices_str[:80]!r}")
 
 def _parse_strings(strings_str):
     """
