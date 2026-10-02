@@ -1,0 +1,117 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "CTAAGGGAATGATTGG-1",
+  "focusedGene": "Penk",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-SP3",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-SP4",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-SP3": false,
+   "cell-plot-SP4": false
+  },
+  "panelConfigs": {
+   "cell-plot-SP3": {
+    "id": "cell-plot-SP3",
+    "title": "Spatial position, spatial_kernel row of the focused spot",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "spatial_kernel",
+     "column": "CTAAGGGAATGATTGG-1",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.9,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "leiden"
+     }
+    ],
+    "colorScale": "Blues",
+    "colorReversed": true
+   },
+   "cell-plot-SP4": {
+    "id": "cell-plot-SP4",
+    "title": "UMAP, spatial_kernel row of the focused spot",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "spatial_kernel",
+     "column": "CTAAGGGAATGATTGG-1",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.9,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "leiden"
+     }
+    ],
+    "colorScale": "Blues",
+    "colorReversed": true
+   }
+  }
+ }
+}

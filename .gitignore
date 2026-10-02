@@ -178,3 +178,7 @@ annzarro/desktop/downloads/
 !annzarro/tests/data/fixture_small.zarr/X/data/
 !annzarro/tests/data/fixture_small_v3.zarr/var/
 !annzarro/tests/data/fixture_small_v3.zarr/X/data/
+
+# Docs sources live under docs/; only top-level data dirs are local data.
+!docs/data/
+!docs/_static/screens/data/
