@@ -292,7 +292,10 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
         /** Show the focused name without opening the menu or calling onPick. */
         setValue(name) {
             committed = name || '';
-            if (doc.activeElement !== input) input.value = committed;
+            // Leave the text alone only while the user is typing in an open
+            // menu. After a pick the box keeps keyboard focus with its menu
+            // closed, and a plot click's new focus used to stay unshown.
+            if (doc.activeElement !== input || !open) input.value = committed;
         },
         /** Forget results (dataset switched). */
         reset() {
