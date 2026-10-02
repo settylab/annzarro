@@ -133,6 +133,25 @@ function updateFilterWidget(plotContainer, filterStats) {
 }
 
 /**
+ * Whether `data` is a complete load for the dataset that is loaded now.
+ *
+ * loadDataAndCreatePlot clears the series and rebuilds them asynchronously.
+ * During a dataset switch a table reloads and fires tableChanged, and the
+ * focus is re-resolved, while the plot's own reload is still in flight; the
+ * incremental update those trigger then read `data.x` / `data.color` as null
+ * (TypeError in createFilterMask / processCategories, caught, and a second
+ * full redraw). Data is current only once a load has stamped it with the
+ * dataset generation it was read under, and that generation is still live.
+ * @param {Object} data - A plot panel's data cache
+ * @returns {boolean}
+ */
+export function isPlotDataCurrent(data) {
+    return !!(data && data.generation !== null && data.generation !== undefined
+        && data.generation === DataManager.getDatasetGeneration()
+        && data.x && data.y && data.x.values && data.y.values);
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
@@ -177,6 +196,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
     if (!plotContainer.data || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) {
         console.warn("No Plotly plot found in the container, recreating plot");
         refreshPlot();
+        return;
+    }
+
+    // A reload is rebuilding the series (or they are from the previous
+    // dataset): leave the plot to that reload, which draws current settings.
+    if (!isPlotDataCurrent(data)) {
         return;
     }
     

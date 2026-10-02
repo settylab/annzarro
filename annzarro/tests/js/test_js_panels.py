@@ -60,6 +60,9 @@ SUITES = {
     "table-chooser.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "table-utilities", "table-ui-make.js"
     ),
+    "plot-generation.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-update.js"
+    ),
     "render-queue.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "render-queue.js"),
     "panel-axis-selector.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "panel-ui-update.js"

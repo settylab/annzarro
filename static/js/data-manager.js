@@ -9,6 +9,9 @@ const DataManager = (function() {
     // Private variables
     let _currentDataset = null;
     let _cells = null;
+    // Bumped whenever the loaded cells/genes change (switch, revert, clear).
+    // Plot data built under an older generation belongs to another dataset.
+    let _datasetGeneration = 0;
     let _genes = null;
     let _focusedCell = null;
     let _focusedGene = null;
@@ -187,6 +190,7 @@ const DataManager = (function() {
             }
             
             // Reset cells and genes before loading new ones
+            _datasetGeneration++;
             _cells = null;
             _genes = null;
             
@@ -228,6 +232,7 @@ const DataManager = (function() {
                     _currentDataset = previousDataset;
                     _cells = previousCells;
                     _genes = previousGenes;
+                    _datasetGeneration++;
                     
                     // We're not dispatching datasetLoadError event here anymore
                     // since the error is already handled in _loadDataset function in main.js.
@@ -237,6 +242,7 @@ const DataManager = (function() {
                     _currentDataset = null;
                     _cells = null;
                     _genes = null;
+                    _datasetGeneration++;
                     
                     // Dispatch a datasetCleared event
                     if (!silent) {
@@ -1286,6 +1292,7 @@ const DataManager = (function() {
         setFocusedGene,
         setTaxonomyId,
         getCurrentDataset,
+        getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,
         getSortedCells,

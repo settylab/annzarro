@@ -678,8 +678,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
-    // Reset cached data without changing its reference.
+    // Reset cached data without changing its reference. Until this load
+    // finishes, `data.generation` is null: the series are half-built, and
+    // incremental updates (a table filter, a focus change) must leave them
+    // alone (isPlotDataCurrent in plot-update.js).
+    const generation = DataManager.getDatasetGeneration();
     Object.keys(data).forEach(key => delete data[key]);
+    data.generation = null;
     
     // Set up the appropriate entity list (cells or genes)
     if (isGenePlot) {
@@ -822,6 +827,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot creation aborted', 'AbortError');
       }
+      // The dataset changed while this load was in flight: its series belong
+      // to the previous dataset. Drop them; the load started for the new
+      // dataset draws the plot.
+      if (DataManager.getDatasetGeneration() !== generation) {
+        loadingIndicator.hide(plotContainer, 'full-plot');
+        throw new DOMException('Plot data is from a previous dataset', 'AbortError');
+      }
     } catch (error) {
       // Always clean up loading indicator for any error
       loadingIndicator.hide(plotContainer, 'full-plot');
@@ -840,6 +852,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // that is what stops a new axis type from silently reintroducing the gap.
     const unit = isGenePlot ? 'genes' : 'cells';
     data.coverage = panelLoadCoverage(data, settings, unit);
+    data.generation = generation;
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
