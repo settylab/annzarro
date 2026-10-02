@@ -12,6 +12,9 @@ from pathlib import Path
 
 
 def size(path: Path) -> int:
+    # PyInstaller links shared libraries into the top level; count each once.
+    if path.is_symlink():
+        return 0
     if path.is_file():
         return path.stat().st_size
     total = 0
@@ -38,8 +41,11 @@ def main(electron_dir):
         if n.endswith(".dist-info"):
             name = "dist-info metadata"
         elif entry.is_dir():
-            # numpy.libs (OpenBLAS ...) counts towards numpy
+            # numpy.libs (OpenBLAS ...) counts towards numpy; python3.11/
+            # (lib-dynload) and Python.framework are the runtime
             name = n[:-5] if n.endswith(".libs") else n
+            if n.startswith("python3") or n == "Python.framework":
+                name = "Python runtime"
         elif n.startswith(("libpython", "python3")) or n == "Python" or n.startswith("python3"):
             name = "Python runtime"
         elif n == "base_library.zip":

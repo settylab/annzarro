@@ -9,9 +9,19 @@ not need Python.
 
 - `server/annzarro-server.spec` freezes the `annzarro` command with PyInstaller
   into a self-contained directory, `annzarro-server/` (Python, numpy, zarr,
-  h5py, Flask, the web frontend, configuration defaults, licenses; about 100 MB).
-  `annzarro.desktop.freeze` lists what goes in; numba, llvmlite and matplotlib
-  are left out because the server never imports them.
+  h5py, scipy.sparse, Flask, the web frontend with every vendored library and
+  font, configuration defaults, licenses): 56 MB on macOS, 90 MB on Windows
+  and Linux, where numpy brings its own OpenBLAS. `annzarro.desktop.freeze`
+  lists what goes in and what is left out (scipy beyond `scipy.sparse`,
+  cryptography, ...); a test serves requests and fails if the server imports
+  anything left out.
+- The app works with no network: nothing is downloaded at first launch or
+  later, and no page loads anything from a CDN. `electron/test/offline-session.js`
+  checks this on every CI build (see "Testing").
+- The `[remote]` extra (s3/gs/http stores) is not bundled: it adds about
+  100 MB (botocore, grpc, google-auth, aiohttp) to a 56 MB server, the app is
+  meant for data on the user's own disk, and it works offline. Use
+  `pip install "annzarro[remote]"` for remote stores.
 - electron-builder copies it into the app's resources (`resources/server/`).
 - `electron/main.js` runs, on a free port from 39487:
 
@@ -63,6 +73,8 @@ frozen server in `electron/server/` if there is one, otherwise
 `python3 -m annzarro.cli start` (set `ANNZARRO_PYTHON` to choose the
 interpreter).
 
+### Testing
+
 To test a built app without clicking:
 
 ```bash
@@ -74,7 +86,23 @@ loads the UI, checks that Plotly loaded and `/api/v1/datasets` answers, prints
 `ANNZARRO_DESKTOP_SMOKE ok ...` and quits. Other switches:
 `ANNZARRO_DESKTOP_DATA_DIR` (data directory), `ANNZARRO_SERVER_BINARY`
 (server to run). The app prints `ANNZARRO_DESKTOP_READY <url>` once the server
-answers.
+answers. In this mode every request the window makes beyond 127.0.0.1 is
+cancelled and fails the check.
+
+A full session with the network cut off (needs `npm ci` in `electron/`):
+
+```bash
+node annzarro/desktop/electron/test/offline-session.js \
+    annzarro/desktop/electron/dist/mac-arm64/AnnZarro.app/Contents/MacOS/AnnZarro \
+    annzarro/tests/data/fixture_small.zarr report.json
+```
+
+It opens the dataset, a cell plot, focuses a gene and a cell, opens a cell
+table and exports the plot as PNG, while the app's main process cancels and
+records every request not to 127.0.0.1. It fails on any such request, on a
+missing page or asset, a 5xx or a page error, and it first checks that a CDN
+fetch really is cancelled. `report.json` lists every static file the UI
+loaded. `scripts/size_report.py` prints the size of each component.
 
 ## Versions and releases
 

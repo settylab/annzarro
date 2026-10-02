@@ -350,7 +350,8 @@ The builds are not code-signed yet, so the first launch needs one extra step:
 - **Linux**: no extra step (AppImage needs `chmod +x`; on Ubuntu 24.04 and
   later an AppImage may need `--no-sandbox` if it fails to start).
 
-The very first start can take up to a minute while the system scans the
+The app works fully offline: the server, Python and every script, style and
+font of the interface are bundled; nothing is downloaded. The very first start can take up to a minute while the system scans the
 bundled server; later starts take a few seconds. The app starts its server on
 `127.0.0.1` only (first free port from 39487), with login off, and uses
 `~/annzarro-data` as its data directory: put or link datasets into
