@@ -531,10 +531,15 @@ def desktop_command(args: argparse.Namespace) -> int:
     """
     # Import here to avoid circular imports
     try:
-        from .desktop.builder import build_desktop_app, run_desktop_app
+        from .desktop.builder import build_desktop_app, run_desktop_app, electron_project_problem
     except ImportError as e:
         logger.error(f"Failed to import desktop builder: {e}")
         logger.error("Please ensure the desktop module is installed.")
+        return 1
+
+    problem = electron_project_problem()
+    if problem:
+        logger.error(problem)
         return 1
         
     # Run desktop app in development mode
