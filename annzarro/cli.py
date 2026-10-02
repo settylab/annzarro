@@ -948,6 +948,12 @@ def main(argv: List[str] = None) -> int:
     
     # Parse arguments
     args = parser.parse_args(argv)
+
+    # ANNZARRO_CONFIG names the site file for every entry point: gunicorn
+    # (wsgi.py) always read it, the CLI did not, so `annzarro config show`
+    # or `annzarro user add` on a server silently used another users file.
+    if not getattr(args, "config", None) and os.environ.get("ANNZARRO_CONFIG"):
+        args.config = os.environ["ANNZARRO_CONFIG"]
     
     # Set up logging
     if args.debug:

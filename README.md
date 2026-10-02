@@ -128,6 +128,10 @@ gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_
 # or: annzarro/server/run_gunicorn.sh, or the systemd unit annzarro/server/annzarro.service
 ```
 
+`ANNZARRO_CONFIG` is read by the `annzarro` command too (when `--config` is
+not given), so `annzarro config show` and `annzarro user add` see the same
+site file as gunicorn.
+
 The gunicorn config binds to `server.host:server.port` from the same
 configuration (default `127.0.0.1:8000`), runs `server.workers` workers
 (default 4; each keeps its own dataset cache), and logs to stderr.
