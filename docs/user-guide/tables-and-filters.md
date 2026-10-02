@@ -133,7 +133,8 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
    With the eye toggle on, only the table's genes are drawn.
    ```
 
-The link is live: change a condition, and the plot follows. Several plots can follow the same table,
+The link is live: change a condition, and the plot follows. The tutorial
+{doc}`../tutorials/cells-and-genes` uses an AND/OR table filter in an analysis ({ref}`tut-cg-andor`). Several plots can follow the same table,
 and a cell plot can follow a cell table the same way.
 
 ```{note}

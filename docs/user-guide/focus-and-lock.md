@@ -5,8 +5,8 @@ draw a slice that depends on them: the focused cell's row of a cells × cells ma
 focused gene's column of a cells × genes layer, the focused gene's row of a genes × genes matrix
 (varp), or the focused cell's row of a layer in a gene plot. Clicking a point moves the focus,
 and every panel that depends on it redraws from one vector. **Locking** a panel freezes its slice,
-so you can move the focus on and compare. The model is Fig. 1 of the paper
-({doc}`../paper/fig1-focus-model`).
+so you can move the focus on and compare. The tutorial {doc}`../tutorials/tour` uses the same
+model in a first analysis.
 
 This page uses two cell plots on `bm_aging.zarr`: on the left, colour = the focused cell's row of
 `obsp/diffusion_walk_t5` (where a 5-step diffusion walk from that cell lands); on the right,
@@ -59,7 +59,7 @@ The click sent exactly one data request: `GET /api/v1/data/obsp/diffusion_walk_t
 (row 2991 is the clicked cell), answered with 8,090 float32 values. The server read only the
 chunks that hold that row. The right plot sent nothing. A row or column that the browser has
 already fetched is served from its cache, so stepping back through the history is free.
-Measurements of bytes and time per click are in {doc}`../paper/fig9-performance`.
+Measurements of bytes and time per click are in {doc}`../reference/performance`.
 ```
 
 ## Step back with the history arrows
@@ -155,5 +155,5 @@ To build it yourself:
 5. Pick another gene in the header: only the unlocked panel changes.
 
 The same pattern works with a gene plot locked to one cell's row of a layer while the other follows
-the focused cell, or with two obsp rows. Paper Fig. 5d compares a locked HSC with a focused
-monocyte this way ({doc}`../paper/fig5-cells-and-genes`).
+the focused cell, or with two obsp rows. The tutorial {doc}`../tutorials/cells-and-genes` compares a
+locked HSC with a focused monocyte this way ({ref}`tut-cg-rows`).

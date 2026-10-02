@@ -90,7 +90,8 @@ following the focused gene) both use RdBu from −1 to 1 with Lock Range on. To 
 1. In the first panel, type `-1` in **Min**, `1` in **Max**, click **Lock Range**.
 2. Do the same in the second panel.
 
-There is no control that ties two panels' ranges together; each panel keeps its own numbers, and
+{ref}`tut-cg-shared-scale` in the tutorial {doc}`../tutorials/cells-and-genes` uses this to
+compare Young and Old. There is no control that ties two panels' ranges together; each panel keeps its own numbers, and
 they are saved with the panel in panel sets and share links (`colorMin`, `colorMax`,
 `lockColorRange`).
 

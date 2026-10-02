@@ -4,7 +4,7 @@ A **cell plot** draws one point per cell; a **gene plot** draws one point per ge
 x axis, a y axis, an optional z axis and a colour, and each of them can come from any slot of the
 AnnData store that holds one number (or one category) per point. This page lists every source,
 shows how to set it, and covers the display controls. The slot map in
-{doc}`../paper/fig7-slot-map` shows the same sources as a diagram.
+{doc}`../data/slot-map` shows the same sources as a diagram.
 
 ## The controls
 
@@ -55,8 +55,8 @@ Every change redraws the panel straight away.
 All four types are available for x, y, z and colour alike. An axis that reads `obsp`, `varp` or a
 `layer` follows the focus and gets the lock and refocus buttons ({doc}`focus-and-lock`); for
 example, x = the focused cell's row of a UMAP distance matrix and y = its row of a diffusion
-distance matrix plots every cell's distance to the focused cell in both spaces, which is paper
-Fig. 3b ({doc}`../paper/fig3-cell-by-cell`).
+distance matrix plots every cell's distance to the focused cell in both spaces, as in
+{ref}`tut-cell-distance-axes` of the tutorial {doc}`../tutorials/cell-similarity`.
 
 ```{note}
 `X` itself is not offered as a source. To plot expression, store it (or a normalised copy) as a
