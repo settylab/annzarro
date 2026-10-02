@@ -1028,6 +1028,39 @@ export function panelLoadCoverage(data, settings, unit) {
   return Coverage.merge(axisCoverages, unit);
 }
 
+/**
+ * Axis ranges that do not move when Hide NaN / Hide Outliers drop points.
+ *
+ * Those options REMOVE points, and Plotly's autorange then fitted the axes
+ * to what was left, so toggling Hide Outliers zoomed the plot. While either
+ * is on, the 2D axes are pinned to the extent of ALL points (with Plotly-
+ * like 5% padding); with both off, autorange is back.
+ * @param {Object} data - plot data (x.values, y.values)
+ * @param {Object} settings
+ * @returns {Object|null} relayout keys, or null for 3D plots
+ */
+export function stableAxisRanges(data, settings) {
+  if (settings.z) return null;
+  if (!(settings.hideNaN || settings.hideOutliers)) {
+    return { 'xaxis.autorange': true, 'yaxis.autorange': true };
+  }
+  const extent = (values) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of values || []) {
+      if (typeof v === 'number' && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+    if (lo === Infinity) return null;
+    const pad = hi > lo ? (hi - lo) * 0.05 : (Math.abs(lo) * 0.05 || 0.5);
+    return [lo - pad, hi + pad];
+  };
+  const out = {};
+  const x = extent(data.x && data.x.values);
+  const y = extent(data.y && data.y.values);
+  if (x) out['xaxis.range'] = x;
+  if (y) out['yaxis.range'] = y;
+  return Object.keys(out).length ? out : null;
+}
+
 export function createFilterMask(data, settings) {
   // Initialize filter statistics
   const filterStats = {
@@ -1146,6 +1179,18 @@ export function createFilterMask(data, settings) {
         v != null && !isNaN(v) && (v < cmin || v > cmax)
       ).length;
     }
+  }
+
+  // Categorical colour: Hide NaN hides points with no category. It used to
+  // act on numerical colours only, so on a categorical colour it did nothing.
+  if (data.colorType === 'categorical' && Array.isArray(data.color) && settings.hideNaN) {
+    const missing = v => v === null || v === undefined || v === ''
+      || (typeof v === 'number' && Number.isNaN(v))
+      || (typeof v === 'string' && v.toLowerCase() === 'nan');
+    const applyToAll = !hasTableFilter || !tableEntities;
+    colorValidMask = data.color.map((v, i) =>
+      !missing(v) || (!applyToAll && !tableEntities.has(data[data.entities][i])));
+    filterStats.colorNaN = data.color.filter(missing).length;
   }
 
   // 5. Gather only the masks we need for explicit filtering
@@ -1562,6 +1607,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Build layout with our pure helper
   const layout = createLayout(settings);
+  // Hide NaN / Hide Outliers remove points; keep the axes where all points are
+  const pinned = stableAxisRanges(data, settings);
+  if (pinned && pinned['xaxis.range']) layout.xaxis = { ...layout.xaxis, range: pinned['xaxis.range'], autorange: false };
+  if (pinned && pinned['yaxis.range']) layout.yaxis = { ...layout.yaxis, range: pinned['yaxis.range'], autorange: false };
   
   // Ensure font and color settings are applied to the layout globally
   layout.font = {
