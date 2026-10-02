@@ -72,9 +72,10 @@ name") and keeps the dialog open.
    Loading a panel set made on `bm_aging.zarr` while `spatial_demo.zarr` is open.
    ```
 
-Panel sets saved by older versions of AnnZarro hold only the panels. They still load: their panels
-are added under **Duplicate or Reopen Panel**, marked **Closed**, ready to reopen
-({doc}`interface`).
+Panel sets saved by older versions of AnnZarro hold the panels, the dataset and the focus, but
+no layout. They load with their dataset and focus, and their open panels are laid out in rows of
+two, from left to right and top to bottom; split and resize them to taste ({doc}`interface`).
+Panels that were closed in such a set come back under **Duplicate or Reopen Panel**.
 
 ## Who can change a panel set
 

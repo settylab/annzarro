@@ -26,8 +26,9 @@ Numerical colour controls of the fold-change panel.
    value in the data.
 5. **Reverse Colormap** flips the map end for end.
 6. **Lock Range** keeps Min and Max fixed when the data change.
-7. **Hide Outliers** removes points whose value lies outside Min to Max.
-8. **Hide NaN** removes points with no value.
+7. **Hide Outliers** removes points whose value lies outside Min to Max. The axes keep their range.
+8. **Hide NaN** removes points with no value (also offered for categorical colours, where it
+   removes the grey **NA** points). The axes keep their range.
 9. **Equal aspect** gives x and y the same scale ({doc}`spatial-coordinates`).
 10. **Strong on top** (on by default) draws the points with the largest absolute colour value
     last, so they are not hidden under weaker ones.
