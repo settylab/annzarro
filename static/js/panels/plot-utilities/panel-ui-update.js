@@ -215,21 +215,22 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     // Last resort: use first available key, but avoid _index if possible
     else {
       const wanted = settings.key;
-      if (type === 'obs' || type === 'var') {
-        // For obs and var types, avoid using _index if there are other options
+      if (wanted && !keyExistsInStructure(datasetStructure, wanted)) {
+        // A key the dataset does not have at all (a deep link or panel set
+        // from another dataset) is KEPT, listed as missing, and reported:
+        // the loader then states the gap ('not in this dataset') instead of
+        // the plot silently showing some other column.
+        $.createSelect([...keyOptions, { value: wanted, text: `${wanted} (not in this dataset)` }], $keySelect);
+        notify('Plot source not found',
+          `${type} "${wanted}" is not in this dataset; nothing is shown for it. Pick another ${type} key.`,
+          'warning');
+      } else if (type === 'obs' || type === 'var') {
+        // The user switched the type menu: take a key of the new type,
+        // avoiding _index if there are other options
         const nonIndexKey = keyValues.find(k => k !== '_index');
         settings.key = nonIndexKey || keyValues[0] || '';
       } else {
         settings.key = keyValues[0] || '';
-      }
-      // A key the dataset does not have at all (a deep link or panel set
-      // from another dataset) is replaced, and the user is told so. A key
-      // that exists under another type is just the user switching the type
-      // menu, which needs no notice.
-      if (wanted && wanted !== settings.key && !keyExistsInStructure(datasetStructure, wanted)) {
-        notify('Plot source not found',
-          `${type} "${wanted}" is not in this dataset; showing ${type} "${settings.key || 'nothing'}" instead.`,
-          'warning');
       }
     }
     

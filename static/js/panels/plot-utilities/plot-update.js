@@ -498,8 +498,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     }
                 }
                 
-                // Process categories to create traces for each category
-                const categoricalTraces = processCategories(settings, data, catValues, customColors);
+                // Process categories to create traces for each category, from
+                // the same masked points as the full render: with Hide NaN on,
+                // the points it counted as hidden must not be drawn under NA.
+                const shownData = (settings.hideNaN || settings.hideOutliers)
+                    ? applyFilterMask(data, indexMask) : data;
+                const categoricalTraces = processCategories(settings, shownData, catValues, customColors);
                 
                 // Remove all existing traces
                 while (plotContainer.data.length > 0) {

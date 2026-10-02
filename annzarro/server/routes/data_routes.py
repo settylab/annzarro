@@ -14,7 +14,7 @@ import json
 import re
 
 from ...core import zarr_reader
-from ...core.zarr_reader import ZarrFormatError
+from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import h5ad_reader_obj
 from ...core import process_file
 from ...core import get_reader
@@ -51,6 +51,15 @@ def _listing_signature(entry_path):
         except OSError:
             parts.append((member, None))
     return tuple(parts)
+
+
+def _listdir(path):
+    """Entries of ``path``, or none when it cannot be read."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError as exc:
+        logger.warning(f"Error listing directory {path}: {exc}")
+        return []
 
 
 def _probe_dataset_counts(entry_path, probe):
@@ -136,6 +145,14 @@ def _reader_error_response(exc, dataset_path):
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
+    if isinstance(exc, UnsupportedEncodingError):
+        # One member of a readable dataset, not the dataset's type: the text
+        # names the member and the encoding.
+        return jsonify({
+            "error": str(exc),
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
     if isinstance(exc, ValueError):
         return jsonify({
             "error": f"Unsupported dataset type for {dataset_path}: {exc}",
@@ -238,7 +255,9 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
     if field and key is not None:
         keys = (metadata.get(field) or {}).get("keys")
         top = key.split("/", 1)[0] if slot == "uns" else key
-        if keys is not None and top not in keys:
+        # layer 'X' is the X matrix when no layer has that name (readers' get_layer)
+        x_as_layer = slot == "layers" and key == "X" and metadata.get("has_X") is not False
+        if keys is not None and top not in keys and not x_as_layer:
             raise DataRequestError(404, "key_not_found", f"No {field} key '{key}' in this dataset.")
     if columns and slot in ("obs", "var"):
         known = metadata.get(f"{slot}_columns")
@@ -1169,7 +1188,7 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             return jsonify({
                 "directory": data_dir
@@ -1197,7 +1216,7 @@ def register_data_routes(app, api_version):
         
         try:
             # Get data directory from config for validation
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
             # Verify the requested path is within the data directory or is an absolute path
             if not os.path.isabs(directory_path) and not directory_path.startswith(data_dir):
@@ -1289,20 +1308,24 @@ def register_data_routes(app, api_version):
         """
         try:
             # Get data directory from config
-            data_dir = app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data"))
+            data_dir = app.config.get("data_dir")
             
-            # Only search in the "datasets" subdirectory if it exists
+            # The top level of data_dir AND its datasets/ subdirectory (the
+            # desktop app creates one). Listing only datasets/ whenever it
+            # existed hid every store placed directly in the data directory.
             datasets_dir = os.path.join(data_dir, "datasets")
-            if not os.path.exists(datasets_dir) or not os.path.isdir(datasets_dir):
-                datasets_dir = data_dir
+            search = [(data_dir, entry) for entry in _listdir(data_dir)
+                      if entry not in ("datasets", "sessions")]
+            if os.path.isdir(datasets_dir):
+                search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
             # List for storing zarr datasets
             zarr_stores = []
             
             try:
-                # Only search the first level of the datasets directory
-                for entry in os.listdir(datasets_dir):
-                    entry_path = os.path.join(datasets_dir, entry)
+                # Only the first level of each directory
+                for parent, entry in search:
+                    entry_path = os.path.join(parent, entry)
                     
                     # Skip hidden files and directories
                     if entry.startswith('.'):
@@ -1410,7 +1433,7 @@ def register_data_routes(app, api_version):
         Returns:
             Path to the sessions directory.
         """
-        sessions_dir = os.path.join(app.config.get("data_dir", os.path.join(os.path.dirname(app.instance_path), "data")), "sessions")
+        sessions_dir = os.path.join(app.config.get("data_dir"), "sessions")
         os.makedirs(sessions_dir, exist_ok=True)
         return sessions_dir
         

@@ -23,7 +23,7 @@
 export async function fetchNameMatches(url, { datasetPath, entity, query, mode = 'substring', limit = 50, signal = null }) {
     const params = new URLSearchParams({ dataset_path: datasetPath, entity, q: query, mode, limit: String(limit) });
     const resp = await fetch(`${url}?${params}`, { signal });
-    let body = null;
+    let body;
     try { body = await resp.json(); } catch { body = null; }
     if (!resp.ok) {
         const err = new Error((body && body.error) || `Name search failed (${resp.status})`);

@@ -1,6 +1,3 @@
-"""Data management for Annzarro."""
+"""Dataset discovery for AnnZarro."""
 
-# Import and create data_manager singleton
-from .manager import DataManager
-
-data_manager = DataManager()
+from .manager import DataManager, data_manager

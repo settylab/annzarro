@@ -71,3 +71,21 @@ def test_removed_store_disappears(client_and_dir):
     _list(client)
     shutil.rmtree(data_dir / "b.zarr")
     assert [d["name"] for d in _list(client)] == ["a.zarr"]
+
+
+def test_lists_top_level_and_datasets_subdirectory(tmp_path):
+    """With a datasets/ subdirectory (the desktop app creates one) only that
+    was listed; stores at the top of data_dir were hidden."""
+    data_dir = tmp_path / "data"
+    (data_dir / "datasets").mkdir(parents=True)
+    (data_dir / "sessions").mkdir()
+    shutil.copytree(FIXTURE, data_dir / "top.zarr")
+    shutil.copytree(FIXTURE, data_dir / "datasets" / "nested.zarr")
+    getattr(data_routes, "_LISTING_PROBE_CACHE", {}).clear()
+    client = create_app({"TESTING": True, "data_dir": str(data_dir),
+                         "log_file": str(tmp_path / "l.log")}).test_client()
+    listed = _list(client)
+    names = sorted(d["name"] for d in listed)
+    assert names == ["nested.zarr", "top.zarr"], "both levels; datasets/ and sessions/ are not entries"
+    rel = {d["name"]: d["rel_path"] for d in listed}
+    assert rel == {"top.zarr": "top.zarr", "nested.zarr": os.path.join("datasets", "nested.zarr")}

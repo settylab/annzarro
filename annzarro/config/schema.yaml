@@ -56,11 +56,16 @@ server:
       description: Path to SSL key file
       default: null
       security: sensitive
+    url_prefix:
+      type: string
+      description: "Path the app is served under behind a reverse proxy, e.g. /explore (empty = the root)"
+      default: ""
+      security: public
     data_dir:
       type: string
       description: Data directory
-      default: data
-      security: public
+      default: "~/annzarro-data"
+      security: internal  # an absolute server path; the client does not need it
     static_dir:
       type: [string, "null"]
       description: Static files directory
@@ -172,7 +177,7 @@ branding:
     app_name:
       type: string
       description: Application name
-      default: Annzarro
+      default: AnnZarro
       security: public
     project_description:
       type: string
@@ -207,6 +212,7 @@ branding:
 ui:
   type: object
   description: UI settings
+  security: public   # the browser reads these
   properties:
     enabled_panel_types:
       type: array
@@ -290,6 +296,7 @@ ui:
 integrations:
   type: object
   description: External API integrations
+  security: public   # the browser calls these APIs itself
   properties:
     string_db:
       type: object

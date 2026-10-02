@@ -356,7 +356,10 @@ body {
 
 .plot-container {
     flex: 1;
-    min-height: 0;
+    /* Never squeezed below a drawable height: with the controls open in a
+       short window it shrank to 94 px or 0 px and Plotly threw 'Something
+       went wrong with axis scaling'. The tile scrolls instead. */
+    min-height: 260px;
     position: relative;
 }
 

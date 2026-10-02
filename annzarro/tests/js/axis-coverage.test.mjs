@@ -17,8 +17,8 @@
  * every plot-axis error not already carrying a `.coverage` threw
  * `ReferenceError: coverage is not defined` -- on exactly the paths
  * `classifyError` exists for. It shipped in four commits through two review
- * rounds. `node --check` passes on it; the repo's own `.eslintrc.js` catches it
- * (`no-undef`) and nothing runs ESLint.
+ * rounds. `node --check` passes on it; ESLint's `no-undef` catches it, and
+ * `npm run lint` / annzarro/tests/static/test_eslint.py now run ESLint.
  *
  * The reason no test caught it is structural: `plot-make.js` touched `window`
  * at module scope, so the module threw on import under `node` and no test could
@@ -93,6 +93,11 @@ async function bothSurfaces({ settings, tableColumn, patch, entityIndex }) {
  * The six conditions. Three of them used to diverge.                  *
  * ------------------------------------------------------------------ */
 
+/** A rejection as `DataManager._fetchWithCache` builds it for a 404 key_not_found. */
+function keyNotFound(message) {
+    return Object.assign(new Error(message), { status: 404, data: { reason: 'key_not_found', error: message } });
+}
+
 const CONDITIONS = [
     {
         name: 'obs: key ABSENT from the response body',
@@ -109,11 +114,40 @@ const CONDITIONS = [
         patch: { loadObs: async () => ({ data: { celltype: [] } }) }
     },
     {
-        name: 'obsm: 200 with "data": [] -- the KEY is absent',
-        reason: GAP.UNAVAILABLE,
+        // The server answers a key it does not list with 404 key_not_found
+        // (settylab/annzarro#45), so `200 {"data": []}` now comes only from a
+        // LISTED key that read as nothing -- the 15 obsm keys of
+        // settylab/annzarro#42, which were badged "not in this dataset".
+        name: 'obsm: 200 with "data": [] -- a listed key that read as nothing',
+        reason: GAP.FAILED,
         settings: { type: 'obsm', key: 'X_umap', column: 0 },
         tableColumn: { type: 'obsm', key: 'X_umap', column: 0 },
         patch: { loadObsm: async () => ({ data: [] }) }
+    },
+    {
+        name: 'obsm: 404 key_not_found -- the KEY is absent',
+        reason: GAP.UNAVAILABLE,
+        settings: { type: 'obsm', key: 'X_gone', column: 0 },
+        tableColumn: { type: 'obsm', key: 'X_gone', column: 0 },
+        patch: { loadObsm: async () => { throw keyNotFound("No obsm key 'X_gone' in this dataset."); } }
+    },
+    {
+        name: 'obs: 404 key_not_found -- the column is absent',
+        reason: GAP.UNAVAILABLE,
+        settings: { type: 'obs', key: 'gone' },
+        tableColumn: { type: 'obs', key: 'gone' },
+        patch: { loadObs: async () => { throw keyNotFound("No obs column 'gone' in this dataset."); } }
+    },
+    {
+        // settylab/annzarro#41: an encoding the reader cannot read used to
+        // arrive as `200 {"gone": []}`; it is now 400 unsupported_type.
+        name: 'obs: 400 unsupported_type -- listed, encoding unreadable',
+        reason: GAP.FAILED,
+        settings: { type: 'obs', key: 'Nucleus' },
+        tableColumn: { type: 'obs', key: 'Nucleus' },
+        patch: { loadObs: async () => { throw Object.assign(
+            new Error("obs column 'Nucleus': Unsupported AnnData encoding 'unknown'"),
+            { status: 400, data: { reason: 'unsupported_type' } }); } }
     },
     {
         name: 'obsm: a full-length column of nulls',
@@ -386,8 +420,10 @@ test('a focus that IS present still loads normally', async () => {
  * RESOLVES, and it is the matrix key that does not.                    *
  *                                                                     *
  * Measured read-only against the live service: a missing obsp, varp,   *
- * layer, varm or obsm key all answer `200 {"data": []}` -- the same    *
- * body. So one rule has to cover all of them.                          *
+ * layer, varm or obsm key all answered `200 {"data": []}` -- the same  *
+ * body. So one rule has to cover all of them. Since settylab/annzarro  *
+ * #45 a missing key is 404 key_not_found, so that body now means a     *
+ * listed key that read as nothing: FAILED, on every member kind.       *
  * ------------------------------------------------------------------ */
 
 const RESIDUE = [
@@ -396,24 +432,24 @@ const RESIDUE = [
         settings: { type: 'obsp', key: 'conn', column: 'c0' },
         tableColumn: { type: 'obsp', key: 'conn', column: 'c0' },
         patch: { loadObsp: async () => ({ data: [] }) },
-        entityIndex: 0, reason: GAP.UNAVAILABLE
+        entityIndex: 0, reason: GAP.FAILED
     },
     {
         name: 'obsp, valid cell index, a single EMPTY row',
         settings: { type: 'obsp', key: 'conn', column: 'c0' },
         tableColumn: { type: 'obsp', key: 'conn', column: 'c0' },
         patch: { loadObsp: async () => ({ data: [[]] }) },
-        entityIndex: 0, reason: GAP.UNAVAILABLE
+        entityIndex: 0, reason: GAP.FAILED
     },
     {
         name: 'layer, valid gene, empty body',
         settings: { type: 'layer', key: 'X', column: 'g0' },
         tableColumn: { type: 'layer', key: 'X', column: 'g0' },
         patch: { loadLayer: async () => ({ data: [] }) },
-        entityIndex: 0, reason: GAP.UNAVAILABLE
+        entityIndex: 0, reason: GAP.FAILED
     },
     {
-        name: 'layer, a body that is not an array at all (malformed, NOT key-absent)',
+        name: 'layer, a body that is not an array at all (malformed)',
         settings: { type: 'layer', key: 'X', column: 'g0' },
         tableColumn: { type: 'layer', key: 'X', column: 'g0' },
         patch: { loadLayer: async () => ({ data: { nope: true } }) },
@@ -440,14 +476,17 @@ for (const c of RESIDUE) {
     });
 }
 
-test('an empty ARRAY means key-absent; a non-array body means malformed', () => {
-    // These are different claims about the server's answer and must not be
-    // collapsed: `{"data": []}` is the measured shape for an absent key, while
-    // a non-array body says nothing of the kind. Collapsing them had
-    // classifyMatrixColumn assert "the key is absent" about a response that
-    // never said so.
+test('an empty ARRAY is a listed key that read as nothing; a non-array body is malformed', () => {
+    // Both are failures, with different sentences. `{"data": []}` was the
+    // shape for an absent key until the server started answering those 404
+    // key_not_found (classifyError -> UNAVAILABLE); now it only comes from a
+    // listed key, and "not in this dataset" would contradict
+    // `dataset_structure` (settylab/annzarro#42).
     const opts = { expected: 100, unit: 'cells', source: 's', key: 'k' };
-    assert.equal(classifyMatrixColumn({ ...opts, values: [] }).worstReason, GAP.UNAVAILABLE);
+    const empty = classifyMatrixColumn({ ...opts, values: [] });
+    assert.equal(empty.worstReason, GAP.FAILED);
+    assert.doesNotMatch(empty.lines()[0], /not in this dataset/);
+    assert.match(empty.lines()[0], /listed by this dataset but returned no values/);
     assert.equal(classifyMatrixColumn({ ...opts, values: { nope: 1 } }).worstReason, GAP.FAILED);
     assert.equal(classifyMatrixColumn({ ...opts, values: undefined }).worstReason, GAP.FAILED);
     // and a healthy one is still complete

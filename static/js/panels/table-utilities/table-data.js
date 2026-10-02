@@ -230,11 +230,11 @@ async function loadColumnData(column, entityType, signal = null) {
             };
         }
         if (loaded.matrixKey !== undefined) {
-            // obsm/varm/obsp/varp/layer answer `200 {"data": []}` when the KEY
-            // is absent, where obs/var omit the key entirely. That rule was the
-            // plot's alone, and reading this identical body without it is what
-            // made the table say "failed to read" (error) beside the plot's
-            // "not in this dataset" (warning), on one page.
+            // obsm/varm/obsp/varp/layer bodies carry no key-presence signal,
+            // so they go through the matrix rule the plot uses. Reading this
+            // identical body by a different rule is what once made the table
+            // say "failed to read" (error) beside the plot's "not in this
+            // dataset" (warning), on one page.
             // A slice taken AT one entity (obsp/varp row, layer row/column)
             // carries `slice`, so an all-blank one names that entity and the
             // fix -- the same sentence the plot gives (classifyFocusRow).
@@ -295,7 +295,7 @@ async function loadColumnData(column, entityType, signal = null) {
  *     classifier could only read as "legitimately blank"; the sentence is now
  *     built by `missingEntity`, shared with the plot.
  *   - `matrixKey` -- this came from an obsm/varm/obsp/varp/layer member, whose
- *     "empty array means the KEY is absent" contract differs from obs/var's.
+ *     body has no key-presence signal (see `classifyMatrixColumn`).
  *   - `slice` -- `{kind, name, focused}` when that read was taken AT one cell
  *     or gene (obsp/varp row, layer row/column), for `classifyFocusRow`.
  *   - `unsupported` -- an unrecognised column type; a defect in this function.

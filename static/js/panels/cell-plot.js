@@ -419,8 +419,6 @@ const CellPlotPanel = (function() {
                 // Clean up any loading indicators before purging the plot
                 if (window.loadingIndicator && typeof window.loadingIndicator.cleanupContainer === 'function') {
                     window.loadingIndicator.cleanupContainer(_plotContainer);
-                } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
-                    loadingIndicator.cleanupContainer(_plotContainer);
                 }
                 
                 // Clean up aesthetics menu event listeners
