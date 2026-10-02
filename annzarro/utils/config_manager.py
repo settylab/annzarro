@@ -475,8 +475,8 @@ class ConfigManager:
         into the hierarchical form; anything already sectioned is returned as is.
 
         Without this a flat file merged its keys at the top level, where nothing
-        reads them -- e.g. ``"auth_enabled": true`` in production_config.json
-        was silently ignored.
+        reads them -- e.g. ``"auth_enabled": true`` in the former
+        production_config.json was silently ignored.
         """
         if not isinstance(data, dict) or any(k in data for k in self.SECTIONS):
             return data

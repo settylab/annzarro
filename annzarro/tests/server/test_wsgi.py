@@ -103,7 +103,7 @@ def test_auth_disabled_env_var_typo_keeps_login(layout, monkeypatch):
 
 
 def test_flat_json_config_is_understood(layout):
-    """The shipped server/production_config.json is flat; its keys must land."""
+    """A flat (Flask-style) JSON config is still understood; its keys must land."""
     path = layout / "flat.json"
     path.write_text(json.dumps({
         "data_dir": str(layout / "data"),
@@ -117,9 +117,27 @@ def test_flat_json_config_is_understood(layout):
     assert config["user_file"] == str(layout / "users.json")
 
 
-def test_shipped_production_config_loads_hosted_with_login(monkeypatch):
+def _server_dir():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    config = load_hosted_config(config_path=os.path.join(root, "annzarro", "server", "production_config.json"))
+    return os.path.join(root, "annzarro", "server")
+
+
+def test_shipped_site_example_loads_hosted_with_login(monkeypatch):
+    """The example the systemd unit and run_gunicorn.sh point at. It replaced
+    production_config.json, which turned CORS on, served /opt/annzarro as the
+    static directory and set keys nothing read."""
+    config = load_hosted_config(config_path=os.path.join(_server_dir(), "site.example.yaml"))
     assert config["auth_enabled"] is True
     assert config["hosted"] is True
+    assert config["cors_enabled"] is False
+    assert not config.get("static_dir")
     assert config["host"] == "127.0.0.1", "gunicorn should sit behind a reverse proxy"
+    assert config["proxy_count"] == 1
+
+
+def test_deploy_files_point_at_the_yaml_config():
+    server = _server_dir()
+    assert not os.path.exists(os.path.join(server, "production_config.json"))
+    for name in ("annzarro.service", "run_gunicorn.sh", "setup_production.sh"):
+        text = open(os.path.join(server, name)).read()
+        assert "site.yaml" in text and "production_config" not in text, name

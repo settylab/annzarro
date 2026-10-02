@@ -3,10 +3,16 @@
 # Run Annzarro with Gunicorn for production
 #
 
-# Configuration: the same merged config as `annzarro start` (config/*.yaml,
+# Configuration: the same merged config as `annzarro start` (built-in defaults,
 # then this file, then ANNZARRO_* variables). Login is ON and dataset paths are
 # confined to the data directory unless the configuration says otherwise.
-export ANNZARRO_CONFIG=${ANNZARRO_CONFIG:-"/opt/annzarro/server/production_config.json"}
+# Start from annzarro/server/site.example.yaml.
+export ANNZARRO_CONFIG=${ANNZARRO_CONFIG:-"/etc/annzarro/site.yaml"}
+if [ ! -f "$ANNZARRO_CONFIG" ]; then
+    echo "Error: configuration file $ANNZARRO_CONFIG not found."
+    echo "Copy annzarro/server/site.example.yaml there and edit it."
+    exit 1
+fi
 CONFIG_FILE=$ANNZARRO_CONFIG
 
 # Set Python path to include project directory
