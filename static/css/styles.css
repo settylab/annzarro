@@ -2812,3 +2812,13 @@ button.dtsb-button.dtsb-clear:hover {
 .session-card-owner i {
     margin-right: 4px;
 }
+
+/* Hover columns picker (settings.hoverInfo) */
+.hover-columns-controls {
+    display: flex;
+    align-items: flex-start;
+}
+.hover-columns-controls .hover-columns-select {
+    max-width: 24rem;
+    padding-right: 0.5rem;
+}

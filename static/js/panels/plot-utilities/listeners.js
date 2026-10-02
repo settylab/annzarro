@@ -1,5 +1,6 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel } from './panel-ui-update.js';
-import { loadAxisData, updateTableEntities, applyLogColor } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo } from './plot-make.js';
+import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
@@ -204,6 +205,19 @@ export function setupPlotControlListeners(
       redrawStyling();
     });
     
+    // --- Hover columns: reload only those columns and relabel the traces ---
+    const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);
+    let hoverGeneration = 0;
+    $hoverSelect.on('change', async (e) => {
+      const selected = Array.from(e.target.selectedOptions, o => o.value);
+      settings.hoverInfo = hoverInfoFromSelection(plotType, selected, settings.hoverInfo);
+      const mine = ++hoverGeneration;
+      const extra = await loadHoverColumns(settings, plotType);
+      if (mine !== hoverGeneration) return;   // a newer selection is loading
+      data.hoverExtra = extra;
+      await applyHoverInfo(plotContainer, data, settings);
+    });
+
     const $existingBtn = $controlsContainer.find(`#aesthetics-menu-btn-${id}`);
     const cleanupAesthetics = createAestheticsMenu(id, $existingBtn[0], controlsContainer, plotContainer, settings);
     plotContainer._aestheticsCleanup = cleanupAesthetics;
