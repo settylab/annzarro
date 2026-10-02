@@ -115,36 +115,31 @@ async function main() {
     // 1. Open the dataset (as a share link / the dataset picker would).
     await win.goto(`${base}/?dataset_path=${encodeURIComponent(datasetPath)}`);
     await win.waitForFunction(() => /Cells:\s*[1-9]/.test(document.body.innerText));
-    log(`dataset open: ${(await win.evaluate(() => document.body.innerText.match(/Cells:\s*\d+/)[0]))}`);
+    log(`dataset open: ${(await win.evaluate(() => document.body.innerText.match(/Cells:\s*[\d,]+/)[0]))}`);
 
     // 2. Cell plot.
     await win.getByText('Cell Plot', { exact: true }).first().click();
     await win.waitForSelector('.js-plotly-plot .main-svg');
     log('cell plot rendered');
 
-    // 3. Focus a gene and a cell through their pickers.
-    const pick = async (selectId, index) => {
-        const value = await win.evaluate(([id, i]) => {
-            // An option other than the current one, so the pick changes focus.
-            const sel = document.getElementById(id);
-            const opts = [...sel.options].filter(o => o.value && o.value !== sel.value);
-            return opts[Math.min(i, opts.length - 1)].value;
-        }, [selectId, index]);
-        await win.locator(`#${selectId} + .select2 .select2-selection`).click();
-        await win.locator('.select2-container--open .select2-search__field').fill(value);
-        await win.locator('.select2-container--open .select2-results__option', { hasText: value }).first().click();
-        await win.waitForFunction(([id, v]) => document.getElementById(id).value === v, [selectId, value]);
-        // The picker may stay open after a pick; close it like a user would.
-        if (await win.locator('.select2-container--open').count()) await win.keyboard.press('Escape');
-        if (await win.locator('.select2-container--open').count()) {
-            await win.locator(`#${selectId} + .select2 .select2-selection`).click();
-        }
-        await win.waitForSelector('.select2-container--open', { state: 'detached', timeout: 10000 });
+    // 3. Focus a gene and a cell through their typeahead pickers.
+    const pick = async (inputId, kind, index) => {
+        const names = await win.evaluate(async ([k, ds]) => {
+            const r = await fetch(`/api/v1/data/${k}?dataset_path=${encodeURIComponent(ds)}`);
+            const body = await r.json();
+            return body[k] || body;
+        }, [kind, datasetPath]);
+        const value = names[Math.min(index, names.length - 1)];
+        const input = win.locator(`#${inputId}`);
+        await input.click();
+        await input.fill(value);
+        await win.locator('.name-picker-option', { hasText: value }).first().click();
+        await win.waitForFunction(([id, v]) => document.getElementById(id).value === v, [inputId, value]);
         return value;
     };
-    const gene = await pick('focused-gene', 5);
+    const gene = await pick('focused-gene', 'genes', 5);
     log(`focused gene ${gene}`);
-    const cell = await pick('focused-cell', 3);
+    const cell = await pick('focused-cell', 'cells', 3);
     log(`focused cell ${cell}`);
 
     // 4. Split the tile and open a cell table in the new half.
