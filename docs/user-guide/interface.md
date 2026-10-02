@@ -15,7 +15,8 @@ close them. This page walks through every control on that screen with `bm_aging.
 The header. Numbers match the list below.
 ```
 
-1. **Dataset** lists every dataset the server found in its data directory. You can also type a
+1. **Dataset** lists every dataset the server found at the top level of its data directory
+   (`~/annzarro-data` unless set with `--data-dir`) and in that directory's `datasets` folder. You can also type a
    path or a remote URL into its search field and press Enter ({doc}`remote-datasets`).
 2. **Refresh dataset** clears the server's and the browser's caches for the current dataset,
    reloads the dataset list and reopens the dataset. Use it after the store on disk changed.

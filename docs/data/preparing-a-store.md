@@ -184,8 +184,9 @@ you are in depends on the environment.
 
 ## Where to put the store
 
-`annzarro start --data-dir DIR` lists datasets from `DIR/datasets/` if that folder exists,
-otherwise from `DIR` itself. Only the first level is scanned. An entry is listed when it is a
+`annzarro start --data-dir DIR` lists the datasets at the top level of `DIR` and in
+`DIR/datasets/` (without `--data-dir`, `DIR` is `~/annzarro-data`). Deeper folders are not
+scanned. An entry is listed when it is a
 `.h5ad` file or a directory that looks like a zarr store (a `.zarr` name, a `.zgroup`, or `X`,
 `obs`, `var`, `obsm`, `layers` inside) and opens as AnnData. Symbolic links are followed, so
 `ln -s /big/disk/atlas.zarr DIR/` works. h5ad files are served directly, but their sparse

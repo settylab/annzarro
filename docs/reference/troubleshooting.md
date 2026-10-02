@@ -21,7 +21,8 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Dataset missing from the Dataset menu (Step 12) | Store outside the data directory, deeper than one level, or not a `.zarr`/`.h5ad` path; or `<data_dir>/datasets/` exists, in which case only that folder is listed | Move or symlink the store into the listed folder and reload ({doc}`../data/preparing-a-store`) |
+| Dataset missing from the Dataset menu (Step 12) | Store outside the data directory (by default `~/annzarro-data`), deeper than the top level or `datasets/`, or not a `.zarr`/`.h5ad` path | Move or symlink the store into the data directory or its `datasets/` folder and click refresh ({doc}`../data/preparing-a-store`) |
+| `annzarro stop` says "No server to stop" or "not an AnnZarro server of yours" | `stop` only stops a server started with `--detach` by the same user (same `ANNZARRO_HOME`); a reused PID is refused and the stale PID file removed | Stop a foreground server with Ctrl+C; otherwise find the process yourself |
 | Dataset listed without cell and gene counts, with an error | zarr format 3 store on a server running zarr 2 | Rewrite as format 2, or run the server with zarr ≥ 3 |
 | One array fails to load with `500` `stale_metadata`: "The store's consolidated metadata (.zmetadata) is out of date" | The store was rewritten in place without re-consolidating, so `.zmetadata` disagrees with the array on disk | `zarr.consolidate_metadata(path)`, then `POST /api/v1/cache/reset` or restart the server |
 | `404` `key_not_found` ("No layers key '…' in this dataset") or `400` `index_out_of_range`. Reproduced | A key, column or index the dataset does not have, often from a panel set or link made for another store | Check the keys with `GET /api/v1/data/dataset_structure` |
@@ -62,7 +63,6 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | `400` `cap_exceeded`. Reproduced | More indices than the request's own `max_cells=` / `max_genes=` parameter | Raise or drop that parameter; the server sets no such cap itself |
 | `400` `bad_indices`. Reproduced | `rows=` empty, not integers (e.g. a trailing comma from macOS `seq -s,`) or negative | Send `rows=1,2,3` or `rows=[1,2,3]` |
 | `403` `admin_only` on `POST /api/v1/cache/reset` | On a shared server only admins may clear the cache | Sign in as an admin, or restart the service |
-| `401` although you sent `Authorization: Bearer <token>` from `/auth/token`. Reproduced | No route accepts the token; only the session cookie | Log in through `POST /login` and reuse the cookie ({doc}`http-api`) |
 
 ## Diagnosing
 

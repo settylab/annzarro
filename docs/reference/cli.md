@@ -1,7 +1,6 @@
 # Command-line interface
 
-The package installs two commands: `annzarro`, described here, and `annzarro-server`, a legacy
-entry point (see the end of this page). All output below is from `annzarro <command> --help`.
+The package installs one command, `annzarro`. All output below is from `annzarro <command> --help`.
 
 ```text
 annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,install,config,desktop} ...
@@ -9,7 +8,7 @@ annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,install,config,deskto
 
 | Global option | Meaning |
 |---|---|
-| `--config FILE` | Configuration file, layered over the built-in defaults and the system, user and project files ({doc}`configuration`). Must exist. `start` and the `config` subcommands also accept it after the subcommand; `user` accepts it only before. |
+| `--config FILE` | Configuration file, layered over the built-in defaults and the system, user and project files ({doc}`configuration`). Must exist. `start`, `user` and the `config` subcommands also accept it after the subcommand (`annzarro user --config FILE add ...`). |
 | `--debug` | Debug logging; a failing command also prints its traceback. |
 
 ## `annzarro start`
@@ -26,10 +25,10 @@ annzarro start [--config CONFIG] [--host HOST] [--port PORT] [--data-dir DATA_DI
 |---|---|
 | `--host HOST` | Address to bind (`server.host`, default `127.0.0.1`). Any address other than `127.0.0.1`, `localhost` or `::1` turns login on and confines paths to the data directory. |
 | `--port PORT` | Port (`server.port`, default 8000). |
-| `--data-dir DIR` | Data directory (`server.data_dir`, default `./data`, created if missing). `~` is expanded. |
+| `--data-dir DIR` | Data directory (`server.data_dir`, default `~/annzarro-data`, created if missing). `~` is expanded; a relative path is taken from the current directory. |
 | `--auth-disabled` | Login off, even on a network address. There a `SECURITY` warning is logged and the header shows "No login". |
 | `--no-browser` | Do not open a browser. Also implied by the environment variable `ANNZARRO_HEADLESS`. |
-| `--detach` | Start the server in the background and write its PID to `~/.annzarro/server.pid`. |
+| `--detach` | Start the server in the background and write its PID to `~/.annzarro/server.pid` (`$ANNZARRO_HOME/server.pid`), mode 0600. |
 | `--development` | Use the `development` defaults (Flask debug mode with the reloader and interactive debugger, CORS on, login off, DEBUG logging). Never on a reachable host. |
 | `--config FILE` | As the global option. |
 | `--venv-path PATH` | Accepted for the desktop app's launcher; has no effect. |
@@ -46,15 +45,18 @@ For a lab server use gunicorn instead ({doc}`../deployment/lab-server`).
 
 ## `annzarro stop`
 
-Stop a server started with `--detach`: reads `~/.annzarro/server.pid` (or
-`$TMPDIR/annzarro/server.pid`), sends SIGTERM, waits 5 s, then SIGKILL. A server started in the
-foreground has no PID file; stop it with Ctrl+C. Exit status 1 when no PID file is found.
+Stop a server started with `--detach`. It reads `~/.annzarro/server.pid` (`$ANNZARRO_HOME/server.pid`)
+and signals that process only if the file is yours and the process is your own `annzarro start`;
+otherwise it refuses and removes the stale file. It sends SIGTERM, waits 5 s, then SIGKILL. A
+server started in the foreground has no PID file; stop it with Ctrl+C. Exit status 1 when there
+is nothing to stop.
 
 ## `annzarro user`
 
-Manage the users file named by `auth.user_file` ({doc}`../deployment/authentication`). Pass the
-server's configuration *before* `user` so the same file is edited:
-`annzarro --config site.yaml user ...`.
+Manage the users file named by `auth.user_file` ({doc}`../deployment/authentication`). The
+`user` commands read the same configuration as `annzarro start` (the `production` defaults plus
+your files), so pass the server's configuration file to edit the same users file:
+`annzarro user --config site.yaml add ...` or `annzarro --config site.yaml user add ...`.
 
 | Command | Meaning |
 |---|---|
@@ -72,7 +74,7 @@ A running server sees every change without a restart.
 |---|---|
 | `config show [--format yaml\|json] [--env production\|development] [override flags]` | Print the merged configuration, every source considered (loaded, not found, ignored) and, at the end, each value not taken from the built-in defaults with its origin. Secrets are masked. Exit 1 if the result is invalid, but it is printed anyway. The YAML output can be saved and used with `--config`. |
 | `config validate [--file FILE] [--env ...] [override flags]` | Validate the merged configuration, or with `--file` one file layered over the built-in defaults. Exit 1 on errors. |
-| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables (values unmasked) and the command line. |
+| `config info [--env ...] [override flags]` | Print the loaded sources, the `ANNZARRO_*` environment variables and the command line. Secret values (variables naming a secret, password, token or credential, or setting a secret key; `--password` arguments) are masked. |
 | `config init [--output FILE] [--force]` | Write a copy of the built-in `base.yaml` (default `./config.yaml`; refuses to overwrite without `--force`). Comments are not kept. |
 
 The override flags are those of `start`: `--config`, `--host`, `--port`, `--data-dir` and
@@ -117,13 +119,3 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | `ANNZARRO_CONFIG` | Configuration file for the WSGI entry point (gunicorn). Not read by `annzarro start`. |
 | `ANNZARRO_ENV` | `production` (default) or `development`, for the WSGI entry point. |
 | `XDG_CONFIG_HOME` | Moves the user configuration file `~/.config/annzarro/config.yaml`. |
-
-## `annzarro-server`
-
-```text
-annzarro-server [-c CONFIG] [--debug] [--port PORT] [--data-dir DATA_DIR] [--static-dir STATIC_DIR]
-```
-
-An older entry point that starts the server without the layered configuration: without `-c`
-it runs on `127.0.0.1` with built-in defaults, ignoring `/etc/annzarro`, `~/.config/annzarro` and
-`ANNZARRO_*` variables. Use `annzarro start` instead.

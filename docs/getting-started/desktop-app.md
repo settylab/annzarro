@@ -32,9 +32,10 @@ The app then behaves like `annzarro start` on your own computer:
 - The server listens on `127.0.0.1` only, starting at port 39487 and taking the next free port
   if that one is busy. Login is off.
 - The data directory is `~/annzarro-data` (in your home folder). The app creates it with two
-  subfolders, `datasets` and `sessions`. Because `datasets` exists, **the Dataset picker lists
-  only what is in `~/annzarro-data/datasets`**: put stores (or links to them) there. Saved panel
-  sets go to `~/annzarro-data/sessions`.
+  subfolders, `datasets` and `sessions`. The Dataset picker lists stores (or links to them) both
+  directly in `~/annzarro-data` and in `~/annzarro-data/datasets`. Saved panel sets go to
+  `~/annzarro-data/sessions`. This is also the default data directory of `annzarro start`, so the
+  app and a command-line server on the same computer see the same datasets and panel sets.
 - A folder button next to the Dataset picker opens your system's folder dialog; choosing a
   `.zarr` folder anywhere on disk opens it directly.
 

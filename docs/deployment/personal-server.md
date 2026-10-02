@@ -40,8 +40,9 @@ annzarro start --no-browser --port 8765 --data-dir /path/to/stores --detach
 annzarro stop        # later; stops the server started with --detach
 ```
 
-`--detach` writes its PID to `~/.annzarro/server.pid`; `annzarro stop` reads that file, so it
-only stops a server started with `--detach` by the same user (with the same `ANNZARRO_HOME`).
+`--detach` writes its PID to `~/.annzarro/server.pid`; `annzarro stop` reads that file and
+signals the process only if it is your own `annzarro start`, so it only stops a server started
+with `--detach` by the same user (with the same `ANNZARRO_HOME`).
 
 ## On an HPC cluster with Slurm
 

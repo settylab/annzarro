@@ -16,9 +16,9 @@ mkdir -p ~/annzarro-data
 ln -s /path/to/bm_aging.zarr ~/annzarro-data/      # or cp -r
 ```
 
-The picker lists `.zarr` directories and `.h5ad` files at the top level of the data directory.
-If the data directory contains a subdirectory called `datasets`, only that subdirectory is
-listed. Panel sets you save are written to `~/annzarro-data/sessions/`.
+The picker lists `.zarr` directories and `.h5ad` files at the top level of the data directory
+and in its `datasets` subdirectory, if there is one. Panel sets you save are written to
+`~/annzarro-data/sessions/`.
 
 ## 2. Start the server
 
@@ -28,8 +28,8 @@ annzarro start --data-dir ~/annzarro-data
 
 The server listens on `127.0.0.1:8000` and opens `http://127.0.0.1:8000` in your browser. On
 a machine without a display, add `--no-browser` and open the address yourself. Without
-`--data-dir`, the data directory is `./data` relative to where you run the command, created if
-it does not exist. Stop the server with Ctrl+C.
+`--data-dir`, the data directory is `~/annzarro-data`, created if it does not exist, so
+`annzarro start` alone works for the layout above. Stop the server with Ctrl+C.
 
 Bound to `127.0.0.1`, the server is reachable only from this machine and needs no login. To
 use a server on another machine, see {doc}`../deployment/personal-server`.

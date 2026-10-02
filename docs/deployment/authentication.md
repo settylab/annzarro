@@ -52,8 +52,9 @@ annzarro --config site.yaml user list
 annzarro --config site.yaml user remove --username bob
 ```
 
-`--config` goes **before** `user`; the `user` subcommands do not accept it after the
-subcommand. `--password` exists, but it puts the password into your shell history and the
+`--config` may also follow `user` (`annzarro user --config site.yaml list`), but not the
+final subcommand (`add`, `list`, ...). The `user` commands read the same `production`
+configuration as `annzarro start`. `--password` exists, but it puts the password into your shell history and the
 process list; leave it out and type the password at the prompt.
 
 Change a user later without removing them:

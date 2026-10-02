@@ -45,8 +45,9 @@ Errors
 Authentication
 : With login enabled, every route except `/login` and `/logout` needs the session cookie set
   by `POST /login` (form fields `username`, `password`); without it API routes answer `401`
-  `{"error": "Authentication required"}` before anything else is checked. See the note on
-  `/auth/token` below.
+  `{"error": "Authentication required"}` before anything else is checked. Scripts log in through
+  the form and reuse the cookie: `curl -c jar -d "username=...&password=..." https://host/login`,
+  then `curl -b jar ...`. There is no token endpoint.
 
 Cross-origin requests
 : No `Access-Control-Allow-Origin` header is sent unless `server.cors_enabled` is set; then it
@@ -151,7 +152,7 @@ so it travels as float64; the 31 non-zeros arrive as 372 bytes.
 
 | Route | Returns |
 |---|---|
-| `GET /datasets` | list of `{name, path, rel_path, cells, genes, is_link}` for the data directory (from `<data_dir>/datasets/` if it exists); a store the server's zarr cannot read is listed with `cells: null` and an `error` sentence |
+| `GET /datasets` | list of `{name, path, rel_path, cells, genes, is_link}` for the stores at the top of the data directory and in its `datasets/` subdirectory (`rel_path` says which); a store the server's zarr cannot read is listed with `cells: null` and an `error` sentence |
 | `GET /data/dataset_structure?dataset_path=` | everything the menus need: `shape`, `n_obs`, `n_vars`, and per slot `available`, `keys` / `columns`, `info` (shape and type per key), `columns_info` (dtype per obs/var column), dataframe columns of `obsm`/`varm`. A store without `X` has `"X": {"available": false, "shape": null}` |
 | `GET /data/info?dataset_path=` | a shorter summary: `shape`, `has_*` flags, `obs_columns`, `var_columns`, `layers`, `embeddings` |
 | `GET /data/genes?dataset_path=` | `{"genes": [...], "dataset_path": ...}`, all `var_names` (146 kB here) |
@@ -205,15 +206,6 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`. On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache; this clears only the worker that answers |
 | `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
-| `POST /auth/token` | see the note below |
-
-```{warning}
-`POST /api/v1/auth/token` issues a JWT, but no route accepts it: `Authorization: Bearer <token>`
-is answered `401`, and the token route itself requires the session cookie. It exists only when
-login is on. For scripted access to a server with login on, log in through the form and reuse
-the cookie: `curl -c jar -d "username=...&password=..." https://host/login`, then
-`curl -b jar ...`.
-```
 
 Also registered but not used by the web client: `/data/paginated`, `/data/statistics`,
 `/data/by_path`, `/core/datasets`, `/zarr/to_anndata`, and the path-segment forms

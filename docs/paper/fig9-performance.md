@@ -54,7 +54,8 @@ The published run used Python 3.11, anndata 0.12.19, zarr 3.1.6, numcodecs 0.16.
 3.1.3, psutil and requests, with AnnZarro installed editable from a checkout at commit
 `63b57e6` (`results/environment.json` lists every version). The harness starts the server as
 `python -m annzarro.server` with `ANNZARRO_HEADLESS=1`, the same Flask app that
-`annzarro start` runs. `run_benchmark.py env` records the commit of the AnnZarro checkout
+`annzarro start` runs. That module entry point was removed in later AnnZarro versions; with
+them, start the server with `annzarro start --no-browser --auth-disabled` instead. `run_benchmark.py env` records the commit of the AnnZarro checkout
 in `ANNZARRO_REPO` (default: `annzarro/` next to the paper repository); set it if your checkout
 lives elsewhere. The cold condition clones each store with `cp -c` (an APFS clone), so
 it is written for macOS.
