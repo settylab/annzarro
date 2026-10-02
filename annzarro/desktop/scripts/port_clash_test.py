@@ -39,6 +39,11 @@ TIMEOUT = int(os.environ.get("PORT_CLASH_TIMEOUT", "300"))
 def occupy(port):
     """Listen on 127.0.0.1:port; accept connections and never answer."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name != "nt":
+        # A server that just stopped leaves TIME_WAIT connections on the
+        # port; without this the bind fails right after another test.
+        # (Two listeners still cannot share the port.)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", port))
     sock.listen(16)
     held = []
