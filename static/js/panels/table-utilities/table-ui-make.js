@@ -10,6 +10,7 @@ import {
     getLayerColumnsForGeneTable
 } from './panel-tracker.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
+import { middleEllipsis } from '../../utils/plot-titles.js';
 
 /**
  * Creates the basic table panel HTML structure.
@@ -19,6 +20,16 @@ import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
  * @param {Object} settings - Optional settings object with controlsVisible property
  * @returns {{ tableContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
+/**
+ * A selected column's name for the narrow list: at most 34 characters,
+ * shortened in the middle so the distinguishing end stays visible.
+ * @param {string} name
+ * @returns {string}
+ */
+export function shortColumnName(name, maxChars = 34) {
+    return middleEllipsis(String(name), s => Array.from(s).length <= maxChars);
+}
+
 export function createTablePanelStructure(container, id, settings = {}) {
     // Determine if controls should be visible (default to true if not specified)
     const controlsVisible = settings.controlsVisible !== false;
@@ -779,7 +790,9 @@ function updateSelectedColumnsList(id, settings) {
         
         // Create text span with ellipsis for long names
         const textSpan = document.createElement('span');
-        textSpan.textContent = displayName;
+        // Shortened in the MIDDLE: kompot_de_..._mahalanobis and
+        // kompot_de_..._mean_lfc used to look identical (cut at the end)
+        textSpan.textContent = shortColumnName(displayName);
         textSpan.title = displayName; // Full name in tooltip
         textSpan.className = 'text-truncate';
         listItem.appendChild(textSpan);

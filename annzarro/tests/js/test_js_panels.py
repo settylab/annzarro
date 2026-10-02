@@ -39,6 +39,9 @@ SUITES = {
     "search-builder.test.mjs": os.path.join(REPO_ROOT, "static", "js", "utils", "search-builder.js"),
     "ui-config.test.mjs": os.path.join(REPO_ROOT, "static", "js", "config.js"),
     "layout-hierarchy.test.mjs": os.path.join(REPO_ROOT, "static", "js", "layout-manager.js"),
+    "column-names.test.mjs": os.path.join(
+        REPO_ROOT, "static", "js", "panels", "table-utilities", "table-ui-make.js"
+    ),
     "click-overlap.test.mjs": os.path.join(
         REPO_ROOT, "static", "js", "panels", "plot-utilities", "plot-make-helper.js"
     ),
