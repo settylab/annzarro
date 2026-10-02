@@ -439,7 +439,7 @@ const App = (function() {
             await _applyPanelSet(plan, { name: 'cell subset' });
             const subset = DataManager.getSubset();
             _showNotification('Cell subset',
-                subset ? `Showing ${subset.n.toLocaleString()} of ${subset.n_total.toLocaleString()} cells (seed ${subset.subset.seed}).`
+                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).`
                        : 'Showing every cell.', 'success', 3000);
         } catch (error) {
             console.error('Changing the cell subset failed:', error);
@@ -1035,6 +1035,10 @@ const App = (function() {
         };
     }
 
+    // The last focused cell a notice said was outside the subset, so a view
+    // restore does not say it a second time.
+    let _focusOutsideSubsetNoticed = null;
+
     /**
      * After a dataset loads, keep the focused cell/gene if the new dataset has
      * it, otherwise focus its first name. Asks the server for one exact match
@@ -1042,10 +1046,6 @@ const App = (function() {
      * @param {'cells'|'genes'} entity
      * @private
      */
-    // The last focused cell a notice said was outside the subset, so a view
-    // restore does not say it a second time.
-    let _focusOutsideSubsetNoticed = null;
-
     async function _resolveFocusForDataset(entity) {
         const picker = _pickers[entity];
         if (picker) picker.reset();
