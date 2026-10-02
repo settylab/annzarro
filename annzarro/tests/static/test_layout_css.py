@@ -41,3 +41,14 @@ def test_panels_fill_their_tile():
     assert "display: flex" in content and "flex-direction: column" in content
     fill = _rule(css, ".tile-content > .plot-panel,\n.tile-content > .table-panel")
     assert "flex: 1 1 auto" in fill and "min-height: 0" in fill
+
+
+def test_small_selects_keep_room_for_their_arrow():
+    """`.form-select-sm { padding: 0.25rem 0.5rem }` cleared Bootstrap's right
+    padding, so the arrow was drawn over the value (obsm key 'X_umap' read
+    'X_umaφ'). A later, more specific rule restores it."""
+    css = open(CSS, encoding="utf-8").read()
+    rule = _rule(css, ".form-select.form-select-sm")
+    m = re.search(r"padding-right:\s*([\d.]+)rem", rule)
+    assert m and float(m.group(1)) >= 1.5
+    assert css.index(".form-select.form-select-sm {") > css.index(".form-control-sm, .form-select-sm {")
