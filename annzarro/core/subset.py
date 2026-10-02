@@ -367,7 +367,7 @@ def select_indices(n_obs: int, spec: SubsetSpec,
             chosen = rows[order[pos < quota[codes[order]]]]
             info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
                               for name, s, q in zip(names, sizes, quota)}
-    indices = np.sort(chosen).astype(np.int64)
+    indices = np.sort(chosen).astype(np.int32 if n_obs < 2**31 else np.int64)
     info["n"] = int(len(indices))
     return indices, info
 
@@ -408,6 +408,14 @@ class Subset:
 _cache: "OrderedDict[Tuple[str, Tuple, str], Subset]" = OrderedDict()
 _lock = threading.Lock()
 _CACHE_SIZE = 16
+#: Bound on the cells all cached subsets hold together (indices, and names once
+#: /cells asked for them): a filter-only spec on a 20M-cell store holds up to
+#: 20M rows, and 16 of those would be gigabytes. The newest subset is always kept.
+_CACHE_MAX_CELLS = 20_000_000
+
+
+def _held(subset) -> int:
+    return len(subset.indices) * (2 if subset._names is not None else 1)
 
 
 def defaults(config) -> Dict[str, int]:
@@ -474,7 +482,8 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
     with _lock:
         _cache[key] = subset
         _cache.move_to_end(key)
-        while len(_cache) > _CACHE_SIZE:
+        while len(_cache) > 1 and (len(_cache) > _CACHE_SIZE or
+                                   sum(_held(v) for v in _cache.values()) > _CACHE_MAX_CELLS):
             _cache.popitem(last=False)
     return subset
 

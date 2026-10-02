@@ -240,3 +240,23 @@ def test_a_spec_too_long_for_a_request_line_is_refused():
         parse_spec(raw)
     with pytest.raises(SubsetError, match="more than"):
         parse_spec({"n": 10, "where": [{"col": "c", "op": "in", "values": values + ["x"]}]})
+
+
+def test_subset_cache_is_bounded_by_cells_held(monkeypatch):
+    """A filter-only spec can hold every row of a huge store; the cache keeps
+    the newest subset and evicts older ones past a cell budget."""
+    class Reader:
+        def get_metadata(self, path):
+            return {"shape": (10_000, 5), "obs_columns": ["k"]}
+
+        def get_obs_var(self, entity, dataset_path, column_names, include_categories, indices=None):
+            return {"data": {"k": [i % 2 for i in range(10_000)]}}
+
+    monkeypatch.setattr(cs, "_CACHE_MAX_CELLS", 12_000)
+    cs.clear()
+    for seed in range(4):
+        spec = parse_spec({"n": None, "seed": seed, "where": [{"col": "k", "op": "in", "values": [seed % 2]}]})
+        cs.get_subset(Reader(), f"/nonexistent/{seed}.zarr", spec)
+    assert len(cs._cache) == 2
+    assert sum(len(v.indices) for v in cs._cache.values()) <= 12_000
+    cs.clear()
