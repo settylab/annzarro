@@ -64,6 +64,12 @@ def occupy(port):
             # looking busy to the next case on Linux.
             for conn in held:
                 conn.close()
+            # shutdown first: on Linux, close() alone leaves the socket
+            # listening while another thread is blocked in accept().
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             sock.close()
 
     return Occupier()
