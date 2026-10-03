@@ -121,3 +121,13 @@ test('childPanes returns only a split\'s own two panes', () => {
     assert.equal(panes.length, 2);
     assert.equal(panes[0].children[0], inner);
 });
+
+// A restore wraps each top-level node in a .panel-wrapper of this height, as
+// the bottom chooser does; without it restored panels shrank with the chooser.
+test('a wrapped panel keeps its row height; without one there is none', () => {
+    const sized = el('panel-wrapper', { dataset: { panelWrapper: 'true' }, style: { height: '640px' },
+                                        children: [split('vertical', tile('cell-plot-1'), tile('gene-plot-2'))] });
+    assert.equal(LayoutManager.buildLayoutHierarchy(sized).height, 640);
+    const unsized = el('panel-wrapper', { dataset: { panelWrapper: 'true' }, children: [tile('cell-plot-1')] });
+    assert.equal('height' in LayoutManager.buildLayoutHierarchy(unsized), false);
+});

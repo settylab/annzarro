@@ -112,10 +112,10 @@ may contain `#` (the demonstration data's do); inside the base64 payload that is
 ### Hierarchy nodes
 
 ```text
-// a panel
-{ "type": "tile", "id": "cell-plot-1718000000000", "controlsVisible": true }
+// a panel ("height": optional, top-level nodes only, px)
+{ "type": "tile", "id": "cell-plot-1718000000000", "controlsVisible": true, "height": 1000 }
 
-// the bottom "add a panel" selector
+// the bottom "add a panel" selector (accepted at top level, always restored anyway)
 { "type": "selector" }
 
 // a split of exactly two children, horizontal or vertical
@@ -129,6 +129,13 @@ may contain `#` (the demonstration data's do); inside the base64 payload that is
   "children": [ <node>, <node> ]   // [first pane, second pane]
 }
 ```
+
+A top-level tile or split may carry `"height": 760`, the height in px of its row (the panel and
+its resize handle under it, as dragged). It is optional and only read on top-level nodes; a
+node without it gets the default panel height. Either way a row is at most the visible tile
+area less 5rem, so the "Create New Panel" chooser below the last row stays in view. A
+top-level `{"type": "selector"}` is accepted and ignored: every restored layout ends with
+exactly one such chooser.
 
 A child may itself be a split, to any depth: splitting one half of a split, horizontally or
 vertically, nests a new split node in that pane. Share links and panel sets made before this was

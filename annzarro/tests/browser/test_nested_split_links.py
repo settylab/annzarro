@@ -12,9 +12,11 @@ Each case builds a layout through the UI as a user would (welcome tile, split
 buttons, the pane's chooser, dragging the handles, hiding a panel's
 controls), clicks Share Link and opens the link in a fresh browser context,
 so no autosave can help. The tile tree, the pane sizes, the panel types and
-configs, and which controls are shown must match. One case also saves a
-panel set and loads it in another fresh context. After a restore every split
-handle must still resize its own split.
+configs, which controls are shown, and the height of each panel row must
+match, and the bottom chooser must come back once, below the rows. One case
+also saves a panel set and loads it in another fresh context. After a
+restore every plot must be drawn inside its tile and above the chooser, and
+every split handle must still resize its own split.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -91,9 +93,12 @@ TREE_JS = r"""
   const walk = (el) => {
     if (el.classList.contains('panel-wrapper')) {
       const c = kids(el, ['split-container', 'tile', 'tile-selector'])[0];
-      return c ? walk(c) : null;
+      return c ? {row: el.style.height, content: walk(c)} : null;
     }
-    if (el.classList.contains('tile-selector')) return 'chooser';
+    if (el.classList.contains('tile-selector')) {
+      const header = el.querySelector('.tile-selection-header');
+      return header && header.style.display === 'none' ? 'chooser' : 'welcome';
+    }
     if (el.classList.contains('tile')) {
       const pc = el.querySelector('.plot-controls, .table-controls');
       return {id: el.dataset.tileId, controls: pc ? pc.style.display !== 'none' : null};
@@ -109,6 +114,30 @@ TREE_JS = r"""
   return [...document.querySelector('.tile-container').children].map(walk).filter(Boolean);
 }
 """
+
+# Where things are drawn: every panel row ends above the bottom chooser, and a
+# plot's data area lies inside its tile. Restored tiles once sat bare in the
+# flex column, shrank with the chooser, and the plot ran under it. A tile too
+# small for its controls scrolls its content instead; its plot is below them
+# by design, so only tiles whose content fits are checked for that.
+GEOMETRY_JS = """() => {
+  const box = e => e.getBoundingClientRect();
+  const chooser = document.querySelector('.tile-container > .tile-selector');
+  const bad = [];
+  for (const row of document.querySelectorAll('.tile-container > .panel-wrapper')) {
+    if (!chooser || box(row).bottom > box(chooser).top + 1) bad.push('a row overlaps the chooser');
+  }
+  for (const tile of document.querySelectorAll('.tile-container .tile[data-tile-id]')) {
+    const content = tile.querySelector('.tile-content');
+    const area = tile.querySelector('.js-plotly-plot .nsewdrag');
+    if (!area || content.scrollHeight > content.clientHeight + 1) continue;
+    const a = box(area), t = box(tile);
+    if (a.height < 50 || a.width < 50) bad.push(`${tile.dataset.tileId} plot area ${a.width}x${a.height}`);
+    if (a.top < t.top - 1 || a.bottom > t.bottom + 1 || a.left < t.left - 1 || a.right > t.right + 1)
+      bad.push(`${tile.dataset.tileId} plot area outside its tile`);
+  }
+  return bad;
+}"""
 
 SIZES_JS = """() => [...document.querySelectorAll('.split-container')].map(c =>
     [...c.children].filter(p => p.classList.contains('split-pane'))
@@ -155,6 +184,16 @@ def _drag(page, tile_id, dx, dy):
     page.mouse.up()
 
 
+def _drag_row(page, dy):
+    """Drag the first row's height handle (under its .panel-wrapper)."""
+    box = page.locator(".tile-container > .split-handle[data-panel-handle='true']").first.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x, y + dy, steps=5)
+    page.mouse.up()
+
+
 def _settle(page):
     page.wait_for_function("() => !!window.PanelManager")
     page.wait_for_timeout(1500)
@@ -184,6 +223,8 @@ def _build(page, case):
         c = _split(page, a, "vertical", "cell-plot")
         _drag(page, b, 150, 0)
         _drag(page, c, 0, 90)
+        # and the row's own height handle, under the panel
+        _drag_row(page, -200)
         page.locator(f".tile[data-tile-id='{c}'] .tile-toggle-controls").first.click()
     elif case == "vertical-then-horizontal-right":
         b = _split(page, a, "vertical", "cell-table")
@@ -222,7 +263,7 @@ def test_nested_layout_round_trips_through_a_share_link(server, browser, case):
         page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
         _build(page, case)
         built = page.evaluate(TREE_JS)
-        assert isinstance(built[0], dict) and "split" in built[0], built
+        assert "split" in built[0]["content"], built
         if case != "close-inside-nested":
             assert any(s != [50, 50] for s in page.evaluate(SIZES_JS)), "no pane was resized"
 
@@ -230,7 +271,9 @@ def test_nested_layout_round_trips_through_a_share_link(server, browser, case):
         errors += _open(opened, _share_link(page))
         _settle(opened)
         assert opened.evaluate(TREE_JS) == built
+        assert built[-1] == "chooser"
         assert _configs(opened) == _configs(page)
+        assert opened.evaluate(GEOMETRY_JS) == []
 
         # a restored split's handle resizes that split; the outer one used
         # to be left unwired (its "panes" were four), so dragging did nothing
@@ -273,6 +316,7 @@ def test_nested_layout_round_trips_through_a_panel_set(server, browser):
         _settle(opened)
         assert opened.evaluate(TREE_JS) == built
         assert _configs(opened) == _configs(page)
+        assert opened.evaluate(GEOMETRY_JS) == []
         assert not errors, errors
     finally:
         ctx.close()

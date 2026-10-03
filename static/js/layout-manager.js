@@ -95,7 +95,12 @@ const LayoutManager = (function() {
             // its content: the panel's tile, or the split it was turned into
             const child = [...element.children].find(c =>
                 c.classList.contains('split-container') || c.classList.contains('tile'));
-            return child ? buildLayoutHierarchy(child) : null;
+            const node = child ? buildLayoutHierarchy(child) : null;
+            // and its height, set by DEFAULT_PANEL_HEIGHT or its handle, so a
+            // restore gives the panel the same room (the CSS cap still applies)
+            const height = parseFloat(element.style.height);
+            if (node && height > 0) node.height = Math.round(height);
+            return node;
         }
 
         // Base case: element is a tile
@@ -659,6 +664,40 @@ const LayoutManager = (function() {
     }
     
     /**
+     * A sized .panel-wrapper with its height handle under it: what holds every
+     * panel made from the bottom chooser. restoreLayout puts each top-level
+     * node in one too. Without it the restored tiles sat bare in the flex
+     * column and shrank together with the bottom chooser, so a plot drawn
+     * into that space ran under the chooser and clicks on it hit the chooser.
+     * @param {HTMLElement} container - The tile container
+     * @param {HTMLElement|null} before - Insert before this element; null appends
+     * @param {number} [height] - Height in px; DEFAULT_PANEL_HEIGHT when missing
+     * @returns {HTMLElement} - The wrapper, empty
+     */
+    function createPanelWrapper(container, before, height) {
+        const panelWrapper = document.createElement('div');
+        panelWrapper.className = 'panel-wrapper';
+        panelWrapper.style.height = `${height > 0 ? height : DEFAULT_PANEL_HEIGHT}px`;
+        panelWrapper.style.width = '100%';
+        panelWrapper.style.overflow = 'hidden';
+        panelWrapper.style.position = 'relative';
+        panelWrapper.dataset.panelWrapper = 'true';
+
+        // A horizontal handle that resizes the wrapper's height
+        const handle = document.createElement('div');
+        handle.className = 'split-handle horizontal';
+        handle.dataset.panelHandle = 'true';
+        // Explicitly mark this as a panel height handle, not a split handle
+        handle.dataset.isPanelHeightHandle = 'true';
+
+        container.insertBefore(panelWrapper, before);
+        container.insertBefore(handle, before);
+        setupPanelHeightHandle(handle, panelWrapper);
+        panelWrapper.dataset.resizeHandle = true;
+        return panelWrapper;
+    }
+
+    /**
      * Creates a panel with a simple horizontal resizer, keeping the welcome tile
      * @param {HTMLElement} container - The container element  
      * @param {HTMLElement} selectionTile - The selection tile element
@@ -675,14 +714,8 @@ const LayoutManager = (function() {
         if (isInSplitPane) {
             console.log('Creating panel in a split pane');
         }
-        // Create a wrapper div that won't be replaced
-        const panelWrapper = document.createElement('div');
-        panelWrapper.className = 'panel-wrapper';
-        panelWrapper.style.height = `${DEFAULT_PANEL_HEIGHT}px`;
-        panelWrapper.style.width = '100%';
-        panelWrapper.style.overflow = 'hidden';
-        panelWrapper.style.position = 'relative';
-        panelWrapper.dataset.panelWrapper = 'true';
+        // Create a wrapper div that won't be replaced, with its height handle
+        const panelWrapper = createPanelWrapper(container, selectionTile);
         
         // Create a panel element inside the wrapper
         const panelElement = document.createElement('div');
@@ -691,14 +724,7 @@ const LayoutManager = (function() {
         panelElement.style.height = '100%';
         panelElement.style.overflow = 'auto'; // Ensure content is scrollable if needed
         
-        // Create a horizontal resize handle
-        const handle = document.createElement('div');
-        handle.className = 'split-handle horizontal';
-        handle.dataset.panelHandle = 'true';
-        // Explicitly mark this as a panel height handle, not a split handle
-        handle.dataset.isPanelHeightHandle = 'true';
-        
-        // Add panel to wrapper and insert both elements
+        // Add panel to wrapper
         panelWrapper.appendChild(panelElement);
         
         // Mark if this is inside a split pane
@@ -711,9 +737,6 @@ const LayoutManager = (function() {
                 console.log(`This panel's split container belongs to wrapper: ${splitContainer.dataset.parentWrapperId}`);
             }
         }
-        
-        container.insertBefore(panelWrapper, selectionTile);
-        container.insertBefore(handle, selectionTile);
         
         // Create the panel in the panel element
         const panel = createPanelCallback(panelType, panelConfig, panelElement);
@@ -745,12 +768,6 @@ const LayoutManager = (function() {
             }
         }
         
-        // Setup resize functionality for the handle
-        setupPanelHeightHandle(handle, panelWrapper);
-        
-        // Store reference to the handle in the wrapper
-        panelWrapper.dataset.resizeHandle = true;
-        
         // We don't remove the welcome tile - it stays at the bottom
         
         return panel;
@@ -765,6 +782,7 @@ const LayoutManager = (function() {
         setupResizableHandle,
         createSplit,
         closePanel,
+        createPanelWrapper,
         createPanelWithSelectionTile
     };
 })();

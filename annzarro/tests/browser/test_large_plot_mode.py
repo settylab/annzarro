@@ -130,6 +130,24 @@ def _wait(page, pred, timeout=60):
     pytest.fail(f"timed out; last state {s}")
 
 
+# The plot's data area lies inside its tile and the tile above the bottom
+# chooser. A restored tile once sat bare in the flex column and shrank with
+# the chooser; the plot ran under it and clicks on points hit the chooser.
+GEOMETRY = """() => {
+  const box = e => e.getBoundingClientRect();
+  const tile = box(document.querySelector('.tile[data-tile-id="cell-plot-L"]'));
+  const area = box(document.querySelector('.tile[data-tile-id="cell-plot-L"] .js-plotly-plot .nsewdrag'));
+  const chooser = box(document.querySelector('.tile-container > .tile-selector'));
+  return {inside: area.top >= tile.top - 1 && area.bottom <= tile.bottom + 1,
+          aboveChooser: tile.bottom <= chooser.top + 1, area: area.height};
+}"""
+
+
+def _assert_fits(page):
+    g = page.evaluate(GEOMETRY)
+    assert g["inside"] and g["aboveChooser"] and g["area"] > 100, g
+
+
 def _set_subset(page, on):
     page.click("#subset-button")
     page.wait_for_selector("#subset-enabled", state="visible")
@@ -198,6 +216,7 @@ def test_subset_switches_large_plot_mode(server):
             colour = {"type": "obs", "key": "cell_type", "column": ""}
             page.goto(_link(server, colour, {"n": 50, "seed": 0}))
             _assert_regular(page, _wait(page, lambda s: s["points"] == 50 and not s["busy"]))
+            _assert_fits(page)
 
             regular_zeroline = page.evaluate(STATE)["zeroline"]
             requests = []
@@ -205,6 +224,7 @@ def test_subset_switches_large_plot_mode(server):
             _set_subset(page, False)
             large = _wait(page, lambda s: s["points"] == 200 and s["notice"] and not s["busy"])
             _assert_large(large)
+            _assert_fits(page)
             # every cell above the threshold: the names stay on the server
             assert not [u for u in requests if "/data/cells" in u], "large-plot mode downloaded every cell name"
             assert large["zeroline"] == regular_zeroline
@@ -212,6 +232,7 @@ def test_subset_switches_large_plot_mode(server):
             _set_subset(page, True)
             _assert_regular(page, _wait(page, lambda s: s["points"] == 50 and s["notice"] is None
                                         and not s["busy"]))
+            _assert_fits(page)
         finally:
             browser.close()
 
