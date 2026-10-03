@@ -677,6 +677,8 @@ const LayoutManager = (function() {
     function createPanelWrapper(container, before, height) {
         const panelWrapper = document.createElement('div');
         panelWrapper.className = 'panel-wrapper';
+        // A saved or dragged height is kept as is, with no cap; the page
+        // scrolls to the bottom chooser
         panelWrapper.style.height = `${height > 0 ? height : DEFAULT_PANEL_HEIGHT}px`;
         panelWrapper.style.width = '100%';
         panelWrapper.style.overflow = 'hidden';

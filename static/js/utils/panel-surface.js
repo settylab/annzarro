@@ -6,7 +6,8 @@
  * `static/js/utils/coverage.js`). That is what makes "say what is missing and
  * why" structural rather than a convention someone remembers to follow:
  *
- *   - `drawPlot()`      wraps `Plotly.newPlot` and renders the notice after it;
+ *   - `drawPlot()`      draws (Plotly.react: into the graph already there, else a
+ *                       new one) and renders the notice after it;
  *   - `drawPlaceholder()` replaces the old `innerHTML = '<div class="alert">'`
  *                       empty states, which said "Insufficient data" and never
  *                       said why;
@@ -334,17 +335,72 @@ export function withCoverageExportButton(config) {
  * @param {Object} config
  * @param {Coverage} coverage  Required in spirit; a missing one renders loudly.
  * @param {string} [unit]
- * @returns {Promise<*>} Whatever `Plotly.newPlot` resolves to.
+ * A graph already drawn in `plotContainer` is updated in place, not rebuilt:
+ * the div, its listeners and whatever the user changed in it stay, and there
+ * is no blank frame between the old points and the new. Callers clear the
+ * container with `clearForDraw`, which keeps a live graph.
+ *
+ * @returns {Promise<*>} Whatever `Plotly.react` resolves to.
  */
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
-    const result = await Plotly.newPlot(
-        plotContainer, traces, withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
+    const result = await Plotly.react(
+        plotContainer, withTraceUids(traces), withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
     );
     renderCoverageNotice(plotContainer, cov, unit);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
+    fitToContainer(plotContainer);
     return result;
+}
+
+/**
+ * Size a graph to its container again. A graph drawn into in place keeps the
+ * size it had; a notice added or removed above it since changes the space.
+ * @param {HTMLElement} gd
+ */
+export function fitToContainer(gd) {
+    const fl = gd && gd._fullLayout;
+    if (!fl || typeof Plotly === 'undefined' || !Plotly.Plots || !Plotly.Plots.resize) return;
+    const style = window.getComputedStyle(gd);
+    const w = parseFloat(style.width), h = parseFloat(style.height);
+    if (Math.abs(w - fl.width) > 1 || Math.abs(h - fl.height) > 1) {
+        Plotly.Plots.resize(gd).catch(() => {});
+    }
+}
+
+/**
+ * Empty `plotContainer` for the next `drawPlot`, but keep a graph that is
+ * drawn there: drawPlot reacts into it. Anything else (a placeholder, an old
+ * filter widget) goes; a graph whose DOM is gone is purged first, so react
+ * does not diff against a figure that is no longer on screen.
+ * @param {HTMLElement} plotContainer
+ */
+export function clearForDraw(plotContainer) {
+    if (!plotContainer) return;
+    const live = plotContainer._fullLayout && plotContainer.querySelector(':scope > .plot-container');
+    if (live) {
+        for (const child of Array.from(plotContainer.children)) {
+            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')
+                && !child.classList.contains('datapoint-filter-widget')) child.remove();
+        }
+        return;
+    }
+    if (typeof Plotly !== 'undefined' && Plotly.purge && plotContainer._fullLayout) {
+        try { Plotly.purge(plotContainer); } catch { /* not a plot container */ }
+    }
+    plotContainer.innerHTML = '';
+}
+
+/**
+ * Traces with a `uid`: their name where names are unique. React matches
+ * traces by uid, so what the user set on one (a legend click hiding a
+ * category) follows that category when another part lacks some of them.
+ */
+function withTraceUids(traces) {
+    const names = traces.map(t => t && t.name);
+    if (names.some(n => typeof n !== 'string' || !n) || new Set(names).size !== names.length) return traces;
+    return traces.map(t => (t.uid ? t : { ...t, uid: `t:${t.name}` }));
 }
 
 /**

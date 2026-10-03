@@ -33,8 +33,8 @@ import { buildPlotLayout } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
-import { LEGEND_PROXY, LEGEND_POINTS } from './plot-make-helper.js';
-import { drawPlot, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
+import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
+import { drawPlot, clearForDraw, fitToContainer, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -284,7 +284,6 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   // the regular path's layout, so both modes look the same
   const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
-  layout.uirevision = 'large';
   let filtered;
 
   if (cs && cs.codes) {
@@ -400,12 +399,15 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       `${filtered.toLocaleString()} cells without a value (or outside the colour range) are not drawn`,
       { source: 'filter', unit: 'cells' });
   }
-  plotContainer.innerHTML = '';
+  clearForDraw(plotContainer);
   await drawPlot(plotContainer, traces, layout,
     { responsive: true, displayModeBar: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
   renderModeNotice(plotContainer, largePlotNotice(n));
+  fitToContainer(plotContainer);
+  // no click handler here, but a zoom is kept like in the regular plot
+  attachViewportTracking(plotContainer, settings);
   // the server's cell-name index, for a later focus by name (remote-names.js)
   DataManager.prewarmCellNames();
   if (container && id !== null) {

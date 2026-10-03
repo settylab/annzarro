@@ -290,6 +290,37 @@ const DataManager = (function() {
     }
     
     /**
+     * Show other cells of the open dataset (a part step, a new seed or n):
+     * the subset requested with setSubsetRequest and its cell names, read
+     * again; the structure and the genes are the dataset's and stay. Bumps
+     * the dataset generation, so a load for the previous cells is dropped.
+     * On an error the previous cells stay and the error is thrown.
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<Object|null>} the new subset
+     */
+    async function reloadSubset(signal = null) {
+        const datasetPath = _currentDataset;
+        if (!datasetPath) throw new Error('No dataset is open');
+        const previous = { cells: _cells, subset: _subset, generation: _datasetGeneration };
+        try {
+            _datasetGeneration++;
+            // the cell routes read the subset from _subset
+            _subset = await _resolveSubset(datasetPath, previous.subset, signal);
+            const structure = await getDatasetStructure(datasetPath, signal);
+            const nShown = _subset ? _subset.n : (structure && structure.n_obs);
+            const cells = await loadCells(datasetPath, signal, nShown);
+            if (signal && signal.aborted) throw new DOMException('Subset change aborted', 'AbortError');
+            _cells = cells;
+            return _subset;
+        } catch (error) {
+            _datasetGeneration++;
+            _cells = previous.cells;
+            _subset = previous.subset;
+            throw error;
+        }
+    }
+
+    /**
      * Set the current dataset and load basic information
      * @param {string} datasetPath - Path to the dataset
      * @param {boolean} [silent=false] - If true, don't trigger events or UI updates
@@ -2046,6 +2077,7 @@ const DataManager = (function() {
     return {
         loadDatasets,
         setCurrentDataset,
+        reloadSubset,
         loadCells,
         loadGenes,
         loadObs,

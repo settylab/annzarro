@@ -72,7 +72,8 @@ function installDom() {
 function installPlotly() {
     const calls = [];
     globalThis.Plotly = {
-        newPlot: async (el, traces, layout, config) => { calls.push({ el, traces, layout, config }); return el; },
+        // drawPlot draws with react (into a graph already there, else a new one)
+        react: async (el, traces, layout, config) => { calls.push({ el, traces, layout, config }); return el; },
         purge: () => { calls.push({ purge: true }); }
     };
     return calls;
@@ -246,7 +247,7 @@ test('drawPlot draws AND states -- both, in one call', async () => {
 
     await drawPlot(host, [{ x: [1] }], { autosize: true }, { responsive: true }, cov, 'cells');
 
-    assert.equal(calls.length, 1, 'Plotly.newPlot was called exactly once');
+    assert.equal(calls.length, 1, 'Plotly.react was called exactly once');
     assert.equal(calls[0].layout.annotations.length, 1, 'the gap travels into the exported image');
     assert.match(calls[0].layout.annotations[0].text, /3,412 of 75,000/);
     assert.equal(notices(panel).length, 1, 'and onto the screen');

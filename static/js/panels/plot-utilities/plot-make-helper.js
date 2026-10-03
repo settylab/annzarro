@@ -228,69 +228,63 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
 }
 
 /**
- * Attaches event listeners to track the current viewport state on user interaction
- * and save it to the plot settings.
- * 
+ * Keep the view the user chose (zoom, pan, 3D camera) in the plot's settings,
+ * so every redraw (a recolour, a part step, a link) draws it again.
+ *
+ * Only edits that set the view count. A relayout of anything else (the
+ * coverage annotation, a legend title) once reset the 3D camera here, and
+ * one handler was added per redraw. One handler per graph now, replaced on
+ * each redraw so it writes to the current settings.
+ *
  * @param {HTMLElement} plotContainer - The container for the plot.
  * @param {Object} settings - The settings object for the plot.
  */
 export function attachViewportTracking(plotContainer, settings) {
-  // For 3D plots, track camera position
-  if (settings.z) {
-    plotContainer.on('plotly_relayout', function(eventData) {
-      // Check if the event data includes 3D camera information
-      if (eventData['scene.camera']) {
-        // Initialize viewport3D if it doesn't exist
-        if (!settings.viewport3D) {
-          settings.viewport3D = {};
-        }
-        
-        const camera = eventData['scene.camera'];
-        settings.viewport3D = {
-          eye: camera.eye,
-          up: camera.up,
-          center: camera.center
-        };
-      } else {
-        // Reset the viewport3D to null to use default camera position
-        settings.viewport3D = null;
-      }
-    });
-  } 
-  // For 2D plots, track axis ranges
-  else {
-    plotContainer.on('plotly_relayout', function(eventData) {
-      // Check if the event includes axis range information
-      const hasXRange = eventData['xaxis.range'] || eventData['xaxis.range[0]'];
-      const hasYRange = eventData['yaxis.range'] || eventData['yaxis.range[0]'];
-      
-      if (hasXRange || hasYRange) {
-        // Initialize viewport2D if it doesn't exist
-        if (!settings.viewport2D) {
-          settings.viewport2D = {};
-        }
-        
-        // Handle range as array or as separate values
-        if (eventData['xaxis.range']) {
-          settings.viewport2D.xrange = eventData['xaxis.range'];
-        } else if (eventData['xaxis.range[0]'] !== undefined && eventData['xaxis.range[1]'] !== undefined) {
-          settings.viewport2D.xrange = [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']];
-        }
-        
-        if (eventData['yaxis.range']) {
-          settings.viewport2D.yrange = eventData['yaxis.range'];
-        } else if (eventData['yaxis.range[0]'] !== undefined && eventData['yaxis.range[1]'] !== undefined) {
-          settings.viewport2D.yrange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
-        }
-      }
-      
-      // Handle reset view (when autorange is true after double click or clicking "Reset axes" button)
-      if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
-        // Reset the viewport2D to null to use default axis ranges
-        settings.viewport2D = null;
-      }
-    });
+  if (typeof plotContainer.on !== 'function') return;
+  if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
+    plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
+  const onRelayout = (eventData) => {
+    if (!eventData) return;
+    if (settings.z) {
+      const camera = eventData['scene.camera'];
+      if (camera) settings.viewport3D = { eye: camera.eye, up: camera.up, center: camera.center };
+      return;
+    }
+    // Reset axes / double click: back to the axes Plotly fits
+    if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
+      settings.viewport2D = null;
+      return;
+    }
+    const range = (axis) => eventData[`${axis}.range`]
+      || (eventData[`${axis}.range[0]`] !== undefined && eventData[`${axis}.range[1]`] !== undefined
+        ? [eventData[`${axis}.range[0]`], eventData[`${axis}.range[1]`]] : null);
+    const xrange = range('xaxis'), yrange = range('yaxis');
+    if (!xrange && !yrange) return;
+    // A zoom along one axis (a drag on its edge) keeps the other as drawn
+    const fl = plotContainer._fullLayout || {};
+    const shown = (axis) => (fl[axis] && Array.isArray(fl[axis].range) ? [...fl[axis].range] : null);
+    settings.viewport2D = {
+      xrange: xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis'),
+      yrange: yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis')
+    };
+  };
+  plotContainer.__azViewportHandler = onRelayout;
+  plotContainer.on('plotly_relayout', onRelayout);
+}
+
+/**
+ * The 2D axis ranges the user zoomed or panned to, as relayout keys, or null.
+ * @param {Object} settings
+ * @returns {Object|null}
+ */
+export function keptViewRanges(settings) {
+  const v = !settings.z && settings.viewport2D;
+  if (!v) return null;
+  const out = {};
+  if (Array.isArray(v.xrange)) out['xaxis.range'] = [...v.xrange];
+  if (Array.isArray(v.yrange)) out['yaxis.range'] = [...v.yrange];
+  return Object.keys(out).length ? out : null;
 }
   
 
