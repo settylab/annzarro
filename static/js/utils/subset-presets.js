@@ -94,6 +94,17 @@ export function presetSizes(eligible) {
     return all.slice(Math.max(0, all.length - MIN_PRESETS));
 }
 
+/**
+ * The largest size a regular Cell Plot draws (n <= threshold): null when
+ * every eligible cell fits ("All"), else the largest preset at most the
+ * threshold (the threshold itself when no preset is that small).
+ */
+export function largestRegularSize(eligible, threshold = DEFAULT_LARGE_PLOT_POINTS) {
+    if (!(Number(eligible) > threshold)) return null;
+    const fits = presetSizes(eligible).filter(n => n <= threshold);
+    return fits.length ? fits[fits.length - 1] : Math.max(1, threshold);
+}
+
 /** The size a dialog offers first: the server's default, within the cells and the browser ceiling. */
 export function initialSize(defaultSize, eligible, ceiling = BROWSER_POINT_CEILING) {
     return Math.max(1, Math.min(Number(defaultSize) || 1, Number(eligible) || 1, ceiling));

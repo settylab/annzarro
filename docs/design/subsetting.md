@@ -190,6 +190,10 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
   An estimate is flagged as extrapolated (grey) when n is past the largest
   clean benchmark run on its path (1M regular, 95.6M large), or, once this
   session's draws have measured the slope, more than 4x the largest of them.
+- Other modules open the dialog without importing it: a document
+  `CustomEvent('annzarro:open-subset', {detail: {preset: 'largest-regular'}})`
+  opens it on the largest preset a regular Cell Plot draws (at most
+  `ui.defaults.large_plot_points`), or on "All" when every passing cell fits.
 - Apply reopens the current view (panels, layout, focus) on the new cells
   through the panel-set load path, so every panel is rebuilt on them.
 - With more than one part, `‹ Part 3 of 957 ›` follows the badge: buttons for

@@ -10,7 +10,9 @@ with a Cell Plot and opens the subset dialog:
    session;
 2. a filter (cell_type is one of <a category>) changes the eligible count,
    and every preset's parts follow it without applying;
-3. at 360 px the dialog fits the viewport with no horizontal scrolling.
+3. the 'annzarro:open-subset' event with preset 'largest-regular' opens the
+   dialog on the largest size a regular plot draws (All when every cell fits);
+4. at 360 px the dialog fits the viewport with no horizontal scrolling.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -45,14 +47,17 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def server(tmp_path_factory):
+def _serve(tmp_path_factory, config=None):
     home = tmp_path_factory.mktemp("home")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    extra = []
+    if config:
+        (home / "config.yaml").write_text(config)
+        extra = ["--config", str(home / "config.yaml")]
     # this checkout's package, not whatever "annzarro" is installed
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", *extra, "--host", "127.0.0.1",
                              "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
@@ -65,6 +70,21 @@ def server(tmp_path_factory):
     else:
         proc.kill()
         pytest.fail("server did not start")
+    return root, proc
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    root, proc = _serve(tmp_path_factory)
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    """Large-plot mode above 60 points: on the 200 cells, 100 is large, 50 is not."""
+    root, proc = _serve(tmp_path_factory, "ui:\n  defaults:\n    large_plot_points: 60\n")
     yield root
     proc.terminate()
     proc.wait(10)
@@ -196,3 +216,34 @@ def test_dialog_fits_a_phone(server, page):
     assert g["left"] >= 0 and g["right"] <= g["width"], g
     assert g["overflow"] <= 0, g
     assert g["chipsInside"] and g["apply"], g
+
+
+OPEN_LARGEST = "() => document.dispatchEvent(new CustomEvent('annzarro:open-subset', "\
+               "{detail: {preset: 'largest-regular'}}))"
+
+
+def _open_by_event(page, root):
+    page.set_viewport_size({"width": 1400, "height": 800})
+    page.goto(_link(root))
+    page.wait_for_selector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot', timeout=30000)
+    page.evaluate(OPEN_LARGEST)
+    page.wait_for_selector("#subset-presets button.subset-preset", state="visible")
+
+
+def test_open_on_the_largest_regular_size(large_server, page):
+    _open_by_event(page, large_server)
+    assert page.is_checked("#subset-enabled")
+    assert not page.is_checked("#subset-n-all")
+    assert page.input_value("#subset-n") == "50"
+    chips = page.evaluate(CHIPS)
+    assert [c["n"] for c in chips if c["pressed"]] == [50], chips
+    # 100 is past the marker: large-plot mode
+    assert page.evaluate("() => document.querySelector('#subset-presets button[data-n=\"100\"]')"
+                         ".classList.contains('sp-large')")
+
+
+def test_open_on_all_when_every_cell_fits(server, page):
+    _open_by_event(page, server)
+    assert page.is_checked("#subset-enabled")
+    assert page.is_checked("#subset-n-all")
+    assert [c["label"] for c in page.evaluate(CHIPS) if c["pressed"]] == ["All"]

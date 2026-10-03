@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const {
     presetSizes, partsFor, shortCount, estimateLoad, formatSeconds, DEFAULT_MODEL, EXTRAPOLATE_FACTOR,
-    BROWSER_POINT_CEILING, initialSize,
+    BROWSER_POINT_CEILING, initialSize, largestRegularSize,
     recordLoad, recordServer, serverSeconds, loadSamples, resetLoadSamples
 } = await import('../../../static/js/utils/subset-presets.js');
 
@@ -176,4 +176,14 @@ test('sizes above the browser ceiling are flagged and never the default', () => 
     assert.equal(initialSize(100000, N), 100000);
     assert.equal(initialSize(N, N), BROWSER_POINT_CEILING);
     assert.equal(initialSize(100000, 200), 200);
+});
+
+test('the largest size a regular plot draws', () => {
+    assert.equal(largestRegularSize(95624334, 5000000), 5000000);
+    assert.equal(largestRegularSize(300000000, 5000000), 5000000);
+    assert.equal(largestRegularSize(95624334, 3000000), 2000000);
+    assert.equal(largestRegularSize(200, 100), 100);
+    assert.equal(largestRegularSize(150, 10), 10);       // no rung below: the threshold itself
+    assert.equal(largestRegularSize(1000000, 5000000), null);   // every cell fits: All
+    assert.equal(largestRegularSize(5000000, 5000000), null);
 });

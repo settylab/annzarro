@@ -16,11 +16,13 @@ import {
     describeCondition, searchBuilderToWhere, describeParts, partSpec
 } from './utils/subset.js';
 import {
-    presetSizes, partsFor, initialSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
+    presetSizes, partsFor, initialSize, largestRegularSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
+/** document event that opens the dialog; detail is open()'s options, e.g. { preset: 'largest-regular' } */
+const OPEN_EVENT = 'annzarro:open-subset';
 const OVER_CEILING = `<span class="sp-warn" title="Above ${fmt(BROWSER_POINT_CEILING)} points the browser tab may run out of memory">may exceed browser memory</span>`;
 
 const SubsetControl = (function() {
@@ -38,7 +40,9 @@ const SubsetControl = (function() {
     function init({ onApply }) {
         _onApply = onApply;
         const button = document.getElementById('subset-button');
-        if (button) button.addEventListener('click', open);
+        if (button) button.addEventListener('click', () => open());
+        // other modules open the dialog without importing it (OPEN_EVENT)
+        document.addEventListener(OPEN_EVENT, (e) => open((e && e.detail) || {}));
         const prev = document.getElementById('subset-part-prev');
         const next = document.getElementById('subset-part-next');
         const input = document.getElementById('subset-part-input');
@@ -212,7 +216,13 @@ const SubsetControl = (function() {
         return el;
     }
 
-    async function open() {
+    /**
+     * Open the dialog on the current subset. `preset: 'largest-regular'`
+     * chooses the largest size a regular Cell Plot draws (at most
+     * Config.DEFAULTS.LARGE_PLOT_POINTS points; every passing cell when they
+     * fit), for "subset to get hover and click back".
+     */
+    async function open(opts = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
         if (!_el) _el = _build();
@@ -252,6 +262,7 @@ const SubsetControl = (function() {
         _renderTables();
         _syncEnabled();
         _renderPresets();
+        if (opts && opts.preset === 'largest-regular') _chooseLargestRegular();
         _modal.show();
         _schedulePreview();
     }
@@ -279,6 +290,19 @@ const SubsetControl = (function() {
         _syncEnabled();
         _renderPresets();
         _schedulePreview();
+    }
+
+    function _chooseLargestRegular() {
+        const n = largestRegularSize(_eligible, _threshold());
+        if (n === null) {
+            const q = (id) => _el.querySelector(`#${id}`);
+            q('subset-enabled').checked = true;
+            q('subset-n-all').checked = true;
+            _syncEnabled();
+            _renderPresets();
+        } else {
+            _choose(n);
+        }
     }
 
     function _estimate(n) {
@@ -554,4 +578,4 @@ const SubsetControl = (function() {
     return { init, update, open, step, goTo };
 })();
 
-export { SubsetControl };
+export { SubsetControl, OPEN_EVENT };
