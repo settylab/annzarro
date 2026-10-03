@@ -344,9 +344,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     }
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < n; i++) { const c = v[i]; if (c < lo) lo = c; if (c > hi) hi = c; }
+    // Every change redraws here, a colour slider's too, so the range follows
+    // the data (unless locked) only when the coloured values changed; on any
+    // other redraw it is the range the user set. It used to be reset on every
+    // redraw, after cmin/cmax were read: a dragged bound was drawn once, then
+    // the boxes and settings went back to the data range.
+    const source = JSON.stringify([generation, settings.color]);
+    const keepRange = plotContainer._largeColorSource === undefined || plotContainer._largeColorSource === source;
+    plotContainer._largeColorSource = source;
+    // the colour range sliders move over percentiles of a sample of v
+    if (container && id !== null) updateColorSliderUI(container, { color: v }, settings, id, keepRange);
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
-    // the colour range controls read only the finite min and max
-    if (container && id !== null) updateColorSliderUI(container, { color: [lo, hi] }, settings, id);
     const width = (cmax - cmin) / COLOR_BINS || 1;
     // draw order: |bin centre| ascending, so the strongest values are on top
     const order = [...Array(COLOR_BINS).keys()]

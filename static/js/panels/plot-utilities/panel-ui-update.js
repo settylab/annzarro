@@ -1,7 +1,8 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
+import { formatRangeValue } from '../../utils/array-stats.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
 
@@ -703,32 +704,90 @@ export function updateColorControlsVisibility(container, colorType, id) {
 }
 
 /**
+ * Show the panel's point size and opacity: the log-scale tracks and the
+ * number boxes beside them. A value outside a track's range (e.g. size 0.1
+ * from an older link) pins the thumb to that end; the box shows it as is.
+ */
+export function showPointStyle(id, settings) {
+  const show = (name, scale, value) => {
+    const $slider = jQuery(`#${name}-${id}`);
+    if ($slider.length) $slider.val(trackValue(scale, value));
+    const $input = jQuery(`#${name}-input-${id}`);
+    if ($input.length) $input.val(value);
+  };
+  show('point-size', pointSizeScale, settings.pointSize);
+  show('point-opacity', opacityScale, settings.pointOpacity);
+}
+
+/**
+ * The scales of the colour min and max sliders (slider-scales.js), or null
+ * when no value is finite. Both move in quantile space; centred at 0 they
+ * move over |value|, the min thumb mirrored, so min = -max position for
+ * position as the centring handlers require.
+ */
+export function colorSliderScales(values, centered) {
+  if (!centered) {
+    const scale = quantileScale(values);
+    return scale && { min: scale, max: scale };
+  }
+  const abs = quantileScale(values, { transform: Math.abs });
+  return abs && { min: mirroredScale(abs), max: abs };
+}
+
+/** The colour value a min/max slider shows (its scale, else its raw value). */
+export function colorSliderValue(slider) {
+  const scale = jQuery(slider).data('scale');
+  return scale ? valueAt(scale, slider.value) : parseFloat(slider.value);
+}
+
+/** Put a colour min/max thumb on `value`; outside the data it pins to an end. */
+export function showColorBound($slider, value, side) {
+  const scale = $slider.data('scale');
+  $slider.val(scale ? trackValue(scale, value, side) : value);
+}
+
+/**
+ * Give the colour sliders their scales and show settings.colorMin/colorMax
+ * on them and in the number boxes. A constant column has nothing to slide
+ * over: the sliders are disabled, the boxes still take a typed range.
+ */
+function showColorRange($container, id, scales, settings) {
+  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
+  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
+  const $colorMinInput = $container.find(`#color-min-${id}`);
+  const $colorMaxInput = $container.find(`#color-max-${id}`);
+  if ($colorMinSlider.length && $colorMaxSlider.length) {
+    $colorMinSlider.data('scale', scales.min);
+    $colorMaxSlider.data('scale', scales.max);
+    $colorMinSlider.attr({ min: 0, max: SLIDER_STEPS, step: 1 }).prop('disabled', !!scales.max.constant);
+    $colorMaxSlider.attr({ min: 0, max: SLIDER_STEPS, step: 1 }).prop('disabled', !!scales.max.constant);
+    showColorBound($colorMinSlider, settings.colorMin, 'low');
+    showColorBound($colorMaxSlider, settings.colorMax, 'high');
+  }
+  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
+  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
+}
+
+/**
  * Updates the color slider UI controls based on current settings.
  *
- * For numerical data:
- *   - Computes the valid data range from data.color.
- *   - Sets the slider (min and max) accordingly.
- *   - If settings.lockColorRange is false, resets slider and input values to the computed dataMin/dataMax.
- *     Otherwise, expands the slider range to include both the new data range and the locked values,
- *     keeping the locked values intact.
- *   - During first load, respects provided colorMin and colorMax values even when lockColorRange is false.
- *
- * For categorical data:
- *   - Updates the category palette selector.
+ * For numerical data the sliders move over percentiles of data.color (an
+ * Array or a typed array; slider-scales.js samples a long one), while
+ * settings and the number boxes keep colour values:
+ *   - If settings.lockColorRange is false, resets the range to the data's
+ *     min and max.
+ *   - During first load (a restored link or session) or with a locked range,
+ *     keeps the provided colorMin/colorMax and fills a missing one from the data.
  *
  * @param {HTMLElement} container - The container element that holds the color controls.
- * @param {Object} data - The data object (must include data.color as an array and data.colorType).
- * @param {Object} settings - The plot settings object. Should include centeringActive, lockColorRange, colorMin, colorMax, and categoryPalette.
+ * @param {Object} data - The data object (data.color: the coloured values).
+ * @param {Object} settings - The plot settings object. Should include centeringActive, lockColorRange, colorMin, colorMax.
  * @param {string|number} id - Unique identifier used to construct element selectors.
  * @param {boolean} isFirstLoad - Flag indicating if this is the first load of the panel.
  */
 export function updateColorSliderUI(container, data, settings, id, isFirstLoad = false) {
   const $container = jQuery(container);
   const $centerColormapButton = $container.find(`#center-colormap-${id}`);
-  const $colorMinInput = $container.find(`#color-min-${id}`);
-  const $colorMaxInput = $container.find(`#color-max-${id}`);
-  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
-  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
 
   // If centering is active, update the UI accordingly and apply centering
   if (settings.centeringActive) {
@@ -738,195 +797,63 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
     }
     // Delegate the centering update to the applyCentering function
     applyCentering(container, data, settings, id);
-  } else {
-    // Reset the center button appearance
-    if ($centerColormapButton.length) {
-      $.updateButtonState($centerColormapButton, false);
-      $centerColormapButton.attr('title', 'Center color scale at 0');
-    }
-
-    if ($colorMinSlider.length && $colorMaxSlider.length && data && data.color && Array.isArray(data.color)) {
-      const validValues = data.color.filter(v => !isNaN(v));
-      if (validValues.length > 0) {
-        const dataMin = arrayMin(validValues);
-        const dataMax = arrayMax(validValues);
-
-        // Now, if the color range is not locked, update the actual slider/input values.
-        // During first load, respect provided values even when range is not locked
-        if (!settings.lockColorRange && !isFirstLoad) {
-          // Set slider ranges based on the data
-          $colorMinSlider.attr({
-            min: dataMin,
-            max: dataMax
-          });
-          
-          $colorMaxSlider.attr({
-            min: dataMin,
-            max: dataMax
-          });
-          
-          const range = dataMax - dataMin;
-          const step = range / 500;
-          
-          $colorMinSlider.attr('step', step);
-          $colorMaxSlider.attr('step', step);
-          
-          // Update UI elements
-          $colorMinSlider.val(dataMin);
-          $colorMaxSlider.val(dataMax);
-          
-          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(dataMin));
-          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(dataMax));
-          
-          settings.colorMin = dataMin;
-          settings.colorMax = dataMax;
-        } else {
-          // First load (e.g. a restored deep link or session) or a locked
-          // range: keep the provided values, but fill a missing one from the
-          // data -- that is what the plot itself does for cmin/cmax
-          // (plot-make.js), so the settings now say what is drawn.
-          if (settings.colorMin == null) settings.colorMin = dataMin;
-          if (settings.colorMax == null) settings.colorMax = dataMax;
-
-          // Expand slider range (min, max) to include both the new data range and the locked values
-          const minSliderRange = Math.min(settings.colorMin ?? dataMin, dataMin);
-          const maxSliderRange = Math.max(settings.colorMax ?? dataMax, dataMax);
-          
-          $colorMinSlider.attr({
-            min: minSliderRange,
-            max: maxSliderRange
-          });
-          
-          $colorMaxSlider.attr({
-            min: minSliderRange,
-            max: maxSliderRange
-          });
-          
-          const range = dataMax - dataMin;
-          const step = range / 500;
-          
-          $colorMinSlider.attr('step', step);
-          $colorMaxSlider.attr('step', step);
-          
-          // Do not change the locked values; just keep them
-          $colorMinSlider.val(settings.colorMin ?? dataMin);
-          $colorMaxSlider.val(settings.colorMax ?? dataMax);
-
-          // ...and SHOW them. Only the sliders were set here, so the number
-          // boxes kept whatever the panel template rendered: "0" and "100"
-          // when the restored config had no colorMin/colorMax (the usual case
-          // for a hand-written deep link), while the plot was coloured over
-          // the data range.
-          if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
-          if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
-        }
-
-        // Update input placeholders if fields are empty
-        if ($colorMinInput.length && $colorMinInput.val() === '') {
-          $colorMinInput.attr('placeholder', formatRangeValue(settings.colorMin ?? dataMin));
-        }
-        
-        if ($colorMaxInput.length && $colorMaxInput.val() === '') {
-          $colorMaxInput.attr('placeholder', formatRangeValue(settings.colorMax ?? dataMax));
-        }
-      }
-    }
+    return;
   }
+  // Reset the center button appearance
+  if ($centerColormapButton.length) {
+    $.updateButtonState($centerColormapButton, false);
+    $centerColormapButton.attr('title', 'Center color scale at 0');
+  }
+  if (!data || !data.color || typeof data.color === 'string') return;
+  const scales = colorSliderScales(data.color, false);
+  if (!scales) return;
+  const dataMin = scales.max.min, dataMax = scales.max.max;
+
+  if (!settings.lockColorRange && !isFirstLoad) {
+    settings.colorMin = dataMin;
+    settings.colorMax = dataMax;
+  } else {
+    // First load (e.g. a restored deep link or session) or a locked
+    // range: keep the provided values, but fill a missing one from the
+    // data -- that is what the plot itself does for cmin/cmax
+    // (plot-make.js), so the settings now say what is drawn.
+    if (settings.colorMin == null) settings.colorMin = dataMin;
+    if (settings.colorMax == null) settings.colorMax = dataMax;
+  }
+  // Show them in the boxes too, not only on the sliders: the boxes would
+  // otherwise keep the template's "0" and "100" after a restore whose
+  // config had no colorMin/colorMax, while the plot is coloured over the
+  // data range.
+  showColorRange($container, id, scales, settings);
 }
 
 /**
  * Applies centering to the color scale.
  *
- * If centering is active, finds the absolute maximum among the valid color values,
- * updates the settings so that colorMin is -absMax and colorMax is absMax,
- * updates input fields and slider ranges accordingly,
- * and triggers a direct Plotly restyle (or calls updatePlotColorRangeOnly as fallback).
+ * If centering is active, finds the absolute maximum among the valid color
+ * values and, unless the range is locked, sets colorMin to -absMax and
+ * colorMax to absMax. The sliders then move over percentiles of |value|,
+ * the min slider mirrored (colorSliderScales).
  *
  * @param {HTMLElement} container - The container element holding the color controls.
- * @param {Object} data - The data object (must have data.color as an array).
+ * @param {Object} data - The data object (data.color: the coloured values).
  * @param {Object} settings - The settings object (must include settings.centeringActive).
  * @param {string|number} id - Unique identifier used for element selectors.
  */
 export function applyCentering(container, data, settings, id) {
-  if (!data || !data.color || !Array.isArray(data.color)) return;
+  if (!data || !data.color || typeof data.color === 'string') return;
   if (!settings.centeringActive) return;
+  const scales = colorSliderScales(data.color, true);
+  if (!scales) return;
+  const absMax = scales.max.max;
 
-  // Filter valid numeric values
-  const validValues = data.color.filter(v => !isNaN(v));
-  if (validValues.length === 0) return;
-
-  // Compute the absolute maximum value from both ends
-  const absMaxComputed = Math.max(
-    Math.abs(arrayMin(validValues)),
-    Math.abs(arrayMax(validValues))
-  );
-
-  // If not locked, update settings with the computed symmetric range
+  // If not locked, update settings with the computed symmetric range;
+  // otherwise keep the locked values
   if (!settings.lockColorRange) {
-    settings.colorMin = -absMaxComputed;
-    settings.colorMax = absMaxComputed;
+    settings.colorMin = -absMax;
+    settings.colorMax = absMax;
   }
-  // Otherwise, keep the locked values and do not modify settings.colorMin/colorMax
-
-  // Use the effective values for the UI update
-  const effectiveColorMin = settings.lockColorRange ? settings.colorMin : -absMaxComputed;
-  const effectiveColorMax = settings.lockColorRange ? settings.colorMax : absMaxComputed;
-
-  // Update input fields
-  const $container = jQuery(container);
-  const $colorMinInput = $container.find(`#color-min-${id}`);
-  const $colorMaxInput = $container.find(`#color-max-${id}`);
-  
-  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(effectiveColorMin));
-  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(effectiveColorMax));
-
-  // Update slider controls
-  const $colorMinSlider = $container.find(`#color-min-slider-${id}`);
-  const $colorMaxSlider = $container.find(`#color-max-slider-${id}`);
-  
-  if ($colorMinSlider.length && $colorMaxSlider.length) {
-    const dataMin = arrayMin(validValues);
-    const dataMax = arrayMax(validValues);
-
-    if (!settings.lockColorRange) {
-      // Set sliders for a perfectly centered range
-      $colorMinSlider.attr({
-        min: Math.min(-absMaxComputed, dataMin),
-        max: 0
-      });
-      
-      $colorMaxSlider.attr({
-        min: 0,
-        max: Math.max(absMaxComputed, dataMax)
-      });
-      
-      $colorMinSlider.val(effectiveColorMin);
-      $colorMaxSlider.val(effectiveColorMax);
-    } else {
-      // Locked: expand the slider range to include both locked values and the new data range
-      const newSliderMin = Math.min(settings.colorMin, -absMaxComputed, dataMin);
-      const newSliderMax = Math.max(settings.colorMax, absMaxComputed, dataMax);
-      
-      $colorMinSlider.attr({
-        min: newSliderMin,
-        max: newSliderMax
-      });
-      
-      $colorMaxSlider.attr({
-        min: newSliderMin,
-        max: newSliderMax
-      });
-      
-      // Preserve the locked slider values
-      $colorMinSlider.val(settings.colorMin);
-      $colorMaxSlider.val(settings.colorMax);
-    }
-
-    // Compute a step value
-    const step = absMaxComputed / 500;
-    $colorMinSlider.attr('step', step);
-    $colorMaxSlider.attr('step', step);
-  }
+  showColorRange(jQuery(container), id, scales, settings);
 }
 
 /**

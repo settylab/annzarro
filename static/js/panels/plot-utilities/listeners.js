@@ -1,4 +1,5 @@
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel } from './panel-ui-update.js';
+import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
+    colorSliderValue, showColorBound } from './panel-ui-update.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
@@ -12,7 +13,8 @@ import {
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate } from './plot-make-helper.js';
-import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
+import { formatRangeValue } from '../../utils/array-stats.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue, valueAt, roundSig } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
 export function setupPlotEventListeners({
@@ -193,17 +195,27 @@ export function setupPlotControlListeners(
         }
       }
     );
-    const $pointSizeSlider = $controlsContainer.find(`#point-size-${id}`);
-    $pointSizeSlider.on('input', (e) => {
-      settings.pointSize = parseFloat(e.target.value);
-      redrawStyling();
-    });
-  
-    const $pointOpacitySlider = $controlsContainer.find(`#point-opacity-${id}`);
-    $pointOpacitySlider.on('input', (e) => {
-      settings.pointOpacity = parseFloat(e.target.value);
-      redrawStyling();
-    });
+    // The tracks are log scales (utils/slider-scales.js); a value read off
+    // one is rounded to two significant digits. The number box beside each
+    // takes any value as typed (in px / alpha), also off the track's range.
+    const pointStyle = (name, key, scale, valid) => {
+      const $slider = $controlsContainer.find(`#${name}-${id}`);
+      const $input = $controlsContainer.find(`#${name}-input-${id}`);
+      $slider.on('input', (e) => {
+        settings[key] = roundSig(valueAt(scale, e.target.value));
+        $input.val(settings[key]);
+        redrawStyling();
+      });
+      $input.on('change', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!valid(v)) { $input.val(settings[key]); return; }
+        settings[key] = v;
+        $slider.val(trackValue(scale, v));
+        redrawStyling();
+      });
+    };
+    pointStyle('point-size', 'pointSize', pointSizeScale, (v) => v > 0);
+    pointStyle('point-opacity', 'pointOpacity', opacityScale, (v) => v > 0 && v <= 1);
     
     // --- Hover columns: reload only those columns and relabel the traces ---
     const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);
@@ -448,12 +460,12 @@ export function setupColorControls(
         $colorMinInput.val(settings.colorMin !== null ? settings.colorMin : '');
         $colorMaxInput.val(settings.colorMax !== null ? settings.colorMax : '');
 
-        if (updateSliders && data && data.color && Array.isArray(data.color)) {
-            const validValues = data.color.filter((v) => !isNaN(v));
-            const dataMin = arrayMin(validValues);
-            const dataMax = arrayMax(validValues);
-            $colorMinSlider.val(settings.colorMin !== null ? settings.colorMin : dataMin);
-            $colorMaxSlider.val(settings.colorMax !== null ? settings.colorMax : dataMax);
+        if (updateSliders) {
+            // an empty bound shows the data's end of the track
+            if (settings.colorMin !== null) showColorBound($colorMinSlider, settings.colorMin, 'low');
+            else $colorMinSlider.val(0);
+            if (settings.colorMax !== null) showColorBound($colorMaxSlider, settings.colorMax, 'high');
+            else $colorMaxSlider.val(SLIDER_STEPS);
         }
 
         if (triggerPlotUpdate) {
@@ -468,14 +480,15 @@ export function setupColorControls(
         const other = which === 'min' ? 'max' : 'min';
         settings[which === 'min' ? 'colorMin' : 'colorMax'] = value;
         const $slider = which === 'min' ? $colorMinSlider : $colorMaxSlider;
-        $slider.val(value);   // display only; the slider may clamp, the setting does not
+        // display only; the thumb may pin to an end, the setting does not
+        showColorBound($slider, value, which === 'min' ? 'low' : 'high');
         updateColorRangeDirect(which, value);
         if (settings.centeringActive) {
             // centred scale: the other bound mirrors the typed one
             const mirrored = -value;
             settings[other === 'min' ? 'colorMin' : 'colorMax'] = mirrored;
             (other === 'min' ? $colorMinInput : $colorMaxInput).val(formatRangeValue(mirrored));
-            (other === 'min' ? $colorMinSlider : $colorMaxSlider).val(mirrored);
+            showColorBound(other === 'min' ? $colorMinSlider : $colorMaxSlider, mirrored, other === 'min' ? 'low' : 'high');
             updateColorRangeDirect(other, mirrored);
         }
         _updatePlotElements({
@@ -632,7 +645,7 @@ export function setupColorControls(
 
     // --- Min slider --- use debounce for smoother performance
     $colorMinSlider.on('input', $.debounce((e) => {
-        const minValue = parseFloat(e.target.value);
+        const minValue = colorSliderValue(e.target);
         $colorMinInput.val(formatRangeValue(minValue));
         settings.colorMin = minValue;
         updateColorRangeDirect('min', minValue);
@@ -645,7 +658,7 @@ export function setupColorControls(
 
     // --- Max slider --- use debounce for smoother performance
     $colorMaxSlider.on('input', $.debounce((e) => {
-        const maxValue = parseFloat(e.target.value);
+        const maxValue = colorSliderValue(e.target);
         $colorMaxInput.val(formatRangeValue(maxValue));
         settings.colorMax = maxValue;
         updateColorRangeDirect('max', maxValue);
@@ -695,7 +708,7 @@ export function setupColorControls(
 
     function centeringMinSliderHandler(e) {
         if (!settings.centeringActive) return;
-        const minValue = parseFloat(e.target.value);
+        const minValue = colorSliderValue(e.target);
         const $csColorMaxSlider = $container.find(`#color-max-slider-${id}`);
         const $csColorMaxInput = $container.find(`#color-max-${id}`);
         const $csColorMinInput = $container.find(`#color-min-${id}`);
@@ -704,7 +717,7 @@ export function setupColorControls(
         settings.colorMax = maxValue;
         $csColorMinInput.val(formatRangeValue(minValue));
         $csColorMaxInput.val(formatRangeValue(maxValue));
-        $csColorMaxSlider.val(maxValue);
+        showColorBound($csColorMaxSlider, maxValue, 'high');
         
         // Update the plot with the new range values
         // Check if we have table filtering with numerical coloring
@@ -770,7 +783,7 @@ export function setupColorControls(
 
     function centeringMaxSliderHandler(e) {
         if (!settings.centeringActive) return;
-        const maxValue = parseFloat(e.target.value);
+        const maxValue = colorSliderValue(e.target);
         const $csColorMinSlider = $container.find(`#color-min-slider-${id}`);
         const $csColorMinInput = $container.find(`#color-min-${id}`);
         const $csColorMaxInput = $container.find(`#color-max-${id}`);
@@ -779,7 +792,7 @@ export function setupColorControls(
         settings.colorMax = maxValue;
         $csColorMaxInput.val(formatRangeValue(maxValue));
         $csColorMinInput.val(formatRangeValue(minValue));
-        $csColorMinSlider.val(minValue);
+        showColorBound($csColorMinSlider, minValue, 'low');
         
         // Update the plot with the new range values
         // Check if we have table filtering with numerical coloring

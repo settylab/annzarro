@@ -2595,6 +2595,11 @@ button.dtsb-button.dtsb-clear:hover {
     gap: 0.25rem;
 }
 
+.point-size-control input[type="number"],
+.point-opacity-control input[type="number"] {
+    width: 70px;
+}
+
 /* Tooltip */
 .tooltip {
     position: absolute;

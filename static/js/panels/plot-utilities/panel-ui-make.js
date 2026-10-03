@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -7,6 +7,7 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -145,12 +146,16 @@ export function createPanelStructure(container, id, settings) {
 
             <div class="point-controls">
               <div class="point-size-control">
-                <label>Size:</label>
-                <input type="range" class="form-range" min=".1" max="20" step="0.1" value="${settings.pointSize}" id="point-size-${id}">
+                <label for="point-size-input-${id}">Size:</label>
+                <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(pointSizeScale, settings.pointSize)}" id="point-size-${id}"
+                       title="Marker size in px (log scale)" aria-label="Point size (log scale)">
+                <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
               </div>
               <div class="point-opacity-control">
-                <label>Opacity:</label>
-                <input type="range" class="form-range" min="0.01" max="1" step="0.01" value="${settings.pointOpacity}" id="point-opacity-${id}">
+                <label for="point-opacity-input-${id}">Opacity:</label>
+                <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(opacityScale, settings.pointOpacity)}" id="point-opacity-${id}"
+                       title="Marker opacity (log scale)" aria-label="Point opacity (log scale)">
+                <input type="number" class="form-control form-control-sm" min="0" max="1" step="any" value="${settings.pointOpacity}" id="point-opacity-input-${id}" title="Marker opacity, 0 to 1">
               </div>
             </div>
 
@@ -173,12 +178,12 @@ export function createPanelStructure(container, id, settings) {
                 <div class="color-range-sliders">
                   <div class="color-min-slider-container">
                     <label>Min:</label>
-                    <input type="range" class="form-range" id="color-min-slider-${id}" value="${settings.colorMin ?? 0}">
+                    <input type="range" class="form-range" id="color-min-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="0" title="Percentile of the coloured values">
                     <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${settings.colorMin ?? 0}">
                   </div>
                   <div class="color-max-slider-container">
                     <label>Max:</label>
-                    <input type="range" class="form-range" id="color-max-slider-${id}" value="${settings.colorMax ?? 100}">
+                    <input type="range" class="form-range" id="color-max-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="${SLIDER_STEPS}" title="Percentile of the coloured values">
                     <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${settings.colorMax ?? 100}">
                   </div>
                 </div>
@@ -467,11 +472,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
 
   // Point controls - ensure sliders reflect the panel's settings
-  const $pointSizeSlider = jQuery(`#point-size-${id}`);
-  if ($pointSizeSlider.length) $pointSizeSlider.val(settings.pointSize);
-  
-  const $pointOpacitySlider = jQuery(`#point-opacity-${id}`);
-  if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
+  showPointStyle(id, settings);
   
   // Hover columns picker (settings.hoverInfo)
   populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo);

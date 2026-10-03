@@ -22,6 +22,15 @@ Numerical colour controls of the fold-change panel.
    {doc}`../reference/configuration`).
 2. **Min**: slider and number box for the value drawn in the first colour of the map.
 3. **Max**: the same for the last colour.
+
+   The sliders move over **percentiles** of the coloured values, not over the value range: the
+   middle of a slider is the median. For a skewed gene, where the 99th percentile may be 30 and
+   the maximum 725, the useful values then fill the slider instead of its first 4%. A value
+   repeated by many points (the zeros of a sparse gene) holds at most 2% of a slider. With
+   **Center at 0** both sliders move over percentiles of the absolute values, Min mirroring Max.
+   The number boxes and the saved settings keep values, not percentiles; a typed value outside
+   the data puts the slider at its end. A column with a single value has nothing to slide over:
+   its sliders are disabled, the boxes still work.
 4. **Center at 0** makes the range symmetric: Min = −m and Max = m, where m is the largest absolute
    value in the data.
 5. **Reverse Colormap** flips the map end for end.

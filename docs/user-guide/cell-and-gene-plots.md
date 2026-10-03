@@ -28,7 +28,12 @@ Cell plot controls, coloured by a categorical obs column.
    **Refresh**, next to it, reloads the panel's data and redraws it.
 7. **Plot Options** opens appearance and export settings ({doc}`export`).
 8. **Filter by Table** links the plot to a table ({doc}`tables-and-filters`).
-9. **Size** (0.1 to 20) and **Opacity** (0.01 to 1) of the points.
+9. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
+   The sliders move on a log scale, so their left half is the small sizes and faint opacities a
+   plot of millions of cells needs: size 0.2 to 2 and opacity 0.002 to 0.045. The size slider
+   stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
+   which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
+   sliders' range.
 10. **Color Palette** (categorical colour) or **Color Map** and range controls (numerical colour,
     {doc}`colour-scales`).
 11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
