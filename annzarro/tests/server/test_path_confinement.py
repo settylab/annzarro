@@ -84,6 +84,10 @@ def test_every_path_carrying_parameter_is_checked(hosted, layout):
     assert _refused(hosted.get(f"/api/v1/datasets/{os.path.relpath(secret)}/info"))
     assert _refused(hosted.get(f"/api/v1/datasets/{os.path.relpath(secret)}/uns/structure"))
     assert _refused(hosted.get("/api/v1/data/obs", query_string={"dataset_path": secret}))
+    assert _refused(hosted.get("/api/v1/data/subset/locate", query_string={"dataset_path": secret,
+                                                                           "dataset_rows": "0"}))
+    assert _refused(hosted.get("/api/v1/data/names", query_string={"dataset_path": secret,
+                                                                   "scope": "dataset"}))
     assert _refused(hosted.get("/api/v1/data/info", query_string={"dataset_id": secret}))
     assert _refused(hosted.get("/api/v1/zarr/to_anndata", query_string={"dataset_path": secret}))
     assert _refused(hosted.get("/api/v1/core/datasets", query_string={"dir": str(layout / "outside")}))
