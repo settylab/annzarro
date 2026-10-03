@@ -134,7 +134,7 @@ class ElectronBuilder:
             True if successful, False otherwise
         """
         try:
-            self._run_npm(['install'])
+            self._run_npm(['ci'])
             logger.info("Successfully installed npm dependencies")
             return True
         except subprocess.SubprocessError as e:
@@ -156,24 +156,23 @@ class ElectronBuilder:
         if not self.check_requirements():
             return False
             
-        # Install or update dependencies
+        # Install dependencies (npm ci: the lock file pins the Electron toolchain)
         if rebuild or not (self.electron_dir / "node_modules").exists():
             if not self.install_dependencies():
                 return False
         
-        # Determine build command based on platform
-        build_cmd = ['run', 'build']
-        
+        # electron-builder for the current platform unless one is named
+        build_cmd = ['exec', '--', 'electron-builder', '--publish', 'never']
         if platform:
             platform = platform.lower()
-            if platform == 'windows' or platform == 'win':
-                build_cmd = ['run', 'build:win']
-            elif platform == 'mac' or platform == 'macos' or platform == 'darwin':
-                build_cmd = ['run', 'build:mac']
+            if platform in ('windows', 'win'):
+                build_cmd.append('--win')
+            elif platform in ('mac', 'macos', 'darwin'):
+                build_cmd.append('--mac')
             elif platform == 'linux':
-                build_cmd = ['run', 'build:linux']
-            # 'all' uses the default build command
-        
+                build_cmd.append('--linux')
+            # 'all' builds every platform's targets the host can build
+
         # Run the build
         try:
             # Run the npm command but capture output in real-time
@@ -253,109 +252,43 @@ class ElectronBuilder:
         """
         return self.build_dir
         
-    def bundle_python(self, target_dir: Union[str, Path] = None) -> bool:
+    def build_server(self) -> bool:
         """
-        Bundle Python with the application by creating a virtual environment.
-        Uses the annzarro-cli to create and set up the Python environment.
-        
-        Args:
-            target_dir: Directory to place bundled Python (optional)
-            
+        Freeze the server with PyInstaller (scripts/build_server.py) into
+        electron/server/, where electron-builder picks it up. Runs with the
+        current Python, which the frozen server then embeds.
+
         Returns:
             True if successful, False otherwise
         """
-        if not target_dir:
-            target_dir = self.electron_dir / "python"
-        
-        target_dir = Path(target_dir)
-        
-        # Create target directory if it doesn't exist
-        if not target_dir.exists():
-            target_dir.mkdir(parents=True, exist_ok=True)
-            
-        logger.info(f"Bundling Python environment to {target_dir}")
-        
-        # Find the CLI script
-        cli_script = self._find_cli_script()
-        if not cli_script:
-            logger.error("Could not find annzarro-cli script")
-            return False
-            
+        script = self.app_root / "annzarro" / "desktop" / "scripts" / "build_server.py"
+        logger.info(f"Freezing the server with {sys.executable}")
         try:
-            # Make CLI executable on Unix systems
-            if os.name != 'nt':
-                try:
-                    os.chmod(cli_script, 0o755)
-                except Exception as e:
-                    logger.warning(f"Could not make CLI executable: {e}")
-            
-            # Use the CLI to create a clean virtual environment
-            logger.info("Creating Python virtual environment...")
-            install_cmd = [
-                cli_script,
-                "install",
-                "--clean",
-                "--venv-path", str(target_dir)
-            ]
-            
-            logger.info(f"Running: {' '.join(install_cmd)}")
-            result = subprocess.run(
-                install_cmd,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            
-            logger.info("Python virtual environment created successfully")
-            logger.info(result.stdout)
-            
+            subprocess.run([sys.executable, str(script)], check=True)
             return True
-            
         except subprocess.SubprocessError as e:
-            logger.error(f"Failed to create Python environment: {e}")
-            logger.error(f"Error output: {e.stderr if hasattr(e, 'stderr') else 'No error output'}")
+            logger.error(f"Failed to freeze the server: {e}")
             return False
-        except Exception as e:
-            logger.error(f"Error bundling Python: {e}")
-            return False
-            
-    def _find_cli_script(self) -> Optional[str]:
-        """
-        Find the annzarro-cli script.
-        
-        Returns:
-            Path to the CLI script or None if not found
-        """
-        # Look in various places for the CLI script
-        possible_paths = [
-            self.app_root / "annzarro-cli",
-            self.app_root / "bin" / "annzarro-cli",
-            self.app_root / "annzarro" / "bin" / "annzarro-cli"
-        ]
-        
-        for p in possible_paths:
-            if p.exists():
-                return str(p)
-                
-        return None
-        
+
 def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: str = None,
-                  bundle_venv: bool = True, venv_path: str = None) -> bool:
+                      build_server: bool = True) -> bool:
     """
     Build the desktop application.
-    
+
     Args:
-        platform: Target platform (windows, mac, linux, or all)
+        platform: Target platform (windows, mac, linux, or all). The frozen
+            server only runs on the platform it was built on, so a release
+            builds each platform on that platform (see .github/workflows/build.yml).
         rebuild: Force rebuilding dependencies before build
         icon_source: Path to source icon for generating app icons (optional)
-        bundle_venv: Whether to bundle a Python virtual environment (default: True)
-        venv_path: Custom path for the Python virtual environment (optional)
-        
+        build_server: Freeze the server first (default); False reuses the one
+            already in electron/server/
+
     Returns:
         True if successful, False otherwise
     """
     builder = ElectronBuilder()
-    
+
     # Generate icons if source is provided
     if icon_source:
         try:
@@ -369,17 +302,12 @@ def build_desktop_app(platform: str = None, rebuild: bool = False, icon_source: 
         except Exception as e:
             logger.error(f"Error generating icons: {e}")
             # Continue with the build even if icon generation fails
-    
-    # Bundle Python environment if requested
-    if bundle_venv:
-        logger.info("Bundling Python virtual environment...")
-        if not builder.bundle_python(target_dir=venv_path):
-            logger.error("Failed to bundle Python environment")
-            # Continue with the build even if Python bundling fails
-            logger.warning("Continuing with build without bundled Python")
-    
+
+    if build_server and not builder.build_server():
+        return False
+
     return builder.build(platform, rebuild)
-    
+
 def run_desktop_app(icon_source: str = None) -> bool:
     """
     Run the desktop application in development mode.

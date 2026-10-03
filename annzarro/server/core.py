@@ -393,7 +393,17 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Set up routes
     register_routes(app)
-    
+
+    # The desktop app names its server with a per-launch token and only
+    # trusts the answer that carries it: two launches that pick the same free
+    # port at once must not take each other's server for their own.
+    instance_id = os.environ.get("ANNZARRO_INSTANCE_ID")
+    if instance_id:
+        @app.after_request
+        def _tag_instance(response):
+            response.headers["X-AnnZarro-Instance"] = instance_id
+            return response
+
     return app
 
 def _exposure_where(config: Dict[str, Any]) -> str:
