@@ -33,6 +33,7 @@ import { buildPlotLayout } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
+import { LEGEND_PROXY, LEGEND_POINTS } from './plot-make-helper.js';
 import { drawPlot, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
@@ -177,7 +178,7 @@ function chunkTraces(X, Y, a, b, name, color, settings) {
   for (let p = a; p < b; p += TRACE_POINTS) {
     const q = Math.min(p + TRACE_POINTS, b);
     out.push({
-      type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: false,
+      type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: false, meta: LEGEND_POINTS,
       x: X.subarray(p, q), y: Y.subarray(p, q),
       hoverinfo: 'skip',
       marker: { size: settings.pointSize, opacity: settings.pointOpacity, color }
@@ -193,7 +194,7 @@ function chunkTraces(X, Y, a, b, name, color, settings) {
  * symbols just as pale.
  */
 function legendTrace(name, color, settings, rank) {
-  return { type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: true,
+  return { type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: true, meta: LEGEND_PROXY,
     legendrank: rank, x: [null], y: [null], hoverinfo: 'skip',
     marker: { size: settings.pointSize, opacity: 1, color } };
 }
@@ -405,6 +406,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
   renderModeNotice(plotContainer, largePlotNotice(n));
+  // the server's cell-name index, for a later focus by name (remote-names.js)
+  DataManager.prewarmCellNames();
   if (container && id !== null) {
     updateColorControlsVisibility(container, cs && cs.codes ? 'categorical' : cs ? 'numerical' : 'constant', id);
   }

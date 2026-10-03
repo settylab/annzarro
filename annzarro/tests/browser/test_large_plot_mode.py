@@ -229,3 +229,49 @@ def test_unsupported_colour_is_refused_not_drawn(server):
                     "or choose an obs column or a gene") in s["placeholder"]
         finally:
             browser.close()
+
+
+LEGEND = """() => {
+  const g = document.querySelector('.tile[data-tile-id="cell-plot-L"] .js-plotly-plot');
+  const vis = name => g._fullData.filter(t => t.name === name && t.meta !== 'az-legend').map(t => t.visible);
+  const names = [...new Set(g._fullData.filter(t => t.meta === 'az-legend').map(t => t.name))];
+  const symbol = g.querySelector('.legend .traces .legendpoints path');
+  return {names, first: vis(names[0]), second: vis(names[1]),
+          proxyOpacity: g._fullData.filter(t => t.meta === 'az-legend').map(t => t.marker.opacity),
+          symbolOpacity: symbol ? Number(getComputedStyle(symbol).opacity) * Number(symbol.style.opacity || 1) : null};
+}"""
+
+
+@pytest.mark.parametrize("subset", [{"n": 50, "seed": 0}, None], ids=["regular", "large"])
+def test_legend_full_opacity_and_toggling(server, subset):
+    """At point opacity 0.2 the legend symbols are opaque, and clicking an entry
+    still hides and shows that category, double-click isolates it -- in both modes."""
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1300, "height": 900})
+            link = _link(server, {"type": "obs", "key": "cell_type", "column": ""}, subset)
+            v = json.loads(base64.urlsafe_b64decode(link.split("#view=")[1] + "=="))
+            v["layout"]["panelConfigs"]["cell-plot-L"]["pointOpacity"] = 0.2
+            enc = base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip("=")
+            page.goto(link.split("#view=")[0] + "#view=" + enc)
+            want = 50 if subset else 200
+            _wait(page, lambda s: s["points"] == want and not s["busy"])
+            s = page.evaluate(LEGEND)
+            assert len(s["names"]) >= 2
+            assert set(s["proxyOpacity"]) == {1}
+            assert s["symbolOpacity"] == 1
+            toggles = page.locator('.tile[data-tile-id="cell-plot-L"] .legend .traces .legendtoggle')
+            toggles.nth(0).click()
+            page.wait_for_timeout(600)
+            s1 = page.evaluate(LEGEND)
+            assert set(s1["first"]) == {"legendonly"} and set(s1["second"]) == {True}
+            toggles.nth(0).click()
+            page.wait_for_timeout(600)
+            assert set(page.evaluate(LEGEND)["first"]) == {True}
+            toggles.nth(0).dblclick()
+            page.wait_for_timeout(800)
+            s3 = page.evaluate(LEGEND)
+            assert set(s3["first"]) == {True} and set(s3["second"]) == {"legendonly"}
+        finally:
+            browser.close()

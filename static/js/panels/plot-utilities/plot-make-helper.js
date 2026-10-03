@@ -435,5 +435,39 @@ export function attachViewportTracking(plotContainer, settings) {
       traces.push(makeTrace(bySlot[i], category, selectedPalette[i % selectedPalette.length], category));
     });
 
-    return traces;
+    return withLegendProxies(traces, settings);
+  }
+
+  /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */
+  export const LEGEND_PROXY = 'az-legend';
+  export const LEGEND_POINTS = 'az-points';
+
+  /** True for a legend proxy trace (no points; styling restyles skip it). */
+  export function isLegendProxy(trace) {
+    return !!trace && trace.meta === LEGEND_PROXY;
+  }
+
+  /**
+   * Legend entries at full opacity. Plotly draws a legend symbol with its
+   * trace's marker opacity, so at a low point opacity the legend was as pale
+   * as the points. Each trace's entry moves to a proxy trace with no points,
+   * at full opacity, in the trace's legend group (clicking the entry still
+   * hides and shows the points; double-click isolates them), appended after
+   * the point traces so their indices do not change.
+   */
+  export function withLegendProxies(traces, settings) {
+    const proxies = [];
+    for (const t of traces) {
+      if (t.showlegend === false) continue;
+      t.legendgroup = t.legendgroup || t.name;
+      t.showlegend = false;
+      t.meta = LEGEND_POINTS;
+      const p = { type: t.type, mode: 'markers', name: t.name, legendgroup: t.legendgroup, showlegend: true,
+        meta: LEGEND_PROXY, x: [null], y: [null], hoverinfo: 'skip',
+        marker: { size: settings.pointSize, opacity: 1, color: t.marker && t.marker.color } };
+      if (t.type === 'scatter3d') p.z = [null];
+      if (t.legendrank !== undefined) p.legendrank = t.legendrank;
+      proxies.push(p);
+    }
+    return traces.concat(proxies);
   }

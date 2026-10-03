@@ -533,6 +533,25 @@ const DataManager = (function() {
     }
 
     /**
+     * Have the server build its cell-name index now, in the background, when
+     * the names stay on the server: the first lookup by name otherwise waits
+     * for that build (16 s at 50M cells). Fire and forget, once per loaded
+     * dataset; nothing waits for it. Called after a large plot is drawn so the
+     * build does not compete with the plot's own requests.
+     */
+    let _prewarmed = null;
+    function prewarmCellNames() {
+        if (!(_cells instanceof RemoteNames) || !_currentDataset) return;
+        const key = `${_currentDataset}#${_datasetGeneration}`;
+        if (_prewarmed === key) return;
+        _prewarmed = key;
+        const params = new URLSearchParams({ dataset_path: _currentDataset, entity: 'cells', q: '',
+            mode: 'exact', limit: '1' });
+        if (_subset && _subset.datasetPath === _currentDataset) params.set('subset', _subset.key);
+        fetch(`${Config.API.NAMES}?${params}`).catch(() => {});
+    }
+
+    /**
      * Index of a cell by name, asking the server when the names are not
      * downloaded (above the large-plot threshold); -1 when absent.
      */
@@ -1648,6 +1667,7 @@ const DataManager = (function() {
         getTaxonomySpecies,
         getCellIndex,
         resolveCellIndex,
+        prewarmCellNames,
         cellNameAt,
         getGeneIndex,
         isDatasetLoaded,
