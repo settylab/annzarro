@@ -1168,9 +1168,17 @@ def register_data_routes(app, api_version):
             # positions, and a cell outside the subset is not found.
             subset = reader.subset if isinstance(reader, cell_subset.SubsetView) else None
             index_key = entity if subset is None or entity != "cells" else f"cells@{subset.spec.key()}"
-            index = name_index.get_index(
-                dataset_path_str, index_key,
-                lambda: reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True))
+            def load_names():
+                # every name of the axis: read a zarr chunk at a time when the
+                # reader can (no list of every name); a subset's names are few
+                chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
+                if subset is None and chunks_of is not None:
+                    chunks = chunks_of(dataset_path_str, entity)
+                    if chunks is not None:
+                        return name_index.NameChunks(chunks)
+                return reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True)
+
+            index = name_index.get_index(dataset_path_str, index_key, load_names)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
 

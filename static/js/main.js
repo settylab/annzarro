@@ -313,7 +313,7 @@ const App = (function() {
                 DataManager.setFocusedGene(constants.focusedGene);
             }
             if (constants.focusedCell) {
-                if (DataManager.getCellIndex(constants.focusedCell) >= 0) {
+                if (await DataManager.resolveCellIndex(constants.focusedCell) >= 0) {
                     DataManager.setFocusedCell(constants.focusedCell);
                 } else if (DataManager.getSubset()) {
                     // Said once: loading the dataset may already have said it
@@ -1081,9 +1081,19 @@ const App = (function() {
                     }
                 }
             }
-            const first = await fetchNameMatches(Config.API.NAMES, {
-                datasetPath, entity, query: '', limit: 1, subset });
-            const name = first.matches.length ? first.matches[0].name : null;
+            // The first name is in the list the dataset load already
+            // downloaded. Asking the server for it (query '') makes it build
+            // its name index first: 56 s for 95.6M cells.
+            const names = entity === 'cells' ? DataManager.getCells() : DataManager.getGenes();
+            let name;
+            if (names && names.length) {
+                // names[0], or asked for when the names stay on the server
+                name = entity === 'cells' ? await DataManager.cellNameAt(0) : names[0];
+            } else {
+                const first = await fetchNameMatches(Config.API.NAMES, {
+                    datasetPath, entity, query: '', limit: 1, subset });
+                name = first.matches.length ? first.matches[0].name : null;
+            }
             if (name && name !== current) setFocused(name);
             if (picker) picker.setValue(name);
         } catch (error) {
