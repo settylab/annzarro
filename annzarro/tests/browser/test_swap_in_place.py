@@ -57,12 +57,13 @@ def _free_port():
 @pytest.fixture(scope="module", params=[5_000_000, 40], ids=["regular", "large-plot"])
 def server(request, tmp_path_factory):
     home = tmp_path_factory.mktemp("home")
-    (home / "config.yaml").write_text(f"ui:\n  defaults:\n    large_plot_points: {request.param}\n")
+    cfg = home / "large.yaml"
+    cfg.write_text(f"ui:\n  defaults:\n    large_plot_points: {request.param}\n")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     # this checkout's package, not whatever "annzarro" is installed
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--config", str(cfg), "--host", "127.0.0.1",
                              "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
@@ -92,7 +93,8 @@ def _link(root, store=STORE, subset=None, focused=None):
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
     cfg = {"cell-plot-S": {"id": "cell-plot-S", "x": x, "y": y, "z": None,
                            "color": {"type": "obs", "key": "cell_type", "column": ""}},
-           "cell-table-S": {"id": "cell-table-S", "columns": ["obs.cell_type", "obs.total_counts"]}}
+           "cell-table-S": {"id": "cell-table-S", "columns": [{"type": "obs", "key": "cell_type", "column": ""},
+                                                                {"type": "obs", "key": "total_counts", "column": ""}]}}
     hierarchy = [{"type": "split", "direction": "horizontal",
                   "panes": [{"percentage": 60, "controlsVisible": True}, {"percentage": 40, "controlsVisible": True}],
                   "children": [{"type": "tile", "id": "cell-plot-S", "controlsVisible": True},
@@ -140,7 +142,8 @@ STATE = """() => {
   return {
     busy: busy + (l ? 0 : 1),
     part: (document.getElementById('subset-part-input') || {}).value,
-    dataset: (document.getElementById('dataset-path') || {}).textContent,
+    // the dataset a plot is drawn from (its uirevision)
+    dataset: g && g.layout ? g.layout.uirevision : null,
     points,
     sig: g && g.data ? g.data.reduce((a, t) => a + [...(t.x || [])].reduce((b, v) => b + (Number.isFinite(v) ? v : 0), 0), 0) : null,
     x: l && l.xaxis && l.xaxis.range ? l.xaxis.range.map(Number) : null,
@@ -220,26 +223,30 @@ def test_part_step_swaps_data_in_place(server):
         try:
             errors = []
             page = _open(browser, _link(root, subset=dict(SPEC, part=0), focused=focused), errors)
-            s = _settle(page, lambda s: s["part"] == "1" and s["rows"] and s["focused"] == focused)
+            s = _settle(page, lambda s: s["part"] == "1" and (large or s["rows"]) and s["focused"] == focused)
             assert s["large"] == large, s["large"]
             view = _zoom(page, s)
             # the table as the user left it: searched, sorted, ten a page
-            page.evaluate("""(q) => jQuery(document.querySelector(
-                '.tile[data-tile-id="cell-table-S"] .dataTables_scrollBody table')).DataTable()
-                .search(String(q)).order([[2, 'desc']]).page.len(10).draw()""", s["firstType"])
-            s = page.evaluate(STATE)
-            table = (s["search"], s["order"], s["pageLen"])
+            if not large:
+                page.evaluate("""(q) => jQuery(document.querySelector(
+                    '.tile[data-tile-id="cell-table-S"] .dataTables_scrollBody table')).DataTable()
+                    .search(String(q)).order([[2, 'desc']]).page.len(10).draw()""", s["firstType"])
+                s = page.evaluate(STATE)
+                table = (s["search"], s["order"], s["pageLen"])
             page.evaluate(WATCH)
 
             before = s
             page.click("#subset-part-next")
             s = _settle(page, lambda s: s["part"] == "2" and s["sig"] != before["sig"]
-                        and s["rows"] and s["rows"] != before["rows"])
-            assert s["same"] == {"tile": True, "plot": True, "tableTile": True, "table": True}, s["same"]
+                        and (large or (s["rows"] and s["rows"] != before["rows"])))
+            assert s["same"]["tile"] and s["same"]["plot"] and s["same"]["tableTile"], s["same"]
+            # large-plot mode: the cell table lists no cells (their names stay on the server)
+            assert large or s["same"]["table"], s["same"]
             assert s["blank"] == 0, f"the plot was blank for {s['blank']} frames"
             assert s["newPlot"] == 0, "the plot was built again"
             assert _close(s["x"], view[0]) and _close(s["y"], view[1]), (s["x"], s["y"], view)
-            assert (s["search"], s["order"], s["pageLen"]) == table
+            if not large:
+                assert (s["search"], s["order"], s["pageLen"]) == table
             assert s["points"] == 50
             assert s["focused"] == focused and s["outside"] == "not in part 2 of 4", (s["focused"], s["outside"])
             assert not errors, errors
@@ -277,14 +284,17 @@ def test_dataset_change_resets_the_zoom_without_a_blank_plot(server):
         try:
             errors = []
             page = _open(browser, _link(root), errors)
-            s = _settle(page, lambda s: s["rows"])
+            s = _settle(page, lambda s: large or s["rows"])
             _zoom(page, s)
             page.evaluate(WATCH)
             target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
                 .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(OTHER))
             before = page.evaluate(STATE)
-            page.select_option("#dataset-selector", target)
-            s = _settle(page, lambda s: s["dataset"] != before["dataset"] and s["rows"])
+            # what choosing it in the select2 dropdown sends
+            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
+                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            s = _settle(page, lambda s: s["dataset"] != before["dataset"] and "_v3" in (s["dataset"] or "")
+                        and (large or s["rows"]))
             assert s["same"]["plot"] and s["same"]["tile"], s["same"]
             assert s["blank"] == 0, f"the plot was blank for {s['blank']} frames"
             assert s["newPlot"] == 0, "the plot was built again"
