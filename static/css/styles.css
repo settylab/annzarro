@@ -2449,6 +2449,11 @@ button.dtsb-button.dtsb-clear:hover {
     grid-template-columns: var(--ctl-label) minmax(3rem, 1fr) var(--ctl-num);
     grid-auto-columns: auto;
 }
+.point-auto { display: flex; }
+.plot-controls .point-auto-btn {
+    padding: 0 calc(1.5 * var(--ctl-u));
+    font-size: 0.75rem;
+}
 
 .ctl-label,
 .plot-controls .ctl-label {
@@ -2570,8 +2575,10 @@ button.dtsb-button.dtsb-clear:hover {
     margin-left: auto;
 }
 
-/* A toggle that is on says so with a check mark too, not by colour alone. */
-.plot-controls .btn[aria-pressed="true"]:not([data-large-off="1"]):not(.axis-lock-btn)::before {
+/* A toggle that is on says so with a check mark too, not by colour alone.
+   Not the lock (its icon says it) nor auto (its box turns italic), whose
+   width must not change under the track beside it. */
+.plot-controls .btn[aria-pressed="true"]:not([data-large-off="1"]):not(.axis-lock-btn):not(.point-auto-btn)::before {
     content: "\2713";
     margin-right: var(--ctl-u);
 }
@@ -2753,6 +2760,14 @@ button.dtsb-button.dtsb-clear:hover {
 .feature-item:hover {
     background-color: #f8f9fa;
 }
+
+/* an automatic value (utils/point-style.js): shown, but not set by the user */
+.point-size-control input.is-auto,
+.point-opacity-control input.is-auto {
+    color: #6c757d;
+    font-style: italic;
+}
+
 /* Tooltip */
 .tooltip {
     position: absolute;

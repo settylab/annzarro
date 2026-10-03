@@ -34,6 +34,14 @@ Cell plot controls, coloured by a categorical obs column.
    stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
    which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
    sliders' range.
+
+   Until you set them, both are **automatic**: they follow the number of points drawn (the
+   subset, or every cell; not the size of the panel), from the default 5 px and opaque at a few
+   thousand points down to 3 px / 0.61 at 100,000, 2 px / 0.39 at a million and 0.92 px / 0.16
+   at 95.6 million. An automatic value is shown in grey italics and changes when the number of
+   points does, for example when you turn the subset off. Moving a slider or typing a value sets it; it then stays
+   as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
+   while its value is automatic; click it to make that value automatic again.
 10. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
     {doc}`colour-scales`).
 11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the

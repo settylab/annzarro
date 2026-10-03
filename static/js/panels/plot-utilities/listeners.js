@@ -1,6 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
-    colorSliderValue, showColorBound } from './panel-ui-update.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo } from './plot-make.js';
+    colorSliderValue, showColorBound, showPointStyle } from './panel-ui-update.js';
+import { applyAutoPointStyle } from '../../utils/point-style.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -14,7 +15,7 @@ import {
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate } from './plot-make-helper.js';
 import { formatRangeValue } from '../../utils/array-stats.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue, valueAt, roundSig } from '../../utils/slider-scales.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
 export function setupPlotEventListeners({
@@ -198,24 +199,34 @@ export function setupPlotControlListeners(
     // The tracks are log scales (utils/slider-scales.js); a value read off
     // one is rounded to two significant digits. The number box beside each
     // takes any value as typed (in px / alpha), also off the track's range.
-    const pointStyle = (name, key, scale, valid) => {
+    // Setting either one ends its automatic value (utils/point-style.js);
+    // its auto button brings it back.
+    const pointStyle = (name, key, autoKey, scale, valid) => {
       const $slider = $controlsContainer.find(`#${name}-${id}`);
       const $input = $controlsContainer.find(`#${name}-input-${id}`);
       $slider.on('input', (e) => {
         settings[key] = roundSig(valueAt(scale, e.target.value));
-        $input.val(settings[key]);
+        settings[autoKey] = false;
+        showPointStyle(id, settings);
         redrawStyling();
       });
       $input.on('change', (e) => {
         const v = parseFloat(e.target.value);
         if (!valid(v)) { $input.val(settings[key]); return; }
         settings[key] = v;
-        $slider.val(trackValue(scale, v));
+        settings[autoKey] = false;
+        showPointStyle(id, settings);
+        redrawStyling();
+      });
+      $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
+        settings[autoKey] = true;
+        applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
+        showPointStyle(id, settings);
         redrawStyling();
       });
     };
-    pointStyle('point-size', 'pointSize', pointSizeScale, (v) => v > 0);
-    pointStyle('point-opacity', 'pointOpacity', opacityScale, (v) => v > 0 && v <= 1);
+    pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0);
+    pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1);
     
     // --- Hover columns: reload only those columns and relabel the traces ---
     const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);
