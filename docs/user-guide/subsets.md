@@ -100,21 +100,45 @@ The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
   focused cell that is not in the new part is not focused, and a notice says so.
 - Type a part number into the box (2) and press Enter to jump to it.
 - The parts never share a cell: stepping from part 1 to part 3 shows each cell exactly once.
-- With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
-  Small groups are used up in the first parts, so later parts hold the larger groups only; the
-  badge's tooltip lists the groups earlier parts already showed in full.
 - Share links and panel sets record the part, so they reopen on the same part. A link without
   a part, such as one made before parts existed, opens on part 1.
 
-```{figure} ../_static/screens/user-guide/subsets-parts-2.png
-:class: screenshot
-:width: 35%
-:alt: The statistics bar after one step: Cells 3,000 of 8,090, Part 2 of 3.
+The same view on part 1 and, after one click on **›**, on part 2:
 
-After **›**: part 2 of 3, another 3,000 cells, none of them in part 1.
+```{figure} ../_static/screens/user-guide/subsets-parts-view-1.png
+:class: screenshot
+:alt: Part 1 of 3: a UMAP of 3,000 cells coloured by cell type and a cell table of 3,000 rows whose first row is HSPC_Mid_1#AAACCCATCGCTGCGA-1; the statistics bar reads Cells 3,000 of 8,090, Part 1 of 3.
+
+Part 1 of 3.
 ```
 
-The plots' **Removed Datapoints** box then counts the other cells as "Not in this part (2 of 3)".
+```{figure} ../_static/screens/user-guide/subsets-parts-view-2.png
+:class: screenshot
+:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1, and the Removed Datapoints box reads Not in this part (2 of 3): 5,090.
+
+Part 2 of 3: other cells in the same layout. The table starts with different cells, the UMAP's
+points are a different 3,000, and **Removed Datapoints** counts the rest as "Not in this part
+(2 of 3)". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
+with the subset applied as above.
+```
+
+### Balanced parts
+
+With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
+Small groups are used up in the first parts, so later parts hold the larger groups only. Here
+`bm_aging.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
+cell types). By part 7, 28 of them have been shown in full, and the part holds the three largest
+types that still have cells left: LMPP, Neutrophil and Ery P. The badge's tooltip says so:
+
+```{figure} ../_static/screens/user-guide/subsets-balanced-late-part.png
+:class: screenshot
+:alt: Part 7 of 9 of a subset balanced across highres_celltype: the UMAP shows only LMPP, Neutrophil and Ery P cells; the badge tooltip reads "Showing 1,000 of 8,090 cells (seed 0, balanced by highres_celltype). Part 7 of 9: the parts hold every cell once; step through them with ‹ ›. Groups already shown in full by earlier parts: Basophil, Basophil Progenitor, CD4 T cell, CD8 TEM, CLP and 23 more. Every panel shows these same cells. Click to change the subset."
+
+Part 7 of 9, balanced across cell type. The tooltip (drawn into the screenshot, because a
+headless browser does not capture native tooltips; the text is the badge's own) lists the cell
+types earlier parts already showed in full. View:
+{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`.
+```
 
 ## What a subset changes
 
