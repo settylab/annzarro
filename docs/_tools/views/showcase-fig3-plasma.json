@@ -1,0 +1,113 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-SC1",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-SC2",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-SC1": false,
+   "cell-plot-SC2": false
+  },
+  "panelConfigs": {
+   "cell-plot-SC1": {
+    "id": "cell-plot-SC1",
+    "title": "UMAP distance vs diffusion distance to the focused plasma cell",
+    "x": {
+     "type": "obsp",
+     "key": "umap_distance",
+     "column": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+     "locked": false
+    },
+    "y": {
+     "type": "obsp",
+     "key": "diffusion_distance",
+     "column": "Mature_Mid_1#GCCATGGAGTATGATG-1",
+     "locked": false
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "fig3_plasma_groups",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   },
+   "cell-plot-SC2": {
+    "id": "cell-plot-SC2",
+    "title": "X_umap, fig3_plasma_groups",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "fig3_plasma_groups",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   }
+  }
+ }
+}

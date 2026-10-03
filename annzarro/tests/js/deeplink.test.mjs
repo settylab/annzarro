@@ -13,7 +13,7 @@
 // in the browser; here we lock the serialization layer the link rides on.
 //
 // Run: `node --test annzarro/tests/js/deeplink.test.mjs` (node >= 18). Also
-// driven by the pytest wrapper test_js_deeplink.py.
+// driven by the pytest wrapper test_js_suites.py.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -158,4 +158,143 @@ test("collectTileIds walks nested splits depth-first, skipping selectors", () =>
     },
   ];
   assert.deepEqual(collectTileIds(hierarchy), ["cell-plot-1", "gene-plot-2"]);
+});
+
+// ── payload codec + URL grammar ──────────────────────────────────────────────
+//
+// Share links carry `#view=z1.<base64url(deflate-raw(JSON))>`. The fragment
+// keeps the view out of the request line (gunicorn rejects lines > 4094 bytes,
+// which a two-panel view used to exceed), and deflate keeps the link pasteable.
+// Legacy `?view=<base64url(JSON)>` links, which DoLiMap emits, must keep opening.
+
+const {
+  COMPRESSED_PREFIX,
+  compressionSupported,
+  encodeViewPayload,
+  decodeViewPayload,
+  parseDeepLinkLocation,
+  buildDeepLinkUrl,
+} = await import(pathToFileURL(MODULE_PATH).href);
+
+// What saveLayout() emits for two cell-plots side by side, 55/45: the full
+// getConfig() settings plus a cell subset, the shape that made a real 4.7 KB
+// link. Barcodes come from a fixed LCG so they are realistic (poorly
+// compressible) yet deterministic.
+function realisticTwoPanelView() {
+  let seed = 12345;
+  const base = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return "ACGT"[seed % 4];
+  };
+  const barcodes = Array.from({ length: 40 }, () => Array.from({ length: 14 }, base).join("") + "-1");
+  const cellPlot = (id, title, color) => ({
+    id, title,
+    x: { type: "obsm", key: "X_umap", dim: 0 },
+    y: { type: "obsm", key: "X_umap", dim: 1 },
+    z: null,
+    color,
+    pointSize: 5, pointOpacity: 0.7, colorScale: "Portland", categoryPalette: "uns",
+    colorMin: null, colorMax: null, colorReversed: false,
+    hoverInfo: [
+      { type: "obs", key: "_index" }, { type: "obs", key: "leiden" },
+      { type: "obs", key: "n_genes_by_counts" }, { type: "obs", key: "total_counts" },
+      { type: "obs", key: "pct_counts_mt" },
+    ],
+    subsettedCells: barcodes, hideNonSubset: false, showGrid: true,
+    lockColorRange: false, highlightFocusedCell: true, exportWidth: 1200, exportHeight: 800,
+  });
+  const a = "cell-plot-1759300000001";
+  const b = "cell-plot-1759300000002";
+  return {
+    v: 1,
+    constants: { focusedGene: "CD3E", focusedCell: "AAACATACAACCAC-1", taxonomyId: "9606" },
+    layout: {
+      v: 1,
+      hierarchy: [
+        {
+          type: "split", direction: "horizontal",
+          panes: [{ percentage: 55, controlsVisible: true }, { percentage: 45, controlsVisible: true }],
+          children: [{ type: "tile", id: a, controlsVisible: true }, { type: "tile", id: b, controlsVisible: true }],
+        },
+        { type: "selector" },
+      ],
+      controlState: { [a]: true, [b]: true },
+      panelConfigs: {
+        [a]: cellPlot(a, "UMAP by cluster", { type: "obs", key: "leiden", column: "leiden" }),
+        [b]: cellPlot(b, "UMAP by CD3E", { type: "gene", key: "CD3E", column: "" }),
+      },
+    },
+  };
+}
+
+const needsDeflate = {
+  skip: compressionSupported() ? false : "runtime lacks deflate-raw CompressionStream (Node < 21.2)",
+};
+
+test("compressed payload round-trips and carries the codec marker", needsDeflate, async () => {
+  const view = realisticTwoPanelView();
+  const payload = await encodeViewPayload(view);
+  assert.ok(payload.startsWith(COMPRESSED_PREFIX), `missing marker: ${payload.slice(0, 8)}`);
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(payload.slice(COMPRESSED_PREFIX.length)), "body not base64url-clean");
+  assert.deepEqual(await decodeViewPayload(payload), view);
+});
+
+test("compressed payload survives non-ASCII gene symbols", needsDeflate, async () => {
+  const view = { v: 1, constants: { focusedGene: "Iβ-µ✦" }, panels: [] };
+  assert.deepEqual(await decodeViewPayload(await encodeViewPayload(view)), view);
+});
+
+test("decodeViewPayload still accepts the legacy uncompressed form", async () => {
+  const view = sampleLayoutView();
+  assert.deepEqual(await decodeViewPayload(encodeView(view)), view);
+});
+
+test("compression shrinks a realistic two-panel view to under half", needsDeflate, async () => {
+  const view = realisticTwoPanelView();
+  const legacy = encodeView(view);
+  const compressed = await encodeViewPayload(view);
+  // The legacy form must itself be the kind of link that blew gunicorn's
+  // request line, or this measures nothing.
+  assert.ok(legacy.length > 4094, `fixture not realistic: legacy is ${legacy.length} chars`);
+  assert.ok(
+    compressed.length < legacy.length * 0.5,
+    `compressed ${compressed.length} vs legacy ${legacy.length}: expected < 50%`
+  );
+});
+
+test("parseDeepLinkLocation reads the fragment form", () => {
+  const url = new URL("https://host/annzarro/?dataset_path=data%2Fpbmc.zarr#view=z1.abc_-");
+  assert.deepEqual(parseDeepLinkLocation(url), { datasetPath: "data/pbmc.zarr", payload: "z1.abc_-" });
+});
+
+test("parseDeepLinkLocation still reads the legacy ?view= query form", () => {
+  const url = new URL("https://host/?dataset_path=x.zarr&view=eyJ2IjoxfQ");
+  assert.deepEqual(parseDeepLinkLocation(url), { datasetPath: "x.zarr", payload: "eyJ2IjoxfQ" });
+});
+
+test("parseDeepLinkLocation prefers the fragment over a stale query view", () => {
+  const url = new URL("https://host/?dataset_path=x.zarr&view=OLD#view=NEW");
+  assert.equal(parseDeepLinkLocation(url).payload, "NEW");
+});
+
+test("parseDeepLinkLocation: bare dataset_path has no payload; no dataset_path is no deep link", () => {
+  assert.deepEqual(
+    parseDeepLinkLocation(new URL("https://host/?dataset_path=x.zarr")),
+    { datasetPath: "x.zarr", payload: null }
+  );
+  assert.equal(parseDeepLinkLocation(new URL("https://host/#view=z1.abc")), null);
+});
+
+test("buildDeepLinkUrl puts the view in the fragment, never the query", async () => {
+  const view = realisticTwoPanelView();
+  const href = buildDeepLinkUrl(
+    "https://host/annzarro/?stale=1#old", "data/pbmc 3k.zarr", await encodeViewPayload(view)
+  );
+  const url = new URL(href);
+  assert.equal(url.searchParams.get("dataset_path"), "data/pbmc 3k.zarr");
+  assert.deepEqual([...url.searchParams.keys()], ["dataset_path"], "only dataset_path may reach the server");
+  assert.ok(url.hash.startsWith("#view="));
+  // The full link decodes back to the same view through the boot parse path.
+  const parsed = parseDeepLinkLocation(url);
+  assert.deepEqual(normalizeView(await decodeViewPayload(parsed.payload)), normalizeView(view));
 });

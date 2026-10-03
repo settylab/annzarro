@@ -3,17 +3,52 @@
  * Handles loading and processing data from the backend API
  */
 import { Config } from './config.js';
+import { subsetParam } from './utils/subset.js';
+import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
+import { BINARY_FORMAT, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
+
+// Marks a cached body that is a decoded binary slice, not parsed JSON.
+const BINARY_RESULT = Symbol('binarySlice');
 
 const DataManager = (function() {
     // Private variables
     let _currentDataset = null;
     let _cells = null;
+    // Bumped whenever the loaded cells/genes change (switch, revert, clear).
+    // Plot data built under an older generation belongs to another dataset.
+    let _datasetGeneration = 0;
     let _genes = null;
     let _focusedCell = null;
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
     let _datasetLoaded = false; // Track if a dataset has been loaded
+
+    // The cell subset in effect (utils/subset.js, annzarro/core/subset.py):
+    // the /data/subset reply plus the dataset it belongs to, or null when
+    // every cell is shown. Every cell-axis request for that dataset carries
+    // its key, so _cells, every index into it and every panel's arrays are
+    // the subset's. _subsetRequest is what the next dataset load applies:
+    // 'auto' (the server's default for the dataset's size; for a reload of
+    // the same dataset, keep the current one), null (every cell) or a spec.
+    let _subset = null;
+    let _subsetRequest = 'auto';
+    let _subsetReply = null;   // the last /data/subset reply, also when it was "every cell"
+
+    // Routes whose answer depends on which cells are shown.
+    const _CELL_AXIS_ROUTES = [Config.API.CELLS, Config.API.OBS, Config.API.X];
+    const _CELL_AXIS_PREFIXES = [Config.API.OBSM, Config.API.OBSP, Config.API.LAYER].map(u => `${u}/`);
+
+    /** `params` plus the subset key, for a cell-axis read of the subset's dataset. */
+    function _withSubset(url, params) {
+        if (!_subset || params.subset !== undefined || params.dataset_path !== _subset.datasetPath) {
+            return params;
+        }
+        if (_CELL_AXIS_ROUTES.includes(url) || _CELL_AXIS_PREFIXES.some(p => url.startsWith(p))) {
+            return { ...params, subset: _subset.key };
+        }
+        return params;
+    }
     
     // Selection history tracking
     let _cellHistory = []; // Array of previously selected cells
@@ -33,14 +68,98 @@ const DataManager = (function() {
         } catch (err) {
         // only replace tokens that aren’t inside quotes:
         // lookbehind (?<=[\[:,\s]) and lookahead (?=[,\]\}\s])
-        const FIX_SPECIAL = /(?<=[\[\{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
+        const FIX_SPECIAL = /(?<=[[{,:]\s*)(-?Infinity|NaN)(?=\s*[,}\]\s])/g;
         const cleaned = text.replace(FIX_SPECIAL, 'null');
         // second chance
         return JSON.parse(cleaned);
         }
     }
 
+    // One network request per URL at a time. On a deep-link boot every panel
+    // asked for the same slices at once: 30 requests (19.5 MB) for 13 unique
+    // ones (6.2 MB). A second caller for a URL that is already in flight now
+    // joins that request instead of starting another; the short-lived
+    // CacheManager entry then serves later callers.
+    const _inflight = new Map();
+
+    async function _readResponse(response) {
+        if (!response.ok) {
+            // Parse the error response to get the detailed error message
+            const text = await response.text();
+            let errorData;
+            try {
+                errorData = _safeJSONParse(text);
+            } catch (e) {
+                // If JSON parsing fails, use the raw text
+                errorData = { error: "Unknown error", message: text };
+            }
+
+            // Create a custom error with the error details from the server
+            const error = new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
+            error.status = response.status;
+            error.data = errorData;
+            throw error;
+        }
+        if (isBinaryResponse(response)) {
+            // Kept decoded (typed, dense) in the cache; loaders turn it into
+            // the JSON-shaped arrays the views expect, one copy per call.
+            return { [BINARY_RESULT]: true, ...decodeVector(await response.arrayBuffer(), response.headers) };
+        }
+        // Use the safer JSON parsing approach
+        return _safeJSONParse(await response.text());
+    }
+
+    function _startShared(fullUrl) {
+        const controller = new AbortController();
+        const entry = { controller, waiters: 0, settled: false, promise: null };
+        entry.promise = (async () => {
+            try {
+                const data = await _readResponse(await fetch(fullUrl, { signal: controller.signal }));
+                CacheManager.set(fullUrl, data);
+                return data;
+            } finally {
+                entry.settled = true;
+                if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
+            }
+        })();
+        // Every waiter attaches its own handlers; this one only keeps a
+        // request that all of its waiters abandoned from being "unhandled".
+        entry.promise.catch(() => {});
+        _inflight.set(fullUrl, entry);
+        return entry;
+    }
+
+    /** Wait for a shared request, honouring THIS caller's abort signal only. */
+    function _join(fullUrl, entry, signal) {
+        entry.waiters += 1;
+        return new Promise((resolve, reject) => {
+            let done = false;
+            const leave = () => {
+                done = true;
+                entry.waiters -= 1;
+                if (signal) signal.removeEventListener('abort', onAbort);
+            };
+            const onAbort = () => {
+                if (done) return;
+                leave();
+                if (entry.waiters === 0 && !entry.settled) {
+                    // Nobody wants it any more: cancel it, and let the next
+                    // caller start afresh rather than join a dying request.
+                    if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
+                    entry.controller.abort();
+                }
+                reject(new DOMException("Fetch request was aborted", "AbortError"));
+            };
+            if (signal) signal.addEventListener('abort', onAbort, { once: true });
+            entry.promise.then(
+                value => { if (!done) { leave(); resolve(value); } },
+                error => { if (!done) { leave(); reject(error); } }
+            );
+        });
+    }
+
     async function _fetchWithCache(url, params = {}, signal = null) {
+        params = _withSubset(url, params);
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const cached = CacheManager.get(fullUrl);
         if (cached !== undefined && !signal?.aborted) return cached;
@@ -50,39 +169,8 @@ const DataManager = (function() {
             if (signal && signal.aborted) {
                 throw new DOMException("Fetch request was aborted", "AbortError");
             }
-            
-            // Use the abort signal with the fetch request
-            const response = await fetch(fullUrl, { signal });
-            
-            // Check if the response is OK (status code in the range 200-299)
-            if (!response.ok) {
-                // Parse the error response to get the detailed error message
-                const text = await response.text();
-                let errorData;
-                try {
-                    errorData = _safeJSONParse(text);
-                } catch (e) {
-                    // If JSON parsing fails, use the raw text
-                    errorData = { error: "Unknown error", message: text };
-                }
-                
-                // Create a custom error with the error details from the server
-                const error = new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
-                error.status = response.status;
-                error.data = errorData;
-                throw error;
-            }
-            
-            // Use the safer JSON parsing approach
-            const text = await response.text();
-            const data = _safeJSONParse(text);
-            
-            // Cache the result (if not aborted during the fetch)
-            if (!signal?.aborted) {
-                CacheManager.set(fullUrl, data);
-            }
-            
-            return data;
+            const entry = _inflight.get(fullUrl) || _startShared(fullUrl);
+            return await _join(fullUrl, entry, signal);
         } catch (error) {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
@@ -97,6 +185,23 @@ const DataManager = (function() {
             }
             throw error;
         }
+    }
+
+    /**
+     * Fetch one numeric slice in the binary encoding (`format=f32`) and give
+     * back the body the JSON route would have: `{data, ...meta}`.
+     *
+     * The server answers JSON instead whenever the slice is not numeric
+     * (categorical, strings, booleans); that body is returned as is.
+     * @param {boolean} flatten  `data` as one flat array for a single row or
+     *                           column, which is what every loader made of it
+     * @param {string|null} column  obs/var: `data` is `{[column]: values}`
+     */
+    async function _fetchVector(url, params, meta, flatten, column = null) {
+        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+        if (!body || !body[BINARY_RESULT]) return body;
+        const values = toJSONShape(body, flatten);
+        return { ...meta, data: column === null ? values : { [column]: values } };
     }
 
     function refreshCacheForDataset(datasetPath = _currentDataset) {
@@ -125,6 +230,10 @@ const DataManager = (function() {
                 method: 'POST'
             });
             
+            if (response.status === 403) {
+                // admin-only on a hosted server: an expected refusal, not an error
+                return { status: 'forbidden', reason: 'admin_only' };
+            }
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
             }
@@ -165,6 +274,7 @@ const DataManager = (function() {
         const previousDataset = _currentDataset;
         const previousCells = _cells;
         const previousGenes = _genes;
+        const previousSubset = _subset;
         
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
@@ -183,9 +293,13 @@ const DataManager = (function() {
             }
             
             // Reset cells and genes before loading new ones
+            _datasetGeneration++;
             _cells = null;
             _genes = null;
-            
+
+            // Decide which cells this dataset shows, before naming them
+            _subset = await _resolveSubset(datasetPath, previousSubset, signal);
+
             // Load cells and genes
             _cells = await loadCells(datasetPath, signal);
             
@@ -224,6 +338,8 @@ const DataManager = (function() {
                     _currentDataset = previousDataset;
                     _cells = previousCells;
                     _genes = previousGenes;
+                    _subset = previousSubset;
+                    _datasetGeneration++;
                     
                     // We're not dispatching datasetLoadError event here anymore
                     // since the error is already handled in _loadDataset function in main.js.
@@ -233,6 +349,8 @@ const DataManager = (function() {
                     _currentDataset = null;
                     _cells = null;
                     _genes = null;
+                    _subset = null;
+                    _datasetGeneration++;
                     
                     // Dispatch a datasetCleared event
                     if (!silent) {
@@ -252,6 +370,92 @@ const DataManager = (function() {
         }
     }
     
+    /**
+     * Ask the server which cells a dataset load shows (/data/subset).
+     * Consumes _subsetRequest: a later load of another dataset starts from
+     * its own default again.
+     * @returns {Promise<Object|null>} the subset in effect, null for every cell
+     * @private
+     */
+    async function _resolveSubset(datasetPath, previous, signal) {
+        let request = _subsetRequest;
+        _subsetRequest = 'auto';
+        if (request === 'auto' && previous && previous.datasetPath === datasetPath) {
+            request = previous.subset;   // a reload keeps the subset it had
+        }
+        let info;
+        try {
+            const param = request === 'auto' ? 'auto' : subsetParam(request);
+            info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: param }, signal);
+        } catch (error) {
+            if (error && error.name === 'AbortError') throw error;
+            if (request === 'auto') {
+                // A server that cannot say (an older one without the route)
+                // serves every cell, as before subsets existed.
+                console.warn('No cell subset information; showing every cell:', error);
+                _subsetReply = null;
+                return null;
+            }
+            // A link or panel set whose subset this dataset cannot apply (a
+            // column it lacks) still opens, on the default, and says so.
+            notify('Cell subset not applied',
+                `${error.message || error}\nShowing the default for this dataset instead.`, 'warning');
+            info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: 'auto' }, signal);
+        }
+        _subsetReply = info ? { ...info, datasetPath } : null;
+        return info && info.subset ? { ...info, datasetPath } : null;
+    }
+
+    /**
+     * Choose the cells the next dataset load shows.
+     * @param {'auto'|null|Object} request - 'auto' (the server's default for
+     *   the dataset's size), null (every cell) or a subset spec
+     */
+    function setSubsetRequest(request) {
+        _subsetRequest = request === undefined ? 'auto' : request;
+    }
+
+    /**
+     * The subset in effect: the /data/subset reply ({subset, key, n,
+     * n_total, n_eligible, groups?, defaults}), or null for every cell.
+     */
+    function getSubset() {
+        return _subset ? { ..._subset } : null;
+    }
+
+    /**
+     * The `subset` a share link or panel set records: the spec in effect;
+     * null (every cell) when every cell is shown of a dataset that would
+     * open on a subset; undefined (no opinion: the default) otherwise, so
+     * views of small datasets are unchanged.
+     */
+    function getSubsetForView() {
+        if (_subset) return _subset.subset;
+        const reply = _subsetReply;
+        if (reply && reply.datasetPath === _currentDataset && reply.defaults &&
+                reply.n_total > reply.defaults.threshold) {
+            return null;
+        }
+        return undefined;
+    }
+
+    /** The /data/subset reply for the open dataset (n_total, defaults), also without a subset. */
+    function getSubsetReply() {
+        return _subsetReply && _subsetReply.datasetPath === _currentDataset ? { ..._subsetReply } : null;
+    }
+
+    /** The `subset` request parameter in effect, or null for every cell. */
+    function getSubsetParam() {
+        return _subset ? _subset.key : null;
+    }
+
+    /** Cells of the dataset that are not loaded because of the subset. */
+    function getCellsNotInSubset() {
+        return _subset ? Math.max(0, _subset.n_total - _subset.n) : 0;
+    }
+
     /**
      * Load complete dataset structure
      * @param {string} [datasetPath] - Optional path to the dataset. Defaults to the current dataset.
@@ -387,6 +591,11 @@ const DataManager = (function() {
         }
         
         try {
+            if (columns && columns.length === 1) {
+                const column = columns[0];
+                return await _fetchVector(Config.API.OBS, params,
+                    { dataset_path: params.dataset_path }, true, column);
+            }
             const data = await _fetchWithCache(Config.API.OBS, params);
             return data;
         } catch (error) {
@@ -424,6 +633,11 @@ const DataManager = (function() {
         }
         
         try {
+            if (columns && columns.length === 1) {
+                const column = columns[0];
+                return await _fetchVector(Config.API.VAR, params,
+                    { dataset_path: params.dataset_path }, true, column);
+            }
             const data = await _fetchWithCache(Config.API.VAR, params);
             return data;
         } catch (error) {
@@ -458,10 +672,10 @@ const DataManager = (function() {
             params.cols = cols.join(',');
         }
         
-        if (columnName) {
-            params.column_name = columnName;
+        if (columnName !== undefined && columnName !== null && columnName !== '') {
+            params.column_name = String(columnName);
         }
-        
+
         if (maxCells) {
             params.max_cells = maxCells;
         }
@@ -473,9 +687,16 @@ const DataManager = (function() {
             
             // Fix the URL format to match the API specification from BACKEND_API_REFERENCE.md
             // GET /api/v1/data/obsm/{obsm_key} is the correct format
+            if (columnName === '') {
+                // No column chosen: nothing to read. This used to fetch the
+                // WHOLE matrix and then return [] from the column extraction.
+                return { data: [], obsm_key: obsmKey, dataset_path: datasetPath };
+            }
             const url = `${Config.API.OBSM}/${obsmKey}`;
             console.log(`Requesting obsm data from: ${url} with params:`, params);
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { obsm_key: obsmKey, dataset_path: params.dataset_path },
+                params.column_name !== undefined);
             
             console.log(`Full response data from obsm endpoint:`, data);
             
@@ -583,17 +804,22 @@ const DataManager = (function() {
             params.cols = cols.join(',');
         }
         
-        if (columnName) {
-            params.column_name = columnName;
+        if (columnName !== undefined && columnName !== null && columnName !== '') {
+            params.column_name = String(columnName);
         }
-        
+
         if (maxGenes) {
             params.max_genes = maxGenes;
         }
         
         try {
+            if (columnName === '') {
+                return { data: [], varm_key: varmKey, dataset_path: datasetPath };
+            }
             const url = `${Config.API.VARM}/${varmKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { varm_key: varmKey, dataset_path: params.dataset_path },
+                params.column_name !== undefined);
             return data;
         } catch (error) {
             console.error(`Error loading varm.${varmKey} data:`, error);
@@ -634,7 +860,8 @@ const DataManager = (function() {
             console.log(`Obsp request params: dataset_path=${params.dataset_path}, rows=${params.rows}`);
             
             const url = `${Config.API.OBSP}/${obspKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { obsp_key: obspKey, dataset_path: params.dataset_path }, false);
             
             // Log and debug the data structure
             console.log(`Obsp data format for ${obspKey} (cell: ${focusedCell}, index: ${focusedCellIndex}):`,
@@ -697,7 +924,8 @@ const DataManager = (function() {
         
         try {
             const url = `${Config.API.VARP}/${varpKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchVector(url, params,
+                { varp_key: varpKey, dataset_path: params.dataset_path }, false);
             return data;
         } catch (error) {
             console.error(`Error loading varp.${varpKey} data:`, error);
@@ -735,17 +963,22 @@ const DataManager = (function() {
         }
         
         try {
-            const focusedGene = cols && cols.length === 1 ? _genes[cols[0]] : null;
-            const focusedGeneIndex = focusedGene ? cols[0] : -1;
-            const focusedCell = rows && rows.length === 1 ? _cells[rows[0]] : null;
-            const focusedCellIndex = focusedCell ? rows[0] : -1;
+            // Branch on the request (one column = one gene), not on whether
+            // the index resolves to a name: _genes/_cells are null after a
+            // cleared or failed load, and indexing them threw a TypeError
+            // (or, guarded alone, sent a gene request down the cell path).
+            const focusedGeneIndex = cols && cols.length === 1 ? cols[0] : -1;
+            const focusedGene = focusedGeneIndex >= 0 && _genes ? _genes[focusedGeneIndex] : null;
+            const focusedCellIndex = rows && rows.length === 1 ? rows[0] : -1;
+            const focusedCell = focusedCellIndex >= 0 && _cells ? _cells[focusedCellIndex] : null;
 
-            if (focusedGene) {
+            if (focusedGeneIndex >= 0) {
                 console.log(`Loading layer data: ${layerName}, gene: ${focusedGene}, index: ${focusedGeneIndex}`);
                 console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
-                const data = await _fetchWithCache(url, params);
+                const data = await _fetchVector(url, params,
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
@@ -799,7 +1032,8 @@ const DataManager = (function() {
                 console.log(`Layer request params: dataset_path=${params.dataset_path}, rows=${params.rows}, cols=${params.cols}`);
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
-                const data = await _fetchWithCache(url, params);
+                const data = await _fetchVector(url, params,
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedCell}, index: ${focusedCellIndex}):`, 
@@ -877,7 +1111,8 @@ const DataManager = (function() {
         }
         
         try {
-            const data = await _fetchWithCache(Config.API.X, params);
+            const data = await _fetchVector(Config.API.X, params,
+                { dataset_path: params.dataset_path }, false);
             return data;
         } catch (error) {
             console.error('Error loading X matrix data:', error);
@@ -1278,6 +1513,7 @@ const DataManager = (function() {
         setFocusedGene,
         setTaxonomyId,
         getCurrentDataset,
+        getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,
         getSortedCells,
@@ -1290,6 +1526,13 @@ const DataManager = (function() {
         getCellIndex,
         getGeneIndex,
         isDatasetLoaded,
+        // Cell subset
+        setSubsetRequest,
+        getSubset,
+        getSubsetParam,
+        getSubsetForView,
+        getSubsetReply,
+        getCellsNotInSubset,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,

@@ -1,11 +1,12 @@
 /**
  * Utilities for loading and processing table data
  */
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
-    classifyError, missingEntity
+    classifyError, missingEntity, classifyFocusRow
 } from '../../utils/coverage.js';
 
 /**
@@ -40,6 +41,7 @@ export async function loadTableData(settings, entityType, signal = null) {
         // list has not been classified, and Coverage.merge turns that into a
         // visible UNREPORTED rather than an absence nobody notices.
         const columnCoverages = [];
+        const booleanColumns = [];   // data keys of Yes/No columns (search-builder.js)
         
         // Check if aborted after fetching entity index
         if (signal && signal.aborted) {
@@ -94,6 +96,20 @@ export async function loadTableData(settings, entityType, signal = null) {
                     
                     // Add column definition
                     const displayName = getColumnDisplayName(column);
+                    if (isBooleanColumn(columnData)) {
+                        // Yes/No for display, filtering and type detection, so
+                        // a SearchBuilder "Equals Yes" matches (it saw raw
+                        // booleans, typed the column num, and kept 0 rows)
+                        booleanColumns.push(columnKey);
+                        columnDefinitions.push({
+                            title: displayName,
+                            data: columnKey,
+                            className: 'dt-center',
+                            type: 'string',
+                            render: renderBoolean
+                        });
+                        continue;
+                    }
                     columnDefinitions.push({
                         title: displayName,
                         data: columnKey,
@@ -145,6 +161,7 @@ export async function loadTableData(settings, entityType, signal = null) {
             ),
             data: data,
             columns: columnDefinitions,
+            booleanColumns: booleanColumns,
             entityIndex: entityIndex
         };
         
@@ -213,16 +230,24 @@ async function loadColumnData(column, entityType, signal = null) {
             };
         }
         if (loaded.matrixKey !== undefined) {
-            // obsm/varm/obsp/varp/layer answer `200 {"data": []}` when the KEY
-            // is absent, where obs/var omit the key entirely. That rule was the
-            // plot's alone, and reading this identical body without it is what
-            // made the table say "failed to read" (error) beside the plot's
-            // "not in this dataset" (warning), on one page.
+            // obsm/varm/obsp/varp/layer bodies carry no key-presence signal,
+            // so they go through the matrix rule the plot uses. Reading this
+            // identical body by a different rule is what once made the table
+            // say "failed to read" (error) beside the plot's "not in this
+            // dataset" (warning), on one page.
+            // A slice taken AT one entity (obsp/varp row, layer row/column)
+            // carries `slice`, so an all-blank one names that entity and the
+            // fix -- the same sentence the plot gives (classifyFocusRow).
             return {
                 values: loaded.values,
-                coverage: classifyMatrixColumn({
-                    values: loaded.values, expected, key: loaded.matrixKey, ...opts
-                })
+                coverage: loaded.slice
+                    ? classifyFocusRow({
+                        values: loaded.values, expected, key: loaded.matrixKey,
+                        ...loaded.slice, ...opts
+                    })
+                    : classifyMatrixColumn({
+                        values: loaded.values, expected, key: loaded.matrixKey, ...opts
+                    })
             };
         }
         if (loaded.unsupported) {
@@ -270,7 +295,9 @@ async function loadColumnData(column, entityType, signal = null) {
  *     classifier could only read as "legitimately blank"; the sentence is now
  *     built by `missingEntity`, shared with the plot.
  *   - `matrixKey` -- this came from an obsm/varm/obsp/varp/layer member, whose
- *     "empty array means the KEY is absent" contract differs from obs/var's.
+ *     body has no key-presence signal (see `classifyMatrixColumn`).
+ *   - `slice` -- `{kind, name, focused}` when that read was taken AT one cell
+ *     or gene (obsp/varp row, layer row/column), for `classifyFocusRow`.
  *   - `unsupported` -- an unrecognised column type; a defect in this function.
  *
  * Callers must go through `loadColumnData`, which attaches the Coverage.
@@ -322,7 +349,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: firstRow(obspData.data), matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key,
+                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -337,7 +365,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             obspKey: key,
                             rows: [cellIndex]
                         });
-                        return { values: firstRow(obspData.data), matrixKey: key };
+                        return { values: firstRow(obspData.data), matrixKey: key,
+                                 slice: { kind: 'cell', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -356,7 +385,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -371,7 +401,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             cols: [geneIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'gene', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getCells().length).fill(null),
@@ -405,7 +436,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: firstRow(varpData.data), matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key,
+                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -420,7 +452,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             varpKey: key,
                             rows: [geneIndex]
                         });
-                        return { values: firstRow(varpData.data), matrixKey: key };
+                        return { values: firstRow(varpData.data), matrixKey: key,
+                                 slice: { kind: 'gene', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -439,7 +472,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -454,7 +488,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                             layerName: key,
                             rows: [cellIndex]
                         });
-                        return { values: layerData.data, matrixKey: key };
+                        return { values: layerData.data, matrixKey: key,
+                                 slice: { kind: 'cell', name: columnName, focused: false } };
                     }
                     return {
                         values: Array(DataManager.getGenes().length).fill(null),
@@ -475,6 +510,9 @@ async function _loadColumnValues(column, entityType, signal = null) {
     }
 }
 
+const FOCUSED_CELL_COLUMNS = new Set(['focused_cell', '_focused_cell']);
+const FOCUSED_GENE_COLUMNS = new Set(['focused_gene', '_focused_gene']);
+
 /**
  * Get a unique key for a column
  * @param {Object} column - The column object
@@ -487,34 +525,27 @@ export function getColumnKey(column) {
 
 /**
  * Get display name for a column
+ *
+ * A column picked from a cell or gene is named after it ("connectivities:
+ * HSPC_Old_1#..."). Only a placeholder column from an older session follows
+ * the focus; it names the entity it shows right now and says that it follows.
  * @param {Object} column - The column object
  * @returns {string} - The display name
  */
 export function getColumnDisplayName(column) {
-    const focusedCell = DataManager.getFocusedCell();
-    const focusedGene = DataManager.getFocusedGene();
     if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
-    } else if (column.type === 'obsp' || column.type === 'varp') {
-        if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedCell}`;
-        } else if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: ${focusedGene}`;
+    } else if (column.type === 'obsp' || column.type === 'varp' || column.type === 'layer') {
+        if (FOCUSED_CELL_COLUMNS.has(column.column)) {
+            return `${column.key}: ${DataManager.getFocusedCell() ?? 'no focused cell'} (follows focus)`;
+        } else if (FOCUSED_GENE_COLUMNS.has(column.column)) {
+            return `${column.key}: ${DataManager.getFocusedGene() ?? 'no focused gene'} (follows focus)`;
         } else if (column.column) {
             return `${column.key}: ${column.column}`;
-        } else {
-            return `${column.key}`;
         }
-    } else if (column.type === 'layer') {
-        if (column.column === 'focused_gene' || column.column === '_focused_gene') {
-            return `${column.key}: ${focusedGene}`;
-        } else if (column.column === 'focused_cell' || column.column === '_focused_cell') {
-            return `${column.key}: ${focusedCell}`;
-        } else {
-            return `${column.key}: ${column.column}`;
-        }
+        return `${column.key}`;
     }
     return `${column.type}:${column.key}:${column.column}`;
 }
@@ -584,6 +615,10 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     extend: 'csv',
                     text: 'CSV',
                     className: 'd-none', // Hidden button for programmatic use
+                    // Export the data, not the display: the display rounds
+                    // numbers to 4 decimals and wraps ids in HTML. The column
+                    // renders return the raw value for any type but 'display'.
+                    exportOptions: { orthogonal: 'export' },
                     filename: function() {
                         // 'this' here refers to the DataTable API instance.
                         // Return the dynamically set property or fallback to a default name.
@@ -593,7 +628,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
-                preDefined: { criteria: settings.searchBuilderConfig?.criteria || [] },
+                // criteria AND top-level logic (an OR came back as AND), with
+                // boolean conditions saved as num 'true' translated to Yes/No
+                preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
@@ -892,47 +929,81 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     return dataTable;
 }
 
+
 /**
- * Update table when focus changes
- * @param {Object} dataTable - The DataTables instance
- * @param {string} entity - The focused entity
- * @param {string} entityType - Type of entities ('cells' or 'genes')
+ * The selected columns that read the focus that just changed.
+ *
+ * A column follows the focus only through its `focused_cell` / `focused_gene`
+ * placeholder, which only older sessions hold: a column picked from the
+ * focus now stores the entity's name and does not move (issue #9).
+ * @param {Array<Object>} columns - The table's selected columns
+ * @param {string} changedEntityType - Which focus changed ('cells' or 'genes')
+ * @returns {Array<Object>}
  */
-export async function updateTableOnFocusChange(dataTable, entity, entityType) {
-    // Update any layer or relation columns
-    const dtSettings = dataTable.settings()[0];
-    const panelSettings = dtSettings._panelSettings;
-    const datasetPath = DataManager.getCurrentDataset()
-    const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
-    
-    if (!panelSettings || !panelSettings.columns) {
-        return;
+export function columnsFollowingFocus(columns, changedEntityType) {
+    const placeholders = changedEntityType === 'cells' ? FOCUSED_CELL_COLUMNS
+        : changedEntityType === 'genes' ? FOCUSED_GENE_COLUMNS : null;
+    if (!placeholders || !Array.isArray(columns)) return [];
+    return columns.filter(col => col && placeholders.has(col.column));
+}
+
+/**
+ * Whether any selected column reads the focus that just changed.
+ * @param {Array<Object>} columns - The table's selected columns
+ * @param {string} changedEntityType - Which focus changed ('cells' or 'genes')
+ * @returns {boolean}
+ */
+export function focusChangeAffectsColumns(columns, changedEntityType) {
+    return columnsFollowingFocus(columns, changedEntityType).length > 0;
+}
+
+/**
+ * Reload the given columns into the live table, leaving every other column,
+ * the paging and the SearchBuilder state as they are.
+ *
+ * Used for placeholder columns that follow the focus. Rebuilding the whole
+ * table for them reloaded every column and re-created the DataTable on each
+ * focus change.
+ * @param {Object} dataTable - The DataTables API instance
+ * @param {Array<Object>} columns - Columns to reload
+ * @param {string} tableEntityType - The table's rows ('cells' or 'genes')
+ * @returns {Promise<boolean>} false when a column is not in the table (it was
+ *     left out when it last failed to load), so the caller must rebuild
+ */
+export async function reloadColumnsInPlace(dataTable, columns, tableEntityType) {
+    const aoColumns = dataTable.settings()[0].aoColumns || [];
+    const rows = dataTable.rows();
+    const n = rows.count();
+    let changed = false;
+    for (const column of columns) {
+        const key = getColumnKey(column);
+        const colIdx = aoColumns.findIndex(c => c.mData === key || c.data === key);
+        if (colIdx < 0) return false;
+        const { values } = await loadColumnData(column, tableEntityType);
+        const fits = Array.isArray(values) && values.length === n;
+        rows.every(function (rowIdx) {
+            this.data()[key] = fits ? values[rowIdx] : null;
+        });
+        const header = dataTable.column(colIdx).header();
+        if (header) header.textContent = getColumnDisplayName(column);
+        changed = true;
     }
-    
-    // Check if we need to update any columns
-    const needsUpdate = panelSettings.columns.some(col => {
-        // Check for focused entity references
-        const usesFocusedEntity = 
-            (col.column === 'focused_gene' || col.column === '_focused_gene' || 
-             col.column === 'focused_cell' || col.column === '_focused_cell');
-             
-        // Check for entity type-specific columns
-        const usesEntitySpecificColumns = 
-            (entityType === 'cells' && (col.type === 'layer' || col.type === 'varp')) || 
-            (entityType === 'genes' && (col.type === 'layer' || col.type === 'obsp'));
-            
-        return usesFocusedEntity || usesEntitySpecificColumns;
-    });
-    
-    if (needsUpdate) {
-        // Reload the table data
-        document.dispatchEvent(new CustomEvent('refreshTable', {
-            detail: { id: panelSettings.id }
-        }));
-    }
-    
-    //Refresh the main panel as well. 
-    const sources = entityType === 'genes' ? [
+    if (changed) rows.invalidate('data').draw(false);
+    return true;
+}
+
+/**
+ * Rebuild a table's column chooser: its lists of focused and locked entities
+ * change with the focus and with every lock in every plot.
+ * @param {Object} panelSettings - The table panel's settings
+ * @param {string} tableRows - The table's rows ('cells' or 'genes')
+ */
+export async function refreshColumnChooser(panelSettings, tableRows) {
+    if (!panelSettings?.id) return;
+    const datasetStructure = await DataManager.getDatasetStructure(DataManager.getCurrentDataset());
+    if (!datasetStructure) return;
+    // Which tabs exist depends on the TABLE, not on the focus.
+    const sources = tableRows === 'cells' ? [
         { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
         { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
         { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
@@ -946,11 +1017,8 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
 
     //Make everything blank to start fresh
     for (const source of sources) {
-        const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);6
-        if (contentContainer == null) {
-            console.log("Container is null");
-            return;
-        }
+        const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);
+        if (contentContainer == null) return;
         contentContainer.innerHTML = '';
 
         const searchContainer = document.createElement('div');
@@ -977,7 +1045,7 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     }
 
     //Add them back
-    if (entityType === 'genes') {
+    if (tableRows === 'cells') {
         populateColumnsCellTable(sources, datasetStructure, panelSettings.id, panelSettings);
     }
     else {
@@ -985,7 +1053,45 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType) {
     }
 
     // Set up event listeners for column selection
-    setupColumnSelectionEvents(panelSettings.id, panelSettings, entityType);
+    setupColumnSelectionEvents(panelSettings.id, panelSettings, tableRows);
+}
+
+/**
+ * Update table when focus changes
+ *
+ * The table itself changes only for placeholder columns that follow the
+ * focus, and then only those columns are reloaded. The column chooser is
+ * always rebuilt, since it offers the new focused entity.
+ * @param {Object} dataTable - The DataTables instance
+ * @param {string} entity - The focused entity
+ * @param {string} entityType - Which focus changed ('cells' or 'genes')
+ * @param {string} [tableEntityType] - The table's own rows ('cells' or 'genes').
+ *     Defaults to the opposite of `entityType`, the only pairing that existed
+ *     before tables listened to both foci.
+ */
+export async function updateTableOnFocusChange(dataTable, entity, entityType, tableEntityType) {
+    const panelSettings = dataTable.settings()[0]._panelSettings;
+    if (!panelSettings || !panelSettings.columns) {
+        return;
+    }
+    const tableRows = tableEntityType || (entityType === 'genes' ? 'cells' : 'genes');
+
+    const following = columnsFollowingFocus(panelSettings.columns, entityType);
+    if (following.length) {
+        let inPlace = false;
+        try {
+            inPlace = await reloadColumnsInPlace(dataTable, following, tableRows);
+        } catch (error) {
+            console.error('Reloading focus-following columns failed, rebuilding the table:', error);
+        }
+        if (!inPlace) {
+            document.dispatchEvent(new CustomEvent('refreshTable', {
+                detail: { id: panelSettings.id }
+            }));
+        }
+    }
+
+    await refreshColumnChooser(panelSettings, tableRows);
 }
 
 /**

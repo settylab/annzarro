@@ -43,6 +43,15 @@ html, body {
 
 .notification-message {
     word-wrap: break-word;
+    white-space: pre-line; /* messages put paths on their own lines */
+}
+
+/* A notice that asks (main.js _askNotification): buttons instead of a modal */
+.notification-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 10px;
 }
 
 .notification-error {
@@ -94,7 +103,10 @@ html, body {
 body {
     display: flex;
     flex-direction: column;
-    min-height: 100vh; /* Minimum viewport height */
+    /* Exactly the window: the tile area below the header takes the rest and
+       scrolls inside itself. With min-height the page grew with its content
+       (a tall table tile pushed a 2x2 layout below the fold). */
+    height: 100vh;
 }
 
 /* Header */
@@ -103,6 +115,74 @@ body {
     padding: 0.5rem;
     border-bottom: 1px solid #dee2e6;
     z-index: 100;
+}
+
+/* Header actions keep one row: the column takes the buttons' natural width,
+   labels never wrap inside a button, and below 1400 px the buttons show
+   their icons only (the label stays as the tooltip). They used to wrap into
+   'Save / Panel / Set' at 1200-1400 px and onto a second row below 1200. */
+.header-actions .btn {
+    white-space: nowrap;
+}
+
+@media (max-width: 1399.98px) {
+    .header-actions .btn:not(.show-label) .btn-label {
+        display: none;
+    }
+}
+
+/* Above 768 px the header is one row: the dataset / gene / cell columns
+   shrink (their inputs scroll their text) instead of pushing the actions
+   onto a second row. At 1000 px the actions used to drop under the dataset
+   picker as bare icons and the header grew from 79 to 117 px. */
+@media (min-width: 768.02px) {
+    .app-header > .container-fluid > .row,
+    .global-controls > .row {
+        flex-wrap: nowrap;
+    }
+    .app-header > .container-fluid > .row > .col,
+    .global-controls > .row > .col,
+    .global-controls .d-flex > .flex-grow-1,
+    .global-controls .select2-container,
+    .global-controls .name-picker {
+        min-width: 0;
+    }
+    .global-controls .name-picker,
+    .global-controls #focused-gene,
+    .global-controls #focused-cell {
+        max-width: 100%;
+    }
+}
+
+/* The cell picker sits near the right edge in a narrow window: open its
+   320 px menu leftwards so it stays inside the window. */
+@media (min-width: 768.02px) and (max-width: 1099.98px) {
+    .name-picker:has(#focused-cell) .name-picker-menu {
+        left: auto;
+        right: 0;
+    }
+}
+
+/* Clipboard-less fallback for the Share Link button: the link, ready to copy.
+   Floats under the header, right-aligned and wide, instead of squeezing into
+   the button column (it was ~190 px and made the header one row taller). */
+.app-header {
+    position: relative;
+}
+
+.share-link-fallback {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0.5rem;
+    width: min(48rem, calc(100vw - 1rem));
+    z-index: 1050;
+    background: #fff;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.share-link-fallback[hidden] {
+    display: none;
 }
 
 .app-title {
@@ -123,12 +203,32 @@ body {
     border-bottom: 1px solid #dee2e6;
 }
 
+/* Cell subset: badge next to the cell count, and its dialog */
+.subset-badge {
+    padding: 0 0.4rem;
+    margin-left: 0.35rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    border: 1px solid #adb5bd;
+    border-radius: 0.6rem;
+    background: transparent;
+    color: #495057;
+}
+.subset-badge.subset-active {
+    background-color: #fff3cd;
+    border-color: #e0a800;
+    color: #664d03;
+    font-weight: 600;
+}
+.subset-dialog .subset-disabled { opacity: 0.5; }
+.subset-preview { min-height: 2.5em; white-space: pre-line; }
+
 /* Main Content Area */
 .tile-container {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 300px; /* Ensure minimum height */
+    min-height: 0; /* take what the header leaves, scroll inside */
     position: relative;
     overflow: auto;
 }
@@ -165,6 +265,24 @@ body {
     flex: 1; /* Use all available space */
 }
 
+/* The page-level chooser under the panels ("Create New Panel / Duplicate or
+   Reopen") keeps a usable height: below panels that fill the window it was
+   squeezed to 2 px, so closed panels could only be reached through a split.
+   A panel keeps its own height (1000 px, or what its handle was dragged to)
+   but at most the visible tile area less 5rem, so the chooser's heading
+   shows at the bottom and the rest is a scroll away; the panel itself is
+   not squeezed to make room. */
+.tile-container > .tile-selector {
+    min-height: 320px;
+    flex-shrink: 0;
+}
+
+.tile-container > .panel-wrapper {
+    flex-shrink: 0;
+    max-height: calc(100% - 5rem);
+    min-height: 360px;
+}
+
 .tile-header {
     display: flex;
     justify-content: space-between;
@@ -199,6 +317,18 @@ body {
     flex: 1;
     overflow: auto;
     position: relative;
+    /* The panel inside fills the tile. 'height: 100%' on the panel did not
+       resolve here (the tile's height is a flex result), so a lone plot tile
+       drew Plotly's default 450 px and left the rest of the tile empty. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.tile-content > .plot-panel,
+.tile-content > .table-panel {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Split Tiles */
@@ -296,7 +426,10 @@ body {
 
 .plot-container {
     flex: 1;
-    min-height: 0;
+    /* Never squeezed below a drawable height: with the controls open in a
+       short window it shrank to 94 px or 0 px and Plotly threw 'Something
+       went wrong with axis scaling'. The tile scrolls instead. */
+    min-height: 260px;
     position: relative;
 }
 
@@ -935,6 +1068,13 @@ button.dtsb-button.dtsb-clear:hover {
     font-size: 0.875rem;
 }
 
+/* The shorthand above also cleared Bootstrap's right padding that keeps a
+   select's arrow clear of its text ("X_umap" read "X_umaφ"). */
+.form-select.form-select-sm {
+    padding-right: 1.75rem;
+    text-overflow: ellipsis;
+}
+
 .custom-dropdown-menu {
     max-height: 300px;
     overflow-y: auto;
@@ -1412,8 +1552,8 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .file-name.has-file::before {
-    content: '\\f15b';
-    font-family: 'Font Awesome 5 Free';
+    content: '\f15b';   /* one backslash: a CSS escape, not a literal '\f15b' */
+    font-family: 'Font Awesome 6 Free', 'Font Awesome 5 Free';
     font-weight: 400;
     margin-right: 8px;
     color: #007bff;
@@ -1489,14 +1629,78 @@ button.dtsb-button.dtsb-clear:hover {
     line-height: 38px;
 }
 
-/* Ensure consistent width for gene and cell selectors */
+/* Focused gene / cell typeaheads (static/js/utils/name-picker.js) */
 #focused-gene {
-    width: 160px !important;
+    width: 160px;
 }
 
 #focused-cell {
-    width: 220px !important;
-    text-overflow: ellipsis !important;
+    width: 220px;
+}
+
+.name-picker {
+    position: relative;
+}
+
+.name-picker > input {
+    text-overflow: ellipsis;
+}
+
+.name-picker-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 9999;
+    width: max(100%, 320px);
+    margin-top: 2px;
+    background: #fff;
+    border: 1px solid #adb5bd;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.name-picker-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.name-picker-regex {
+    font-family: monospace;
+    padding: 0 6px;
+    line-height: 1.4;
+}
+
+.name-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.name-picker-option {
+    padding: 6px 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.name-picker-option.selected {
+    font-weight: bold;
+}
+
+.name-picker-option.active,
+.name-picker-option:hover {
+    background-color: #0d6efd;
+    color: #fff;
 }
 
 /* Dataset selector should have a moderate width */
@@ -2084,7 +2288,7 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Ensure refocus button is hidden by default */
-[id^="refocus-"] {
+.axis-refocus-btn {
     display: none;
 }
 
@@ -2384,21 +2588,46 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* Datapoint filter info widget */
+/* Top-left corner, in the margin above the plotting area (at the bottom it
+   sat on the x tick labels or the centred x-axis title): one row with the title, every
+   reason and the total (each reason inline). The reasons used to show only on
+   hover, so the box read just "Total: 6,540"; before that the box stood 10 px
+   into the plot over the x tick labels. */
 .datapoint-filter-widget {
     position: absolute;
-    bottom: 10px;
-    left: 10px;
+    top: 2px;
+    left: 2px;
     background-color: rgba(248, 249, 250, 0.85);
     border: 1px solid #dee2e6;
     border-radius: 4px;
-    padding: 6px 8px;
-    font-size: 0.75rem;
+    padding: 2px 6px;
+    font-size: 0.72rem;
     color: #666;
-    max-width: 200px;
+    max-width: calc(100% - 190px);   /* clear of the modebar on the right */
     z-index: 10;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    pointer-events: none;
     transition: opacity 0.3s ease;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+}
+
+.datapoint-filter-widget .filter-stats-list {
+    display: contents;
+}
+
+.datapoint-filter-widget .filter-stats-item {
+    display: inline-flex;
+    margin: 0;
+}
+
+.datapoint-filter-widget .filter-stats-title {
+    margin: 0;
+}
+
+.datapoint-filter-widget.hidden {
+    pointer-events: none;
 }
 
 .datapoint-filter-widget.hidden {
@@ -2571,4 +2800,57 @@ button.dtsb-button.dtsb-clear:hover {
 .coverage-placeholder__hints {
     margin: 0 12px 12px 12px;
     font-size: 12px;
+}
+
+/* Who is signed in / "No login" badge under the app title (main.js _loadAuthIndicator) */
+.auth-indicator {
+    display: inline-block;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding: 0 6px;
+    border-radius: 4px;
+    text-decoration: none;
+}
+
+.auth-indicator[hidden] {
+    display: none;
+}
+
+.auth-indicator--user {
+    color: #6c757d;
+}
+
+.auth-indicator--user:hover {
+    text-decoration: underline;
+}
+
+.auth-indicator--warning {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+    cursor: help;
+}
+
+/* Panel set the current user may not delete or overwrite (owner/admin only) */
+.session-lock {
+    color: #6c757d;
+    cursor: help;
+}
+
+.session-card-owner {
+    margin-left: 8px;
+}
+
+.session-card-owner i {
+    margin-right: 4px;
+}
+
+/* Hover columns picker (settings.hoverInfo) */
+.hover-columns-controls {
+    display: flex;
+    align-items: flex-start;
+}
+.hover-columns-controls .hover-columns-select {
+    max-width: 24rem;
+    padding-right: 0.5rem;
 }

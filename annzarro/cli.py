@@ -33,7 +33,8 @@ logger = logging.getLogger("annzarro")
 def load_config(
     config_path: Optional[str] = None,
     env: str = "development",
-    cli_args: Optional[argparse.Namespace] = None
+    cli_args: Optional[argparse.Namespace] = None,
+    exit_on_invalid: bool = True
 ) -> Dict[str, Any]:
     """
     Load configuration using the configuration manager.
@@ -46,12 +47,18 @@ def load_config(
     Returns:
         Configuration dictionary
     """
-    # Load configuration using the manager
-    config = config_manager.load_config(env=env, config_path=config_path, cli_args=cli_args)
+    # Load configuration using the manager. Every override (--config file,
+    # environment, CLI flags) is merged BEFORE validation, so a flag can supply
+    # a value that no file provides.
+    try:
+        config = config_manager.load_config(env=env, config_path=config_path, cli_args=cli_args)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
     
     # Validate configuration
     is_valid, errors = config_manager.validate_config()
-    if not is_valid:
+    if not is_valid and exit_on_invalid:
         for error in errors:
             logger.error(f"Configuration error: {error}")
         logger.error("Configuration is invalid. Exiting.")
@@ -85,43 +92,28 @@ def start_server(args: argparse.Namespace) -> int:
     # Load configuration - default to production for security, use development only when explicitly requested
     env = "development" if getattr(args, "development", False) else "production"
     logger.info(f"Starting server in {env} mode")
+    # CLI flags (--host, --port, --data-dir, --auth-disabled) are applied by
+    # the configuration manager, before validation. It also forces
+    # authentication on for a non-loopback host unless --auth-disabled or
+    # ANNZARRO_AUTH_DISABLED says otherwise.
     config = load_config(
         config_path=args.config,
         env=env,
         cli_args=args
     )
-    
-    # Override with command-line arguments
-    if args.host:
-        config.setdefault('server', {})['host'] = args.host
-    if args.port:
-        config.setdefault('server', {})['port'] = args.port
-    if args.data_dir:
-        config.setdefault('server', {})['data_dir'] = args.data_dir
-    
-    # Determine if authentication should be enabled
-    host = args.host or config.get('server', {}).get('host')
-    is_non_localhost = host and host not in ('127.0.0.1', 'localhost', '::1')
-    
-    # Enable auth by default for non-localhost or when auth is explicitly configured
-    if is_non_localhost:
-        config.setdefault('auth', {})['enabled'] = True
-        logger.info("Authentication enabled by default for non-localhost host")
-    
-    # Explicit command line flag takes precedence
-    if getattr(args, 'auth_disabled', False):
-        config.setdefault('auth', {})['enabled'] = False
-        logger.info("Authentication disabled by command line flag")
-    
-    # Environment variable also takes precedence
-    if os.environ.get('ANNZARRO_AUTH_DISABLED'):
-        config.setdefault('auth', {})['enabled'] = False
-        logger.info("Authentication disabled by ANNZARRO_AUTH_DISABLED environment variable")
+    if not config.get('auth', {}).get('enabled'):
+        logger.info("Authentication disabled")
     
     # Convert to flat structure for the server
-    logger.info(f"Server host before flattening: {config.get('server', {}).get('host', 'NOT SET')}")
     flask_config = config_manager.to_flask_config()
-    logger.info(flask_config)
+    
+    # A detached server re-runs this command in a child process; hand it the
+    # same configuration inputs, not just host/port/data-dir.
+    detach_args = []
+    if args.config:
+        detach_args += ['--config', os.path.abspath(os.path.expanduser(args.config))]
+    if getattr(args, 'development', False):
+        detach_args.append('--development')
     
     # Check explicit user preference
     no_browser = getattr(args, 'no_browser', False)
@@ -136,14 +128,34 @@ def start_server(args: argparse.Namespace) -> int:
     run_server(
         config_file=flask_config, 
         detach=args.detach,
-        no_browser=no_browser
+        no_browser=no_browser,
+        detach_args=detach_args
     )
     
     return 0
 
+def _is_annzarro_server(proc) -> bool:
+    """Whether ``proc`` (a psutil.Process) is a detached AnnZarro server: run
+    by this user as ``<python> -m annzarro.cli start ...`` (the command
+    ``annzarro start --detach`` launches)."""
+    try:
+        if hasattr(os, "getuid") and proc.uids().real != os.getuid():
+            return False
+        args = proc.cmdline()
+    except Exception:
+        return False
+    return "annzarro.cli" in args and "start" in args[args.index("annzarro.cli"):]
+
+
 def stop_server(args: argparse.Namespace) -> int:
     """
-    Stop the Annzarro server
+    Stop a server started with ``annzarro start --detach``.
+
+    The PID comes only from the per-user state directory (``~/.annzarro``),
+    never from the shared temp directory, where anyone on the machine could
+    plant a file naming a process of yours. Before signalling, the PID must
+    still belong to an AnnZarro process of this user; PIDs are reused, and a
+    stale file must not kill whatever runs under that number now.
     
     Args:
         args: Command line arguments
@@ -151,61 +163,51 @@ def stop_server(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    try:
-        # Look in the standard location first
-        pid_file = Path.home() / ".annzarro" / "server.pid"
-        
-        # If the PID file doesn't exist in the home directory, try the temp directory
-        if not pid_file.exists():
-            import tempfile
-            temp_pid_file = Path(tempfile.gettempdir()) / "annzarro" / "server.pid"
-            if temp_pid_file.exists():
-                pid_file = temp_pid_file
-                logger.info(f"Using alternative PID file location: {pid_file}")
-            else:
-                logger.error("Server is not running (PID file not found in any location)")
-                return 1
-        
-        logger.info(f"Found PID file at: {pid_file}")
-            
-        with open(pid_file, 'r') as f:
-            pid = int(f.read().strip())
-            
-        logger.info(f"Stopping Annzarro server (PID: {pid})")
-        
-        try:
-            os.kill(pid, signal.SIGTERM)
-            
-            # Wait for process to terminate
-            for _ in range(10):  # Try for 5 seconds
-                time.sleep(0.5)
-                try:
-                    # If this doesn't raise an exception, the process is still running
-                    os.kill(pid, 0)
-                except OSError:
-                    # Process has terminated
-                    break
-            else:
-                logger.warning("Server did not terminate gracefully, sending SIGKILL")
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    # Process already terminated
-                    pass
-            
-            # Remove PID file
-            pid_file.unlink()
-            logger.info("Server stopped successfully")
-            
-        except ProcessLookupError:
-            logger.warning(f"Process with PID {pid} not found, removing stale PID file")
-            pid_file.unlink()
-            
-        return 0
-            
-    except Exception as e:
-        logger.error(f"Error stopping server: {e}")
+    import psutil
+    from annzarro.utils.paths import pid_file as default_pid_file
+
+    pid_file = default_pid_file()
+    if not pid_file.exists():
+        logger.error(f"No server to stop: {pid_file} not found. `annzarro stop` stops a "
+                     "server started with `annzarro start --detach`; stop a foreground "
+                     "server with Ctrl+C.")
         return 1
+    try:
+        st = pid_file.stat()
+        if hasattr(os, "getuid") and st.st_uid != os.getuid():
+            logger.error(f"Refusing to use {pid_file}: it is not owned by you")
+            return 1
+        pid = int(pid_file.read_text().strip())
+    except (OSError, ValueError) as e:
+        logger.error(f"Unreadable PID file {pid_file}: {e}")
+        return 1
+
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        logger.warning(f"Process {pid} is not running; removing the stale PID file")
+        pid_file.unlink(missing_ok=True)
+        return 0
+    if not _is_annzarro_server(proc):
+        logger.error(f"PID file {pid_file} names process {pid}, which is not an AnnZarro "
+                     "server of yours (the PID was probably reused). Not signalling it; "
+                     "removing the stale PID file.")
+        pid_file.unlink(missing_ok=True)
+        return 1
+
+    logger.info(f"Stopping AnnZarro server (PID: {pid})")
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except psutil.TimeoutExpired:
+            logger.warning("Server did not terminate gracefully, sending SIGKILL")
+            proc.kill()
+    except psutil.NoSuchProcess:
+        pass
+    pid_file.unlink(missing_ok=True)
+    logger.info("Server stopped successfully")
+    return 0
 
 def manage_users(args: argparse.Namespace) -> int:
     """
@@ -219,8 +221,9 @@ def manage_users(args: argparse.Namespace) -> int:
     """
     from .server.auth import AuthManager
     
-    # Load configuration to get user file path
-    config = load_config(config_path=args.config)
+    # The same environment `annzarro start` runs with (production), so a
+    # user_file set for production is the file both of them use
+    config = load_config(config_path=args.config, env="production")
     
     # Extract user file path from full config
     if "auth" in config and "user_file" in config["auth"]:
@@ -276,6 +279,30 @@ def manage_users(args: argparse.Namespace) -> int:
         auth_manager.remove_user(username)
         logger.info(f"User '{username}' removed successfully")
         
+    elif args.user_command == "passwd":
+        username = args.username or input("Username: ").strip()
+        if not auth_manager.get_user(username):
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        password = args.password
+        if not password:
+            password = getpass.getpass("New password: ")
+            if password != getpass.getpass("Confirm new password: "):
+                logger.error("Passwords do not match")
+                return 1
+        if not password:
+            logger.error("Empty password refused")
+            return 1
+        auth_manager.set_password(username, password)
+        logger.info(f"Password of '{username}' changed; their existing logins are signed out")
+
+    elif args.user_command == "set-admin":
+        username = args.username or input("Username: ").strip()
+        if not auth_manager.set_admin(username, not args.no_admin):
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        logger.info(f"User '{username}' is {'no longer ' if args.no_admin else 'now '}an admin")
+
     elif args.user_command == "list":
         # List users
         users = auth_manager.get_users()
@@ -513,10 +540,15 @@ def desktop_command(args: argparse.Namespace) -> int:
     """
     # Import here to avoid circular imports
     try:
-        from .desktop.builder import build_desktop_app, run_desktop_app
+        from .desktop.builder import build_desktop_app, run_desktop_app, electron_project_problem
     except ImportError as e:
         logger.error(f"Failed to import desktop builder: {e}")
         logger.error("Please ensure the desktop module is installed.")
+        return 1
+
+    problem = electron_project_problem()
+    if problem:
+        logger.error(problem)
         return 1
         
     # Run desktop app in development mode
@@ -534,15 +566,10 @@ def desktop_command(args: argparse.Namespace) -> int:
     elif args.desktop_command == "build":
         platform = args.platform
         rebuild = args.rebuild
-        bundle_venv = args.bundle_venv
-        venv_path = args.venv_path
-        
-        logger.info(f"Building desktop application for {platform or 'all platforms'}")
-        if bundle_venv:
-            logger.info(f"Will bundle Python virtual environment{' at ' + venv_path if venv_path else ''}")
-        
-        if build_desktop_app(platform, rebuild, icon_source=args.icon, 
-                             bundle_venv=bundle_venv, venv_path=venv_path):
+        logger.info(f"Building desktop application for {platform or 'this platform'}")
+
+        if build_desktop_app(platform, rebuild, icon_source=args.icon,
+                             build_server=args.build_server):
             logger.info("Desktop application built successfully")
             return 0
         else:
@@ -592,6 +619,42 @@ def desktop_command(args: argparse.Namespace) -> int:
         logger.error(f"Unknown desktop command: {args.desktop_command}")
         return 1
 
+def format_effective_config(manager, fmt: str = "yaml", errors: Optional[List[str]] = None) -> str:
+    """Render the merged configuration with the sources it was assembled from.
+
+    Secrets are masked. ``yaml`` prints the sources as comments around a plain
+    YAML document (so the output can be saved and used with --config); ``json``
+    returns one object with ``config``, ``sources`` and ``origins``.
+    """
+    info = manager.get_config_info()
+    config = manager.masked_config()
+    errors = errors or []
+    if fmt == "json":
+        return json.dumps({
+            "environment": info["environment"],
+            "valid": not errors,
+            "errors": errors,
+            "config": config,
+            "sources": info["layers"],
+            "origins": info["origins"],
+        }, indent=2)
+
+    lines = [f"# Effective AnnZarro configuration (environment: {info['environment']})",
+             "# Sources, lowest to highest precedence:"]
+    width = max((len(layer["name"]) for layer in info["layers"]), default=0)
+    for layer in info["layers"]:
+        detail = f" ({layer['detail']})" if layer["detail"] else ""
+        lines.append(f"#   {layer['name']:<{width}}  {layer['status']:<9}  {layer['path']}{detail}")
+    for error in errors:
+        lines.append(f"# INVALID: {error}")
+    body = yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+    overridden = sorted((k, v) for k, v in info["origins"].items() if not v.startswith("defaults:"))
+    tail = ["", "# Values not taken from the built-in defaults, and where they came from:"]
+    key_width = max((len(k) for k, _ in overridden), default=0)
+    tail += [f"#   {k:<{key_width}}  <- {v}" for k, v in overridden]
+    return "\n".join(lines) + "\n" + body + "\n".join(tail)
+
+
 def config_command(args: argparse.Namespace) -> int:
     """
     Handle configuration-related commands
@@ -603,21 +666,14 @@ def config_command(args: argparse.Namespace) -> int:
         Exit code
     """
     if args.config_command == "show":
-        # Load and show configuration
+        # Show the configuration even when it is invalid: that is when you
+        # need to see where a value came from. The exit code still says so.
         env = args.env  # Default already set to production
-        config = load_config(config_path=args.config, env=env)
-        
-        # Print configuration
-        if args.format == "json":
-            print(json.dumps(config, indent=2))
-        else:  # yaml
-            if 'yaml' not in sys.modules:
-                logger.warning("PyYAML is not installed. Falling back to JSON output.")
-                print(json.dumps(config, indent=2))
-            else:
-                import yaml
-                print(yaml.dump(config, default_flow_style=False))
-            
+        load_config(config_path=args.config, env=env, cli_args=args, exit_on_invalid=False)
+        is_valid, errors = config_manager.validate_config()
+        print(format_effective_config(config_manager, args.format, errors))
+        return 0 if is_valid else 1
+
     elif args.config_command == "init":
         # Initialize a new configuration file
         output_path = args.output
@@ -637,11 +693,7 @@ def config_command(args: argparse.Namespace) -> int:
             return 1
                 
         # Load base configuration
-        base_config_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "config", 
-            "base.yaml"
-        )
+        base_config_path = os.path.join(config_manager.DEFAULTS_DIR, "base.yaml")
         
         try:
             import yaml
@@ -671,8 +723,10 @@ def config_command(args: argparse.Namespace) -> int:
                 from annzarro.utils.config_manager import ConfigManager
                 validator = ConfigManager()
                 
-                # Load just the file to validate
-                validator._load_yaml_config(args.file, "file_to_validate")
+                # Validate the file as it would be used: on top of the
+                # built-in defaults. A partial file (just `server.port`, say)
+                # is valid; validating it alone reported every key it omits.
+                validator.load_config(env=args.env, config_path=args.file)
                 
                 # Check for validation errors
                 is_valid, errors = validator.validate_config()
@@ -694,7 +748,7 @@ def config_command(args: argparse.Namespace) -> int:
         else:
             # Validate full configuration
             env = args.env  # Default already set to production
-            config = load_config(config_path=args.config, env=env)
+            config = load_config(config_path=args.config, env=env, cli_args=args)
             
             # Check validation result
             is_valid, errors = config_manager.validate_config()
@@ -711,7 +765,7 @@ def config_command(args: argparse.Namespace) -> int:
     elif args.config_command == "info":
         # Show configuration source information
         env = args.env  # Default already set to production
-        load_config(config_path=args.config, env=env)
+        load_config(config_path=args.config, env=env, cli_args=args)
         
         # Get configuration info
         config_info = config_manager.get_config_info()
@@ -750,19 +804,30 @@ def main(argv: List[str] = None) -> int:
     parser.add_argument('--config', help="Path to configuration file")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
     
+    # Flags that override configuration keys. Shared by `start` and the
+    # `config` subcommands, so `config show --port 9000` shows what
+    # `start --port 9000` would run with. SUPPRESS keeps a subcommand from
+    # resetting a value given before the subcommand (`annzarro --config x start`).
+    overrides = argparse.ArgumentParser(add_help=False)
+    overrides.add_argument('--config', default=argparse.SUPPRESS,
+                           help="Path to configuration file (overrides user/system config files)")
+    overrides.add_argument('--host', help="Host to bind to (server.host)")
+    overrides.add_argument('--port', type=int, help="Port to bind to (server.port)")
+    overrides.add_argument('--data-dir', help="Data directory (server.data_dir)")
+    overrides.add_argument(
+        '--auth-disabled', action='store_true',
+        help="Disable login (auth.enabled=false). Login is otherwise required when --host is not "
+             "localhost; disabling it there lets anyone who can reach the port read datasets and "
+             "delete every shared panel set (a warning is logged at startup).")
+    
     # Create subcommands
     subparsers = parser.add_subparsers(dest='command', help="Command to run")
     
     # Start command
-    start_parser = subparsers.add_parser('start', help="Start the Annzarro server")
-    start_parser.add_argument('--host', help="Host to bind to")
-    start_parser.add_argument('--port', type=int, help="Port to bind to")
-    start_parser.add_argument('--data-dir', help="Data directory")
+    start_parser = subparsers.add_parser('start', parents=[overrides], help="Start the Annzarro server")
     start_parser.add_argument('--detach', action='store_true', help="Run server in background")
     start_parser.add_argument('--development', action='store_true', help="Run in development mode (less secure)")
-    start_parser.add_argument('--config', help="Path to configuration file")
     start_parser.add_argument('--venv-path', help="Path to Python virtual environment")
-    start_parser.add_argument('--auth-disabled', action='store_true', help="Disable authentication")
     start_parser.add_argument('--no-browser', action='store_true', help="Don't open a browser automatically")
     start_parser.set_defaults(func=start_server)
     
@@ -772,13 +837,20 @@ def main(argv: List[str] = None) -> int:
     
     # User management command
     user_parser = subparsers.add_parser('user', help="Manage users")
+    user_parser.add_argument('--config', default=argparse.SUPPRESS,
+                             help="Path to configuration file (as for start)")
     user_subparsers = user_parser.add_subparsers(dest='user_command', help="User management command")
     
     # User add command
     user_add_parser = user_subparsers.add_parser('add', help="Add a new user")
     user_add_parser.add_argument('--username', help="Username")
     user_add_parser.add_argument('--password', help="Password")
-    user_add_parser.add_argument('--admin', action='store_true', help="Make user an admin")
+    user_add_parser.add_argument(
+        '--admin', action='store_true',
+        help="Make user an admin: may delete, rename or overwrite ANY shared panel set "
+             "(others may only change sets they saved; sets saved before owners were "
+             "recorded are admin-only). Grants nothing else. A running server picks it up "
+             "without a restart.")
     
     # User remove command
     user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")
@@ -786,6 +858,19 @@ def main(argv: List[str] = None) -> int:
     
     # User list command
     user_list_parser = user_subparsers.add_parser('list', help="List users")
+
+    # Change a password in place
+    user_passwd_parser = user_subparsers.add_parser(
+        'passwd', help="Change a user's password (signs out their existing logins)")
+    user_passwd_parser.add_argument('--username', help="Username")
+    user_passwd_parser.add_argument('--password', help="New password (prompted for if omitted)")
+
+    # Grant or revoke admin in place
+    user_admin_parser = user_subparsers.add_parser(
+        'set-admin', help="Make a user an admin, or with --no-admin revoke it "
+                          "(a running server picks it up without a restart)")
+    user_admin_parser.add_argument('--username', help="Username")
+    user_admin_parser.add_argument('--no-admin', action='store_true', help="Revoke admin instead")
     
     user_parser.set_defaults(func=manage_users)
     
@@ -804,7 +889,7 @@ def main(argv: List[str] = None) -> int:
     config_subparsers = config_parser.add_subparsers(dest='config_command', help="Configuration command")
     
     # Config show command
-    config_show_parser = config_subparsers.add_parser('show', help="Show current configuration")
+    config_show_parser = config_subparsers.add_parser('show', parents=[overrides], help="Show the effective configuration and where each value came from")
     config_show_parser.add_argument('--format', choices=['json', 'yaml'], default='yaml', help="Output format")
     config_show_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
@@ -814,12 +899,12 @@ def main(argv: List[str] = None) -> int:
     config_init_parser.add_argument('--force', action='store_true', help="Overwrite existing file")
     
     # Config validate command
-    config_validate_parser = config_subparsers.add_parser('validate', help="Validate configuration")
+    config_validate_parser = config_subparsers.add_parser('validate', parents=[overrides], help="Validate configuration")
     config_validate_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     config_validate_parser.add_argument('--file', help="Validate a specific configuration file")
     
     # Config info command
-    config_info_parser = config_subparsers.add_parser('info', help="Show configuration source information")
+    config_info_parser = config_subparsers.add_parser('info', parents=[overrides], help="Show configuration source information")
     config_info_parser.add_argument('--env', choices=['development', 'production'], default='production', help="Environment")
     
     config_parser.set_defaults(func=config_command)
@@ -841,11 +926,9 @@ def main(argv: List[str] = None) -> int:
                                      help="Target platform (default: current platform)")
     desktop_build_parser.add_argument('--rebuild', action='store_true', help="Force rebuild dependencies")
     desktop_build_parser.add_argument('--icon', type=str, help="Path to source icon file for icon generation")
-    desktop_build_parser.add_argument('--bundle-venv', action='store_true', default=True, 
-                                     help="Bundle Python virtual environment with the application (default: True)")
-    desktop_build_parser.add_argument('--no-bundle-venv', action='store_false', dest='bundle_venv',
-                                     help="Don't bundle Python virtual environment")
-    desktop_build_parser.add_argument('--venv-path', type=str, help="Custom path for the Python virtual environment")
+    desktop_build_parser.add_argument('--no-build-server', action='store_false', dest='build_server',
+                                     help="Reuse the frozen server in annzarro/desktop/electron/server "
+                                          "instead of freezing it again")
     
     # Desktop icons command
     desktop_icons_parser = desktop_subparsers.add_parser('icons', help="Generate application icons")
@@ -858,6 +941,12 @@ def main(argv: List[str] = None) -> int:
     
     # Parse arguments
     args = parser.parse_args(argv)
+
+    # ANNZARRO_CONFIG names the site file for every entry point: gunicorn
+    # (wsgi.py) always read it, the CLI did not, so `annzarro config show`
+    # or `annzarro user add` on a server silently used another users file.
+    if not getattr(args, "config", None) and os.environ.get("ANNZARRO_CONFIG"):
+        args.config = os.environ["ANNZARRO_CONFIG"]
     
     # Set up logging
     if args.debug:

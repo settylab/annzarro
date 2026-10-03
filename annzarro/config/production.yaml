@@ -1,0 +1,33 @@
+# Annzarro Production Configuration
+# Overrides for production environment
+
+server:
+  host: 127.0.0.1 # 0.0.0.0  # Listen on all interfaces
+  port: 8000
+  # Never true in production: Flask debug mode runs the Werkzeug interactive
+  # debugger and the reloader.
+  debug: false
+  
+  # Security settings for production
+  cors_enabled: false
+  https_enabled: false  # Set to true when properly configured
+  cert_file: "config/ssl/cert.pem"  # Change to absolute path when properly configured
+  key_file: "config/ssl/key.pem"    # Change to absolute path when properly configured
+  
+  # Production logging
+  log_level: "INFO"
+  
+  # Resource limits for production
+  cache_memory_mb: 4000
+  cache_dataset_limit: 20
+  
+  # Number of reverse proxies in front of the server whose X-Forwarded-* headers are
+  # trusted. 0 by default: `annzarro start` on a laptop or HPC node has no proxy, and
+  # trusting the headers there would let any client set its own address. Set it to 1
+  # when the server runs behind nginx/apache (see docs/deployment/lab-server).
+  proxy_count: 0
+
+auth: {}
+  # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
+  # enabled: true
+

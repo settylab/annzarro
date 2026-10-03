@@ -1,3 +1,4 @@
+import { exportWithCoverage } from '../../utils/panel-surface.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -1455,6 +1456,38 @@ function updateMargins(plotContainer, settings) {
 }
 
 /**
+ * Where the legend goes so it does not sit on the colour bar.
+ *
+ * Legend and colour bar share one position setting (right by default, x 1.05
+ * vs 1.02), so a plot that shows both, e.g. a numeric colour with a table
+ * filter ('Not in table' in grey plus the colour bar of the rest), drew the
+ * legend entry on top of the colour bar's title. When both are visible the
+ * legend moves to a single row above the plot instead.
+ *
+ * @param {Array} data - plotDiv.data
+ * @param {Object} posConfig - getPositioningByLocation(...) for the setting
+ * @returns {Object} relayout keys for the legend
+ */
+export function legendPlacement(data, posConfig) {
+  const traces = Array.isArray(data) ? data : [];
+  const colorbar = traces.some(t => t && t.marker && t.marker.colorscale && t.marker.showscale !== false);
+  const legendItems = traces.some(t => t && t.showlegend !== false
+    && !(typeof t.name === 'string' && t.name.includes('Focused'))
+    && !(t.marker && t.marker.colorscale));
+  if (colorbar && legendItems) {
+    return { 'legend.orientation': 'h', 'legend.x': 0, 'legend.xanchor': 'left',
+             'legend.y': 1.02, 'legend.yanchor': 'bottom' };
+  }
+  return {
+    'legend.orientation': posConfig.legendOrientation,
+    'legend.x':           posConfig.legendX,
+    'legend.y':           posConfig.legendY,
+    'legend.xanchor':     posConfig.legendXanchor,
+    'legend.yanchor':     posConfig.legendYanchor
+  };
+}
+
+/**
  * Update legend & colorbar visibility
  * @param {HTMLElement} plotDiv  – Plotly graph div
  * @param {Object}      settings – Must include boolean settings.showLegend
@@ -1508,6 +1541,12 @@ function updateLegendVisibility(plotDiv, settings) {
             Plotly.restyle(plotDiv, update, [i]);
         }
     });
+
+    // Legend entries next to a colour bar: keep them off it
+    if (show) {
+        Plotly.relayout(plotDiv, legendPlacement(plotDiv.data,
+            getPositioningByLocation(settings.legendPosition || 'right')));
+    }
   }
 
 /**
@@ -1557,14 +1596,8 @@ export function getPositioningByLocation(position) {
     if (!plotContainer) return;
     const posConfig = getPositioningByLocation(settings.legendPosition || 'right');
   
-    // 1) Legend positioning (layout update)
-    Plotly.relayout(plotContainer, {
-      'legend.orientation': posConfig.legendOrientation,
-      'legend.x':           posConfig.legendX,
-      'legend.y':           posConfig.legendY,
-      'legend.xanchor':     posConfig.legendXanchor,
-      'legend.yanchor':     posConfig.legendYanchor
-    });
+    // 1) Legend positioning (layout update), off the colour bar if both show
+    Plotly.relayout(plotContainer, legendPlacement(plotContainer.data, posConfig));
   
 
     // 2) Shared coloraxis: hide → update → show
@@ -1694,7 +1727,7 @@ export async function exportPlot(plotContainer, format, settings) {
 
   const popoverContainer = showNotification("Preparing Image", false);
   try {
-    await Plotly.downloadImage(plotContainer, config);
+    await exportWithCoverage(plotContainer, () => Plotly.downloadImage(plotContainer, config));
   } catch (err) {
     console.error('Error exporting plot:', err);
     alert('Failed to export plot. Please try again.');
@@ -1742,9 +1775,9 @@ async function copyPlotToClipboard(plotContainer, settings) {
   
     try {
       // 1) Render plot to a data‐URL
-      const dataUrl = await Plotly.toImage(plotContainer, {
+      const dataUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, {
         format: 'png', width, height, scale: 1
-      });
+      }));
   
       // 2) Convert the data‐URL to a Blob
       const blob = await fetch(dataUrl).then(res => res.blob());
@@ -1764,7 +1797,7 @@ async function copyPlotToClipboard(plotContainer, settings) {
       
       try {
         // Fallback: render to canvas, use canvas.toBlob() API
-        const imgUrl = await Plotly.toImage(plotContainer, { format:'png', width, height });
+        const imgUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, { format:'png', width, height }));
         const img = new Image();
         
         img.onload = function() {

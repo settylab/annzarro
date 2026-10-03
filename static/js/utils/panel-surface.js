@@ -27,6 +27,7 @@
  */
 
 import { Coverage, GAP } from './coverage.js';
+import { keepTitlesFitted } from './plot-titles.js';
 
 /** Class prefix for the notice element; styled in static/css/styles.css. */
 const NOTICE_CLASS = 'coverage-notice';
@@ -176,9 +177,15 @@ export function coverageAnnotation(coverage) {
         // without disturbing any annotation a future feature may add.
         name: 'coverage-notice',
         text,
+        // Hidden on screen, where the banner above the plot already says it
+        // (the two were shown together, the box overlapping the plot), and
+        // shown only while an image is exported (exportWithCoverage). Placed
+        // above the plotting area, right-aligned, in the top margin.
+        visible: false,
         xref: 'paper', yref: 'paper',
-        x: 0.01, y: 0.99,
-        xanchor: 'left', yanchor: 'top',
+        x: 1, y: 1,
+        xanchor: 'right', yanchor: 'bottom',
+        yshift: 4,
         showarrow: false,
         align: 'left',
         font: { size: 11, color: ANNOTATION_COLOR[severity] || '#8a6d3b' },
@@ -202,6 +209,59 @@ export function withCoverageAnnotation(layout, coverage) {
     return next;
 }
 
+/** Top margin (px) an export needs to show the coverage annotation's lines. */
+export function coverageMarginFor(annotation) {
+    if (!annotation) return 0;
+    return 15 * String(annotation.text).split('<br>').length + 16;
+}
+
+/**
+ * Run an image export with the coverage annotation shown (and room made for
+ * it above the plot), then hide it again: an exported PNG must not be
+ * cleaner than the panel, but on screen the banner already says it.
+ * @param {HTMLElement} gd
+ * @param {() => Promise<*>} exportFn - e.g. () => Plotly.downloadImage(gd, opts)
+ */
+export async function exportWithCoverage(gd, exportFn) {
+    const anns = (gd && gd.layout && gd.layout.annotations) || [];
+    const i = anns.findIndex(a => a && a.name === 'coverage-notice');
+    if (i < 0 || typeof Plotly === 'undefined') return exportFn();
+    const prevTop = gd.layout.margin ? gd.layout.margin.t : undefined;
+    const needed = coverageMarginFor(anns[i]);
+    const show = { [`annotations[${i}].visible`]: true };
+    if (!(prevTop >= needed)) show['margin.t'] = needed;
+    await Plotly.relayout(gd, show);
+    try {
+        return await exportFn();
+    } finally {
+        const hide = { [`annotations[${i}].visible`]: false };
+        if (!(prevTop >= needed)) hide['margin.t'] = prevTop === undefined ? null : prevTop;
+        await Plotly.relayout(gd, hide);
+    }
+}
+
+/**
+ * The modebar camera button, exporting with the coverage annotation shown.
+ * @param {Object} config - Plotly config passed to newPlot
+ * @returns {Object} config with the stock toImage button replaced
+ */
+export function withCoverageExportButton(config) {
+    const cfg = { ...(config || {}) };
+    if (cfg.displayModeBar === false || typeof Plotly === 'undefined' || !Plotly.Icons) return cfg;
+    const remove = new Set(cfg.modeBarButtonsToRemove || []);
+    if (remove.has('toImage')) return cfg;
+    remove.add('toImage');
+    cfg.modeBarButtonsToRemove = [...remove];
+    const opts = cfg.toImageButtonOptions || { format: 'png' };
+    cfg.modeBarButtonsToAdd = [...(cfg.modeBarButtonsToAdd || []), {
+        name: 'toImageWithCoverage',
+        title: 'Download plot as a png',
+        icon: Plotly.Icons.camera,
+        click: (gd) => exportWithCoverage(gd, () => Plotly.downloadImage(gd, opts))
+    }];
+    return cfg;
+}
+
 /**
  * THE plot chokepoint. Draws traces and then states the coverage, in one call
  * that cannot do the first without the second.
@@ -217,9 +277,11 @@ export function withCoverageAnnotation(layout, coverage) {
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
     const result = await Plotly.newPlot(
-        plotContainer, traces, withCoverageAnnotation(layout, cov), config
+        plotContainer, traces, withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
     );
     renderCoverageNotice(plotContainer, cov, unit);
+    // long axis / colour-bar titles: shortened to fit, full text on hover
+    keepTitlesFitted(plotContainer);
     return result;
 }
 

@@ -1,6 +1,7 @@
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading } from './panel-ui-update.js';
-import { loadAxisData, updateTableEntities } from './plot-make.js';
-import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight } from './plot-update.js';
+import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel } from './panel-ui-update.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo } from './plot-make.js';
+import { hoverInfoFromSelection } from './hover-columns.js';
+import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   setupAestheticsMenuListeners, 
@@ -10,7 +11,9 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { aspectUpdate } from './plot-make-helper.js';
+import { arrayMin, arrayMax, formatRangeValue } from '../../utils/array-stats.js';
+import { coalesce } from '../../utils/render-queue.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -165,7 +168,11 @@ export function setupPlotControlListeners(
               zColumn = df.columns.at(-1); // fallback to last column
             }
           }
-          settings.z = { type: plotType === 'genes' ? 'varm' : 'obsm', key: yKey, column: zColumn };
+          const zType = defaultAxisType(plotType, datasetStructure);
+          settings.z = (zType === 'varm' || zType === 'obsm')
+            ? { type: zType, key: yKey, column: zColumn }
+            // No matrix source: let the selector pick an annotation column.
+            : { type: zType, key: '', column: '' };
           // Call the axis selector setup helper from the controls object.
           setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
         }
@@ -173,30 +180,44 @@ export function setupPlotControlListeners(
       }
     });
   
-    // --- Point Size Slider ---
+    // --- Point Size / Opacity Sliders ---
+    // The sliders write settings on every input event; the restyle that shows
+    // it is coalesced (utils/render-queue.js): at most one runs at a time and
+    // the next starts only after it is painted, with the newest values.
+    const redrawStyling = coalesce(
+      () => restyleMarkers(plotContainer, settings),
+      {
+        onError: (error) => {
+          console.error("Error updating point size/opacity:", error);
+          loadDataAndCreatePlot();
+        }
+      }
+    );
     const $pointSizeSlider = $controlsContainer.find(`#point-size-${id}`);
-    $pointSizeSlider.on('input', $.debounce((e) => {
-      const newSize = parseFloat(e.target.value);
-      settings.pointSize = newSize;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
-        .catch(error => {
-          console.error("Error updating point size:", error);
-          loadDataAndCreatePlot();
-        });
-    }, 5));
+    $pointSizeSlider.on('input', (e) => {
+      settings.pointSize = parseFloat(e.target.value);
+      redrawStyling();
+    });
   
-    // --- Point Opacity Slider ---
     const $pointOpacitySlider = $controlsContainer.find(`#point-opacity-${id}`);
-    $pointOpacitySlider.on('input', $.debounce((e) => {
-      const newOpacity = parseFloat(e.target.value);
-      settings.pointOpacity = newOpacity;
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { styling: true })
-        .catch(error => {
-          console.error("Error updating point opacity:", error);
-          loadDataAndCreatePlot();
-        });
-    }, 5));
+    $pointOpacitySlider.on('input', (e) => {
+      settings.pointOpacity = parseFloat(e.target.value);
+      redrawStyling();
+    });
     
+    // --- Hover columns: reload only those columns and relabel the traces ---
+    const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);
+    let hoverGeneration = 0;
+    $hoverSelect.on('change', async (e) => {
+      const selected = Array.from(e.target.selectedOptions, o => o.value);
+      settings.hoverInfo = hoverInfoFromSelection(plotType, selected, settings.hoverInfo);
+      const mine = ++hoverGeneration;
+      const extra = await loadHoverColumns(settings, plotType);
+      if (mine !== hoverGeneration) return;   // a newer selection is loading
+      data.hoverExtra = extra;
+      await applyHoverInfo(plotContainer, data, settings);
+    });
+
     const $existingBtn = $controlsContainer.find(`#aesthetics-menu-btn-${id}`);
     const cleanupAesthetics = createAestheticsMenu(id, $existingBtn[0], controlsContainer, plotContainer, settings);
     plotContainer._aestheticsCleanup = cleanupAesthetics;
@@ -440,15 +461,34 @@ export function setupColorControls(
         }
     }
 
-    // Update sliders and plot when input values change
+    // A typed bound is used as typed. It used to be passed through the
+    // slider, whose step (range/500) and min/max snapped and clamped it, so
+    // typing 0.0126 into Max on a 0..0.012 range did nothing.
+    function _applyTypedBound(which, value) {
+        const other = which === 'min' ? 'max' : 'min';
+        settings[which === 'min' ? 'colorMin' : 'colorMax'] = value;
+        const $slider = which === 'min' ? $colorMinSlider : $colorMaxSlider;
+        $slider.val(value);   // display only; the slider may clamp, the setting does not
+        updateColorRangeDirect(which, value);
+        if (settings.centeringActive) {
+            // centred scale: the other bound mirrors the typed one
+            const mirrored = -value;
+            settings[other === 'min' ? 'colorMin' : 'colorMax'] = mirrored;
+            (other === 'min' ? $colorMinInput : $colorMaxInput).val(formatRangeValue(mirrored));
+            (other === 'min' ? $colorMinSlider : $colorMaxSlider).val(mirrored);
+            updateColorRangeDirect(other, mirrored);
+        }
+        _updatePlotElements({
+            colors: false,
+            colorRange: true,
+            filter: settings.hideOutliers
+        });
+    }
+
     $colorMinInput.on('change', (e) => {
         const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (minValue !== null) {
-            // Update the slider with the typed value
-            $colorMinSlider.val(minValue);
-            
-            // Manually trigger the slider's input event to use existing handler
-            $colorMinSlider.trigger('input');
+        if (minValue !== null && Number.isFinite(minValue)) {
+            _applyTypedBound('min', minValue);
         } else {
             _updateColorRange(minValue, settings.colorMax, true);
         }
@@ -456,12 +496,8 @@ export function setupColorControls(
 
     $colorMaxInput.on('change', (e) => {
         const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (maxValue !== null) {
-            // Update the slider with the typed value
-            $colorMaxSlider.val(maxValue);
-            
-            // Manually trigger the slider's input event to use existing handler
-            $colorMaxSlider.trigger('input');
+        if (maxValue !== null && Number.isFinite(maxValue)) {
+            _applyTypedBound('max', maxValue);
         } else {
             _updateColorRange(settings.colorMin, maxValue, true);
         }
@@ -539,6 +575,51 @@ export function setupColorControls(
         _updatePlotElements({ filter: true, colors: true });
     });
     
+    // --- Strong-on-top button: draw the largest |colour| last (default on) ---
+    const $sortByColorButton = $container.find(`#sort-by-color-${id}`);
+    $.updateButtonState($sortByColorButton, settings.sortByColor !== false);
+    $sortByColorButton.on('click', () => {
+        settings.sortByColor = settings.sortByColor === false;
+        $.updateButtonState($sortByColorButton, settings.sortByColor);
+        _updatePlotElements({ colors: true });
+    });
+
+    // --- Log colour scale with a floor (settings.color.log / logFloor) ---
+    const $logColorButton = $container.find(`#log-color-${id}`);
+    const $logFloorInput = $container.find(`#log-floor-${id}`);
+    $.updateButtonState($logColorButton, !!(settings.color && settings.color.log));
+    if (settings.color && settings.color.logFloor != null) $logFloorInput.val(settings.color.logFloor);
+    const _reapplyLog = () => {
+        if (data.colorRaw && data.colorLog) data.color = data.colorRaw;   // back to linear values
+        applyLogColor(data, settings);
+        if (!settings.lockColorRange) { settings.colorMin = null; settings.colorMax = null; }
+        _updatePlotElements({ colors: true, colorRange: true });
+    };
+    $logColorButton.on('click', () => {
+        if (!settings.color) return;
+        settings.color.log = !settings.color.log;
+        $.updateButtonState($logColorButton, settings.color.log);
+        _reapplyLog();
+    });
+    $logFloorInput.on('change', (e) => {
+        if (!settings.color) return;
+        const v = parseFloat(e.target.value);
+        settings.color.logFloor = Number.isFinite(v) && v > 0 ? v : null;
+        if (settings.color.log) _reapplyLog();
+    });
+
+    // --- Equal aspect (settings.equalAspect) ---
+    const $equalAspectButton = $container.find(`#equal-aspect-${id}`);
+    $.updateButtonState($equalAspectButton, !!settings.equalAspect);
+    $equalAspectButton.on('click', () => {
+        settings.equalAspect = !settings.equalAspect;
+        $.updateButtonState($equalAspectButton, settings.equalAspect);
+        // refit both axes for the new constraint (unless hiding pins them)
+        const refit = (settings.hideNaN || settings.hideOutliers) ? {} : { 'xaxis.autorange': true, 'yaxis.autorange': true };
+        Promise.resolve().then(() => Plotly.relayout(plotContainer, { ...aspectUpdate(settings), ...refit }))
+            .catch(err => console.warn('Aspect not changed:', err && err.message));
+    });
+
     // --- Hide NaN button ---
     const $hideNanButton = $container.find(`#hide-nan-${id}`);
     $.updateButtonState($hideNanButton, settings.hideNaN);
@@ -552,7 +633,7 @@ export function setupColorControls(
     // --- Min slider --- use debounce for smoother performance
     $colorMinSlider.on('input', $.debounce((e) => {
         const minValue = parseFloat(e.target.value);
-        $colorMinInput.val(minValue.toFixed(2));
+        $colorMinInput.val(formatRangeValue(minValue));
         settings.colorMin = minValue;
         updateColorRangeDirect('min', minValue);
         _updatePlotElements({
@@ -565,7 +646,7 @@ export function setupColorControls(
     // --- Max slider --- use debounce for smoother performance
     $colorMaxSlider.on('input', $.debounce((e) => {
         const maxValue = parseFloat(e.target.value);
-        $colorMaxInput.val(maxValue.toFixed(2));
+        $colorMaxInput.val(formatRangeValue(maxValue));
         settings.colorMax = maxValue;
         updateColorRangeDirect('max', maxValue);
         _updatePlotElements({
@@ -621,8 +702,8 @@ export function setupColorControls(
         const maxValue = -minValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMinInput.val(minValue.toFixed(2));
-        $csColorMaxInput.val(maxValue.toFixed(2));
+        $csColorMinInput.val(formatRangeValue(minValue));
+        $csColorMaxInput.val(formatRangeValue(maxValue));
         $csColorMaxSlider.val(maxValue);
         
         // Update the plot with the new range values
@@ -696,8 +777,8 @@ export function setupColorControls(
         const minValue = -maxValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMaxInput.val(maxValue.toFixed(2));
-        $csColorMinInput.val(minValue.toFixed(2));
+        $csColorMaxInput.val(formatRangeValue(maxValue));
+        $csColorMinInput.val(formatRangeValue(minValue));
         $csColorMinSlider.val(minValue);
         
         // Update the plot with the new range values
@@ -989,6 +1070,23 @@ function setupAxisSelectorListeners(
 }
 
 /**
+ * The column-menu label right after the padlock is clicked: 'Locked cell X'
+ * for the cell the axis is now locked to, 'Focused cell Y' for the current
+ * focus once unlocked. It used to keep the old wording until the panel was
+ * rebuilt from a link.
+ * @param {string} dataType - 'obsp' | 'varp' | 'layer'
+ * @param {string} plotType - 'cells' | 'genes'
+ * @param {Object} axisSettings - {column, locked}
+ * @param {string|null} currentFocus
+ * @returns {string|null}
+ */
+export function lockOptionLabel(dataType, plotType, axisSettings, currentFocus) {
+  const entity = ((dataType === 'layer' && plotType === 'cells') || dataType === 'varp') ? 'genes' : 'cells';
+  const shown = axisSettings.locked ? axisSettings.column : currentFocus;
+  return shown ? focusedOptionLabel(entity, shown, !!axisSettings.locked) : null;
+}
+
+/**
  * Sets up event listeners for the special buttons (lock and refocus)
  * @param {HTMLElement} controlsContainer - The container element
  * @param {Object} settings - The settings object for the plot
@@ -1001,13 +1099,13 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
   const $container = jQuery(controlsContainer);
   
   // Event delegation for button clicks
-  $container.on('click', 'button[id^="lock-"], button[id^="refocus-"]', function(e) {
+  $container.on('click', 'button.axis-lock-btn, button.axis-refocus-btn', function(e) {
     e.preventDefault();
     e.stopPropagation();
     
     // Extract axis and button type
-    const buttonId = jQuery(this).attr('id');
-    const [buttonType, axis] = buttonId.split('-');
+    const buttonType = jQuery(this).hasClass('axis-lock-btn') ? 'lock' : 'refocus';
+    const axis = jQuery(this).attr('data-axis');
     const dataType = jQuery(this).data('type');
 
     let currentFocus;
@@ -1029,6 +1127,15 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
     if (buttonType === 'lock' && settings[axis]) {
       // Handle lock button click
       settings[axis].locked = !settings[axis].locked;
+      // Relabel the column menu now: it kept saying 'Focused cell ...' after
+      // the padlock was clicked until the panel was rebuilt from a link
+      const columnSelect = controlsContainer.querySelector(`.axis-column-select[data-axis="${axis}"]`);
+      const label = lockOptionLabel(dataType, plotType, settings[axis], currentFocus);
+      if (columnSelect && columnSelect.options[0] && label) columnSelect.options[0].text = label;
+      // Tables offer every locked cell and gene as a column (panel-tracker.js)
+      document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', {
+        detail: { axis, locked: settings[axis].locked, entity: settings[axis].column }
+      }));
       
       if (settings[axis].locked) {
         // Locking - update button style to locked state
@@ -1037,7 +1144,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
         jQuery(this).attr('title', 'Unlock (follow focused element)');
         
         // Check if refocus button should be visible
-        const $refocusButton = $container.find(`#refocus-${axis}`);
+        const $refocusButton = $container.find(`.axis-refocus-btn[data-axis="${axis}"]`);
         const shouldShow = currentFocus && currentFocus !== settings[axis].column;
         $refocusButton.toggle(shouldShow);
       } else {
@@ -1047,7 +1154,7 @@ function setupSpecialButtonListeners(controlsContainer, settings, plotType, onFo
         jQuery(this).attr('title', 'Lock (keep current selection)');
         
         // Hide refocus button
-        $container.find(`#refocus-${axis}`).hide();
+        $container.find(`.axis-refocus-btn[data-axis="${axis}"]`).hide();
         
         executeFocusChange(currentFocus);
       }

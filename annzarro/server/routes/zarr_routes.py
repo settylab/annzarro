@@ -11,6 +11,7 @@ from pathlib import Path
 from flask import jsonify, request, current_app as app
 
 from ...core import zarr_reader
+from ...core import name_index
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +54,31 @@ def register_zarr_routes(app, api_version):
         
         Returns:
             JSON response with cache reset result
+
+        On a hosted server only an admin may do this: the cache is shared by
+        every user, and emptying it on demand makes every open session re-read
+        its data from disk. A hosted server with login disabled has no admins,
+        so nobody may (restart it to empty the cache). The frontend's refresh
+        button tolerates the 403.
         """
+        from ..confinement import is_hosted
+        from .. import permissions
+        if is_hosted(app.config):
+            _, is_admin = permissions.current_user()
+            if not is_admin:
+                return jsonify({
+                    "status": "error",
+                    "reason": "admin_only",
+                    "message": "Only an admin can reset the shared cache on this server.",
+                }), 403
         try:
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
             
             # Clear the cache
             result = zarr_reader.clear_cache(dataset_path=dataset_path)
+            # The name search index is a cache too: a reset must rebuild it.
+            name_index.clear(dataset_path)
             
             # Add cache configuration to the response
             result["cache_config"] = {
@@ -320,6 +339,8 @@ def register_zarr_routes(app, api_version):
                 "dataset_path": dataset_path,
                 "uns_structure": uns_structure
             })
+        except ValueError as e:
+            return jsonify({"error": f"Cannot open dataset: {e}", "reason": "unsupported_type"}), 400
         except Exception as e:
             logger.error(f"Error getting uns structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
@@ -359,19 +380,13 @@ def register_zarr_routes(app, api_version):
             # Get the uns data
             data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
             
-            if data is None:
-                return jsonify({
-                    "dataset_path": dataset_path,
-                    "uns_key": uns_key,
-                    "data": None,
-                    "message": f"Uns key '{uns_key}' not found or contains no data"
-                })
-            
             return jsonify({
                 "dataset_path": dataset_path,
                 "uns_key": uns_key,
                 "data": data
             })
+        except KeyError as e:
+            return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
@@ -404,19 +419,13 @@ def register_zarr_routes(app, api_version):
             # Get the uns data
             data = zarr_reader.get_uns(uns_key, dataset_path=dataset_path)
             
-            if data is None:
-                return jsonify({
-                    "dataset_path": dataset_path,
-                    "uns_key": uns_key,
-                    "data": None,
-                    "message": f"Uns key '{uns_key}' not found or contains no data"
-                })
-            
             return jsonify({
                 "dataset_path": dataset_path,
                 "uns_key": uns_key,
                 "data": data
             })
+        except KeyError as e:
+            return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

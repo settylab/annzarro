@@ -1,0 +1,39 @@
+# AnnZarro site configuration for a hosted (gunicorn) server.
+#
+# Copy to /etc/annzarro/site.yaml and point ANNZARRO_CONFIG at it (the systemd
+# unit and run_gunicorn.sh do). It is layered over the built-in defaults
+# (annzarro/config/base.yaml + production.yaml), so list only what differs.
+# `annzarro config show --config /etc/annzarro/site.yaml` (or with
+# ANNZARRO_CONFIG set, plain `annzarro config show`) prints the merged result
+# and where each value came from; `annzarro user ...` uses the same file.
+
+server:
+  # gunicorn binds here; keep it on loopback behind a TLS reverse proxy
+  host: 127.0.0.1
+  port: 8000
+  # Every dataset opened must resolve inside data_dir or allowed_dirs
+  data_dir: /srv/annzarro/data
+  # allowed_dirs: [/srv/shared/atlases]
+  # Reverse proxies in front whose X-Forwarded-* headers are trusted
+  # (client address, and https for the Secure login cookie). 0 without one.
+  proxy_count: 1
+  # Served under a path, e.g. https://lab.example.org/explore/ (empty = the root).
+  # The proxy may strip the prefix or pass it on; see the nginx example in the docs.
+  # url_prefix: /explore
+  # Each gunicorn worker keeps its own cache of up to cache_memory_mb
+  workers: 4
+  log_file: /var/log/annzarro/server.log
+
+auth:
+  # Login is on by default under gunicorn. Users: `annzarro user add --admin`.
+  # The login cookie key is generated beside this file on first start.
+  user_file: /srv/annzarro/users.json
+  # session_timeout: 28800   # seconds idle before a login expires; 0 = never
+  # cookie_secure: auto      # Secure cookie when the request came over HTTPS
+
+# Shown on the login page only when set
+# branding:
+#   contact_info:
+#     lab_name: "Example Lab"
+#     lab_url: "https://lab.example.org"
+#     email: "annzarro-admin@example.org"

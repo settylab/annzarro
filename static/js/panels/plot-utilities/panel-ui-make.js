@@ -1,9 +1,12 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes } from './panel-ui-update.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
+import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
+import { populateHoverSelect } from './hover-columns.js';
+import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -58,15 +61,7 @@ export function createPanelStructure(container, id, settings) {
   
   $container.html(`
     <div class="plot-panel">
-      <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
-        <div class="loading-content">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-          <h4 class="mt-3">No dataset loaded</h4>
-          <p>Please select a dataset to begin visualization</p>
-        </div>
-      </div>
+      ${noDatasetScreenHtml(id)}
       <div class="plot-controls">
         <!-- X and Y Axis Selectors -->
         ${['x', 'y'].map(axis => `
@@ -141,6 +136,13 @@ export function createPanelStructure(container, id, settings) {
               </div>
             </div>
 
+            <div class="hover-columns-controls mb-2">
+              <label class="me-2 mb-0" for="hover-columns-${id}">Hover:</label>
+              <select multiple size="3" class="form-select form-select-sm hover-columns-select" id="hover-columns-${id}"
+                      aria-label="Columns listed in the hover label" title="Columns listed in the hover label (Ctrl/Cmd-click for several)">
+              </select>
+            </div>
+
             <div class="point-controls">
               <div class="point-size-control">
                 <label>Size:</label>
@@ -189,6 +191,10 @@ export function createPanelStructure(container, id, settings) {
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}">Lock Range</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="equal-aspect-${id}" title="Same scale on x and y (spatial coordinates)">Equal aspect</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="sort-by-color-${id}" title="Draw the largest |colour| values on top">Strong on top</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="log-color-${id}" title="log10 colour scale; values at or below the floor share its colour">Log</button>
+                  <input type="number" class="form-control form-control-sm log-floor-input" id="log-floor-${id}" placeholder="floor: auto" title="Floor for the log colour scale (empty: smallest positive value)" style="width: 7.5rem">
                 </div>
               </div>
             </div>
@@ -254,9 +260,8 @@ export function checkDatasetLoadingStatus(id) {
     $loadingScreen.toggle(!isDatasetLoaded);
   }
   
-  if ($controlsContainer.length) {
-    $controlsContainer.toggle(isDatasetLoaded);
-  }
+  // Shows controls only if the user (or a restored view) has not hidden them
+  syncControlsWithDataset($controlsContainer[0], isDatasetLoaded);
   
   // Also update the loading status of all select elements
   if ($plotPanel.length) {
@@ -370,52 +375,23 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
   // Try to set default axes from data collection if they're undefined
   function trySetDefaultAxes() {
-    // Auto-set default axes from appropriate collection based on plot type
-    const collection = isGenePlot ? 'varm' : 'obsm';
-    const dataframeCollection = isGenePlot ? datasetStructure?.varm?.dataframes : datasetStructure?.obsm?.dataframes;
-    
-    if (!dataframeCollection || Object.keys(dataframeCollection).length === 0) {
-      console.warn(`No ${collection} dataframes available`);
-      return false;
-    }
-    
-    const dataframeKeys = Object.keys(dataframeCollection);
-    // Try UMAP first, then look for a key starting with "X_umap", then try PCA, then use the first available key
-    let defaultKey =
-      dataframeKeys.includes("X_umap") ? "X_umap" :
-      dataframeKeys.find(k => k.startsWith("X_umap")) ||
-      (dataframeKeys.includes("X_pca") ? "X_pca" : dataframeKeys[0]);
-
-    const defaultFrame = dataframeCollection[defaultKey];
-    if (!defaultFrame?.columns?.length || defaultFrame.columns.length < 2) {
-      console.warn(`No usable columns in ${collection} dataframe "${defaultKey}"`);
+    const defaults = chooseDefaultAxes(plotType, datasetStructure);
+    if (!defaults) {
       return false;
     }
 
     // Only set default x and y if they're not already defined
     if (!settings.x || !settings.x.type) {
-      settings.x = { 
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[0]
-      };
+      settings.x = defaults.x;
     }
 
     if (!settings.y || !settings.y.type) {
-      settings.y = { 
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[1]
-      };
+      settings.y = defaults.y;
     }
 
     // Only suggest z-axis if there's a third column available and z is undefined
-    if (defaultFrame.columns.length >= 3 && settings.z === undefined) {
-      settings.z = {
-        type: collection,
-        key: defaultKey,
-        column: defaultFrame.columns[2]
-      };
+    if (defaults.z && settings.z === undefined) {
+      settings.z = defaults.z;
     }
     
     return true;
@@ -497,6 +473,9 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   const $pointOpacitySlider = jQuery(`#point-opacity-${id}`);
   if ($pointOpacitySlider.length) $pointOpacitySlider.val(settings.pointOpacity);
   
+  // Hover columns picker (settings.hoverInfo)
+  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo);
+
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);
   
@@ -543,6 +522,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     $.updateButtonState($hideOutliersButton, settings.hideOutliers);
   }
   
+  // Strong-on-top button (default on)
+  const $sortByColorButton = jQuery(`#sort-by-color-${id}`);
+  if ($sortByColorButton.length) {
+    $.updateButtonState($sortByColorButton, settings.sortByColor !== false);
+  }
+
   // Hide NaN button
   const $hideNanButton = jQuery(`#hide-nan-${id}`);
   if ($hideNanButton.length) {

@@ -35,7 +35,7 @@ def register_core_routes(app, api_version):
             JSON response with dataset list
         """
         # Get data directory from config
-        data_dir = app.config.get("data_dir", "data")
+        data_dir = app.config.get("data_dir")
         
         # Override from query parameter if provided
         if "dir" in request.args:
@@ -53,94 +53,73 @@ def register_core_routes(app, api_version):
         
         # List datasets with new options
         datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
+        # Not offered when hosted: anything a link leads to outside the roots
+        from ..confinement import listable
+        datasets = [d for d in datasets
+                    if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
         
         return jsonify({"datasets": datasets})
 
     @app.route(f"/api/{api_version}/config", methods=["GET"])
     def get_config():
         """
-        Get server configuration.
-        
+        The configuration the browser may see.
+
+        Exactly the keys schema.yaml marks ``security: public`` (directly or
+        through their section), plus the flat ``ui_*`` / ``app_name`` /
+        ``integrations`` keys static/js/config.js reads -- derived from those
+        public keys only -- and two environment flags. Nothing else: no
+        internal key (data_dir, log_file, user_file, cors_origins ...) and
+        never a sensitive one. The tiers used to be ignored (issue #32) and
+        this route fell back to a hand-written list that published data_dir.
+
         Returns:
-            JSON response with configuration (limited to what clients need to know)
+            JSON response with the public configuration
         """
-        try:
-            # Check if we have access to the config manager
-            from annzarro.utils.config_manager import config_manager
-            
-            # Try to get filtered configuration
-            filtered_config = config_manager.get_filtered_config("public")
-            
-            # If filtered config exists, return it
-            if filtered_config:
-                # Add a few basic connection parameters that might not be in the filtered config
-                # but are needed by the frontend
-                if "host" not in filtered_config and "server" in filtered_config:
-                    filtered_config["host"] = filtered_config.get("server", {}).get("host", app.config.get("host", "127.0.0.1"))
-                    
-                if "port" not in filtered_config and "server" in filtered_config:
-                    filtered_config["port"] = filtered_config.get("server", {}).get("port", app.config.get("port", 8000))
-                    
-                if "data_dir" not in filtered_config and "server" in filtered_config:
-                    filtered_config["data_dir"] = filtered_config.get("server", {}).get("data_dir", app.config.get("data_dir", "data"))
-                
-                # Add environment flags
-                filtered_config["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
-                filtered_config["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
-                
-                logger.debug(f"Sending environment flags to frontend: electron_mode={filtered_config['electron_mode']}, local_mode={filtered_config['local_mode']}")
-                
-                return jsonify(filtered_config)
-        except ImportError:
-            # Config manager not available, fall back to default filtering
-            logger.warning("Config manager not available, using default security filtering")
-        except Exception as e:
-            # Something went wrong, fall back to default filtering
-            logger.error(f"Error filtering configuration: {e}")
+        from annzarro.utils.config_manager import ConfigManager
+        manager = ConfigManager()
+        tree = app.config.get("config_tree")
+        if not tree:
+            # create_app() given a flat config directly: nest it the way a
+            # flat config file is nested. Flask's own UPPERCASE settings are
+            # not configuration.
+            from annzarro.server.core import DEFAULT_CONFIG
+            flat = dict(DEFAULT_CONFIG)
+            flat.update({k: v for k, v in app.config.items() if k == k.lower()})
+            tree = manager._nest_flat_config(flat)
+        public = manager.filter_by_level(tree, "public")
+        client = dict(public)
+        client.update(manager.client_keys(public))
+        # host/port also at the top level, where clients read them before
+        for key in ("host", "port"):
+            if key in public.get("server", {}):
+                client[key] = public["server"][key]
+        client["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
+        client["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
+        return jsonify(client)
         
-        # Fall back to default filtering approach
-        client_config = {
-            # Basic connectivity info the frontend needs
-            "host": app.config.get("host", "127.0.0.1"),
-            "port": app.config.get("port", 8000),
-            "data_dir": app.config.get("data_dir", "data"),
-            
-            # UI/application information
-            "app_name": app.config.get("app_name", "Annzarro"),
-            "project_description": app.config.get("project_description", "Zarr-based AnnData Visualization Tool"),
-            
-            # Contact info - explicitly extract only what's needed
-            "contact_info": {
-                "lab_name": app.config.get("contact_info", {}).get("lab_name"),
-                "lab_url": app.config.get("contact_info", {}).get("lab_url"),
-                "email": app.config.get("contact_info", {}).get("email"),
-                "custom_html": app.config.get("contact_info", {}).get("custom_html")
-            },
-            
-            # Feature flags and limits - only sharing safe values
-            "max_cells_per_request": app.config.get("max_cells_per_request", 10000),
-            "max_genes_per_request": app.config.get("max_genes_per_request", 10000),
-            
-            # UI settings
-            "ui_max_cells": app.config.get("ui_max_cells", None),
-            "ui_max_genes": app.config.get("ui_max_genes", None),
-            "ui_point_size": app.config.get("ui_point_size", None),
-            "ui_point_opacity": app.config.get("ui_point_opacity", None),
-            "ui_color_scale": app.config.get("ui_color_scale", None),
-            "ui_taxonomy_id": app.config.get("ui_taxonomy_id", None),
-            "enabled_panel_types": app.config.get("enabled_panel_types", None),
-            
-            # Environment flags
-            "electron_mode": os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1",
-            "local_mode": os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
-        }
-        
-        # Log the environment mode flags
-        logger.debug(f"Sending environment flags to frontend: electron_mode={client_config['electron_mode']}, local_mode={client_config['local_mode']}")
-        
-        # Never share sensitive values
-        return jsonify(client_config)
-        
+    @app.route(f"/api/{api_version}/auth/me", methods=["GET"])
+    def get_current_user():
+        """
+        Who the requester is and what they may change.
+
+        Registered whether or not login is enabled, so the client can ask one
+        question in both modes. ``exposed`` is true when the server listens
+        beyond this machine with login disabled -- anyone who can reach it can
+        then edit and delete every shared panel set.
+
+        Returns:
+            JSON ``{auth_enabled, username, is_admin, exposed}``
+        """
+        from .. import permissions
+        username, is_admin = permissions.current_user()
+        return jsonify({
+            "auth_enabled": permissions.auth_enabled(),
+            "username": username,
+            "is_admin": is_admin,
+            "exposed": permissions.is_exposed(app.config),
+        })
+
     @app.route(f"/api/{api_version}/status", methods=["GET"])
     def get_status():
         """
@@ -180,7 +159,7 @@ def register_core_routes(app, api_version):
                 connections_count = 0
             
             # Check data directory
-            data_dir = app.config.get("data_dir", "data")
+            data_dir = app.config.get("data_dir")
             data_dir_exists = os.path.exists(data_dir)
             data_dir_is_readable = os.access(data_dir, os.R_OK)
             data_dir_is_writable = os.access(data_dir, os.W_OK)
@@ -256,5 +235,8 @@ def register_core_routes(app, api_version):
         """
         # Get dataset info
         info = data_manager.get_dataset_info(dataset_path)
+        if isinstance(info, dict) and "error" in info:
+            # It exists (checked before the route) but cannot be opened
+            return jsonify(dict(info, reason="unsupported_type")), 400
         
         return jsonify(info)

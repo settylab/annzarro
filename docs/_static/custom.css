@@ -1,0 +1,6 @@
+/* Screenshots: a quiet frame so white app chrome separates from the page. */
+img.screenshot, figure.screenshot img { border: 1px solid var(--color-background-border); border-radius: 4px; }
+.step-list > ol > li { margin-bottom: 0.6em; }
+
+/* Sidebar logo: the app icon, kept small above the title */
+.sidebar-logo { max-width: 112px; }

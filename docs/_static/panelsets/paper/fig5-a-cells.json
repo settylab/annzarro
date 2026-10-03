@@ -1,0 +1,206 @@
+{
+  "name": "fig5-a-cells",
+  "timestamp": "2026-10-02T21:26:49+00:00",
+  "dataset": "bm_aging_showcase.zarr",
+  "datasetName": "bm_aging_showcase",
+  "constants": {
+    "focusedGene": "S100a9",
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "cell-table-5t": {
+      "id": "cell-table-5t",
+      "type": "cell-table",
+      "title": "Cells with S100a9 fold change < -0.5",
+      "config": {
+        "id": "cell-table-5t",
+        "title": "Cells with S100a9 fold change < -0.5",
+        "columns": [
+          {
+            "type": "obs",
+            "key": "highres_celltype",
+            "column": ""
+          },
+          {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "focused_gene"
+          }
+        ],
+        "searchBuilderConfig": {
+          "logic": "AND",
+          "criteria": [
+            {
+              "condition": "<",
+              "data": "kompot_de_Young_to_Old_fold_change: S100a9",
+              "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_gene",
+              "type": "num",
+              "value": [
+                "-0.5"
+              ]
+            }
+          ]
+        }
+      },
+      "isSelectionTile": false
+    },
+    "cell-plot-5t": {
+      "id": "cell-plot-5t",
+      "type": "cell-plot",
+      "title": "Cells in the table (others grey)",
+      "config": {
+        "id": "cell-plot-5t",
+        "title": "Cells in the table (others grey)",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "S100a9",
+          "locked": false
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.85,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ],
+        "colorScale": "RdBu",
+        "centeringActive": true,
+        "tableFilter": "cell-table-5t",
+        "removeNonTableEntries": false
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedGene": "S100a9",
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 45,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 55,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "cell-table-5t",
+              "controlsVisible": false
+            },
+            {
+              "type": "tile",
+              "id": "cell-plot-5t",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "cell-table-5t": false,
+        "cell-plot-5t": false
+      },
+      "panelConfigs": {
+        "cell-table-5t": {
+          "id": "cell-table-5t",
+          "title": "Cells with S100a9 fold change < -0.5",
+          "columns": [
+            {
+              "type": "obs",
+              "key": "highres_celltype",
+              "column": ""
+            },
+            {
+              "type": "layer",
+              "key": "kompot_de_Young_to_Old_fold_change",
+              "column": "focused_gene"
+            }
+          ],
+          "searchBuilderConfig": {
+            "logic": "AND",
+            "criteria": [
+              {
+                "condition": "<",
+                "data": "kompot_de_Young_to_Old_fold_change: S100a9",
+                "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_gene",
+                "type": "num",
+                "value": [
+                  "-0.5"
+                ]
+              }
+            ]
+          }
+        },
+        "cell-plot-5t": {
+          "id": "cell-plot-5t",
+          "title": "Cells in the table (others grey)",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "S100a9",
+            "locked": false
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.85,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorScale": "RdBu",
+          "centeringActive": true,
+          "tableFilter": "cell-table-5t",
+          "removeNonTableEntries": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "S100a9",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-L",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-R",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-L": false,
+   "cell-plot-R": false
+  },
+  "panelConfigs": {
+   "cell-plot-L": {
+    "id": "cell-plot-L",
+    "title": "Locked: fold change of H2-Q7",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": true
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true
+   },
+   "cell-plot-R": {
+    "id": "cell-plot-R",
+    "title": "Follows the focus: fold change of the focused gene",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "S100a9",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true
+   }
+  }
+ }
+}

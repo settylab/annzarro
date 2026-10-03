@@ -1,0 +1,144 @@
+# AnnZarro Base Configuration
+# This file contains common settings shared across all environments
+
+# Server configuration
+server:
+  # Network settings
+  host: 127.0.0.1
+  port: 8000
+  unified_server: true
+  
+  # API configuration
+  cors_enabled: false
+  cors_origins: "*"
+  
+  # HTTPS settings (enabled in production)
+  https_enabled: false
+  cert_file: null
+  key_file: null
+  
+  # Proxy settings
+  proxy_count: 0
+  # Path the app is served under behind a reverse proxy, e.g. "/explore"
+  # (empty = the root). Works whether the proxy strips the prefix or not.
+  # A trusted proxy (proxy_count > 0) can instead send X-Forwarded-Prefix.
+  url_prefix: ""
+  
+  # Data storage
+  # Datasets and shared panel sets (sessions/). A relative path is taken
+  # relative to the directory annzarro is started from; the default is the
+  # folder the desktop app uses.
+  data_dir: "~/annzarro-data"
+  
+  # Logging configuration
+  # null = ~/.annzarro/logs/annzarro_server.log (or $ANNZARRO_HOME/logs/...).
+  # A relative path is taken relative to the directory annzarro is started from.
+  log_file: null
+  log_level: "INFO"
+  
+  # Response size protection
+  max_response_elements: 10000000
+  
+  # Caching configuration
+  cache_enabled: true
+  cache_memory_mb: 1000
+  cache_dataset_limit: 10
+
+  # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])
+  # A remote dataset path makes the server fetch a URL chosen by the client.
+  #   auto  - allowed on a local single-user server (loopback host, no auth,
+  #           no proxy); otherwise only URLs under remote_allowlist
+  #   allow - always allowed (restricted to remote_allowlist if it is set)
+  #   deny  - never
+  remote_stores: auto
+  remote_allowlist: []  # e.g. ["s3://my-lab-bucket/atlases/", "https://data.example.org/zarr/"]
+  # anonymous   - unsigned requests (public buckets / plain HTTP)
+  # environment - backend credential chain: AWS_* env vars, AWS_PROFILE/~/.aws,
+  #               instance roles; Google application default credentials
+  remote_credentials: anonymous
+  # Seconds to establish a connection / to wait between bytes. A store that
+  # stops answering fails the request with HTTP 504 instead of holding it.
+  remote_connect_timeout_s: 10
+  remote_read_timeout_s: 30
+  # In-memory LRU of raw bytes per open remote store (zarr 3 only; 0 = off).
+  # The reader's result cache only answers identical requests; this one makes
+  # a different gene or column from already-fetched chunks local.
+  remote_chunk_cache_mb: 256
+
+# Authentication configuration
+auth:
+  # enabled: leave unset. Unset means off for a loopback `annzarro start`, on for a
+  # non-loopback host and for the WSGI (gunicorn) entry point. Setting it to false
+  # on a shared server is honoured but logs a security warning.
+  # null = ~/.annzarro/auth/users.json; a source checkout keeps using an existing
+  # <checkout>/config/auth/users.json.
+  user_file: null
+  # secret_key: leave unset; a random key is generated once and kept (mode 0600) beside user_file
+  # Seconds without a request after which a login expires (0 = never).
+  session_timeout: 28800
+  # Secure flag on the login cookie. auto: set when the request arrived over
+  # HTTPS -- directly, or per X-Forwarded-Proto from the server.proxy_count
+  # trusted proxies. true forces it (the cookie is then never sent over plain
+  # HTTP, so login over http:// stops working); false never sets it.
+  cookie_secure: auto
+
+# Application branding
+branding:
+  app_name: "AnnZarro"
+  project_description: "Zarr-based AnnData Visualization Tool"
+  
+  # Contact block on the login page, shown only when something is set here.
+  # Fill it in for your site, e.g.:
+  #   lab_name: "Example Lab"
+  #   lab_url: "https://lab.example.org"
+  #   email: "annzarro-admin@example.org"
+  contact_info:
+    lab_name: null
+    lab_url: null
+    email: null
+    custom_html: null
+
+# UI configuration
+ui:
+  # Panel type settings
+  enabled_panel_types:
+    - cell-plot
+    - gene-plot
+    - cell-table
+    - gene-table
+    # - gene-set  # Uncomment to enable gene set analysis
+  
+  # Default visualization settings
+  defaults:
+    max_cells: 1000000
+    max_genes: 1000000
+    point_size: 5
+    point_opacity: 1.0
+    color_scale: "Portland"
+    taxonomy_id: "9606"  # Homo sapiens
+    # Datasets with more cells than subset_threshold open on a reproducible
+    # subset of subset_size cells (seed subset_seed); the header shows it and
+    # its dialog changes or removes it. Every panel shows the same cells.
+    subset_threshold: 200000
+    subset_size: 100000
+    subset_seed: 0
+
+  # Client-side cache configuration
+  cache:
+    max_entries: 1000
+    max_size_mb: 1024  # ~1GB
+    
+  # Autosave configuration
+  autosave:
+    enabled: true
+    interval_ms: 10000
+    storage_key: "annzarro_autosave"
+    session_name: "Autosave"
+    show_in_list: false
+    auto_restore: true
+
+# External API integrations
+integrations:
+  string_db:
+    base_url: "https://string-db.org/api"
+    version: "11.5"

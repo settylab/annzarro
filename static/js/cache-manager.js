@@ -8,13 +8,43 @@ const CacheManager = (function() {
   const _maxEntries = Config.CACHE.MAX_ENTRIES || 200;
   const _totalSizeLimit = Config.CACHE.MAX_SIZE_BYTES || 500 * 1024 * 1024; // 500MB default
 
-  function estimateSize(value) {
-    try {
-      return new Blob([JSON.stringify(value)]).size;
-    } catch (e) {
-      console.warn("Failed to estimate cache entry size", e);
-      return 0;
+  /**
+   * Approximate bytes held by a cached value, without serialising it.
+   *
+   * This used to be `new Blob([JSON.stringify(value)]).size`: a second full
+   * JSON encoding of every response on the main thread (hundreds of ms for a
+   * 1M-cell column), and for a typed array a stringified object with one key
+   * per element. Typed arrays report their byteLength; long plain arrays are
+   * sampled.
+   */
+  function estimateSize(value, depth = 0) {
+    if (value === null || value === undefined) return 0;
+    if (ArrayBuffer.isView(value)) return value.byteLength;
+    if (value instanceof ArrayBuffer) return value.byteLength;
+    switch (typeof value) {
+      case 'number': case 'boolean': return 8;
+      case 'string': return 2 * value.length;
+      case 'object': break;
+      default: return 0;
     }
+    if (depth > 8) return 0;
+    if (Array.isArray(value)) {
+      const n = value.length;
+      if (n === 0) return 0;
+      const SAMPLE = 64;
+      if (n <= SAMPLE) {
+        let total = 0;
+        for (let i = 0; i < n; i++) total += estimateSize(value[i], depth + 1);
+        return total;
+      }
+      let sampled = 0;
+      const step = n / SAMPLE;
+      for (let i = 0; i < SAMPLE; i++) sampled += estimateSize(value[Math.floor(i * step)], depth + 1);
+      return Math.round(sampled * (n / SAMPLE));
+    }
+    let total = 0;
+    for (const key of Object.keys(value)) total += 2 * key.length + estimateSize(value[key], depth + 1);
+    return total;
   }
 
   function get(key) {
@@ -30,8 +60,11 @@ const CacheManager = (function() {
     const expires = ttl > 0 ? Date.now() + ttl : null;
     const size = estimateSize(value);
 
-    // Evict if needed
-    while (_cache.size >= _maxEntries || (_currentSize + size) > _totalSizeLimit) {
+    // Replacing an entry must not count its old size twice.
+    _remove(key);
+
+    // Evict if needed (an empty cache has nothing left to evict)
+    while (_cache.size > 0 && (_cache.size >= _maxEntries || (_currentSize + size) > _totalSizeLimit)) {
       const oldestKey = _cache.keys().next().value;
       _remove(oldestKey);
     }
@@ -62,6 +95,24 @@ const CacheManager = (function() {
     return get(key) !== undefined;
   }
 
+  /**
+   * Live (unexpired) keys, oldest first. Expired entries are dropped on the
+   * way, exactly as `get` would drop them.
+   * @returns {string[]}
+   */
+  function keys() {
+    const now = Date.now();
+    const live = [];
+    for (const [key, entry] of [..._cache]) {
+      if (entry.expires && entry.expires <= now) {
+        _remove(key);
+      } else {
+        live.push(key);
+      }
+    }
+    return live;
+  }
+
   function _notifyChange(key) {
     for (const cb of _listeners) {
       try {
@@ -82,6 +133,7 @@ const CacheManager = (function() {
     set,
     clear,
     has,
+    keys,
     onChange
   };
 })();

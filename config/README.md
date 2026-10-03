@@ -1,8 +1,14 @@
 # Annzarro Configuration
 
-This directory contains the configuration files for Annzarro. The configuration system is designed to be flexible, layered, and secure.
+The configuration system is designed to be flexible, layered, and secure.
 
 ## Configuration Files
+
+The built-in defaults ship inside the Python package, in `annzarro/config/`, so
+an installed AnnZarro finds them no matter which directory it is started from.
+Do not edit them to configure a deployment; put overrides in your own file (see
+"Configuration Precedence" below). This directory only holds `auth/`, the legacy
+location of the user database in a source checkout.
 
 - **base.yaml**: Base configuration with default values
 - **development.yaml**: Development environment overrides
@@ -49,7 +55,7 @@ server:
 auth:
   enabled: false
   user_file: users.json
-  secret_key: change-this-in-production
+  # secret_key: leave unset; generated and stored beside user_file
 ```
 
 ### Application Branding
@@ -97,28 +103,58 @@ integrations:
 
 Annzarro uses a layered configuration system with the following precedence (highest to lowest):
 
-1. **Command line arguments**
+1. **Command line arguments**: `--host` (`server.host`), `--port` (`server.port`),
+   `--data-dir` (`server.data_dir`), `--auth-disabled` (`auth.enabled: false`)
 2. **Environment variables** (prefixed with `ANNZARRO_`)
-3. **User-provided configuration file** (specified with `--config`)
-4. **Local configuration file** (`config.yaml` in current directory)
-5. **User configuration file** (`~/.config/annzarro/config.yaml`)
+3. **User-provided configuration file** (specified with `--config`; it is an error if it does not exist)
+4. **Local configuration file** (`config.yaml` in the directory annzarro is started from)
+5. **User configuration file** (`~/.config/annzarro/config.yaml`, or `$XDG_CONFIG_HOME/annzarro/config.yaml`)
 6. **System-wide configuration file** (`/etc/annzarro/config.yaml`)
-7. **Environment-specific configuration** (`development.yaml` or `production.yaml`)
-8. **Base configuration** (`base.yaml`)
+7. **Environment-specific defaults** (`annzarro/config/production.yaml`, or `development.yaml` with `--development`)
+8. **Base defaults** (`annzarro/config/base.yaml`)
+
+Files 4-6 are optional. Validation runs once, on the merged result.
+
+`annzarro config show` prints the effective configuration together with every
+source that was considered and which one set each value. It accepts the same
+override flags as `start`, so `annzarro config show --port 9000` shows exactly
+what `annzarro start --port 9000` would run with.
+
+## Runtime Files
+
+AnnZarro never writes into the installed package or, unless you configure a
+relative path, into the directory it was started from. Runtime state lives in
+`~/.annzarro` (set `ANNZARRO_HOME` to move it):
+
+- `logs/annzarro_server.log` when `server.log_file` is unset
+- `server.pid` for `annzarro start --detach` / `annzarro stop`
+- `auth/users.json` when `auth.user_file` is unset (a source checkout that
+  already has `config/auth/users.json` keeps using it)
+- `secret_key` (mode 0600), generated on first use when authentication is on
+  and `auth.secret_key` is unset or still one of the shipped placeholders
+
+Relative `server.log_file` and `server.data_dir` values are taken relative to
+the working directory; a relative `auth.user_file` relative to the state
+directory (or to the checkout root in a source checkout, as before).
 
 ## Environment Variables
 
 Environment variables override configuration values. Use the prefix `ANNZARRO_` followed by the configuration key with underscores.
+Keys that contain underscores themselves work as expected (`ANNZARRO_SERVER_DATA_DIR` sets `server.data_dir`).
+A variable that does not name an existing key is ignored and listed as such by `config show`.
 
 Examples:
 - `ANNZARRO_SERVER_HOST=0.0.0.0`
 - `ANNZARRO_SERVER_PORT=8080`
+- `ANNZARRO_SERVER_DATA_DIR=/srv/datasets`
 - `ANNZARRO_AUTH_ENABLED=true`
+
+`ANNZARRO_AUTH_DISABLED=1` is a switch equivalent to `--auth-disabled`.
 
 ## Security Best Practices
 
 1. **Production Mode**: Use `--production` flag to load production configuration
-2. **Secret Key**: Always change the `auth.secret_key` in production
+2. **Secret Key**: Leave `auth.secret_key` unset and a random key is generated once and stored (mode 0600) beside the users file as `annzarro_secret_key`; or set your own long random value. The old placeholder values are refused
 3. **Sensitive Data**: Avoid storing sensitive information in configuration files
 4. **Environment Variables**: Use environment variables for sensitive settings
 5. **File Permissions**: Restrict access to configuration files with sensitive information

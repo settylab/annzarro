@@ -1,134 +1,93 @@
-# <span style="color: #357AFA;">AnnZarro</span> <img src="annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt="AnnZarro logo">
+<!-- Images use absolute URLs on the main branch so that PyPI renders them too; they resolve
+     once this branch is merged to main. -->
+# <img src="https://raw.githubusercontent.com/settylab/annzarro/main/annzarro/desktop/electron/icons/icon.png" width="40" height="40" align="center" alt=""> AnnZarro
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+<!-- PyPI version and Tests resolve after the first PyPI release and PR #50 (tests.yml). -->
+[![PyPI](https://img.shields.io/pypi/v/annzarro)](https://pypi.org/project/annzarro/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/settylab/annzarro/blob/main/LICENSE)
+[![Docs](https://readthedocs.org/projects/annzarro/badge/?version=latest)](https://annzarro.readthedocs.io)
+[![Tests](https://github.com/settylab/annzarro/actions/workflows/tests.yml/badge.svg)](https://github.com/settylab/annzarro/actions/workflows/tests.yml)
 
-AnnZarro is a modern single-cell data visualization tool for analyzing AnnData objects stored in zarr format. It features a browser-based interface with a lightweight Python backend and can be used as either a web application or standalone desktop app.
+A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers
+leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
+explored one focused cell or gene at a time and linked to the cell x gene layers.
 
-## Key Features
+**Documentation: [annzarro.readthedocs.io](https://annzarro.readthedocs.io)** (tutorials, user guide,
+data preparation, deployment and reference). Developed by the [Setty Lab](https://settylab.org) at
+Fred Hutch.
 
-- **Interactive Visualization** - Scatter plots, heatmaps and tables using plotly.js
-- **Comprehensive AnnData Support** - Access all components (.obs, .var, .obsm, .varm, .obsp, .varp, .layers)
-- **Efficient Data Handling** - Lazy loading and sparse matrix support for large datasets
-- **Flexible Access** - Local files, HTTP, or S3 connectivity
-- **Desktop Application** - Standalone cross-platform electron app
+![Clicking a cell moves the diffusion-walk colouring; clicking a gene recolours its correlations and per-cell fold change](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/focus.gif)
 
-## Installation & Usage
+## What it does
 
-### Quick Start
+- Colours any plot by the focused cell's row of an `obsp` matrix or the focused gene's row of a `varp` matrix.
+- Plots any `obs`, `var`, `obsm`, `varm` column or `layers` row/column against any other, spatial coordinates included.
+- Links cells and genes: one cell's values across genes, one gene's values across cells, in every layer.
+- Filters cell and gene tables with AND/OR conditions that mask the plots; saves layouts as panel sets and share links.
+- Reads only the chunks behind what is on screen, so cost follows the view, not the dataset size; locally or from S3, GCS and HTTP.
+- Never writes to your data and never runs code: a lab server can show datasets without giving write or compute access.
+
+![Cell x cell, gene x gene, cells x genes and table filters](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/features.png)
+
+## Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/settylab/annzarro.git
-cd annzarro
-
-# Install dependencies (uses virtual environment by default)
-./annzarro-cli install
-
-# Start the server
-./annzarro-cli start
-
-# Or run the desktop app
-./annzarro-cli desktop run
+pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and https:// stores
 ```
 
-Then open http://localhost:8000 in your browser if using server mode.
+Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are on the
+[releases page](https://github.com/settylab/annzarro/releases). From source:
+`git clone https://github.com/settylab/annzarro.git && pip install -e ./annzarro`.
+Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
+[desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).
 
-### Installation Options
+## Quickstart
 
 ```bash
-# Install without virtual environment
-./annzarro-cli install --no-venv
-
-# Clean reinstall 
-./annzarro-cli install --clean
-
-# Use standalone installer directly
-python annzarro-install.py
-
-# Skip optional dependencies
-./annzarro-cli install --no-extras
+mkdir -p ~/annzarro-data
+ln -s /path/to/your.zarr ~/annzarro-data/
+annzarro start --data-dir ~/annzarro-data      # opens http://127.0.0.1:8000
 ```
 
-### Server Commands
+Walkthrough with the demonstration data: [quickstart](https://annzarro.readthedocs.io/en/latest/getting-started/quickstart.html).
 
-```bash
-# Start with custom settings
-./annzarro-cli start --port 8080 --data-dir /path/to/data
+## Prepare your data
 
-# Run in background
-./annzarro-cli start --detach
+Any AnnData written with `adata.write_zarr(...)` opens as is. Which slot feeds which view, how to
+precompute `obsp`/`varp` matrices and how to chunk for speed: [preparing data](https://annzarro.readthedocs.io/en/latest/data/index.html).
 
-# Stop the server
-./annzarro-cli stop
+## Deployment
 
-# Manage users
-./annzarro-cli user add
-./annzarro-cli user list
-./annzarro-cli user remove -u username
-```
+- **Desktop app**: one person, data on the same computer. [Set up](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html)
+- **Personal server**: `annzarro start` on a laptop or an HPC node, reached over an SSH tunnel. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/personal-server.html)
+- **Lab server**: gunicorn behind HTTPS, read-only, with login and shared panel sets. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)
 
-### Desktop Application
+## Documentation
 
-```bash
-# Run desktop app
-./annzarro-cli desktop run
+[annzarro.readthedocs.io](https://annzarro.readthedocs.io): tutorials on cell and gene
+similarity, the user guide, data preparation, deployment, and the CLI, configuration and HTTP API reference.
 
-# Build for distribution
-./annzarro-cli desktop build --platform [windows|mac|linux]
-```
+## Citation
 
-## Working with Data
+Otto D.J., Baasri S. and Setty M. AnnZarro. Protocol preprint in preparation.
 
-Add datasets by copying or linking .zarr directories to the data/ folder:
-
-```bash
-# Copy a dataset
-cp -r /path/to/your-dataset.zarr data/
-
-# Or create a symlink
-ln -s /path/to/your-dataset.zarr data/
-
-# Use a custom data directory
-./annzarro-cli start --data-dir /path/to/datasets
+```bibtex
+% PLACEHOLDER: replace with the preprint entry once it has a DOI.
+@unpublished{otto_annzarro,
+  author = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
+  title  = {AnnZarro},
+  note   = {Preprint in preparation},
+  year   = {2026}
+}
 ```
 
 ## Development
 
-```bash
-# Run tests
-python -m pytest
+`npm ci` once (Node.js 22+), then `python -m pytest` runs the Python tests, every JS suite and
+ESLint. See [running the tests](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html#running-the-tests).
 
-# Start in development mode
-./annzarro-cli start --development
-```
+## Licence
 
-## Architecture
-
-- **Frontend**: Pure JavaScript with plotly.js and DataTables
-- **Backend**: Flask-based REST API with comprehensive zarr support
-- **Desktop**: Electron application with integrated Python server
-
-## Download
-
-Get the latest desktop app for your platform:
-
-- [Windows](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-Setup.exe)
-- [macOS](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.dmg)
-- [Linux](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro.AppImage)
-
-### Creating a new release
-
-To create a new release with desktop apps for all platforms:
-
-1. Update version in `annzarro/desktop/electron/package.json`
-2. Create and push a new tag:
-   ```bash
-   git tag v0.1.1
-   git push origin v0.1.1
-   ```
-3. GitHub Actions will automatically build the desktop apps and create a release
-
-## License
-
-GPL-3.0-or-later
+MIT ([LICENSE](https://github.com/settylab/annzarro/blob/main/LICENSE)). The web interface bundles unmodified third-party libraries under their
+own permissive licences, listed in [`annzarro/THIRD_PARTY_LICENSES/`](https://github.com/settylab/annzarro/tree/main/annzarro/THIRD_PARTY_LICENSES).

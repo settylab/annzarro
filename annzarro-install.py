@@ -33,62 +33,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("annzarro-install")
 
-# External resources to download for electron packaging
-EXTERNAL_RESOURCES = [
-    # CSS files
-    {"url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.dataTables.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/select/1.6.2/css/select.dataTables.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css", "type": "css"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css", "type": "css"},
-    {"url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css", "type": "css"},
-    
-    # JavaScript files - Core libraries
-    {"url": "https://code.jquery.com/jquery-3.6.4.min.js", "type": "js"},
-    {"url": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js", "type": "js"},
-    {"url": "https://cdn.plot.ly/plotly-2.20.0.min.js", "type": "js"},
-    
-    # DataTables core and extensions (replacing the builder URL with direct CDN links)
-    {"url": "https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap5.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap5.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/dataTables.searchBuilder.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/js/searchBuilder.bootstrap5.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/searchbuilder/1.4.2/css/searchBuilder.bootstrap5.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/select/1.6.2/js/dataTables.select.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/select/1.6.2/css/select.bootstrap5.min.css", "type": "css"},
-    {"url": "https://cdn.datatables.net/fixedheader/3.3.2/js/dataTables.fixedHeader.min.js", "type": "js"},
-    {"url": "https://cdn.datatables.net/fixedheader/3.3.2/css/fixedHeader.bootstrap5.min.css", "type": "css"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js", "type": "js"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js", "type": "js"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js", "type": "js"},
-    
-    # Other libraries
-    {"url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js", "type": "js"},
-    {"url": "https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js", "type": "js"},
-]
+def _load_vendor_tool(repo_root):
+    """Load scripts/vendor_assets.py, the single owner of the pinned asset list."""
+    import importlib.util
+    path = os.path.join(repo_root, "scripts", "vendor_assets.py")
+    spec = importlib.util.spec_from_file_location("_annzarro_vendor_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-# FontAwesome has additional CSS and web font files we need to download
-FONTAWESOME_RESOURCES = [
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.woff2", "type": "font"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2", "type": "font"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2", "type": "font"},
-    {"url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-v4compatibility.woff2", "type": "font"},
-]
 
 def download_external_resources(repo_root, args):
     """
-    Download external CSS and JavaScript resources for offline use in the Electron app
-    
+    Install the third-party CSS/JS/font bundles into static/vendor/.
+
+    The list of files, their URLs, SHA-256 checksums and licenses lives in
+    scripts/vendor-assets.json (the same manifest the wheel build uses). Files
+    already present with the right checksum are kept; anything else is
+    downloaded and only written once its checksum matches.
+
     Args:
         repo_root: Root directory of the repository
         args: Command line arguments
-    
+
     Returns:
         True if successful, False otherwise
     """
@@ -97,124 +64,25 @@ def download_external_resources(repo_root, args):
     if hasattr(args, 'no_electron_resources') and args.no_electron_resources:
         logger.debug("Skipping external resources download (disabled by flag)")
         return True
-    
-    logger.info("Downloading external resources for offline use in Electron app")
-    
-    # Ensure DataTables directory exists in vendor
-    datatables_dir = os.path.join(repo_root, "static", "vendor", "DataTables")
-    os.makedirs(datatables_dir, exist_ok=True)
-    logger.info(f"Created DataTables directory: {datatables_dir}")
-    
-    # Create static directory structure for all assets
-    static_dir = os.path.join(repo_root, "static")
-    if not os.path.exists(static_dir):
-        logger.info(f"Creating static directory: {static_dir}")
-        os.makedirs(static_dir, exist_ok=True)
-        
-    # Set up CSS directory
-    static_css_dir = os.path.join(static_dir, "css")
-    logger.info(f"Creating static/css directory: {static_css_dir}")
-    os.makedirs(static_css_dir, exist_ok=True)
-    
-    # Create or ensure styles.css exists
-    styles_path = os.path.join(static_css_dir, "styles.css")
-    if not os.path.exists(styles_path):
-        logger.info(f"Creating empty styles.css in static/css")
-        with open(styles_path, 'w') as f:
-            f.write("/* AnnZarro custom styles */\n")
-    
-    # Set up JavaScript directories
-    static_js_dir = os.path.join(static_dir, "js")
-    logger.info(f"Creating static/js directory: {static_js_dir}")
-    os.makedirs(static_js_dir, exist_ok=True)
-    
-    # Create panels directory in static/js
-    static_panels_dir = os.path.join(static_js_dir, "panels")
-    logger.info(f"Creating static/js/panels directory: {static_panels_dir}")
-    os.makedirs(static_panels_dir, exist_ok=True)
-    
-    # JS files are now directly in static/js - no need to copy from js/ directory
-    logger.info("Using JS files directly from static/js directory")
-    
-    # Create directories for storing resources
-    static_dir = os.path.join(repo_root, "static")
-    vendor_dir = os.path.join(static_dir, "vendor")
-    
-    # Create subdirectories for different resource types
-    css_dir = os.path.join(vendor_dir, "css")
-    js_dir = os.path.join(vendor_dir, "js")
-    fonts_dir = os.path.join(vendor_dir, "webfonts")
-    
-    for directory in [static_dir, vendor_dir, css_dir, js_dir, fonts_dir]:
-        os.makedirs(directory, exist_ok=True)
-        logger.debug(f"Created directory: {directory}")
-    
-    # Download each resource
-    success_count = 0
-    
-    all_resources = EXTERNAL_RESOURCES + FONTAWESOME_RESOURCES
-    total_resources = len(all_resources)
-    
-    for i, resource in enumerate(all_resources, 1):
-        url = resource["url"]
-        res_type = resource["type"]
-        
-        # Extract filename from URL
-        filename = url.split("/")[-1]
-        
-        # Determine target directory based on resource type
-        if res_type == "css":
-            target_dir = css_dir
-        elif res_type == "js":
-            target_dir = js_dir
-        elif res_type == "font":
-            target_dir = fonts_dir
-        else:
-            target_dir = vendor_dir
-        
-        # Check if a custom destination path is specified
-        if "dest" in resource:
-            # Use the custom destination path
-            dest_parts = resource["dest"].split("/")
-            if len(dest_parts) > 1:
-                # If the dest has a directory, create it if needed
-                dest_dir = os.path.join(vendor_dir, *dest_parts[:-1])
-                os.makedirs(dest_dir, exist_ok=True)
-                target_path = os.path.join(vendor_dir, resource["dest"])
-            else:
-                target_path = os.path.join(target_dir, resource["dest"])
-        else:
-            target_path = os.path.join(target_dir, filename)
-        
-        try:
-            logger.info(f"Downloading [{i}/{total_resources}]: {filename}")
-            # Add User-Agent header to avoid 403 Forbidden errors
-            opener = urllib.request.build_opener()
-            opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')]
-            urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(url, target_path)
-            logger.debug(f"Downloaded {url} to {target_path}")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"Failed to download {url}: {e}")
-    
-    if success_count == total_resources:
-        logger.info(f"Successfully downloaded all {total_resources} external resources")
-        
-        # Verify that the template directory exists
-        template_dir = os.path.join(repo_root, "templates")
-        index_path = os.path.join(template_dir, "index.html")
-        
-        if not os.path.exists(index_path):
-            logger.error(f"Index template not found: {index_path}")
-            return False
-        
-        # All resources downloaded successfully and template exists
-        logger.info("All resources downloaded for offline use")
-        return True
-    else:
-        logger.error(f"Only downloaded {success_count}/{total_resources} resources")
+
+    vendor_dir = os.path.join(repo_root, "static", "vendor")
+    logger.info(f"Installing pinned frontend assets into {vendor_dir}")
+    try:
+        vendor = _load_vendor_tool(repo_root)
+        vendor.ensure(vendor_dir, replace_mismatched=True, log=logger.info)
+    except Exception as e:
+        logger.error(f"Failed to install frontend assets: {e}")
         return False
+
+    # Verify that the template directory exists
+    index_path = os.path.join(repo_root, "templates", "index.html")
+    if not os.path.exists(index_path):
+        logger.error(f"Index template not found: {index_path}")
+        return False
+
+    logger.info("All resources downloaded for offline use")
+    return True
+
 
 def validate_python_executable(python_path, env_vars=None):
     """

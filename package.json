@@ -1,0 +1,17 @@
+{
+  "name": "annzarro-dev",
+  "private": true,
+  "description": "Development tooling only (lint and JS tests). The browser loads static/js directly; there is no build step.",
+  "scripts": {
+    "lint": "eslint static/js annzarro/tests/js",
+    "test": "node --test \"annzarro/tests/js/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.12.0",
+    "globals": "17.13.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

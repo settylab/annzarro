@@ -1,3 +1,4 @@
+import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
@@ -238,7 +239,9 @@ const GenePlotPanel = (function() {
                 await Promise.all(updatePromises);
                 // If any axis was updated and highlighting is enabled,
                 // ensure the focused entity is properly highlighted.
-                if (updatePromises.length > 1 && _settings.highlightFocusedGene) {
+                // Always: a LOCKED axis is not refocused, so nothing else moves the
+                // highlight to the new focus (it stayed on the old cell)
+                if (_settings.highlightFocusedGene) {
                     highlightFocusedEntity(_plotContainer, _data, _settings, _plotType);
                 }
             } catch (err) {
@@ -261,10 +264,13 @@ const GenePlotPanel = (function() {
                 return;
             }
             // Update the label of the first option in the select element
+            // A locked axis keeps showing the entity it is locked to
+            const locked = !!(_settings[axis] && _settings[axis].locked && _settings[axis].column);
+            if (locked) focusedEntity = _settings[axis].column;
             if (_settings[axis] && _settings[axis].type === 'layer' && endityType === 'cells') {
-                columnSelect.options[0].text = `Focused cell ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('cells', focusedEntity, locked);
             } else if (_settings[axis] && _settings[axis].type === 'varp' && endityType === 'genes') {
-                columnSelect.options[0].text = `Focused gene ${focusedEntity}`;
+                columnSelect.options[0].text = focusedOptionLabel('genes', focusedEntity, locked);
             }
         }
 
@@ -396,8 +402,6 @@ const GenePlotPanel = (function() {
                 // Clean up any loading indicators before purging the plot
                 if (window.loadingIndicator && typeof window.loadingIndicator.cleanupContainer === 'function') {
                     window.loadingIndicator.cleanupContainer(_plotContainer);
-                } else if (typeof loadingIndicator !== 'undefined' && typeof loadingIndicator.cleanupContainer === 'function') {
-                    loadingIndicator.cleanupContainer(_plotContainer);
                 }
 
                 // Clean up aesthetics menu event listeners
@@ -506,8 +510,14 @@ const GenePlotPanel = (function() {
                         throw error;
                     }
                     
-                    // Otherwise log and continue
+                    // Otherwise this plot shows its own failure instead of
+                    // the previous dataset's plot (issue #2)
                     console.error(`Error updating gene plot ${_id}:`, error);
+                    if (_plotContainer) {
+                        drawPlaceholder(_plotContainer, error.coverage || Coverage.missing(GAP.FAILED,
+                            error.message || 'unknown error',
+                            { source: 'loading dataset', unit: 'genes' }), 'genes');
+                    }
                 }
             }
             

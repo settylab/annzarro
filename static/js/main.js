@@ -5,7 +5,16 @@ import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
-import { encodeView, decodeView, normalizeView } from './utils/deeplink.js';
+import {
+    VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView,
+    sameDatasetPath
+} from './utils/deeplink.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
+import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
+import { NOTIFY_EVENT } from './utils/notify.js';
+import { sameSubset } from './utils/subset.js';
+import { SubsetControl } from './subset-dialog.js';
 
 const App = (function() {
     // Private variables
@@ -38,9 +47,13 @@ const App = (function() {
             // Setup custom event listeners for error handling
             _setupErrorHandlers();
             
+            // Say who is signed in, or that nobody needs to be (not awaited:
+            // the header must not hold up the first render)
+            _loadAuthIndicator();
+            
             // Check for autosave session before initializing panel manager.
             //
-            // Parse the deep-link up front: a deep-link (?dataset_path=...&view=...)
+            // Parse the deep-link up front: a deep-link (?dataset_path=...#view=...)
             // takes precedence over the autosave session, so when one is present we
             // must NOT show the "restoring previous panel set" spinner. That spinner
             // is only ever cleared as a side effect of a panel being created, so a
@@ -49,11 +62,20 @@ const App = (function() {
             // deep-link boots into the normal Welcome tile, which is the correct
             // fallback whenever nothing opens.
             const autosave = SessionManager.getAutosaveSession();
-            const deepLink = _parseDeepLink();
+            const deepLink = await _parseDeepLink();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
 
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
+
+            // Loading a panel set restores its whole view through _applyView
+            SessionManager.setViewApplier(_applyPanelSet);
+
+            // Notices raised by modules that cannot import main.js (utils/notify.js)
+            document.addEventListener(NOTIFY_EVENT, (e) => {
+                const { title, message, type } = e.detail || {};
+                _showNotification(title || 'Notice', message || '', type || 'warning');
+            });
 
             // Load available datasets
             await _loadDatasets();
@@ -97,7 +119,15 @@ const App = (function() {
             window.addEventListener('beforeunload', async () => {
                 await SessionManager.saveToLocalStorage();
             });
-            
+
+            // Opening another share link for the same dataset in this tab changes
+            // only the fragment, which the browser treats as in-page navigation:
+            // no reload, so the new view would silently not apply. Reload instead.
+            window.addEventListener('hashchange', () => {
+                const parts = parseDeepLinkLocation(window.location);
+                if (parts && parts.payload) window.location.reload();
+            });
+
             _isInitialized = true;
         } catch (error) {
             console.error('Error initializing application:', error);
@@ -107,33 +137,34 @@ const App = (function() {
 
     /**
      * Parse the deep-link grammar from the current URL:
-     *   ?dataset_path=<path>&view=<base64url(JSON)>
+     *   ?dataset_path=<path>#view=<payload>           (what share links emit)
+     *   ?dataset_path=<path>&view=<base64url(JSON)>   (legacy, e.g. DoLiMap)
      * `view` is optional — a bare ?dataset_path just opens the dataset with no
      * preset panels. Returns null when no dataset_path is present (normal boot).
+     * Async because a compressed payload is inflated with DecompressionStream.
      *
      * Decoding + normalization live in ./utils/deeplink.js, the single source of
      * truth shared with the Node guard and the share-link encoder, so a link this
      * parses and a link _buildShareView produces are governed by one schema.
-     * @returns {{datasetPath: string, view: Object|null}|null}
+     * @returns {Promise<{datasetPath: string, view: Object|null}|null>}
      * @private
      */
-    function _parseDeepLink() {
-        try {
-            const params = new URLSearchParams(window.location.search);
-            const datasetPath = params.get('dataset_path');
-            if (!datasetPath) return null;
-
-            let view = null;
-            const rawView = params.get('view');
-            if (rawView) {
-                view = normalizeView(decodeView(rawView));
+    async function _parseDeepLink() {
+        const parts = parseDeepLinkLocation(window.location);
+        if (!parts) return null;
+        let view = null;
+        if (parts.payload) {
+            try {
+                view = normalizeView(await decodeViewPayload(parts.payload));
+            } catch (error) {
+                // A mangled view (truncated by a mail client, say) should still
+                // open the dataset the link names rather than nothing at all.
+                console.error('Failed to decode deep-link view:', error);
+                _showNotification('Invalid deep-link',
+                    'The shared view could not be decoded; opening the dataset only.', 'error');
             }
-            return { datasetPath, view };
-        } catch (error) {
-            console.error('Failed to parse deep-link parameters:', error);
-            _showNotification('Invalid deep-link', 'The view= parameter could not be decoded.', 'error');
-            return null;
         }
+        return { datasetPath: parts.datasetPath, view };
     }
 
     /**
@@ -144,22 +175,72 @@ const App = (function() {
      * view when opened. This is the "save current layout → shareable link" half
      * of the unified serialization.
      * @param {string} datasetPath - dataset to encode (defaults to the loaded one)
-     * @returns {string} absolute URL with ?dataset_path=&view=
+     * @returns {Promise<string>} absolute URL, ?dataset_path= plus #view=
      */
-    function _buildShareView(datasetPath) {
+    async function _buildShareView(datasetPath) {
         const path = datasetPath || _lastLoadedDatasetPath || '';
-        const view = {
-            constants: {
-                focusedGene: DataManager.getFocusedGene(),
-                focusedCell: DataManager.getFocusedCell(),
-                taxonomyId: DataManager.getTaxonomyId()
-            },
-            layout: PanelManager.saveLayout()
-        };
-        const url = new URL(window.location.origin + window.location.pathname);
-        url.searchParams.set('dataset_path', path);
-        url.searchParams.set('view', encodeView(view));
-        return url.toString();
+        // The same capture a saved panel set stores (SessionManager.captureView)
+        const view = SessionManager.captureView();
+        return buildDeepLinkUrl(window.location.origin + window.location.pathname,
+            path, await encodeViewPayload(view));
+    }
+
+    /**
+     * Header "Share Link" handler: build the link for the current view and copy
+     * it. The clipboard API needs a secure context, which a plain-http cluster
+     * node is not, so on failure the link is shown in a pre-selected field
+     * instead; the user can always copy it by hand. No modal dialogs either way.
+     * @private
+     */
+    async function _shareCurrentView() {
+        const button = document.getElementById('btn-share-link');
+        const fallback = document.getElementById('share-link-fallback');
+        const field = document.getElementById('share-link-field');
+        const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset();
+        if (!datasetPath) {
+            _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
+            return;
+        }
+
+        let link;
+        try {
+            link = await _buildShareView(datasetPath);
+        } catch (error) {
+            console.error('Building share link failed:', error);
+            _showNotification('Share link failed', error.message || 'Could not encode this view.', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(link);
+            fallback.hidden = true;
+            const label = button.querySelector('.btn-share-label');
+            label.textContent = 'Copied!';
+            clearTimeout(_shareLabelTimer);
+            button.classList.add('show-label');   // visible even when the header shows icons only
+            _shareLabelTimer = setTimeout(() => { label.textContent = 'Share Link'; button.classList.remove('show-label'); }, 2000);
+        } catch (error) {
+            console.debug('Clipboard unavailable, showing share link inline:', error);
+            field.value = link;
+            fallback.hidden = false;
+            field.focus();   // selects it all, start in view (see _selectShowingStart)
+        }
+    }
+    let _shareLabelTimer = null;
+
+    /**
+     * Select all of an input's text with the caret at the start, so the
+     * beginning stays visible (a plain select() scrolls to the end).
+     * @param {HTMLInputElement} input
+     * @private
+     */
+    function _selectShowingStart(input) {
+        try {
+            input.setSelectionRange(0, input.value.length, 'backward');
+        } catch (e) {
+            input.select();
+        }
+        input.scrollLeft = 0;
     }
 
     /**
@@ -171,15 +252,54 @@ const App = (function() {
      * @private
      */
     async function _applyDeepLink(deepLink) {
-        const { datasetPath, view } = deepLink;
+        await _applyView(deepLink);
+
+        // Rewrite the URL to a clean form so the opened view is itself
+        // re-shareable and a refresh re-applies it (state currently lives only
+        // in localStorage otherwise).
+        try {
+            history.replaceState(null, '', window.location.href);
+        } catch (e) {
+            // replaceState can throw in sandboxed iframes — non-fatal.
+            console.debug('history.replaceState skipped:', e);
+        }
+    }
+
+    /**
+     * Load a dataset, then restore a view on it: focus constants, then the
+     * layout tree (or the legacy flat panel list). Shared by deep links and
+     * loaded panel sets, so both restore exactly the same way.
+     * @param {{datasetPath: string, view: Object|null}} target
+     * @private
+     */
+    async function _applyView({ datasetPath, view }) {
+
+        // 0. The cells the view shows. A view without `subset` keeps the
+        //    subset of an already open dataset (or the default for a new
+        //    one); a different subset of the open dataset reloads it.
+        const subset = view && 'subset' in view ? view.subset : undefined;
+        if (subset !== undefined) {
+            const open = datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset;
+            const current = DataManager.getSubset();
+            if (!open || !sameSubset(current ? current.subset : null, subset)) {
+                DataManager.setSubsetRequest(subset);
+                _lastLoadedDatasetPath = null;
+            }
+        }
 
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
         await _loadDataset(datasetPath);
 
-        // Reflect the selection in the dataset dropdown if the option exists.
+        // Reflect the selection in the dataset dropdown. A dataset that is not
+        // in the listing (a remote URL, a path outside the data directory) gets
+        // its own option; otherwise the picker showed its placeholder.
         const datasetSelector = document.getElementById('dataset-selector');
         if (datasetSelector) {
+            if (DataManager.getCurrentDataset() === datasetPath &&
+                ![...datasetSelector.options].some(o => o.value === datasetPath)) {
+                datasetSelector.appendChild(new Option(datasetPath, datasetPath));
+            }
             datasetSelector.value = datasetPath;
             if (window.$ && $.fn.select2) {
                 $(datasetSelector).trigger('change.select2');
@@ -191,10 +311,21 @@ const App = (function() {
             const constants = view.constants || {};
             if (constants.focusedGene) {
                 DataManager.setFocusedGene(constants.focusedGene);
-                const focusedGeneSelect = document.getElementById('focused-gene');
-                if (focusedGeneSelect) focusedGeneSelect.value = constants.focusedGene;
             }
-            if (constants.focusedCell) DataManager.setFocusedCell(constants.focusedCell);
+            if (constants.focusedCell) {
+                if (DataManager.getCellIndex(constants.focusedCell) >= 0) {
+                    DataManager.setFocusedCell(constants.focusedCell);
+                } else if (DataManager.getSubset()) {
+                    // Said once: loading the dataset may already have said it
+                    if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
+                        _showNotification('Focused cell not in the subset',
+                            `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
+                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                    }
+                } else {
+                    DataManager.setFocusedCell(constants.focusedCell);
+                }
+            }
             if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
 
             // 3. Materialize the panels. Two shapes, one preferred:
@@ -229,16 +360,141 @@ const App = (function() {
                 });
             }
         }
+    }
 
-        // 4. Rewrite the URL to a clean form so the opened view is itself
-        //    re-shareable and a refresh re-applies it (state currently lives only
-        //    in localStorage otherwise).
-        try {
-            history.replaceState(null, '', window.location.href);
-        } catch (e) {
-            // replaceState can throw in sandboxed iframes — non-fatal.
-            console.debug('history.replaceState skipped:', e);
+    /**
+     * Apply a loaded panel set (SessionManager hands every load to this; see
+     * setViewApplier). A panel set restores what a share link restores: its
+     * dataset, the focused cell and gene, and the split layout with each
+     * panel's settings. Panel ids are kept, so a plot's tableFilter still
+     * names its table.
+     *
+     * A set saved on another dataset than the open one asks first, in a
+     * notice that does not block the page; nothing changes unless the user
+     * agrees.
+     * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
+     * @param {Object} panelSet - the stored panel set
+     * @returns {Promise<{status: string, message: string}>}
+     * @private
+     */
+    async function _applyPanelSet(plan, panelSet) {
+        const name = (panelSet && panelSet.name) || 'panel set';
+        const current = DataManager.getCurrentDataset();
+        const target = plan.datasetPath || current;
+        if (!target) {
+            return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
+        // the same store named relative vs absolute is not a switch
+        const listing = await DataManager.loadDatasets().catch(() => []);
+        if (current && !sameDatasetPath(target, current, listing)) {
+            if (_sessionModal) _sessionModal.hide();
+            const choice = await _askNotification(
+                'Switch dataset?',
+                `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
+                [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
+            );
+            if (choice !== 'switch') {
+                return { status: 'cancelled', message: `Kept ${current}; "${name}" was not loaded.` };
+            }
+        }
+
+        // The set replaces the open view. Open panels are closed (they stay
+        // available to reopen); a panel with an id the set brings is removed,
+        // so the set's panel gets that id back unchanged.
+        const incoming = new Set([
+            ...(plan.view && plan.view.layout ? collectTileIds(plan.view.layout.hierarchy) : []),
+            ...plan.closedPanels.map(p => p.id)
+        ]);
+        PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+        incoming.forEach(id => PanelManager.removePanel(id));
+
+        // keep the open store's own path when the set names it differently
+        const sameStore = current && sameDatasetPath(target, current, listing);
+        await _applyView({ datasetPath: sameStore ? current : target, view: plan.view });
+
+        // Panels that were closed when the set was saved come back closed.
+        const idMap = new Map();
+        const closedConfigs = plan.closedPanels.map(p => {
+            const config = JSON.parse(JSON.stringify(p.config));
+            PanelManager.registerClosedPanel(p.type, config);
+            if (config.id !== p.id) idMap.set(p.id, config.id);
+            return config;
+        });
+        if (idMap.size) remapPanelReferences(closedConfigs, idMap);
+
+        PanelManager.updateSourcePanelSelection();
+        PanelManager.ensureWelcomeFallback();
+        return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    /**
+     * Show other cells (the subset dialog's Apply): the open view, its
+     * panels, focus and layout, reopened on the new subset through the same
+     * path a panel set loads by, so every panel is rebuilt on the new cells.
+     * @param {Object|null} spec - subset spec, or null for every cell
+     * @private
+     */
+    async function _changeSubset(spec) {
+        const datasetPath = DataManager.getCurrentDataset();
+        if (!datasetPath) return;
+        const view = SessionManager.captureView();
+        view.subset = spec;
+        const plan = panelSetToView({ dataset: datasetPath, view });
+        try {
+            await _applyPanelSet(plan, { name: 'cell subset' });
+            const subset = DataManager.getSubset();
+            _showNotification('Cell subset',
+                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).`
+                       : 'Showing every cell.', 'success', 3000);
+        } catch (error) {
+            console.error('Changing the cell subset failed:', error);
+            _showNotification('Cell subset not changed', error.message || String(error), 'error');
+        }
+    }
+
+    /**
+     * A notice that asks: like _showNotification, but it stays until one of
+     * its buttons (or the close cross) is clicked. Never a modal dialog.
+     * @param {string} title
+     * @param {string} message
+     * @param {Array<{key: string, label: string, primary?: boolean}>} actions
+     * @returns {Promise<string|null>} the chosen key, null if dismissed
+     * @private
+     */
+    function _askNotification(title, message, actions) {
+        return new Promise(resolve => {
+            const id = _showNotification(title, message, 'warning', 24 * 3600 * 1000);
+            const el = document.getElementById(id);
+            if (!el) { resolve(null); return; }
+            el.classList.add('notification-ask');
+            el.setAttribute('role', 'alertdialog');
+            let done = false;
+            const finish = (key) => {
+                if (done) return;
+                done = true;
+                // answered: not clickable while it fades out
+                el.classList.remove('notification-ask');
+                el.querySelectorAll('.notification-actions button').forEach(btn => { btn.disabled = true; });
+                _removeNotification(id);
+                resolve(key);
+            };
+            const bar = document.createElement('div');
+            bar.className = 'notification-actions';
+            actions.forEach(action => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `btn btn-sm ${action.primary ? 'btn-primary' : 'btn-outline-secondary'}`;
+                btn.textContent = action.label;
+                btn.dataset.action = action.key;
+                btn.addEventListener('click', () => finish(action.key));
+                bar.appendChild(btn);
+            });
+            el.appendChild(bar);
+            const close = el.querySelector('.notification-close');
+            if (close) close.addEventListener('click', () => finish(null));
+            const primary = bar.querySelector('.btn-primary');
+            if (primary) primary.focus();
+        });
     }
 
     /**
@@ -276,6 +532,10 @@ const App = (function() {
     function _initUI() {
         // Setup bootstrap modals
         _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
+
+        // Cell count and subset badge in the stats bar; its dialog reloads
+        // the open view on the chosen cells
+        SubsetControl.init({ onApply: _changeSubset });
         
         // Setup keyboard shortcuts
         _initKeyboardShortcuts();
@@ -392,12 +652,15 @@ const App = (function() {
                 document.getElementById('gene-count').textContent = 'Loading..';
 
                 // Reset backend cache for the current dataset (if one is selected)
-                try {
-                    // Reset backend cache for this specific dataset
-                    await DataManager.resetBackendCache(datasetPath);
-                } catch (e) {
-                    console.warn('Error resetting backend cache:', e);
-                    // Continue even if backend cache reset fails
+                // Only an admin may clear a hosted server's shared cache; for
+                // everyone else Refresh reloads in this browser only, and a
+                // refusal (403 admin_only) is expected, not an error.
+                if (_refreshPlan.resetServerCache) {
+                    try {
+                        await DataManager.resetBackendCache(datasetPath);
+                    } catch (e) {
+                        console.warn('Server cache not cleared:', e && e.message);
+                    }
                 }
                 
                 // Reload available datasets
@@ -422,15 +685,33 @@ const App = (function() {
         if (loadSessionBtn) {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
-        
-        // Setup gene and cell selectors with history navigation
-        const focusedGeneSelect = document.getElementById('focused-gene');
-        if (focusedGeneSelect) {
-            focusedGeneSelect.addEventListener('change', (e) => {
-                const geneName = e.target.value;
-                if (geneName) {
-                    DataManager.setFocusedGene(geneName);
-                }
+
+        const shareLinkBtn = document.getElementById('btn-share-link');
+        if (shareLinkBtn) {
+            shareLinkBtn.addEventListener('click', _shareCurrentView);
+        }
+        // The share field selects its whole link on focus, ready to copy, but
+        // keeps the START in view (host and dataset_path), not the tail of a
+        // 1,300-character #view= payload.
+        const shareLinkField = document.getElementById('share-link-field');
+        if (shareLinkField) {
+            shareLinkField.addEventListener('focus', () => _selectShowingStart(shareLinkField));
+            shareLinkField.addEventListener('mouseup', (e) => e.preventDefault());
+        }
+        const shareLinkClose = document.getElementById('share-link-close');
+        if (shareLinkClose) {
+            shareLinkClose.addEventListener('click', () => {
+                document.getElementById('share-link-fallback').hidden = true;
+            });
+        }
+
+        // Gene and cell pickers: typeaheads that ask the server for matches
+        // (see utils/name-picker.js), plus history navigation
+        const focusedGeneInput = document.getElementById('focused-gene');
+        if (focusedGeneInput) {
+            _pickers.genes = mountNamePicker({
+                input: focusedGeneInput, noun: 'gene', search: _nameSearch('genes'),
+                onPick: name => DataManager.setFocusedGene(name)
             });
         }
         
@@ -459,26 +740,15 @@ const App = (function() {
                 geneHistoryForward.disabled = !e.detail.canGoForward;
             }
             
-            // Always update select field with current gene, regardless of source
-            if (focusedGeneSelect) {
-                focusedGeneSelect.value = e.detail.gene;
-                if (window.$ && $.fn.select2) {
-                    $(focusedGeneSelect).trigger('change.select2');
-                    // Force width update when gene changes programmatically
-                    const $container = $(focusedGeneSelect).next('.select2-container');
-                    const containerWidth = 160; // Fixed width in pixels
-                    $container.width(containerWidth);
-                }
-            }
+            // Show the focused gene, whatever changed it (plot click, history, link)
+            if (_pickers.genes) _pickers.genes.setValue(e.detail.gene);
         });
         
-        const focusedCellSelect = document.getElementById('focused-cell');
-        if (focusedCellSelect) {
-            focusedCellSelect.addEventListener('change', (e) => {
-                const cellName = e.target.value;
-                if (cellName) {
-                    DataManager.setFocusedCell(cellName);
-                }
+        const focusedCellInput = document.getElementById('focused-cell');
+        if (focusedCellInput) {
+            _pickers.cells = mountNamePicker({
+                input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'),
+                onPick: name => DataManager.setFocusedCell(name)
             });
         }
         
@@ -507,17 +777,8 @@ const App = (function() {
                 cellHistoryForward.disabled = !e.detail.canGoForward;
             }
             
-            // Always update select field with current cell, regardless of source
-            if (focusedCellSelect) {
-                focusedCellSelect.value = e.detail.cell;
-                if (window.$ && $.fn.select2) {
-                    $(focusedCellSelect).trigger('change.select2');
-                    // Force width update when cell changes programmatically
-                    const $container = $(focusedCellSelect).next('.select2-container');
-                    const containerWidth = 180; // Fixed width in pixels
-                    $container.width(containerWidth);
-                }
-            }
+            // Show the focused cell, whatever changed it (plot click, history, link)
+            if (_pickers.cells) _pickers.cells.setValue(e.detail.cell);
         });
         
         // No asynchronous sorting events
@@ -673,8 +934,8 @@ const App = (function() {
                 return;
             }
             
-            // Update dataset info
-            document.getElementById('cell-count').textContent = datasetStructure.n_obs || 0;
+            // Update dataset info: cells shown of the dataset's cells, and the subset
+            SubsetControl.update();
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
             
@@ -684,19 +945,12 @@ const App = (function() {
                 return;
             }
             
-            // Populate gene and cell selectors
-            await _populateGeneSelector();
+            // Keep or reset the focused gene and cell for this dataset (two
+            // small server lookups; the pickers never hold the name lists)
+            await Promise.all([_resolveFocusForDataset('genes'), _resolveFocusForDataset('cells')]);
             
             if (signal.aborted) {
-                console.log(`Dataset load aborted after populating gene selector: ${datasetPath}`);
-                _isLoadingDataset = false;
-                return;
-            }
-            
-            await _populateCellSelector();
-            
-            if (signal.aborted) {
-                console.log(`Dataset load aborted after populating cell selector: ${datasetPath}`);
+                console.log(`Dataset load aborted after resolving focus: ${datasetPath}`);
                 _isLoadingDataset = false;
                 return;
             }
@@ -746,6 +1000,7 @@ const App = (function() {
 
                     document.getElementById('cell-count').textContent =
                         `${cells.length.toLocaleString()} cells`;
+                    SubsetControl.update();
                     document.getElementById('gene-count').textContent =
                         `${genes.length.toLocaleString()} genes`;
                     document.getElementById('dataset-path').textContent = currentDataset;
@@ -767,446 +1022,74 @@ const App = (function() {
     }
     
     /**
-     * Populate the gene selector
+     * Header focus pickers (typeaheads over /data/names), created in _initUI.
      * @private
      */
-    async function _populateGeneSelector() {
-        const focusedGeneSelect = document.getElementById('focused-gene');
-        if (!focusedGeneSelect) return;
-        
-        // Clear existing options - no empty option to force a selection
-        focusedGeneSelect.innerHTML = '';
-        
-        try {
-            const genes = DataManager.getSortedGenes();
-            
-            if (genes && genes.length > 0) {
-                // Use sorted genes for the dropdown
-                
-                // Add first set of genes (limit to avoid performance issues)
-                const maxGenes = Math.min(genes.length, 1000);
-                
-                for (let i = 0; i < maxGenes; i++) {
-                    const option = document.createElement('option');
-                    option.value = genes[i];
-                    option.textContent = genes[i];
-                    focusedGeneSelect.appendChild(option);
-                }
-                
-                // Setup select2 for searching (if available)
-                if (window.$ && $.fn.select2) {
+    const _pickers = { cells: null, genes: null };
 
-                    const defaultMatcher = $.fn.select2.defaults.defaults.matcher;
-
-                    function filterByRegex(params, data) {
-                        const regexMode = window.regexMode;
-
-                        if (!regexMode) {
-                            return defaultMatcher(params, data);
-                        }
-                        
-                        try {
-                            const regex = new RegExp(params.term, 'i');
-                            return regex.test(data.text) ? data : null;
-                        } catch (e) {
-                            return null; // invalid regex
-                        }
-
-                    }
-                    
-                    $(focusedGeneSelect).select2({
-                        placeholder: 'Start typing to search for a gene...',
-                        allowClear: false, // Don't allow clearing the selection
-                        data: genes.map(gene => ({ id: gene, text: gene })),
-                        width: '100%', // Set fixed width to parent container
-                        minimumResultsForSearch: 0, // Always show search box
-                        dropdownCssClass: 'gene-select-dropdown',
-                        dropdownAutoWidth: false, // Don't auto-adjust dropdown width
-                        selectOnClose: false, // Don't select on close to preserve current selection
-                        openOnEnter: false,
-                        searchInputPlaceholder: 'Type to filter...',
-                        closeOnSelect: false, // Keep dropdown open after selecting
-                        matcher: filterByRegex
-                    });
-                    
-                    // Enable immediate search when dropdown is opened
-                    $(focusedGeneSelect).on('select2:open', function() {
-                        setTimeout(function() {
-                            // Explicitly focus the search input field inside the dropdown
-                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                            createButton(searchField);
-
-                            if (searchField) {
-                                searchField.focus();
-                                
-                                // Add keyboard event listener for dropdown control
-                                searchField.addEventListener('keydown', function(e) {
-                                    // Escape key: close dropdown
-                                    if (e.key === 'Escape') {
-                                        $(focusedGeneSelect).select2('close');
-                                        return;
-                                    }
-                                    
-                                    // CTRL+Enter: select current highlighted item and close
-                                    if (e.key === 'Enter' && e.ctrlKey) {
-                                        const highlightedOption = document.querySelector('.select2-results__option--highlighted');
-                                        if (highlightedOption) {
-                                            // Get the text of the highlighted option
-                                            const optionText = highlightedOption.textContent.trim();
-                                            
-                                            // Find corresponding option in select and select it
-                                            const selectOptions = focusedGeneSelect.options;
-                                            for (let i = 0; i < selectOptions.length; i++) {
-                                                if (selectOptions[i].textContent.trim() === optionText) {
-                                                    focusedGeneSelect.value = selectOptions[i].value;
-                                                    $(focusedGeneSelect).trigger('change');
-                                                    $(focusedGeneSelect).select2('close');
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-                            }
-                        }, 10); // Small delay to ensure dropdown is fully rendered
-                    });
-                    
-                    // Ensure Select2 change event also triggers focused gene update
-                    $(focusedGeneSelect).on('select2:select', function(e) {
-                        const geneName = e.params.data.id;
-                        if (geneName) {
-                            DataManager.setFocusedGene(geneName);
-                        }
-                    });
-                    
-                    // Set a fixed width for gene selector on initialization and maintain it
-                    $(focusedGeneSelect).on('select2:opening select2:closing change', function(e) {
-                        const $container = $(this).next('.select2-container');
-                        // Use fixed width instead of percentage of parent
-                        const containerWidth = 180; // Fixed width in pixels
-                        if (containerWidth > 0) {
-                            $container.width(containerWidth);
-                            // Also fix the selection text to avoid overflowing
-                            $container.find('.select2-selection__rendered').css({
-                                'width': (containerWidth - 30) + 'px',
-                                'text-overflow': 'ellipsis',
-                                'white-space': 'nowrap',
-                                'overflow': 'hidden'
-                            });
-                        }
-                    });
-                    
-                    // Prevent losing selection when dropdown is closed without selecting
-                    $(focusedGeneSelect).on('select2:closing', function(e) {
-                        // Store the current value to ensure it's preserved
-                        const currentVal = $(focusedGeneSelect).val();
-                        deleteButton();
-                        
-                        // After dropdown closes, make sure the value is still set
-                        setTimeout(() => {
-                            if (currentVal && $(focusedGeneSelect).val() !== currentVal) {
-                                $(focusedGeneSelect).val(currentVal).trigger('change');
-                            }
-                        }, 10);
-                    });
-                    
-                    // Set dropdown width on open (narrower than default)
-                    $(focusedGeneSelect).on('select2:open', function() {
-                        setTimeout(function() {
-                            $('.gene-select-dropdown').css({
-                                'width': '300px' // Narrower dropdown
-                            });
-                            $('.gene-select-dropdown .select2-results__options').css({
-                                'max-height': '600px'
-                            });
-                        }, 0);
-                    });
-                }
-                
-                // Use current focused gene if it exists in the new dataset
-                if (genes.length > 0) {
-                    // Get the current focused gene from DataManager
-                    const currentFocused = DataManager.getFocusedGene();
-                    
-                    // Check if the current focused gene exists in the new dataset
-                    const geneExists = currentFocused && genes.includes(currentFocused);
-                    
-                    // Use the current focused gene if it exists, otherwise use the first gene
-                    focusedGeneSelect.value = geneExists ? currentFocused : genes[0];
-                    
-                    // If we're changing to a new gene, update DataManager
-                    if (!geneExists && currentFocused !== genes[0]) {
-                        DataManager.setFocusedGene(genes[0]);
-                    }
-                    
-                    // Update select2 if it's active
-                    if (window.$ && $.fn.select2) {
-                        $(focusedGeneSelect).trigger('change');
-                        // Force width update after selection change
-                        const $container = $(focusedGeneSelect).next('.select2-container');
-                        const containerWidth = $(focusedGeneSelect).parent().width() * 0.9;
-                        if (containerWidth > 0) {
-                            $container.width(containerWidth);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error populating gene selector:', error);
-        }
+    /** The search function a picker calls: server-side, at most 100 names. */
+    function _nameSearch(entity) {
+        return (query, { regex, signal }) => {
+            const datasetPath = DataManager.getCurrentDataset();
+            if (!datasetPath) return Promise.resolve({ matches: [], truncated: false });
+            return fetchNameMatches(Config.API.NAMES, {
+                datasetPath, entity, query, signal, limit: 100,
+                mode: regex ? 'regex' : 'substring',
+                subset: DataManager.getSubsetParam()
+            });
+        };
     }
-    
+
+    // The last focused cell a notice said was outside the subset, so a view
+    // restore does not say it a second time.
+    let _focusOutsideSubsetNoticed = null;
+
     /**
-     * Populate the cell selector
+     * After a dataset loads, keep the focused cell/gene if the new dataset has
+     * it, otherwise focus its first name. Asks the server for one exact match
+     * (and, if needed, the first name) instead of scanning a downloaded list.
+     * @param {'cells'|'genes'} entity
      * @private
      */
-    async function _populateCellSelector() {
-        const focusedCellSelect = document.getElementById('focused-cell');
-        if (!focusedCellSelect) return;
-        
-        // Clear existing options - no empty option to force a selection
-        focusedCellSelect.innerHTML = '';
-        
+    async function _resolveFocusForDataset(entity) {
+        const picker = _pickers[entity];
+        if (picker) picker.reset();
+        const getFocused = entity === 'cells' ? DataManager.getFocusedCell : DataManager.getFocusedGene;
+        const setFocused = entity === 'cells' ? DataManager.setFocusedCell : DataManager.setFocusedGene;
+        const datasetPath = DataManager.getCurrentDataset();
+        if (!datasetPath) return;
+        const subset = DataManager.getSubsetParam();
         try {
-            const cells = DataManager.getSortedCells();
-            
-            if (cells && cells.length > 0) {
-                // Use sorted cells for the dropdown
-                
-                // Add first set of cells (limit to avoid performance issues)
-                const maxCells = Math.min(cells.length, 1000);
-                
-                for (let i = 0; i < maxCells; i++) {
-                    const option = document.createElement('option');
-                    option.value = cells[i];
-                    option.textContent = cells[i];
-                    focusedCellSelect.appendChild(option);
+            const current = getFocused();
+            if (current) {
+                const hit = await fetchNameMatches(Config.API.NAMES, {
+                    datasetPath, entity, query: current, mode: 'exact', limit: 1, subset });
+                if (hit.matches.length && hit.matches[0].name === current) {
+                    if (picker) picker.setValue(current);
+                    return;
                 }
-                
-                // Setup select2 for searching (if available)
-                if (window.$ && $.fn.select2) {
-
-                    // Default matcher for select2 on alphabetical ordering
-                    const defaultMatcher = $.fn.select2.defaults.defaults.matcher;
-
-                    // Method to filter by regex to be passed into select2
-                    function filterByRegex(params, data) {
-                        const regexMode = window.regexMode;
-
-                        if (!regexMode) {
-                            return defaultMatcher(params, data);
-                        }
-                        
-                        try {
-                            const regex = new RegExp(params.term, 'i');
-                            return regex.test(data.text) ? data : null;
-                        } catch (e) {
-                            return null; // invalid regex
-                        }
-
-                    }
-
-
-                    $(focusedCellSelect).select2({
-                        placeholder: 'Start typing to search for a cell...',
-                        allowClear: false, // Don't allow clearing the selection
-                        data: cells.map(cell => ({ id: cell, text: cell })),
-                        width: '100%', // Set fixed width to parent container
-                        minimumResultsForSearch: 0, // Always show search box
-                        dropdownCssClass: 'cell-select-dropdown',
-                        dropdownAutoWidth: false, // Don't auto-adjust dropdown width
-                        selectOnClose: false, // Don't select on close to preserve current selection
-                        openOnEnter: false,
-                        searchInputPlaceholder: 'Type to filter...',
-                        closeOnSelect: false, // Keep dropdown open after selecting
-                        matcher: filterByRegex
-                    });
-                    
-                    // Enable immediate search when dropdown is opened
-                    $(focusedCellSelect).on('select2:open', function() {
-                        setTimeout(function() {
-                            // Explicitly focus the search input field inside the dropdown
-                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                            createButton(searchField);
-                            
-                            if (searchField) {
-                                searchField.focus();
-
-                                // Add keyboard event listener for dropdown control
-                                searchField.addEventListener('keydown', function(e) {
-                                    // Escape key: close dropdown
-                                    if (e.key === 'Escape') {
-                                        $(focusedCellSelect).select2('close');
-                                        return;
-                                    }
-                                    
-                                    // CTRL+Enter: select current highlighted item and close
-                                    if (e.key === 'Enter' && e.ctrlKey) {
-                                        const highlightedOption = document.querySelector('.select2-results__option--highlighted');
-                                        if (highlightedOption) {
-                                            // Get the text of the highlighted option
-                                            const optionText = highlightedOption.textContent.trim();
-                                            
-                                            // Find corresponding option in select and select it
-                                            const selectOptions = focusedCellSelect.options;
-                                            for (let i = 0; i < selectOptions.length; i++) {
-                                                if (selectOptions[i].textContent.trim() === optionText) {
-                                                    focusedCellSelect.value = selectOptions[i].value;
-                                                    $(focusedCellSelect).trigger('change');
-                                                    $(focusedCellSelect).select2('close');
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-                            }
-                        }, 10); // Small delay to ensure dropdown is fully rendered
-                    });
-                    
-                    // Ensure Select2 change event also triggers focused cell update
-                    $(focusedCellSelect).on('select2:select', function(e) {
-                        const cellName = e.params.data.id;
-                        if (cellName) {
-                            DataManager.setFocusedCell(cellName);
-                        }
-                    });
-                    
-                    // Prevent resizing by forcing a fixed width regardless of content
-                    $(focusedCellSelect).on('select2:opening select2:closing change', function(e) {
-                        const $container = $(this).next('.select2-container');
-                        // Force fixed width in pixels
-                        const containerWidth = 220;
-                        $container.width(containerWidth);
-                        // Also fix the selection text to avoid overflowing
-                        $container.find('.select2-selection__rendered').css({
-                            'width': (containerWidth - 30) + 'px',
-                            'text-overflow': 'ellipsis',
-                            'white-space': 'nowrap',
-                            'overflow': 'hidden'
-                        });
-                    });
-                    
-                    // Prevent losing selection when dropdown is closed without selecting
-                    $(focusedCellSelect).on('select2:closing', function(e) {
-                        // Store the current value to ensure it's preserved
-                        const currentVal = $(focusedCellSelect).val();
-                        deleteButton();
-                        
-                        // After dropdown closes, make sure the value is still set
-                        setTimeout(() => {
-                            if (currentVal && $(focusedCellSelect).val() !== currentVal) {
-                                $(focusedCellSelect).val(currentVal).trigger('change');
-                            }
-                        }, 10);
-                    });
-                    
-                    // Set dropdown width on open (narrower than default)
-                    $(focusedCellSelect).on('select2:open', function() {
-                        setTimeout(function() {
-                            $('.cell-select-dropdown').css({
-                                'width': '320px' // Wider dropdown for cell selector
-                            });
-                            $('.cell-select-dropdown .select2-results__options').css({
-                                'max-height': '600px'
-                            });
-                        }, 0);
-                    });
-                }
-                
-                // Use current focused cell if it exists in the new dataset
-                if (cells.length > 0) {
-                    // Get the current focused cell from DataManager
-                    const currentFocused = DataManager.getFocusedCell();
-                    
-                    // Check if the current focused cell exists in the new dataset
-                    const cellExists = currentFocused && cells.includes(currentFocused);
-                    
-                    // Use the current focused cell if it exists, otherwise use the first cell
-                    focusedCellSelect.value = cellExists ? currentFocused : cells[0];
-                    
-                    // If we're changing to a new cell, update DataManager
-                    if (!cellExists && currentFocused !== cells[0]) {
-                        DataManager.setFocusedCell(cells[0]);
-                    }
-                    
-                    // Update select2 if it's active
-                    if (window.$ && $.fn.select2) {
-                        $(focusedCellSelect).trigger('change');
-                        // Force width update after selection change
-                        const $container = $(focusedCellSelect).next('.select2-container');
-                        $container.width(220); // Fixed width
+                if (entity === 'cells' && subset) {
+                    // In the dataset but not among the cells shown: say why
+                    // the focus moves, instead of moving it silently.
+                    const outside = await fetchNameMatches(Config.API.NAMES, {
+                        datasetPath, entity, query: current, mode: 'exact', limit: 1 });
+                    if (outside.matches.length && outside.matches[0].name === current) {
+                        _focusOutsideSubsetNoticed = current;
+                        _showNotification('Focused cell not in the subset',
+                            `${current} is not among the cells shown, so another cell is focused. ` +
+                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
                     }
                 }
             }
+            const first = await fetchNameMatches(Config.API.NAMES, {
+                datasetPath, entity, query: '', limit: 1, subset });
+            const name = first.matches.length ? first.matches[0].name : null;
+            if (name && name !== current) setFocused(name);
+            if (picker) picker.setValue(name);
         } catch (error) {
-            console.error('Error populating cell selector:', error);
+            console.error(`Error resolving the focused ${entity === 'cells' ? 'cell' : 'gene'}:`, error);
         }
     }
-    
-
-    function createButton(searchField) {
-        if (searchField && !searchField.querySelector('.regex-toggle-btn dt-search-option btn btn-sm active')) {
-
-            // Create a wrapper
-            const optionsWrapper = document.createElement('div');
-            optionsWrapper.style.display = 'inline-flex';   // ensures same line
-            optionsWrapper.style.alignItems = 'center';     // vertically align text and button
-            optionsWrapper.style.gap = '5px';               // space between h6 and button
-            optionsWrapper.id = 'regex-button-container';
-
-            // Create h6
-            const optionsText = document.createElement('h6');
-            optionsText.textContent = 'Options: ';
-            optionsText.id = 'options-header';
-            optionsText.style.margin = 0; // remove default h6 margins
-
-            // Create button
-            const regexToggle = document.createElement('button');
-            regexToggle.textContent = 'Regex Mode';
-            regexToggle.className = 'regex-toggle-btn dt-search-option btn btn-sm active';
-            regexToggle.id = 'regex-button';
-            regexToggle.style.backgroundColor = '#6c757d';
-            regexToggle.style.color = '#fff';
-            regexToggle.style.border = 'none';
-            regexToggle.style.cursor = 'pointer';
-
-
-
-            window.regexMode = false;
-
-            regexToggle.addEventListener('click', function (e) {
-                e.preventDefault();
-                window.regexMode = !(window.regexMode);
-
-                // Update button text & styling
-                if (regexMode) {
-                    regexToggle.style.backgroundColor = '#0d6efd';
-                }
-                else {
-                    regexToggle.style.backgroundColor = '#6c757d';
-                }
-
-                // Trigger filtering refresh
-                //searchField.dispatchEvent(new Event('input'));
-            })
-
-            // Append in correct order
-            optionsWrapper.appendChild(optionsText);
-            optionsWrapper.appendChild(regexToggle);
-
-            // Insert after search field
-            searchField.after(optionsWrapper);
-        }
-    }
-
-    function deleteButton() {
-        const btn = document.getElementById('regex-button-container');
-        if (btn) {
-            btn.remove();  // deletes it from the DOM
-        }
-    }
-
     /**
      * Show save session modal
      * @private
@@ -1225,7 +1108,9 @@ const App = (function() {
         
         // Get existing sessions for suggestions
         const sessions = await SessionManager.listSessions();
-        const sessionNames = sessions.map(s => s.name);
+        // Suggest only sets this user may overwrite; offering someone else's
+        // name would lead straight to a refusal.
+        const sessionNames = sessions.filter(canModify).map(s => s.name);
         
         // Get DOM elements
         const sessionNameInput = document.getElementById('session-name');
@@ -1346,7 +1231,7 @@ const App = (function() {
                 if (!noResultsMsg) {
                     const msg = document.createElement('div');
                     msg.className = 'no-search-results no-sessions-message';
-                    msg.innerHTML = `No sessions found matching "<strong>${searchTerm}</strong>"`;
+                    msg.innerHTML = `No sessions found matching "<strong>${escapeHtml(searchTerm)}</strong>"`;
                     document.getElementById('session-grid').appendChild(msg);
                 }
             } else {
@@ -1532,6 +1417,11 @@ const App = (function() {
                     card.className = 'session-card';
                     card.dataset.sessionName = session.name;
                     card.dataset.isAutosave = isAutosave;
+                    // Names, dataset labels and owners come from files any user
+                    // can upload; escape before they reach innerHTML.
+                    const safeName = escapeHtml(session.name);
+                    const locked = !isAutosave && !canModify(session);
+                    const lockText = locked ? lockReason(session) : '';
                     
                     // Format date nicely
                     let dateObj = new Date(session.timestamp);
@@ -1539,13 +1429,13 @@ const App = (function() {
                     const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     
                     // Determine dataset display
-                    const datasetDisplay = session.datasetName || 
-                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset');
+                    const datasetDisplay = escapeHtml(session.datasetName || 
+                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset'));
                     
                     // Prepare title with autosave badge if needed
                     const titleHTML = isAutosave ? 
-                        `${session.name} <span class="autosave-indicator"><i class="fas fa-sync-alt me-1"></i> Auto</span>` : 
-                        session.name;
+                        `${safeName} <span class="autosave-indicator"><i class="fas fa-sync-alt me-1"></i> Auto</span>` : 
+                        safeName;
                     
                     // Format last saved time for autosave
                     const autosaveTimeInfo = isAutosave ?
@@ -1569,7 +1459,7 @@ const App = (function() {
                     // Panel configurations might not be included in the session list API
                     // We'll add a placeholder that will be populated asynchronously
                     
-                    let panelPreview = `<div class="session-card-preview" data-session-name="${session.name}">
+                    let panelPreview = `<div class="session-card-preview" data-session-name="${safeName}">
                         <div class="panel-preview-loading">
                             <i class="fas fa-spinner fa-pulse"></i>
                         </div>
@@ -1580,9 +1470,13 @@ const App = (function() {
                             <h5 class="session-card-title">${titleHTML}</h5>
                             <div class="session-card-subtitle">${datasetDisplay}</div>
                             <div class="session-card-actions">
+                                ${locked ? `
+                                <span class="session-lock session-action-button" title="${escapeHtml(lockText)}" aria-label="${escapeHtml(lockText)}">
+                                    <i class="fas fa-lock"></i>
+                                </span>` : `
                                 <button class="btn btn-sm btn-outline-danger session-delete session-action-button" title="Delete">
                                     <i class="fas fa-trash-alt"></i>
-                                </button>
+                                </button>`}
                             </div>
                         </div>
                         ${panelPreview}
@@ -1591,6 +1485,7 @@ const App = (function() {
                         ${!isAutosave ? `
                         <div class="session-card-date">
                             <i class="far fa-calendar-alt"></i> ${dateStr} ${timeStr}
+                            ${session.owner ? `<span class="session-card-owner"><i class="far fa-user"></i> ${escapeHtml(session.owner)}</span>` : ''}
                         </div>
                         ` : ''}
                         <div class="session-card-footer">
@@ -1650,7 +1545,8 @@ const App = (function() {
                                         `;
                                     }
                                 } else {
-                                    _showNotification('Failed to delete panel set', result.message, 'error');
+                                    const { title, type } = describeFailure(result, 'Failed to delete panel set');
+                                    _showNotification(title, result.message, type);
                                 }
                             }
                         }
@@ -1886,6 +1782,14 @@ const App = (function() {
             // Check for name collision
             const sessions = await SessionManager.listSessions();
             const existingNames = new Set(sessions.map(s => s.name.toLowerCase()));
+            const existing = sessions.find(s => !s.isAutosave && s.name.toLowerCase() === sanitizedName.toLowerCase());
+            
+            if (existing && !canModify(existing)) {
+                // The server would refuse the overwrite; say so before asking
+                // anything, and leave the dialog open so a new name can be typed.
+                _showNotification('Choose another name', `"${sanitizedName}": ${lockReason(existing)}`, 'warning');
+                return;
+            }
             
             if (existingNames.has(sanitizedName.toLowerCase())) {
                 // If name collision, ask for confirmation
@@ -1900,7 +1804,8 @@ const App = (function() {
                 _sessionModal.hide();
                 //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
-                _showNotification('Failed to save panel set', result.message, 'error');
+                const { title, type } = describeFailure(result, 'Failed to save panel set');
+                _showNotification(title, result.message, type);
             }
         } else if (modalType === 'load') {
             // Check if we're in file upload mode
@@ -1929,11 +1834,14 @@ const App = (function() {
                         if (loadResult.status === 'success') {
                             _sessionModal.hide();
                             _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
+                        } else if (loadResult.status === 'cancelled') {
+                            _showNotification('Panel set imported, not loaded', loadResult.message, 'info', 5000);
                         } else {
                             _showNotification('Failed to load imported panel set', loadResult.message, 'error');
                         }
                     } else {
-                        _showNotification('Failed to import panel set', result.message, 'error');
+                        const { title, type } = describeFailure(result, 'Failed to import panel set');
+                        _showNotification(title, result.message, type);
                     }
                 } catch (error) {
                     _showNotification('Error', error.message, 'error');
@@ -1947,7 +1855,7 @@ const App = (function() {
                 const selectedCard = document.querySelector('.session-card.selected');
                 
                 if (!selectedCard) {
-                    alert('Please select a panel set to load or switch to upload mode');
+                    _showNotification('No panel set selected', 'Select a panel set to load, or switch to upload mode.', 'warning', 4000);
                     return;
                 }
                 
@@ -1957,10 +1865,44 @@ const App = (function() {
                 
                 if (result.status === 'success') {
                     _sessionModal.hide();
+                } else if (result.status === 'cancelled') {
+                    _showNotification('Panel set not loaded', result.message, 'info', 5000);
                 } else {
                     _showNotification('Failed to load panel set', result.message, 'error');
                 }
             }
+        }
+    }
+    
+    /**
+     * Fill the header badge from `auth/me`: the signed-in user (a logout
+     * link), or a warning when the server is on the network without login.
+     * Silent on failure -- an older server simply has no such endpoint.
+     * @private
+     */
+    // What Refresh may do for this user (utils/session-permissions.js refreshPlan);
+    // until auth/me answers, try the server reset and tolerate a refusal
+    let _refreshPlan = refreshPlan(null);
+
+    async function _loadAuthIndicator() {
+        const el = document.getElementById('auth-indicator');
+        if (!el) return;
+        try {
+            const response = await fetch(Config.API.AUTH_ME);
+            if (!response.ok) return;
+            const me = await response.json();
+            _refreshPlan = refreshPlan(me);
+            const refreshBtn = document.getElementById('refresh-dataset');
+            if (refreshBtn) refreshBtn.title = _refreshPlan.title;
+            const badge = authIndicator(me);
+            if (!badge) return;
+            el.textContent = badge.text;
+            el.title = badge.title;
+            el.classList.add(`auth-indicator--${badge.variant}`);
+            if (badge.href) el.href = badge.href;
+            el.hidden = false;
+        } catch (error) {
+            console.warn('Could not load sign-in status:', error);
         }
     }
     

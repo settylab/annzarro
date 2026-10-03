@@ -46,17 +46,20 @@ def register_static_routes(app, api_version):
         # Authentication check for static files except login page
         if path != "login" and app.config.get("auth_enabled", False):
             # Import functions rather than decorating to avoid circular import
-            from flask import session, redirect
-            if "user_id" not in session:
+            from annzarro.server.core import is_logged_in, login_required_response
+            if not is_logged_in():
                 logger.warning(f"Unauthenticated access attempt to /{path}")
-                return redirect("/login")
+                return login_required_response()
         
         # Get static directory from config
         static_dir = app.config.get("static_dir")
         
         if not static_dir:
-            # Use repository root as default
-            static_dir = Path(__file__).resolve().parent.parent.parent.parent
+            # The frontend's own static directory. NOT the directory above the
+            # package: in a checkout that is the repository (configs, source),
+            # in a pip install it is site-packages (every installed package).
+            from annzarro.utils.paths import frontend_dir
+            static_dir = frontend_dir("static")
         
         # Normalize the path
         static_dir = os.path.abspath(static_dir)
@@ -73,7 +76,7 @@ def register_static_routes(app, api_version):
             logger.debug(f"Rendering index.html template")
             return render_template(
                 "index.html",
-                app_name=app.config.get("app_name", "Annzarro"),
+                app_name=app.config.get("app_name", "AnnZarro"),
                 project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
             )
         
@@ -106,6 +109,6 @@ def register_static_routes(app, api_version):
             logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
             return render_template(
                 "index.html",
-                app_name=app.config.get("app_name", "Annzarro"),
+                app_name=app.config.get("app_name", "AnnZarro"),
                 project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
             )

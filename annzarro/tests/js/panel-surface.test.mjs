@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { Coverage, GAP } from '../../../static/js/utils/coverage.js';
 import {
     renderCoverageNotice, drawPlaceholder, drawPlot,
-    coverageAnnotation, withCoverageAnnotation
+    coverageAnnotation, withCoverageAnnotation, exportWithCoverage, withCoverageExportButton
 } from '../../../static/js/utils/panel-surface.js';
 
 // --- minimal DOM ---------------------------------------------------------
@@ -182,6 +182,39 @@ test('an incomplete coverage produces a tagged, self-describing annotation', () 
     assert.match(ann.text, /3,412 of 75,000 cells shown/);
     assert.match(ann.text, /x-axis/);
     assert.equal(ann.showarrow, false);
+});
+
+test('on screen the banner states the gap; the in-plot box is for exports only', async () => {
+    // Both used to show: the banner above the plot and a box over it (seen on
+    // the docs' colour-range view, Hide Outliers panel).
+    const cov = Coverage.partial(3412, 75000, GAP.FILTERED, 'points with no x value',
+        { source: 'x-axis', unit: 'cells' });
+    const ann = coverageAnnotation(cov);
+    assert.equal(ann.visible, false, 'hidden on screen');
+    assert.ok(ann.y >= 1 && ann.yanchor === 'bottom', 'outside the plotting area');
+    const layout = withCoverageAnnotation({ margin: { t: 20 } }, cov);
+    assert.equal(layout.margin.t, 20, 'no margin is reserved on screen');
+
+    // an export shows it, with room above the plot, then hides it again
+    const relayouts = [];
+    globalThis.Plotly = { relayout: async (gd, u) => { relayouts.push(u); } };
+    const gd = { layout: layout };
+    const seen = await exportWithCoverage(gd, async () => 'png');
+    assert.equal(seen, 'png');
+    const i = layout.annotations.findIndex(a => a.name === 'coverage-notice');
+    assert.equal(relayouts[0][`annotations[${i}].visible`], true);
+    assert.ok(relayouts[0]['margin.t'] >= 15 * ann.text.split('<br>').length);
+    assert.equal(relayouts[1][`annotations[${i}].visible`], false);
+    assert.equal(relayouts[1]['margin.t'], 20);
+});
+
+test('the modebar camera exports through exportWithCoverage', () => {
+    globalThis.Plotly = { Icons: { camera: {} } };
+    const cfg = withCoverageExportButton({ modeBarButtonsToRemove: ['lasso2d'] });
+    assert.ok(cfg.modeBarButtonsToRemove.includes('toImage'));
+    assert.equal(cfg.modeBarButtonsToAdd.length, 1);
+    assert.equal(typeof cfg.modeBarButtonsToAdd[0].click, 'function');
+    assert.deepEqual(withCoverageExportButton({ displayModeBar: false }), { displayModeBar: false });
 });
 
 test('the annotation elides a long reason list rather than covering the plot', () => {

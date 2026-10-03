@@ -3,7 +3,7 @@
  * This file contains functions to set up event listeners for table panels
  */
 import { DataManager } from '../../data-manager.js';
-import { exportTableToCsv, updateTableOnFocusChange } from './table-data.js';
+import { exportTableToCsv, updateTableOnFocusChange, refreshColumnChooser } from './table-data.js';
 
 /**
  * Set up event listeners for table panels
@@ -15,7 +15,7 @@ import { exportTableToCsv, updateTableOnFocusChange } from './table-data.js';
  * @param {string} options.entityType - Entity type ('cells' or 'genes')
  * @param {string} options.title - Panel title
  * @param {Function} options.refreshTable - Function to refresh the table
- * @returns {void}
+ * @returns {Function} - Removes every listener this call registered
  */
 export function setupTableEventListeners({
     id,
@@ -26,30 +26,50 @@ export function setupTableEventListeners({
     title,
     refreshTable
 }) {
+    // Every document-level listener below is registered with this signal, so
+    // the cleanup removes all of them. The panels call this on EVERY refresh;
+    // without the removal each refresh stacked another full set, and one
+    // 'refreshTable' event then ran N refreshes against N stale DataTables.
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     // Common event listeners for both table types
     setupCommonEventListeners({
         id,
         settings,
         dataTable,
         title,
-        refreshTable
+        refreshTable,
+        signal
     });
 
-    // Entity-specific event listeners
-    if (entityType === 'cells') {
-        setupCellTableEventListeners({
+    // Focus listeners. BOTH table types hold columns keyed to BOTH foci: a
+    // cell table has obsp "focused cell" and layer "focused gene" columns, a
+    // gene table has varp "focused gene" and layer "focused cell" columns. So
+    // both tables listen to both events and let updateTableOnFocusChange
+    // decide which columns actually depend on the entity that changed.
+    if (entityType === 'cells' || entityType === 'genes') {
+        setupFocusEventListeners({
             id,
-            dataTable
-        });
-    } else if (entityType === 'genes') {
-        setupGeneTableEventListeners({
-            id,
-            dataTable
+            dataTable,
+            tableEntityType: entityType,
+            signal
         });
     }
     
+    // A plot locked or unlocked an axis on a cell or gene, or a panel closed:
+    // the chooser offers every locked entity, so list them again. The table's
+    // data does not change.
+    if (entityType === 'cells' || entityType === 'genes') {
+        document.addEventListener('fixedEntitiesChanged', () => {
+            refreshColumnChooser(settings, entityType).catch(error =>
+                console.error(`Table ${id}: refreshing the column chooser failed:`, error));
+        }, { signal });
+    }
+
     // Return a cleanup function that can be called when refreshing the table
     return function cleanupListeners() {
+        controller.abort();
         // Remove SearchBuilder event listener if dataTable exists
         if (dataTable && dataTable.table) {
             $(dataTable.table().node()).off('searchBuilder.dtsb');
@@ -65,6 +85,7 @@ export function setupTableEventListeners({
  * @param {Object} options.dataTable - DataTable instance
  * @param {string} options.title - Panel title
  * @param {Function} options.refreshTable - Function to refresh the table
+ * @param {AbortSignal} options.signal - Removes the listeners when aborted
  * @returns {void}
  */
 function setupCommonEventListeners({
@@ -72,7 +93,8 @@ function setupCommonEventListeners({
     settings,
     dataTable,
     title,
-    refreshTable
+    refreshTable,
+    signal
 }) {
     // Listen for column updates
     document.addEventListener('columnsUpdated', async (e) => {
@@ -86,7 +108,7 @@ function setupCommonEventListeners({
                 }
             }
         }
-    });
+    }, { signal });
     
     // Listen for table option changes
     document.addEventListener('tableOptionChanged', (e) => {
@@ -99,7 +121,7 @@ function setupCommonEventListeners({
                 refreshTable();
             }
         }
-    });
+    }, { signal });
     
     // Listen for search builder toggle
     document.addEventListener('searchBuilderToggled', (e) => {
@@ -111,65 +133,51 @@ function setupCommonEventListeners({
                 $('.dtsp-searchBuilder').toggle(e.detail.enabled);
             }
         }
-    });
+    }, { signal });
     
     // Listen for export CSV request
     document.addEventListener('exportTableToCsv', (e) => {
         if (e.detail.id === id && dataTable) {
             exportTableToCsv(dataTable, title);
         }
-    });
+    }, { signal });
     
     // Listen for refresh table request
     document.addEventListener('refreshTable', (e) => {
         if (e.detail.id === id) {
             refreshTable();
         }
-    });
+    }, { signal });
 }
 
 /**
- * Set up cell table specific event listeners
+ * Set up focused cell / focused gene listeners for a table
  * @param {Object} options - Options for setting up listeners
  * @param {string} options.id - Panel ID
  * @param {Object} options.dataTable - DataTable instance
+ * @param {string} options.tableEntityType - The table's rows ('cells' or 'genes')
+ * @param {AbortSignal} options.signal - Removes the listeners when aborted
  * @returns {void}
  */
-function setupCellTableEventListeners({
+function setupFocusEventListeners({
     id,
-    dataTable
+    dataTable,
+    tableEntityType,
+    signal
 }) {
-    // Listen for focused gene changes
-    document.addEventListener('focusedGeneChanged', async (e) => {
-        // Handle both immediate updates and deferred updates
-        setTimeout(() => {
-            if (dataTable) {
-                console.log(`Cell table ${id} handling focused gene change: ${e.detail.gene}`);
-                updateTableOnFocusChange(dataTable, e.detail.gene, 'genes');
-            }
-        }, 0);
-    });
-}
-
-/**
- * Set up gene table specific event listeners
- * @param {Object} options - Options for setting up listeners
- * @param {string} options.id - Panel ID
- * @param {Object} options.dataTable - DataTable instance
- * @returns {void}
- */
-function setupGeneTableEventListeners({
-    id,
-    dataTable
-}) {
-    // Listen for focused cell changes
-    document.addEventListener('focusedCellChanged', async (e) => {
-        // Handle both immediate updates and deferred updates
-        setTimeout(() => {
-            if (dataTable) {
-                console.log(`Gene table ${id} handling focused cell change: ${e.detail.cell}`);
-                updateTableOnFocusChange(dataTable, e.detail.cell, 'cells');
-            }
-        }, 0);
-    });
+    const events = [
+        { name: 'focusedCellChanged', detailKey: 'cell', changed: 'cells' },
+        { name: 'focusedGeneChanged', detailKey: 'gene', changed: 'genes' }
+    ];
+    for (const { name, detailKey, changed } of events) {
+        document.addEventListener(name, (e) => {
+            // Handle both immediate updates and deferred updates
+            setTimeout(() => {
+                if (dataTable && !signal.aborted) {
+                    console.log(`Table ${id} (${tableEntityType}) handling ${name}: ${e.detail?.[detailKey]}`);
+                    updateTableOnFocusChange(dataTable, e.detail?.[detailKey], changed, tableEntityType);
+                }
+            }, 0);
+        }, { signal });
+    }
 }

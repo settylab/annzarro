@@ -6,17 +6,23 @@ including configuration, initialization, and routing.
 """
 
 import os
+import re
 import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from functools import wraps
 import time
+from urllib.parse import quote, urlsplit
 
-from flask import Flask, request, jsonify, session, redirect, url_for, current_app, render_template
+from flask import (Flask, request, jsonify, session, redirect, url_for, current_app,
+                   render_template, has_request_context)
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+from annzarro.utils.paths import default_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +36,25 @@ DEFAULT_CONFIG = {
     "https_enabled": False,
     "cert_file": None,
     "key_file": None,
-    "data_dir": "data",
-    "static_dir": None,  # Will default to project root directory
-    "log_file": "annzarro_server.log",
+    "data_dir": None,                  # None = ~/annzarro-data (paths.default_data_dir)
+    "static_dir": None,  # None = the frontend static directory (paths.frontend_dir)
+    "log_file": None,  # None = ~/.annzarro/logs/annzarro_server.log
     "log_level": "INFO",
     "auth_enabled": False,
     "user_file": "users.json",
     "unified_server": True,  # New flag to indicate we're using the unified server approach
-    "max_response_elements": 1000000,  # Maximum number of elements in array responses
-    "max_cells_per_request": 10000,    # Maximum number of cells in a single request
-    "max_genes_per_request": 10000,    # Maximum number of genes in a single request
-    "max_embedding_dims": 50,          # Maximum number of dimensions in embedding requests
-    "secret_key": "change-this-in-production",  # Secret key for sessions
+    "max_response_elements": 10000000, # Maximum number of elements in array responses (as base.yaml)
+    "secret_key": None,                # Login cookie key; None = generated and stored beside user_file
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
     "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
-    "app_name": "Annzarro",            # Application name shown on login page
+    "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
+    "remote_allowlist": [],            # URL prefixes remote datasets must start with
+    "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
+    "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
+    "remote_read_timeout_s": 30,       # seconds between bytes before a 504
+    "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
+    "app_name": "AnnZarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page
         "email": None,                 # Contact email address
@@ -54,6 +63,142 @@ DEFAULT_CONFIG = {
         "custom_html": None            # Custom HTML content for additional contact info
     }
 }
+
+#: Default seconds of inactivity before a login expires (auth.session_timeout).
+DEFAULT_SESSION_TIMEOUT = 8 * 3600
+
+
+def is_logged_in() -> bool:
+    """Whether the current request carries a live login session.
+
+    A session idle for longer than ``session_timeout`` seconds (0 = never)
+    is cleared. The idle clock lives in the signed cookie, so it cannot be
+    reset by the client; it is refreshed at most once a minute to avoid
+    re-sending the cookie on every request.
+    """
+    if "user_id" not in session:
+        return False
+    timeout = current_app.config.get("session_timeout", DEFAULT_SESSION_TIMEOUT)
+    now = time.time()
+    try:
+        last = float(session.get("last_activity", 0))
+    except (TypeError, ValueError):
+        last = 0.0
+    if timeout and now - last > float(timeout):
+        logger.info(f"Login session of {session.get('user_id')!r} expired after {timeout}s idle")
+        session.clear()
+        return False
+    # A removed user, or a login from before a password change, no longer counts
+    manager = getattr(current_app, "auth_manager", None)
+    if manager is not None and not manager.session_is_current(
+            session["user_id"], session.get("login_at", 0)):
+        logger.info(f"Login session of {session.get('user_id')!r} revoked "
+                    "(user removed or password changed)")
+        session.clear()
+        return False
+    if now - last > 60:
+        session["last_activity"] = now
+    return True
+
+
+def safe_next(target: Optional[str], root: str = "") -> str:
+    """``target`` if it is a path in this app, else the app's front page.
+
+    Only a relative path that starts with a single ``/`` is accepted, so a
+    crafted ``/login?next=//evil.example`` or ``next=https://...`` cannot send
+    a user who just signed in to another site. ``root`` is the path the app is
+    mounted at (``request.script_root``, e.g. ``/explore``); ``target`` is the
+    path as the browser sees it, so it must lie under ``root``, which also
+    keeps a login from sending the user to another app on the same host.
+    """
+    home = root + "/"
+    if not target or not isinstance(target, str):
+        return home
+    if any(c in target for c in "\r\n\\") or any(ord(c) < 0x20 for c in target):
+        return home
+    if not target.startswith("/") or target.startswith("//"):
+        return home
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc:
+        return home
+    if parts.path != root and not parts.path.startswith(home):
+        return home
+    path = parts.path[len(root):]
+    if path.startswith("/login") or path.startswith("/logout"):
+        return home
+    return target
+
+
+def normalize_url_prefix(value: Optional[str]) -> str:
+    """``server.url_prefix`` as a mount point: ``/explore/`` -> ``/explore``,
+    and ``None``, ``""`` or ``/`` -> ``""`` (the root).
+
+    Raises ValueError for anything but a plain path, since the prefix ends up
+    in every URL the app writes and in the login cookie's Path.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"server.url_prefix must be a path such as /explore, not {value!r}")
+    prefix = value.strip().strip("/")
+    if not prefix:
+        return ""
+    segments = prefix.split("/")
+    if (any(seg in ("", ".", "..") for seg in segments)
+            or not re.fullmatch(r"[A-Za-z0-9._~/-]+", prefix)):
+        raise ValueError(f"server.url_prefix must be a path such as /explore, not {value!r}")
+    return "/" + prefix
+
+
+class PrefixMiddleware:
+    """Mount the app at a fixed path (``server.url_prefix``).
+
+    Sets ``SCRIPT_NAME`` so every URL Flask builds (``url_for``, redirects,
+    ``request.script_root`` in the templates, the cookie Path) carries the
+    prefix. Works whether the proxy strips the prefix before forwarding
+    (``proxy_pass http://127.0.0.1:8766/;``) or passes the path through
+    unchanged (``proxy_pass http://127.0.0.1:8766;``).
+    """
+
+    def __init__(self, app, prefix: str):
+        self.app = app
+        self.prefix = prefix
+
+    def __call__(self, environ, start_response):
+        path = environ.get("PATH_INFO", "") or ""
+        if path == self.prefix or path.startswith(self.prefix + "/"):
+            environ["PATH_INFO"] = path[len(self.prefix):] or "/"
+        environ["SCRIPT_NAME"] = self.prefix
+        return self.app(environ, start_response)
+
+
+def safe_fragment(fragment: Optional[str]) -> str:
+    """A URL fragment (``#view=...``) to re-attach after login, or ``""``."""
+    if not fragment or not isinstance(fragment, str):
+        return ""
+    fragment = fragment.lstrip("#")
+    if not fragment or any(ord(c) < 0x20 for c in fragment):
+        return ""
+    return "#" + fragment
+
+
+def login_required_response():
+    """What a request that needs login gets without one: 401 for the API,
+    a redirect to the login page for everything else.
+
+    The redirect carries the page asked for (path and query) as ``next``, so
+    a shared link survives signing in. Its ``#view=`` fragment never reaches
+    the server; the browser keeps it across this redirect and the login page
+    posts it back (see templates/login.html).
+    """
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Authentication required"}), 401
+    root = request.script_root
+    target = root + (request.full_path.rstrip("?") if request.query_string else request.path)
+    if safe_next(target, root) == root + "/":
+        return redirect(root + "/login")
+    return redirect(root + "/login?next=" + quote(target, safe="/"))
+
 
 def require_auth(f):
     """
@@ -75,18 +220,67 @@ def require_auth(f):
             return f(*args, **kwargs)
             
         # Check if user is logged in (in session)
-        if "user_id" not in session:
+        if not is_logged_in():
             logger.warning(f"Unauthenticated access attempt to {request.path}")
-            # For API routes, return 401 Unauthorized
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required"}), 401
-            # For UI routes, redirect to login page
-            return redirect("/login")
+            return login_required_response()
             
         # User is authenticated, proceed with the original function
         logger.debug(f"Authenticated access to {request.path} by {session['user_id']}")
         return f(*args, **kwargs)
     return decorated_function
+
+class _LoginCookieInterface(SecureCookieSessionInterface):
+    """Flask's signed-cookie sessions with ``cookie_secure: auto``: the login
+    cookie is marked Secure exactly when the request came over HTTPS (as
+    reported by the trusted proxies, see ``proxy_count``).
+
+    The cookie's Path is the path the app is mounted at (``/explore`` behind a
+    proxy, see ``url_prefix``), so the browser does not send it to other apps
+    on the same host, and two AnnZarro servers under different paths keep
+    separate logins."""
+
+    def get_cookie_path(self, app):
+        configured = app.config.get("SESSION_COOKIE_PATH")
+        if configured:
+            return configured
+        return (request.script_root if has_request_context() else "") or "/"
+
+    def get_cookie_secure(self, app):
+        mode = app.config.get("cookie_secure", "auto")
+        if isinstance(mode, str) and mode.strip().lower() == "auto":
+            return request.is_secure
+        if isinstance(mode, str):
+            return mode.strip().lower() in ("true", "yes", "1", "on")
+        return bool(mode)
+
+
+def resolve_dataset_segment(endpoint, values):
+    """``/datasets/<path>`` names a dataset RELATIVE TO data_dir.
+
+    The routes used to hand the segment to the readers as is, so it was
+    resolved against the server's working directory, and an absolute path
+    lost its leading "/" in the URL. Resolved here, before the confinement
+    check sees it. (``?dataset_path=`` keeps accepting absolute paths.)
+    """
+    if not values or not values.get("dataset_path"):
+        return
+    segment = values["dataset_path"]
+    if "://" in segment:
+        return
+    data_dir = current_app.config.get("data_dir") or default_data_dir()
+    values["dataset_path"] = os.path.join(data_dir, segment)
+
+
+def require_dataset_segment():
+    """404 for a ``/datasets/<path>`` that does not exist, instead of the
+    routes' 200-with-an-error-body, 400 or 500."""
+    path = (request.view_args or {}).get("dataset_path")
+    if path and "://" not in path and not os.path.exists(path):
+        return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
+                                 "to the server's data directory.",
+                        "reason": "not_found"}), 404
+    return None
+
 
 def create_app(config: Dict[str, Any] = None) -> Flask:
     """
@@ -99,10 +293,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         Configured Flask application
     """
     # Create Flask app with custom template folder
-    template_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
+    from annzarro.utils.paths import frontend_dir
+    template_folder = str(frontend_dir("templates"))
     
     # Check for static folder with favicon
-    static_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    static_folder = str(frontend_dir("static"))
     if os.path.exists(static_folder) and (
         os.path.exists(os.path.join(static_folder, "favicon.ico")) or
         os.path.exists(os.path.join(static_folder, "favicon.png"))
@@ -116,9 +311,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     app.json_encoder = NumpyJSONEncoder
     logger.info("Using custom JSON encoder to handle NaN/Infinity values")
     
-    # Enable CORS by default for all routes - important during development
-    CORS(app)
-    
+    # CORS is configured in configure_app() from cors_enabled/cors_origins
+    # (off by default). An unconditional CORS(app) here used to answer every
+    # route with Access-Control-Allow-Origin: *, whatever the configuration.
+
     # Apply configuration
     if config and isinstance(config, dict):
         config_copy = dict(config)
@@ -131,13 +327,32 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         # Fallback if no config was provided
         logger.warning("No configuration provided, using default configuration")
         app.config.update(DEFAULT_CONFIG)
+    if not app.config.get("data_dir"):
+        app.config["data_dir"] = default_data_dir()
     
+    # Login cookie: not sent on cross-site subrequests or form posts (Lax),
+    # Secure per cookie_secure, never readable from JavaScript.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.session_interface = _LoginCookieInterface()
+
     # Configure the app
     configure_app(app, app.config)
     
     # Setup logging
     setup_logging(app.config)
+    warn_about_exposure(app.config)
     
+    # A shared server only opens paths inside its data directory (see confinement.py)
+    from annzarro.server import confinement
+    confinement.warn_about_escaping_links(app.config)
+    # /datasets/<path> segments resolve against data_dir (#45); a relative
+    # ?dataset_path= does too when it is not a path from the working directory
+    app.url_value_preprocessor(resolve_dataset_segment)
+    app.before_request(confinement.resolve_relative_dataset_paths)
+    app.before_request(confinement.enforce)
+    app.before_request(require_dataset_segment)
+
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
     configure_zarr_reader(app.config)
@@ -151,16 +366,25 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
                f"cache_enabled={app.config.get('cache_enabled')}, "
                f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
     
+    # Decide whether this server may open remote (s3/gs/http) datasets. This
+    # must see the final auth/host/proxy settings, so it runs after config.
+    from annzarro.core.remote import configure_remote_policy
+    configure_remote_policy(app.config)
+
     # Set up authentication if enabled
     if app.config.get("auth_enabled", False):
-        # Set up Flask session secret key
-        app.secret_key = app.config.get("secret_key", os.urandom(24))
-        
         # Import after app is created to avoid circular imports
-        from annzarro.server.auth import AuthManager
+        from annzarro.server.auth import AuthManager, resolve_user_file
+        from annzarro.server.secret_key import resolve_secret_key
         
         # Create auth manager with proper path handling
         user_file = app.config.get("user_file", "users.json")
+        
+        # Sign login cookies with a key nobody else has: the configured one
+        # unless it is a shipped placeholder, else one generated and kept
+        # beside the users file (see secret_key.py)
+        app.secret_key = resolve_secret_key(app.config.get("secret_key"),
+                                            resolve_user_file(user_file))
 
         auth_manager = AuthManager(user_file=user_file)
         
@@ -169,8 +393,56 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Set up routes
     register_routes(app)
-    
+
+    # The desktop app names its server with a per-launch token and only
+    # trusts the answer that carries it: two launches that pick the same free
+    # port at once must not take each other's server for their own.
+    instance_id = os.environ.get("ANNZARRO_INSTANCE_ID")
+    if instance_id:
+        @app.after_request
+        def _tag_instance(response):
+            response.headers["X-AnnZarro-Instance"] = instance_id
+            return response
+
     return app
+
+def _exposure_where(config: Dict[str, Any]) -> str:
+    """How we know the server is shared, for the warning text."""
+    if config.get("hosted") is not None:
+        return "server.hosted is set"
+    return f"listening on {config.get('host')}"
+
+
+def warn_about_exposure(config: Dict[str, Any]) -> None:
+    """Say loudly, at startup, when the server is reachable by people it can't tell apart.
+
+    Listening beyond localhost with login disabled looks fine from the
+    outside and is not: anyone who can reach the port can edit or delete
+    every shared panel set. It is logged at WARNING inside a banner, because
+    an INFO line in a scrolling log is exactly how a deployment ran
+    unprotected unnoticed. (A placeholder ``secret_key`` is no longer a
+    risk to warn about: it is never used, see ``secret_key.py``.)
+    """
+    from .permissions import is_exposed
+
+    problems = []
+    if is_exposed(config):
+        problems.append(
+            f"Serving as a shared server ({_exposure_where(config)}) with login "
+            "DISABLED. Anyone who can "
+            "reach this port can open every dataset under the data directory "
+            "and edit or delete every shared panel set. Remove --auth-disabled / "
+            "ANNZARRO_AUTH_DISABLED and add users with `annzarro user add`, or "
+            "bind to 127.0.0.1."
+        )
+    if not problems:
+        return
+    bar = "!" * 78
+    logger.warning(bar)
+    for problem in problems:
+        logger.warning("SECURITY: %s", problem)
+    logger.warning(bar)
+
 
 def configure_app(app: Flask, config: Dict[str, Any]) -> None:
     """
@@ -180,17 +452,27 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         app: Flask application instance
         config: Configuration dictionary
     """
-    # Enable CORS if configured
+    # Cross-origin API access only when configured. Never with credentials:
+    # the login cookie must not authorize requests from other sites.
     if config.get("cors_enabled", False):
-        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}})
+        CORS(app, resources={r"/api/*": {"origins": config.get("cors_origins", "*")}},
+             supports_credentials=False)
     
-    # Enable proxy fix if needed
+    # A fixed mount point (server.url_prefix), e.g. /explore behind nginx
+    prefix = normalize_url_prefix(config.get("url_prefix"))
+    if prefix:
+        app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix)
+
+    # Enable proxy fix if needed. A trusted proxy may also say where it mounts
+    # the app with X-Forwarded-Prefix (and strip that prefix from the path);
+    # a configured url_prefix, applied inside, takes precedence.
     if config.get("proxy_count", 0) > 0:
         app.wsgi_app = ProxyFix(
             app.wsgi_app,
             x_for=config.get("proxy_count", 0),
             x_proto=config.get("proxy_count", 0),
-            x_host=config.get("proxy_count", 0)
+            x_host=config.get("proxy_count", 0),
+            x_prefix=config.get("proxy_count", 0)
         )
 
 def setup_logging(config: Dict[str, Any]) -> None:
@@ -200,7 +482,8 @@ def setup_logging(config: Dict[str, Any]) -> None:
     Args:
         config: Configuration dictionary
     """
-    log_file = config.get("log_file", "annzarro_server.log")
+    from annzarro.utils.paths import default_log_file
+    log_file = str(config.get("log_file") or default_log_file())
     log_level_str = config.get("log_level", "INFO")
     
     # Convert string log level to numeric value
@@ -208,8 +491,8 @@ def setup_logging(config: Dict[str, Any]) -> None:
     
     # Create logs directory if it doesn't exist
     log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
     
     # Reset the root logger to avoid duplicate handlers
     root_logger = logging.getLogger("")
@@ -277,50 +560,53 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
+    def render_login(**extra):
+        return render_template(
+            "login.html",
+            app_name=app.config.get("app_name", "AnnZarro"),
+            project_description=app.config.get("project_description", ""),
+            contact_info=app.config.get("contact_info", {}),
+            **extra
+        )
+
     @app.route("/login", methods=["GET"])
     def login_page():
         """Login page"""
-        # Pass the config variables to the template
-        app_name = app.config.get("app_name", "Annzarro")
-        project_description = app.config.get("project_description", "")
-        contact_info = app.config.get("contact_info", {})
-        
-        return render_template(
-            "login.html",
-            app_name=app_name,
-            project_description=project_description,
-            contact_info=contact_info
-        )
+        return render_login(next_url=safe_next(request.args.get("next"), request.script_root),
+                            fragment="")
     
     @app.route("/login", methods=["POST"])
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
+        next_url = safe_next(request.form.get("next"), request.script_root)
+        fragment = safe_fragment(request.form.get("fragment"))
         
         # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
-            # Set session variables
+        from annzarro.server.auth import UnsupportedPasswordHash
+        try:
+            ok = app.auth_manager.authenticate(username, password, client_ip=request.remote_addr)
+        except UnsupportedPasswordHash as exc:
+            logger.error(f"Login of {username!r} impossible on this Python: {exc}")
+            return render_login(next_url=next_url, fragment=fragment,
+                                error="This server cannot check your password on its current "
+                                      "Python installation. Please tell the administrator "
+                                      "(the server log says why)."), 500
+        if ok:
+            # A fresh session: nothing from before login carries over
+            session.clear()
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
-            session["last_activity"] = time.time()
+            session["last_activity"] = session["login_at"] = time.time()
             
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            
-            # Redirect to home page
-            return redirect("/")
+            # Back to the page that asked for login, view included
+            return redirect(next_url + fragment)
         else:
-            # Return login page with error
-            app_name = app.config.get("app_name", "Annzarro")
-            project_description = app.config.get("project_description", "")
-            contact_info = app.config.get("contact_info", {})
-            
-            return render_template(
-                "login.html",
-                app_name=app_name,
-                project_description=project_description,
-                contact_info=contact_info,
+            # Return login page with error, keeping where to go afterwards
+            return render_login(
+                next_url=next_url,
+                fragment=fragment,
                 error="Invalid username or password. Please try again."
             )
     
@@ -330,21 +616,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         # Clear session
         session.clear()
         # Redirect to login page
-        return redirect("/login")
-    
-    @app.route(f"/api/{api_version}/auth/token", methods=["POST"])
-    def get_auth_token():
-        """API endpoint to get an authentication token"""
-        username = request.json.get("username")
-        password = request.json.get("password")
-        
-        # Validate credentials using auth manager
-        if app.auth_manager.authenticate(username, password):
-            # Create authentication token
-            token = app.auth_manager.create_token(username)
-            return jsonify({"token": token})
-        else:
-            return jsonify({"error": "Invalid credentials"}), 401
+        return redirect(request.script_root + "/login")
     
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:
