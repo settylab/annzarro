@@ -11,18 +11,21 @@ import assert from 'node:assert/strict';
 
 const {
     presetSizes, partsFor, shortCount, estimateLoad, formatSeconds, DEFAULT_MODEL, EXTRAPOLATE_FACTOR,
+    BROWSER_POINT_CEILING, initialSize,
     recordLoad, recordServer, serverSeconds, loadSamples, resetLoadSamples
 } = await import('../../../static/js/utils/subset-presets.js');
 
-test('the ladder is 1-2-5 from 1k, below the eligible cells, fast to complete', () => {
-    assert.deepEqual(presetSizes(1000000),
-        [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000]);
-    const big = presetSizes(95624334);
-    assert.equal(big[0], 1000);
-    assert.equal(big[big.length - 1], 50000000);
-    assert.equal(big.length, 15);
-    for (let i = 1; i < big.length; i++) assert.ok(big[i] > big[i - 1]);
-    for (const n of big) assert.match(String(n), /^[125]0*$/);
+test('the ladder is 1-5 from 1k, 1-2-5 from 100k, below the eligible cells, fast to complete', () => {
+    assert.deepEqual(presetSizes(1000000), [1000, 5000, 10000, 50000, 100000, 200000, 500000]);
+    assert.deepEqual(presetSizes(95624334), [1000, 5000, 10000, 50000, 100000, 200000, 500000,
+        1e6, 2e6, 5e6, 1e7, 2e7, 5e7]);
+    assert.deepEqual(presetSizes(300000000).slice(-5), [1e7, 2e7, 5e7, 1e8, 2e8]);
+    for (const N of [200, 1500, 1e6, 95624334, 3e8]) {
+        const p = presetSizes(N);
+        for (let i = 1; i < p.length; i++) assert.ok(p[i] > p[i - 1]);
+        for (const n of p) assert.match(String(n), /^[125]0*$/);
+        assert.ok(p.every(n => n < N));
+    }
     // a rung equal to the eligible count is "All", not a preset
     assert.ok(!presetSizes(100000).includes(100000));
 });
@@ -59,10 +62,12 @@ test('the default estimate reproduces the benchmark it was fitted to', () => {
     assert.equal(large.large, true);
     near(large.seconds, 9.03, 1.0);
     assert.equal(large.calibrated, false);
-    // within the benchmark's range: 1M regular, 95.6M large
+    // within the benchmark's clean runs: 1M regular, 95.6M large; past them a guess
     assert.equal(large.extrapolated, false);
-    assert.equal(estimateLoad(4000000, { nTotal: 1e8 }).extrapolated, false);
-    assert.equal(estimateLoad(4000001, { nTotal: 1e8 }).extrapolated, true);
+    assert.equal(estimateLoad(1000000, { nTotal: 1e8 }).extrapolated, false);
+    assert.equal(estimateLoad(2000000, { nTotal: 1e8 }).extrapolated, true);
+    assert.equal(estimateLoad(5000000, { nTotal: 1e8 }).extrapolated, true);  // the unclean 5M row
+    assert.equal(estimateLoad(2e8, { nTotal: 3e8 }).extrapolated, true);
 });
 
 test('the estimate grows with n on each path', () => {
@@ -101,9 +106,9 @@ test('calibration: big plots set the per-point cost, small ones the fixed cost',
     assert.equal(far.calibrated, true);
     assert.equal(far.extrapolated, false);
     assert.equal(far.measuredUpTo, DEFAULT_MODEL.regular.measuredUpTo);
+    assert.equal(estimateLoad(2000000, { ...ctx, samples: tiny }).extrapolated, true);
     assert.ok(far.seconds < base(1000000));
     assert.ok(far.seconds > base(1000000) - DEFAULT_MODEL.regular.first.fixed);
-    assert.equal(estimateLoad(5000000, { ...ctx, samples: tiny }).extrapolated, true);
 });
 
 test('recolour timings calibrate against the recolour model', () => {
@@ -124,7 +129,7 @@ test('extrapolated beyond EXTRAPOLATE_FACTOR x the largest measured n, and per p
     assert.equal(large.calibrated, false);      // no large-plot draw yet: the benchmark's range
     assert.equal(large.measuredUpTo, DEFAULT_MODEL.large.measuredUpTo);
     assert.equal(large.extrapolated, false);
-    assert.equal(estimateLoad(4e8, ctx).extrapolated, true);
+    assert.equal(estimateLoad(1e8, ctx).extrapolated, true);
     assert.equal(estimateLoad(1e5, ctx).measuredUpTo, 100000);
 });
 
@@ -157,4 +162,18 @@ test('the session record keeps sane samples only, and the server time per datase
 test('times are rounded so they do not look precise', () => {
     assert.deepEqual([0.2, 1.4, 6.08, 12, 28, 59, 75, 900].map(formatSeconds),
         ['<1 s', '~1 s', '~6 s', '~10 s', '~30 s', '~60 s', '~1 min', '~15 min']);
+});
+
+test('sizes above the browser ceiling are flagged and never the default', () => {
+    // measured: 175M drawn, 182M a V8 OOM at a 4.40 GB heap
+    assert.equal(BROWSER_POINT_CEILING, 150000000);
+    const N = 300000000;
+    const flagged = presetSizes(N).filter(n => estimateLoad(n, { nTotal: N }).overCeiling);
+    assert.deepEqual(flagged, [2e8]);
+    assert.equal(estimateLoad(N, { nTotal: N }).overCeiling, true);          // "All"
+    assert.equal(estimateLoad(95624334, { nTotal: 95624334 }).overCeiling, false);
+    assert.ok(presetSizes(95624334).every(n => !estimateLoad(n).overCeiling));
+    assert.equal(initialSize(100000, N), 100000);
+    assert.equal(initialSize(N, N), BROWSER_POINT_CEILING);
+    assert.equal(initialSize(100000, 200), 200);
 });

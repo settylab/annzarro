@@ -52,22 +52,24 @@ show the dialog. On a large dataset the steps are the same.
    ```
 
 2. Switch on **Show a subset of the cells** (switch it off to show every cell).
-3. **Cells to show**: a row of sizes on the 1-2-5 ladder (1k, 2k, 5k, 10k, ... up to the number
-   of cells passing the filter), ordered from fast to complete, and **All**. Click one to choose it;
+3. **Cells to show**: a row of round sizes (1k, 5k, 10k, 50k, then 100k, 200k, 500k, 1M, 2M, 5M,
+   ... up to the number of cells passing the filter), ordered from fast to complete, and **All**. Click one to choose it;
    the current size is highlighted. Each size shows:
    - the number of **parts** it splits the cells into (k = ⌈cells passing the filter / size⌉; see
      [Stepping through every cell](#stepping-through-every-cell)). The parts follow the filter
      as you edit it;
    - an **estimated load time**, rounded (`<1 s`, `~6 s`, `~2 min`). Until this session has drawn
      a Cell Plot the estimates are defaults from a laptop benchmark; after that they are rescaled
-     to the plots this browser has drawn and recoloured. A grey, italic estimate is extrapolated:
-     the size is more than 4 times the largest plot of that kind that was timed (by the benchmark,
-     or by this session once it has drawn a plot large enough to measure). The line under the sizes says
+     to the plots this browser has drawn and recoloured. A grey, italic estimate is a guess:
+     the size is past the largest plot of that kind the benchmark timed cleanly (1 million points
+     for the regular plot), or more than 4 times the largest this session has drawn. The line under the sizes says
      which kind of estimate you are reading.
 
    Sizes above the large-plot limit (5,000,000 points by default, set by the server) come after a
    dashed line that says so: large-plot mode draws them faster but without hover, click or table
-   filters ([Very large datasets](#very-large-datasets)). For any other size, type it in **Cells**, here `3000`; the
+   filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
+   **may exceed browser memory** and is never chosen for you: a laptop's Chrome drew 175 million
+   points and ran out of memory at 182 million. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
 4. **Seed**: any whole number from 0 to 4,294,967,295. **New seed** draws another one. The same

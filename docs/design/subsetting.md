@@ -164,11 +164,13 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 - Stats bar: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
   `Cells: 8,090 [All cells]`. The badge's tooltip spells out the spec
   (seed, balance, filter, cells passing the filter).
-- The badge opens the dialog: on/off; size presets on the 1-2-5 ladder from
-  1k below the eligible count (the three largest rungs on a dataset too small
+- The badge opens the dialog: on/off; size presets below the eligible count,
+  1k, 5k, 10k, 50k and then 1-2-5 from 100k (the three largest rungs on a dataset too small
   for three from 1k), each with its parts ⌈eligible / n⌉ and an estimated load
   time, and "All" (every cell passing the filter); a marker before the presets
-  above `ui.defaults.large_plot_points`; the cell count for any other size;
+  above `ui.defaults.large_plot_points`; a "may exceed browser memory" warning
+  above `BROWSER_POINT_CEILING` (150M; 175M drew, 182M was a V8 OOM at a
+  4.40 GB heap), a size the dialog never picks by default; the cell count for any other size;
   seed and a "New seed" button, uniform or balanced sampling, filter
   conditions, "use a cell table's filter". It previews what the server would
   select (`/data/subset`) before anything changes, including per-group counts,
@@ -185,9 +187,9 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
   the slope. The preview request times the selection alone, so it can raise the
   modelled server cost but not lower it (reading a subset's rows from a large
   store costs more than selecting them).
-  An estimate is flagged as extrapolated (grey) when n is more than 4x the
-  largest plot that measured its path's slope: this session's draws, or the
-  benchmark's (1M regular, 95.6M large) until a session draw does.
+  An estimate is flagged as extrapolated (grey) when n is past the largest
+  clean benchmark run on its path (1M regular, 95.6M large), or, once this
+  session's draws have measured the slope, more than 4x the largest of them.
 - Apply reopens the current view (panels, layout, focus) on the new cells
   through the panel-set load path, so every panel is rebuilt on them.
 - With more than one part, `‹ Part 3 of 957 ›` follows the badge: buttons for

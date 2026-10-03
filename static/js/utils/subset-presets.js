@@ -19,11 +19,27 @@
  * its path.
  */
 
-/** The 1-2-5 ladder starts here; smaller datasets get a few smaller rungs. */
+/** The ladder starts here; smaller datasets get a few smaller rungs. */
 export const LADDER_FLOOR = 1000;
+/** Below this the ladder skips its 2-rungs (1k, 5k, 10k, 50k), so it stays short on a phone. */
+export const FULL_LADDER_FROM = 100000;
 const MIN_PRESETS = 3;
-/** An estimate for n more than this many times the largest n measured on its path is extrapolated. */
+/**
+ * An estimate for n more than this many times the largest n this session
+ * measured on its path is extrapolated. Against the benchmark's defaults the
+ * factor is 1: anything past its largest clean run is a guess.
+ */
 export const EXTRAPOLATE_FACTOR = 4;
+
+/** Large-plot mode above this many points unless the server says otherwise (ui.defaults.large_plot_points). */
+export const DEFAULT_LARGE_PLOT_POINTS = 5000000;
+/**
+ * Above this many points a plot may not fit in the browser tab at all. The
+ * paper's laptop benchmark drew 175M points in large-plot mode and ran out
+ * of V8 memory (OOM) at 182M with a 4.40 GB heap; 150M leaves a margin.
+ * Sizes above it are offered with a warning and never chosen by default.
+ */
+export const BROWSER_POINT_CEILING = 150000000;
 
 /**
  * Defaults from the AnnZarro paper's clean laptop benchmark
@@ -47,13 +63,16 @@ export const DEFAULT_MODEL = {
     large: { first: { fixed: 0.53, perPoint: 6.2e-8 }, recolour: { fixed: 1.05, perPoint: 5.7e-8 }, measuredUpTo: 95624334 }
 };
 
-/** The 1-2-5 sequence from `from` up to (not including) `below`. */
-function _ladder(from, below) {
+/**
+ * The 1-2-5 sequence from `from` up to (not including) `below`, without the
+ * 2-rungs below `full` (1-5 there).
+ */
+function _ladder(from, below, full = 0) {
     const out = [];
     for (let decade = 1; decade < below; decade *= 10) {
         for (const m of [1, 2, 5]) {
             const v = m * decade;
-            if (v >= from && v < below) out.push(v);
+            if (v >= from && v < below && !(m === 2 && v < full)) out.push(v);
         }
     }
     return out;
@@ -69,10 +88,15 @@ function _ladder(from, below) {
 export function presetSizes(eligible) {
     const e = Number(eligible);
     if (!(e > 1)) return [];
-    const ladder = _ladder(LADDER_FLOOR, e);
+    const ladder = _ladder(LADDER_FLOOR, e, FULL_LADDER_FROM);
     if (ladder.length >= MIN_PRESETS) return ladder;
     const all = _ladder(1, e);
     return all.slice(Math.max(0, all.length - MIN_PRESETS));
+}
+
+/** The size a dialog offers first: the server's default, within the cells and the browser ceiling. */
+export function initialSize(defaultSize, eligible, ceiling = BROWSER_POINT_CEILING) {
+    return Math.max(1, Math.min(Number(defaultSize) || 1, Number(eligible) || 1, ceiling));
 }
 
 /** k = ceil(eligible / n), the number of disjoint parts of size n (at least 1). */
@@ -173,13 +197,18 @@ function _factors(model, path, samples) {
  * @param {number} [ctx.serverTime] the measured selection time (serverSeconds()); the larger of it and the modelled cost is used
  * @param {Array} [ctx.samples] defaults to this session's (recordLoad)
  * @param {Object} [ctx.model] defaults to DEFAULT_MODEL
- * @returns {{seconds: number, large: boolean, calibrated: boolean, extrapolated: boolean, measuredUpTo: number}}
+ * @param {number} [ctx.ceiling] BROWSER_POINT_CEILING
+ * @returns {{seconds: number, large: boolean, calibrated: boolean, extrapolated: boolean,
+ *            measuredUpTo: number, overCeiling: boolean}}
  *   calibrated: rescaled to this session's draws on this path;
- *   extrapolated: n is more than EXTRAPOLATE_FACTOR times the largest plot
- *   that measured the per-point cost (measuredUpTo): this session's draws on
- *   the path, or the benchmark's until one of them does.
+ *   extrapolated: n is beyond the largest plot that measured the per-point
+ *   cost (measuredUpTo): more than EXTRAPOLATE_FACTOR times this session's
+ *   largest draw on the path, or past the benchmark's largest clean run
+ *   until a session draw measures it;
+ *   overCeiling: n may not fit in the browser's memory at all.
  */
-export function estimateLoad(n, { nTotal = 0, threshold = 5000000, serverTime = null, samples = null, model = DEFAULT_MODEL } = {}) {
+export function estimateLoad(n, { nTotal = 0, threshold = DEFAULT_LARGE_PLOT_POINTS, serverTime = null, samples = null,
+                              model = DEFAULT_MODEL, ceiling = BROWSER_POINT_CEILING } = {}) {
     const large = n > threshold;
     const path = large ? 'large' : 'regular';
     const mine = (samples || _samples).filter(s => s.large === large);
@@ -196,8 +225,9 @@ export function estimateLoad(n, { nTotal = 0, threshold = 5000000, serverTime = 
         seconds: server + t.fixed * f.fixed + t.perPoint * f.perPoint * n,
         large,
         calibrated: mine.length > 0,
-        extrapolated: n > EXTRAPOLATE_FACTOR * measuredUpTo,
-        measuredUpTo
+        extrapolated: n > (f.perPointMeasured ? EXTRAPOLATE_FACTOR : 1) * measuredUpTo,
+        measuredUpTo,
+        overCeiling: n > ceiling
     };
 }
 

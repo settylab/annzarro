@@ -117,7 +117,7 @@ def test_preset_applies_its_size(server, page):
     _open(page, server, 1400)
     chips = page.evaluate(CHIPS)
     assert [(c["label"], c["parts"]) for c in chips] == [
-        ("20", "10 parts"), ("50", "4 parts"), ("100", "2 parts"), ("All", "200 cells")], chips
+        ("20", "10 parts"), ("50", "4 parts"), ("100", "2 parts"), ("All", "200")], chips
     assert all(c["time"] for c in chips), chips
     # the plot behind the dialog was drawn and timed in this session
     page.wait_for_function("() => /this session/.test(document.getElementById('subset-estimate-note').textContent)")
@@ -128,6 +128,15 @@ def test_preset_applies_its_size(server, page):
     assert page.input_value("#subset-n") == "50"
     assert page.inner_text("#subset-n-parts").startswith("4 parts")
     assert [c["n"] for c in page.evaluate(CHIPS) if c["pressed"]] == [50]
+    # the preview is the server's answer for the same size
+    page.wait_for_function("() => /^50 of 200 cells will be shown/.test("
+                           "document.getElementById('subset-preview').textContent)")
+    assert "part 1 of 4;" in page.inner_text("#subset-preview")
+    # a size off the ladder selects no chip
+    page.fill("#subset-n", "60")
+    assert [c for c in page.evaluate(CHIPS) if c["pressed"]] == []
+    assert page.inner_text("#subset-n-parts").startswith("4 parts")
+    page.click('#subset-presets button[data-n="50"]')
 
     page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
     page.click("#subset-apply")

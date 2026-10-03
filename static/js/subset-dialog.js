@@ -16,11 +16,12 @@ import {
     describeCondition, searchBuilderToWhere, describeParts, partSpec
 } from './utils/subset.js';
 import {
-    presetSizes, partsFor, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
+    presetSizes, partsFor, initialSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
+const OVER_CEILING = `<span class="sp-warn" title="Above ${fmt(BROWSER_POINT_CEILING)} points the browser tab may run out of memory">may exceed browser memory</span>`;
 
 const SubsetControl = (function() {
     let _onApply = null;
@@ -233,7 +234,7 @@ const SubsetControl = (function() {
         _nTotal = nTotal;
         _eligible = (current && current.n_eligible) || nTotal;
         q('subset-enabled').checked = !!spec;
-        q('subset-n').value = String(spec && spec.n !== null ? spec.n : Math.min(defaults.size, nTotal));
+        q('subset-n').value = String(spec && spec.n !== null ? spec.n : initialSize(defaults.size, nTotal));
         q('subset-n').max = String(nTotal);
         q('subset-n-all').checked = !!spec && spec.n === null;
         q('subset-n').disabled = q('subset-n-all').checked;
@@ -266,7 +267,7 @@ const SubsetControl = (function() {
     /** Points above which a Cell Plot uses large-plot mode (as large-plot.js reads it). */
     function _threshold() {
         const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
-        return typeof v === 'number' && v >= 0 ? v : 5000000;
+        return typeof v === 'number' && v >= 0 ? v : DEFAULT_LARGE_PLOT_POINTS;
     }
 
     /** A size preset was chosen: show a subset of `n` cells. */
@@ -316,18 +317,22 @@ const SubsetControl = (function() {
             if (est.large && !marked) { html += divider; marked = true; }
             const parts = partsFor(_eligible, size);
             const pressed = on && !all && n === size;
-            html += `<button type="button" class="subset-preset${est.large ? ' sp-large' : ''}" data-n="${size}"
-                aria-pressed="${pressed}" title="${fmt(size)} cells, part 1 of ${fmt(parts)}">
+            html += `<button type="button" class="subset-preset${est.large ? ' sp-large' : ''}${est.overCeiling ? ' sp-over' : ''}"
+                data-n="${size}" aria-pressed="${pressed}" title="${fmt(size)} cells, part 1 of ${fmt(parts)}">
                 <span class="sp-n">${shortCount(size)}</span>${_timeHtml(est)}
-                <span class="sp-parts">${fmt(parts)} parts</span></button>`;
+                <span class="sp-parts">${parts >= 10000 ? shortCount(parts) : fmt(parts)} parts</span>${est.overCeiling ? OVER_CEILING : ''}</button>`;
         }
         const estAll = _estimate(_eligible);
         if (estAll.large && !marked) html += divider;
         box.innerHTML = html;
         box.appendChild(allChip);
         allChip.classList.toggle('sp-large', estAll.large);
+        allChip.classList.toggle('sp-over', estAll.overCeiling);
+        const warn = allChip.querySelector('.sp-warn');
+        if (warn) warn.remove();
+        if (estAll.overCeiling) allChip.insertAdjacentHTML('beforeend', OVER_CEILING);
         allChip.classList.toggle('active', on && all);
-        allChip.querySelector('.sp-parts').textContent = _eligible ? `${shortCount(_eligible)} cells` : 'every cell';
+        allChip.querySelector('.sp-parts').textContent = _eligible ? shortCount(_eligible) : 'every cell';
         allChip.querySelector('.sp-time').outerHTML = _timeHtml(estAll);
 
         const partsLabel = q('subset-n-parts');
