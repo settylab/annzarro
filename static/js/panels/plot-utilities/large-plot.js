@@ -29,7 +29,9 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { createLayout } from './plot-make-helper.js';
+import { buildPlotLayout } from './plot-make.js';
+import { getPositioningByLocation } from './plot-aesthetics-menu.js';
+import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
 import { drawPlot, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
@@ -178,6 +180,24 @@ function pushTraces(traces, X, Y, a, b, name, color, settings, showlegend) {
   }
 }
 
+/** The colour's axis title, as the regular path writes it. */
+function colourTitle(settings) {
+  return `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : '');
+}
+
+function titleFont(settings) {
+  return { size: settings.fontSize ? settings.fontSize + 2 : 14,
+    family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: settings.textColor || '#000000' };
+}
+
+/** The colour bar as the regular path draws it (plot-make.js, numerical branch). */
+function colourBar(settings, title) {
+  const pos = getPositioningByLocation(settings.legendPosition || 'right');
+  return { title: { text: title, side: 'right', font: titleFont(settings) },
+    x: pos.x, xanchor: pos.xanchor, y: pos.y, yanchor: pos.yanchor,
+    titleside: pos.titleside, orientation: pos.orientation };
+}
+
 /** What the panel says while in this mode. */
 export function largePlotNotice(n) {
   return `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`;
@@ -227,7 +247,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const t1 = performance.now();
   const x = xs.values, y = ys.values, n = x.length;
   const traces = [];
-  const layout = createLayout(settings);
+  // the regular path's layout, so both modes look the same
+  const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
   layout.uirevision = 'large';
   let filtered;
@@ -265,7 +286,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
         palette[k % palette.length], settings, true);
     }
     layout.showlegend = true;
-    layout.legend = { ...(layout.legend || {}), title: { text: `obs.${settings.color.key}` } };
+    // legend as the regular path draws it (plot-make.js, categorical branch)
+    const pos = getPositioningByLocation(settings.legendPosition || 'right');
+    layout.legend = { ...(layout.legend || {}), title: { text: colourTitle(settings), font: titleFont(settings) },
+      orientation: pos.legendOrientation, x: pos.legendX, y: pos.legendY,
+      xanchor: pos.legendXanchor, yanchor: pos.legendYanchor };
   } else if (cs && cs.values) {
     // numeric: COLOR_BINS steps over [cmin, cmax]
     let v = cs.values;
@@ -305,12 +330,16 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       pushTraces(traces, X, Y, start[r + 1], start[r + 2], `bin ${bin}`, colors[bin], settings, false);
     });
     // the colour bar: one invisible point carrying the scale
-    const title = `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : '')
-      + (settings.color.log ? ' (log10)' : '');
+    const bar = colourBar(settings, colourTitle(settings));
+    if (settings.color.log) {
+      // whole decades labelled in original units, as applyLogColorbar does
+      const ticks = logColorbarTicks(lo, hi);
+      if (ticks) Object.assign(bar, { tickvals: ticks.tickvals, ticktext: ticks.ticktext });
+    }
     traces.push({
       type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false,
       marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: settings.colorScale,
-        reversescale: !!settings.colorReversed, showscale: true, colorbar: { title: { text: title, side: 'right' } } }
+        reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
     });
     layout.showlegend = false;
   } else {

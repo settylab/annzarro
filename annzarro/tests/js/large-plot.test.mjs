@@ -60,7 +60,9 @@ const { updateLargePlotControls, largePlotTooltip } = await import(js("panels/pl
 function el(desc) {
   const attrs = {};
   if (desc.title) attrs.title = desc.title;
+  const classes = new Set(desc.classes || []);
   return { ...desc, disabled: !!desc.disabled, dataset: {},
+    classList: { contains: c => classes.has(c), add: c => classes.add(c), remove: c => classes.delete(c) },
     getAttribute: k => (k in attrs ? attrs[k] : null), setAttribute: (k, v) => { attrs[k] = v; },
     removeAttribute: k => { delete attrs[k]; } };
 }
@@ -71,7 +73,8 @@ function panel() {
   const items = [select("x"), select("y"), select("z"), select("color", ["none"]),
     el({ tag: "select", cls: "hover-columns-select", title: "Columns listed in the hover label" }),
     el({ tag: "select", cls: "table-filter-select" }),
-    el({ tag: "button", id: "z-axis-toggle-7" })];
+    el({ tag: "button", id: "z-axis-toggle-7" }),
+    el({ tag: "button", id: "highlight-focused-cell-7", classes: ["btn", "active", "btn-primary"] })];
   const match = (e, sel) => {
     const m = sel.trim().match(/^(\w+)(?:\.([\w-]+))?(?:\[data-axis="(\w+)"\])?(?:\[id\^="([\w-]+)"\])?$/);
     return m && e.tag === m[1] && (!m[2] || e.cls === m[2]) && (!m[3] || e.axis === m[3])
@@ -98,7 +101,13 @@ test("above the threshold: unsupported types, 3D, Hover and table filter off wit
     assert.equal(byCls(p, c).getAttribute("title"), tip);
   }
   assert.equal(p.items.find(e => e.axis === "z").disabled, true);
-  assert.equal(p.items.find(e => e.id).disabled, true);
+  assert.equal(p.items.find(e => e.id === "z-axis-toggle-7").disabled, true);
+  const hl = p.items.find(e => e.id === "highlight-focused-cell-7");
+  assert.equal(hl.disabled, true);
+  assert.equal(hl.getAttribute("title"), tip);
+  // its on/off state is kept; styles.css draws it as off while data-large-off is set
+  assert.equal(hl.classList.contains("active"), true);
+  assert.equal(hl.dataset.largeOff, "1");
 });
 
 test("below the threshold (or a subset on) everything comes back, with its own tooltip", () => {
@@ -113,7 +122,22 @@ test("below the threshold (or a subset on) everything comes back, with its own t
   assert.equal(byCls(p, "hover-columns-select").disabled, false);
   assert.equal(byCls(p, "hover-columns-select").getAttribute("title"), "Columns listed in the hover label");
   assert.equal(byCls(p, "table-filter-select").disabled, false);
-  assert.equal(p.items.find(e => e.id).disabled, false);
+  assert.equal(p.items.find(e => e.id === "z-axis-toggle-7").disabled, false);
+  const hl = p.items.find(e => e.id === "highlight-focused-cell-7");
+  assert.equal(hl.disabled, false);
+  assert.equal(hl.classList.contains("active"), true, "the highlight comes back as it was");
+  assert.equal(hl.dataset.largeOff, undefined);
+  assert.equal(hl.getAttribute("title"), null);
+});
+
+test("a highlight toggle that was off stays off when the mode ends", () => {
+  const p = panel();
+  const hl = p.items.find(e => e.id === "highlight-focused-cell-7");
+  hl.classList.remove("active");
+  updateLargePlotControls(p, true, 100);
+  updateLargePlotControls(p, false, 100);
+  assert.equal(hl.classList.contains("active"), false);
+  assert.equal(hl.disabled, false);
 });
 
 test("a control that was already disabled stays disabled when the mode ends", () => {

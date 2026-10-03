@@ -104,7 +104,11 @@ STATE = """() => {
     colorObsp: opt('color', 'obsp'), xObsp: opt('x', 'obsp'), colorObs: opt('color', 'obs'),
     colorLayer: opt('color', 'layer'),
     hover: ctl('select.hover-columns-select'), table: ctl('select.table-filter-select'),
-    z: ctl('button[id^="z-axis-toggle-"]'), busy
+    z: ctl('button[id^="z-axis-toggle-"]'), highlight: ctl('button[id^="highlight-focused-cell-"]'),
+    // the highlight toggle reads as on only when it is drawn in Bootstrap's primary blue
+    highlightOn: (() => { const b = sel('button[id^="highlight-focused-cell-"]');
+                          return b ? getComputedStyle(b).backgroundColor === 'rgb(13, 110, 253)' : null; })(),
+    zeroline: g && g._fullLayout && g._fullLayout.xaxis ? g._fullLayout.xaxis.zeroline : null, busy
   };
 }"""
 
@@ -138,9 +142,10 @@ def _assert_regular(page, s):
     assert s["points"] == 50
     assert s["notice"] is None
     assert s["hovermode"] == "closest"
-    for c in ("colorObsp", "xObsp", "hover", "table", "z"):
+    for c in ("colorObsp", "xObsp", "hover", "table", "z", "highlight"):
         assert s[c]["disabled"] is False, c
         assert s[c]["title"] != TOOLTIP, c
+    assert s["highlightOn"] is True
     # click a point that is not the focused cell: the focus moves to a cell
     # under the pointer (overlapping points are stepped through, so which one
     # is not pinned)
@@ -170,13 +175,15 @@ def _assert_large(s):
     assert s["notice"] == ("Large-plot mode (200 points): hover, click and table filters are off; "
                            "use a subset for them")
     assert s["hovermode"] is False
-    for c in ("colorObsp", "xObsp", "hover", "table", "z"):
+    for c in ("colorObsp", "xObsp", "hover", "table", "z", "highlight"):
         assert s[c] == {"disabled": True, "title": TOOLTIP}, c
+    assert s["highlightOn"] is False
     for c in ("colorObs", "colorLayer"):
         assert s[c]["disabled"] is False, c
 
 
 def test_subset_switches_large_plot_mode(server):
+    """Also: both modes take the same axis layout (zero lines as the regular plot draws them)."""
     with playwright.sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
@@ -185,8 +192,11 @@ def test_subset_switches_large_plot_mode(server):
             page.goto(_link(server, colour, {"n": 50, "seed": 0}))
             _assert_regular(page, _wait(page, lambda s: s["points"] == 50 and not s["busy"]))
 
+            regular_zeroline = page.evaluate(STATE)["zeroline"]
             _set_subset(page, False)
-            _assert_large(_wait(page, lambda s: s["points"] == 200 and s["notice"] and not s["busy"]))
+            large = _wait(page, lambda s: s["points"] == 200 and s["notice"] and not s["busy"])
+            _assert_large(large)
+            assert large["zeroline"] == regular_zeroline
 
             _set_subset(page, True)
             _assert_regular(page, _wait(page, lambda s: s["points"] == 50 and s["notice"] is None

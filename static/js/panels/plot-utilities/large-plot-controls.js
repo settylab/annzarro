@@ -5,9 +5,11 @@
  * Above the threshold the panel draws only what large-plot mode can draw. The
  * controls say so instead of letting a choice fail: the axis and colour types
  * the mode cannot draw are disabled, and so are the 3D toggle and z axis, the
- * Hover picker and the table filter, each with a tooltip naming the way out.
+ * Highlight Focused Cell toggle, the Hover picker and the table filter, each with a tooltip naming the way out.
  * Below the threshold (or with a subset on) everything is enabled again, with
- * the tooltips it had before.
+ * the tooltips it had before. A toggle that is on (Highlight Focused Cell)
+ * keeps its state; styles.css draws it as off while `data-large-off` is set,
+ * so it neither reads as on nor loses the user's choice.
  *
  * DOM only, no other imports, so it can be tested without a browser.
  */
@@ -71,7 +73,7 @@ export function updateLargePlotControls(root, active, threshold) {
   }
   for (const el of root.querySelectorAll(
     'select.axis-type-select[data-axis="z"], select.hover-columns-select, select.table-filter-select, '
-    + 'button[id^="z-axis-toggle-"]')) {
+    + 'button[id^="z-axis-toggle-"], button[id^="highlight-focused-cell-"]')) {
     set(el);
   }
 }

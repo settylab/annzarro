@@ -701,6 +701,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         renderModeNotice(plotContainer, null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        // again after the draw: panel code that ran meanwhile may have reset a toggle
+        updateLargePlotControls(container, true, largePlotPoints());
         return;
       }
     }
@@ -1610,123 +1612,18 @@ export function filterDataPoints(data, settings) {
 }
 
 /**
- * Updates the datapoint filter widget with the current filter statistics
- * 
- * @param {HTMLElement} plotContainer - The DOM element containing the plot
- * @param {object} filterStats - Statistics about filtered datapoints
+ * The Cell/Gene Plot layout from the panel's settings: axes, grid, zero lines,
+ * fonts, margins, colours and interaction, with the settings' defaults filled
+ * in. Shared by the regular path (createPlot) and large-plot mode
+ * (large-plot.js), so the two look the same.
+ * @param {Object} settings  panel settings (defaults are written into it)
+ * @param {Object|null} data  the panel's series, for stable axis ranges under
+ *   Hide NaN / Hide Outliers; null to skip that
+ * @returns {Object} Plotly layout
  */
-function updateFilterWidget(plotContainer, filterStats) {
-  const plotId = plotContainer.id.replace('plot-container-', '');
-  const widget = document.getElementById(`filter-widget-${plotId}`);
-  
-  if (!widget) return;
-  
-  const statsList = widget.querySelector('.filter-stats-list');
-  const totalCount = widget.querySelector('.filter-total-count');
-  
-  // Clear existing items
-  statsList.innerHTML = '';
-  
-  // Track if we have any filters to display
-  let hasFilters = false;
-  
-  // Add items for each filter reason - axis NaNs are always filtered by Plotly
-  if (filterStats.xNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">X-axis NaN:</span>
-        <span class="filter-count">${filterStats.xNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.yNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Y-axis NaN:</span>
-        <span class="filter-count">${filterStats.yNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.zNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Z-axis NaN:</span>
-        <span class="filter-count">${filterStats.zNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color NaN in the stats when hideNaN is active
-  if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color NaN:</span>
-        <span class="filter-count">${filterStats.colorNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color outliers when hideOutliers is active
-  if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color outliers:</span>
-        <span class="filter-count">${filterStats.colorOutliers.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show table filtered entries when removeNonTableEntries is active 
-  // and there are actually entries being filtered out
-  if (filterStats.tableFiltered > 0 && filterStats.tableFilterActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Table filtered:</span>
-        <span class="filter-count">${filterStats.tableFiltered.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Cells outside the subset count as hidden too, so the total accounts
-  // for every cell of the dataset
-  const notInSubset = filterStats.notInSubset || 0;
-  if (notInSubset > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item" title="Not loaded: outside the cell subset (Cells, above the panels)">
-        <span class="filter-reason">Not in cell subset:</span>
-        <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-
-  // Update total count and percentage
-  const hidden = filterStats.filtered + notInSubset;
-  const all = filterStats.total + notInSubset;
-  const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
-  
-  totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
-  
-  // Show/hide the widget based on whether there are any filters
-  if (hasFilters) {
-    widget.classList.remove('hidden');
-  } else {
-    widget.classList.add('hidden');
-  }
-}
-
-export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
-  // Import aesthetic defaults
+export function buildPlotLayout(settings, data) {
   const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-  
+
   // Apply default aesthetic settings if not already set
   initializeAestheticsSettings(settings);
   
@@ -1767,98 +1664,11 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   settings.enableZoom = settings.enableZoom !== undefined ? settings.enableZoom : defaults.ENABLE_ZOOM || true;
   settings.enablePan = settings.enablePan !== undefined ? settings.enablePan : defaults.ENABLE_PAN || true;
   settings.showHoverInfo = settings.showHoverInfo !== undefined ? settings.showHoverInfo : defaults.SHOW_HOVER_INFO || true;
-  
-  // Determine if this is a gene plot or cell plot
-  const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
-  const entityKey = isGenePlot ? 'genes' : 'cells';
-  const entities = data[entityKey];
-  const highlightKey = isGenePlot ? 'highlightFocusedGene' : 'highlightFocusedCell';
-
-  const unit = isGenePlot ? 'genes' : 'cells';
-  // The panel's coverage starts from whatever the loaders reported. An absent
-  // one is UNREPORTED, not "fine" -- see static/js/utils/coverage.js.
-  let loadCoverage = (data.coverage instanceof Coverage)
-    ? data.coverage : Coverage.unreported(unit);
-
-  // Validate required data
-  if (!data.x || !data.y) {
-    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.EMPTY,
-      'the x or y series was never loaded', 'axes'), unit);
-    return;
-  }
-  if (!entities || entities.length === 0) {
-    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.UNAVAILABLE,
-      `this dataset supplied no ${unit} names, so points cannot be identified`,
-      `${unit} names`), unit);
-    return;
-  }
-  if (entities.length !== data.x.values.length) {
-    console.warn(
-      `${isGenePlot ? 'Gene' : 'Cell'} names count (${entities.length}) doesn't match data points count (${data.x.values.length})`
-    );
-    // This truncation used to be console-only. It changes what is on screen,
-    // so it is a gap and the user is told.
-    if (entities.length > data.x.values.length) {
-      data[entityKey] = entities.slice(0, data.x.values.length);
-      loadCoverage = loadCoverage.withGap(GAP.FAILED,
-        `${unit} names (${entities.length}) and data points (${data.x.values.length}) disagree; `
-        + 'the surplus names were dropped', `${unit} names`,
-        entities.length - data.x.values.length);
-    } else {
-      loadCoverage = loadCoverage.withGap(GAP.FAILED,
-        `only ${entities.length} ${unit} names are available for ${data.x.values.length} data points`,
-        `${unit} names`, data.x.values.length - entities.length);
-    }
-  }
-
-  // Create filter mask to gather statistics and handle filtering
-  const { indexMask, filterStats } = createFilterMask(data, settings);
-
-  // What the loaders could not supply, plus what the filters removed. This is
-  // the single value every draw call below is required to carry.
-  // Per AXIS, not per panel: only the series that loaded x can explain x.
-  const axisCoverage = {
-    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
-    z: data.z && data.z.coverage
-  };
-  const panelCoverage = Coverage.merge(
-    [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
-    unit
-  );
-  
-  // Apply the filter mask only if explicit filtering is enabled
-  let filteredData = data;
-  if (settings.hideNaN || settings.hideOutliers) {
-    filteredData = applyFilterMask(data, indexMask);
-  }
-  
-  // Prepare base trace (works for numerical and constant coloring)
-  const baseTrace = {
-    type: settings.z ? 'scatter3d' : 'scattergl',
-    mode: 'markers',
-    x: filteredData.x.values,
-    y: filteredData.y.values,
-    text: filteredData[entityKey],
-    customdata: filteredData[entityKey],
-    showlegend: false,
-    hovertemplate:
-      `%{text}<br>x: %{x}<br>y: %{y}` +
-      (settings.z ? `<br>z: %{z}` : '') +
-      (filteredData.colorType === 'numerical' ? `<br>c: %{marker.color}` : '') +
-      `<extra></extra>`,
-    marker: {
-      size: settings.pointSize,
-      opacity: settings.pointOpacity
-    }
-  };
-  if (settings.z && filteredData.z) {
-    baseTrace.z = filteredData.z.values;
-  }
 
   // Build layout with our pure helper
   const layout = createLayout(settings);
   // Hide NaN / Hide Outliers remove points; keep the axes where all points are
-  const pinned = stableAxisRanges(data, settings);
+  const pinned = data ? stableAxisRanges(data, settings) : null;
   if (pinned && pinned['xaxis.range']) layout.xaxis = { ...layout.xaxis, range: pinned['xaxis.range'], autorange: false };
   if (pinned && pinned['yaxis.range']) layout.yaxis = { ...layout.yaxis, range: pinned['yaxis.range'], autorange: false };
   
@@ -2109,13 +1919,6 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     }
   }
 
-  // Setup the filter widget regardless of color type
-  plotContainer.innerHTML = '';
-  ensureFilterWidget(plotContainer);
-  
-  // Always update the filter widget with statistics
-  updateFilterWidget(plotContainer, filterStats);
-
   // Apply additional aesthetic settings to the layout before plotting
   // Update grid and zero line visibility based on settings
   if (settings.z) { // 3D plot
@@ -2142,6 +1945,222 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     layout.xaxis.zeroline = settings.showZeroLines;
     layout.yaxis.zeroline = settings.showZeroLines;
   }
+
+  return layout;
+}
+
+/**
+ * Updates the datapoint filter widget with the current filter statistics
+ * 
+ * @param {HTMLElement} plotContainer - The DOM element containing the plot
+ * @param {object} filterStats - Statistics about filtered datapoints
+ */
+function updateFilterWidget(plotContainer, filterStats) {
+  const plotId = plotContainer.id.replace('plot-container-', '');
+  const widget = document.getElementById(`filter-widget-${plotId}`);
+  
+  if (!widget) return;
+  
+  const statsList = widget.querySelector('.filter-stats-list');
+  const totalCount = widget.querySelector('.filter-total-count');
+  
+  // Clear existing items
+  statsList.innerHTML = '';
+  
+  // Track if we have any filters to display
+  let hasFilters = false;
+  
+  // Add items for each filter reason - axis NaNs are always filtered by Plotly
+  if (filterStats.xNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">X-axis NaN:</span>
+        <span class="filter-count">${filterStats.xNaN.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  if (filterStats.yNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Y-axis NaN:</span>
+        <span class="filter-count">${filterStats.yNaN.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  if (filterStats.zNaN > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Z-axis NaN:</span>
+        <span class="filter-count">${filterStats.zNaN.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  // Only show color NaN in the stats when hideNaN is active
+  if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Color NaN:</span>
+        <span class="filter-count">${filterStats.colorNaN.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  // Only show color outliers when hideOutliers is active
+  if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Color outliers:</span>
+        <span class="filter-count">${filterStats.colorOutliers.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  // Only show table filtered entries when removeNonTableEntries is active 
+  // and there are actually entries being filtered out
+  if (filterStats.tableFiltered > 0 && filterStats.tableFilterActive) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item">
+        <span class="filter-reason">Table filtered:</span>
+        <span class="filter-count">${filterStats.tableFiltered.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+  
+  // Cells outside the subset count as hidden too, so the total accounts
+  // for every cell of the dataset
+  const notInSubset = filterStats.notInSubset || 0;
+  if (notInSubset > 0) {
+    hasFilters = true;
+    statsList.innerHTML += `
+      <li class="filter-stats-item" title="Not loaded: outside the cell subset (Cells, above the panels)">
+        <span class="filter-reason">Not in cell subset:</span>
+        <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
+      </li>
+    `;
+  }
+
+  // Update total count and percentage
+  const hidden = filterStats.filtered + notInSubset;
+  const all = filterStats.total + notInSubset;
+  const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
+  
+  totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
+  
+  // Show/hide the widget based on whether there are any filters
+  if (hasFilters) {
+    widget.classList.remove('hidden');
+  } else {
+    widget.classList.add('hidden');
+  }
+}
+
+export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
+  
+  
+  // Determine if this is a gene plot or cell plot
+  const isGenePlot = settings && settings.highlightFocusedGene !== undefined;
+  const entityKey = isGenePlot ? 'genes' : 'cells';
+  const entities = data[entityKey];
+  const highlightKey = isGenePlot ? 'highlightFocusedGene' : 'highlightFocusedCell';
+
+  const unit = isGenePlot ? 'genes' : 'cells';
+  // The panel's coverage starts from whatever the loaders reported. An absent
+  // one is UNREPORTED, not "fine" -- see static/js/utils/coverage.js.
+  let loadCoverage = (data.coverage instanceof Coverage)
+    ? data.coverage : Coverage.unreported(unit);
+
+  // Validate required data
+  if (!data.x || !data.y) {
+    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.EMPTY,
+      'the x or y series was never loaded', 'axes'), unit);
+    return;
+  }
+  if (!entities || entities.length === 0) {
+    drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.UNAVAILABLE,
+      `this dataset supplied no ${unit} names, so points cannot be identified`,
+      `${unit} names`), unit);
+    return;
+  }
+  if (entities.length !== data.x.values.length) {
+    console.warn(
+      `${isGenePlot ? 'Gene' : 'Cell'} names count (${entities.length}) doesn't match data points count (${data.x.values.length})`
+    );
+    // This truncation used to be console-only. It changes what is on screen,
+    // so it is a gap and the user is told.
+    if (entities.length > data.x.values.length) {
+      data[entityKey] = entities.slice(0, data.x.values.length);
+      loadCoverage = loadCoverage.withGap(GAP.FAILED,
+        `${unit} names (${entities.length}) and data points (${data.x.values.length}) disagree; `
+        + 'the surplus names were dropped', `${unit} names`,
+        entities.length - data.x.values.length);
+    } else {
+      loadCoverage = loadCoverage.withGap(GAP.FAILED,
+        `only ${entities.length} ${unit} names are available for ${data.x.values.length} data points`,
+        `${unit} names`, data.x.values.length - entities.length);
+    }
+  }
+
+  // Create filter mask to gather statistics and handle filtering
+  const { indexMask, filterStats } = createFilterMask(data, settings);
+
+  // What the loaders could not supply, plus what the filters removed. This is
+  // the single value every draw call below is required to carry.
+  // Per AXIS, not per panel: only the series that loaded x can explain x.
+  const axisCoverage = {
+    x: data.x && data.x.coverage, y: data.y && data.y.coverage,
+    z: data.z && data.z.coverage
+  };
+  const panelCoverage = Coverage.merge(
+    [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
+    unit
+  );
+  
+  // Apply the filter mask only if explicit filtering is enabled
+  let filteredData = data;
+  if (settings.hideNaN || settings.hideOutliers) {
+    filteredData = applyFilterMask(data, indexMask);
+  }
+  
+  // Prepare base trace (works for numerical and constant coloring)
+  const baseTrace = {
+    type: settings.z ? 'scatter3d' : 'scattergl',
+    mode: 'markers',
+    x: filteredData.x.values,
+    y: filteredData.y.values,
+    text: filteredData[entityKey],
+    customdata: filteredData[entityKey],
+    showlegend: false,
+    hovertemplate:
+      `%{text}<br>x: %{x}<br>y: %{y}` +
+      (settings.z ? `<br>z: %{z}` : '') +
+      (filteredData.colorType === 'numerical' ? `<br>c: %{marker.color}` : '') +
+      `<extra></extra>`,
+    marker: {
+      size: settings.pointSize,
+      opacity: settings.pointOpacity
+    }
+  };
+  if (settings.z && filteredData.z) {
+    baseTrace.z = filteredData.z.values;
+  }
+
+  const layout = buildPlotLayout(settings, data);
+
+  // Setup the filter widget regardless of color type
+  plotContainer.innerHTML = '';
+  ensureFilterWidget(plotContainer);
+  
+  // Always update the filter widget with statistics
+  updateFilterWidget(plotContainer, filterStats);
 
   // Branch for different color types
   if (filteredData.colorType === 'categorical') {
