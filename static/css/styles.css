@@ -298,7 +298,9 @@ body {
 .subset-field > .input-group, .subset-field > .form-select { max-width: 18rem; }
 .subset-n-parts { font-size: 0.8rem; color: var(--bs-secondary-color, #6c757d); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .subset-condition { display: flex; flex-wrap: wrap; gap: var(--u); align-items: center; margin-bottom: var(--u); }
-.subset-condition .subset-value-wrap { min-width: 8rem; }
+.subset-condition .subset-col { max-width: 12rem; }
+.subset-condition .subset-op { max-width: 8rem; }
+.subset-condition .subset-value-wrap { flex: 1 1 8rem; min-width: 0; }
 .subset-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)); }
 .subset-import { display: inline-flex; gap: var(--u); min-width: 0; }
 .subset-import .form-select { width: auto; max-width: 12rem; }
