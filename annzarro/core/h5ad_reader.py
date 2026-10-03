@@ -600,6 +600,42 @@ class h5adReader(CacheSettings):
             return [None if n is None else str(n) for n in names.tolist()]
 
     @cached_method
+    def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                          column_name: Optional[str] = None, indices: Optional[List[int]] = None):
+        """``(codes, categories)`` of a categorical obs/var column, or None,
+        as ZarrReader.get_obs_var_codes."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            obj = f[layer][column_name]
+            if isinstance(obj, h5py.Group):
+                if not (_encoding(obj) == "categorical" or ("codes" in obj and "categories" in obj)):
+                    return None
+                codes_ds, categories = obj["codes"], _values(obj["categories"])
+            else:
+                ref = obj.attrs.get("categories")
+                if not isinstance(ref, h5py.Reference):
+                    return None
+                codes_ds, categories = obj, _values(f[ref])
+            codes = _values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64))
+            return np.asarray(codes), categories.tolist()
+
+    @cached_method
+    def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
+        """Names at the sorted positions ``rows`` (a cell subset's names)."""
+        obj_name = "obs" if entity == "cells" else "var"
+        with _open(dataset_path) as f:
+            if obj_name not in f:
+                return []
+            group = f[obj_name]
+            index = _index_name(group)
+            if index not in group:
+                return []
+            names, _ = _column(f, group[index], np.asarray(rows, dtype=np.int64))
+            return [None if n is None else str(n) for n in names.tolist()]
+
+    @cached_method
     def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                     column_names: Optional[List[str]] = None, indices: Optional[List[int]] = None,
                     include_categories: bool = True) -> Dict[str, Any]:

@@ -18,6 +18,7 @@ import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
+import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 
 
 
@@ -218,7 +219,13 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         return;
     }
     
-    try {
+    // Every Plotly edit in apply() goes to a copy of the figure, drawn once
+    // at the end (utils/plotly-batch.js): one recalculation of the points
+    // instead of one per restyle. A case only a full redraw can show throws
+    // RefreshNeeded, so the batch is dropped instead of drawn first.
+    const apply = async () => {
+        const refreshPlot = () => { throw new RefreshNeeded(); };
+
         removeHighlight(plotContainer); // One trace less to take care of
         // back to data order: the updates below write arrays in data order
         await unsortTraces(plotContainer);
@@ -945,13 +952,21 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         }
 
         applyAllAestheticSettings(plotContainer, settings);
-        
+    };
+
+    try {
+        await withPlotlyBatch(plotContainer, apply);
     } catch (error) {
-        console.error("Error updating plot:", error);
-        console.log("Falling back to recreating the plot");
+        if (!(error instanceof RefreshNeeded)) {
+            console.error("Error updating plot:", error);
+            console.log("Falling back to recreating the plot");
+        }
         refreshPlot();
     }
 }
+
+/** Thrown inside updatePlotElements' batch when only a full redraw can show the update. */
+class RefreshNeeded extends Error {}
 
 
 /**

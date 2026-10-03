@@ -12,13 +12,16 @@ than an `Accept` header keeps the two encodings at different URLs, so neither th
 nor the client cache can confuse them. The web client asks for `format=f32` on every numeric
 slice; JSON stays the default for everyone else.
 
-| Request | Slice is numeric (int or float, 1-D or 2-D) | Slice is not numeric (string, bool, categorical) |
-|---|---|---|
-| no `format` | JSON | JSON |
-| `format=f32` | **binary** (`application/octet-stream`) | JSON |
+| Request | Slice is numeric (int or float, 1-D or 2-D) | One categorical obs/var column | Other slices (string, bool) |
+|---|---|---|---|
+| no `format` | JSON | JSON | JSON |
+| `format=f32` | **binary** (`application/octet-stream`) | JSON | JSON |
+| `format=f32&categorical=codes` | **binary** | **binary codes** ({ref}`categorical-codes`) | JSON |
 
-So a client must branch on `Content-Type`, not on what it asked for. Requesting the
-categorical `obs/Age` with `format=f32` returns JSON with a `categories` field.
+So a client must branch on `Content-Type`, not on what it asked for, and for a binary reply on
+`X-Annzarro-Encoding`. Requesting the categorical `obs/Age` with `format=f32` alone returns
+JSON with a `categories` field, as it did before the codes existed; a client opts in to codes
+with `categorical=codes`. The web client sends both on every single-column obs/var request.
 
 ## Binary replies
 
@@ -35,11 +38,12 @@ Body layout of the two binary encodings.
 |---|---|---|
 | `Content-Type` | `application/octet-stream` | |
 | `X-Annzarro-Shape` | `n` for a 1-D slice, `rows,cols` for 2-D (row-major) | `8090,1` (gene column), `1,8090` (obsp row), `8090` (one obs column) |
-| `X-Annzarro-Dtype` | `float32` or `float64` | |
-| `X-Annzarro-Encoding` | `dense` or `sparse` | |
+| `X-Annzarro-Dtype` | `float32` or `float64`; for categorical codes `int8`, `int16` or `int32` | |
+| `X-Annzarro-Encoding` | `dense`, `sparse` or `categorical` | |
 | `X-Annzarro-Nnz` | number of stored entries; sparse only | `15` |
+| `X-Annzarro-Categories-Bytes` | length of the categories prefix; categorical only | `48` |
 | `ETag`, `Cache-Control` | see {ref}`revalidation` | |
-| `Access-Control-Expose-Headers` | the four `X-Annzarro-*` headers and `ETag`, so a cross-origin page can read them when `server.cors_enabled` allows its origin | |
+| `Access-Control-Expose-Headers` | the five `X-Annzarro-*` headers and `ETag`, so a cross-origin page can read them when `server.cors_enabled` allows its origin | |
 
 ### Dtype
 
@@ -107,6 +111,52 @@ at cells 1205, 1335, 1567 and 1796; the strongest connection (1.0, bytes 16-19) 
 decoder in Python is in {doc}`http-api`; the browser's is `decodeVector` in `wire.js`, which
 returns a dense `Float32Array` or `Float64Array` and checks that the body length matches the
 headers.
+
+(categorical-codes)=
+### Categorical codes
+
+A categorical column used to travel as one JSON string per cell even with `format=f32`: about
+12 bytes per cell, 120 MB for the cell line of 10 million Tahoe-100M cells. With
+`format=f32&categorical=codes` on `/data/obs` or `/data/var` (exactly one column, which is
+categorical) the reply is the stored integer codes:
+
+- `X-Annzarro-Encoding: categorical`, `X-Annzarro-Shape: n`.
+- `X-Annzarro-Dtype`: `int8` for up to 128 categories, `int16` up to 32,768, else `int32`. Code
+  `-1` is a missing value (anndata's convention); a stored code outside the categories is sent as
+  `-1` too.
+- Body: a UTF-8 JSON array of the categories, padded with spaces to
+  `X-Annzarro-Categories-Bytes` bytes (a multiple of 4, so the codes are aligned), then `n`
+  little-endian codes. Code `k` stands for `categories[k]`; categories keep their JSON types
+  (strings, numbers, booleans).
+
+Any other column under `categorical=codes` answers exactly as without it (numeric binary, or
+JSON), as does a request for several columns.
+
+```console
+$ curl -s -D - -o age.bin "http://127.0.0.1:8812/api/v1/data/obs?dataset_path=$DS&columns=Age&format=f32&categorical=codes" | grep -i '^x-annzarro\|^content-length'
+X-Annzarro-Encoding: categorical
+X-Annzarro-Shape: 8090
+X-Annzarro-Dtype: int8
+X-Annzarro-Categories-Bytes: 24
+Content-Length: 8114
+```
+
+```python
+import json
+import numpy as np
+body, lead = open("age.bin", "rb").read(), 24
+categories = json.loads(body[:lead])
+codes = np.frombuffer(body, "<i1", offset=lead)
+print(categories, codes[:5], [categories[c] for c in codes[:3]])
+```
+
+```text
+['Mid', 'Old', 'Young'] [2 2 2 2 2] ['Young', 'Young', 'Young']
+```
+
+The same column is 8,114 bytes as codes against 54,571 bytes of JSON. The browser's decoder
+(`decodeVector` and `categoricalValues` in `wire.js`) turns the codes back into the values and
+`categories` the JSON body carried, so the plot and table code is unchanged.
 
 ## JSON replies
 

@@ -6,7 +6,7 @@ import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
-import { BINARY_FORMAT, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
+import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
 const BINARY_RESULT = Symbol('binarySlice');
@@ -192,14 +192,24 @@ const DataManager = (function() {
      * back the body the JSON route would have: `{data, ...meta}`.
      *
      * The server answers JSON instead whenever the slice is not numeric
-     * (categorical, strings, booleans); that body is returned as is.
+     * (strings, booleans); that body is returned as is. An obs/var column
+     * also asks for `categorical=codes`: a categorical column then comes as
+     * one integer code per cell plus its categories (about 1 B per cell
+     * instead of ~12 B of JSON) and is expanded here into the same
+     * `{data: {[column]: values}, categories: {[column]: [...]}}` body.
      * @param {boolean} flatten  `data` as one flat array for a single row or
      *                           column, which is what every loader made of it
      * @param {string|null} column  obs/var: `data` is `{[column]: values}`
      */
     async function _fetchVector(url, params, meta, flatten, column = null) {
-        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+        const query = { ...params, format: BINARY_FORMAT };
+        if (column !== null) query.categorical = 'codes';
+        const body = await _fetchWithCache(url, query);
         if (!body || !body[BINARY_RESULT]) return body;
+        if (body.encoding === 'categorical') {
+            return { ...meta, data: { [column]: categoricalValues(body) },
+                     categories: { [column]: [...body.categories] } };
+        }
         const values = toJSONShape(body, flatten);
         return { ...meta, data: column === null ? values : { [column]: values } };
     }

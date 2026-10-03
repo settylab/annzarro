@@ -480,6 +480,18 @@ def cached_method(func):
         elif method_name == 'get_cell_gene_names':
             cache_key = f"path:{encoded_path}:names:{arg.get('entity')}"
 
+        elif method_name == 'get_cell_gene_names_at':
+            # A subset's names: keyed by a digest of its rows, which a
+            # subset spec determines, instead of 100,000 numbers in the key.
+            import hashlib
+            rows = np.ascontiguousarray(np.asarray(arg.get('rows'), dtype=np.int64))
+            digest = hashlib.sha1(rows.tobytes()).hexdigest()
+            cache_key = f"path:{encoded_path}:names_at:{arg.get('entity')}:{len(rows)}:{digest}"
+
+        elif method_name == 'get_obs_var_codes':
+            cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:"
+                         f"{arg.get('column_name')}:{idx_key('indices', arg.get('indices'))}")
+
         elif method_name == 'open_dataset_by_path':
             cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"
                          f"{arg.get('metadata_level', 'full')}")

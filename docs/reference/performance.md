@@ -104,6 +104,53 @@ Before the binary encoding, 81 % of a 1M-cell gene-column request was turning th
 a Python list and encoding it as JSON (194 ms `tolist` + 314 ms JSON of 629 ms; the zarr read
 was 94 ms).
 
+## A real 50-million-cell store (Tahoe-100M)
+
+Measured on 50,000,000 real cells of Tahoe-100M (`tahoe_50M_plot.zarr`: CSC `X` holding a panel
+of 200 genes, five categorical obs columns, `obsm/X_pca_2d`, zarr format 2), opened on the
+default 100,000-cell subset. Before is AnnZarro v0.2.0, after is the scale fixes (PR #63). Apple
+M3 Max (128 GB), local NVMe. **Cold**: a fresh APFS clone of the store and a fresh server
+process. **Warm**: a fresh server process on the same clone, its pages already cached. Every run
+held a machine-wide lock, so no other benchmark ran at the same time. Peak server memory is the
+largest resident set sampled every 10 ms during the request.
+
+| Request (default subset unless stated) | Before, cold / warm | After, cold / warm | Peak memory before → after |
+|---|---|---|---|
+| resolve the subset (`/data/subset`) | 0.48 / 0.48 s | 0.36 / 0.35 s | 1.7 GB → 0.2 GB |
+| cell names of the subset (`/data/cells`, 2.2 MB) | 12.7 / 12.9 s | 0.60 / 0.57 s | 7.0 GB → 0.24 GB |
+| categorical column, subset (`cell_line_id`) | 0.23 s, 1.2 MB | 0.10 s, 0.10 MB | |
+| categorical column, all 50M cells | 13.7 s, 600 MB | 0.09 s, 50 MB | |
+| balanced subset (`balance: cell_line_id`) | 114 / 118 s | 0.73 / 0.74 s | 9.5 GB → 2.4 GB |
+| filtered subset (`moa_fine in [one class]`) | 25.0 / 24.8 s | 0.18 / 0.17 s | 11.5 GB → 2.4 GB |
+| gene column of a panel gene (server share of a recolour) | 0.25-0.63 s | 0.27-0.30 s | |
+
+The open sequence the client sends (structure, subset, cell names, genes, name search) went from
+13.3 s to 1.0 s cold. The cell names were the cost: the subset's 100,000 names used to be picked
+from all 50 million, which were decoded and held in memory; now only the subset's names are read,
+one chunk at a time. Balanced and filtered subsets used to evaluate every cell's value in Python;
+they now work on the categorical codes, one lookup per category. A categorical column is sent as
+one int8 code per cell instead of a JSON string ({ref}`categorical-codes`). The peak memory of
+2.4 GB after the gene requests is mostly the server's result cache: a gene column is read for
+all 50 million cells (200 MB as float32) and then cut to the subset, and three were read.
+
+In the browser (headless Chromium, two Cell Plots on `X_pca_2d`, one coloured by the focused
+gene, one by `cell_line_id`, 100,000 points each; three recolours by panel genes):
+
+| | Before | After |
+|---|---|---|
+| first plot, cold server | 18.0 s | 5.4 s |
+| recolour, Enter to the last redraw, cold / warm | 1.98-2.05 / 1.72-1.80 s | 0.44-0.47 / 0.18-0.19 s |
+| redraws of the recoloured panel per recolour | 19 | 1 |
+
+A recolour used to restyle the 100,000-point trace once per helper (colour, sort by colour,
+hover, log colour bar, highlight, legend, aesthetics); now the edits are drawn with one
+`Plotly.react`, and the trace, layout and pixels are the same as before.
+
+On `bm_aging.zarr` (8,090 cells) nothing got slower: the open sequence took 0.071-0.074 s
+against 0.076-0.081 s, a categorical column 0.05-0.06 s either way (8.4 kB of codes instead of
+91 kB of JSON), and a recolour 0.10-0.11 s against 0.27-0.31 s (three runs each, under the same
+lock).
+
 ## Scaling with dataset size (laptop, JSON transfer)
 
 From the paper's laptop benchmark (`benchmark/FINDINGS.md`): Apple M3 Max, NVMe, synthetic

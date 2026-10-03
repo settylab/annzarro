@@ -238,6 +238,102 @@ def rank_keys(n_obs: int, seed: int) -> np.ndarray:
     return _splitmix64(np.arange(n_obs, dtype=_U64) ^ salt)
 
 
+#: Rows whose rank keys are computed at once when only the smallest are kept.
+_KEY_BLOCK = 1 << 20
+
+
+def _block_rows(n_obs: int, eligible: Optional[np.ndarray], block: int = _KEY_BLOCK):
+    """(rows, slice) per block of ``block`` dataset rows: the eligible rows
+    in it (every row when ``eligible`` is None) and the block's slice."""
+    for start in range(0, n_obs, block):
+        stop = min(start + block, n_obs)
+        if eligible is None:
+            yield np.arange(start, stop, dtype=np.int64), slice(start, stop)
+        else:
+            yield start + np.flatnonzero(eligible[start:stop]), slice(start, stop)
+
+
+def _keys(rows: np.ndarray, salt) -> np.ndarray:
+    """rank_keys(n_obs, seed)[rows], for the salt of seed."""
+    return _splitmix64(rows.astype(_U64) ^ salt)
+
+
+def _salt(seed: int):
+    return _splitmix64(np.array([seed], dtype=_U64))[0]
+
+
+def _rows_with_smallest_keys(n_obs: int, eligible: Optional[np.ndarray], seed: int, k: int,
+                             block: int = _KEY_BLOCK) -> np.ndarray:
+    """The k eligible rows (every row when ``eligible`` is None) with the
+    smallest rank keys, computed a block at a time.
+
+    The same rows as ``rows[_smallest(rank_keys(n_obs, seed)[rows], k)]``,
+    without the n_obs-long key array: at Tahoe-100M's 95.6 million cells
+    that was 0.8 GB per temporary and about 3 GB at the peak.
+    """
+    salt = _salt(seed)
+    best_rows = np.empty(0, dtype=np.int64)
+    best_keys = np.empty(0, dtype=_U64)
+    for part, _ in _block_rows(n_obs, eligible, block):
+        cand_rows = np.concatenate([best_rows, part])
+        cand_keys = np.concatenate([best_keys, _keys(part, salt)])
+        keep = _smallest(cand_keys, k)
+        best_rows, best_keys = cand_rows[keep], cand_keys[keep]
+    return best_rows
+
+
+def _rows_with_smallest_keys_per_group(n_obs, eligible, group_of, seed, sizes, quota,
+                                       block=_KEY_BLOCK):
+    """For each group g, the quota[g] eligible rows of g with the smallest
+    rank keys: the rows a lexsort of (group, key) over every eligible row
+    kept, without sorting them all.
+
+    Rank keys are splitmix64 outputs, so group g's quota[g]-th smallest key
+    lies near quota[g] / sizes[g] of the key range. Every row below a
+    per-group threshold a little above that is collected, block by block;
+    a group that collects fewer than its quota gets a higher threshold and
+    is collected again. The collected rows always contain the group's
+    smallest keys, so the result is exact; only the collected rows (about
+    1.1 x the subset) are sorted.
+    """
+    salt = _salt(seed)
+    sizes = np.asarray(sizes, dtype=np.float64)
+    quota = np.asarray(quota, dtype=np.int64)
+    frac = (1.1 * quota + 6 * np.sqrt(quota) + 16) / np.maximum(sizes, 1)
+    top = np.iinfo(np.uint64).max
+    pending = np.flatnonzero(quota > 0)
+    rows_parts, key_parts, group_parts = [], [], []
+    while pending.size:
+        # every key at or below limit[g] is collected; a group with frac >= 1
+        # collects all of its rows
+        limit = np.zeros(len(quota), dtype=_U64)
+        limit[pending] = [top if f >= 1.0 else int(f * 2.0**64) for f in frac[pending].tolist()]
+        wanted = np.zeros(len(quota), dtype=bool)
+        wanted[pending] = True
+        hits = []
+        for part, sl in _block_rows(n_obs, eligible, block):
+            groups = group_of(part, sl)
+            keys = _keys(part, salt)
+            hit = wanted[groups] & (keys <= limit[groups])
+            hits.append((part[hit], keys[hit], groups[hit]))
+        rows = np.concatenate([h[0] for h in hits])
+        keys = np.concatenate([h[1] for h in hits])
+        groups = np.concatenate([h[2] for h in hits])
+        got = np.bincount(groups, minlength=len(quota))
+        short = pending[(got[pending] < quota[pending]) & (frac[pending] < 1.0)]
+        done = ~np.isin(groups, short)
+        rows_parts.append(rows[done]); key_parts.append(keys[done]); group_parts.append(groups[done])
+        frac[short] *= 4
+        pending = short
+    rows = np.concatenate(rows_parts) if rows_parts else np.empty(0, np.int64)
+    keys = np.concatenate(key_parts) if key_parts else np.empty(0, _U64)
+    groups = np.concatenate(group_parts) if group_parts else np.empty(0, np.int64)
+    order = np.lexsort((keys, groups))
+    g = groups[order]
+    first = np.searchsorted(g, g, side="left")
+    return rows[order[(np.arange(len(order)) - first) < quota[g]]]
+
+
 def _smallest(keys: np.ndarray, k: int) -> np.ndarray:
     """Positions of the k smallest keys (keys are distinct, so this is exact)."""
     if k >= len(keys):
@@ -329,44 +425,132 @@ def _condition_mask(cond: Condition, values: Sequence) -> np.ndarray:
                 "==": x == v, "!=": (x != v) & ~np.isnan(x)}[cond.op]
 
 
+def _compare(cond: Condition, x: np.ndarray) -> np.ndarray:
+    with np.errstate(invalid="ignore"):
+        if cond.op == "between":
+            lo, hi = cond.values
+            return (x >= lo) & (x <= hi)
+        v = cond.values[0]
+        return {">": x > v, ">=": x >= v, "<": x < v, "<=": x <= v,
+                "==": x == v, "!=": (x != v) & ~np.isnan(x)}[cond.op]
+
+
+class _Values:
+    """A column as one Python value per cell (read_column)."""
+
+    def __init__(self, values):
+        self.values = values
+
+    def __len__(self):
+        return len(self.values)
+
+    def mask(self, cond: Condition) -> np.ndarray:
+        return _condition_mask(cond, self.values)
+
+    def groups(self, eligible: np.ndarray):
+        """(sorted group names, group_of(rows, sl)) for the eligible rows."""
+        rows = np.flatnonzero(eligible)
+        text = [MISSING_GROUP if _is_missing(self.values[i]) else value_text(self.values[i])
+                for i in rows.tolist()]
+        names, inverse = np.unique(np.asarray(text, dtype=object), return_inverse=True)
+        gid = np.full(len(self.values), -1, dtype=np.int64)
+        gid[rows] = inverse.reshape(-1)
+        return names, lambda part, sl: gid[part]
+
+
+class _Codes:
+    """A categorical column as its stored codes and categories.
+
+    Every per-cell question is asked once per category and answered for the
+    cells with one numpy lookup: the same answers as asking each cell's
+    value, which is categories[code] (None for a code outside them).
+    """
+
+    def __init__(self, codes, categories):
+        self.codes = np.asarray(codes)
+        self.categories = list(categories)
+        k = len(self.categories)
+        self.k = k
+        self.missing = np.array([_is_missing(c) for c in self.categories] + [True], dtype=bool)
+
+    def __len__(self):
+        return len(self.codes)
+
+    def ids(self, sl=slice(None)) -> np.ndarray:
+        """Category index per cell; k (one past the last) for a missing value."""
+        c = self.codes[sl].astype(np.int64, copy=False)
+        return np.where((c < 0) | (c >= self.k), self.k, c)
+
+    def mask(self, cond: Condition) -> np.ndarray:
+        if cond.op in TEXT_OPS:
+            wanted = set(cond.values)
+            hit = np.array([not m and value_text(c) in wanted
+                            for c, m in zip(self.categories, self.missing)] + [False], dtype=bool)
+            lut = hit if cond.op == "in" else (~self.missing & ~hit)
+        else:
+            lut = _compare(cond, np.append(_numeric(self.categories), np.nan))
+        out = np.empty(len(self.codes), dtype=bool)
+        for start in range(0, len(self.codes), _KEY_BLOCK):
+            sl = slice(start, start + _KEY_BLOCK)
+            out[sl] = lut[self.ids(sl)]
+        return out
+
+    def groups(self, eligible: np.ndarray):
+        counts = np.zeros(self.k + 1, dtype=np.int64)
+        for start in range(0, len(self.codes), _KEY_BLOCK):
+            sl = slice(start, start + _KEY_BLOCK)
+            counts += np.bincount(self.ids(sl)[eligible[sl]], minlength=self.k + 1)
+        text = np.array([MISSING_GROUP if m else value_text(c)
+                         for c, m in zip(self.categories, self.missing)] + [MISSING_GROUP], dtype=object)
+        names = np.unique(text[counts > 0])
+        lut = np.full(self.k + 1, -1, dtype=np.int64)
+        present = np.flatnonzero(counts > 0)
+        lut[present] = np.searchsorted(names, text[present])
+        return names, lambda part, sl: lut[self.ids(part)]
+
+
 def select_indices(n_obs: int, spec: SubsetSpec,
-                   read_column: Callable[[str], Sequence]) -> Tuple[np.ndarray, Dict[str, Any]]:
+                   read_column: Callable[[str], Sequence],
+                   read_codes: Optional[Callable[[str], Optional[Tuple[Sequence, Sequence]]]] = None
+                   ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """Sorted row indices of the subset, and counts that describe it.
 
     ``read_column(name)`` returns one obs column for all ``n_obs`` cells.
+    ``read_codes(name)``, when given, returns a categorical column as
+    ``(codes, categories)`` (None when it is not categorical); the filter and
+    the balance groups are then computed per category, not per cell. A
+    per-cell Python loop over 95.6 million cells took minutes.
     """
-    eligible = np.ones(n_obs, dtype=bool)
+    def column(name):
+        coded = read_codes(name) if read_codes is not None else None
+        col = _Codes(*coded) if coded is not None else _Values(read_column(name))
+        if len(col) != n_obs:
+            raise SubsetError(f"obs column {name!r} has {len(col)} entries, expected {n_obs}")
+        return col
+
+    eligible = None
     for cond in spec.where:
-        values = read_column(cond.col)
-        if len(values) != n_obs:
-            raise SubsetError(f"obs column {cond.col!r} has {len(values)} entries, expected {n_obs}")
-        eligible &= _condition_mask(cond, values)
-    rows = np.flatnonzero(eligible)
-    n_eligible = int(len(rows))
+        mask = column(cond.col).mask(cond)
+        eligible = mask if eligible is None else (eligible & mask)
+    n_eligible = int(n_obs if eligible is None else np.count_nonzero(eligible))
     want = n_eligible if spec.n is None else min(spec.n, n_eligible)
     info: Dict[str, Any] = {"n_total": int(n_obs), "n_eligible": n_eligible}
 
     if want >= n_eligible:
-        chosen = rows
+        chosen = np.arange(n_obs) if eligible is None else np.flatnonzero(eligible)
+    elif spec.balance is None:
+        chosen = _rows_with_smallest_keys(n_obs, eligible, spec.seed, want)
     else:
-        keys = rank_keys(n_obs, spec.seed)[rows]
-        if spec.balance is None:
-            chosen = rows[_smallest(keys, want)]
-        else:
-            labels = read_column(spec.balance)
-            if len(labels) != n_obs:
-                raise SubsetError(f"obs column {spec.balance!r} has {len(labels)} entries, expected {n_obs}")
-            text = [MISSING_GROUP if _is_missing(labels[i]) else value_text(labels[i]) for i in rows]
-            names, codes = np.unique(np.asarray(text, dtype=object), return_inverse=True)
-            sizes = np.bincount(codes, minlength=len(names))
-            quota = balanced_quota(sizes, want)
-            # Order by (group, key); keep the first quota[g] of each group's run.
-            order = np.lexsort((keys, codes))
-            starts = np.concatenate([[0], np.cumsum(sizes)[:-1]])
-            pos = np.arange(len(order)) - starts[codes[order]]
-            chosen = rows[order[pos < quota[codes[order]]]]
-            info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
-                              for name, s, q in zip(names, sizes, quota)}
+        if eligible is None:
+            eligible = np.ones(n_obs, dtype=bool)
+        names, group_of = column(spec.balance).groups(eligible)
+        sizes = np.zeros(len(names), dtype=np.int64)
+        for part, sl in _block_rows(n_obs, eligible):
+            sizes += np.bincount(group_of(part, sl), minlength=len(names))
+        quota = balanced_quota(sizes, want)
+        chosen = _rows_with_smallest_keys_per_group(n_obs, eligible, group_of, spec.seed, sizes, quota)
+        info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
+                          for name, s, q in zip(names, sizes, quota)}
     indices = np.sort(chosen).astype(np.int32 if n_obs < 2**31 else np.int64)
     info["n"] = int(len(indices))
     return indices, info
@@ -477,7 +661,14 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
             raise SubsetError(f"obs column {name!r} could not be read", "read_failed", 500)
         return values
 
-    indices, info = select_indices(n_obs, spec, read_column)
+    get_codes = getattr(reader, "get_obs_var_codes", None)
+
+    def read_codes(name):
+        if get_codes is None:
+            return None
+        return get_codes(entity="cells", dataset_path=dataset_path, column_name=name)
+
+    indices, info = select_indices(n_obs, spec, read_column, read_codes)
     subset = Subset(dataset_path, spec, indices, info)
     with _lock:
         _cache[key] = subset
@@ -590,6 +781,13 @@ class SubsetView:
         if entity != "cells":
             return self._reader.get_cell_gene_names(dataset_path, entity, use_cache=use_cache)
         sub = self.subset
+        take = getattr(self._reader, "get_cell_gene_names_at", None)
+        if take is not None:
+            # Only the subset's names are read (by index, chunk by chunk);
+            # reading every name of a 95-million-cell store to keep 100,000
+            # was most of the time it took to open one. The reader caches
+            # them in its DatasetCache, under its memory accounting.
+            return list(take(dataset_path, "cells", sub.indices))
         if sub._names is None:
             names = self._reader.get_cell_gene_names(dataset_path, "cells", use_cache=use_cache)
             sub._names = [names[i] for i in sub.indices.tolist()]
@@ -613,6 +811,13 @@ class SubsetView:
         return self._reader.get_obs_var(entity=entity, dataset_path=dataset_path, indices=indices,
                                         column_names=column_names,
                                         include_categories=include_categories)
+
+    def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None):
+        if entity == "cells":
+            indices = (self.subset.indices.tolist() if indices is None
+                       else self.subset.to_rows(indices))
+        return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
+                                              column_name=column_name, indices=indices)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):
