@@ -203,3 +203,92 @@ def test_bm_aging_names():
     from annzarro.core.zarr_reader import ZarrReader
     _compare(ZarrReader().get_cell_gene_names(store, "cells"), 1000)
     _compare(ZarrReader().get_cell_gene_names(store, "genes"), 1000)
+
+
+# --- built a zarr chunk at a time (string_chunks.iter_chunks) -----------------
+import numcodecs  # noqa: E402
+
+from annzarro.core import string_chunks  # noqa: E402
+from annzarro.core.name_index import NameChunks  # noqa: E402
+from annzarro.tests.zarr_compat import open_group, write_strings  # noqa: E402
+
+JOIN_CASES = [[f"AAAC{i:06d}-1" for i in range(50)], ["a", "bb", "", "cccc", "e"], ["", "", ""],
+              ["é", "漢字", "naïve", "😀x"], ["q\nline", "x", "tab\tin"], ["only"], []]
+
+
+@pytest.mark.parametrize("items", JOIN_CASES)
+def test_joined_items_is_exact_or_declines(items):
+    encoded = numcodecs.VLenUTF8().encode(np.array(items, dtype=object))
+    got = string_chunks.joined_items(encoded)
+    if got is None:
+        return
+    joined, lengths = got
+    assert lengths.tolist() == [len(x.encode()) for x in items]
+    assert joined == "\n".join(items).encode()
+
+
+def _chunked_names(n, kind):
+    if kind == "barcodes":
+        return [f"{i // 1000:02d}_{i % 1000:03d}-lib_{i * 7 % 10000:04d}" for i in range(n)]
+    if kind == "upper":
+        return [f"AAAC{i:06d}-1" for i in range(n)]
+    rng = np.random.default_rng(n)
+    pool = ["", "AAACCTGAGAAACCAT-1", "é漢字_ü", "İstanbul", "😀,#;x", "q\nline", "Dup", "dup", "x" * 300, "ß"]
+    names = [f"cell_{i}" for i in range(n)]
+    for i in rng.choice(n, size=n // 3, replace=False):
+        names[i] = pool[int(rng.integers(len(pool)))] + ("" if rng.random() < 0.5 else f"_{i}")
+    return names
+
+
+@pytest.mark.parametrize("compressor", ["blosc-zstd", "none"])
+@pytest.mark.parametrize("kind", ["barcodes", "upper", "tricky"])
+def test_chunked_build_equals_reference(tmp_path, compressor, kind, monkeypatch):
+    n, chunk = 2_050, 256                       # the last chunk is partial
+    names = _chunked_names(n, kind)
+    comp = numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.SHUFFLE) if compressor != "none" else None
+    root = open_group(tmp_path / "s.zarr")
+    arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=comp)
+    raw_chunks = []
+    real = string_chunks.joined_items
+    monkeypatch.setattr(string_chunks, "joined_items",
+                        lambda *a: raw_chunks.append(real(*a)) or raw_chunks[-1])
+    new = NameIndex(NameChunks(string_chunks.iter_chunks(arr, str(tmp_path / "s.zarr" / "idx"))))
+    if kind != "tricky":
+        assert raw_chunks and all(c is not None for c in raw_chunks), "a chunk fell back to zarr"
+    old = ReferenceIndex(names)
+    assert len(new) == n
+    for i in range(n):
+        assert new.name(i) == names[i]
+    for q in _queries(names):
+        for mode in ("substring", "exact"):
+            for limit in (1, 50, MAX_LIMIT):
+                assert new.search(q, limit=limit, mode=mode) == old.search(q, limit=limit, mode=mode), (q, mode)
+    assert new.search("^cell_1", limit=20, mode="regex") == old.search("^cell_1", limit=20, mode="regex")
+
+
+def _reader_chunks_vs_list(store, entity):
+    from annzarro.core.zarr_reader import ZarrReader
+    reader = ZarrReader()
+    names = reader.get_cell_gene_names(store, entity)
+    chunks = reader.iter_cell_gene_name_chunks(store, entity)
+    assert chunks is not None
+    new, old = NameIndex(NameChunks(chunks)), ReferenceIndex(names)
+    assert len(new) == len(names)
+    for q in _queries(names):
+        for mode in ("substring", "exact"):
+            assert new.search(q, limit=50, mode=mode) == old.search(q, limit=50, mode=mode), (q, mode)
+
+
+def test_fixture_store_chunked():
+    store = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "fixture_small.zarr")
+    _reader_chunks_vs_list(store, "cells")
+    _reader_chunks_vs_list(store, "genes")
+
+
+def test_bm_aging_chunked():
+    store = os.path.join(os.environ.get("ANNZARRO_DOCS_DATA", os.path.expanduser("~/gits/annzarro-paper/data")),
+                         "bm_aging.zarr")
+    if not os.path.isdir(store):
+        pytest.skip(f"no {store}")
+    _reader_chunks_vs_list(store, "cells")
+    _reader_chunks_vs_list(store, "genes")

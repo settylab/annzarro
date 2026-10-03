@@ -30,6 +30,14 @@ _CACHE_SIZE = 8
 _SEP = "\n"
 
 
+class NameChunks:
+    """Names handed to NameIndex a chunk at a time: each chunk a list of
+    strings or a ``(joined_bytes, lengths)`` pair (string_chunks.iter_chunks)."""
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+
 class NameIndex:
     """Case-insensitive exact / prefix / substring / regex lookup over names.
 
@@ -50,58 +58,93 @@ class NameIndex:
     _CHUNK = 1 << 20
 
     def __init__(self, names):
-        n = len(names)
-        self._n = n
-        hay_parts: List[bytes] = [_SEP.encode()]
-        hay_lens: List[np.ndarray] = []
-        orig_parts: List[bytes] = []
-        orig_lens: List[np.ndarray] = []
-        need_orig = False
-        for a in range(0, n, self._CHUNK):
-            part = ["" if v is None else str(v) for v in names[a:a + self._CHUNK]]
-            joined = _SEP.join(part)
-            if joined.isascii() and joined.count(_SEP) == len(part) - 1:
-                # one byte per character, no newline inside a name: whole-chunk ops
-                lens = np.fromiter(map(len, part), dtype=np.int64, count=len(part))
-                low = joined.lower()
-                hay_parts.append(low.encode("ascii"))
-                if low != joined:
-                    need_orig = True
-                orig_parts.append(joined.replace(_SEP, "").encode("ascii") if len(part) else b"")
-                orig_lens.append(lens)
-                hay_lens.append(lens)
+        """``names``: a sequence of names, or a NameChunks of them (read a
+        chunk at a time, never all as Python strings at once)."""
+        if isinstance(names, NameChunks):
+            chunks = names.chunks
+        else:
+            chunks = (names[a:a + self._CHUNK] for a in range(0, len(names), self._CHUNK))
+        sep = _SEP.encode()
+        self._hay_parts: List[bytes] = [sep]
+        self._hay_lens: List[np.ndarray] = []
+        self._orig_parts: List[bytes] = []
+        self._orig_lens: List[np.ndarray] = []
+        self._need_orig = False
+        for chunk in chunks:
+            if isinstance(chunk, tuple):
+                self._add_joined(*chunk)
             else:
-                # lower() may change a name's length ('İ'); a newline becomes a space
-                low = [x.lower().replace(_SEP, " ").encode() for x in part]
-                enc = [x.encode() for x in part]
-                hay_parts.append(_SEP.encode().join(low))
-                hay_lens.append(np.fromiter(map(len, low), dtype=np.int64, count=len(low)))
-                orig_parts.append(b"".join(enc))
-                orig_lens.append(np.fromiter(map(len, enc), dtype=np.int64, count=len(enc)))
-                if any(lo != e for lo, e in zip(low, enc)):
-                    need_orig = True
-            hay_parts.append(_SEP.encode())
-        # chunks were joined with a separator after each; drop a doubled one
-        # for an empty last chunk (n == 0)
-        self._hay = b"".join(hay_parts) if n else _SEP.encode() * 2
-        lens = np.concatenate(hay_lens) if hay_lens else np.zeros(0, np.int64)
+                self._add_list(["" if v is None else str(v) for v in chunk])
+        n = int(sum(x.size for x in self._hay_lens))
+        self._n = n
+        self._hay = b"".join(self._hay_parts) if n else sep * 2
+        lens = np.concatenate(self._hay_lens) if self._hay_lens else np.zeros(0, np.int64)
         starts = np.empty(n, dtype=np.int64)
         if n:
             starts[0] = 1
             np.cumsum(lens[:-1] + 1, out=starts[1:])
             starts[1:] += 1
-        width = np.uint32 if len(self._hay) < 2 ** 32 else np.uint64
-        self._starts = starts.astype(width)
-        if need_orig:
-            olens = np.concatenate(orig_lens)
+        self._starts = starts.astype(np.uint32 if len(self._hay) < 2 ** 32 else np.uint64)
+        if self._need_orig:
             off = np.zeros(n + 1, dtype=np.int64)
-            np.cumsum(olens, out=off[1:])
-            blob = b"".join(orig_parts)
+            np.cumsum(np.concatenate(self._orig_lens), out=off[1:])
+            blob = b"".join(self._orig_parts)
             self._orig = blob
             self._orig_off = off.astype(np.uint32 if len(blob) < 2 ** 32 else np.uint64)
         else:
             self._orig = None
             self._orig_off = None
+        del self._hay_parts, self._hay_lens, self._orig_parts, self._orig_lens, self._need_orig
+
+    def _add_joined(self, joined: bytes, lengths: np.ndarray) -> None:
+        """One chunk as newline-joined UTF-8 and item byte lengths
+        (string_chunks.joined_items): ASCII without newlines in the names is
+        lower-cased as bytes, which for ASCII is what str.lower() does."""
+        k = int(lengths.size)
+        if k == 0:
+            return
+        if joined.isascii() and joined.count(_SEP.encode()) == k - 1:
+            low = joined.lower()
+            self._hay_parts.append(low)
+            self._hay_parts.append(_SEP.encode())
+            self._hay_lens.append(np.asarray(lengths, dtype=np.int64))
+            self._orig_parts.append(joined.replace(_SEP.encode(), b""))
+            self._orig_lens.append(np.asarray(lengths, dtype=np.int64))
+            if low != joined:
+                self._need_orig = True
+            return
+        names, pos = [], 0
+        for ln in lengths.tolist():
+            names.append(joined[pos:pos + ln].decode())
+            pos += ln + 1
+        self._add_list(names)
+
+    def _add_list(self, part: List[str]) -> None:
+        if not part:
+            return
+        sep = _SEP.encode()
+        joined = _SEP.join(part)
+        if joined.isascii() and joined.count(_SEP) == len(part) - 1:
+            # one byte per character, no newline inside a name: whole-chunk ops
+            lens = np.fromiter(map(len, part), dtype=np.int64, count=len(part))
+            low = joined.lower()
+            self._hay_parts.append(low.encode("ascii"))
+            if low != joined:
+                self._need_orig = True
+            self._orig_parts.append(joined.replace(_SEP, "").encode("ascii"))
+            self._orig_lens.append(lens)
+            self._hay_lens.append(lens)
+        else:
+            # lower() may change a name's length ('İ'); a newline becomes a space
+            low = [x.lower().replace(_SEP, " ").encode() for x in part]
+            enc = [x.encode() for x in part]
+            self._hay_parts.append(sep.join(low))
+            self._hay_lens.append(np.fromiter(map(len, low), dtype=np.int64, count=len(low)))
+            self._orig_parts.append(b"".join(enc))
+            self._orig_lens.append(np.fromiter(map(len, enc), dtype=np.int64, count=len(enc)))
+            if any(lo != e for lo, e in zip(low, enc)):
+                self._need_orig = True
+        self._hay_parts.append(sep)
 
     def __len__(self) -> int:
         return self._n
