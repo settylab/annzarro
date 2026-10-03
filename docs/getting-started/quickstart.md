@@ -62,7 +62,7 @@ of the demonstration data).
 
 1. In the Welcome tile, under "Create New Panel", click **Cell Plot**.
 2. The tile becomes "Cell Plot 1": a scatter plot of all cells on the first two UMAP
-   coordinates (X-Axis `obsm` / `X_umap` / `0`, Y-Axis `obsm` / `X_umap` / `1`), coloured
+   coordinates (X `obsm` / `X_umap` / `0`, Y `obsm` / `X_umap` / `1`), coloured
    by the `obs` column `leiden`. The focused cell is drawn as a larger
    point with a dark outline ("Highlight Focused Cell" is on).
 

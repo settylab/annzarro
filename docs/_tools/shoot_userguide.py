@@ -496,8 +496,8 @@ def shoot_colour(sh, data_dir):
         (3, f"{d} .color-max-slider-container"), (4, f"{d} [id^=center-colormap]"),
         (5, f"{d} [id^=reverse-colormap]"), (6, f"{d} [id^=lock-range]"),
         (7, f"{d} [id^=hide-outliers]"), (8, f"{d} [id^=hide-nan]"),
-        (9, f"{d} [id^=equal-aspect]"), (10, f"{d} [id^=sort-by-color]"),
-        (11, f"{d} [id^=log-color]"), (12, f"{d} [id^=log-floor]")])
+        (9, f"{d} [id^=sort-by-color]"), (10, f"{d} [id^=log-color]"),
+        (11, f"{d} [id^=log-floor]")])
     sh.log.append("colour: Min/Max boxes = " + json.dumps(page.evaluate(
         f"[document.querySelector('{d} [id^=color-min-]:not([id*=slider])').value,"
         f" document.querySelector('{d} [id^=color-max-]:not([id*=slider])').value]")))

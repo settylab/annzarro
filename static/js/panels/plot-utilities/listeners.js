@@ -335,13 +335,9 @@ export function setupPlotControlListeners(
         settings.removeNonTableEntries = !settings.removeNonTableEntries;
         
         // Update button styling based on state
-        if (settings.removeNonTableEntries) {
-          $removeNonTableEntriesBtn.addClass('btn-primary').removeClass('btn-outline-secondary');
-          $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
-        } else {
-          $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
-          $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (inactive)');
-        }
+        $.updateButtonState($removeNonTableEntriesBtn, settings.removeNonTableEntries, 'btn-primary');
+        $removeNonTableEntriesBtn.attr('title',
+          `Remove non-table entries (${settings.removeNonTableEntries ? 'active' : 'inactive'})`);
         
         // We don't need to rebuild the tableEntities set, just apply the new filter setting
         // Now all filtering is separated - just update filter and colors

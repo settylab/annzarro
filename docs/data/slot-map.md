@@ -146,7 +146,7 @@ of the focused gene H2-Q7.
 :::{grid-item}
 ```{figure} ../_static/screens/paper/slot-varp-controls.png
 :class: screenshot
-:alt: Plot controls: X-Axis var kompot_de_Young..., Y-Axis var kompot_de_Young..., Color varp spearman_fold_change "Focused gene to H2-Q7" with a lock button, colour map RdBu, min -1, max 1, Lock Range on.
+:alt: Plot controls: X var kompot_de_Young..., Y var kompot_de_Young..., Color varp spearman_fold_change "Focused gene to H2-Q7" with a lock button, colour map RdBu, min -1, max 1, Lock Range on.
 
 **The controls of that plot.** Slot, key, and "Focused gene" with its lock.
 ```

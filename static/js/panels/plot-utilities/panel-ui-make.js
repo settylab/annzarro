@@ -26,7 +26,7 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
   $select.empty();
   
   // Insert the first menu option for "uns" colors
-  $select.append(new Option('As stored in adata.uns if available', 'uns', selected === 'uns', selected === 'uns'));
+  $select.append(new Option('As stored in adata.uns', 'uns', selected === 'uns', selected === 'uns'));
 
   // Process the remaining colormaps grouped by category
   for (const [groupLabel, colormaps] of Object.entries(colormapGroups)) {
@@ -41,6 +41,29 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
   }
   
   $select.prop('disabled', false);
+}
+
+/**
+ * One axis row of the plot controls: its label and the type, key and column
+ * selects (setupAxisSelector fills them and appends the lock/refocus buttons).
+ */
+function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-row"') {
+  const rowAttrs = attrs.startsWith('class=') ? attrs : `class="axis-selector-container ctl-row" ${attrs}`;
+  return `
+            <div ${rowAttrs}>
+              <label class="axis-selector-label ctl-label" for="${axis}-type-select-${id}">${label}</label>
+              <div class="axis-selector">
+                <select class="form-select form-select-sm axis-type-select" data-axis="${axis}" id="${axis}-type-select-${id}">
+                  <option value="">Loading...</option>
+                </select>
+                <select class="form-select form-select-sm axis-key-select" data-axis="${axis}" disabled>
+                  <option value="">Loading...</option>
+                </select>
+                <select class="form-select form-select-sm axis-column-select" data-axis="${axis}" disabled>
+                  <option value="">Loading...</option>
+                </select>
+              </div>
+            </div>`;
 }
 
 /**
@@ -64,145 +87,132 @@ export function createPanelStructure(container, id, settings) {
     <div class="plot-panel">
       ${noDatasetScreenHtml(id)}
       <div class="plot-controls">
-        <!-- X and Y Axis Selectors -->
-        ${['x', 'y'].map(axis => `
-        <div class="axis-selector-container">
-          <div class="axis-selector-label">${axis.toUpperCase()}-Axis</div>
-          <div class="axis-selector">
-            <select class="form-select form-select-sm axis-type-select" data-axis="${axis}" id="${axis}-type-select-${id}">
-              <option value="">Loading...</option>
-            </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="${axis}" disabled>
-              <option value="">Loading...</option>
-            </select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="${axis}" disabled>
-              <option value="">Loading...</option>
-            </select>
-          </div>
-        </div>
-        `).join('')}
-
-        <!-- Z-Axis Selector -->
-        <div class="axis-selector-container" id="z-axis-container-${id}" style="display:none;">
-          <div class="axis-selector-label">Z-Axis (3D)</div>
-          <div class="axis-selector">
-            <select class="form-select form-select-sm axis-type-select" data-axis="z" id="z-type-select-${id}">
-              <option value="">Loading...</option>
-            </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="z" disabled>
-              <option value="">Loading...</option>
-            </select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="z" disabled>
-              <option value="">Loading...</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Color Controls and Selectors -->
-        <div class="color-selector-container">
-          <div class="axis-selector-label">Color</div>
-          <div class="axis-selector">
-            <select class="form-select form-select-sm axis-type-select" data-axis="color" id="color-type-select-${id}">
-              <option value="">Loading...</option>
-              <option value="none">None (constant)</option>
-              <!-- Other options will be set based on plot type -->
-            </select>
-            <select class="form-select form-select-sm axis-key-select" data-axis="color" disabled>
-              <option value="">Loading...</option>
-            </select>
-            <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
-              <option value="">Loading...</option>
-            </select>
-          </div>
-
-          <div class="color-options mt-2">
-            <div class="btn-group" role="group">
-              <button class="btn btn-sm btn-outline-secondary me-2" id="z-axis-toggle-${id}">3D Plot</button>
-              <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-cell-${id}" style="display:none;">Highlight Focused Cell</button>
-              <button class="btn btn-sm active btn-primary me-2" id="highlight-focused-gene-${id}" style="display:none;">Highlight Focused Gene</button>
-              <button class="btn btn-sm btn-outline-secondary me-2" id="refresh-plot-${id}">Refresh</button>
-              <button class="btn btn-sm btn-outline-secondary me-2" id="aesthetics-menu-btn-${id}"><i class="fas fa-sliders-h"></i> Plot Options</button>
+        <!-- One grid (styles.css, "Plot controls"): three groups that sit side
+             by side, two up or stacked as the panel narrows, and a row of
+             toggles under them. A hidden group leaves no gap. -->
+        <div class="ctl-grid ctl-no-colour">
+          <!-- What is plotted: the axes and the colour source -->
+          <div class="ctl-group ctl-axes" role="group" aria-label="Axes and colour">
+            ${['x', 'y'].map(axis => axisRow(axis, axis.toUpperCase(), id)).join('')}
+            ${axisRow('z', 'Z', id, `id="z-axis-container-${id}" style="display:none;"`)}
+            <div class="color-selector-container ctl-row">
+              <label class="axis-selector-label ctl-label" for="color-type-select-${id}">Color</label>
+              <div class="axis-selector">
+                <select class="form-select form-select-sm axis-type-select" data-axis="color" id="color-type-select-${id}">
+                  <option value="">Loading...</option>
+                  <option value="none">None (constant)</option>
+                  <!-- Other options will be set based on plot type -->
+                </select>
+                <select class="form-select form-select-sm axis-key-select" data-axis="color" disabled>
+                  <option value="">Loading...</option>
+                </select>
+                <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
+                  <option value="">Loading...</option>
+                </select>
+              </div>
             </div>
-            
-            <div class="table-filter-controls mb-2 mt-2">
-              <div class="d-flex align-items-center">
-                <label class="me-2 mb-0">Filter by Table:</label>
-                <select class="form-select form-select-sm table-filter-select" id="table-filter-${id}">
-                  <option value="none">None</option>
+          </div>
+
+          <!-- How the colour is drawn; hidden for a constant colour -->
+          <div class="ctl-group ctl-colour color-range-controls" id="color-range-container-${id}" style="display:none;"
+               role="group" aria-label="Colour scale">
+            <div class="ctl-row">
+              <label id="numerical-color-label-${id}" class="numerical-color-label ctl-label" for="color-scale-${id}">Map</label>
+              <label id="categorical-color-label-${id}" class="categorical-color-label ctl-label" for="category-palette-${id}" style="display:none;">Palette</label>
+              <div class="ctl-field">
+                <select class="form-select form-select-sm color-palette-selector" id="color-scale-${id}">
+                  ${COLOR_SCALES.map(scale => `
+                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
+                  `).join('')}
+                </select>
+                <select class="form-select form-select-sm category-palette-selector" id="category-palette-${id}" style="display:none;">
+                  <option value="">Loading palettes...</option>
                   <!-- Options populated by external logic -->
                 </select>
-                <button class="btn btn-sm btn-outline-secondary ms-2" id="remove-non-table-entries-${id}" title="Toggle between coloring non-table entries in gray or completely removing them">
-                  <i class="fas fa-eye-slash"></i>
-                </button>
               </div>
             </div>
 
-            <div class="hover-columns-controls mb-2">
-              <label class="me-2 mb-0" for="hover-columns-${id}">Hover:</label>
-              <select multiple size="3" class="form-select form-select-sm hover-columns-select" id="hover-columns-${id}"
-                      aria-label="Columns listed in the hover label" title="Columns listed in the hover label (Ctrl/Cmd-click for several)">
-              </select>
+            <div class="color-range-inputs">
+              <div class="color-range-sliders">
+                <div class="color-min-slider-container ctl-row ctl-slider">
+                  <label class="ctl-label" for="color-min-${id}">Min</label>
+                  <input type="range" class="form-range" id="color-min-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="0" title="Percentile of the coloured values" aria-label="Colour minimum (percentile)">
+                  <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${settings.colorMin ?? 0}">
+                </div>
+                <div class="color-max-slider-container ctl-row ctl-slider">
+                  <label class="ctl-label" for="color-max-${id}">Max</label>
+                  <input type="range" class="form-range" id="color-max-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="${SLIDER_STEPS}" title="Percentile of the coloured values" aria-label="Colour maximum (percentile)">
+                  <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${settings.colorMax ?? 100}">
+                </div>
+              </div>
             </div>
 
+            <div class="btn-toolbar ctl-toggles" role="toolbar" aria-label="Colour scale options">
+              <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}" aria-pressed="false">Center at 0</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}" aria-pressed="false">Reverse</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}" aria-pressed="false">Lock Range</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}" aria-pressed="false">Hide Outliers</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}" aria-pressed="false">Hide NaN</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="sort-by-color-${id}" aria-pressed="false" title="Draw the largest |colour| values on top">Strong on top</button>
+                <span class="ctl-log">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="log-color-${id}" aria-pressed="false" title="log10 colour scale; values at or below the floor share its colour">Log</button>
+                  <input type="number" class="form-control form-control-sm log-floor-input" id="log-floor-${id}" placeholder="floor: auto" title="Floor for the log colour scale (empty: smallest positive value)" aria-label="Log floor">
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- How the points are drawn and labelled -->
+          <div class="ctl-group ctl-points" role="group" aria-label="Points">
             <div class="point-controls">
-              <div class="point-size-control">
-                <label for="point-size-input-${id}">Size:</label>
+              <div class="point-size-control ctl-row ctl-slider">
+                <label class="ctl-label" for="point-size-input-${id}">Size</label>
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(pointSizeScale, settings.pointSize)}" id="point-size-${id}"
                        title="Marker size in px (log scale)" aria-label="Point size (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
               </div>
-              <div class="point-opacity-control">
-                <label for="point-opacity-input-${id}">Opacity:</label>
+              <div class="point-opacity-control ctl-row ctl-slider">
+                <label class="ctl-label" for="point-opacity-input-${id}">Opacity</label>
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(opacityScale, settings.pointOpacity)}" id="point-opacity-${id}"
                        title="Marker opacity (log scale)" aria-label="Point opacity (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" max="1" step="any" value="${settings.pointOpacity}" id="point-opacity-input-${id}" title="Marker opacity, 0 to 1">
               </div>
             </div>
 
-            <div class="color-range-controls" id="color-range-container-${id}" style="display:none;">
-              <div class="d-flex align-items-center mb-2">
-                <label id="numerical-color-label-${id}" class="numerical-color-label me-2 mb-0">Color Map:</label>
-                <label id="categorical-color-label-${id}" class="categorical-color-label me-2 mb-0" style="display:none;">Color Palette:</label>
-                <select class="form-select form-select-sm color-palette-selector flex-grow-1" id="color-scale-${id}">
-                  ${COLOR_SCALES.map(scale => `
-                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
-                  `).join('')}
-                </select>
-                <select class="form-select form-select-sm category-palette-selector flex-grow-1" id="category-palette-${id}" style="display:none;">
-                  <option value="">Loading palettes...</option>
+            <div class="table-filter-controls ctl-row">
+              <label class="ctl-label" for="table-filter-${id}" title="Filter by table">Table</label>
+              <div class="ctl-field">
+                <select class="form-select form-select-sm table-filter-select" id="table-filter-${id}" aria-label="Filter by table">
+                  <option value="none">None</option>
                   <!-- Options populated by external logic -->
                 </select>
-              </div>
-
-              <div class="color-range-inputs">
-                <div class="color-range-sliders">
-                  <div class="color-min-slider-container">
-                    <label>Min:</label>
-                    <input type="range" class="form-range" id="color-min-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="0" title="Percentile of the coloured values">
-                    <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${settings.colorMin ?? 0}">
-                  </div>
-                  <div class="color-max-slider-container">
-                    <label>Max:</label>
-                    <input type="range" class="form-range" id="color-max-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="${SLIDER_STEPS}" title="Percentile of the coloured values">
-                    <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${settings.colorMax ?? 100}">
-                  </div>
-                </div>
-              </div>
-
-              <div class="btn-toolbar d-flex flex-row" role="toolbar">
-                <div class="btn-group d-flex flex-row flex-nowrap" role="group">
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}">Center at 0</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}">Reverse Colormap</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}">Lock Range</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-outliers-${id}">Hide Outliers</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="hide-nan-${id}">Hide NaN</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="equal-aspect-${id}" title="Same scale on x and y (spatial coordinates)">Equal aspect</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="sort-by-color-${id}" title="Draw the largest |colour| values on top">Strong on top</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="log-color-${id}" title="log10 colour scale; values at or below the floor share its colour">Log</button>
-                  <input type="number" class="form-control form-control-sm log-floor-input" id="log-floor-${id}" placeholder="floor: auto" title="Floor for the log colour scale (empty: smallest positive value)" style="width: 7.5rem">
-                </div>
+                <button class="btn btn-sm btn-outline-secondary" id="remove-non-table-entries-${id}" aria-pressed="false" title="Toggle between coloring non-table entries in gray or completely removing them">
+                  <i class="fas fa-eye-slash"></i>
+                </button>
               </div>
             </div>
+
+            <div class="hover-columns-controls ctl-row">
+              <label class="ctl-label" for="hover-columns-${id}">Hover</label>
+              <select multiple size="3" class="form-select form-select-sm hover-columns-select" id="hover-columns-${id}"
+                      aria-label="Columns listed in the hover label" title="Columns listed in the hover label (Ctrl/Cmd-click for several)">
+              </select>
+            </div>
+          </div>
+
+          <!-- Panel-wide toggles and actions -->
+          <div class="color-options ctl-actions">
+            <span class="ctl-actions-toggles" role="group" aria-label="View">
+              <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${id}" aria-pressed="false">3D Plot</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="equal-aspect-${id}" aria-pressed="false" title="Same scale on x and y (spatial coordinates)">Equal aspect</button>
+              <button class="btn btn-sm active btn-primary" id="highlight-focused-cell-${id}" aria-pressed="true" style="display:none;">Highlight Focused Cell</button>
+              <button class="btn btn-sm active btn-primary" id="highlight-focused-gene-${id}" aria-pressed="true" style="display:none;">Highlight Focused Gene</button>
+            </span>
+            <span class="ctl-actions-end" role="group" aria-label="Plot actions">
+              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
+              <button class="btn btn-sm btn-outline-secondary" id="aesthetics-menu-btn-${id}" title="Plot options" aria-label="Plot options"><i class="fas fa-sliders-h"></i> <span class="ctl-btn-text">Plot Options</span></button>
+            </span>
           </div>
         </div>
       </div>
@@ -487,13 +497,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   // Set up remove non-table entries button state
   const $removeNonTableEntriesBtn = jQuery(`#remove-non-table-entries-${id}`);
   if ($removeNonTableEntriesBtn.length) {
-    if (settings.removeNonTableEntries) {
-      $removeNonTableEntriesBtn.addClass('btn-primary').removeClass('btn-outline-secondary');
-      $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (active)');
-    } else {
-      $removeNonTableEntriesBtn.addClass('btn-outline-secondary').removeClass('btn-primary');
-      $removeNonTableEntriesBtn.attr('title', 'Remove non-table entries (inactive)');
-    }
+    $.updateButtonState($removeNonTableEntriesBtn, settings.removeNonTableEntries, 'btn-primary');
+    $removeNonTableEntriesBtn.attr('title', `Remove non-table entries (${settings.removeNonTableEntries ? 'active' : 'inactive'})`);
   }
   
   // Color controls

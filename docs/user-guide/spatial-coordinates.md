@@ -22,7 +22,7 @@ prepared by `docs/_tools/make_spatial_demo.py`. It holds
 
 1. Open `spatial_demo.zarr` in the **Dataset** picker and add a **Cell Plot**. It opens on the
    expression UMAP.
-2. Open its controls. Set **X-Axis** to `obsm` → `spatial_upright` → `0` and **Y-Axis** to `obsm`
+2. Open its controls. Set **X** to `obsm` → `spatial_upright` → `0` and **Y** to `obsm`
    → `spatial_upright` → `1`.
 3. Set **Color** to `obs` → `leiden`.
 4. Click **Equal aspect** (next to **Hide NaN** for a categorical colour, in the colour toolbar

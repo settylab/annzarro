@@ -319,6 +319,9 @@ body {
 
 .tile-title {
     flex: 1;
+    /* an <input> keeps its default width (20 characters) as its minimum and
+       pushed the close button out of a narrow tile */
+    min-width: 0;
     margin: 0;
     padding: 0.25rem 0.5rem;
     border: 1px solid transparent;
@@ -335,6 +338,7 @@ body {
 
 .tile-controls {
     display: flex;
+    flex: none;
     gap: 0.25rem;
 }
 
@@ -440,6 +444,8 @@ body {
     height: 100%;
 }
 
+/* Plot controls: the layout is under "Plot controls grid" below. JS sets
+   display flex/none on .plot-controls (controls-visibility.js). */
 .plot-controls {
     padding: 0.5rem;
     border-bottom: 1px solid #dee2e6;
@@ -471,6 +477,8 @@ body {
     padding: 0.5rem;
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
+    /* the columns stack in a narrow panel (below), by the panel's width */
+    container: table-controls / inline-size;
 }
 
 
@@ -964,6 +972,31 @@ button.dtsb-button.dtsb-clear:hover {
     flex-direction: column;
     min-height: 0; /* Allow shrinking */
     padding-left: 0.5rem; /* Add a bit of padding for separation */
+}
+
+/* The selected list and its buttons give way instead of pushing the panel
+   wider (they used to need 250 px plus two 120 px buttons); below 520 px the
+   two columns stack. */
+.table-controls .selected-columns { min-width: 0; }
+.table-controls .action-buttons {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+.table-controls .action-buttons .btn { min-width: 0; }
+
+@container table-controls (max-width: 519px) {
+    .table-controls .control-row {
+        flex-direction: column;
+        max-height: none;
+    }
+    .table-controls .column-selector,
+    .table-controls .column-actions {
+        width: 100%;
+        padding-left: 0;
+    }
+    .table-controls .column-selector { max-height: 220px; }
 }
 
 /* Table length control in panel */
@@ -2301,139 +2334,278 @@ button.dtsb-button.dtsb-clear:hover {
     border: 2px dashed #dee2e6;
     border-radius: 0.5rem;
 }
+/* Special buttons for layer, obsp, varp types */
+/* ---- Plot controls grid ---------------------------------------------------
+   Every size is a multiple of --ctl-u (4 px). Each row is label | field, and
+   a slider row label | track | number box, on tracks shared by every row, so
+   labels, tracks and boxes line up across rows and groups.
 
-/* Plot Controls */
-.axis-selector-container {
+   The groups (panel-ui-make.js) are laid out from the width of the panel's
+   controls, not the window, because splits resize panels:
+     < 560 px     one column: Axes, Colour, Points, actions;
+     560-959 px   Axes | Points, Colour across both, then the toggles under
+                  the axes and Refresh / Plot Options under the points;
+     >= 960 px    Axes | Colour | Points, the toggles under the axes (the
+                  shortest column), Refresh / Plot Options at the foot of
+                  the points.
+   With a constant colour the Colour group is hidden and .ctl-no-colour
+   (updateColorControlsVisibility) drops its area, so it leaves no hole. */
+.plot-controls {
+    --ctl-u: 4px;
+    --ctl-label: 3.5rem;
+    --ctl-num: 4.5rem;
+    --ctl-h: 1.75rem;
+    --ctl-rule: 1px solid #e3e6ea;
+    container: plot-controls / inline-size;
+    padding: calc(2 * var(--ctl-u));
+    gap: calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+}
+
+.ctl-grid {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: calc(3 * var(--ctl-u)) calc(4 * var(--ctl-u));
+}
+
+.ctl-group {
     display: flex;
     flex-direction: column;
-    margin-bottom: 0.5rem;
+    gap: var(--ctl-u);
+    min-width: 0;
 }
 
-.axis-selector-label {
+/* One column: a hairline above every group but the first. */
+.ctl-colour,
+.ctl-points {
+    border-top: var(--ctl-rule);
+    padding-top: calc(3 * var(--ctl-u));
+}
+
+@container plot-controls (min-width: 560px) {
+    .ctl-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "axes points" "colour colour" "acts end";
+    }
+    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "acts end"; }
+    .ctl-axes { grid-area: axes; }
+    .ctl-colour {
+        grid-area: colour;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: calc(4 * var(--ctl-u));
+        row-gap: var(--ctl-u);
+    }
+    .ctl-colour > .color-range-inputs { grid-column: 1; grid-row: 2 / span 2; }
+    .ctl-colour > .ctl-toggles { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
+    .ctl-points {
+        grid-area: points;
+        border-top: 0;
+        padding-top: 0;
+        border-left: var(--ctl-rule);
+        padding-left: calc(4 * var(--ctl-u));
+    }
+    .ctl-grid > .ctl-actions { display: contents; }
+    .ctl-grid .ctl-actions-toggles { grid-area: acts; align-self: start; }
+    .ctl-grid .ctl-actions-end { grid-area: end; justify-self: end; align-self: start; }
+}
+
+@container plot-controls (min-width: 960px) {
+    .ctl-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: auto 1fr;
+        grid-template-areas: "axes colour points" "acts colour points";
+    }
+    .ctl-grid.ctl-no-colour {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "axes points" "acts points";
+    }
+    /* Refresh / Plot Options sit in the points column's last line, which
+       the group keeps free, so the first row is only as tall as the axes. */
+    .ctl-points { padding-bottom: calc(var(--ctl-h) + var(--ctl-u)); }
+    .ctl-grid .ctl-actions-end { grid-area: points; align-self: end; }
+    .ctl-colour {
+        display: flex;
+        border-top: 0;
+        padding-top: 0;
+        border-left: var(--ctl-rule);
+        padding-left: calc(4 * var(--ctl-u));
+    }
+}
+
+.ctl-row {
+    display: grid;
+    grid-template-columns: var(--ctl-label) minmax(0, 1fr);
+    align-items: center;
+    column-gap: calc(2 * var(--ctl-u));
+    min-height: var(--ctl-h);
+}
+
+/* label | track | number box; an extra item (a marker, a reset) takes an
+   implicit track of its own width after the box. */
+.ctl-row.ctl-slider {
+    grid-template-columns: var(--ctl-label) minmax(3rem, 1fr) var(--ctl-num);
+    grid-auto-columns: auto;
+}
+
+.ctl-label,
+.plot-controls .ctl-label {
+    margin: 0;
     font-weight: 500;
-    margin-bottom: 0.25rem;
+    color: #495057;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
+.ctl-field,
 .axis-selector {
     display: flex;
-    gap: 0.25rem;
     align-items: center;
+    gap: var(--ctl-u);
+    min-width: 0;
 }
 
-/* Special buttons for layer, obsp, varp types */
+.plot-controls .form-select-sm,
+.plot-controls .form-control-sm {
+    min-height: var(--ctl-h);
+    height: var(--ctl-h);
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 0.8125rem;
+}
+
+.plot-controls .form-select-sm {
+    padding-left: calc(2 * var(--ctl-u));
+    padding-right: calc(6 * var(--ctl-u));
+    background-position: right calc(1.5 * var(--ctl-u)) center;
+}
+
+.plot-controls .form-range {
+    min-width: 0;
+    height: var(--ctl-h);
+}
+
+/* The type select is one track wide (obs, obsm, layer all fit), so the keys
+   line up; the key takes two thirds of the rest, the column one third. */
+.axis-selector .axis-type-select {
+    flex: 0 0 4.5rem;
+    min-width: 0;
+}
+/* Key and column start from their own widest option and give way in
+   proportion, so a short column (0, 1) leaves the room to a long key. */
+.axis-selector .axis-key-select,
+.axis-selector .axis-column-select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+}
+
+/* A constant colour has no key or column: the type select says so in full. */
+.axis-selector:has(> .axis-type-select option[value="none"]:checked) > .axis-type-select {
+    flex: 0 1 auto;
+}
+.axis-selector:has(> .axis-type-select option[value="none"]:checked) > :not(.axis-type-select) {
+    display: none;
+}
+.ctl-field > .form-select { flex: 1 1 auto; min-width: 0; }
+
+/* obs and var columns have no column: the disabled "N/A" select is not shown
+   and the key select takes its width. */
+.axis-selector .axis-column-select:disabled:has(> option:only-child[value=""]) {
+    display: none;
+}
+
+.hover-columns-controls { align-items: start; }
+.hover-columns-controls .ctl-label { line-height: var(--ctl-h); }
+.plot-controls .hover-columns-select {
+    height: auto;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.color-range-inputs,
+.color-range-sliders,
+.point-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ctl-u);
+    min-width: 0;
+}
+
+/* Toggles wrap; they never push the panel wider. */
+.ctl-toggles,
+.ctl-toggles > .btn-group,
+.ctl-actions,
+.ctl-actions-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ctl-u);
+    align-items: center;
+    min-width: 0;
+}
+/* Bootstrap's .btn-group joins and stretches its buttons; here they are
+   separate toggles of their own width. */
+.ctl-toggles > .btn-group > .btn,
+.ctl-log > .btn {
+    flex: 0 0 auto;
+    border-radius: 0.25rem;
+    margin-left: 0;
+}
+.ctl-log {
+    display: inline-flex;
+    gap: var(--ctl-u);
+}
+.ctl-log .log-floor-input { width: 6.5rem; }
+
+.ctl-actions { justify-content: space-between; }
+@container plot-controls (max-width: 379px) {
+    .ctl-actions .ctl-btn-text { display: none; }
+}
+.ctl-actions-end {
+    display: inline-flex;
+    gap: var(--ctl-u);
+    margin-left: auto;
+}
+
+/* A toggle that is on says so with a check mark too, not by colour alone. */
+.plot-controls .btn[aria-pressed="true"]:not([data-large-off="1"]):not(.axis-lock-btn)::before {
+    content: "\2713";
+    margin-right: var(--ctl-u);
+}
+
+.plot-controls .btn-sm {
+    min-height: var(--ctl-h);
+    padding: 0 calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+    line-height: calc(var(--ctl-h) - 2px);
+    white-space: nowrap;
+}
+
+/* The 3rd axis row only appears with 3D on; axis lock/refocus buttons only
+   for layer, obsp and varp axes. */
 [class^="axis-special-buttons"] {
     display: flex;
+    flex: none;
     align-items: center;
-    margin-left: 4px;
+    gap: 2px;
 }
 
 [class^="axis-special-buttons"] .btn {
-    padding: 0.25rem 0.375rem;
+    padding: 0 0.375rem;
     font-size: 0.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 28px;
-    height: 28px;
-}
-
-[class^="axis-special-buttons"] .btn:first-child {
-    margin-right: 2px;
+    min-width: var(--ctl-h, 28px);
+    height: var(--ctl-h, 28px);
 }
 
 /* Ensure refocus button is hidden by default */
 .axis-refocus-btn {
     display: none;
-}
-
-.color-selector-container {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 0.5rem;
-}
-
-.color-range-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    background-color: #f8f9fa;
-    border-radius: 0.25rem;
-    margin-top: 0.5rem;
-}
-
-/* Ensure buttons within color range controls stay on same line */
-.color-range-controls .btn-toolbar,
-.color-range-controls .btn-group {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    width: auto !important;
-    justify-content: flex-start !important;
-}
-
-.color-range-controls .btn-group .btn {
-    white-space: nowrap !important;
-    flex: 0 0 auto !important;
-    display: inline-block !important;
-    position: relative !important;
-}
-
-/* Remove margin that might be causing wrapping */
-.color-range-controls .btn-group.me-2 {
-    margin-right: 0 !important;
-}
-
-/* Fix for specific buttons */
-[id^="center-colormap-"],
-[id^="hide-outliers-"],
-[id^="lock-range-"] {
-    display: inline-block !important;
-    width: auto !important;
-}
-
-.color-palette-selector,
-.category-palette-selector {
-    width: 150px;
-    margin-bottom: 0.5rem;
-}
-
-.color-range-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-}
-
-.color-range-sliders {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-}
-
-.color-min-slider-container,
-.color-max-slider-container {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.color-min-slider-container label,
-.color-max-slider-container label {
-    width: 40px;
-    font-size: 0.875rem;
-    margin-bottom: 0;
-}
-
-.color-min-slider-container input[type="range"],
-.color-max-slider-container input[type="range"] {
-    flex: 1;
-}
-
-.color-min-slider-container input[type="number"],
-.color-max-slider-container input[type="number"] {
-    width: 80px;
 }
 
 .color-options-buttons {
@@ -2581,25 +2753,6 @@ button.dtsb-button.dtsb-clear:hover {
 .feature-item:hover {
     background-color: #f8f9fa;
 }
-
-/* Point styling controls */
-.point-controls {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.point-size-control, .point-opacity-control {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.point-size-control input[type="number"],
-.point-opacity-control input[type="number"] {
-    width: 70px;
-}
-
 /* Tooltip */
 .tooltip {
     position: absolute;
@@ -2903,17 +3056,6 @@ button.dtsb-button.dtsb-clear:hover {
 .session-card-owner i {
     margin-right: 4px;
 }
-
-/* Hover columns picker (settings.hoverInfo) */
-.hover-columns-controls {
-    display: flex;
-    align-items: flex-start;
-}
-.hover-columns-controls .hover-columns-select {
-    max-width: 24rem;
-    padding-right: 0.5rem;
-}
-
 /* A toggle that large-plot mode turns off (large-plot-controls.js) keeps its
    on/off state, but must not read as on while it does nothing. */
 .btn.active[data-large-off="1"] {

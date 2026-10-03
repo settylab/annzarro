@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X-Axis type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Filter by Table; Size and Opacity sliders; Color Palette; Hide NaN; Equal aspect.
+:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Table filter; Size and Opacity sliders; Palette; Hide NaN; Equal aspect.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -20,27 +20,30 @@ Cell plot controls, coloured by a categorical obs column.
 1. **Type**: the AnnData slot the axis reads from.
 2. **Key**: the column or matrix in that slot.
 3. **Column**: which column of the matrix, or which focused row or column (see the tables below).
-   For obs and var it reads "N/A".
+   obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
-5. **3D Plot** adds a **Z-Axis (3D)** row and draws the plot in 3D. Click it again for 2D.
+5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
 6. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
    as a red dot with a black ring. On by default.
-   **Refresh**, next to it, reloads the panel's data and redraws it.
+   **Refresh**, at the end of the row, reloads the panel's data and redraws it.
 7. **Plot Options** opens appearance and export settings ({doc}`export`).
-8. **Filter by Table** links the plot to a table ({doc}`tables-and-filters`).
+8. **Table** links the plot to a table ({doc}`tables-and-filters`).
 9. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
    The sliders move on a log scale, so their left half is the small sizes and faint opacities a
    plot of millions of cells needs: size 0.2 to 2 and opacity 0.002 to 0.045. The size slider
    stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
    which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
    sliders' range.
-10. **Color Palette** (categorical colour) or **Color Map** and range controls (numerical colour,
+10. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
     {doc}`colour-scales`).
 11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
     points of the **NA** legend entry).
 12. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
-    ({doc}`spatial-coordinates`). Numerical colours have more buttons in the same row
+    ({doc}`spatial-coordinates`). Numerical colours have more buttons next to Hide NaN
     ({doc}`colour-scales`).
+
+A toggle that is on is filled blue and starts with a check mark. The controls rearrange with the
+panel's width: side by side in a wide panel, stacked in a narrow one.
 
 Every change redraws the panel straight away.
 
@@ -137,8 +140,8 @@ missing is therefore still numerical.
 
 - **Categorical**: one trace per category with a legend, and every point drawn. Points with a
   missing value are drawn in grey under an **NA** legend entry, and values that are not among the
-  column's categories appear as categories of their own. **Color Palette** offers "As stored in
-  adata.uns if available" (uses `uns/<key>_colors`, as scanpy writes them; the default),
+  column's categories appear as categories of their own. **Palette** offers "As stored in
+  adata.uns" (uses `uns/<key>_colors`, as scanpy writes them; the default),
   **hue** (evenly spaced hues), discrete palettes (Accent, Dark2, Paired, Pastel1, Pastel2, Set1,
   Set2, Set3, tab10, tab20, tab20b, tab20c, RetroMetro, DutchField, RiverNights, SpringPastels,
   Tableau10, Plotly), continuous palettes sampled into discrete colours (89 maps from Blues to winter,

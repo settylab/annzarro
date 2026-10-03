@@ -47,9 +47,9 @@ along a trajectory shows how far each cell state reaches.
 
 1. Choose `bm_aging_showcase.zarr` in **Dataset**. Set **Focused Cell** to
    `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (click the box, type, Enter, Esc).
-2. In the Welcome tile click **Cell Plot**. **X-Axis** `obsm` · `X_umap` · `0`, **Y-Axis**
+2. In the Welcome tile click **Cell Plot**. **X** `obsm` · `X_umap` · `0`, **Y**
    `obsm` · `X_umap` · `1`, **Color** `obsp` · `diffusion_walk_t5`. The third dropdown reads
-   "Focused cell HSPC_Old_1#…". **Color Map** `Blues`, **Reverse Colormap** on.
+   "Focused cell HSPC_Old_1#…". **Map** `Blues`, **Reverse** on.
 3. Click "Split Horizontally" in the tile header and choose **Cell Table**. In its controls,
    under "Available Columns" on the `obs` tab, tick `fig3a_path_step`, `fig3a_focus_cells` and
    `highres_celltype`, and click **Apply Changes**.
@@ -134,14 +134,14 @@ each point is another cell, at x = its UMAP distance to the focus and y = its di
 Where the two agree the points fall on a rising band; where they disagree they leave it.
 
 7. Set **Focused Cell** to the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`.
-8. Add a **Cell Plot** (split a tile). Set **X-Axis** `obsp` · `umap_distance` and **Y-Axis**
+8. Add a **Cell Plot** (split a tile). Set **X** `obsp` · `umap_distance` and **Y**
    `obsp` · `diffusion_distance`. The third dropdown of each reads "Focused cell
-   Mature_Mid_1#…". Set **Color** `obs` · `fig3_plasma_groups` and leave **Color Palette** at
-   "As stored in adata.uns if available".
+   Mature_Mid_1#…". Set **Color** `obs` · `fig3_plasma_groups` and leave **Palette** at
+   "As stored in adata.uns".
 
 ```{figure} ../_static/screens/paper/fig3-controls-axes.png
 :class: screenshot
-:alt: Cell plot controls with X-Axis obsp umap_distance "Focused cell Mature_Mi..." and Y-Axis obsp diffusion_distance "Focused cell Mature_Mi...", each with an open padlock; Color obs fig3_plasma_groups with Color Palette "As stored in adata.uns if available".
+:alt: Cell plot controls with X obsp umap_distance "Focused cell Mature_Mi..." and Y obsp diffusion_distance "Focused cell Mature_Mi...", each with an open padlock; Color obs fig3_plasma_groups with Palette "As stored in adata.uns".
 :width: 70%
 
 Both axes are rows of obsp that follow the focused cell. Each has its own padlock.

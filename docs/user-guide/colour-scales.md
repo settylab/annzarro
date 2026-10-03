@@ -11,12 +11,12 @@ The numerical colour controls appear in a panel's controls once its colour is nu
 
 ```{figure} ../_static/screens/user-guide/colour-controls.png
 :class: screenshot
-:alt: Numerical colour controls with twelve numbered parts: Color Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse Colormap, Lock Range, Hide Outliers, Hide NaN, Equal aspect, Strong on top, Log and the floor box.
+:alt: Numerical colour controls with eleven numbered parts: Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse, Lock Range, Hide Outliers, Hide NaN, Strong on top, Log and the floor box.
 
 Numerical colour controls of the fold-change panel.
 ```
 
-1. **Color Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
+1. **Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
    Portland, Jet, Hot, Blackbody, Earth, Electric, Viridis, Cividis, Inferno, Magma, Plasma.
    A new panel uses Portland unless the server sets another default (`ui.defaults.color_scale`,
    {doc}`../reference/configuration`).
@@ -33,16 +33,15 @@ Numerical colour controls of the fold-change panel.
    its sliders are disabled, the boxes still work.
 4. **Center at 0** makes the range symmetric: Min = −m and Max = m, where m is the largest absolute
    value in the data.
-5. **Reverse Colormap** flips the map end for end.
+5. **Reverse** flips the map end for end.
 6. **Lock Range** keeps Min and Max fixed when the data change.
 7. **Hide Outliers** removes points whose value lies outside Min to Max. The axes keep their range.
 8. **Hide NaN** removes points with no value (also offered for categorical colours, where it
    removes the grey **NA** points). The axes keep their range.
-9. **Equal aspect** gives x and y the same scale ({doc}`spatial-coordinates`).
-10. **Strong on top** (on by default) draws the points with the largest absolute colour value
-    last, so they are not hidden under weaker ones.
-11. **Log** switches to a log10 colour scale.
-12. **floor** is the smallest value the log scale shows; empty means the smallest positive value
+9. **Strong on top** (on by default) draws the points with the largest absolute colour value
+   last, so they are not hidden under weaker ones.
+10. **Log** switches to a log10 colour scale.
+11. **floor** is the smallest value the log scale shows; empty means the smallest positive value
     in the data.
 
 The Min and Max boxes show 3 significant digits (0.0126, −1.03), and a value you type is used
@@ -62,8 +61,7 @@ Left: sequential (Blues, reversed, 0 to 0.012). Right: diverging (RdBu, Center a
 ```
 
 1. Open the panel's controls.
-2. In **Color Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse
-   Colormap** to draw zero in the light colour and large values in dark blue.
+2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse** to draw zero in the light colour and large values in dark blue.
 3. For the fold change, choose **RdBu** and click **Center at 0**. Min and Max become −1.03 and
    1.03 for H2-Q7.
 

@@ -47,15 +47,15 @@ focus.
 
 3. In the Welcome tile, under "Create New Panel", click **Cell Plot**. A new panel opens with
    its controls showing. Set:
-   - **X-Axis** `obsm` · `X_umap` · `0`; **Y-Axis** `obsm` · `X_umap` · `1`.
+   - **X** `obsm` · `X_umap` · `0`; **Y** `obsm` · `X_umap` · `1`.
    - **Color** `obsp` · `diffusion_walk_t5`. The third dropdown now reads "Focused cell
      HSPC_Old_1#…": the colour is that cell's row.
-   - **Color Map** `Blues`, then click **Reverse Colormap**, so that a cell the walk does not
+   - **Map** `Blues`, then click **Reverse**, so that a cell the walk does not
      reach is light grey and the outline of the UMAP stays visible.
 
    ```{figure} ../_static/screens/paper/fig1-controls-walk.png
    :class: screenshot
-   :alt: Cell plot controls. X-Axis obsm X_umap 0, Y-Axis obsm X_umap 1, Color obsp diffusion_walk_t5 "Focused cell HSPC_Old_1#", Color Map Blues with Reverse Colormap active.
+   :alt: Cell plot controls. X obsm X_umap 0, Y obsm X_umap 1, Color obsp diffusion_walk_t5 "Focused cell HSPC_Old_1#", Map Blues with Reverse active.
    :width: 70%
 
    The open padlock beside the third Color dropdown means the panel follows the focused cell.
@@ -75,7 +75,7 @@ To see where each click lands, put a cell-type map beside the walk.
 
 5. Click "Split Horizontally" (the first of the two split icons in the tile header). In the
    new "Add New Panel" tile choose **Cell Plot**: UMAP axes as before, **Color** `obs` ·
-   `highres_celltype`, **Color Palette** "As stored in adata.uns if available". Close its
+   `highres_celltype`, **Palette** "As stored in adata.uns". Close its
    controls.
 6. Hover over cells in the walk panel: the label shows the cell ID and `highres_celltype`.
    Click a GMP in the middle of the central cluster, near UMAP (12, 3). The paper clicked
@@ -140,23 +140,23 @@ driven by the focused cell and the bottom row by the focused gene.
 
 9. Close the cell-type panel (× in its header), then focus the HSC again (step 2).
 10. **Top right: the focused cell's row of a layer.** Click "Split Horizontally" on the walk
-    tile and choose **Gene Plot**. Set **X-Axis** `var` · `kompot_de_Young_to_Old_mean_lfc`
-    and **Y-Axis** `var` · `kompot_de_Young_to_Old_mahalanobis` (a volcano), **Color**
+    tile and choose **Gene Plot**. Set **X** `var` · `kompot_de_Young_to_Old_mean_lfc`
+    and **Y** `var` · `kompot_de_Young_to_Old_mahalanobis` (a volcano), **Color**
     `layer` · `kompot_de_Young_to_Old_fold_change`. The third dropdown reads "Focused cell …".
-    Choose **Color Map** `RdBu` and click **Center at 0**.
+    Choose **Map** `RdBu` and click **Center at 0**.
 11. **Bottom left: the focused gene's column of the same layer.** Click "Split Vertically"
     (the second split icon) on the walk tile, choose **Cell Plot**, UMAP axes, **Color**
     `layer` · `kompot_de_Young_to_Old_fold_change` (third dropdown "Focused gene H2-Q7"),
-    **Color Map** `RdBu`, **Center at 0**.
+    **Map** `RdBu`, **Center at 0**.
 12. **Bottom right: the focused gene's row of varp.** Click "Split Vertically" on the gene
     plot, choose **Gene Plot**, volcano axes, **Color** `varp` · `spearman_fold_change` (third
-    dropdown "Focused gene H2-Q7"). Choose **Color Map** `RdBu`, type `-1` in **Min** and `1`
+    dropdown "Focused gene H2-Q7"). Choose **Map** `RdBu`, type `-1` in **Min** and `1`
     in **Max**, and click **Lock Range**, so that a colour means the same ρ for every gene you
     focus.
 
     ```{figure} ../_static/screens/paper/fig1-controls-varp.png
     :class: screenshot
-    :alt: Gene plot controls. X-Axis var kompot_de_Young_to_Old_mean_lfc, Y-Axis var kompot_de_Young_to_Old_mahalanobis, Color varp spearman_fold_change "Focused gene H2-Q7", RdBu from -1 to 1 with Lock Range active.
+    :alt: Gene plot controls. X var kompot_de_Young_to_Old_mean_lfc, Y var kompot_de_Young_to_Old_mahalanobis, Color varp spearman_fold_change "Focused gene H2-Q7", RdBu from -1 to 1 with Lock Range active.
     :width: 70%
 
     Controls of the bottom-right panel.
@@ -248,7 +248,7 @@ table. From the grid of section 4:
 
 18. Unlock the walk panel, and focus `H2-Q7` and the HSC again.
 19. In the top-right gene plot (the cell's row of the layer), change **Color** to `varp` ·
-    `spearman_fold_change` with **Color Map** `RdBu`, **Min** `-1`, **Max** `1` and **Lock
+    `spearman_fold_change` with **Map** `RdBu`, **Min** `-1`, **Max** `1` and **Lock
     Range**, as in step 12. Close the bottom-right volcano with × in its header; the top-right
     one now holds the same view.
 20. Click "Split Vertically" on the top-right volcano and choose **Cell Table**. In its
@@ -275,7 +275,7 @@ HSCs. Click a cell ID in the table and it becomes the focused cell.
 ## 7. Filter cells with two conditions and mask a plot
 
 A cell table's "Advanced Search" holds any number of conditions combined with AND or OR,
-nested if needed. A plot can take the rows that pass as a mask ("Filter by Table"). The mask
+nested if needed. A plot can take the rows that pass as a mask ("Table filter"). The mask
 needs no new data from the server, because the plot already holds every cell.
 
 22. Start a new layout (or split any tile) with a **Cell Table**: tick `Age`,
@@ -294,8 +294,8 @@ needs no new data from the server, because the plot already holds every cell.
     ```
 
 25. Click "Split Horizontally" on the table and add a **Cell Plot**: UMAP axes, **Color**
-    `obs` · `kompot_da_Young_to_Old_lfc_zscore`, **Color Map** `RdBu`, **Center at 0**.
-26. In the plot's controls set **Filter by Table** to the table (it is listed by its title).
+    `obs` · `kompot_da_Young_to_Old_lfc_zscore`, **Map** `RdBu`, **Center at 0**.
+26. In the plot's controls set **Table** to the table (it is listed by its title).
     Cells the filter removes turn grey; the eye button beside it ("Toggle between coloring
     non-table entries in gray or completely removing them") hides them instead.
 

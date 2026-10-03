@@ -602,22 +602,16 @@ export const COLOR_TOOLBAR_CONTROLS = Object.freeze({
   categorical: Object.freeze(['hide-nan', 'equal-aspect'])
 });
 
-/** Show the toolbar with exactly the controls that apply to `colorType`. */
+/**
+ * Show exactly the toolbar controls that apply to `colorType`. A shown control
+ * gets no inline display, so the layout in styles.css places it.
+ */
 function applyColorToolbar($container, colorType, id) {
   const shown = COLOR_TOOLBAR_CONTROLS[colorType] || [];
   for (const name of COLOR_TOOLBAR_CONTROLS.numerical) {
     const $el = $container.find(`#${name}-${id}`);
     if (!$el.length) continue;
-    $el.attr('style', shown.includes(name)
-      ? (name === 'log-floor' ? 'width: 7.5rem' : 'display: inline-block !important')
-      : 'display: none !important');
-  }
-  const $buttonToolbar = $container.find('.btn-toolbar');
-  if ($buttonToolbar.length) {
-    $buttonToolbar.attr('style', 'width: 100%; display: flex !important; flex-direction: row !important; gap: 4px');
-    $buttonToolbar.find('.btn-group').each(function() {
-      jQuery(this).attr('style', 'width: auto; display: inline-flex !important; flex-wrap: nowrap !important; gap: 4px');
-    });
+    $el.attr('style', shown.includes(name) ? '' : 'display: none !important');
   }
 }
 
@@ -646,36 +640,39 @@ export function updateColorControlsVisibility(container, colorType, id) {
 
   if (!$colorRangeContainer.length) return;
 
+  // The controls grid drops the Colour group's area when it is hidden (styles.css)
+  const grid = $colorRangeContainer[0]?.closest?.('.ctl-grid');
+  if (grid) grid.classList.toggle('ctl-no-colour', colorType !== 'numerical' && colorType !== 'categorical');
+
   if (colorType === 'numerical') {
     // Show numerical color controls
-    $colorRangeContainer.css('display', 'flex');
-    $.showHide($colorScaleSelect, true, 'block');
+    $colorRangeContainer.css('display', '');
+    $.showHide($colorScaleSelect, true, '');
     $.showHide($categoryPaletteSelect, false);
-    $.showHide($colorMinInput, true, 'block');
-    $.showHide($colorMaxInput, true, 'block');
-    $.showHide($colorMinSlider, true, 'block');
-    $.showHide($colorMaxSlider, true, 'block');
+    $.showHide($numericalLabel, true, '');
+    $.showHide($categoricalLabel, false);
+    $.showHide($colorMinInput, true, '');
+    $.showHide($colorMaxInput, true, '');
+    $.showHide($colorMinSlider, true, '');
+    $.showHide($colorMaxSlider, true, '');
     
     // Show slider containers with Min/Max labels
-    $.showHide($colorMinSliderContainer, true, 'block');
-    $.showHide($colorMaxSliderContainer, true, 'block');
+    $.showHide($colorMinSliderContainer, true, '');
+    $.showHide($colorMaxSliderContainer, true, '');
     
     // Every toolbar control applies to a numerical colour
     applyColorToolbar($container, 'numerical', id);
     
     // Show the entire color range inputs section
     const $colorRangeInputs = $container.find('.color-range-inputs');
-    $.showHide($colorRangeInputs, true, 'block');
+    $.showHide($colorRangeInputs, true, '');
     
   } else if (colorType === 'categorical') {
     // Show categorical color controls
-    $colorRangeContainer.css('display', 'flex');
+    $colorRangeContainer.css('display', '');
     $.showHide($colorScaleSelect, false);
     
-    if ($categoryPaletteSelect.length) {
-      $.showHide($categoryPaletteSelect, true, 'block');
-      $categoryPaletteSelect.css('margin', '10px 0');
-    }
+    $.showHide($categoryPaletteSelect, true, '');
     
     $.showHide($colorMinInput, false);
     $.showHide($colorMaxInput, false);
@@ -695,7 +692,7 @@ export function updateColorControlsVisibility(container, colorType, id) {
     
     // Show/hide labels
     $.showHide($numericalLabel, false);
-    $.showHide($categoricalLabel, true, 'inline');
+    $.showHide($categoricalLabel, true, '');
     
   } else {
     // For 'none' type, hide the entire color controls

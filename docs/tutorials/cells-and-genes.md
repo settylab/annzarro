@@ -45,10 +45,10 @@ changes. Only `fig5d_direction` is precomputed, for the two example cells.
 1. Open `bm_aging_showcase.zarr` from **Dataset** and set **Focused Gene** to `S100a9`.
 2. Set **Focused Cell** to `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (type `GAAGCCCGTGGCTCTG` and pick it).
    This is the HSC you will lock in step 3.
-3. Add a cell plot. Open its controls. Set **X-Axis** and **Y-Axis** to `obsm`, `X_umap`, columns
+3. Add a cell plot. Open its controls. Set **X** and **Y** to `obsm`, `X_umap`, columns
    `0` and `1`.
 4. Set **Color** to `layer`, `kompot_de_Young_to_Old_fold_change`, "Focused gene …".
-5. Choose **Color Map** `RdBu` and press **Center at 0**, so blue is a loss and red a gain.
+5. Choose **Map** `RdBu` and press **Center at 0**, so blue is a loss and red a gain.
 6. Make sure **Highlight Focused Cell** is on. The focused HSC gets a dark marker.
 
 ```{figure} ../_static/screens/paper/fig5a-fc.png
@@ -66,7 +66,7 @@ ranges from −1.46 to +0.31. A cell table shows where the loss is:
    `kompot_de_Young_to_Old_fold_change` column for the focused gene.
 2. **Add Condition**: the fold-change column, **Less Than**, `-0.5`. The table keeps 317 of
    8,090 cells.
-3. In the cell plot, set **Filter by Table** to this table. Cells outside the table turn grey.
+3. In the cell plot, set **Table** to this table. Cells outside the table turn grey.
 
 ```{figure} ../_static/screens/paper/fig5a-cells-page.png
 :class: screenshot
@@ -90,7 +90,7 @@ same range and lock it ({doc}`../user-guide/colour-scales`).
 
 1. Add two more cell plots with the UMAP axes. Colour the first by `layer`,
    `kompot_de_Young_smoothed`, "Focused gene …", the second by `kompot_de_Old_smoothed`.
-2. In each, choose **Color Map** `Viridis`, type `0` in **Min** and `3.77` in **Max**, and press
+2. In each, choose **Map** `Viridis`, type `0` in **Min** and `3.77` in **Max**, and press
    **Lock Range**. 3.77 is the larger of the two maxima (Young 3.77, Old 3.72).
 
 ```{figure} ../_static/screens/paper/fig5b-range-controls.png
@@ -122,10 +122,10 @@ A gene plot can use a cell's row of a layer as an axis. One axis stays on a lock
 follows the focus.
 
 1. Keep the HSC focused. Add a gene plot and open its controls.
-2. Set **X-Axis** to `layer`, `kompot_de_Young_to_Old_fold_change`, "Focused cell …". Press the
+2. Set **X** to `layer`, `kompot_de_Young_to_Old_fold_change`, "Focused cell …". Press the
    lock button to the right of the axis (title "Lock (keep current selection)"). It turns blue: the
    x axis now stays on this HSC.
-3. Set **Y-Axis** to the same layer, "Focused cell …", and leave its lock open.
+3. Set **Y** to the same layer, "Focused cell …", and leave its lock open.
 4. Set **Color** to `var`, `fig5d_direction` (showcase store). Its palette is stored with the data:
    purple for the same direction, amber for opposite directions, grey for non-DE genes.
 5. Set **Focused Cell** to the monocyte `Mature_Young_2#TCAATTCAGTGAGGCT-1`, or click it in a UMAP.
@@ -197,7 +197,7 @@ posterior standard deviation. Kompot's variance here is shared by all genes of a
 ±0.24 on the y axis.
 
 1. Colour the scatter by `layer`, `kompot_de_Young_to_Old_fold_change_zscores`, "Focused
-   cell …", with **Color Map** `RdBu`, Min `-4`, Max `4` and **Lock Range**. Because the variance
+   cell …", with **Map** `RdBu`, Min `-4`, Max `4` and **Lock Range**. Because the variance
    is per cell, this colour repeats the y position scaled by 1/0.121; it marks which genes clear
    the noise in the monocyte.
 2. In the gene table, use the z-score layer's columns for the two cells and the filter

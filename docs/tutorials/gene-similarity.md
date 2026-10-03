@@ -43,12 +43,12 @@ expressed in the same cell states whether or not they change. Both are dense
 
 1. Open `bm_aging_showcase.zarr` from **Dataset**.
 2. In the bottom selector, add a gene plot. Open its controls (the chevron in the tile header).
-3. Set **X-Axis** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y-Axis** to `var`,
+3. Set **X** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y** to `var`,
    `kompot_de_Young_to_Old_mahalanobis`. You now have the Kompot volcano.
 4. Set **Color** to `varp`, `spearman_fold_change`. The third box reads "Focused gene …"; leave it
    there, so the colour follows the focus. Leave the lock next to it open
    ({doc}`../user-guide/focus-and-lock`).
-5. Under the colour options, choose **Color Map** `RdBu`, type `-1` in **Min** and `1` in **Max**,
+5. Under the colour options, choose **Map** `RdBu`, type `-1` in **Min** and `1` in **Max**,
    and press **Lock Range**. Correlations then keep one scale for every focused gene
    ({doc}`../user-guide/colour-scales`).
 6. Make sure **Highlight Focused Gene** is on (blue).
@@ -134,9 +134,9 @@ paper's result as `var/fig4_module_k3` (87, 68 and 35 genes) together with each 
 ρ with H2-Q7 and with S100a9. This step uses those precomputed columns; it works for these two
 genes only.
 
-1. Add a gene plot. Set **X-Axis** to `var`, `fig4c_rank_H2-Q7`, **Y-Axis** to `var`,
-   `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Color Palette** stays at "As
-   stored in adata.uns if available", which gives the paper's purple, green and amber.
+1. Add a gene plot. Set **X** to `var`, `fig4c_rank_H2-Q7`, **Y** to `var`,
+   `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Palette** stays at "As
+   stored in adata.uns", which gives the paper's purple, green and amber.
 2. Non-DE genes have no rank, so 16,096 genes have no x value and are not drawn. The tile says so
    in a blue notice ("189 of 16,285 genes shown").
 3. Add a second gene plot with `fig4c_rank_S100a9`, `rho_fc_S100a9` and the same colour.
@@ -183,8 +183,8 @@ Two genes can correlate because they change together with age, or merely because
 expressed in the same cells. Plot the two rows of the focused gene against each other. Both axes
 are live `varp` rows: one click redraws the whole scatter.
 
-1. Add a gene plot. Set **X-Axis** to `varp`, `spearman_smoothed`, "Focused gene …", and
-   **Y-Axis** to `varp`, `spearman_fold_change`, "Focused gene …". Leave both locks open.
+1. Add a gene plot. Set **X** to `varp`, `spearman_smoothed`, "Focused gene …", and
+   **Y** to `varp`, `spearman_fold_change`, "Focused gene …". Leave both locks open.
 2. Set **Color** to `var`, `fig4d_class` (showcase store, precomputed for H2-Q7), or to `var`,
    `kompot_de_Young_to_Old_is_de` on `bm_aging.zarr`.
 3. Focus `H2-Q7`. It sits at (1, 1), marked red.
