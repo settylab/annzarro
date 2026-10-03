@@ -337,10 +337,15 @@ function wireStrips() {
     if (typeof document === 'undefined' || typeof document.addEventListener !== 'function'
         || document.__plotStatusWired) return;
     document.__plotStatusWired = true;
+    // A press outside a strip closes its popovers: a press, not a click, so
+    // the click a nudge opens a popover with (nudgeStatusTag) keeps it open
+    document.addEventListener('pointerdown', (e) => {
+        const strip = e.target.closest && e.target.closest(`.${STRIP_CLASS}`);
+        closeAll(strip && strip._host ? strip : null);
+    }, true);
     document.addEventListener('click', (e) => {
         const strip = e.target.closest && e.target.closest(`.${STRIP_CLASS}`);
-        if (!strip || !strip._host) { closeAll(); return; }
-        closeAll(strip);
+        if (!strip || !strip._host) return;
         const host = strip._host;
         const s = stateOf(host);
         const action = e.target.closest('[data-ps-action]');

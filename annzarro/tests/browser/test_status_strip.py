@@ -259,7 +259,8 @@ def test_each_reason_counted_once_and_undone(server):
             # Next part swaps the cells for the next part's: the part advances
             _act(page, "next-part")
             s = _wait(page, lambda s: s["part"] == "2" and "part 2 of 4" in " ".join(s["chips"]))
-            assert _rows(s) == {"outside": 150, "nan": len(NAN_ROWS & set(part1))}, s
+            # (the table filter is still chosen: Hide NaN acts on the table's cells)
+            assert _rows(s) == {"outside": 150, "nan": len([r for r in part1 if 100 <= r < 200 and r in NAN_ROWS])}, s
             assert page.evaluate("() => window.__toasts").get("made") == 0, "no toast for any of it"
         finally:
             browser.close()
