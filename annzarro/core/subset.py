@@ -640,6 +640,15 @@ class Subset:
                              f"{len(self.indices)} cells (0-{len(self.indices) - 1})")
         return self.indices[pos].tolist()
 
+    def to_positions(self, rows) -> List[int]:
+        """Positions in the subset of dataset rows; -1 for a row it does not show."""
+        rows = np.asarray(rows, dtype=np.int64)
+        if not len(self.indices):
+            return [-1] * len(rows)
+        pos = np.searchsorted(self.indices, rows)
+        found = self.indices[np.minimum(pos, len(self.indices) - 1)] == rows
+        return np.where(found, pos, -1).tolist()
+
     def describe(self) -> Dict[str, Any]:
         out = {"subset": self.spec.canonical(), "key": self.spec.key()}
         out.update(self.info)
@@ -806,6 +815,19 @@ class SubsetView:
     def __getattr__(self, name):
         return getattr(self._reader, name)
 
+    @property
+    def base(self):
+        """The reader of the whole dataset."""
+        return self._reader
+
+    def at_dataset_rows(self) -> "DatasetRowsView":
+        """The same view, with the cells a read names given as dataset rows."""
+        return DatasetRowsView(self._reader, self.subset)
+
+    def _rows(self, positions) -> List[int]:
+        """Dataset rows of the cells a read names."""
+        return self.subset.to_rows(positions)
+
     # -- metadata -----------------------------------------------------------
 
     def get_metadata(self, dataset_path, *args, **kwargs):
@@ -867,7 +889,7 @@ class SubsetView:
         # are what h5py needs too.
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
-                       else self.subset.to_rows(indices))
+                       else self._rows(indices))
         return self._reader.get_obs_var(entity=entity, dataset_path=dataset_path, indices=indices,
                                         column_names=column_names,
                                         include_categories=include_categories)
@@ -875,14 +897,14 @@ class SubsetView:
     def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
-                       else self.subset.to_rows(indices))
+                       else self._rows(indices))
         return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
                                               column_name=column_name, indices=indices)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):
         if entity != "cells" or indices is not None:
-            rows = indices if entity != "cells" else self.subset.to_rows(indices)
+            rows = indices if entity != "cells" else self._rows(indices)
             return self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
                                               indices=rows, col_indices=col_indices,
                                               column_name=column_name)
@@ -899,7 +921,7 @@ class SubsetView:
         # Rows are read by index (a focused cell's row is the reader's one-row
         # fast path), whole, and then cut to the subset's columns.
         rows = (self.subset.indices.tolist() if row_indices is None
-                else self.subset.to_rows(row_indices))
+                else self._rows(row_indices))
         data = self._reader.get_obsp_varp(key=key, entity=entity, dataset_path=dataset_path,
                                           row_indices=rows, col_indices=None)
         cols = (self.subset.indices if col_indices is None
@@ -916,5 +938,28 @@ class SubsetView:
 
     def _matrix(self, read, row_indices):
         if row_indices is not None:
-            return read(self.subset.to_rows(row_indices))
+            return read(self._rows(row_indices))
         return _take_rows(read(None), self.subset.indices)
+
+
+class DatasetRowsView(SubsetView):
+    """A SubsetView whose named cells are dataset rows, not positions.
+
+    For a cell that is not shown, such as a focused cell from another part:
+    its obsp row is read whole from the dataset and cut to the subset's
+    cells, exactly as a shown cell's row is, and its layer or X row is its
+    own. Column indices (obsp ``cols``) and whole-axis reads stay the
+    subset's.
+    """
+
+    @property
+    def n_obs(self) -> int:
+        return int(self.subset.info["n_total"])
+
+    def _rows(self, positions) -> List[int]:
+        rows = np.asarray(positions, dtype=np.int64)
+        if rows.size and (rows.min() < 0 or rows.max() >= self.n_obs):
+            bad = int(rows[(rows < 0) | (rows >= self.n_obs)][0])
+            raise IndexError(f"dataset row {bad} is out of range: the dataset has "
+                             f"{self.n_obs} cells (0-{self.n_obs - 1})")
+        return rows.tolist()
