@@ -45,6 +45,12 @@ const DataManager = (function() {
     let _subsetRequest = 'auto';
     let _subsetReply = null;   // the last /data/subset reply, also when it was "every cell"
 
+    // Dataset rows of cells by name, for the open dataset (see locateCell):
+    // learned rows, and unconfirmed hints from a link or panel set
+    let _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
+    // Where each name is in the cells shown, per dataset load and subset
+    let _located = { generation: -1, key: null, byName: new Map() };
+
     // Routes whose answer depends on which cells are shown.
     const _CELL_AXIS_ROUTES = [Config.API.CELLS, Config.API.OBS, Config.API.X];
     const _CELL_AXIS_PREFIXES = [Config.API.OBSM, Config.API.OBSP, Config.API.LAYER].map(u => `${u}/`);
@@ -230,6 +236,7 @@ const DataManager = (function() {
             return;
         }
         CacheManager.clear(`dataset_path=${datasetPath}`);
+        _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
         // Optionally re-fetch structure/cells/genes
         return setCurrentDataset(datasetPath);
     }
@@ -537,6 +544,7 @@ const DataManager = (function() {
             if (_subset && _subset.datasetPath === datasetPath) params.set('subset', _subset.key);
             const body = await _readResponse(await fetch(`${Config.API.NAMES}?${params}`));
             const hit = body && body.matches && body.matches[0];
+            if (hit && hit.name === name && typeof hit.row === 'number') _learnRow(datasetPath, name, hit.row);
             return hit && hit.name === name ? hit.index : -1;
         };
         return RemoteNames.wrap(new RemoteNames(n, fetchNames, lookup));
@@ -580,6 +588,287 @@ const DataManager = (function() {
         if (!_cells) return undefined;
         if (_cells instanceof RemoteNames) return _cells.nameAt(i);
         return _cells[i];
+    }
+
+    // ---------------------------------------------------------------------
+    // Locating a cell by name, also outside the subset
+    //
+    // Focus, locks, links and panel sets hold cell NAMES. A read names a
+    // cell by its position among the cells shown (`rows=`), which a cell
+    // outside the subset does not have: a focused cell from another part, or
+    // one a filter leaves out. The server reads such a cell by its dataset
+    // row instead (`dataset_rows=`), so each name is located as
+    // {position, row}: position among the cells shown (-1 if not shown), row
+    // in the dataset (null while unknown).
+    //
+    // Rows are learned from /data/names replies and from /data/subset/locate,
+    // and kept for the dataset: they do not change with the subset, so a part
+    // step carries a focused or locked cell over without the dataset-wide name
+    // index (16 s to build at 50M cells). Rows from a link or panel set are
+    // only hints until obs/_index at that row confirms the name.
+    // ---------------------------------------------------------------------
+
+    function _rowsFor(datasetPath) {
+        if (_cellRows.datasetPath !== datasetPath) {
+            _cellRows = { datasetPath, rows: new Map(), hints: new Map() };
+        }
+        return _cellRows;
+    }
+
+    function _learnRow(datasetPath, name, row) {
+        if (typeof name === 'string' && name && Number.isInteger(row) && row >= 0) {
+            _rowsFor(datasetPath).rows.set(name, row);
+        }
+    }
+
+    /** What the server's cell-axis routes understand beyond rows= (/data/subset `features`). */
+    function _features() {
+        const reply = _subsetReply;
+        return new Set(reply && reply.datasetPath === _currentDataset && Array.isArray(reply.features)
+            ? reply.features : []);
+    }
+
+    /** The subset in effect for the open dataset, or null. */
+    function _openSubset() {
+        return _subset && _subset.datasetPath === _currentDataset ? _subset : null;
+    }
+
+    /** Can this server read a cell outside the subset (dataset_rows=)? */
+    function canReadOutsideSubset() {
+        return _features().has('dataset_rows');
+    }
+
+    function _locatedCache() {
+        const key = _openSubset() ? _openSubset().key : null;
+        if (_located.generation !== _datasetGeneration || _located.key !== key) {
+            _located = { generation: _datasetGeneration, key, byName: new Map() };
+        }
+        return _located;
+    }
+
+    /** Positions in the subset of dataset rows (-1: not shown), one /locate call. */
+    async function _positionsOfRows(rows) {
+        const subset = _openSubset();
+        if (!subset) return rows.slice();
+        const body = await _fetchWithCache(Config.API.SUBSET_LOCATE,
+            { dataset_path: _currentDataset, subset: subset.key, dataset_rows: rows.join(',') });
+        return body.rows;
+    }
+
+    /** Dataset rows of positions in the subset, one /locate call. */
+    async function _rowsOfPositions(positions) {
+        const subset = _openSubset();
+        if (!subset) return positions.slice();
+        const body = await _fetchWithCache(Config.API.SUBSET_LOCATE,
+            { dataset_path: _currentDataset, subset: subset.key, rows: positions.join(',') });
+        return body.dataset_rows;
+    }
+
+    /** The cell's dataset row from a link's hint, if obs/_index there names it. */
+    async function _confirmedHint(name) {
+        const known = _rowsFor(_currentDataset);
+        const hint = known.hints.get(name);
+        if (hint === undefined) return null;
+        known.hints.delete(name);
+        try {
+            // without a subset, rows are dataset rows (and an older server reads them)
+            const at = _openSubset() ? { dataset_rows: String(hint) } : { rows: String(hint) };
+            const body = await _fetchWithCache(Config.API.OBS,
+                { dataset_path: _currentDataset, columns: '_index', ...at });
+            const names = body && body.data && body.data._index;
+            if (Array.isArray(names) && names[0] === name) {
+                known.rows.set(name, hint);
+                return hint;
+            }
+        } catch (error) {
+            console.warn(`Row hint ${hint} for ${name} could not be checked:`, error);
+        }
+        return null;
+    }
+
+    /** The cell's dataset row by an exact, dataset-wide name search; null if absent. */
+    async function _searchRow(name) {
+        const params = { dataset_path: _currentDataset, entity: 'cells', q: name, mode: 'exact',
+                         limit: 1, scope: 'dataset' };
+        if (_openSubset()) params.subset = _openSubset().key;
+        const body = await _fetchWithCache(Config.API.NAMES, params);
+        const hit = body && body.matches && body.matches[0];
+        if (!hit || hit.name !== name || typeof hit.row !== 'number') return null;
+        _learnRow(_currentDataset, name, hit.row);
+        return hit.row;
+    }
+
+    async function _locate(name) {
+        const subset = _openSubset();
+        const outside = canReadOutsideSubset();
+        const known = _rowsFor(_currentDataset);
+        let row = known.rows.has(name) ? known.rows.get(name) : null;
+        // When the names stay on the server, a known row is cheaper than a
+        // name lookup, which first builds the server's name index
+        const byRow = _cells instanceof RemoteNames && (!subset || outside);
+        if (row === null && byRow) row = await _confirmedHint(name);
+        let position;
+        if (row !== null && byRow) {
+            [position] = await _positionsOfRows([row]);
+            if (position >= 0) _cells.remember(name, position);
+        } else {
+            position = await resolveCellIndex(name);
+        }
+        if (!subset) {
+            if (position >= 0) _learnRow(_currentDataset, name, position);
+            return { name, position, row: position >= 0 ? position : null, shown: position >= 0 };
+        }
+        if (position >= 0) return { name, position, row, shown: true };
+        if (!outside) {
+            // An older server cannot read a cell the subset does not show,
+            // nor say whether the dataset has it
+            return { name, position: -1, row: null, shown: false, unreadable: true };
+        }
+        if (row === null) row = await _confirmedHint(name);
+        if (row === null) row = await _searchRow(name);
+        return { name, position: -1, row, shown: false };
+    }
+
+    /**
+     * Where a cell is: `{name, position, row, shown}`. `position` is its
+     * index among the cells shown (-1 when not shown); `row` its dataset row
+     * (null when unknown, or when the dataset does not have it). A cell that
+     * is not shown but has a row can still be read, with cellRowParams().
+     * `unreadable` is set when the server cannot read cells outside the
+     * subset. Null for no name.
+     * @param {string|null} name
+     * @returns {Promise<Object|null>}
+     */
+    function locateCell(name) {
+        if (typeof name !== 'string' || !name) return Promise.resolve(null);
+        if (!_cells) return Promise.resolve({ name, position: -1, row: null, shown: false });
+        const cache = _locatedCache();
+        let found = cache.byName.get(name);
+        if (!found) {
+            found = _locate(name);
+            cache.byName.set(name, found);
+            // a failed lookup is asked again next time
+            found.catch(() => { if (cache.byName.get(name) === found) cache.byName.delete(name); });
+        }
+        return found;
+    }
+
+    /**
+     * The request parameter naming a located cell's row: `{rows}` for a cell
+     * shown, `{dataset_rows}` for one outside the subset, or null when it
+     * cannot be read (not in the dataset, or an older server).
+     * @param {Object|null} cell - from locateCell()
+     */
+    function cellRowParams(cell) {
+        if (!cell) return null;
+        if (cell.shown && cell.position >= 0) return { rows: String(cell.position) };
+        if (cell.row !== null && cell.row !== undefined && canReadOutsideSubset()) {
+            return { dataset_rows: String(cell.row) };
+        }
+        return null;
+    }
+
+    /**
+     * `params` naming one located cell's row, for loadObsp/loadLayer/loadX.
+     * @private
+     */
+    function _cellRowQuery(params, cell) {
+        const at = cellRowParams(cell);
+        if (!at) {
+            throw new Error(`The cell ${cell && cell.name} cannot be read: it is not among the cells shown`);
+        }
+        return Object.assign(params, at);
+    }
+
+    /** One row asked for by dataset row must come back as one row. @private */
+    function _checkOneRow(params, data, rowsOf) {
+        if (params.dataset_rows === undefined || !data || !Array.isArray(data.data)) return;
+        const n = rowsOf(data.data);
+        if (n !== 1) {
+            throw new Error(`The server answered ${n} rows for one cell outside the subset; `
+                + 'it does not read cells by dataset row');
+        }
+    }
+
+    /**
+     * Learn the dataset rows of cells while the current subset still shows
+     * them, so they are found again in another subset by row. Called before
+     * the subset changes (a part step) for the focused and the locked cells.
+     * One /locate call for every cell whose row is not known yet.
+     * @param {string[]} names
+     */
+    async function recordCellRows(names) {
+        if (!_currentDataset || !_cells) return;
+        const known = _rowsFor(_currentDataset);
+        const todo = [];
+        for (const name of new Set(names)) {
+            if (typeof name !== 'string' || !name || known.rows.has(name)) continue;
+            const position = await resolveCellIndex(name);
+            if (position >= 0) todo.push([name, position]);
+        }
+        if (!todo.length) return;
+        if (_openSubset() && !_features().has('locate')) return;
+        try {
+            const rows = await _rowsOfPositions(todo.map(([, p]) => p));
+            todo.forEach(([name], i) => _learnRow(_currentDataset, name, rows[i]));
+        } catch (error) {
+            console.warn('Could not record the dataset rows of the focused cells:', error);
+        }
+    }
+
+    /**
+     * Learn the dataset row of a newly focused cell in the background while
+     * the subset shows it, so a link or panel set made later can carry it.
+     * Only from names already at hand: no name lookup is started for it.
+     * @private
+     */
+    function _learnRowSoon(name) {
+        if (typeof name !== 'string' || !name || !_cells || !_currentDataset) return;
+        const datasetPath = _currentDataset;
+        if (_rowsFor(datasetPath).rows.has(name)) return;
+        const position = _cells.indexOf(name);
+        if (position < 0) return;
+        if (!_openSubset()) {
+            _learnRow(datasetPath, name, position);
+            return;
+        }
+        if (!_features().has('locate')) return;
+        _rowsOfPositions([position])
+            .then(([row]) => { if (_currentDataset === datasetPath) _learnRow(datasetPath, name, row); })
+            .catch(() => {});
+    }
+
+    /** Record a cell's dataset row learned elsewhere (a name search result). */
+    function rememberCellRow(name, row) {
+        if (_currentDataset) _learnRow(_currentDataset, name, row);
+    }
+
+    /**
+     * Dataset rows a link or panel set may carry for its cells,
+     * `{name: row}`, for the cells whose rows are known.
+     * @param {string[]} names
+     */
+    function cellRowHints(names) {
+        const known = _currentDataset ? _rowsFor(_currentDataset).rows : new Map();
+        const out = {};
+        for (const name of names) {
+            if (typeof name === 'string' && known.has(name)) out[name] = known.get(name);
+        }
+        return out;
+    }
+
+    /**
+     * Take the row hints of a link or panel set for `datasetPath`. They are
+     * checked against obs/_index before use: names stay authoritative.
+     * @param {string} datasetPath
+     * @param {Object} hints - `{name: row}`
+     */
+    function setCellRowHints(datasetPath, hints) {
+        if (!datasetPath || !hints || typeof hints !== 'object') return;
+        const known = _rowsFor(datasetPath);
+        for (const [name, row] of Object.entries(hints)) {
+            if (Number.isInteger(row) && row >= 0 && !known.rows.has(name)) known.hints.set(name, row);
+        }
     }
 
     async function loadCells(datasetPath, signal = null, expected = null) {
@@ -936,13 +1225,19 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - obsp data
      */
     async function loadObsp(options) {
-        const { datasetPath, obspKey, rows, maxCells } = options;
+        const { datasetPath, obspKey, cell, maxCells } = options;
+        let { rows } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
         
-        if (rows && rows.length > 0) {
+        if (cell) {
+            // one located cell (locateCell): its position, or its dataset row
+            // when the subset does not show it
+            _cellRowQuery(params, cell);
+            rows = [cell.position];
+        } else if (rows && rows.length > 0) {
             params.rows = rows.join(',');
         }
         
@@ -961,6 +1256,7 @@ const DataManager = (function() {
             const url = `${Config.API.OBSP}/${obspKey}`;
             const data = await _fetchVector(url, params,
                 { obsp_key: obspKey, dataset_path: params.dataset_path }, false);
+            _checkOneRow(params, data, d => d.length);
             
             // Log and debug the data structure
             console.log(`Obsp data format for ${obspKey} (cell: ${focusedCell}, index: ${focusedCellIndex}):`,
@@ -1043,13 +1339,18 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Layer data
      */
     async function loadLayer(options) {
-        const { datasetPath, layerName, rows, cols, maxCells } = options;
+        const { datasetPath, layerName, cell, cols, maxCells } = options;
+        let { rows } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
         
-        if (rows && rows.length > 0) {
+        if (cell) {
+            // one located cell's row (see loadObsp)
+            _cellRowQuery(params, cell);
+            rows = [cell.position];
+        } else if (rows && rows.length > 0) {
             params.rows = rows.join(',');
         }
         
@@ -1133,6 +1434,8 @@ const DataManager = (function() {
                 const url = `${Config.API.LAYER}/${layerName}`;
                 const data = await _fetchVector(url, params,
                     { layer_name: layerName, dataset_path: params.dataset_path }, true);
+                // a flat vector is one row; a list of rows must hold one
+                _checkOneRow(params, data, d => (Array.isArray(d[0]) ? d.length : 1));
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedCell}, index: ${focusedCellIndex}):`, 
@@ -1314,6 +1617,8 @@ const DataManager = (function() {
             _cellHistory.push(cellName);
             _cellHistoryIndex = _cellHistory.length - 1;
         }
+        
+        _learnRowSoon(cellName);
         
         // Trigger event for components to update
         const event = new CustomEvent('focusedCellChanged', {
@@ -1681,6 +1986,13 @@ const DataManager = (function() {
         getTaxonomySpecies,
         getCellIndex,
         resolveCellIndex,
+        locateCell,
+        cellRowParams,
+        canReadOutsideSubset,
+        recordCellRows,
+        rememberCellRow,
+        cellRowHints,
+        setCellRowHints,
         prewarmCellNames,
         cellNameAt,
         getGeneIndex,
