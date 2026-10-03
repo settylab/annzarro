@@ -34,7 +34,7 @@ import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -284,7 +284,6 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   // the regular path's layout, so both modes look the same
   const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
-  layout.uirevision = 'large';
   let filtered;
 
   if (cs && cs.codes) {
@@ -400,7 +399,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       `${filtered.toLocaleString()} cells without a value (or outside the colour range) are not drawn`,
       { source: 'filter', unit: 'cells' });
   }
-  plotContainer.innerHTML = '';
+  clearForDraw(plotContainer);
   await drawPlot(plotContainer, traces, layout,
     { responsive: true, displayModeBar: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },

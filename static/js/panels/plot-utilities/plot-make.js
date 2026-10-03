@@ -9,7 +9,7 @@ import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
-import { drawPlot, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 
@@ -1966,6 +1966,11 @@ export function buildPlotLayout(settings, data) {
     layout.yaxis.zeroline = settings.showZeroLines;
   }
 
+  // drawPlot reacts into a graph already drawn: what the user changed there
+  // (zoom, camera, a category hidden from the legend) is kept while this is
+  // the same, i.e. on other cells of the same dataset
+  layout.uirevision = DataManager.getCurrentDataset() || 'view';
+
   return layout;
 }
 
@@ -2175,8 +2180,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   const layout = buildPlotLayout(settings, data);
 
-  // Setup the filter widget regardless of color type
-  plotContainer.innerHTML = '';
+  // Setup the filter widget regardless of color type; a graph already
+  // drawn stays, and the new points are drawn into it
+  clearForDraw(plotContainer);
   ensureFilterWidget(plotContainer);
   
   // Always update the filter widget with statistics
