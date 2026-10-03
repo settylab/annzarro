@@ -26,7 +26,8 @@ A spec, sent as compact JSON:
   "where": [                // optional: AND of conditions on obs columns
     {"col": "cluster",  "op": "in",      "values": ["3", "5"]},
     {"col": "n_counts", "op": ">=",      "value": 500},
-    {"col": "age",      "op": "between", "value": [2, 18]} ] }
+    {"col": "age",      "op": "between", "value": [2, 18]} ],
+  "part": 0 }               // optional: which part of the partition (below); 0 when absent
 ```
 
 Ops: `in`, `not_in` (matched on the value's text: `3` and `3.0` are `"3"`,
@@ -52,6 +53,36 @@ whole and its unused share goes to the others; the rest get equal shares, the
 remainder one each in group order. Within a group the cells with the smallest
 keys are taken. 50,000 / 5,000 / 500 cells at n = 3,000 gives 1,250 / 1,250 /
 500.
+
+**Parts.** A subset is one part of a partition of the eligible cells into
+k = ceil(eligible / n) disjoint parts that together hold every eligible cell
+once; `part` (0-based, default 0) picks one. Stepping through the parts shows
+every cell.
+
+- Uniform: part j is the eligible cells of key rank [j*n, (j+1)*n). The last
+  part holds the remainder.
+- Balanced: part j is the balanced selection of n cells from the cells not in
+  parts 0..j-1. Each group's quota per part follows from repeating the
+  water-filling on the remaining group sizes (arithmetic on the sizes only),
+  and group g's part-j cells are its key ranks [before, before + quota), where
+  before is its quota summed over parts 0..j-1. Every part is as balanced as
+  the remaining cells allow: once a small group is used up, later parts hold
+  only the larger groups.
+- Part 0 is the subset as it was defined before parts existed, and a spec of
+  part 0 is written without `part`, so its key, its cache entries and every
+  link that names it are unchanged.
+
+Finding a part does not sort every eligible row. Rank keys are spread evenly
+over the 64-bit range, so rank r of a group of size S sits near key r / S of
+the range. One pass over the rows, a million at a time, counts each group's
+rows below a key a little under the wanted ranks and collects the rows inside a
+window a little above them; a group whose count and collection do not bracket
+its ranks gets a wider window and is collected again. Only the collected rows
+(about 1.1 x the part) are sorted, so a part costs about what part 0 does
+(synthetic 2M cells, 20 parts of 100,000, in-process: uniform 0.023 / 0.034 /
+0.029 s for parts 0 / 10 / 19; balanced across 380 drugs 0.065 / 0.140 /
+0.113 s). The row pass is linear in the cells, about 1.5 s at 95.6 million;
+the quotas of the last of 957 balanced parts over 5,000 groups take 0.12 s.
 
 **Default.** A dataset with more than `ui.defaults.subset_threshold` cells
 (200,000) opens on `{"n": subset_size, "seed": subset_seed}` (100,000, 0). At
@@ -137,8 +168,14 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
   draw exceed the threshold.
 - Apply reopens the current view (panels, layout, focus) on the new cells
   through the panel-set load path, so every panel is rebuilt on them.
-- Each plot's filter widget has a line `Not in cell subset: 1,060,000`, and its
-  total is a share of every cell of the dataset.
+- With more than one part, `‹ Part 3 of 957 ›` follows the badge: buttons for
+  the previous and next part and a box to type a part number (counted from 1 in
+  the UI, from 0 in the spec). A step reopens the view on the other part, like
+  Apply. The badge's tooltip names the part and, for a balanced partition, the
+  groups earlier parts already showed in full.
+- Each plot's filter widget has a line `Not in cell subset: 1,060,000` (`Not in
+  this part (3 of 957)` with parts), and its total is a share of every cell of
+  the dataset.
 - A focused cell outside the subset is not focused silently; a notice says why.
   A link whose subset the dataset cannot apply (a column it lacks) opens on the
   default, with a notice.

@@ -218,11 +218,25 @@ A subset is described by a spec, sent as the `subset=` query parameter (compact 
 `not_in`, `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`). The same spec selects the same cells on
 every machine and release.
 
-`GET /data/subset?dataset_path=&subset=` resolves a spec and describes it:
+`"part": j` (0-based, default 0) selects part j of the partition of the eligible cells into
+`ceil(eligible / n)` disjoint parts, which together hold every eligible cell once. Part 0 is the
+spec without `part`, and its `key` is written without it. Every route that takes `subset=` takes
+the part; a part past the last is `400 part_out_of_range`.
+
+`GET /data/subset?dataset_path=&subset=` resolves a spec and describes it. The reply has `n`
+(cells in this part), `n_total`, `n_eligible`, `part`, `parts` (the number of parts) and, for a
+balanced spec, per group `total`, `shown` (in this part) and `before` (in parts 0..part-1):
 
 ```console
 $ curl -s "http://127.0.0.1:8812/api/v1/data/subset?dataset_path=$DS&subset=%7B%22n%22%3A300%2C%22seed%22%3A0%2C%22balance%22%3A%22Age%22%7D"
-{"defaults":{"seed":0,"size":100000,"threshold":200000},"groups":{"Mid":{"shown":100,"total":2057},"Old":{"shown":100,"total":3116},"Young":{"shown":100,"total":2917}},"key":"{\"n\":300,\"seed\":0,\"balance\":\"Age\"}","n":300,"n_eligible":8090,"n_total":8090,"subset":{"balance":"Age","n":300,"seed":0}}
+{"defaults":{"seed":0,"size":100000,"threshold":200000},"groups":{"Mid":{"before":0,"shown":100,"total":2057},"Old":{"before":0,"shown":100,"total":3116},"Young":{"before":0,"shown":100,"total":2917}},"key":"{\"n\":300,\"seed\":0,\"balance\":\"Age\"}","n":300,"n_eligible":8090,"n_total":8090,"part":0,"parts":27,"subset":{"balance":"Age","n":300,"seed":0}}
+```
+
+The last of the 27 parts (`"part": 26`) holds the 290 cells left; the 2,057 Mid cells were all
+shown by earlier parts, so it is Old and Young only:
+
+```text
+"groups":{"Mid":{"before":2057,"shown":0,"total":2057},"Old":{"before":2872,"shown":244,"total":3116},"Young":{"before":2871,"shown":46,"total":2917}},"n":290,"part":26,"parts":27
 ```
 
 With `subset=` the cell-axis routes (`/data/cells`, `/data/obs`, `/data/obsm`, `/data/obsp`,
@@ -314,7 +328,7 @@ one that is not a dataset `400 unsupported_type`.
 | 400 | `index_out_of_range` | an index at or beyond the length of its axis |
 | 400 | `cap_exceeded` | more indices than the client's own `max_cells=` / `max_genes=` parameter (below) |
 | 400 | `unsupported_type` | not a `.zarr`/`.h5ad`, a zarr format the server's zarr cannot read, an h5ad written by anndata older than 0.7, or a named obs/var column or obsm/varm key whose encoding cannot be read |
-| 400 | `bad_subset`, `subset_unsupported` | a malformed `subset=` spec; a route that cannot apply a subset |
+| 400 | `bad_subset`, `subset_unsupported`, `part_out_of_range` | a malformed `subset=` spec; a route that cannot apply a subset; a `part` past the last part |
 | 400 | (none) | a required parameter is missing, e.g. `{"error":"dataset_path parameter is required"}` |
 | 401 | (none) | login on, no session; checked first |
 | 403 | `outside_data_dir` | hosted server, local path outside the data directory and `allowed_dirs` (the message names no server directories) |

@@ -81,10 +81,45 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
 ```
 
+## Stepping through every cell
+
+A subset is the first of several **parts** that split the cells into disjoint groups of the
+chosen size; together the parts hold every cell (every cell passing the filter) once. With more
+than one part, the statistics bar shows the part next to the badge:
+
+```{figure} ../_static/screens/user-guide/subsets-parts.png
+:class: screenshot
+:width: 35%
+:alt: The statistics bar reading Cells 3,000 of 8,090, the badge Subset · seed 0, and below it a previous-part button (1), the part number 1 in a box (2), "of 3" and a next-part button (3).
+
+The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
+```
+
+- **›** (3) shows the next part and **‹** (1) the previous one. The view stays as it is (layout,
+  panel settings, focused gene); only the cells change, and every panel and table follows. A
+  focused cell that is not in the new part is not focused, and a notice says so.
+- Type a part number into the box (2) and press Enter to jump to it.
+- The parts never share a cell: stepping from part 1 to part 3 shows each cell exactly once.
+- With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
+  Small groups are used up in the first parts, so later parts hold the larger groups only; the
+  badge's tooltip lists the groups earlier parts already showed in full.
+- Share links and panel sets record the part, so they reopen on the same part. A link without
+  a part, such as one made before parts existed, opens on part 1.
+
+```{figure} ../_static/screens/user-guide/subsets-parts-2.png
+:class: screenshot
+:width: 35%
+:alt: The statistics bar after one step: Cells 3,000 of 8,090, Part 2 of 3.
+
+After **›**: part 2 of 3, another 3,000 cells, none of them in part 1.
+```
+
+The plots' **Removed Datapoints** box then counts the other cells as "Not in this part (2 of 3)".
+
 ## What a subset changes
 
 - **Cell plots** draw only the subset's cells. The **Removed Datapoints** box counts the other
-  cells as not in the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
+  cells as not in this part of the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
   every cell of the dataset. Gene plots draw every gene as before.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.

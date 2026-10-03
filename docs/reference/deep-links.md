@@ -76,7 +76,7 @@ companion repository `settylab/annzarro-paper`. The docs' screenshot views are i
   },
 
   // the cells every panel shows, optional (see "Cell subset" below)
-  "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default
+  "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default; optional "part"
 
   // PREFERRED: a full layout tree
   "layout": {                      // exactly what PanelManager.saveLayout() emits
@@ -105,6 +105,13 @@ larger `n` only adds cells. A share link records the subset whenever one is show
 `subset` opens on the server's default (a 100,000-cell subset above 200,000 cells, otherwise
 every cell); a malformed one is dropped, so the link still opens. A hand-written link can ask
 for a subset of an atlas directly, e.g. `"subset": {"n": 50000, "seed": 1, "balance": "batch"}`.
+
+`subset.part` (0-based) picks one of the disjoint parts that the spec splits the cells into
+({doc}`../user-guide/subsets`): `{"n": 100000, "seed": 0, "part": 2}` is the third part, shown
+as "Part 3 of …". A link records the part it was made on; part 0 is written without the field,
+so a link without `part`, including every link made before parts existed, opens on part 0 with
+the same cells as before. A part past the last one is refused by the server (`400
+part_out_of_range`) and the link opens on the dataset's default, with a notice.
 
 `focusedCell` and `focusedGene` are names (`obs_names`, `var_names`), not indices. Cell names
 may contain `#` (the demonstration data's do); inside the base64 payload that is harmless.

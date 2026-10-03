@@ -876,6 +876,22 @@ def shoot_subsets(sh, data_dir):
     capture(sh, page, "subsets-applied", None)
     capture_union(sh, page, "subsets-badge", ["#cell-count", "#subset-button"],
                   marks=[(1, "#subset-button")], pad=10)
+    # Parts: 8,063 cells pass the filter, in parts of 3,000 -> 3 parts. Step to part 2.
+    capture_union(sh, page, "subsets-parts", ["#cell-count", "#subset-button", "#subset-parts"],
+                  marks=[(1, "#subset-part-prev"), (2, "#subset-part-input"), (3, "#subset-part-next")], pad=10)
+    page.click("#subset-part-next")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '2'", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
+    sh.log.append("subsets: after › = " + page.evaluate(
+        "document.getElementById('cell-count').textContent + ' | part ' + document.getElementById('subset-part-input').value"
+        " + ' of ' + document.getElementById('subset-part-count').textContent + ' | ' + document.getElementById('subset-button').title"))
+    capture_union(sh, page, "subsets-parts-2", ["#cell-count", "#subset-button", "#subset-parts"], pad=10)
+    sh.log.append("subsets: filter widget part 2 = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    page.click("#subset-part-prev")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '1'", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
     sh.log.append("subsets: table info = " + page.locator(f"{T('cell-table-ST')} .dataTables_info").inner_text())
     sh.log.append("subsets: filter widget = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
     # Share link carries the subset
