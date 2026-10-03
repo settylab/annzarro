@@ -29,3 +29,18 @@ test('expired entries are not reported', () => {
     assert.deepEqual(DataManager.getCacheKeys(), ['fresh']);
     assert.equal(CacheManager.has('stale'), false);
 });
+
+test('caching a large decoded slice does not JSON-encode it', () => {
+    CacheManager.clear();
+    const real = JSON.stringify;
+    let stringified = 0;
+    JSON.stringify = (...args) => { stringified += 1; return real(...args); };
+    try {
+        CacheManager.set('big', { values: new Float32Array(1_000_000), shape: [1_000_000] });
+        CacheManager.set('arr', { data: new Array(200_000).fill(1.5) });
+    } finally {
+        JSON.stringify = real;
+    }
+    assert.equal(stringified, 0);
+    assert.ok(CacheManager.get('big'));
+});

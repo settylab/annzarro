@@ -1,0 +1,97 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-V",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-plot-L",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-V": false,
+   "gene-plot-L": false
+  },
+  "panelConfigs": {
+   "gene-plot-V": {
+    "id": "gene-plot-V",
+    "title": "var vs var, colour varp row of the focused gene",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true
+   },
+   "gene-plot-L": {
+    "id": "gene-plot-L",
+    "title": "varm PCs 0 vs 1, colour layer row of the focused cell",
+    "x": {
+     "type": "varm",
+     "key": "PCs",
+     "column": "0"
+    },
+    "y": {
+     "type": "varm",
+     "key": "PCs",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "centeringActive": true
+   }
+  }
+ }
+}

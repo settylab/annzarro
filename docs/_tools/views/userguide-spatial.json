@@ -1,0 +1,188 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "AAACAAGTATCTCCCA-1",
+  "focusedGene": "Ttr",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-SL",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-SG",
+        "controlsVisible": false
+       }
+      ]
+     },
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-SK",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-SU",
+        "controlsVisible": false
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-SL": false,
+   "cell-plot-SG": false,
+   "cell-plot-SK": false,
+   "cell-plot-SU": false
+  },
+  "panelConfigs": {
+   "cell-plot-SL": {
+    "id": "cell-plot-SL",
+    "title": "Spots at obsm spatial_upright, colour obs leiden",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "leiden",
+     "column": ""
+    },
+    "pointSize": 4,
+    "pointOpacity": 1,
+    "equalAspect": true
+   },
+   "cell-plot-SG": {
+    "id": "cell-plot-SG",
+    "title": "Colour: layer log_normalized, focused gene",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "log_normalized",
+     "column": "Ttr",
+     "locked": false
+    },
+    "pointSize": 4,
+    "pointOpacity": 1,
+    "equalAspect": true,
+    "colorScale": "Viridis"
+   },
+   "cell-plot-SK": {
+    "id": "cell-plot-SK",
+    "title": "Colour: obsp spatial_kernel row of the focused spot",
+    "x": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "spatial_upright",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "spatial_kernel",
+     "column": "AAACAAGTATCTCCCA-1",
+     "locked": false
+    },
+    "pointSize": 4,
+    "pointOpacity": 1,
+    "equalAspect": true,
+    "colorScale": "Blues",
+    "colorReversed": true
+   },
+   "cell-plot-SU": {
+    "id": "cell-plot-SU",
+    "title": "Same kernel row on the expression UMAP",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "spatial_kernel",
+     "column": "AAACAAGTATCTCCCA-1",
+     "locked": false
+    },
+    "pointSize": 4,
+    "pointOpacity": 1,
+    "colorScale": "Blues",
+    "colorReversed": true
+   }
+  }
+ }
+}

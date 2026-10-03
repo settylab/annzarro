@@ -51,3 +51,11 @@ def test_reconsolidated_store_reads_again(tmp_path, client):
     zarr.consolidate_metadata(path)
     resp = client.get("/api/v1/data/obsp/conn", query_string={"dataset_path": path, "rows": "0", "cols": "0"})
     assert resp.status_code == 200 and resp.get_json()["data"] == [[2.0]]
+
+
+def test_stale_metadata_is_reported_for_binary_replies_too(tmp_path, client):
+    path = make_rich_store(tmp_path / "stale_f32.zarr")
+    _rewrite(path, "obsp", "conn", np.ones((200, 7), dtype="float32"))
+    resp = client.get("/api/v1/data/obsp/conn",
+                      query_string={"dataset_path": path, "rows": "0", "format": "f32"})
+    assert resp.status_code == 500 and resp.get_json()["reason"] == "stale_metadata"

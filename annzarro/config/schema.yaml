@@ -84,6 +84,10 @@ server:
       type: integer
       description: Maximum number of elements in an array response
       default: 10000000
+    compress_responses:
+      type: [boolean, string]
+      description: gzip JSON responses (level 1); auto compresses only on a shared server (login on or a network host)
+      default: auto
     cache_enabled:
       type: boolean
       description: Whether to enable caching

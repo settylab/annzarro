@@ -97,3 +97,74 @@ def test_full_load_still_correct_for_row_and_col():
                           row_indices=[1, 4, 9], col_indices=[2, 5])
         assert out.shape == (3, 2)
         assert np.allclose(out, dense[np.ix_([1, 4, 9], [2, 5])])
+
+
+# --------------------------------------------------------------------------
+# the other axis: a cell row of CSC, a gene column of CSR, and both axes
+# --------------------------------------------------------------------------
+import pytest
+
+SELECTIONS = [
+    ([3], None), (None, [7]), ([6], None), (None, [5]),       # 6 / 5 are empty
+    ([9, 2, 9, 0], None), (None, [17, 1, 1, 11]), ([4, 1, 4], [3, 0, 3]),
+    (list(range(30)), None), (None, list(range(17, -1, -1))), ([], None), (None, []),
+]
+
+
+@pytest.fixture(scope="module")
+def other_axis_store(tmp_path_factory):
+    rng = np.random.default_rng(2)
+    dense = rng.random((30, 18)).astype(np.float32)
+    dense[dense < 0.6] = 0.0
+    dense[6] = 0.0
+    dense[:, 5] = 0.0
+    path = str(tmp_path_factory.mktemp("axes") / "t.zarr")
+    _build_store(path, sp.csc_matrix(dense), sp.csc_matrix(dense), sp.csr_matrix(dense))
+    return path, dense
+
+
+@pytest.mark.parametrize("layer", ["logcounts", "counts_csr"])
+@pytest.mark.parametrize("rows,cols", SELECTIONS)
+@pytest.mark.parametrize("block", [1, 7, 1 << 22])
+def test_any_selection_matches_full_load(other_axis_store, monkeypatch, layer, rows, cols, block):
+    """block=1 rounds up to one chunk (7 entries): many blocks, a hit
+    spanning none, one or several of them."""
+    monkeypatch.setattr(ZarrReader, "_SCAN_BLOCK", block, raising=False)
+    path, dense = other_axis_store
+    expected = dense
+    if rows is not None:
+        expected = expected[rows, :]
+    if cols is not None:
+        expected = expected[:, cols]
+    out = ZarrReader().get_layer(layer, dataset_path=path, row_indices=rows,
+                                 col_indices=cols, disable_caching=True)
+    assert out.shape == expected.shape
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_other_axis_never_reads_more_than_a_block(other_axis_store, monkeypatch):
+    """A cell row of CSC X used to load the whole matrix (1.08 GB of peak
+    RSS on bm_aging.zarr); now no read of data or indices exceeds a block."""
+    import zarr  # the class whose reads are counted, zarr 2 or 3
+    monkeypatch.setattr(ZarrReader, "_SCAN_BLOCK", 14, raising=False)
+    path, dense = other_axis_store
+    reads = []
+    real = zarr.Array.__getitem__
+
+    def recording(self, sel):
+        out = real(self, sel)
+        reads.append((self.basename, int(np.size(out))))
+        return out
+
+    monkeypatch.setattr(zarr.Array, "__getitem__", recording)
+    out = ZarrReader().get_X(dataset_path=path, row_indices=[3], disable_caching=True)
+    np.testing.assert_array_equal(out[0], dense[3])
+    assert max(n for name, n in reads if name in ("data", "indices")) <= 14
+    nnz = np.count_nonzero(dense)
+    assert sum(n for name, n in reads if name == "indices") == nnz
+
+
+def test_out_of_range_on_the_other_axis_raises(other_axis_store):
+    path, _ = other_axis_store
+    with pytest.raises(Exception):
+        ZarrReader().get_X(dataset_path=path, row_indices=[30], disable_caching=True)

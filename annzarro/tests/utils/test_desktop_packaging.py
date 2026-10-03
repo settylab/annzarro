@@ -63,6 +63,11 @@ def test_server_does_not_import_the_excluded_packages():
     imports them through its array-API shim.)"""
     modules = [n for n in freeze.hiddenimports() if n != "annzarro.server.gunicorn_config"]
     data = os.path.join(ROOT, "annzarro", "tests", "data")
+    # zarr 2 cannot read the v3 fixture (the bundle ships zarr 3).
+    import zarr
+    stores = ["fixture_small.zarr"]
+    if int(zarr.__version__.split(".")[0]) >= 3:
+        stores.append("fixture_small_v3.zarr")
     # The bundle has no optional extras (dask, the [remote] stores); hide
     # them as the bundle would, or the readers' optional imports pull in
     # scipy.fft, linalg ... through dask.
@@ -74,7 +79,7 @@ for m in {modules!r}:
     importlib.import_module(m)
 from annzarro.server.core import create_app
 client = create_app({{"TESTING": True, "data_dir": {data!r}}}).test_client()
-for store in ("fixture_small.zarr", "fixture_small_v3.zarr"):
+for store in {stores!r}:
     q = urllib.parse.quote(os.path.join({data!r}, store), safe="")
     for url in ("/api/v1/datasets", f"/api/v1/data/info?dataset_path={{q}}",
                 f"/api/v1/data/genes?dataset_path={{q}}", f"/api/v1/data/cells?dataset_path={{q}}",

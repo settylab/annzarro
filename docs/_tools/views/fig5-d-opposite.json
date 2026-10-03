@@ -1,0 +1,227 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "S100a9",
+  "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 55,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 45,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-5d",
+      "controlsVisible": false
+     },
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 55,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 45,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "gene-table-5d",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-5e",
+        "controlsVisible": false
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-5d": false,
+   "gene-table-5d": false,
+   "cell-plot-5e": false
+  },
+  "panelConfigs": {
+   "gene-plot-5d": {
+    "id": "gene-plot-5d",
+    "title": "d | fold change: locked HSC (x) vs focused cell (y)",
+    "x": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": true
+    },
+    "y": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+     "locked": false
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change_zscores",
+     "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+     "locked": false
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "colorScale": "RdBu",
+    "centeringActive": true,
+    "highlightFocusedGene": true,
+    "showZeroLines": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "tableFilter": "gene-table-5d",
+    "removeNonTableEntries": false
+   },
+   "gene-table-5d": {
+    "id": "gene-table-5d",
+    "title": "DE genes changing in opposite directions",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+     },
+     {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "focused_cell"
+     }
+    ],
+    "searchBuilderConfig": {
+     "logic": "OR",
+     "criteria": [
+      {
+       "logic": "AND",
+       "criteria": [
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_mahalanobis",
+         "origData": "var_kompot_de_Young_to_Old_mahalanobis_main",
+         "type": "num",
+         "value": [
+          "5.82"
+         ]
+        },
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+         "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+         "type": "num",
+         "value": [
+          "0"
+         ]
+        },
+        {
+         "condition": "<",
+         "data": "kompot_de_Young_to_Old_fold_change: Mature_Young_2#TCAATTCAGTGAGGCT-1",
+         "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_cell",
+         "type": "num",
+         "value": [
+          "0"
+         ]
+        }
+       ]
+      },
+      {
+       "logic": "AND",
+       "criteria": [
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_mahalanobis",
+         "origData": "var_kompot_de_Young_to_Old_mahalanobis_main",
+         "type": "num",
+         "value": [
+          "5.82"
+         ]
+        },
+        {
+         "condition": "<",
+         "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+         "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+         "type": "num",
+         "value": [
+          "0"
+         ]
+        },
+        {
+         "condition": ">",
+         "data": "kompot_de_Young_to_Old_fold_change: Mature_Young_2#TCAATTCAGTGAGGCT-1",
+         "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_cell",
+         "type": "num",
+         "value": [
+          "0"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "cell-plot-5e": {
+    "id": "cell-plot-5e",
+    "title": "Cell types (focused cell highlighted)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "highres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   }
+  }
+ }
+}

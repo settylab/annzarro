@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 300" width="860" height="300" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Binary body layout</title>
+  <desc id="d">Dense body: n little-endian float values, one per element in row-major order. Sparse body: nnz little-endian float values followed by nnz little-endian uint32 flat positions; every other element is zero.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .v { fill: #eaf2fc; stroke: #2A78D6; stroke-width: 1; }
+    .p { fill: #fdeee6; stroke: #EB6834; stroke-width: 1; }
+    .h { font-size: 14px; font-weight: 700; fill: #0b0b0b; }
+    .s { font-size: 11.5px; fill: #52514e; }
+    .c { font-size: 11px; fill: #0b0b0b; font-family: Menlo, Consolas, monospace; }
+    .tick { stroke: #898781; stroke-width: 1; }
+  </style>
+  <rect class="bg" x="0" y="0" width="860" height="300" rx="10"/>
+
+  <text class="h" x="20" y="32">dense</text>
+  <text class="s" x="80" y="32">X-Annzarro-Encoding: dense, body = prod(shape) × 4 bytes (float32) or × 8 (float64)</text>
+  <g transform="translate(20,46)">
+    <rect class="v" x="0" y="0" width="60" height="34"/><text class="c" x="30" y="22" text-anchor="middle">v[0]</text>
+    <rect class="v" x="60" y="0" width="60" height="34"/><text class="c" x="90" y="22" text-anchor="middle">v[1]</text>
+    <rect class="v" x="120" y="0" width="60" height="34"/><text class="c" x="150" y="22" text-anchor="middle">v[2]</text>
+    <rect class="v" x="180" y="0" width="60" height="34"/><text class="c" x="210" y="22" text-anchor="middle">v[3]</text>
+    <rect class="v" x="240" y="0" width="120" height="34"/><text class="c" x="300" y="22" text-anchor="middle">…</text>
+    <rect class="v" x="360" y="0" width="80" height="34"/><text class="c" x="400" y="22" text-anchor="middle">v[n−1]</text>
+    <text class="s" x="0" y="54">byte 0</text>
+    <text class="s" x="60" y="54">4</text>
+    <text class="s" x="120" y="54">8</text>
+    <text class="s" x="460" y="22">row-major: element (r, c) is v[r·cols + c]</text>
+  </g>
+
+  <text class="h" x="20" y="152">sparse</text>
+  <text class="s" x="80" y="152">X-Annzarro-Encoding: sparse, X-Annzarro-Nnz: nnz, body = nnz × (4 or 8) + nnz × 4 bytes</text>
+  <g transform="translate(20,166)">
+    <rect class="v" x="0" y="0" width="60" height="34"/><text class="c" x="30" y="22" text-anchor="middle">val[0]</text>
+    <rect class="v" x="60" y="0" width="60" height="34"/><text class="c" x="90" y="22" text-anchor="middle">val[1]</text>
+    <rect class="v" x="120" y="0" width="80" height="34"/><text class="c" x="160" y="22" text-anchor="middle">…</text>
+    <rect class="v" x="200" y="0" width="90" height="34"/><text class="c" x="245" y="22" text-anchor="middle">val[nnz−1]</text>
+    <rect class="p" x="290" y="0" width="60" height="34"/><text class="c" x="320" y="22" text-anchor="middle">pos[0]</text>
+    <rect class="p" x="350" y="0" width="60" height="34"/><text class="c" x="380" y="22" text-anchor="middle">pos[1]</text>
+    <rect class="p" x="410" y="0" width="80" height="34"/><text class="c" x="450" y="22" text-anchor="middle">…</text>
+    <rect class="p" x="490" y="0" width="90" height="34"/><text class="c" x="535" y="22" text-anchor="middle">pos[nnz−1]</text>
+    <text class="s" x="0" y="54">values: float32 or float64, little-endian</text>
+    <text class="s" x="290" y="54">positions: uint32, little-endian, flat row-major index</text>
+    <text class="s" x="0" y="84">Decoded: out = zeros(prod(shape)); out[pos[i]] = val[i]; every other element is 0.</text>
+    <text class="s" x="0" y="102">NaN and ±inf count as non-zero and are stored as values.</text>
+  </g>
+</svg>

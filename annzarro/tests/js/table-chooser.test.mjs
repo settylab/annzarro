@@ -177,7 +177,10 @@ test('loadLayer survives a cleared dataset and still sends a gene request (#27)'
     const urls = [];
     globalThis.fetch = async (url) => {
         urls.push(url);
-        return { ok: true, text: async () => JSON.stringify({ data: [[1], [2], [3]] }) };
+        // a Response has headers: the client checks Content-Type for the
+        // binary (format=f32) encoding before parsing
+        return { ok: true, headers: new Headers({ 'Content-Type': 'application/json' }),
+                 text: async () => JSON.stringify({ data: [[1], [2], [3]] }) };
     };
     // fresh module: no dataset loaded, so its cell and gene names are null
     const out = await DataManager.loadLayer({ datasetPath: '/d.zarr', layerName: 'X', cols: [4] });

@@ -2,6 +2,7 @@ from flask import jsonify
 from pathlib import Path
 from .reader import Reader
 from .remote import raise_if_timeout
+from .array_response import array_response, binary_response, numeric_array
 from typing import Literal
 import logging
 
@@ -167,7 +168,7 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
             type: []
         }), 500
     
-def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"]):
+def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"], binary: bool = False):
     try:
         result = reader.get_obs_var(
             dataset_path=dataset_path, 
@@ -191,7 +192,18 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
         else:
             # Single column result
             response["data"] = result
-            
+
+        if binary:
+            # One plain numeric column goes binary; anything with categories,
+            # strings, booleans or missing entries (None) stays JSON.
+            data = response.get("data")
+            if (isinstance(data, dict) and column_names and len(column_names) == 1
+                    and list(data) == list(column_names)
+                    and column_names[0] not in (response.get("categories") or {})):
+                values = numeric_array(data[column_names[0]])
+                if values is not None and values.ndim == 1:
+                    return binary_response(values)
+
         return jsonify(response)
     except Exception as e:
         raise_if_timeout(e)
@@ -201,7 +213,7 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
                         "reason": "read_failed"}), 500
     
 
-def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"]):
+def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_indices, column_name, entity_type = Literal["cells", "genes"], binary: bool = False):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_obsm_varm(key=key, 
@@ -211,32 +223,20 @@ def extract_obsm_varm(dataset_path: str, reader: Reader, key, indices, column_in
                                     col_indices=column_indices,
                                     column_name=column_name
                                     )
-        
-        # Convert NumPy arrays to Python lists for JSON serialization
-        if hasattr(data, 'tolist'):
-            # Direct conversion for simple ndarray
-            serialized_data = data.tolist()
-        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-            # Handle list of ndarrays case
-            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-        else:
-            # Already serializable or empty
-            serialized_data = data
-            
+
         logger.info(f"Successfully loaded {'obsm' if entity_type == 'cells' else 'varm'}/{key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
 
         
-        response_data = {
-            "data": serialized_data,
+        meta = {
             f"{'obsm' if entity_type == 'cells' else 'varm'}_key": key,
             "dataset_path": dataset_path
         }
-        
+
         # Include column name in response if provided
         if column_name:
-            response_data["column_name"] = column_name
-        
-        return jsonify(response_data)
+            meta["column_name"] = column_name
+
+        return array_response(data, meta, binary)
     except Exception as e:
         raise_if_timeout(e)
         _raise_if_store_error(e)
@@ -265,88 +265,47 @@ def extract_uns(uns_key: str, dataset_path: str, reader: Reader):
         logger.error(f"Error getting uns/{uns_key} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
     
-def extract_X(dataset_path: str, row_indices, col_indices, reader: Reader):
+def extract_X(dataset_path: str, row_indices, col_indices, reader: Reader, binary: bool = False):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_X(dataset_path, row_indices, col_indices)
-        
-        # Convert NumPy arrays to Python lists for JSON serialization
-        if hasattr(data, 'tolist'):
-            # Direct conversion for simple ndarray
-            serialized_data = data.tolist()
-        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-            # Handle list of ndarrays case
-            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-        else:
-            # Already serializable or empty
-            serialized_data = data
-            
+
         logger.info(f"Successfully loaded X data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
-        return jsonify({
-            "data": serialized_data,
-            "dataset_path": dataset_path
-        })
+        return array_response(data, {"dataset_path": dataset_path}, binary)
     except Exception as e:
         raise_if_timeout(e)
         _raise_if_store_error(e)
         logger.error(f"Error getting X data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get X data: {str(e)}"}), 500
 
-def extract_layer(dataset_path: str, layer_name: str, row_indices, col_indices, reader: Reader):
+def extract_layer(dataset_path: str, layer_name: str, row_indices, col_indices, reader: Reader, binary: bool = False):
     try:
         # Use direct zarr access for stateless operation
         data = reader.get_layer(layer_name, dataset_path, row_indices, col_indices)
 
-        # Convert NumPy arrays to Python lists for JSON serialization
-        if hasattr(data, 'tolist'):
-            # Direct conversion for simple ndarray
-            serialized_data = data.tolist()
-        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-            # Handle list of ndarrays case
-            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-        else:
-            # Already serializable or empty
-            serialized_data = data
-            
         logger.info(f"Successfully loaded layer/{layer_name} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
-        return jsonify({
-            "data": serialized_data,
-            "layer_name": layer_name,
-            "dataset_path": dataset_path
-        })
+        return array_response(data, {"layer_name": layer_name, "dataset_path": dataset_path}, binary)
     except Exception as e:
         raise_if_timeout(e)
         _raise_if_store_error(e)
         logger.error(f"Error getting layer {layer_name} data for {dataset_path}: {e}")
         return jsonify({"error": f"Failed to get layer data: {str(e)}"}), 500
 
-def extract_obsp_varp(dataset_path: str, key: str, row_indices, col_indices, entity_type: Literal["cells", "genes"], reader: Reader):
+def extract_obsp_varp(dataset_path: str, key: str, row_indices, col_indices, entity_type: Literal["cells", "genes"], reader: Reader, binary: bool = False):
     try:
     # Use direct zarr access for stateless operation
         data = reader.get_obsp_varp(key = key, entity = entity_type, 
                                         dataset_path=dataset_path, row_indices=row_indices, 
                                         col_indices = col_indices)
-        
-        # Convert NumPy arrays to Python lists for JSON serialization
-        if hasattr(data, 'tolist'):
-            # Direct conversion for simple ndarray
-            serialized_data = data.tolist()
-        elif isinstance(data, list) and data and hasattr(data[0], 'tolist'):
-            # Handle list of ndarrays case
-            serialized_data = [row.tolist() if hasattr(row, 'tolist') else row for row in data]
-        else:
-            # Already serializable or empty
-            serialized_data = data
-            
+
         logger.info(f"Successfully loaded {'obsp' if entity_type == 'cells' else 'varp'}/{key} data: {type(data)}, shape: {getattr(data, 'shape', 'unknown')}")
         
-        return jsonify({
-            "data": serialized_data,
+        return array_response(data, {
             f"{'obsp' if entity_type == 'cells' else 'varp'}_key": key,
             "dataset_path": dataset_path
-        })
+        }, binary)
     except Exception as e:
         raise_if_timeout(e)
         _raise_if_store_error(e)
