@@ -120,18 +120,24 @@ largest resident set sampled every 10 ms during the request.
 | cell names of the subset (`/data/cells`, 2.2 MB) | 12.7 / 12.9 s | 0.60 / 0.57 s | 7.0 GB → 0.24 GB |
 | categorical column, subset (`cell_line_id`) | 0.23 s, 1.2 MB | 0.10 s, 0.10 MB | |
 | categorical column, all 50M cells | 13.7 s, 600 MB | 0.09 s, 50 MB | |
-| balanced subset (`balance: cell_line_id`) | 114 / 118 s | 0.73 / 0.74 s | 9.5 GB → 2.4 GB |
+| balanced subset (`balance: cell_line_id`) | 114 / 118 s | 0.73 / 0.74 s | 9.5 GB → 2.4 GB (after three gene columns) |
 | filtered subset (`moa_fine in [one class]`) | 25.0 / 24.8 s | 0.18 / 0.17 s | 11.5 GB → 2.4 GB |
-| gene column of a panel gene (server share of a recolour) | 0.25-0.63 s | 0.27-0.30 s | |
+| gene column of a panel gene (server share of a recolour) | 0.25-0.63 s | 0.27-0.30 s (0.12-0.17 s since, below) | |
 
 The open sequence the client sends (structure, subset, cell names, genes, name search) went from
 13.3 s to 1.0 s cold. The cell names were the cost: the subset's 100,000 names used to be picked
 from all 50 million, which were decoded and held in memory; now only the subset's names are read,
 one chunk at a time. Balanced and filtered subsets used to evaluate every cell's value in Python;
 they now work on the categorical codes, one lookup per category. A categorical column is sent as
-one int8 code per cell instead of a JSON string ({ref}`categorical-codes`). The peak memory of
-2.4 GB after the gene requests is mostly the server's result cache: a gene column is read for
-all 50 million cells (200 MB as float32) and then cut to the subset, and three were read.
+one int8 code per cell instead of a JSON string ({ref}`categorical-codes`). A gene column of the subset is now read for the subset's rows only: the column's stored
+entries are scanned in blocks of 16 million and only the subset's rows are kept, instead of
+building the 50-million-row column (200 MB dense, then cached) and cutting it. For three panel
+genes (30 million stored values each), on a fresh server process, cold / warm:
+
+| Gene column within the subset | Before | After |
+|---|---|---|
+| server time per gene | 0.27-0.35 s | 0.12-0.17 s |
+| server memory after three genes (from 0.2 GB at start) | 2.2 GB | 0.53 GB |
 
 In the browser (headless Chromium, two Cell Plots on `X_pca_2d`, one coloured by the focused
 gene, one by `cell_line_id`, 100,000 points each; three recolours by panel genes):
