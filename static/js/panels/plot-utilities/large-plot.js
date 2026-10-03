@@ -21,17 +21,21 @@
  *
  * What it gives up: hover and click on points (hovermode false; there are no
  * per-point names on the traces), the focused-cell highlight, table filters,
- * 3D, and incremental updates (any change redraws). It is used only above
- * LARGE_PLOT_POINTS and only for the settings it supports (largePlotReason).
+ * 3D, and incremental updates (any change redraws). The panel says so (renderModeNotice). It is used only above
+ * largePlotPoints() (default 5M) and only for the settings it supports (largePlotReason).
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { createLayout } from './plot-make-helper.js';
 import { generateDiscreteColors } from './colors.js';
-import { drawPlot } from '../../utils/panel-surface.js';
+import { drawPlot, renderModeNotice } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
 
-export const LARGE_PLOT_POINTS = 1000000;
+/** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
+export function largePlotPoints() {
+  const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+  return typeof v === 'number' && v >= 0 ? v : 5000000;
+}
 const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
 const NA_COLOR = 'rgba(200, 200, 200, 1)';
@@ -42,7 +46,7 @@ const NA_COLOR = 'rgba(200, 200, 200, 1)';
  * @param {number} n  cells in the plot
  */
 export function largePlotReason(settings, n) {
-  if (!(n > LARGE_PLOT_POINTS)) return `${n} cells (large path above ${LARGE_PLOT_POINTS})`;
+  if (!(n > largePlotPoints())) return `${n} cells (large path above ${largePlotPoints()})`;
   if (settings.z) return '3D';
   if (settings.tableFilter && settings.tableFilter !== 'none') return 'table filter';
   for (const axis of ['x', 'y', 'color']) {
@@ -160,6 +164,12 @@ function pushTraces(traces, X, Y, a, b, name, color, settings, showlegend) {
       marker: { size: settings.pointSize, opacity: settings.pointOpacity, color }
     });
   }
+}
+
+/** What the panel says while in this mode. */
+export function largePlotNotice(n) {
+  const m = n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n.toLocaleString();
+  return `Large-plot mode (${m} points): hover, click and table filters are off; use a subset for them`;
 }
 
 // The draw in flight per panel. A panel's first load is usually asked for
@@ -298,6 +308,7 @@ async function _drawLargePlot(plotContainer, settings, data) {
     { responsive: true, displayModeBar: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
+  renderModeNotice(plotContainer, largePlotNotice(n));
   const t3 = performance.now();
   data.large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2 };

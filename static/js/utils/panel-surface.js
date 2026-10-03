@@ -152,6 +152,42 @@ export function renderCoverageNotice(host, coverage, unit) {
 }
 
 /**
+ * Render (or clear, with `text` null) a notice that says how a panel is drawn
+ * when that changes what the user can do with it, e.g. the large-plot mode
+ * (large-plot.js) with hover, click and table filters off. Same look as the
+ * coverage notice, kept as a separate element so neither replaces the other.
+ *
+ * @param {HTMLElement} host  The plot container.
+ * @param {string|null} text
+ * @returns {HTMLElement|null}
+ */
+export function renderModeNotice(host, text) {
+    const anchor = noticeAnchor(host);
+    if (!anchor) return null;
+    const key = `mode-notice-for-${anchor.id || 'panel'}`;
+    let el = null;
+    for (const child of Array.from(anchor.parentNode.children || [])) {
+        if (child.dataset && child.dataset.modeFor === key) el = child;
+    }
+    if (!text) {
+        if (el) el.remove();
+        return null;
+    }
+    if (!el) {
+        el = document.createElement('div');
+        el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--notice mode-notice`;
+        el.dataset.modeFor = key;
+        anchor.parentNode.insertBefore(el, anchor);
+    }
+    el.innerHTML =
+        `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON.notice}</span>`
+        + `<div class="${NOTICE_CLASS}__body"><div class="${NOTICE_CLASS}__headline">${escapeHtml(text)}</div></div>`;
+    el.setAttribute('role', 'status');
+    el.setAttribute('title', text);
+    return el;
+}
+
+/**
  * Build the Plotly layout annotation that carries the gap into EXPORTED images.
  *
  * A PNG saved from a panel must not be cleaner than the panel was: the DOM

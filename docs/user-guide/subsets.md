@@ -94,6 +94,27 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
   every cell of a large dataset records that and reopens with every cell; a view without a subset
   entry, such as an older link, opens with the server's default.
 
+### Every cell of a very large dataset: large-plot mode
+
+A Cell Plot with more than 5 million points (the default of `ui.defaults.large_plot_points`,
+{doc}`../reference/configuration`) is drawn in **large-plot mode**. That only happens with the
+subset removed, or one larger than that. The panel then says so above the plot:
+
+> Large-plot mode (95.6M points): hover, click and table filters are off; use a subset for them
+
+In this mode:
+
+- **No hover or click on points.** Clicking a point does not focus a cell, and the focused cell
+  is not marked.
+- **No table filter**, and no 3D. A panel with either keeps the regular drawing, which runs out of
+  browser memory a little above 5 million points.
+- **A gene's colour is drawn in 64 steps** of the colour scale, the strongest values on top. Every
+  change, such as another gene or another colour range, redraws the panel.
+
+Pan, zoom, colour by a category or a gene, point size and opacity work as usual. To hover over,
+click or filter cells, apply a subset (above). Why the mode exists and what it costs are in
+{doc}`../reference/performance`.
+
 The exact rule (a fixed hash of seed and row, so a notebook can reproduce the selection), the
 balancing algorithm and the request format are in {doc}`../design/subsetting`.
 

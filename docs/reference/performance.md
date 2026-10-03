@@ -122,6 +122,32 @@ process (a lower bound for network storage); warm = page cache warm, new index.
 A cell row costs the same at every size (98 kB, one row of 5,000 genes). A gene column grows
 linearly with cells; the binary encoding cuts it to 4 bytes per cell (above).
 
+## Very large Cell Plots (large-plot mode)
+
+A browser tab's JavaScript heap is capped near 4.4 GB, and browser flags do not raise the cap
+(`--js-flags=--max-old-space-size=16384` leaves `performance.memory.jsHeapSizeLimit` at 4.4 GB).
+The regular Cell Plot spends 400 to 900 bytes of that heap per point. On an Apple M3 Max (headless
+Chromium 153, WebGL on Metal) it draws 10 million points coloured by a category and 5 million
+coloured by a gene. Beyond that, the tab runs out of memory and closes.
+
+Above `ui.defaults.large_plot_points` (5 million by default) a Cell Plot keeps its data in typed
+arrays, outside that heap, and draws one single-colour layer per category or per colour step. The
+panel says it is in this mode (see {doc}`../user-guide/subsets`). It uses 20 bytes of heap per
+point. Measured on a synthetic store of 95,624,334 cells, the size of Tahoe-100M, before the
+final timing runs (other jobs shared the machine):
+
+| | Coloured by category | Coloured by a gene |
+|---|---|---|
+| First plot | 89 s | 47.5 s |
+| Recolour by another gene | | 6.3-6.9 s |
+| JavaScript heap, peak | 1.9 GB | 1.9 GB |
+| Browser tab memory (RSS) | 8.5 GB | 9.0 GB |
+
+Most of the first plot is the server writing the 95.6 million cell names as JSON (31-49 s). For a
+category colour, the column's labels as JSON take another 28-43 s. The drawing itself takes about
+7 s. Pan by dragging runs at 17 ms per frame. Each finished zoom redraws for 1.0-1.8 s, because
+Plotly uploads every point to the GPU again.
+
 ## Chunk shape
 
 The slowest interaction is set by chunk layout, not by data size. Full discussion and a fresh

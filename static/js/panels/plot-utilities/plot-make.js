@@ -8,8 +8,8 @@ import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, classifyFocusRow
 } from '../../utils/coverage.js';
-import { drawPlot, drawPlaceholder } from '../../utils/panel-surface.js';
-import { LARGE_PLOT_POINTS, largePlotReason, createLargePlot } from './large-plot.js';
+import { drawPlot, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
+import { largePlotPoints, largePlotReason, createLargePlot } from './large-plot.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -679,7 +679,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
 
-    // Millions of cells: typed arrays and single-colour traces (large-plot.js)
+    // Millions of cells: typed arrays and single-colour traces (large-plot.js).
+    // Its notice is cleared here and put back once a large draw succeeds.
+    renderModeNotice(plotContainer, null);
     if (!isGenePlot) {
       const nCells = (DataManager.getCells() || []).length;
       const why = largePlotReason(settings, nCells);
@@ -687,7 +689,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         await createLargePlot(plotContainer, settings, data);
         return;
       }
-      if (nCells > LARGE_PLOT_POINTS) console.warn(`Large cell plot path not used: ${why}`);
+      if (nCells > largePlotPoints()) console.warn(`Large cell plot path not used: ${why}`);
     }
 
     // Reset cached data without changing its reference. Until this load

@@ -14,7 +14,7 @@ import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
 // 12M cells with 19-character names. Above about 24M such cells the JSON text
 // no longer fits in one V8 string at all. Below it the names stay a plain
 // array, which every view accepts; only the large Cell Plot path
-// (large-plot.js) works with packed names, and it takes over above 1M cells.
+// (large-plot.js) works with packed names; it takes over above 5M cells by default.
 const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
