@@ -8,6 +8,7 @@ import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
 import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+import { RemoteNames } from './utils/remote-names.js';
 
 // A /cells body above this size is read as a stream into PackedNames
 // (ArrayBuffers) instead of one JSON string and an array of JS strings: about
@@ -310,7 +311,8 @@ const DataManager = (function() {
             _subset = await _resolveSubset(datasetPath, previousSubset, signal);
 
             // Load cells and genes
-            _cells = await loadCells(datasetPath, signal);
+            const nShown = _subset ? _subset.n : (_datasetStructure && _datasetStructure.n_obs);
+            _cells = await loadCells(datasetPath, signal, nShown);
             
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
@@ -508,13 +510,58 @@ const DataManager = (function() {
      * @returns {Promise<Array<string>>} - List of cell names
      * @throws {Error} If there's an error loading the cells
      */
-    async function loadCells(datasetPath, signal = null) {
+    /**
+     * The names of the cells shown, kept on the server (utils/remote-names.js):
+     * one name by index from obs/_index, one index by name from /data/names.
+     */
+    function _remoteNames(datasetPath, n) {
+        const fetchNames = async (indices) => {
+            const params = _withSubset(Config.API.OBS,
+                { dataset_path: datasetPath, columns: '_index', rows: indices.join(',') });
+            const body = await _readResponse(await fetch(`${Config.API.OBS}?${new URLSearchParams(params)}`));
+            return (body && body.data && body.data._index) || [];
+        };
+        const lookup = async (name) => {
+            const params = new URLSearchParams({ dataset_path: datasetPath, entity: 'cells', q: name,
+                mode: 'exact', limit: '1' });
+            if (_subset && _subset.datasetPath === datasetPath) params.set('subset', _subset.key);
+            const body = await _readResponse(await fetch(`${Config.API.NAMES}?${params}`));
+            const hit = body && body.matches && body.matches[0];
+            return hit && hit.name === name ? hit.index : -1;
+        };
+        return RemoteNames.wrap(new RemoteNames(n, fetchNames, lookup));
+    }
+
+    /**
+     * Index of a cell by name, asking the server when the names are not
+     * downloaded (above the large-plot threshold); -1 when absent.
+     */
+    async function resolveCellIndex(cellName) {
+        if (!_cells) return -1;
+        if (_cells instanceof RemoteNames) return _cells.resolve(cellName);
+        return _cells.indexOf(cellName);
+    }
+
+    /** Name of cell `i` (asks the server when the names are not downloaded). */
+    async function cellNameAt(i) {
+        if (!_cells) return undefined;
+        if (_cells instanceof RemoteNames) return _cells.nameAt(i);
+        return _cells[i];
+    }
+
+    async function loadCells(datasetPath, signal = null, expected = null) {
         try {
             // Check for abort before making request
             if (signal && signal.aborted) {
                 throw new DOMException("Cells loading aborted", "AbortError");
             }
             
+            // Every cell of a dataset above the large-plot threshold: the names
+            // stay on the server (large-plot mode shows none)
+            const threshold = Config.DEFAULTS.LARGE_PLOT_POINTS;
+            if (typeof expected === 'number' && typeof threshold === 'number' && expected > threshold) {
+                return _remoteNames(datasetPath, expected);
+            }
             const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
             const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
             const response = await fetch(fullUrl, { signal });
@@ -1418,8 +1465,8 @@ const DataManager = (function() {
      */
     function getCells() {
         if (!_cells) return [];
-        // Packed names are read-only and too large to copy
-        if (_cells instanceof PackedNames) return _cells;
+        // Packed and remote names are read-only and too large to copy
+        if (_cells instanceof PackedNames || _cells instanceof RemoteNames) return _cells;
         // Return a copy to avoid modifying the original array
         return [..._cells]; // No sorting to maintain original order
     }
@@ -1600,6 +1647,8 @@ const DataManager = (function() {
         getTaxonomyId,
         getTaxonomySpecies,
         getCellIndex,
+        resolveCellIndex,
+        cellNameAt,
         getGeneIndex,
         isDatasetLoaded,
         // Cell subset

@@ -167,17 +167,50 @@ function groupByKey(x, y, key, nkeys, drop) {
 }
 
 /** Single-colour scattergl traces for points [a, b), cut below TRACE_POINTS. */
-function pushTraces(traces, X, Y, a, b, name, color, settings, showlegend) {
+function pushTraces(traces, X, Y, a, b, name, color, settings) {
+  traces.push(...chunkTraces(X, Y, a, b, name, color, settings));
+}
+
+/** Single-colour traces for points [a, b), cut below TRACE_POINTS, without legend entries. */
+function chunkTraces(X, Y, a, b, name, color, settings) {
+  const out = [];
   for (let p = a; p < b; p += TRACE_POINTS) {
     const q = Math.min(p + TRACE_POINTS, b);
-    traces.push({
-      type: 'scattergl', mode: 'markers', name, legendgroup: name,
-      showlegend: showlegend && p === a,
+    out.push({
+      type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: false,
       x: X.subarray(p, q), y: Y.subarray(p, q),
       hoverinfo: 'skip',
       marker: { size: settings.pointSize, opacity: settings.pointOpacity, color }
     });
   }
+  return out;
+}
+
+/**
+ * The legend entry of one category: a trace with no points, at full opacity,
+ * in the category's legend group (clicking it toggles all its chunks). The
+ * point traces carry the panel's opacity; Plotly would draw their legend
+ * symbols just as pale.
+ */
+function legendTrace(name, color, settings, rank) {
+  return { type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: true,
+    legendrank: rank, x: [null], y: [null], hoverinfo: 'skip',
+    marker: { size: settings.pointSize, opacity: 1, color } };
+}
+
+/**
+ * Chunk traces of several categories in an interleaved draw order. Drawing
+ * each category whole, in list order, puts the last-drawn categories on top
+ * of every other one where they overlap (at 50M Tahoe cells one cell line
+ * covered the plot). Here every chunk is placed at its relative position
+ * within its own category ((j + 0.5) / chunks), so all categories are spread
+ * through the whole draw and none is drawn entirely on top.
+ */
+function interleave(groups) {
+  const all = [];
+  for (const g of groups) g.forEach((t, j) => all.push([(j + 0.5) / g.length, all.length, t]));
+  all.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  return all.map(e => e[2]);
 }
 
 /** The colour's axis title, as the regular path writes it. */
@@ -280,11 +313,19 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       palette = generateDiscreteColors(nc, settings.categoryPalette && settings.categoryPalette !== 'uns'
         ? settings.categoryPalette : undefined);
     }
-    pushTraces(traces, X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings, true);
+    // blank values at the bottom, then the categories interleaved; legend
+    // entries in category order with NA last, as the regular path lists them
+    traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings));
+    const groups = [];
     for (let k = 0; k < nc; k++) {
-      pushTraces(traces, X, Y, start[k], start[k + 1], String(cs.categories[k]),
-        palette[k % palette.length], settings, true);
+      const name = String(cs.categories[k]), color = palette[k % palette.length];
+      if (start[k + 1] > start[k]) {
+        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
+        traces.push(legendTrace(name, color, settings, k + 1));
+      }
     }
+    if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));
+    traces.push(...interleave(groups));
     layout.showlegend = true;
     // legend as the regular path draws it (plot-make.js, categorical branch)
     const pos = getPositioningByLocation(settings.legendPosition || 'right');
@@ -325,9 +366,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const { X, Y, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP);
     filtered = n - kept;
     const colors = await sampleColorscale(settings.colorScale, settings.colorReversed, COLOR_BINS);
-    pushTraces(traces, X, Y, start[0], start[1], 'no value', NA_COLOR, settings, false);
+    pushTraces(traces, X, Y, start[0], start[1], 'no value', NA_COLOR, settings);
     order.forEach((bin, r) => {
-      pushTraces(traces, X, Y, start[r + 1], start[r + 2], `bin ${bin}`, colors[bin], settings, false);
+      pushTraces(traces, X, Y, start[r + 1], start[r + 2], `bin ${bin}`, colors[bin], settings);
     });
     // the colour bar: one invisible point carrying the scale
     const bar = colourBar(settings, colourTitle(settings));
@@ -347,7 +388,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     for (let i = 0; i < n; i++) key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? 1 : 0;
     const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1);
     filtered = n - kept;
-    pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings, false);
+    pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
     layout.showlegend = false;
   }
   const t2 = performance.now();

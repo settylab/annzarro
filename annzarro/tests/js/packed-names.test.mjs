@@ -78,3 +78,35 @@ test("categorical codes: data before categories (key order not assumed)", async 
   assert.deepEqual(categories, ["a", "b"]);
   assert.deepEqual(Array.from(codes), [1, 0, 1]);
 });
+
+// --- names kept on the server (static/js/utils/remote-names.js) -------------
+const { RemoteNames } = await import(
+  pathToFileURL(path.resolve(__dirname, "../../../static/js/utils/remote-names.js")).href
+);
+
+test("remote names: fetched one at a time, cached, array-like from the cache", async () => {
+  const all = ["c0", "c1", "c2", "c3"];
+  const calls = [];
+  const names = RemoteNames.wrap(new RemoteNames(all.length,
+    async (idx) => { calls.push(["name", ...idx]); return idx.map(i => all[i]); },
+    async (n) => { calls.push(["index", n]); return all.indexOf(n); }));
+  assert.equal(names.length, 4);
+  assert.equal(names[2], undefined, "not fetched yet");
+  assert.equal(await names.nameAt(2), "c2");
+  assert.equal(names[2], "c2");
+  assert.equal(names.indexOf("c2"), 2, "learned from nameAt");
+  assert.equal(await names.resolve("c3"), 3);
+  assert.equal(await names.resolve("c3"), 3);
+  assert.equal(await names.resolve("nope"), -1);
+  assert.equal(await names.resolve("nope"), -1);
+  assert.deepEqual(calls, [["name", 2], ["index", "c3"], ["index", "nope"]], "each asked once");
+  assert.equal(names.includes("c3"), true);
+  assert.equal(await names.nameAt(9), undefined);
+});
+
+test("remote names: walking every name throws a clear error", () => {
+  const names = RemoteNames.wrap(new RemoteNames(50000000, async () => [], async () => -1));
+  for (const walk of [() => [...names], () => names.map(x => x), () => names.slice(0, 2)]) {
+    assert.throws(walk, /not loaded .*turn on a subset/);
+  }
+});

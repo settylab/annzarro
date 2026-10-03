@@ -401,7 +401,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           break;
         }
         const focusIndex = type === 'obsp'
-          ? DataManager.getCellIndex(column)
+          ? await DataManager.resolveCellIndex(column)
           : DataManager.getGeneIndex(column);
         if (focusIndex === -1) {
           // Render the plot without the highlight; do not fail the load.
@@ -443,7 +443,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       }
       case 'layer': {
         if (plotType === 'genes') {
-          const cellIndex = DataManager.getCellIndex(column);
+          const cellIndex = await DataManager.resolveCellIndex(column);
           if (cellIndex === -1) {
             ({ values, coverage, dataType } = blankFocusSeries('cell', column));
             break;

@@ -313,7 +313,7 @@ const App = (function() {
                 DataManager.setFocusedGene(constants.focusedGene);
             }
             if (constants.focusedCell) {
-                if (DataManager.getCellIndex(constants.focusedCell) >= 0) {
+                if (await DataManager.resolveCellIndex(constants.focusedCell) >= 0) {
                     DataManager.setFocusedCell(constants.focusedCell);
                 } else if (DataManager.getSubset()) {
                     // Said once: loading the dataset may already have said it
@@ -1087,7 +1087,8 @@ const App = (function() {
             const names = entity === 'cells' ? DataManager.getCells() : DataManager.getGenes();
             let name;
             if (names && names.length) {
-                name = names[0];
+                // names[0], or asked for when the names stay on the server
+                name = entity === 'cells' ? await DataManager.cellNameAt(0) : names[0];
             } else {
                 const first = await fetchNameMatches(Config.API.NAMES, {
                     datasetPath, entity, query: '', limit: 1, subset });

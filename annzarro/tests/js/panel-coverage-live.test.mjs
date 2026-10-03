@@ -57,6 +57,7 @@ Object.assign(DataManager, {
     getCells: () => CELLS, getGenes: () => [],
     getCurrentDataset: () => '/fixture.zarr',
     getCellIndex: () => -1,          // nothing focused -> blankFocusSeries
+    resolveCellIndex: async () => -1,
     getGeneIndex: () => -1,
     getFocusedCell: () => null, getFocusedGene: () => null
 });

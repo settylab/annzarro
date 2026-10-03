@@ -101,7 +101,9 @@ STATE = """() => {
       .filter(e => e.offsetParent !== null).length;
   const placeholder = tile && tile.querySelector('.coverage-placeholder');
   return {
-    points: g && g._fullData ? g._fullData.filter(t => !/Focused/.test(t.name || ''))
+    // legend-only traces (one null point each, large-plot mode) are not points
+    points: g && g._fullData ? g._fullData.filter(t => !/Focused/.test(t.name || '')
+                                               && !(t.x && t.x.length === 1 && t.x[0] === null))
         .reduce((s, t) => s + (t.x ? t.x.length : 0), 0) : 0,
     hovermode: g && g._fullLayout ? g._fullLayout.hovermode : null,
     notice: notice ? notice.textContent.trim() : null,
@@ -198,9 +200,13 @@ def test_subset_switches_large_plot_mode(server):
             _assert_regular(page, _wait(page, lambda s: s["points"] == 50 and not s["busy"]))
 
             regular_zeroline = page.evaluate(STATE)["zeroline"]
+            requests = []
+            page.on("request", lambda r: requests.append(r.url))
             _set_subset(page, False)
             large = _wait(page, lambda s: s["points"] == 200 and s["notice"] and not s["busy"])
             _assert_large(large)
+            # every cell above the threshold: the names stay on the server
+            assert not [u for u in requests if "/data/cells" in u], "large-plot mode downloaded every cell name"
             assert large["zeroline"] == regular_zeroline
 
             _set_subset(page, True)

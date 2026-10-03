@@ -63,6 +63,7 @@ Object.assign(DataManager, {
     getCurrentDataset: () => '/fixture.zarr',
     getGeneIndex: (g) => GENES.indexOf(g),
     getCellIndex: () => -1,
+    resolveCellIndex: async () => -1,
     getFocusedGene: () => 'GENE_0', getFocusedCell: () => null,
     loadVarp: async () => ({ data: [varpRow] })
 });

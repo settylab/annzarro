@@ -63,6 +63,7 @@ function stubDataManager({ entityIndex = -1 } = {}) {
         getGenes: () => GENES,
         getCurrentDataset: () => '/fixture.zarr',
         getCellIndex: () => entityIndex,
+        resolveCellIndex: async () => entityIndex,
         getGeneIndex: () => entityIndex,
         getFocusedCell: () => 'c0',
         getFocusedGene: () => 'g0'

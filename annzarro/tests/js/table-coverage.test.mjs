@@ -52,13 +52,17 @@ function withObs(body, { cells = CELLS, cellIndex = null } = {}) {
         getCells: DataManager.getCells,
         getGenes: DataManager.getGenes,
         getCellIndex: DataManager.getCellIndex,
+        resolveCellIndex: DataManager.resolveCellIndex,
         getFocusedCell: DataManager.getFocusedCell,
         loadObsp: DataManager.loadObsp
     };
     DataManager.loadObs = async () => body;
     DataManager.getCells = () => cells;
     DataManager.getGenes = () => [];
-    if (cellIndex !== null) DataManager.getCellIndex = () => cellIndex;
+    if (cellIndex !== null) {
+        DataManager.getCellIndex = () => cellIndex;
+        DataManager.resolveCellIndex = async () => cellIndex;
+    }
     return () => Object.assign(DataManager, saved);
 }
 
