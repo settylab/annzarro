@@ -740,6 +740,21 @@ const PanelManager = (function() {
                 )
             );
             
+            // The bottom "Create New Panel" chooser is restored only when the
+            // hierarchy lists it. Layouts saved by the app always do, but a
+            // hand-written link or an older panel set may not, and the chooser
+            // then never came back. Add it when the hierarchy has none.
+            const hasSelector = (nodes) => nodes.some(n => n && (n.type === 'selector' ||
+                (Array.isArray(n.children) && hasSelector(n.children))));
+            if (_container && !hasSelector(layout.hierarchy)) {
+                LayoutManager.rebuildLayoutFromHierarchy(
+                    { type: 'selector' },
+                    _container,
+                    (id) => _createTileElement(id),
+                    () => {}
+                );
+            }
+
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
                 const container = handle.parentElement;
