@@ -295,9 +295,8 @@ body {
    room left under the panels. Panels above keep the height they were given
    or dragged to, with no cap: the page (.tile-container) scrolls instead.
    A cap at the visible area once kept the chooser's heading in view but made
-   the height handle stop working past the window height. A new panel still
-   starts short enough to leave the chooser's heading in view
-   (createPanelWrapper). */
+   the height handle stop working past the window height, and left a plot
+   with its controls open too little room. */
 .tile-container > .tile-selector {
     min-height: 320px;
     flex: 1 0 auto;
