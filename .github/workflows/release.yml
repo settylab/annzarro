@@ -1,0 +1,82 @@
+# Publish the Python package to PyPI when a v* tag is pushed.
+#
+# Trusted publishing (OIDC): no token is stored in the repository. PyPI must
+# list this workflow as a trusted publisher for the project "annzarro":
+# owner settylab, repository annzarro, workflow release.yml, environment pypi.
+# The desktop apps for the same tag are built by build.yml.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Tag matches the package version
+        run: |
+          version=$(python -c "import re; print(re.search(r'__version__\s*=\s*[\"\']([^\"\']+)', open('annzarro/__init__.py').read()).group(1))")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match annzarro.__version__ $version (run bump_version.py)" >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      # The wheel must carry the frontend and its vendored bundles: the app
+      # is used offline and never loads anything from a CDN.
+      - name: Wheel contents
+        run: |
+          python - <<'EOF'
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          for needed in ("annzarro/templates/index.html", "annzarro/static/js/main.js",
+                         "annzarro/static/vendor/js/plotly-2.20.0.min.js"):
+              assert needed in names, f"missing from wheel: {needed}"
+          assert not any(n.startswith("annzarro/tests/") for n in names), "tests in wheel"
+          print(len(names), "files; frontend and vendor bundles present")
+          EOF
+
+      - name: Install the wheel and start the app
+        working-directory: /tmp
+        run: |
+          python -m venv v
+          v/bin/pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          v/bin/python -c "import annzarro; from annzarro.server.core import create_app; c = create_app({'TESTING': True}).test_client(); assert c.get('/').status_code in (200, 302)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/annzarro/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
