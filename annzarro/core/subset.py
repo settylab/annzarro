@@ -398,20 +398,25 @@ def balanced_quota(sizes: Sequence[int], budget: int) -> np.ndarray:
     sizes = np.asarray(sizes, dtype=np.int64)
     quota = np.zeros(len(sizes), dtype=np.int64)
     budget = int(min(budget, sizes.sum())) if len(sizes) else 0
-    open_groups = list(np.argsort(sizes, kind="stable"))
-    while open_groups:
-        share = budget // len(open_groups)
-        smallest = open_groups[0]
-        if sizes[smallest] <= share:
-            quota[smallest] = sizes[smallest]
-            budget -= int(sizes[smallest])
-            open_groups.pop(0)
-            continue
-        rest = sorted(open_groups)
+    if not len(sizes):
+        return quota
+    # The smallest group still open is taken whole while it fits its share
+    # of what is left; the first that does not fit ends that. Vectorised:
+    # step i (groups by size) has budget - (sizes taken before) to share
+    # among the len - i groups still open.
+    order = np.argsort(sizes, kind="stable")
+    ordered = sizes[order]
+    before = np.concatenate([[0], np.cumsum(ordered)[:-1]])
+    open_count = len(sizes) - np.arange(len(sizes))
+    fits = ordered <= (budget - before) // open_count
+    t = int(np.argmin(fits)) if not fits.all() else len(sizes)
+    quota[order[:t]] = ordered[:t]
+    if t < len(sizes):
+        left = budget - int(before[t])
+        rest = np.sort(order[t:])
+        share = left // len(rest)
         quota[rest] = share
-        for g in rest[: budget - share * len(rest)]:
-            quota[g] += 1
-        break
+        quota[rest[: left - share * len(rest)]] += 1
     return quota
 
 

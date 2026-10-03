@@ -113,3 +113,34 @@ def test_partition_quotas_is_repeated_water_filling():
         first += q
         remaining -= q
     assert remaining.sum() == 0
+
+
+def _quota_loop(sizes, budget):
+    """balanced_quota as it was written first (a loop), the reference."""
+    sizes = np.asarray(sizes, dtype=np.int64)
+    quota = np.zeros(len(sizes), dtype=np.int64)
+    budget = int(min(budget, sizes.sum())) if len(sizes) else 0
+    open_groups = list(np.argsort(sizes, kind="stable"))
+    while open_groups:
+        share = budget // len(open_groups)
+        smallest = open_groups[0]
+        if sizes[smallest] <= share:
+            quota[smallest] = sizes[smallest]
+            budget -= int(sizes[smallest])
+            open_groups.pop(0)
+            continue
+        rest = sorted(open_groups)
+        quota[rest] = share
+        for g in rest[: budget - share * len(rest)]:
+            quota[g] += 1
+        break
+    return quota
+
+
+def test_vectorised_water_filling_equals_the_loop():
+    rng = np.random.default_rng(3)
+    for _ in range(2000):
+        g = int(rng.integers(0, 12))
+        sizes = rng.integers(0, 50, g) * rng.integers(0, 2, g) + rng.integers(0, 3, g)
+        budget = int(rng.integers(0, 400))
+        assert balanced_quota(sizes, budget).tolist() == _quota_loop(sizes, budget).tolist()
