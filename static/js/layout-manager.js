@@ -677,11 +677,9 @@ const LayoutManager = (function() {
     function createPanelWrapper(container, before, height) {
         const panelWrapper = document.createElement('div');
         panelWrapper.className = 'panel-wrapper';
-        // A new panel leaves the bottom chooser's heading in view (5rem);
-        // a saved or dragged height is kept as is, with no cap
-        const room = container.clientHeight - 80;
-        const initial = room >= MIN_PANEL_HEIGHT ? Math.min(DEFAULT_PANEL_HEIGHT, room) : DEFAULT_PANEL_HEIGHT;
-        panelWrapper.style.height = `${height > 0 ? height : initial}px`;
+        // A saved or dragged height is kept as is, with no cap; the page
+        // scrolls to the bottom chooser
+        panelWrapper.style.height = `${height > 0 ? height : DEFAULT_PANEL_HEIGHT}px`;
         panelWrapper.style.width = '100%';
         panelWrapper.style.overflow = 'hidden';
         panelWrapper.style.position = 'relative';
