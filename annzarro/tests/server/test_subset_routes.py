@@ -169,7 +169,7 @@ def test_name_search_is_within_the_subset(get):
     all_names = _ok(get("/api/v1/data/cells"))["cells"]
     inside, outside = all_names[rows[3]], all_names[next(r for r in range(N_OBS) if r not in set(rows))]
     hit = _ok(get("/api/v1/data/names", subset=SPEC, entity="cells", q=inside, mode="exact"))
-    assert hit["matches"] == [{"name": inside, "index": 3}] and hit["total"] == SPEC["n"]
+    assert hit["matches"] == [{"name": inside, "index": 3, "row": int(rows[3])}] and hit["total"] == SPEC["n"]
     miss = _ok(get("/api/v1/data/names", subset=SPEC, entity="cells", q=outside, mode="exact"))
     assert miss["matches"] == []
     # genes are not subset

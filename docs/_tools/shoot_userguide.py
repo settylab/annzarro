@@ -876,6 +876,32 @@ def shoot_subsets(sh, data_dir):
     capture(sh, page, "subsets-applied", None)
     capture_union(sh, page, "subsets-badge", ["#cell-count", "#subset-button"],
                   marks=[(1, "#subset-button")], pad=10)
+    # Parts: 8,063 cells pass the filter, in parts of 3,000 -> 3 parts. Step to part 2.
+    page.mouse.move(0, 0)          # no hover or focus styling in the shots
+    capture_union(sh, page, "subsets-parts", ["#cell-count", "#subset-button", "#subset-parts"],
+                  marks=[(1, "#subset-part-prev"), (2, "#subset-part-input"), (3, "#subset-part-next")], pad=10)
+    parts_view = ["#dataset-stats", T("cell-plot-SA"), T("cell-table-ST")]
+    capture_union(sh, page, "subsets-parts-view-1", parts_view, pad=4)
+    rows1 = page.locator(f"{T('cell-table-ST')} tbody tr td").first.inner_text()
+    page.click("#subset-part-next")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '2'", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
+    page.mouse.move(0, 0)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    time.sleep(0.3)
+    sh.log.append("subsets: after › = " + page.evaluate(
+        "document.getElementById('cell-count').textContent + ' | part ' + document.getElementById('subset-part-input').value"
+        " + ' of ' + document.getElementById('subset-part-count').textContent + ' | ' + document.getElementById('subset-button').title"))
+    capture_union(sh, page, "subsets-parts-view-2", parts_view, pad=4)
+    part2_first = page.locator(f"{T('cell-table-ST')} tbody tr td").first.inner_text()
+    sh.log.append(f"subsets: first table cell part 1 = {rows1!r}, part 2 = "
+                  f"{part2_first!r}")
+    sh.log.append("subsets: filter widget part 2 = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    page.click("#subset-part-prev")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '1'", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
     sh.log.append("subsets: table info = " + page.locator(f"{T('cell-table-ST')} .dataTables_info").inner_text())
     sh.log.append("subsets: filter widget = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
     # Share link carries the subset
@@ -886,10 +912,118 @@ def shoot_subsets(sh, data_dir):
     page.context.close()
 
 
+def shoot_focus_outside(sh, data_dir):
+    """A focused cell outside the subset: the HSC is in part 2 of {"n": 3000, "seed": 0} on
+    bm_aging.zarr; one click on › shows part 3, which does not hold it. The walk from the HSC
+    is coloured over part 3's cells, the ring marks where the HSC lies, the header says it is
+    not shown. Then the picker lists a cell of another part, tagged."""
+    D = ds("bm_aging.zarr", data_dir)
+    v = view(split("horizontal", tile("cell-plot-W"), tile("cell-plot-T")),
+             {"cell-plot-W": cell_plot("cell-plot-W", "5-step diffusion walk from the focused cell",
+                                       obsp(WALK, HSC), colorScale="Blues", colorReversed=True),
+              "cell-plot-T": cell_plot("cell-plot-T", "Cell type",
+                                       {"type": "obs", "key": "highres_celltype", "column": ""})})
+    v["subset"] = {"n": 3000, "seed": 0, "part": 1}
+    save_view("focus-outside", v)
+    page = sh.open(v, dataset=D)
+    page.click("#subset-part-next")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '3'", timeout=60000)
+    page.wait_for_function("!document.getElementById('focused-cell-outside').hidden", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
+    page.wait_for_function("""() => { const g = document.querySelector('.tile[data-tile-id="cell-plot-W"] .js-plotly-plot');
+        return g && g._fullData && g._fullData.some(t => t.name === 'Focused Cell'); }""", timeout=60000)
+    page.mouse.move(0, 0)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    time.sleep(0.5)
+    sh.log.append("focus-outside: badge = " + page.text_content("#focused-cell-outside")
+                  + " | note = " + page.evaluate("""() => { const n = document.querySelector(
+                      '.tile[data-tile-id="cell-plot-W"] .focus-notice .coverage-notice__headline');
+                      return n ? n.textContent : null; }"""))
+    capture_union(sh, page, "focus-outside-header", ["#focused-cell", "#focused-cell-outside", "#subset-parts"],
+                  marks=[(1, "#focused-cell-outside")], pad=10)
+    capture_union(sh, page, "focus-outside", [T("cell-plot-W"), T("cell-plot-T")], pad=2)
+
+    # The picker: a cell of part 1, listed after part 3's matches and tagged
+    page.click("#focused-cell")
+    page.fill("#focused-cell", "HSPC_Young_1#AAAGG")
+    page.wait_for_function("document.querySelector('.name-picker-option.outside') !== null", timeout=60000)
+    time.sleep(0.5)
+    capture_union(sh, page, "focus-outside-picker", ["#focused-cell", ".name-picker:has(#focused-cell) .name-picker-menu"],
+                  pad=6)
+    sh.log.append("focus-outside: picker = " + " | ".join(page.evaluate(
+        "[...document.querySelectorAll('.name-picker-option')].slice(0, 8).map(li => li.textContent)")))
+    page.context.close()
+
+
+def draw_tooltip(path, anchor, text, scale):
+    """Draw a browser-style tooltip with `text` under `anchor` (x0, y0, x1, y1 in image
+    pixels). Headless Chromium does not render native `title` tooltips into
+    screenshots, so the badge's real title text is drawn into the shot."""
+    im = Image.open(path).convert("RGB")
+    font = _font(int(11 * scale))
+    lines = []
+    for para in text.split("\n"):
+        words, line = para.split(" "), ""
+        for w in words:
+            trial = (line + " " + w).strip()
+            if font.getlength(trial) > 430 * scale and line:
+                lines.append(line)
+                line = w
+            else:
+                line = trial
+        lines.append(line)
+    pad, lh = int(6 * scale), int(15 * scale)
+    width = int(max(font.getlength(l) for l in lines)) + 2 * pad
+    height = lh * len(lines) + 2 * pad
+    x0 = int(min(max(0, anchor[0]), im.width - width - 2))
+    y0 = int(anchor[3] + 4 * scale)
+    canvas = Image.new("RGB", (max(im.width, x0 + width + 2), max(im.height, y0 + height + 2)), "white")
+    canvas.paste(im, (0, 0))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle([x0, y0, x0 + width, y0 + height], fill=(255, 255, 225), outline=(118, 118, 118))
+    for i, l in enumerate(lines):
+        d.text((x0 + pad, y0 + pad + i * lh), l, fill=(0, 0, 0), font=font)
+    canvas.save(path)
+
+
+def shoot_subset_balanced_parts(sh, data_dir):
+    """A late part of a balanced partition: the small cell types are used up."""
+    D = ds("bm_aging.zarr", data_dir)
+    v = view(split("horizontal", tile("cell-plot-SB"), tile("cell-table-SC")),
+             {"cell-plot-SB": cell_plot("cell-plot-SB", "Cell type", {"type": "obs", "key": "highres_celltype", "column": ""}),
+              "cell-table-SC": {"id": "cell-table-SC", "title": "Cell table",
+                                "columns": [{"type": "obs", "key": "highres_celltype", "column": ""}]}})
+    v["subset"] = {"n": 1000, "seed": 0, "balance": "highres_celltype", "part": 6}
+    v = save_view("subset-balanced-part", v)
+    page = sh.open(v, dataset=D)
+    page.wait_for_selector("#subset-parts:not([hidden])", timeout=60000)
+    sh.ready(page)
+    page.mouse.move(0, 0)
+    title = page.get_attribute("#subset-button", "title")
+    sh.log.append("subsets: balanced late part tooltip = " + title.replace("\n", " | "))
+    sh.log.append("subsets: balanced late part = part " + page.input_value("#subset-part-input")
+                  + " of " + page.text_content("#subset-part-count"))
+    name = "subsets-balanced-late-part"
+    capture_union(sh, page, name, ["#dataset-stats", T("cell-plot-SB")], pad=4)
+    # hang the tooltip under the badge, right of the part stepper so it stays readable
+    box = page.locator("#subset-button").bounding_box()
+    parts = page.locator("#subset-parts").bounding_box()
+    region = [page.locator(s_).first.bounding_box() for s_ in ("#dataset-stats", T("cell-plot-SB"))]
+    x0 = max(0, min(b["x"] for b in region) - 4)
+    y0 = max(0, min(b["y"] for b in region) - 4)
+    anchor = ((parts["x"] + parts["width"] + 8 - x0) * DSF, (box["y"] - y0) * DSF,
+              (box["x"] - x0 + box["width"]) * DSF, (box["y"] - y0 + box["height"]) * DSF)
+    draw_tooltip(OUT / f"{name}.png", anchor, title, DSF)
+    finish(OUT / f"{name}.png")
+    page.context.close()
+
+
 STEPS = {"interface": shoot_interface, "focus": shoot_focus, "plots": shoot_plots,
          "colour": shoot_colour, "tables": shoot_tables, "panelsets": shoot_panelsets,
          "share": shoot_share, "export": shoot_export, "spatial": shoot_spatial,
-         "subsets": shoot_subsets}
+         "subsets": shoot_subsets, "subsets-balanced": shoot_subset_balanced_parts,
+         "focus-outside": shoot_focus_outside}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

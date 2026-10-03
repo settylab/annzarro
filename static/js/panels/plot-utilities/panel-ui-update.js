@@ -92,6 +92,9 @@ export function chooseDefaultAxes(plotType, datasetStructure) {
   };
 }
 
+/** What a cell's label adds when the subset does not show it. */
+export const NOT_SHOWN = ' (not shown)';
+
 /**
  * The label of an axis column option that follows the focused cell or gene.
  * One wording everywhere: the menus said "Focused cell to X" when built and
@@ -101,8 +104,10 @@ export function chooseDefaultAxes(plotType, datasetStructure) {
  * @returns {string}
  */
 export function focusedOptionLabel(entity, name, locked = false) {
-  // a locked axis names the entity it is locked to, and says so
-  return `${locked ? 'Locked' : 'Focused'} ${entity === 'cells' ? 'cell' : 'gene'} ${name}`;
+  // a locked axis names the entity it is locked to, and says so; and a cell
+  // the subset does not show, so (main.js relabels once that is known)
+  const label = `${locked ? 'Locked' : 'Focused'} ${entity === 'cells' ? 'cell' : 'gene'} ${name}`;
+  return entity === 'cells' && DataManager.cellShown(name) === false ? `${label}${NOT_SHOWN}` : label;
 }
 
 /**

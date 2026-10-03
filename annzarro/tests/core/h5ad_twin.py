@@ -30,7 +30,8 @@ def _attrs(src, dst):
 
 def _copy(src, dst, sparse=False):
     _attrs(src, dst)
-    for name, member in src.members():
+    # zarr 3 lists a group's members with members(), zarr 2 with items()
+    for name, member in (src.members() if hasattr(src, "members") else src.items()):
         if isinstance(member, zarr.Group):
             enc = member.attrs.get("encoding-type")
             _copy(member, dst.create_group(name), sparse=enc in ("csr_matrix", "csc_matrix"))

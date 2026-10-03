@@ -220,6 +220,31 @@ body {
     color: #664d03;
     font-weight: 600;
 }
+.subset-parts { margin-left: 0.35rem; white-space: nowrap; font-size: 0.78rem; }
+/* Through Bootstrap's button variables: a plain border rule lost to .btn's
+   hover/focus/active border colours (transparent), so a focused › looked flat,
+   like a disabled control. Enabled: grey border in every state; disabled: faint. */
+.btn.subset-part-step {
+    --bs-btn-padding-x: 0.35rem;
+    --bs-btn-padding-y: 0;
+    --bs-btn-color: #495057;
+    --bs-btn-border-color: #adb5bd;
+    --bs-btn-hover-color: #212529;
+    --bs-btn-hover-bg: #e9ecef;
+    --bs-btn-hover-border-color: #6c757d;
+    --bs-btn-active-color: #212529;
+    --bs-btn-active-bg: #dee2e6;
+    --bs-btn-active-border-color: #6c757d;
+    --bs-btn-disabled-color: #adb5bd;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #dee2e6;
+    --bs-btn-disabled-opacity: 1;
+    --bs-btn-focus-box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.35);
+    line-height: 1.2;
+    border-radius: 0.6rem;
+}
+.subset-part-input { width: 4.5em; padding: 0 0.2rem; font-size: 0.78rem; border: 1px solid #adb5bd; border-radius: 0.3rem; }
+.subset-part-label { margin: 0 0.15rem; }
 .subset-dialog .subset-disabled { opacity: 0.5; }
 .subset-preview { min-height: 2.5em; white-space: pre-line; }
 
@@ -1686,11 +1711,18 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .name-picker-option {
+    display: flex;
+    align-items: center;
     padding: 6px 12px;
     white-space: nowrap;
+    cursor: pointer;
+}
+
+/* a long name is cut, never the "not shown" tag after it */
+.name-picker-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: pointer;
 }
 
 .name-picker-option.selected {
@@ -1701,6 +1733,28 @@ button.dtsb-button.dtsb-clear:hover {
 .name-picker-option:hover {
     background-color: #0d6efd;
     color: #fff;
+}
+
+/* A cell the subset does not show: still pickable, and tagged */
+.name-picker-tag {
+    flex: none;
+    margin-left: 8px;
+    padding: 0 5px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-size: 0.75em;
+    opacity: 0.7;
+}
+
+/* Beside the focused cell in the header when the subset does not show it */
+.focus-outside-badge {
+    align-self: center;
+    margin-left: 4px;
+    white-space: nowrap;
+    color: #495057;
+    background-color: #e9ecef;
+    border: 1px solid #ced4da;
+    font-weight: normal;
 }
 
 /* Dataset selector should have a moderate width */

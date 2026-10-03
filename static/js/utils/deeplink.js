@@ -59,11 +59,14 @@
  *   }
  *
  *   <node> :=
- *     { type: 'tile',     id: '<type>-<n>', controlsVisible?: bool }
+ *     { type: 'tile',     id: '<type>-<n>', controlsVisible?: bool, height?: px }
  *   | { type: 'selector' }
- *   | { type: 'split', direction: 'horizontal'|'vertical',
+ *   | { type: 'split', direction: 'horizontal'|'vertical', height?: px,
  *       panes: [ {percentage, controlsVisible?}, {percentage, controlsVisible?} ],
  *       children: [ <node>, <node> ] }
+ *
+ *   `height` is read on top-level nodes only: the height of the panel row
+ *   (its .panel-wrapper); missing, the default panel height.
  *
  *   A tile's panel TYPE is encoded in its id prefix (`cell-plot-1718…` → type
  *   `cell-plot`), matching how restoreLayout derives it — see panelTypeFromTileId.

@@ -36,6 +36,14 @@ Paths
   refused with `400` `bad_indices`; it is never widened to "everything". An index at or beyond
   the length of its axis is refused with `400` `index_out_of_range`.
 
+`dataset_rows`
+: Rows of the dataset, in the same forms as `rows`, on `/data/X`, `/data/layer/<k>`,
+  `/data/obs`, `/data/obsm/<k>` and `/data/obsp/<k>`. It differs from `rows` only under a cell
+  subset, where `rows` are positions among the cells shown and `dataset_rows` can name a cell
+  the subset does not show ({ref}`http-outside-cells`). It is checked against the dataset's
+  cell count. Sending it with `rows` is `400 rows_conflict`; any other data route refuses it
+  with `400 dataset_rows_unsupported` instead of ignoring it.
+
 `format=f32`
 : Ask for the binary encoding of a numeric slice ({doc}`wire-format`). Accepted on `/data/X`,
   `/data/layer/<k>`, `/data/obsm/<k>`, `/data/varm/<k>`, `/data/obsp/<k>`, `/data/varp/<k>`, and on
@@ -218,11 +226,25 @@ A subset is described by a spec, sent as the `subset=` query parameter (compact 
 `not_in`, `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`). The same spec selects the same cells on
 every machine and release.
 
-`GET /data/subset?dataset_path=&subset=` resolves a spec and describes it:
+`"part": j` (0-based, default 0) selects part j of the partition of the eligible cells into
+`ceil(eligible / n)` disjoint parts, which together hold every eligible cell once. Part 0 is the
+spec without `part`, and its `key` is written without it. Every route that takes `subset=` takes
+the part; a part past the last is `400 part_out_of_range`.
+
+`GET /data/subset?dataset_path=&subset=` resolves a spec and describes it. The reply has `n`
+(cells in this part), `n_total`, `n_eligible`, `part`, `parts` (the number of parts) and, for a
+balanced spec, per group `total`, `shown` (in this part) and `before` (in parts 0..part-1):
 
 ```console
 $ curl -s "http://127.0.0.1:8812/api/v1/data/subset?dataset_path=$DS&subset=%7B%22n%22%3A300%2C%22seed%22%3A0%2C%22balance%22%3A%22Age%22%7D"
-{"defaults":{"seed":0,"size":100000,"threshold":200000},"groups":{"Mid":{"shown":100,"total":2057},"Old":{"shown":100,"total":3116},"Young":{"shown":100,"total":2917}},"key":"{\"n\":300,\"seed\":0,\"balance\":\"Age\"}","n":300,"n_eligible":8090,"n_total":8090,"subset":{"balance":"Age","n":300,"seed":0}}
+{"defaults":{"seed":0,"size":100000,"threshold":200000},"groups":{"Mid":{"before":0,"shown":100,"total":2057},"Old":{"before":0,"shown":100,"total":3116},"Young":{"before":0,"shown":100,"total":2917}},"key":"{\"n\":300,\"seed\":0,\"balance\":\"Age\"}","n":300,"n_eligible":8090,"n_total":8090,"part":0,"parts":27,"subset":{"balance":"Age","n":300,"seed":0}}
+```
+
+The last of the 27 parts (`"part": 26`) holds the 290 cells left; the 2,057 Mid cells were all
+shown by earlier parts, so it is Old and Young only:
+
+```text
+"groups":{"Mid":{"before":2057,"shown":0,"total":2057},"Old":{"before":2872,"shown":244,"total":3116},"Young":{"before":2871,"shown":46,"total":2917}},"n":290,"part":26,"parts":27
 ```
 
 With `subset=` the cell-axis routes (`/data/cells`, `/data/obs`, `/data/obsm`, `/data/obsp`,
@@ -237,6 +259,60 @@ chunk at a time and only the wanted names are decoded, so naming the 100,000 cel
 refuse one with `400 subset_unsupported`. A malformed spec is `400 bad_subset` (it never falls
 back to every cell); a `where` or `balance` column the dataset does not have is `404
 key_not_found`.
+
+`/data/subset` also lists what this server's cell-axis routes understand beyond `rows=`:
+`"features": ["dataset_rows", "locate", "names_scope"]`. A client sends the parameters below
+only to a server that lists them (an older server would ignore `dataset_rows` and answer for
+every row).
+
+(http-outside-cells)=
+### A cell the subset does not show
+
+A focused or locked cell from another part, or one a `where` filter leaves out, is still a
+cell of the dataset, and its rows mean something over the cells shown: its kNN or diffusion row
+coloured over them, its own expression row. `rows=` cannot name it, so the cell-axis routes take
+its dataset row as `dataset_rows=`. An obsp row comes back over the subset's cells, exactly as
+a shown cell's row does; a layer or `X` row is the cell's own; `cols` of obsp stay positions
+among the cells shown. Here part 2 of `{"n":3000,"seed":0}` on `bm_aging.zarr`, and dataset
+row 1, a cell of part 1:
+
+```console
+$ curl -s "http://127.0.0.1:8812/api/v1/data/names?dataset_path=$DS&subset=$S&entity=cells&q=HSPC_Young_1%23AAAGGATTCAAACCCA-1&mode=exact"
+{"matches":[],"total":3000,"truncated":false}
+
+$ curl -s "http://127.0.0.1:8812/api/v1/data/names?dataset_path=$DS&subset=$S&entity=cells&q=HSPC_Young_1%23AAAGGATTCAAACCCA-1&mode=exact&scope=dataset"
+{"matches":[{"index":null,"name":"HSPC_Young_1#AAAGGATTCAAACCCA-1","row":1}],"total":8090,"truncated":false}
+
+$ curl -s -D - -o row.bin "http://127.0.0.1:8812/api/v1/data/obsp/diffusion_walk_t5?dataset_path=$DS&subset=$S&dataset_rows=1&format=f32"
+X-Annzarro-Shape: 1,3000
+X-Annzarro-Encoding: sparse
+X-Annzarro-Nnz: 1097
+Content-Length: 8776
+```
+
+(`$S` is the URL-encoded spec `{"n":3000,"seed":0,"part":1}`; other headers omitted.) The
+walk from that cell reaches 1,097 of the 3,000 cells of part 2. Without a subset `dataset_rows`
+is the same as `rows`. A shown cell reads byte for byte the same either way, but the two URLs
+have their own `ETag`s.
+
+`/data/names` (the typeahead behind the header pickers) answers `{"matches": [{"name",
+"index", "row"}], "truncated", "total"}`: `index` is the position among the cells shown, `row`
+the dataset row (the same without a subset). Under a subset it searches the shown cells only;
+`scope=dataset` searches every cell of the dataset, and a cell not shown has `"index": null`.
+The dataset-wide search uses the same name index as a request without a subset, which the
+server builds on first use (6.2 s at 50 million cells) and then keeps.
+
+`GET /data/subset/locate?dataset_path=&subset=` translates cells between the two index spaces
+without names, up to 1,000 per call: `rows=` (positions) answers `{"dataset_rows": [...]}`,
+`dataset_rows=` answers `{"rows": [...]}` with `-1` for a row the subset does not show. The
+client uses it to carry the focused and locked cells across a part step:
+
+```console
+$ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subset=$S&rows=0,1,2"
+{"dataset_rows":[0,6,7]}
+$ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subset=$S&dataset_rows=0,1,2,2991"
+{"rows":[0,-1,-1,-1]}
+```
 
 ## Dataset discovery and structure
 
@@ -311,10 +387,11 @@ one that is not a dataset `400 unsupported_type`.
 | 200 | | the slice, as JSON or binary |
 | 304 | | `If-None-Match` matched: same URL, store unchanged |
 | 400 | `bad_indices` | `rows`/`cols` present but not a list of non-negative integers, in JSON and `format=f32` alike; the message quotes the value: `Indices must be comma-separated non-negative integers, got 'abc'` (`got ''` for an empty parameter) |
-| 400 | `index_out_of_range` | an index at or beyond the length of its axis |
-| 400 | `cap_exceeded` | more indices than the client's own `max_cells=` / `max_genes=` parameter (below) |
+| 400 | `index_out_of_range` | an index at or beyond the length of its axis (for `dataset_rows`, the dataset's cell count) |
+| 400 | `cap_exceeded` | more indices than the client's own `max_cells=` / `max_genes=` parameter (below), or more than 1,000 cells in one `/data/subset/locate` call |
 | 400 | `unsupported_type` | not a `.zarr`/`.h5ad`, a zarr format the server's zarr cannot read, an h5ad written by anndata older than 0.7, or a named obs/var column or obsm/varm key whose encoding cannot be read |
-| 400 | `bad_subset`, `subset_unsupported` | a malformed `subset=` spec; a route that cannot apply a subset |
+| 400 | `bad_subset`, `subset_unsupported`, `part_out_of_range` | a malformed `subset=` spec; a route that cannot apply a subset; a `part` past the last part |
+| 400 | `rows_conflict`, `dataset_rows_unsupported` | `rows` and `dataset_rows` in one request; `dataset_rows` on a route that does not read cells by dataset row |
 | 400 | (none) | a required parameter is missing, e.g. `{"error":"dataset_path parameter is required"}` |
 | 401 | (none) | login on, no session; checked first |
 | 403 | `outside_data_dir` | hosted server, local path outside the data directory and `allowed_dirs` (the message names no server directories) |

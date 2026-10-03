@@ -29,6 +29,17 @@ export function aspectUpdate(settings) {
   return { 'yaxis.scaleanchor': on ? 'x' : null, 'yaxis.scaleratio': on ? 1 : null };
 }
 
+/**
+ * An axis title: the user's own (Plot Options, or a view link's
+ * xaxisTitle / yaxisTitle / zaxisTitle), else type.key.column.
+ */
+export function axisTitle(settings, axis) {
+  const custom = settings[`${axis}axisTitle`];
+  if (custom) return custom;
+  const a = settings[axis];
+  return `${a.type}.${a.key}` + (a.column ? `.${a.column}` : '');
+}
+
 export function createLayout(settings) {
   // Base axis settings for both 2D and 3D axes.
   const baseAxis = {
@@ -51,14 +62,14 @@ export function createLayout(settings) {
     xaxis: {
       ...baseAxis,
       title: {
-        text: `${settings.x.type}.${settings.x.key}` + (settings.x.column ? `.${settings.x.column}` : ''),
+        text: axisTitle(settings, 'x'),
         font: {}
       }
     },
     yaxis: {
       ...baseAxis,
       title: {
-        text: `${settings.y.type}.${settings.y.key}` + (settings.y.column ? `.${settings.y.column}` : ''),
+        text: axisTitle(settings, 'y'),
         font: {}
       },
       ...(settings.equalAspect && !settings.z ? { scaleanchor: 'x', scaleratio: 1 } : {})
@@ -79,7 +90,7 @@ export function createLayout(settings) {
       zaxis: {
         ...baseAxis,
         title: {
-          text: `${settings.z.type}.${settings.z.key}` + (settings.z.column ? `.${settings.z.column}` : ''),
+          text: axisTitle(settings, 'z'),
           font: {}
         }
       }

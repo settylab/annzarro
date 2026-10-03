@@ -144,7 +144,7 @@ def test_subset_cells_does_not_read_every_name(client, monkeypatch):
     found = test_client.get("/api/v1/data/names", query_string={
         "dataset_path": path, "entity": "cells", "q": _names(N_OBS)[rows[5]], "mode": "exact",
         "subset": json.dumps(spec)}).get_json()
-    assert found["matches"] == [{"name": _names(N_OBS)[rows[5]], "index": 5}]
+    assert found["matches"] == [{"name": _names(N_OBS)[rows[5]], "index": 5, "row": int(rows[5])}]
 
 
 def test_h5ad_names_by_index(tmp_path):

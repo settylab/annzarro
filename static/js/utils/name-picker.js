@@ -17,14 +17,17 @@
  * Ask the server for names matching `query`.
  * @param {string} url - the /data/names endpoint
  * @param {{datasetPath:string, entity:'cells'|'genes', query:string,
- *          mode?:string, limit?:number, signal?:AbortSignal, subset?:string|null}} opts
- *   subset: the cell subset parameter in effect; cells outside it are not
- *   matched, and indices are positions in it
- * @returns {Promise<{matches:Array<{name:string,index:number}>, truncated:boolean, total:number}>}
+ *          mode?:string, limit?:number, signal?:AbortSignal, subset?:string|null,
+ *          scope?:'subset'|'dataset'}} opts
+ *   subset: the cell subset parameter in effect; indices are positions in it.
+ *   scope: 'subset' (default) matches only the cells it shows; 'dataset'
+ *   matches every cell, with index null for one the subset does not show
+ * @returns {Promise<{matches:Array<{name:string,index:number|null,row:number}>, truncated:boolean, total:number}>}
  */
-export async function fetchNameMatches(url, { datasetPath, entity, query, mode = 'substring', limit = 50, signal = null, subset = null }) {
+export async function fetchNameMatches(url, { datasetPath, entity, query, mode = 'substring', limit = 50, signal = null, subset = null, scope = 'subset' }) {
     const params = new URLSearchParams({ dataset_path: datasetPath, entity, q: query, mode, limit: String(limit) });
     if (subset && entity === 'cells') params.set('subset', subset);
+    if (subset && entity === 'cells' && scope === 'dataset') params.set('scope', 'dataset');
     const resp = await fetch(`${url}?${params}`, { signal });
     let body;
     try { body = await resp.json(); } catch { body = null; }
@@ -34,6 +37,33 @@ export async function fetchNameMatches(url, { datasetPath, entity, query, mode =
         throw err;
     }
     return body;
+}
+
+/**
+ * The cells a subset shows first, then the dataset's other matches, each
+ * marked `outside` (not shown). Every match appears once (by dataset row,
+ * or by name from an older server), and at most `limit` are kept.
+ * @param {{matches:Array, truncated:boolean}} shown - a subset-scoped reply
+ * @param {{matches:Array, truncated:boolean}} all - a dataset-scoped reply
+ * @param {number} limit
+ */
+export function mergeScopedMatches(shown, all, limit) {
+    const seen = new Set();
+    const id = m => (typeof m.row === 'number' ? `#${m.row}` : `=${m.name}`);
+    const out = [];
+    for (const m of (shown && shown.matches) || []) {
+        seen.add(id(m));
+        out.push(m);
+    }
+    let dropped = false;
+    for (const m of (all && all.matches) || []) {
+        if (seen.has(id(m)) || m.index !== null) continue;
+        if (out.length >= limit) { dropped = true; break; }
+        seen.add(id(m));
+        out.push({ ...m, outside: true });
+    }
+    return { matches: out.slice(0, limit),
+             truncated: !!((shown && shown.truncated) || (all && all.truncated) || dropped || out.length > limit) };
 }
 
 export class NameSearchModel {
@@ -50,6 +80,7 @@ export class NameSearchModel {
         this.highlighted = -1;
         this.query = '';
         this.regex = false;
+        this.onUpdate = null;   // called when later results replace the list
     }
 
     /** Run a query; resolves to true if its results became the current state. */
@@ -76,7 +107,26 @@ export class NameSearchModel {
         this.truncated = !!(result && result.truncated);
         this.error = null;
         this.highlighted = this.items.length ? 0 : -1;
+        if (result && result.more) this._extend(seq, result.more);
         return true;
+    }
+
+    /**
+     * Results that arrive later for the same query (the cells a subset does
+     * not show, from a slower dataset-wide search): replace the list, keep
+     * the highlighted name, and call onUpdate.
+     * @private
+     */
+    _extend(seq, more) {
+        Promise.resolve(more).then(result => {
+            if (seq !== this._seq || !result) return;
+            const current = this.current();
+            this.items = result.matches || [];
+            this.truncated = !!result.truncated;
+            const keep = current ? this.items.findIndex(m => m.name === current.name) : -1;
+            this.highlighted = keep >= 0 ? keep : (this.items.length ? 0 : -1);
+            if (this.onUpdate) this.onUpdate();
+        }, () => {});   // the shown cells' matches stand on their own
     }
 
     move(delta) {
@@ -109,7 +159,8 @@ let _pickerCount = 0;
  * @param {HTMLInputElement} opts.input
  * @param {string} opts.noun - 'cell' or 'gene', for messages
  * @param {(query:string, opts:{regex:boolean, signal:AbortSignal|null}) => Promise} opts.search
- * @param {(name:string) => void} opts.onPick - called with the chosen name
+ * @param {(name:string, item:Object) => void} opts.onPick - called with the chosen name
+ *   and its match ({name, index, row, outside?})
  * @param {number} [opts.debounceMs=120]
  * @returns {{setValue:(name:string|null)=>void, reset:()=>void, model:NameSearchModel, close:()=>void}}
  */
@@ -121,6 +172,7 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
     let timer = null;
     let open = false;
 
+    model.onUpdate = () => { if (open) render(); };
     const wrapper = input.parentElement;
     wrapper.classList.add('name-picker');
 
@@ -163,8 +215,20 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
                 + (item.name === committed ? ' selected' : '');
             li.setAttribute('role', 'option');
             li.setAttribute('aria-selected', i === model.highlighted ? 'true' : 'false');
-            li.textContent = item.name;
+            const label = doc.createElement('span');
+            label.className = 'name-picker-name';
+            label.textContent = item.name;
+            li.appendChild(label);
             li.title = item.name;
+            if (item.outside) {
+                // in the dataset, but not among the cells shown
+                li.classList.add('outside');
+                const tag = doc.createElement('span');
+                tag.className = 'name-picker-tag';
+                tag.textContent = 'not shown';
+                li.appendChild(tag);
+                li.title = `${item.name} (not among the shown cells)`;
+            }
             li.dataset.index = String(i);
             list.appendChild(li);
         });
@@ -223,7 +287,7 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
         committed = item.name;
         input.value = item.name;
         close();
-        onPick(item.name);
+        onPick(item.name, item);
     }
 
     // Focusing the box, or clicking it again after a pick (it keeps focus),

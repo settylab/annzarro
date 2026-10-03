@@ -728,37 +728,66 @@ const PanelManager = (function() {
             // on exactly which tiles a hierarchy opens.
             collectTileIds(layout.hierarchy).forEach(id => panelIdsInLayout.add(id));
             
-            // First pass: Build the DOM layout structure without initializing panels
-            const rebuiltNodes = layout.hierarchy.map(node => 
-                LayoutManager.rebuildLayoutFromHierarchy(
-                    node, 
-                    _container,
+            // First pass: Build the DOM layout structure without initializing panels.
+            // Each top-level node goes in a sized .panel-wrapper with its height
+            // handle, as the bottom chooser makes it. Rebuilt bare into the flex
+            // column, the tiles shrank together with the chooser, and a plot
+            // drawn into that space ran under it. `height` (px) is what the
+            // wrapper had; older layouts without it get the default height.
+            // A top-level selector node is the bottom chooser itself: rebuilt
+            // through the layout callback it became a pane chooser that fills
+            // the container. It is skipped here and the welcome-variant chooser
+            // is appended below; selectors nested in split panes stay pane
+            // choosers.
+            const topLevel = layout.hierarchy.filter(node => node && node.type !== 'selector');
+            topLevel.forEach(node => {
+                const wrapper = LayoutManager.createPanelWrapper(_container, null, node.height);
+                const built = LayoutManager.rebuildLayoutFromHierarchy(
+                    node,
+                    wrapper,
                     // Callback to create a tile element
                     (id) => _createTileElement(id),
                     // Empty callback - we'll initialize panels in second pass
                     () => {}
-                )
-            );
-            
-            // The bottom "Create New Panel" chooser is restored only when the
-            // hierarchy lists it. Layouts saved by the app always do, but a
-            // hand-written link or an older panel set may not, and the chooser
-            // then never came back. Add it when the hierarchy has none.
-            const hasSelector = (nodes) => nodes.some(n => n && (n.type === 'selector' ||
-                (Array.isArray(n.children) && hasSelector(n.children))));
-            if (_container && !hasSelector(layout.hierarchy)) {
-                LayoutManager.rebuildLayoutFromHierarchy(
-                    { type: 'selector' },
-                    _container,
-                    (id) => _createTileElement(id),
-                    () => {}
                 );
+                if (node.type === 'tile' && built) {
+                    built.style.width = '100%';
+                    built.style.height = '100%';
+                    wrapper.dataset.wrapperId = node.id;
+                }
+            });
+
+            // Every restored layout ends with exactly one bottom chooser, whether
+            // or not the hierarchy listed it: a hand-written link or an older
+            // panel set may not, and the chooser then never came back.
+            if (_container) {
+                _welcomeSelectionTile = new SelectionTile({
+                    container: _container,
+                    variant: "welcome",
+                    showSessions: false,
+                    panels: _panels,
+                    activePanels: _activePanels,
+                    layoutManager: LayoutManager,
+                    createPanel: createPanel,
+                    panelsByType: _panelsByType,
+                    generateUniqueName: _generateUniqueName,
+                    sessionManager: window.sessionManager
+                });
+                // below restored panels it is "Create New Panel", as after
+                // picking a first panel; with none, the welcome header stays
+                if (topLevel.length > 0) {
+                    _welcomeSelectionTile.hideHeader();
+                    const cloneSection = _welcomeSelectionTile.tileSelector
+                        .querySelector(`#clone-panel-section-${_welcomeSelectionTile.selectionId}`);
+                    if (cloneSection) cloneSection.style.display = 'block';
+                }
             }
 
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
                 const container = handle.parentElement;
-                const panes = container.querySelectorAll('.split-pane');
+                // its own two panes; a nested split's would make it four
+                const panes = LayoutManager.childPanes(container);
                 
                 if (panes.length === 2) {
                     const direction = container.dataset.splitDirection;
