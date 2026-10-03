@@ -271,13 +271,15 @@ def test_automatic_point_style(server):
             assert page.input_value(size_box) == "5"
             assert "is-auto" in page.get_attribute(size_box, "class")
             assert "auto" in page.get_attribute(size_box, "title")
-            assert "active" in page.get_attribute(f"#point-auto-{PID}", "class")
+            assert "active" in page.get_attribute(f"#point-size-auto-{PID}", "class")
+            assert "active" in page.get_attribute(f"#point-opacity-auto-{PID}", "class")
 
             _type(page, size_box, 2.5)
             assert _marker(page)["size"] == 2.5
             assert "is-auto" not in page.get_attribute(size_box, "class")
             assert "is-auto" in page.get_attribute(opacity_box, "class"), "opacity is still automatic"
-            assert "active" not in page.get_attribute(f"#point-auto-{PID}", "class")
+            assert "active" not in page.get_attribute(f"#point-size-auto-{PID}", "class")
+            assert "active" in page.get_attribute(f"#point-opacity-auto-{PID}", "class")
 
             # a refresh redraws (and recomputes automatic values): the user's size stays
             page.click(f"#refresh-plot-{PID}")
@@ -289,7 +291,7 @@ def test_automatic_point_style(server):
             assert (cfg["pointSize"], cfg["autoPointSize"]) == (2.5, False)
             assert (cfg["pointOpacity"], cfg["autoPointOpacity"]) == (1, True)
 
-            page.click(f"#point-auto-{PID}")
+            page.click(f"#point-size-auto-{PID}")
             page.wait_for_timeout(500)
             assert _marker(page)["size"] == 5
             assert "is-auto" in page.get_attribute(size_box, "class")

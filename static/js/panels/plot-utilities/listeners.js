@@ -200,7 +200,7 @@ export function setupPlotControlListeners(
     // one is rounded to two significant digits. The number box beside each
     // takes any value as typed (in px / alpha), also off the track's range.
     // Setting either one ends its automatic value (utils/point-style.js);
-    // the auto button brings both back.
+    // its auto button brings it back.
     const pointStyle = (name, key, autoKey, scale, valid) => {
       const $slider = $controlsContainer.find(`#${name}-${id}`);
       const $input = $controlsContainer.find(`#${name}-input-${id}`);
@@ -218,16 +218,15 @@ export function setupPlotControlListeners(
         showPointStyle(id, settings);
         redrawStyling();
       });
+      $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
+        settings[autoKey] = true;
+        applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
+        showPointStyle(id, settings);
+        redrawStyling();
+      });
     };
     pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0);
     pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1);
-    $controlsContainer.find(`#point-auto-${id}`).on('click', () => {
-      settings.autoPointSize = true;
-      settings.autoPointOpacity = true;
-      applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
-      showPointStyle(id, settings);
-      redrawStyling();
-    });
     
     // --- Hover columns: reload only those columns and relabel the traces ---
     const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);

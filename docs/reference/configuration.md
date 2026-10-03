@@ -97,7 +97,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table` | Panel types offered in "Create New Panel". |
-| `defaults.point_size`, `defaults.point_opacity` | `5`, `1.0` | Initial marker size and opacity. |
+| `defaults.point_size`, `defaults.point_opacity` | `5`, `1.0` | Marker size and opacity for a few thousand points; with more points a panel's automatic values shrink from these (see Cell and gene plots). |
 | `defaults.color_scale` | `Portland` | Initial continuous colour scale. |
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |

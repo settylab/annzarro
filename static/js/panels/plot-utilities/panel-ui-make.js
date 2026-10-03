@@ -150,15 +150,17 @@ export function createPanelStructure(container, id, settings) {
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(pointSizeScale, settings.pointSize)}" id="point-size-${id}"
                        title="Marker size in px (log scale)" aria-label="Point size (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
+                <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-size-auto-${id}"
+                      title="Automatic size: follows the number of points drawn">auto</button></span>
               </div>
               <div class="point-opacity-control">
                 <label for="point-opacity-input-${id}">Opacity:</label>
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(opacityScale, settings.pointOpacity)}" id="point-opacity-${id}"
                        title="Marker opacity (log scale)" aria-label="Point opacity (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" max="1" step="any" value="${settings.pointOpacity}" id="point-opacity-input-${id}" title="Marker opacity, 0 to 1">
+                <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-opacity-auto-${id}"
+                      title="Automatic opacity: follows the number of points drawn">auto</button></span>
               </div>
-              <button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-auto-${id}"
-                      title="Size and opacity follow the number of points drawn">auto</button>
             </div>
 
             <div class="color-range-controls" id="color-range-container-${id}" style="display:none;">
