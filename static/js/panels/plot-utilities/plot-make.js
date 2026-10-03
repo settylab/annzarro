@@ -1,6 +1,6 @@
 import { DataManager } from '../../data-manager.js';
 import { notInSubsetLabel } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -1111,12 +1111,17 @@ export function panelLoadCoverage(data, settings, unit) {
  * to what was left, so toggling Hide Outliers zoomed the plot. While either
  * is on, the 2D axes are pinned to the extent of ALL points (with Plotly-
  * like 5% padding); with both off, autorange is back.
+ *
+ * A zoom or pan the user chose comes first: the axes stay where the user put
+ * them. Returning autorange here reset that view on every recolour.
  * @param {Object} data - plot data (x.values, y.values)
  * @param {Object} settings
  * @returns {Object|null} relayout keys, or null for 3D plots
  */
 export function stableAxisRanges(data, settings) {
   if (settings.z) return null;
+  const kept = keptViewRanges(settings);
+  if (kept) return kept;
   if (!(settings.hideNaN || settings.hideOutliers)) {
     return { 'xaxis.autorange': true, 'yaxis.autorange': true };
   }
