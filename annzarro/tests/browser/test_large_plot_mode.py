@@ -15,7 +15,8 @@ headless Chromium session then:
    what is not available and the ways out.
 
 Needs Playwright with Chromium (``pip install playwright && playwright install
-chromium``); skipped otherwise.
+chromium``); skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1 (set in CI),
+where a missing Playwright is an error.
 """
 import base64
 import json
@@ -29,7 +30,10 @@ import urllib.request
 
 import pytest
 
-playwright = pytest.importorskip("playwright.sync_api")
+if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
+    import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
+else:
+    playwright = pytest.importorskip("playwright.sync_api")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(HERE), "data")
@@ -51,7 +55,8 @@ def server(tmp_path_factory):
     port = _free_port()
     exe = shutil.which("annzarro", path=os.path.dirname(sys.executable)) or shutil.which("annzarro")
     if not exe:
-        pytest.skip("annzarro console script not found")
+        (pytest.fail if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1" else pytest.skip)(
+            "annzarro console script not found")
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1")
     proc = subprocess.Popen([exe, "start", "--config", str(cfg), "--host", "127.0.0.1", "--port", str(port),
                              "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
