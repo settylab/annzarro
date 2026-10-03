@@ -848,13 +848,19 @@ class SubsetView:
 
     def get_X(self, dataset_path=None, row_indices=None, col_indices=None):
         return self._matrix(lambda rows: self._reader.get_X(dataset_path, rows, col_indices),
-                            row_indices)
+                            row_indices, col_indices)
 
     def get_layer(self, layer_name, dataset_path=None, row_indices=None, col_indices=None):
         return self._matrix(lambda rows: self._reader.get_layer(layer_name, dataset_path, rows, col_indices),
-                            row_indices)
+                            row_indices, col_indices)
 
-    def _matrix(self, read, row_indices):
+    def _matrix(self, read, row_indices, col_indices=None):
         if row_indices is not None:
             return read(self.subset.to_rows(row_indices))
+        if col_indices is not None:
+            # A few columns (a gene's column): ask the reader for the subset's
+            # rows of them. For sparse matrices only those rows are kept
+            # (ZarrReader._rows_of_major_slices) instead of a 50-million-row
+            # column built, cached and then cut.
+            return read(self.subset.indices.tolist())
         return _take_rows(read(None), self.subset.indices)

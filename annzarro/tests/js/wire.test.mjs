@@ -297,3 +297,21 @@ test('a failed shared request rejects every waiter and is not cached', async () 
     pending[1].resolve(jsonResponse({ ok: 1 }));
     assert.deepEqual(await c, { ok: 1 });
 });
+
+test('loadUns does not ask for a key the dataset structure does not list', async () => {
+    CacheManager.clear();
+    const calls = installFetch([
+        ['/api/v1/data/dataset_structure', () => jsonResponse({ shape: [4, 3], uns: { available: true, keys: ['leiden_colors', 'neighbors'] } })],
+        ['/api/v1/data/uns/', () => jsonResponse({ data: ['#ff0000', '#00ff00'] })],
+    ]);
+    const missing = await DataManager.loadUns({ datasetPath: DS, unsKey: 'cell_line_id_colors' });
+    assert.deepEqual(missing.data, []);
+    assert.equal(missing.missing, true);
+    assert.ok(!calls.some(c => c.url.includes('/data/uns/')), 'no request for a key that is not there');
+    const found = await DataManager.loadUns({ datasetPath: DS, unsKey: 'leiden_colors' });
+    assert.deepEqual(found.data, ['#ff0000', '#00ff00']);
+    const nested = await DataManager.loadUns({ datasetPath: DS, unsKey: 'neighbors/params' });
+    assert.ok(calls.some(c => c.url.includes('/data/uns/neighbors/params')), 'nested keys are checked by their top level');
+    assert.ok(nested);
+});
+

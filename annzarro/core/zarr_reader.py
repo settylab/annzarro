@@ -960,6 +960,55 @@ class ZarrReader(CacheSettings):
         return sp.csr_matrix((data, inner, new_indptr),
                              shape=(len(indices), n_cols))
 
+    def _rows_of_major_slices(self, matrix, shape, major, minor, axis):
+        """
+        ``M[minor, major]`` of a CSC group (axis='col': ``major`` columns,
+        ``minor`` rows) or ``M[major, minor]`` of a CSR one (axis='row'),
+        without building the major slices whole.
+
+        A gene column of a cell subset is the case: 100,000 rows of a column
+        of 50 million cells. Building the column first and cutting it after
+        made a 50-million-row slice, 200 MB dense, cached as such, for every
+        gene. Here each major slice's stored entries are read a block at a
+        time (``_SCAN_BLOCK``) and only those whose minor index is selected
+        are kept, so memory is one block plus the result. ``minor`` may be in
+        any order and repeat; the result is what slicing the full matrix
+        returns.
+        """
+        indptr = matrix['indptr']
+        data_z, idx_z = matrix['data'], matrix['indices']
+        n_minor = int(shape[0] if axis == 'col' else shape[1])
+        want, inverse = np.unique(np.asarray(minor, dtype=np.int64), return_inverse=True)
+        if want.size and (want[0] < 0 or want[-1] >= n_minor):
+            bad = int(want[0] if want[0] < 0 else want[-1])
+            raise IndexError(f"index {bad} is out of range for size {n_minor}")
+        block = self._SCAN_BLOCK
+        positions, majors, values = [], [], []
+        for n, k in enumerate(major):
+            k = int(k)
+            s, e = (int(v) for v in indptr[k:k + 2])
+            for b in range(s, e, block):
+                stop = min(b + block, e)
+                idx = np.asarray(idx_z[b:stop], dtype=np.int64)
+                at = np.searchsorted(want, idx)
+                hit = at < want.size
+                hit[hit] = want[at[hit]] == idx[hit]
+                if not hit.any():
+                    continue
+                positions.append(at[hit])
+                majors.append(np.full(int(hit.sum()), n, dtype=np.int64))
+                values.append(np.asarray(data_z[b:stop])[hit])
+        dtype = data_z.dtype
+        pos = np.concatenate(positions) if positions else np.empty(0, np.int64)
+        maj = np.concatenate(majors) if majors else np.empty(0, np.int64)
+        val = np.concatenate(values) if values else np.empty(0, dtype)
+        # in the space of the unique selected minor indices, then expanded
+        if axis == 'col':
+            m = sp.csr_matrix((val, (pos, maj)), shape=(want.size, len(major)))
+            return m[inverse.reshape(-1), :]
+        m = sp.csr_matrix((val, (maj, pos)), shape=(len(major), want.size))
+        return m[:, inverse.reshape(-1)]
+
     #: Stored entries of a sparse matrix's ``indices`` scanned per block by
     #: _minor_axis_slice (rounded to whole chunks): 4M int32, 16 MB.
     _SCAN_BLOCK = 1 << 22
@@ -1079,14 +1128,16 @@ class ZarrReader(CacheSettings):
                     col_indices is not None or row_indices is not None):
                 if col_indices is None:
                     return self._minor_axis_slice(matrix, shape, row_indices, axis='row')
-                m = self._lazy_sparse_slice(matrix, shape, col_indices, axis='col')
-                return m if row_indices is None else m[row_indices, :]
+                if row_indices is not None:
+                    return self._rows_of_major_slices(matrix, shape, col_indices, row_indices, axis='col')
+                return self._lazy_sparse_slice(matrix, shape, col_indices, axis='col')
             if sparse_format == 'csr_matrix' and compressed and (
                     row_indices is not None or col_indices is not None):
                 if row_indices is None:
                     return self._minor_axis_slice(matrix, shape, col_indices, axis='col')
-                m = self._lazy_sparse_slice(matrix, shape, row_indices, axis='row')
-                return m if col_indices is None else m[:, col_indices]
+                if col_indices is not None:
+                    return self._rows_of_major_slices(matrix, shape, row_indices, col_indices, axis='row')
+                return self._lazy_sparse_slice(matrix, shape, row_indices, axis='row')
 
             # Handle CSR format
             if sparse_format == 'csr_matrix':

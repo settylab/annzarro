@@ -1144,6 +1144,21 @@ const DataManager = (function() {
             dataset_path: datasetPath || _currentDataset
         };
         
+        // A key the dataset does not have is not asked for: the plots look
+        // up `<column>_colors` for every categorical colour, and most columns
+        // have none, which logged a 404 for each. The structure lists the
+        // top-level uns keys (a server that does not say is asked as before).
+        let keys;
+        try {
+            const structure = await getDatasetStructure(params.dataset_path);
+            keys = structure && structure.uns && Array.isArray(structure.uns.keys) ? structure.uns.keys : null;
+        } catch {
+            keys = null;
+        }
+        if (keys && !keys.includes(String(unsKey).split('/')[0])) {
+            return { data: [], uns_key: unsKey, dataset_path: datasetPath, missing: true };
+        }
+
         try {
             const url = `${Config.API.UNS}/${unsKey}`;
             const data = await _fetchWithCache(url, params);

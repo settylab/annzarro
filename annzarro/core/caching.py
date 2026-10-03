@@ -420,7 +420,14 @@ def cached_method(func):
         arg = bound.arguments
 
         def idx_key(name, values):
-            return 'all' if values is None else f"{name}:{','.join(map(str, values))}"
+            if values is None:
+                return 'all'
+            if len(values) > 64:
+                # a cell subset's rows: a digest, not 100,000 numbers in the key
+                import hashlib
+                arr = np.ascontiguousarray(np.asarray(values, dtype=np.int64))
+                return f"{name}:{len(arr)}:{hashlib.sha1(arr.tobytes()).hexdigest()}"
+            return f"{name}:{','.join(map(str, values))}"
 
         dataset_path = arg.get('dataset_path')
 
