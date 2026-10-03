@@ -11,6 +11,7 @@
 import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
+import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 
@@ -31,17 +32,31 @@ const SessionManager = (function() {
     }
 
     /**
+     * The focus state a link or panel set stores. `cellRows` holds the
+     * dataset row of the focused and locked cells where it is known: a hint
+     * that finds a cell the subset does not show without a dataset-wide name
+     * lookup. Names stay authoritative; the row is checked against them.
+     * @private
+     */
+    function _constants() {
+        const constants = {
+            focusedGene: DataManager.getFocusedGene(),
+            focusedCell: DataManager.getFocusedCell(),
+            taxonomyId: DataManager.getTaxonomyId()
+        };
+        const cellRows = DataManager.cellRowHints(getFixedCells().map(c => c.cell));
+        if (Object.keys(cellRows).length) constants.cellRows = cellRows;
+        return constants;
+    }
+
+    /**
      * The current view, in exactly the form a share link encodes.
      * @returns {{v: number, constants: Object, layout: Object}}
      */
     function captureView() {
         const view = {
             v: VIEW_SCHEMA_VERSION,
-            constants: {
-                focusedGene: DataManager.getFocusedGene(),
-                focusedCell: DataManager.getFocusedCell(),
-                taxonomyId: DataManager.getTaxonomyId()
-            },
+            constants: _constants(),
             layout: PanelManager.saveLayout()
         };
         // The cells shown, so the link reopens on the same cells
@@ -130,11 +145,7 @@ const SessionManager = (function() {
             sessionData.datasetName = datasetName || '';
             
             // 2. Save focus state
-            sessionData.constants = {
-                focusedCell: DataManager.getFocusedCell(),
-                focusedGene: DataManager.getFocusedGene(),
-                taxonomyId: DataManager.getTaxonomyId()
-            };
+            sessionData.constants = _constants();
             
             // 3. We don't need to access the container directly for panel configs
             console.log('Getting panels for panel set');
@@ -543,11 +554,7 @@ const SessionManager = (function() {
             autosaveData.datasetName = datasetName || '';
             
             // Save focus state
-            autosaveData.constants = {
-                focusedCell: DataManager.getFocusedCell(),
-                focusedGene: DataManager.getFocusedGene(),
-                taxonomyId: DataManager.getTaxonomyId()
-            };
+            autosaveData.constants = _constants();
             
             // Save panel configurations
             const panelConfigs = {};

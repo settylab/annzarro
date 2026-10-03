@@ -15,6 +15,7 @@ import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
+import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 
 const App = (function() {
     // Private variables
@@ -312,18 +313,25 @@ const App = (function() {
             if (constants.focusedGene) {
                 DataManager.setFocusedGene(constants.focusedGene);
             }
+            // Dataset rows the link recorded for its cells: checked against
+            // the names, they spare a dataset-wide name lookup for a cell
+            // the subset does not show
+            DataManager.setCellRowHints(datasetPath, constants.cellRows);
             if (constants.focusedCell) {
-                if (await DataManager.resolveCellIndex(constants.focusedCell) >= 0) {
-                    DataManager.setFocusedCell(constants.focusedCell);
-                } else if (DataManager.getSubset()) {
+                // Kept also when the subset does not show it (its rows are
+                // read by dataset row); a cell the dataset lacks is focused as
+                // before, and its panels say it is not in this dataset
+                const cell = await DataManager.locateCell(constants.focusedCell);
+                if (cell && cell.unreadable) {
                     // Said once: loading the dataset may already have said it
                     if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
                         _showNotification('Focused cell not in the subset',
                             `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
-                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                            'This server cannot read a cell outside the subset.', 'warning', 8000);
                     }
                 } else {
                     DataManager.setFocusedCell(constants.focusedCell);
+                    if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
                 }
             }
             if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
@@ -439,6 +447,9 @@ const App = (function() {
         if (!datasetPath) return;
         // The view as it is (layout, panel settings, focus) on other cells:
         // only the data is read again.
+        // The focused and locked cells are found in the new subset by their
+        // dataset rows, learned now while this subset still shows them
+        await DataManager.recordCellRows(getFixedCells().map(c => c.cell));
         const view = SessionManager.captureView();
         view.subset = spec;
         const plan = panelSetToView({ dataset: datasetPath, view });
@@ -1048,6 +1059,14 @@ const App = (function() {
     // restore does not say it a second time.
     let _focusOutsideSubsetNoticed = null;
 
+    /** Say once that the focused cell is kept although the subset does not show it. */
+    function _noticeFocusOutside(name) {
+        if (_focusOutsideSubsetNoticed === name) return;
+        _focusOutsideSubsetNoticed = name;
+        _showNotification('Focused cell not shown',
+            `${name} is focused but not among the shown cells.`, 'info', 5000);
+    }
+
     /**
      * After a dataset loads, keep the focused cell/gene if the new dataset has
      * it, otherwise focus its first name. Asks the server for one exact match
@@ -1065,24 +1084,29 @@ const App = (function() {
         const subset = DataManager.getSubsetParam();
         try {
             const current = getFocused();
-            if (current) {
+            if (current && entity === 'cells') {
+                // A cell the subset does not show stays focused while the
+                // dataset has it (a part step, a filter): its rows are read
+                // by dataset row
+                const cell = await DataManager.locateCell(current);
+                if (cell && (cell.shown || cell.row !== null)) {
+                    if (picker) picker.setValue(current);
+                    if (!cell.shown) _noticeFocusOutside(current);
+                    return;
+                }
+                if (cell && cell.unreadable) {
+                    // An older server: say why the focus moves
+                    _focusOutsideSubsetNoticed = current;
+                    _showNotification('Focused cell not in the subset',
+                        `${current} is not among the cells shown, so another cell is focused. ` +
+                        'This server cannot read a cell outside the subset.', 'warning', 8000);
+                }
+            } else if (current) {
                 const hit = await fetchNameMatches(Config.API.NAMES, {
                     datasetPath, entity, query: current, mode: 'exact', limit: 1, subset });
                 if (hit.matches.length && hit.matches[0].name === current) {
                     if (picker) picker.setValue(current);
                     return;
-                }
-                if (entity === 'cells' && subset) {
-                    // In the dataset but not among the cells shown: say why
-                    // the focus moves, instead of moving it silently.
-                    const outside = await fetchNameMatches(Config.API.NAMES, {
-                        datasetPath, entity, query: current, mode: 'exact', limit: 1 });
-                    if (outside.matches.length && outside.matches[0].name === current) {
-                        _focusOutsideSubsetNoticed = current;
-                        _showNotification('Focused cell not in the subset',
-                            `${current} is not among the cells shown, so another cell is focused. ` +
-                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
-                    }
                 }
             }
             // The first name is in the list the dataset load already
