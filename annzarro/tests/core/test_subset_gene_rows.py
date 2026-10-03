@@ -43,7 +43,7 @@ def test_rows_of_columns_equal_slicing_the_full_matrix(tmp_path, fmt, monkeypatc
     g = open_group(tmp_path / "m.zarr")
     _write(g, "X", mat, fmt)
     reader = ZarrReader(enable_caching=False)
-    monkeypatch.setattr(ZarrReader, "_SCAN_BLOCK", 53)       # many blocks per column
+    monkeypatch.setattr(ZarrReader, "_SELECT_BLOCK", 53)       # many blocks per column
     rng = np.random.default_rng(1)
     shape = (N_OBS, N_VAR)
     dense = mat.toarray()

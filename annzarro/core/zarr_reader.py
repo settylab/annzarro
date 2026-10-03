@@ -970,8 +970,8 @@ class ZarrReader(CacheSettings):
         of 50 million cells. Building the column first and cutting it after
         made a 50-million-row slice, 200 MB dense, cached as such, for every
         gene. Here each major slice's stored entries are read a block at a
-        time (``_SCAN_BLOCK``) and only those whose minor index is selected
-        are kept, so memory is one block plus the result. ``minor`` may be in
+        time and only those whose minor index is selected
+        are kept, so memory is one block (``_SELECT_BLOCK``) plus the result. ``minor`` may be in
         any order and repeat; the result is what slicing the full matrix
         returns.
         """
@@ -982,21 +982,24 @@ class ZarrReader(CacheSettings):
         if want.size and (want[0] < 0 or want[-1] >= n_minor):
             bad = int(want[0] if want[0] < 0 else want[-1])
             raise IndexError(f"index {bad} is out of range for size {n_minor}")
-        block = self._SCAN_BLOCK
+        block = self._SELECT_BLOCK
+        # Membership by a mask over the minor axis (1 byte per row: 50 MB at
+        # 50M cells) is one lookup per stored entry; a binary search of every
+        # entry into the selection was 6x slower than reading the column.
+        selected = np.zeros(n_minor, dtype=bool)
+        selected[want] = True
         positions, majors, values = [], [], []
         for n, k in enumerate(major):
             k = int(k)
             s, e = (int(v) for v in indptr[k:k + 2])
             for b in range(s, e, block):
                 stop = min(b + block, e)
-                idx = np.asarray(idx_z[b:stop], dtype=np.int64)
-                at = np.searchsorted(want, idx)
-                hit = at < want.size
-                hit[hit] = want[at[hit]] == idx[hit]
+                idx = np.asarray(idx_z[b:stop])
+                hit = selected[idx]
                 if not hit.any():
                     continue
-                positions.append(at[hit])
-                majors.append(np.full(int(hit.sum()), n, dtype=np.int64))
+                positions.append(np.searchsorted(want, idx[hit]))
+                majors.append(np.full(int(np.count_nonzero(hit)), n, dtype=np.int64))
                 values.append(np.asarray(data_z[b:stop])[hit])
         dtype = data_z.dtype
         pos = np.concatenate(positions) if positions else np.empty(0, np.int64)
@@ -1008,6 +1011,11 @@ class ZarrReader(CacheSettings):
             return m[inverse.reshape(-1), :]
         m = sp.csr_matrix((val, (maj, pos)), shape=(len(major), want.size))
         return m[:, inverse.reshape(-1)]
+
+    #: Stored entries read per block by _rows_of_major_slices: 16M, 64 MB of
+    #: int32 indices plus as much data. Measured on a 50M-cell CSC column of
+    #: 30M entries: 0.23 s in 4M blocks, 0.13 s in 16M ones (zarr call overhead).
+    _SELECT_BLOCK = 1 << 24
 
     #: Stored entries of a sparse matrix's ``indices`` scanned per block by
     #: _minor_axis_slice (rounded to whole chunks): 4M int32, 16 MB.
