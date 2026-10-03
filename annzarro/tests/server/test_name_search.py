@@ -81,7 +81,7 @@ def test_endpoint_searches_cells_and_genes(client_and_store):
     assert cells == ["cell_0010", "cell_0011", "cell_0012", "cell_0013", "cell_0014"]
     genes = client.get("/api/v1/data/names", query_string={
         "dataset_path": store, "entity": "genes", "q": "gene007"}).get_json()
-    assert genes["matches"] == [{"name": "GENE007", "index": 7}]
+    assert genes["matches"] == [{"name": "GENE007", "index": 7, "row": 7}]
     assert genes["total"] == 20 and genes["truncated"] is False
 
 

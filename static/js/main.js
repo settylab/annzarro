@@ -11,10 +11,12 @@ import {
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
-import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
+import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
+import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
+import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 
 const App = (function() {
     // Private variables
@@ -312,18 +314,25 @@ const App = (function() {
             if (constants.focusedGene) {
                 DataManager.setFocusedGene(constants.focusedGene);
             }
+            // Dataset rows the link recorded for its cells: checked against
+            // the names, they spare a dataset-wide name lookup for a cell
+            // the subset does not show
+            DataManager.setCellRowHints(datasetPath, constants.cellRows);
             if (constants.focusedCell) {
-                if (await DataManager.resolveCellIndex(constants.focusedCell) >= 0) {
-                    DataManager.setFocusedCell(constants.focusedCell);
-                } else if (DataManager.getSubset()) {
+                // Kept also when the subset does not show it (its rows are
+                // read by dataset row); a cell the dataset lacks is focused as
+                // before, and its panels say it is not in this dataset
+                const cell = await DataManager.locateCell(constants.focusedCell);
+                if (cell && cell.unreadable) {
                     // Said once: loading the dataset may already have said it
                     if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
                         _showNotification('Focused cell not in the subset',
                             `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
-                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
+                            'This server cannot read a cell outside the subset.', 'warning', 8000);
                     }
                 } else {
                     DataManager.setFocusedCell(constants.focusedCell);
+                    if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
                 }
             }
             if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
@@ -434,17 +443,24 @@ const App = (function() {
      * @param {Object|null} spec - subset spec, or null for every cell
      * @private
      */
-    async function _changeSubset(spec) {
+    async function _changeSubset(spec, { step = false } = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
+        // The view as it is (layout, panel settings, focus) on other cells:
+        // only the data is read again.
+        // The focused and locked cells are found in the new subset by their
+        // dataset rows, learned now while this subset still shows them
+        await DataManager.recordCellRows(getFixedCells().map(c => c.cell));
         const view = SessionManager.captureView();
         view.subset = spec;
         const plan = panelSetToView({ dataset: datasetPath, view });
         try {
-            await _applyPanelSet(plan, { name: 'cell subset' });
+            await _applyPanelSet(plan, { name: step ? 'cell subset part' : 'cell subset' });
             const subset = DataManager.getSubset();
+            const part = subset && subset.parts > 1
+                ? ` Part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}.` : '';
             _showNotification('Cell subset',
-                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).`
+                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).${part}`
                        : 'Showing every cell.', 'success', 3000);
         } catch (error) {
             console.error('Changing the cell subset failed:', error);
@@ -748,7 +764,11 @@ const App = (function() {
         if (focusedCellInput) {
             _pickers.cells = mountNamePicker({
                 input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'),
-                onPick: name => DataManager.setFocusedCell(name)
+                onPick: (name, match) => {
+                    // the search said where the cell is: no second lookup
+                    if (match) DataManager.rememberCell(name, match);
+                    DataManager.setFocusedCell(name);
+                }
             });
         }
         
@@ -779,6 +799,13 @@ const App = (function() {
             
             // Show the focused cell, whatever changed it (plot click, history, link)
             if (_pickers.cells) _pickers.cells.setValue(e.detail.cell);
+            _updateFocusBadge();
+        });
+        document.addEventListener('datasetChanged', () => _updateFocusBadge());
+        // Once a cell is located, its labels say whether the subset shows it
+        document.addEventListener('cellLocated', (e) => {
+            _relabelCell(e.detail);
+            if (e.detail.name === DataManager.getFocusedCell()) _updateFocusBadge();
         });
         
         // No asynchronous sorting events
@@ -1032,17 +1059,76 @@ const App = (function() {
         return (query, { regex, signal }) => {
             const datasetPath = DataManager.getCurrentDataset();
             if (!datasetPath) return Promise.resolve({ matches: [], truncated: false });
-            return fetchNameMatches(Config.API.NAMES, {
+            const opts = {
                 datasetPath, entity, query, signal, limit: 100,
                 mode: regex ? 'regex' : 'substring',
                 subset: DataManager.getSubsetParam()
-            });
+            };
+            const shown = fetchNameMatches(Config.API.NAMES, opts);
+            if (entity !== 'cells' || !opts.subset || !DataManager.hasSubsetFeature('names_scope')) return shown;
+            // Under a subset every cell of the dataset can be focused: the
+            // shown cells' matches come first, and the others, tagged "not
+            // shown", follow from a dataset-wide search (slower the first
+            // time, while the server builds that name index)
+            const all = fetchNameMatches(Config.API.NAMES, { ...opts, scope: 'dataset' });
+            all.catch(() => {});
+            return shown.then(first => ({
+                ...first, more: all.then(rest => mergeScopedMatches(first, rest, opts.limit))
+            }));
         };
     }
 
     // The last focused cell a notice said was outside the subset, so a view
     // restore does not say it a second time.
     let _focusOutsideSubsetNoticed = null;
+
+    let _badgeSeq = 0;
+
+    /**
+     * The header badge beside the focused cell: "not shown", or "not in
+     * part 3 of 7" when the subset has parts, while the subset does not show
+     * the focused cell; hidden otherwise.
+     * @private
+     */
+    async function _updateFocusBadge() {
+        const badge = document.getElementById('focused-cell-outside');
+        if (!badge) return;
+        const seq = ++_badgeSeq;
+        const name = DataManager.getFocusedCell();
+        const cell = name ? await DataManager.locateCell(name).catch(() => null) : null;
+        if (seq !== _badgeSeq) return;
+        const outside = !!(cell && !cell.shown && cell.row !== null);
+        badge.hidden = !outside;
+        if (!outside) return;
+        const subset = DataManager.getSubset();
+        badge.textContent = subset && subset.parts > 1
+            ? `not in part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}`
+            : 'not shown';
+        badge.title = `${name} is focused but not among the shown cells`;
+    }
+
+    /**
+     * Add or drop "(not shown)" on the axis menu options that name a cell,
+     * once it is located (they are drawn before that is known).
+     * @private
+     */
+    function _relabelCell(cell) {
+        if (!cell || !cell.name) return;
+        const outside = !cell.shown && cell.row !== null;
+        const labels = [`Focused cell ${cell.name}`, `Locked cell ${cell.name}`];
+        for (const option of document.querySelectorAll('select.axis-column-select option')) {
+            const base = option.text.endsWith(NOT_SHOWN) ? option.text.slice(0, -NOT_SHOWN.length) : option.text;
+            if (labels.includes(base)) option.text = outside ? `${base}${NOT_SHOWN}` : base;
+        }
+    }
+
+    /** Say once that the focused cell is kept although the subset does not show it. */
+    function _noticeFocusOutside(name) {
+        if (_focusOutsideSubsetNoticed === name) return;
+        _focusOutsideSubsetNoticed = name;
+        _showNotification('Focused cell not shown',
+            `${name} is focused but not among the shown cells.`, 'info', 5000);
+    }
 
     /**
      * After a dataset loads, keep the focused cell/gene if the new dataset has
@@ -1061,24 +1147,29 @@ const App = (function() {
         const subset = DataManager.getSubsetParam();
         try {
             const current = getFocused();
-            if (current) {
+            if (current && entity === 'cells') {
+                // A cell the subset does not show stays focused while the
+                // dataset has it (a part step, a filter): its rows are read
+                // by dataset row
+                const cell = await DataManager.locateCell(current);
+                if (cell && (cell.shown || cell.row !== null)) {
+                    if (picker) picker.setValue(current);
+                    if (!cell.shown) _noticeFocusOutside(current);
+                    return;
+                }
+                if (cell && cell.unreadable) {
+                    // An older server: say why the focus moves
+                    _focusOutsideSubsetNoticed = current;
+                    _showNotification('Focused cell not in the subset',
+                        `${current} is not among the cells shown, so another cell is focused. ` +
+                        'This server cannot read a cell outside the subset.', 'warning', 8000);
+                }
+            } else if (current) {
                 const hit = await fetchNameMatches(Config.API.NAMES, {
                     datasetPath, entity, query: current, mode: 'exact', limit: 1, subset });
                 if (hit.matches.length && hit.matches[0].name === current) {
                     if (picker) picker.setValue(current);
                     return;
-                }
-                if (entity === 'cells' && subset) {
-                    // In the dataset but not among the cells shown: say why
-                    // the focus moves, instead of moving it silently.
-                    const outside = await fetchNameMatches(Config.API.NAMES, {
-                        datasetPath, entity, query: current, mode: 'exact', limit: 1 });
-                    if (outside.matches.length && outside.matches[0].name === current) {
-                        _focusOutsideSubsetNoticed = current;
-                        _showNotification('Focused cell not in the subset',
-                            `${current} is not among the cells shown, so another cell is focused. ` +
-                            'Change the cell subset (Cells, above the panels) to include it.', 'warning', 8000);
-                    }
                 }
             }
             // The first name is in the list the dataset load already

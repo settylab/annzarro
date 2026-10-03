@@ -103,6 +103,7 @@ class SubsetSpec:
     seed: int = DEFAULT_SEED
     balance: Optional[str] = None
     where: Tuple[Condition, ...] = field(default_factory=tuple)
+    part: int = 0
 
     def canonical(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"n": self.n, "seed": self.seed}
@@ -110,6 +111,10 @@ class SubsetSpec:
             out["balance"] = self.balance
         if self.where:
             out["where"] = [c.canonical() for c in self.where]
+        # Part 0 is written as before parts existed, so its key, its cache
+        # entries and every link that names it are unchanged.
+        if self.part:
+            out["part"] = self.part
         return out
 
     def key(self) -> str:
@@ -199,7 +204,7 @@ def parse_spec(raw) -> Optional[SubsetSpec]:
         return None
     if not isinstance(raw, dict):
         raise SubsetError(f"subset must be a JSON object, got {raw!r}")
-    unknown = set(raw) - {"n", "seed", "balance", "where"}
+    unknown = set(raw) - {"n", "seed", "balance", "where", "part"}
     if unknown:
         raise SubsetError(f"unknown subset field(s): {', '.join(sorted(unknown))}")
     n = _int(raw.get("n"), "n", 1, 2**62, allow_none=True)
@@ -216,7 +221,8 @@ def parse_spec(raw) -> Optional[SubsetSpec]:
     conditions = tuple(_condition(c) for c in where)
     if n is None and balance is not None:
         raise SubsetError("subset balance needs a cell count n")
-    return SubsetSpec(n=n, seed=seed, balance=balance, where=conditions)
+    part = _int(raw.get("part", 0), "part", 0, 2**62)
+    return SubsetSpec(n=n, seed=seed, balance=balance, where=conditions, part=part)
 
 
 # ---------------------------------------------------------------------------
@@ -262,76 +268,114 @@ def _salt(seed: int):
     return _splitmix64(np.array([seed], dtype=_U64))[0]
 
 
-def _rows_with_smallest_keys(n_obs: int, eligible: Optional[np.ndarray], seed: int, k: int,
-                             block: int = _KEY_BLOCK) -> np.ndarray:
-    """The k eligible rows (every row when ``eligible`` is None) with the
-    smallest rank keys, computed a block at a time.
+_MAX_KEY = np.iinfo(np.uint64).max
 
-    The same rows as ``rows[_smallest(rank_keys(n_obs, seed)[rows], k)]``,
-    without the n_obs-long key array: at Tahoe-100M's 95.6 million cells
-    that was 0.8 GB per temporary and about 3 GB at the peak.
+
+def _key_limit(fraction: float):
+    """The rank key at ``fraction`` of the key range (0 -> 0, 1 -> the top)."""
+    if fraction <= 0:
+        return 0
+    if fraction >= 1:
+        return int(_MAX_KEY)
+    return min(int(fraction * 2.0**64), int(_MAX_KEY))
+
+
+def _rank_window(n_obs: int, eligible: Optional[np.ndarray], group_of, n_groups: int, seed: int,
+                 sizes, lo, count, block: int = _KEY_BLOCK) -> np.ndarray:
+    """For each group g, the eligible rows of g whose rank among g's rows by
+    rank key is in [lo[g], lo[g] + count[g]): the rows a sort of every
+    eligible row by (group, key) would put there, without that sort.
+
+    Rank keys are splitmix64 outputs, spread evenly over the key range, so
+    rank r of a group of size S sits near key r / S of the range. One pass
+    over the rows (a block at a time) counts each group's rows below a key a
+    little under that window and collects the rows inside it. When a group's
+    count or collection does not bracket its ranks the window is widened and
+    that group is collected again. The ranks are then exact: only the
+    collected rows (about 1.1 x the window) are sorted, and memory stays at
+    one block plus them.
+
+    ``group_of(rows, slice)`` gives each row's group (0..n_groups-1).
     """
     salt = _salt(seed)
-    best_rows = np.empty(0, dtype=np.int64)
-    best_keys = np.empty(0, dtype=_U64)
-    for part, _ in _block_rows(n_obs, eligible, block):
-        cand_rows = np.concatenate([best_rows, part])
-        cand_keys = np.concatenate([best_keys, _keys(part, salt)])
-        keep = _smallest(cand_keys, k)
-        best_rows, best_keys = cand_rows[keep], cand_keys[keep]
-    return best_rows
-
-
-def _rows_with_smallest_keys_per_group(n_obs, eligible, group_of, seed, sizes, quota,
-                                       block=_KEY_BLOCK):
-    """For each group g, the quota[g] eligible rows of g with the smallest
-    rank keys: the rows a lexsort of (group, key) over every eligible row
-    kept, without sorting them all.
-
-    Rank keys are splitmix64 outputs, so group g's quota[g]-th smallest key
-    lies near quota[g] / sizes[g] of the key range. Every row below a
-    per-group threshold a little above that is collected, block by block;
-    a group that collects fewer than its quota gets a higher threshold and
-    is collected again. The collected rows always contain the group's
-    smallest keys, so the result is exact; only the collected rows (about
-    1.1 x the subset) are sorted.
-    """
-    salt = _salt(seed)
-    sizes = np.asarray(sizes, dtype=np.float64)
-    quota = np.asarray(quota, dtype=np.int64)
-    frac = (1.1 * quota + 6 * np.sqrt(quota) + 16) / np.maximum(sizes, 1)
-    top = np.iinfo(np.uint64).max
-    pending = np.flatnonzero(quota > 0)
-    rows_parts, key_parts, group_parts = [], [], []
+    sizes = np.maximum(np.asarray(sizes, dtype=np.float64), 1.0)
+    lo = np.asarray(lo, dtype=np.int64)
+    count = np.asarray(count, dtype=np.int64)
+    margin = 0.05 * count + 6 * np.sqrt(lo + count + 1.0) + 16
+    fa = np.where(lo > 0, (lo - margin) / sizes, 0.0)
+    fb = (lo + count + margin) / sizes
+    pending = np.flatnonzero(count > 0)
+    out_rows, out_keys, out_groups = [], [], []
+    below_all = np.zeros(n_groups, dtype=np.int64)
     while pending.size:
-        # every key at or below limit[g] is collected; a group with frac >= 1
-        # collects all of its rows
-        limit = np.zeros(len(quota), dtype=_U64)
-        limit[pending] = [top if f >= 1.0 else int(f * 2.0**64) for f in frac[pending].tolist()]
-        wanted = np.zeros(len(quota), dtype=bool)
+        a = np.zeros(n_groups, dtype=_U64)
+        b = np.zeros(n_groups, dtype=_U64)
+        a[pending] = [_key_limit(f) for f in fa[pending].tolist()]
+        b[pending] = [_key_limit(f) for f in fb[pending].tolist()]
+        wanted = np.zeros(n_groups, dtype=bool)
         wanted[pending] = True
+        below = np.zeros(n_groups, dtype=np.int64)
         hits = []
         for part, sl in _block_rows(n_obs, eligible, block):
             groups = group_of(part, sl)
             keys = _keys(part, salt)
-            hit = wanted[groups] & (keys <= limit[groups])
-            hits.append((part[hit], keys[hit], groups[hit]))
-        rows = np.concatenate([h[0] for h in hits])
-        keys = np.concatenate([h[1] for h in hits])
-        groups = np.concatenate([h[2] for h in hits])
-        got = np.bincount(groups, minlength=len(quota))
-        short = pending[(got[pending] < quota[pending]) & (frac[pending] < 1.0)]
-        done = ~np.isin(groups, short)
-        rows_parts.append(rows[done]); key_parts.append(keys[done]); group_parts.append(groups[done])
-        frac[short] *= 4
-        pending = short
-    rows = np.concatenate(rows_parts) if rows_parts else np.empty(0, np.int64)
-    keys = np.concatenate(key_parts) if key_parts else np.empty(0, _U64)
-    groups = np.concatenate(group_parts) if group_parts else np.empty(0, np.int64)
+            w = wanted[groups]
+            under = w & (keys < a[groups])
+            below += np.bincount(groups[under], minlength=n_groups)
+            inside = w & ~under & (keys <= b[groups])
+            hits.append((part[inside], keys[inside], groups[inside]))
+        rows = np.concatenate([h[0] for h in hits]) if hits else np.empty(0, np.int64)
+        keys = np.concatenate([h[1] for h in hits]) if hits else np.empty(0, _U64)
+        groups = np.concatenate([h[2] for h in hits]) if hits else np.empty(0, np.int64)
+        got = np.bincount(groups, minlength=n_groups)
+        too_high = below[pending] > lo[pending]
+        too_few = below[pending] + got[pending] < lo[pending] + count[pending]
+        # a window over the whole key range has every row of its group: final
+        whole = (fa[pending] <= 0) & (fb[pending] >= 1)
+        retry = pending[(too_high | too_few) & ~whole]
+        done = ~np.isin(groups, retry)
+        out_rows.append(rows[done]); out_keys.append(keys[done]); out_groups.append(groups[done])
+        below_all[np.setdiff1d(pending, retry)] = below[np.setdiff1d(pending, retry)]
+        width = np.maximum(fb[retry] - fa[retry], 1e-9)
+        fa[retry] = np.where(below[retry] > lo[retry], np.maximum(fa[retry] - 2 * width, 0.0), fa[retry])
+        fa[retry] = np.where(fa[retry] < 1e-12, 0.0, fa[retry])
+        fb[retry] = np.where(below[retry] + got[retry] < lo[retry] + count[retry],
+                             fb[retry] + 2 * width, fb[retry])
+        pending = retry
+    rows = np.concatenate(out_rows) if out_rows else np.empty(0, np.int64)
+    keys = np.concatenate(out_keys) if out_keys else np.empty(0, _U64)
+    groups = np.concatenate(out_groups) if out_groups else np.empty(0, np.int64)
     order = np.lexsort((keys, groups))
     g = groups[order]
-    first = np.searchsorted(g, g, side="left")
-    return rows[order[(np.arange(len(order)) - first) < quota[g]]]
+    rank = np.arange(len(order)) - np.searchsorted(g, g, side="left") + below_all[g]
+    return rows[order[(rank >= lo[g]) & (rank < lo[g] + count[g])]]
+
+
+def _rows_with_smallest_keys(n_obs: int, eligible: Optional[np.ndarray], seed: int, k: int,
+                             block: int = _KEY_BLOCK) -> np.ndarray:
+    """The k eligible rows (every row when ``eligible`` is None) with the
+    smallest rank keys: ``rows[_smallest(rank_keys(n_obs, seed)[rows], k)]``
+    without the n_obs-long key array (3 GB at the peak at 95.6M cells)."""
+    total = n_obs if eligible is None else int(np.count_nonzero(eligible))
+    zeros = lambda part, sl: np.zeros(len(part), dtype=np.int64)  # noqa: E731
+    return _rank_window(n_obs, eligible, zeros, 1, seed, [total], [0], [min(k, total)], block)
+
+
+def partition_quotas(sizes, n: int, part: int):
+    """(first rank, count) per group for ``part`` of a balanced partition.
+
+    Part j is the balanced selection (water-filling, balanced_quota) of n
+    cells from the cells not in parts 0..j-1. Within a group the parts take
+    its cells in rank-key order, so group g's part-j cells are its ranks
+    [first[g], first[g] + count[g]). Arithmetic on the group sizes only.
+    """
+    remaining = np.asarray(sizes, dtype=np.int64).copy()
+    first = np.zeros(len(remaining), dtype=np.int64)
+    for _ in range(part):
+        q = balanced_quota(remaining, n)
+        first += q
+        remaining -= q
+    return first, balanced_quota(remaining, n)
 
 
 def _smallest(keys: np.ndarray, k: int) -> np.ndarray:
@@ -354,20 +398,25 @@ def balanced_quota(sizes: Sequence[int], budget: int) -> np.ndarray:
     sizes = np.asarray(sizes, dtype=np.int64)
     quota = np.zeros(len(sizes), dtype=np.int64)
     budget = int(min(budget, sizes.sum())) if len(sizes) else 0
-    open_groups = list(np.argsort(sizes, kind="stable"))
-    while open_groups:
-        share = budget // len(open_groups)
-        smallest = open_groups[0]
-        if sizes[smallest] <= share:
-            quota[smallest] = sizes[smallest]
-            budget -= int(sizes[smallest])
-            open_groups.pop(0)
-            continue
-        rest = sorted(open_groups)
+    if not len(sizes):
+        return quota
+    # The smallest group still open is taken whole while it fits its share
+    # of what is left; the first that does not fit ends that. Vectorised:
+    # step i (groups by size) has budget - (sizes taken before) to share
+    # among the len - i groups still open.
+    order = np.argsort(sizes, kind="stable")
+    ordered = sizes[order]
+    before = np.concatenate([[0], np.cumsum(ordered)[:-1]])
+    open_count = len(sizes) - np.arange(len(sizes))
+    fits = ordered <= (budget - before) // open_count
+    t = int(np.argmin(fits)) if not fits.all() else len(sizes)
+    quota[order[:t]] = ordered[:t]
+    if t < len(sizes):
+        left = budget - int(before[t])
+        rest = np.sort(order[t:])
+        share = left // len(rest)
         quota[rest] = share
-        for g in rest[: budget - share * len(rest)]:
-            quota[g] += 1
-        break
+        quota[rest[: left - share * len(rest)]] += 1
     return quota
 
 
@@ -533,13 +582,21 @@ def select_indices(n_obs: int, spec: SubsetSpec,
         mask = column(cond.col).mask(cond)
         eligible = mask if eligible is None else (eligible & mask)
     n_eligible = int(n_obs if eligible is None else np.count_nonzero(eligible))
-    want = n_eligible if spec.n is None else min(spec.n, n_eligible)
-    info: Dict[str, Any] = {"n_total": int(n_obs), "n_eligible": n_eligible}
+    n = n_eligible if spec.n is None else spec.n
+    parts = max(1, -(-n_eligible // n)) if n else 1
+    if spec.part >= parts:
+        raise SubsetError(f"subset part {spec.part} does not exist: {n_eligible:,} cells in parts of "
+                          f"{n:,} make {parts:,} part(s), numbered 0-{parts - 1}", "part_out_of_range")
+    info: Dict[str, Any] = {"n_total": int(n_obs), "n_eligible": n_eligible,
+                            "part": int(spec.part), "parts": int(parts)}
 
-    if want >= n_eligible:
+    if parts == 1:
         chosen = np.arange(n_obs) if eligible is None else np.flatnonzero(eligible)
     elif spec.balance is None:
-        chosen = _rows_with_smallest_keys(n_obs, eligible, spec.seed, want)
+        lo = spec.part * n
+        zeros = lambda part, sl: np.zeros(len(part), dtype=np.int64)  # noqa: E731
+        chosen = _rank_window(n_obs, eligible, zeros, 1, spec.seed, [n_eligible], [lo],
+                              [min(n, n_eligible - lo)])
     else:
         if eligible is None:
             eligible = np.ones(n_obs, dtype=bool)
@@ -547,10 +604,10 @@ def select_indices(n_obs: int, spec: SubsetSpec,
         sizes = np.zeros(len(names), dtype=np.int64)
         for part, sl in _block_rows(n_obs, eligible):
             sizes += np.bincount(group_of(part, sl), minlength=len(names))
-        quota = balanced_quota(sizes, want)
-        chosen = _rows_with_smallest_keys_per_group(n_obs, eligible, group_of, spec.seed, sizes, quota)
-        info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
-                          for name, s, q in zip(names, sizes, quota)}
+        first, quota = partition_quotas(sizes, n, spec.part)
+        chosen = _rank_window(n_obs, eligible, group_of, len(names), spec.seed, sizes, first, quota)
+        info["groups"] = {str(name): {"total": int(s), "shown": int(q), "before": int(f)}
+                          for name, s, q, f in zip(names, sizes, quota, first)}
     indices = np.sort(chosen).astype(np.int32 if n_obs < 2**31 else np.int64)
     info["n"] = int(len(indices))
     return indices, info
@@ -582,6 +639,15 @@ class Subset:
             raise IndexError(f"index {bad} is out of range: the subset has "
                              f"{len(self.indices)} cells (0-{len(self.indices) - 1})")
         return self.indices[pos].tolist()
+
+    def to_positions(self, rows) -> List[int]:
+        """Positions in the subset of dataset rows; -1 for a row it does not show."""
+        rows = np.asarray(rows, dtype=np.int64)
+        if not len(self.indices):
+            return [-1] * len(rows)
+        pos = np.searchsorted(self.indices, rows)
+        found = self.indices[np.minimum(pos, len(self.indices) - 1)] == rows
+        return np.where(found, pos, -1).tolist()
 
     def describe(self) -> Dict[str, Any]:
         out = {"subset": self.spec.canonical(), "key": self.spec.key()}
@@ -696,6 +762,9 @@ def resolve(reader, dataset_path: str, raw, config=None) -> Optional[Subset]:
     if spec is None:
         return None
     if not spec.where and (spec.n is None or spec.n >= _n_obs(reader, dataset_path)):
+        if spec.part:
+            raise SubsetError(f"subset part {spec.part} does not exist: these cells form one part (part 0)",
+                              "part_out_of_range")
         return None
     return get_subset(reader, dataset_path, spec)
 
@@ -745,6 +814,19 @@ class SubsetView:
 
     def __getattr__(self, name):
         return getattr(self._reader, name)
+
+    @property
+    def base(self):
+        """The reader of the whole dataset."""
+        return self._reader
+
+    def at_dataset_rows(self) -> "DatasetRowsView":
+        """The same view, with the cells a read names given as dataset rows."""
+        return DatasetRowsView(self._reader, self.subset)
+
+    def _rows(self, positions) -> List[int]:
+        """Dataset rows of the cells a read names."""
+        return self.subset.to_rows(positions)
 
     # -- metadata -----------------------------------------------------------
 
@@ -807,7 +889,7 @@ class SubsetView:
         # are what h5py needs too.
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
-                       else self.subset.to_rows(indices))
+                       else self._rows(indices))
         return self._reader.get_obs_var(entity=entity, dataset_path=dataset_path, indices=indices,
                                         column_names=column_names,
                                         include_categories=include_categories)
@@ -815,14 +897,14 @@ class SubsetView:
     def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
-                       else self.subset.to_rows(indices))
+                       else self._rows(indices))
         return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
                                               column_name=column_name, indices=indices)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):
         if entity != "cells" or indices is not None:
-            rows = indices if entity != "cells" else self.subset.to_rows(indices)
+            rows = indices if entity != "cells" else self._rows(indices)
             return self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
                                               indices=rows, col_indices=col_indices,
                                               column_name=column_name)
@@ -839,7 +921,7 @@ class SubsetView:
         # Rows are read by index (a focused cell's row is the reader's one-row
         # fast path), whole, and then cut to the subset's columns.
         rows = (self.subset.indices.tolist() if row_indices is None
-                else self.subset.to_rows(row_indices))
+                else self._rows(row_indices))
         data = self._reader.get_obsp_varp(key=key, entity=entity, dataset_path=dataset_path,
                                           row_indices=rows, col_indices=None)
         cols = (self.subset.indices if col_indices is None
@@ -856,5 +938,28 @@ class SubsetView:
 
     def _matrix(self, read, row_indices):
         if row_indices is not None:
-            return read(self.subset.to_rows(row_indices))
+            return read(self._rows(row_indices))
         return _take_rows(read(None), self.subset.indices)
+
+
+class DatasetRowsView(SubsetView):
+    """A SubsetView whose named cells are dataset rows, not positions.
+
+    For a cell that is not shown, such as a focused cell from another part:
+    its obsp row is read whole from the dataset and cut to the subset's
+    cells, exactly as a shown cell's row is, and its layer or X row is its
+    own. Column indices (obsp ``cols``) and whole-axis reads stay the
+    subset's.
+    """
+
+    @property
+    def n_obs(self) -> int:
+        return int(self.subset.info["n_total"])
+
+    def _rows(self, positions) -> List[int]:
+        rows = np.asarray(positions, dtype=np.int64)
+        if rows.size and (rows.min() < 0 or rows.max() >= self.n_obs):
+            bad = int(rows[(rows < 0) | (rows >= self.n_obs)][0])
+            raise IndexError(f"dataset row {bad} is out of range: the dataset has "
+                             f"{self.n_obs} cells (0-{self.n_obs - 1})")
+        return rows.tolist()

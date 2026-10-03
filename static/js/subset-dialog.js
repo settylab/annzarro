@@ -13,7 +13,7 @@ import { PanelManager } from './panel-manager.js';
 import { getColumnKey } from './panels/table-utilities/table-data.js';
 import {
     SUBSET_OPS, MAX_SEED, canonicalSubset, subsetParam, describeSubset,
-    describeCondition, searchBuilderToWhere
+    describeCondition, searchBuilderToWhere, describeParts, partSpec
 } from './utils/subset.js';
 import { escapeHtml } from './utils/session-permissions.js';
 
@@ -33,6 +33,33 @@ const SubsetControl = (function() {
         _onApply = onApply;
         const button = document.getElementById('subset-button');
         if (button) button.addEventListener('click', open);
+        const prev = document.getElementById('subset-part-prev');
+        const next = document.getElementById('subset-part-next');
+        const input = document.getElementById('subset-part-input');
+        if (prev) prev.addEventListener('click', () => step(-1));
+        if (next) next.addEventListener('click', () => step(1));
+        if (input) {
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goTo(Number(input.value) - 1); });
+            input.addEventListener('change', () => goTo(Number(input.value) - 1));
+        }
+    }
+
+    /** Show the part `delta` away (the ‹ › buttons). Same view, other cells. */
+    function step(delta) {
+        const info = DataManager.getSubset();
+        const parts = describeParts(info);
+        if (!parts) return;
+        _goToSpec(partSpec(info, parts.part + delta));
+    }
+
+    /** Show part `part` (0-based; a typed number past the end shows the last). */
+    function goTo(part) {
+        _goToSpec(partSpec(DataManager.getSubset(), part, true));
+        update();   // an unchanged or invalid entry snaps back to the current part
+    }
+
+    function _goToSpec(spec) {
+        if (spec && _onApply) _onApply(spec, { step: true });
     }
 
     /** Refresh the header's cell count and badge from the DataManager. */
@@ -51,6 +78,22 @@ const SubsetControl = (function() {
             button.textContent = text.badge;
             button.title = text.title;
             button.classList.toggle('subset-active', text.active);
+        }
+        const box = document.getElementById('subset-parts');
+        const parts = describeParts(DataManager.getSubset());
+        if (box) {
+            box.hidden = !parts || !DataManager.getCurrentDataset();
+            if (parts) {
+                box.title = parts.title;
+                const input = document.getElementById('subset-part-input');
+                if (input) { input.value = String(parts.display); input.max = String(parts.parts); }
+                const count = document.getElementById('subset-part-count');
+                if (count) count.textContent = fmt(parts.parts);
+                const prev = document.getElementById('subset-part-prev');
+                const next = document.getElementById('subset-part-next');
+                if (prev) prev.disabled = !parts.canPrev;
+                if (next) next.disabled = !parts.canNext;
+            }
         }
     }
 
@@ -74,6 +117,8 @@ const SubsetControl = (function() {
                 <p class="text-muted small mb-2">Every panel, table and share link uses the same cells.
                   The same seed always selects the same cells, and more cells with the same seed
                   keeps every cell of fewer.</p>
+                <p class="text-muted small mb-2">The subset is the first of several disjoint parts of
+                  this size that together hold every cell; step through them with ‹ › next to the badge.</p>
                 <div class="form-check form-switch mb-2">
                   <input class="form-check-input" type="checkbox" id="subset-enabled">
                   <label class="form-check-label" for="subset-enabled">Show a subset of the cells</label>
@@ -315,6 +360,9 @@ const SubsetControl = (function() {
             const shown = body.subset ? body.n : body.n_total;
             const lines = [`${fmt(shown)} of ${fmt(body.n_total)} cells will be shown.`];
             if (spec.where) lines.push(`${fmt(body.n_eligible)} pass the filter (${spec.where.map(describeCondition).join(' and ')}).`);
+            if (body.parts > 1) {
+                lines.push(`These are part 1 of ${fmt(body.parts)}; the parts together show every cell once.`);
+            }
             if (body.groups) {
                 lines.push('Per group: ' + Object.entries(body.groups)
                     .map(([g, c]) => `${g} ${fmt(c.shown)}/${fmt(c.total)}`).join(', '));
@@ -374,7 +422,7 @@ const SubsetControl = (function() {
         if (_onApply) await _onApply(spec);
     }
 
-    return { init, update, open };
+    return { init, update, open, step, goTo };
 })();
 
 export { SubsetControl };

@@ -183,12 +183,14 @@ export async function resolveColorscale(scale) {
  * @param {HTMLElement} host  The plot container.
  * @param {string|null} text
  * @param {string} [severity]  'notice' (default) or 'warning'
+ * @param {string} [kind]  'mode' (default); another kind is a notice of its
+ *   own beside it, e.g. 'focus' for a focused cell the subset does not show
  * @returns {HTMLElement|null}
  */
-export function renderModeNotice(host, text, severity = 'notice') {
+export function renderModeNotice(host, text, severity = 'notice', kind = 'mode') {
     const anchor = noticeAnchor(host);
     if (!anchor) return null;
-    const key = `mode-notice-for-${anchor.id || 'panel'}`;
+    const key = `${kind}-notice-for-${anchor.id || 'panel'}`;
     let el = null;
     for (const child of Array.from(anchor.parentNode.children || [])) {
         if (child.dataset && child.dataset.modeFor === key) el = child;
@@ -202,7 +204,7 @@ export function renderModeNotice(host, text, severity = 'notice') {
         el.dataset.modeFor = key;
         anchor.parentNode.insertBefore(el, anchor);
     }
-    el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--${severity} mode-notice`;
+    el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--${severity} ${kind}-notice`;
     el.innerHTML =
         `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON[severity] || 'i'}</span>`
         + `<div class="${NOTICE_CLASS}__body"><div class="${NOTICE_CLASS}__headline">${escapeHtml(text)}</div></div>`;

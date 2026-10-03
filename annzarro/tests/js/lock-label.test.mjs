@@ -33,3 +33,18 @@ test('the entity follows the source type and plot type', () => {
     assert.equal(lockOptionLabel('layer', 'genes', { column: 'c9', locked: true }, null), 'Locked cell c9');
     assert.equal(lockOptionLabel('obsp', 'cells', { column: '', locked: false }, null), null);
 });
+
+test('a cell the subset does not show is labelled so, once located', async () => {
+    const { DataManager } = await import('../../../static/js/data-manager.js');
+    const saved = DataManager.cellShown;
+    DataManager.cellShown = (name) => (name === 'out' ? false : name === 'in' ? true : undefined);
+    try {
+        assert.equal(lockOptionLabel('obsp', 'cells', { column: 'out', locked: true }, 'in'), 'Locked cell out (not shown)');
+        assert.equal(lockOptionLabel('obsp', 'cells', { column: 'x', locked: false }, 'in'), 'Focused cell in');
+        assert.equal(lockOptionLabel('obsp', 'cells', { column: 'x', locked: false }, 'new'), 'Focused cell new');
+        // genes are never "not shown"
+        assert.equal(lockOptionLabel('varp', 'genes', { column: 'out', locked: true }, null), 'Locked gene out');
+    } finally {
+        DataManager.cellShown = saved;
+    }
+});

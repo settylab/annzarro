@@ -13,7 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { NameSearchModel, fetchNameMatches } = await import('../../../static/js/utils/name-picker.js');
+const { NameSearchModel, fetchNameMatches, mergeScopedMatches } = await import('../../../static/js/utils/name-picker.js');
 
 const deferred = () => { let resolve, reject; const p = new Promise((a, b) => { resolve = a; reject = b; }); return { p, resolve, reject }; };
 const page = (...names) => ({ matches: names.map((name, index) => ({ name, index })), truncated: false });
@@ -88,4 +88,67 @@ test('fetchNameMatches asks /data/names with the query, axis and limit', async (
 
     globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'bad regex' }) });
     await assert.rejects(fetchNameMatches('/n', { datasetPath: '/d', entity: 'cells', query: '(' }), /bad regex/);
+});
+
+test('the dataset scope is sent for cells under a subset, and nowhere else', async () => {
+    const urls = [];
+    globalThis.fetch = async (u) => { urls.push(new URL(u, 'http://x')); return { ok: true, json: async () => page() }; };
+    const base = { datasetPath: '/d.zarr', query: 'c1', subset: '{"n":2}' };
+    await fetchNameMatches('/n', { ...base, entity: 'cells', scope: 'dataset' });
+    await fetchNameMatches('/n', { ...base, entity: 'cells' });
+    await fetchNameMatches('/n', { ...base, entity: 'genes', scope: 'dataset' });
+    await fetchNameMatches('/n', { ...base, subset: null, entity: 'cells', scope: 'dataset' });
+    assert.deepEqual(urls.map(u => u.searchParams.get('scope')), ['dataset', null, null, null]);
+    assert.deepEqual(urls.map(u => u.searchParams.get('subset')), ['{"n":2}', '{"n":2}', null, null]);
+});
+
+const at = (name, index, row) => ({ name, index, row });
+
+test('shown cells come first, then the others tagged outside, each once', () => {
+    const shown = { matches: [at('c13', 0, 13), at('c1', 1, 1)], truncated: false };
+    const all = { matches: [at('c1', 1, 1), at('c10', null, 10), at('c11', null, 11), at('c13', 0, 13)],
+                  truncated: false };
+    const merged = mergeScopedMatches(shown, all, 10);
+    assert.deepEqual(merged.matches.map(m => [m.name, !!m.outside]),
+                     [['c13', false], ['c1', false], ['c10', true], ['c11', true]]);
+    assert.equal(merged.truncated, false);
+});
+
+test('the merged list keeps the limit and says when it cut', () => {
+    const shown = { matches: [at('c1', 0, 1)], truncated: false };
+    const all = { matches: [at('c2', null, 2), at('c3', null, 3), at('c4', null, 4)], truncated: false };
+    const merged = mergeScopedMatches(shown, all, 2);
+    assert.deepEqual(merged.matches.map(m => m.name), ['c1', 'c2']);
+    assert.equal(merged.truncated, true);
+    assert.equal(mergeScopedMatches(shown, { matches: [], truncated: true }, 5).truncated, true);
+});
+
+test('later results replace the list for the same query only, and keep the highlight', async () => {
+    const more = deferred();
+    const updates = [];
+    const model = new NameSearchModel(async () => ({ ...page('c1', 'c2'), more: more.p }));
+    model.onUpdate = () => updates.push(model.items.map(i => i.name));
+    await model.setQuery('c');
+    model.move(1);                                     // c2 highlighted
+    more.resolve({ matches: [at('c1', 0, 1), at('c2', 1, 2), at('c9', null, 9)], truncated: false });
+    await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(updates, [['c1', 'c2', 'c9']]);
+    assert.equal(model.current().name, 'c2');
+
+    const stale = deferred();
+    const model2 = new NameSearchModel(async q => (q === 'a' ? { ...page('a1'), more: stale.p } : page('ab1')));
+    model2.onUpdate = () => assert.fail('a stale extension was applied');
+    await model2.setQuery('a');
+    await model2.setQuery('ab');
+    stale.resolve({ matches: [at('a9', null, 9)], truncated: false });
+    await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(model2.items.map(i => i.name), ['ab1']);
+});
+
+test('a failed dataset-wide search leaves the shown cells\' matches', async () => {
+    const model = new NameSearchModel(async () => ({ ...page('c1'), more: Promise.reject(new Error('x')) }));
+    await model.setQuery('c');
+    await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(model.items.map(i => i.name), ['c1']);
+    assert.equal(model.error, null);
 });

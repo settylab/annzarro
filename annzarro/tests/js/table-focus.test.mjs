@@ -43,13 +43,15 @@ DataManager.getCells = () => CELLS;
 DataManager.getGenes = () => GENES;
 DataManager.getCellIndex = (c) => CELLS.indexOf(c);
 DataManager.resolveCellIndex = async (c) => CELLS.indexOf(c);
+DataManager.locateCell = async (c) => ({ name: c, position: CELLS.indexOf(c), row: CELLS.indexOf(c),
+                                         shown: CELLS.indexOf(c) >= 0 });
 DataManager.getGeneIndex = (g) => GENES.indexOf(g);
 DataManager.getFocusedCell = () => 'c1';
 DataManager.getFocusedGene = () => 'g1';
 // one row of the requested matrix, sized for the table that asked
 DataManager.loadObsp = async () => ({ data: [[0.1, 0.2, 0.3]] });
 DataManager.loadVarp = async () => ({ data: [[0.4, 0.5]] });
-DataManager.loadLayer = async ({ rows }) => ({ data: rows ? [7, 8] : [1, 2, 3] });
+DataManager.loadLayer = async ({ cell }) => ({ data: cell ? [7, 8] : [1, 2, 3] });
 
 const settle = () => new Promise(r => setTimeout(r, 20));
 

@@ -81,14 +81,77 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
 ```
 
+## Stepping through every cell
+
+A subset is the first of several **parts** that split the cells into disjoint groups of the
+chosen size; together the parts hold every cell (every cell passing the filter) once. With more
+than one part, the statistics bar shows the part next to the badge:
+
+```{figure} ../_static/screens/user-guide/subsets-parts.png
+:class: screenshot
+:width: 35%
+:alt: The statistics bar reading Cells 3,000 of 8,090, the badge Subset · seed 0, and below it a previous-part button (1), the part number 1 in a box (2), "of 3" and a next-part button (3).
+
+The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
+```
+
+- **›** (3) shows the next part and **‹** (1) the previous one. The view stays as it is (layout,
+  panel settings, focused cell and gene, locks); only the cells change, and every panel and
+  table follows. A focused or locked cell that is not in the new part stays focused or locked:
+  its rows are still read, over the new part's cells, and the header marks it **not in part 2
+  of 3** ({ref}`focus-outside-subset`).
+- Type a part number into the box (2) and press Enter to jump to it.
+- The parts never share a cell: stepping from part 1 to part 3 shows each cell exactly once.
+- Share links and panel sets record the part, so they reopen on the same part. A link without
+  a part, such as one made before parts existed, opens on part 1.
+
+The same view on part 1 and, after one click on **›**, on part 2:
+
+```{figure} ../_static/screens/user-guide/subsets-parts-view-1.png
+:class: screenshot
+:alt: Part 1 of 3: a UMAP of 3,000 cells coloured by cell type and a cell table of 3,000 rows whose first row is HSPC_Mid_1#AAACCCATCGCTGCGA-1; the statistics bar reads Cells 3,000 of 8,090, Part 1 of 3.
+
+Part 1 of 3.
+```
+
+```{figure} ../_static/screens/user-guide/subsets-parts-view-2.png
+:class: screenshot
+:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1, and the Removed Datapoints box reads Not in this part (2 of 3): 5,090.
+
+Part 2 of 3: other cells in the same layout. The table starts with different cells, the UMAP's
+points are a different 3,000, and **Removed Datapoints** counts the rest as "Not in this part
+(2 of 3)". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
+with the subset applied as above.
+```
+
+### Balanced parts
+
+With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
+Small groups are used up in the first parts, so later parts hold the larger groups only. Here
+`bm_aging.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
+cell types). By part 7, 28 of them have been shown in full, and the part holds the three largest
+types that still have cells left: LMPP, Neutrophil and Ery P. The badge's tooltip says so:
+
+```{figure} ../_static/screens/user-guide/subsets-balanced-late-part.png
+:class: screenshot
+:alt: Part 7 of 9 of a subset balanced across highres_celltype: the UMAP shows only LMPP, Neutrophil and Ery P cells; the badge tooltip reads "Showing 1,000 of 8,090 cells (seed 0, balanced by highres_celltype). Part 7 of 9: the parts hold every cell once; step through them with ‹ ›. Groups already shown in full by earlier parts: Basophil, Basophil Progenitor, CD4 T cell, CD8 TEM, CLP and 23 more. Every panel shows these same cells. Click to change the subset."
+
+Part 7 of 9, balanced across cell type. The tooltip (drawn into the screenshot, because a
+headless browser does not capture native tooltips; the text is the badge's own) lists the cell
+types earlier parts already showed in full. View:
+{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`.
+```
+
 ## What a subset changes
 
 - **Cell plots** draw only the subset's cells. The **Removed Datapoints** box counts the other
-  cells as not in the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
+  cells as not in this part of the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
   every cell of the dataset. Gene plots draw every gene as before.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
-- **The Focused Cell picker** only finds cells in the subset.
+- **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
+  first; the others follow, tagged **not shown**, and can be focused too
+  ({ref}`focus-outside-subset`).
 - **Share links, panel sets and the autosaved view** store the subset's description, so they
   reopen on the same cells (a link to the subset above is 1,351 characters). A view saved with
   every cell of a large dataset records that and reopens with every cell; a view without a subset

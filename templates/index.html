@@ -113,6 +113,7 @@
                                         </button>
                                     </div>
                                     <div class="flex-grow-1"><input id="focused-cell" class="form-control" type="text" placeholder="Search cells" aria-label="Focused cell"></div>
+                                    <span id="focused-cell-outside" class="badge focus-outside-badge" hidden>not shown</span>
                                 </div>
                             </div>
                             <div class="col-auto header-actions">
@@ -141,6 +142,11 @@
                 <div class="col-md-3">
                     <span>Cells: <span id="cell-count">-</span></span>
                     <button id="subset-button" type="button" class="btn btn-sm subset-badge" hidden>All cells</button>
+                    <span id="subset-parts" class="subset-parts" hidden>
+                        <button id="subset-part-prev" type="button" class="btn btn-sm subset-part-step" aria-label="Previous part" title="Previous part">&lsaquo;</button>
+                        <label class="subset-part-label">Part <input id="subset-part-input" type="number" min="1" step="1" class="subset-part-input" aria-label="Part number"> of <span id="subset-part-count">-</span></label>
+                        <button id="subset-part-next" type="button" class="btn btn-sm subset-part-step" aria-label="Next part" title="Next part">&rsaquo;</button>
+                    </span>
                 </div>
                 <div class="col-md-3">
                     <span>Genes: <span id="gene-count">-</span></span>

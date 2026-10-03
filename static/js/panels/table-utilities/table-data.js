@@ -6,7 +6,7 @@ import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
-    classifyError, missingEntity, classifyFocusRow
+    classifyError, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 
 /**
@@ -222,11 +222,12 @@ async function loadColumnData(column, entityType, signal = null) {
         // classifier the plot uses.
         if (loaded.unavailable) {
             // One sentence, shared with the plot -- see missingEntity().
+            const { kind, name, cell } = loaded.unavailable;
             return {
                 values: loaded.values,
-                coverage: missingEntity(
-                    loaded.unavailable.kind, loaded.unavailable.name,
-                    { ...opts, total: expected })
+                coverage: kind === 'cell'
+                    ? unreadableCell(cell || (name ? { name } : null), { ...opts, total: expected })
+                    : missingEntity(kind, name, { ...opts, total: expected })
             };
         }
         if (loaded.matrixKey !== undefined) {
@@ -290,8 +291,9 @@ async function loadColumnData(column, entityType, signal = null) {
  *     this dataset" (key ABSENT) and "the read failed" (key present, empty)
  *     into one indistinguishable `undefined`, which is precisely how the table
  *     came to contradict the plot about the same server response.
- *   - `unavailable` -- `{kind, name}` for a cell/gene that is not in THIS
- *     dataset. It used to return a full-length array of nulls, which the
+ *   - `unavailable` -- `{kind, name, cell?}` for a cell/gene that is not in
+ *     THIS dataset (or, `cell` from DataManager.locateCell, a cell outside the
+ *     subset that an older server cannot read). It used to return a full-length array of nulls, which the
  *     classifier could only read as "legitimately blank"; the sentence is now
  *     built by `missingEntity`, shared with the plot.
  *   - `matrixKey` -- this came from an obsm/varm/obsp/varp/layer member, whose
@@ -338,41 +340,20 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 });
                 return { values: obsmData.data, matrixKey: key };
             } else if (type === 'obsp') {
-                // Check if using focused cell or specific cell
-                if (columnName === 'focused_cell' || columnName === '_focused_cell') {
-                    // For focused cell in obsp
-                    const focusedCell = DataManager.getFocusedCell();
-                    const cellIndex = await DataManager.resolveCellIndex(focusedCell);
-                    
-                    if (cellIndex >= 0) {
-                        const obspData = await DataManager.loadObsp({
-                            obspKey: key,
-                            rows: [cellIndex]
-                        });
-                        return { values: firstRow(obspData.data), matrixKey: key,
-                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
-                    }
-                    return {
-                        values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: { kind: 'cell', name: focusedCell }
-                    };
-                } else {
-                    // For fixed cell in obsp
-                    const cellIndex = await DataManager.resolveCellIndex(columnName);
-                    
-                    if (cellIndex >= 0) {
-                        const obspData = await DataManager.loadObsp({
-                            obspKey: key,
-                            rows: [cellIndex]
-                        });
-                        return { values: firstRow(obspData.data), matrixKey: key,
-                                 slice: { kind: 'cell', name: columnName, focused: false } };
-                    }
-                    return {
-                        values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: { kind: 'cell', name: columnName }
-                    };
+                // The focused cell, or a fixed one; a cell the subset does
+                // not show is read by its dataset row (DataManager.locateCell)
+                const focused = columnName === 'focused_cell' || columnName === '_focused_cell';
+                const name = focused ? DataManager.getFocusedCell() : columnName;
+                const cell = await DataManager.locateCell(name);
+                if (DataManager.cellRowParams(cell)) {
+                    const obspData = await DataManager.loadObsp({ obspKey: key, cell });
+                    return { values: firstRow(obspData.data), matrixKey: key,
+                             slice: { kind: 'cell', name, focused } };
                 }
+                return {
+                    values: Array(DataManager.getCells().length).fill(null),
+                    unavailable: { kind: 'cell', name, cell }
+                };
             } else if (type === 'layer') {
                 // Check if using focused gene or specific gene
                 if (columnName === 'focused_gene' || columnName === '_focused_gene') {
@@ -461,41 +442,20 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     };
                 }
             } else if (type === 'layer') {
-                // Check if using focused cell or specific cell
-                if (columnName === 'focused_cell' || columnName === '_focused_cell') {
-                    // For focused cell in layer
-                    const focusedCell = DataManager.getFocusedCell();
-                    const cellIndex = await DataManager.resolveCellIndex(focusedCell);
-                    
-                    if (cellIndex >= 0) {
-                        const layerData = await DataManager.loadLayer({
-                            layerName: key,
-                            rows: [cellIndex]
-                        });
-                        return { values: layerData.data, matrixKey: key,
-                                 slice: { kind: 'cell', name: focusedCell, focused: true } };
-                    }
-                    return {
-                        values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: { kind: 'cell', name: focusedCell }
-                    };
-                } else {
-                    // For fixed cell in layer
-                    const cellIndex = await DataManager.resolveCellIndex(columnName);
-                    
-                    if (cellIndex >= 0) {
-                        const layerData = await DataManager.loadLayer({
-                            layerName: key,
-                            rows: [cellIndex]
-                        });
-                        return { values: layerData.data, matrixKey: key,
-                                 slice: { kind: 'cell', name: columnName, focused: false } };
-                    }
-                    return {
-                        values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: { kind: 'cell', name: columnName }
-                    };
+                // The focused cell's expression row, or a fixed cell's; also
+                // for a cell the subset does not show (see obsp above)
+                const focused = columnName === 'focused_cell' || columnName === '_focused_cell';
+                const name = focused ? DataManager.getFocusedCell() : columnName;
+                const cell = await DataManager.locateCell(name);
+                if (DataManager.cellRowParams(cell)) {
+                    const layerData = await DataManager.loadLayer({ layerName: key, cell });
+                    return { values: layerData.data, matrixKey: key,
+                             slice: { kind: 'cell', name, focused } };
                 }
+                return {
+                    values: Array(DataManager.getGenes().length).fill(null),
+                    unavailable: { kind: 'cell', name, cell }
+                };
             }
         }
         
@@ -538,12 +498,15 @@ export function getColumnDisplayName(column) {
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
     } else if (column.type === 'obsp' || column.type === 'varp' || column.type === 'layer') {
+        // a cell the subset does not show is still a column, and says so
+        const notShown = name => (DataManager.cellShown(name) === false ? ' (not shown)' : '');
         if (FOCUSED_CELL_COLUMNS.has(column.column)) {
-            return `${column.key}: ${DataManager.getFocusedCell() ?? 'no focused cell'} (follows focus)`;
+            const focused = DataManager.getFocusedCell();
+            return `${column.key}: ${focused ?? 'no focused cell'} (follows focus)${notShown(focused)}`;
         } else if (FOCUSED_GENE_COLUMNS.has(column.column)) {
             return `${column.key}: ${DataManager.getFocusedGene() ?? 'no focused gene'} (follows focus)`;
         } else if (column.column) {
-            return `${column.key}: ${column.column}`;
+            return `${column.key}: ${column.column}${notShown(column.column)}`;
         }
         return `${column.key}`;
     }
