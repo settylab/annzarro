@@ -3,7 +3,7 @@ from importlib.metadata import PackageNotFoundError, version as _version
 
 project = "AnnZarro"
 author = "Dominik J. Otto, Siddharth Baasri, Manu Setty"
-copyright = "2026, Setty Lab, Fred Hutch Cancer Center"
+copyright = "2026, Setty Lab"
 try:
     release = _version("annzarro")
 except PackageNotFoundError:
