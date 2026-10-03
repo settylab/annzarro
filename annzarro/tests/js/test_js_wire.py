@@ -62,3 +62,26 @@ def test_server_bytes_decode_in_the_browser_decoder(ds, tmp_path):  # noqa: F811
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("ok ") == len(requests)
+
+
+def test_categorical_codes_decode_in_the_browser_decoder(tmp_path):
+    from annzarro.tests.server.test_categorical_codes import categorical_client
+    node = _node()
+    client, path = categorical_client(tmp_path)
+    cases = []
+    for i, (route, column) in enumerate((("obs", "line"), ("obs", "many"), ("obs", "level"), ("var", "kind"))):
+        query = {"dataset_path": path, "columns": column}
+        coded = client.get(f"/api/v1/data/{route}", query_string={**query, "format": "f32",
+                                                                   "categorical": "codes"})
+        assert coded.headers["X-Annzarro-Encoding"] == "categorical", column
+        data = client.get(f"/api/v1/data/{route}", query_string=query).get_json()["data"][column]
+        body = f"cat{i}.bin"
+        (tmp_path / body).write_bytes(coded.data)
+        cases.append({"name": f"{route} {column}", "body": body, "json": data,
+                      "headers": {k: v for k, v in coded.headers.items() if k.startswith("X-Annzarro")}})
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps(cases))
+    result = subprocess.run([node, os.path.join(JS_TEST_DIR, "wire-roundtrip.mjs"), str(manifest)],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("ok ") == len(cases)

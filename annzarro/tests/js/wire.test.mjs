@@ -12,7 +12,7 @@ globalThis.window = { addEventListener() {}, location: { href: 'http://localhost
 globalThis.document = { addEventListener() {}, dispatchEvent() {}, getElementById: () => null };
 globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
 
-const { decodeVector, toJSONShape, toPlainArray } = await import('../../../static/js/utils/wire.js');
+const { categoricalValues, decodeVector, toJSONShape, toPlainArray } = await import('../../../static/js/utils/wire.js');
 const { CacheManager } = await import('../../../static/js/cache-manager.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
 
@@ -134,6 +134,58 @@ test('loadObsp keeps the [row] shape, densified from sparse', async () => {
         binaryResponse(sparseBody(4, [[2, 0.75]]), { shape: [1, 4], encoding: 'sparse', nnz: 1 })]]);
     const res = await DataManager.loadObsp({ datasetPath: DS, obspKey: 'connectivities', rows: [1] });
     assert.deepEqual(res.data, [[0, 0, 0.75, 0]]);
+});
+
+function categoricalBody(categories, codes, Ctor = Int8Array) {
+    const prefix = new TextEncoder().encode(JSON.stringify(categories));
+    const lead = Math.ceil(prefix.length / 4) * 4;
+    const buf = new ArrayBuffer(lead + codes.length * Ctor.BYTES_PER_ELEMENT);
+    new Uint8Array(buf).fill(32, 0, lead);
+    new Uint8Array(buf).set(prefix, 0);
+    new Ctor(buf, lead, codes.length).set(codes);
+    return { buf, lead };
+}
+
+function categoricalResponse(categories, codes, dtype = 'int8', Ctor = Int8Array) {
+    const { buf, lead } = categoricalBody(categories, codes, Ctor);
+    return new Response(buf, { status: 200, headers: {
+        'Content-Type': 'application/octet-stream', 'X-Annzarro-Encoding': 'categorical',
+        'X-Annzarro-Shape': String(codes.length), 'X-Annzarro-Dtype': dtype,
+        'X-Annzarro-Categories-Bytes': String(lead) } });
+}
+
+test('categorical codes decode to the values JSON carried; -1 is missing', () => {
+    const { buf, lead } = categoricalBody(['A549', 'é漢', 7], [1, -1, 0, 2, 1]);
+    const d = decodeVector(buf, { 'X-Annzarro-Encoding': 'categorical', 'X-Annzarro-Shape': '5',
+        'X-Annzarro-Dtype': 'int8', 'X-Annzarro-Categories-Bytes': String(lead) });
+    assert.ok(d.values instanceof Int8Array);
+    assert.deepEqual(d.categories, ['A549', 'é漢', 7]);
+    assert.deepEqual(categoricalValues(d), ['é漢', null, 'A549', 7, 'é漢']);
+    const wide = categoricalBody(['a', 'b'], [300, 1], Int16Array);
+    const w = decodeVector(wide.buf, { 'X-Annzarro-Encoding': 'categorical', 'X-Annzarro-Shape': '2',
+        'X-Annzarro-Dtype': 'int16', 'X-Annzarro-Categories-Bytes': String(wide.lead) });
+    assert.deepEqual(categoricalValues(w), [null, 'b'], 'a code past the categories is missing, not undefined');
+    assert.throws(() => decodeVector(buf, { 'X-Annzarro-Encoding': 'categorical', 'X-Annzarro-Shape': '6',
+        'X-Annzarro-Dtype': 'int8', 'X-Annzarro-Categories-Bytes': String(lead) }), /expected/);
+    assert.throws(() => decodeVector(buf, { 'X-Annzarro-Encoding': 'categorical', 'X-Annzarro-Shape': '5',
+        'X-Annzarro-Dtype': 'float32', 'X-Annzarro-Categories-Bytes': String(lead) }), /Malformed/);
+});
+
+test('loadObs asks for categorical codes and hands the plot values and categories', async () => {
+    CacheManager.clear();
+    const calls = installFetch([['/api/v1/data/obs', () => categoricalResponse(['a', 'b'], [0, 1, -1, 1])]]);
+    const cat = await DataManager.loadObs({ datasetPath: DS, columns: ['kind'] });
+    const q = new URL(calls[0].url, 'http://localhost').searchParams;
+    assert.equal(q.get('format'), 'f32');
+    assert.equal(q.get('categorical'), 'codes');
+    assert.deepEqual(cat.data, { kind: ['a', 'b', null, 'b'] });
+    assert.deepEqual(cat.categories, { kind: ['a', 'b'] });
+    assert.equal(cat.dataset_path, DS);
+    const again = await DataManager.loadObs({ datasetPath: DS, columns: ['kind'] });
+    assert.equal(calls.length, 1, 'served from the decoded cache');
+    again.data.kind[0] = 'changed';
+    assert.equal((await DataManager.loadObs({ datasetPath: DS, columns: ['kind'] })).data.kind[0], 'a',
+        'each caller gets its own copy');
 });
 
 test('loadObs: a numeric column comes binary, a categorical one as JSON', async () => {
