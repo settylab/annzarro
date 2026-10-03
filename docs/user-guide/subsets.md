@@ -140,6 +140,14 @@ In large-plot mode:
   numeric obs column or by a gene, with the colour palette, scale and range; point size and
   opacity. A gene's colour is drawn in 64 steps of the scale, the strongest values on top. Every
   change redraws the panel.
+- **Categories are drawn interleaved.** The regular plot draws each category whole, in the order of
+  the legend, so where categories overlap the last ones cover the others. Large-plot mode draws
+  them in pieces of under 100,000 points, mixed through the whole draw, so no category sits
+  entirely on top. The same data can therefore look different in the two modes where categories
+  overlap.
+- **Cell names stay on the server.** The dataset opens without downloading the names of its cells.
+  Focusing a cell by name asks the server for it; on a dataset with tens of millions of cells the
+  first such search waits while the server builds its name index (16 s for 50 million cells).
 - **Settings it cannot draw are refused, not attempted.** A view that asks for one, such as a
   share link colouring by an obsp row, shows a message instead of the plot: "Colour by an obsp
   column is not available for 95.6M points: turn on a subset, or choose an obs column or a gene".

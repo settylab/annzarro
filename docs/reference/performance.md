@@ -143,9 +143,22 @@ final timing runs (other jobs shared the machine):
 | JavaScript heap, peak | 1.9 GB | 1.9 GB |
 | Browser tab memory (RSS) | 8.5 GB | 9.0 GB |
 
-Most of the first plot is the server writing the 95.6 million cell names as JSON (31-49 s). For a
-category colour, the column's labels as JSON take another 28-43 s. The drawing itself takes about
-7 s. Pan by dragging runs at 17 ms per frame. Each finished zoom redraws for 1.0-1.8 s, because
+In that measurement most of the first plot was the server writing the 95.6 million cell names as
+JSON (31-49 s); large-plot mode no longer downloads them (they stay on the server and are asked for
+one at a time). On real Tahoe-100M data, 50 million cells (PCs 1-2, Chromium 153, three cold and
+four warm runs; categorical colours as integer codes), opening every cell takes:
+
+| | Coloured by cell line | Coloured by a gene |
+|---|---|---|
+| First plot, cold / warm | 3.9 / 2.6 s | 3.4 / 3.0 s |
+| Before names stayed on the server (cold) | 22.6 s | 24.0 s |
+| Recolour by another gene | | 3.1-3.3 s |
+| JavaScript heap, peak | 1.0 GB | 1.0 GB |
+| Browser tab memory (RSS) | 5.6-5.8 GB | 7.0-7.3 GB |
+| Server memory (RSS) | 1.4 GB | 2.2-3.1 GB |
+
+Pan by dragging redraws every point on each move: 0.4-0.6 s per redraw at the default point size,
+so about two frames a second at 50 million points. Each finished zoom takes 0.8-1.0 s, because
 Plotly uploads every point to the GPU again.
 
 ## Chunk shape
