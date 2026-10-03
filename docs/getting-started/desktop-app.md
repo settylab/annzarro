@@ -52,13 +52,17 @@ The builds are not code-signed yet, so the first launch needs one extra step:
   AppImage that fails to start may need `--no-sandbox`.
 
 The very first start can take up to a minute while the system's malware scanner (Gatekeeper,
-Defender) checks the bundled server; the window shows a loading screen until the server answers.
-Later starts take a few seconds. Quitting the app stops the server.
+Defender) checks the bundled server; the loading screen counts the seconds and says so. Later
+starts take a few seconds. The wait is bounded: if the server has not answered after 180 s, or
+the interface has not loaded 60 s after that, the window shows an error page with the reason,
+the path of the log file and a **Retry** button. Starting the app again while it runs brings
+the open window to the front instead of starting a second server. Quitting the app stops the
+server.
 
 The app then behaves like `annzarro start` on your own computer:
 
 - The server listens on `127.0.0.1` only, starting at port 39487 and taking the next free port
-  if that one is busy. Login is off.
+  if that one is busy, also when another program takes it while the server starts. Login is off.
 - The data directory is `~/annzarro-data` (in your home folder). Put or link datasets into
   `~/annzarro-data/datasets`; the Dataset picker lists stores both there and directly in
   `~/annzarro-data`. Saved panel sets go to `~/annzarro-data/sessions`. This is also the default
@@ -84,7 +88,8 @@ path on your disk, so they only reopen on the same computer.
 | Server state (PID file, server log) | `~/.annzarro`, as for `annzarro start` |
 | Optional settings | `~/.config/annzarro/config.yaml`, read as by `annzarro start` ({doc}`../reference/configuration`); host, port, data directory and login are fixed by the app |
 
-If the server does not start, the app shows an error page that names the log file.
+If the server does not start, the app shows an error page that names the log file and offers
+**Retry**.
 
 ## Building the app yourself
 
