@@ -196,6 +196,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         filter: false 
     };
     
+    // A large plot (large-plot.js) has no incremental updates: redraw it
+    if (data && data.large) {
+        refreshPlot();
+        return;
+    }
+
     // Merge provided options with defaults
     const updateOptions = { ...defaultOptions, ...options };
 
@@ -974,6 +980,10 @@ export async function loadColorDataAndUpdatePlot(
     id,
     refreshPlot
 ) {
+    if (data && data.large) {
+        refreshPlot();
+        return;
+    }
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
@@ -1033,6 +1043,8 @@ export async function loadColorDataAndUpdatePlot(
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
+  // A large plot (large-plot.js) draws no focused-cell marker
+  if (data && data.large) return;
   // Capture current view state before making changes
   let currentLayout = null;
   let newXTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;

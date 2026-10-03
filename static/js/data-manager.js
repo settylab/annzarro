@@ -7,6 +7,15 @@ import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
+import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+
+// A /cells body above this size is read as a stream into PackedNames
+// (ArrayBuffers) instead of one JSON string and an array of JS strings: about
+// 12M cells with 19-character names. Above about 24M such cells the JSON text
+// no longer fits in one V8 string at all. Below it the names stay a plain
+// array, which every view accepts; only the large Cell Plot path
+// (large-plot.js) works with packed names, and it takes over above 1M cells.
+const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
 const BINARY_RESULT = Symbol('binarySlice');
@@ -506,7 +515,17 @@ const DataManager = (function() {
                 throw new DOMException("Cells loading aborted", "AbortError");
             }
             
-            const data = await _fetchWithCache(Config.API.CELLS, { dataset_path: datasetPath }, signal);
+            const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
+            const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
+            const response = await fetch(fullUrl, { signal });
+            const size = Number(response.headers.get('Content-Length') || 0);
+            if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+                const t0 = performance.now();
+                const names = await PackedNames.fromJSON(response, 'cells', size);
+                console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
+                return names;
+            }
+            const data = await _readResponse(response);
             
             // Check if response contains error information
             if (data && data.status === 'error') {
@@ -1399,10 +1418,47 @@ const DataManager = (function() {
      */
     function getCells() {
         if (!_cells) return [];
+        // Packed names are read-only and too large to copy
+        if (_cells instanceof PackedNames) return _cells;
         // Return a copy to avoid modifying the original array
         return [..._cells]; // No sorting to maintain original order
     }
     
+    /**
+     * One numeric cell- or gene-axis vector as the decoded typed array
+     * (Float32Array, NaN where the value is missing): no plain-array copy.
+     * Null when the server answers JSON instead (a non-numeric slice).
+     * @param {string} url  e.g. `${Config.API.OBSM}/X_umap`
+     * @param {Object} params  route parameters (dataset_path, column_name, cols, ...)
+     */
+    async function loadVector(url, params) {
+        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+        return body && body[BINARY_RESULT] ? body.values : null;
+    }
+
+    /**
+     * A categorical obs column as codes (Uint16Array, `MISSING` where blank)
+     * plus its categories, read as a stream (utils/packed-names.js): the JSON
+     * body of a large dataset does not fit in one string.
+     */
+    async function loadCategoryCodes(datasetPath, column) {
+        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column });
+        const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
+        const key = `${fullUrl}#codes`;
+        const cached = CacheManager.get(key);
+        if (cached !== undefined) return cached;
+        if (_inflight.has(key)) return _inflight.get(key);
+        const pending = (async () => {
+            const response = await fetch(fullUrl);
+            if (!response.ok) await _readResponse(response);   // throws with the server's reason
+            const result = await categoryCodesFromJSON(response, column, (_cells || []).length);
+            CacheManager.set(key, result);
+            return result;
+        })().finally(() => _inflight.delete(key));
+        _inflight.set(key, pending);
+        return pending;
+    }
+
     /**
      * Get the cell names, sorted alphabetically
      * @returns {Array<string>} - Cell names sorted alphabetically
@@ -1509,6 +1565,8 @@ const DataManager = (function() {
         loadX,
         loadUns,
         loadByPath,
+        loadVector,
+        loadCategoryCodes,
         setFocusedCell,
         setFocusedGene,
         setTaxonomyId,

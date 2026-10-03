@@ -1081,9 +1081,18 @@ const App = (function() {
                     }
                 }
             }
-            const first = await fetchNameMatches(Config.API.NAMES, {
-                datasetPath, entity, query: '', limit: 1, subset });
-            const name = first.matches.length ? first.matches[0].name : null;
+            // The first name is in the list the dataset load already
+            // downloaded. Asking the server for it (query '') makes it build
+            // its name index first: 56 s for 95.6M cells.
+            const names = entity === 'cells' ? DataManager.getCells() : DataManager.getGenes();
+            let name;
+            if (names && names.length) {
+                name = names[0];
+            } else {
+                const first = await fetchNameMatches(Config.API.NAMES, {
+                    datasetPath, entity, query: '', limit: 1, subset });
+                name = first.matches.length ? first.matches[0].name : null;
+            }
             if (name && name !== current) setFocused(name);
             if (picker) picker.setValue(name);
         } catch (error) {
