@@ -81,8 +81,12 @@ its ranks gets a wider window and is collected again. Only the collected rows
 (about 1.1 x the part) are sorted, so a part costs about what part 0 does
 (synthetic 2M cells, 20 parts of 100,000, in-process: uniform 0.023 / 0.034 /
 0.029 s for parts 0 / 10 / 19; balanced across 380 drugs 0.065 / 0.140 /
-0.113 s). The row pass is linear in the cells, about 1.5 s at 95.6 million;
-the quotas of the last of 957 balanced parts over 5,000 groups take 0.12 s.
+0.113 s). On the real 50-million-cell Tahoe store (500 parts of 100,000;
+fresh server process per part, pages cached; laptop, under the benchmark lock),
+`/data/subset` took 0.28 / 0.31 / 0.57 / 0.42 s for parts 0 / 1 / 250 / 499
+uniform, and 0.78 / 0.81 / 1.08 / 0.82 s balanced across `cell_line_id`; the
+part's 100,000 names then took 0.55 s. The quotas of the last of 957 balanced
+parts over 5,000 groups take 0.12 s.
 
 **Default.** A dataset with more than `ui.defaults.subset_threshold` cells
 (200,000) opens on `{"n": subset_size, "seed": subset_seed}` (100,000, 0). At
