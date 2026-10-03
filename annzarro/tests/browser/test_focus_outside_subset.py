@@ -48,8 +48,7 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def server(tmp_path_factory):
+def _serve(tmp_path_factory, config=None):
     home = tmp_path_factory.mktemp("home")
     data = tmp_path_factory.mktemp("data")
     store = _make_store(data / "focus.zarr")
@@ -59,7 +58,11 @@ def server(tmp_path_factory):
         (pytest.fail if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1" else pytest.skip)(
             "annzarro console script not found")
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1")
-    proc = subprocess.Popen([exe, "start", "--host", "127.0.0.1", "--port", str(port),
+    extra = []
+    if config:
+        (home / "c.yaml").write_text(config)
+        extra = ["--config", str(home / "c.yaml")]
+    proc = subprocess.Popen([exe, "start", *extra, "--host", "127.0.0.1", "--port", str(port),
                              "--data-dir", str(data), "--no-browser", "--auth-disabled"],
                             env=env, cwd=home, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
@@ -72,6 +75,21 @@ def server(tmp_path_factory):
     else:
         proc.kill()
         pytest.fail("server did not start")
+    return proc, root, store
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    proc, root, store = _serve(tmp_path_factory)
+    yield root, store
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    """Large-plot mode above 10 points: every 12-cell part is drawn large."""
+    proc, root, store = _serve(tmp_path_factory, "ui:\n  defaults:\n    large_plot_points: 10\n")
     yield root, store
     proc.terminate()
     proc.wait(10)
@@ -88,10 +106,10 @@ def _part_rows(root, store, part):
     return [int(c[1:]) for c in cells]
 
 
-def _link(root, store, part, focused, cell_rows=None, colour_locked=False):
+def _link(root, store, part, focused, cell_rows=None, colour_locked=False, colour=None):
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
-    colour = {"type": "obsp", "key": "dist", "column": focused, "locked": colour_locked}
+    colour = colour or {"type": "obsp", "key": "dist", "column": focused, "locked": colour_locked}
     cells = {"id": "cell-plot-F", "title": "kNN", "x": x, "y": y, "z": None, "color": colour}
     genes = {"id": "gene-plot-F", "title": "expression", "z": None,
              "x": {"type": "layer", "key": "counts", "column": focused},
@@ -291,5 +309,31 @@ def test_pick_a_cell_the_subset_does_not_show(server):
             _wait(page, _shows(r0, parts[1], 1))
             page.wait_for_function("() => document.getElementById('focused-cell-outside').hidden", timeout=20_000)
             assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .focus-notice') is None
+        finally:
+            browser.close()
+
+
+def test_large_plot_mode_keeps_the_focus_and_says_so(large_server):
+    """No marker in large-plot mode, but the focus is kept, its rows are read and
+    the plot says it is not shown."""
+    root, store = large_server
+    parts = [_part_rows(root, store, p) for p in range(2)]
+    x = next(r for r in parts[0] if r not in parts[1])
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            # large-plot mode colours by obs or a gene, not by an obsp row
+            page.goto(_link(root, store, 1, f"c{x}", colour={"type": "obs", "key": "score", "column": ""}))
+            note = page.wait_for_selector(
+                '.tile[data-tile-id="cell-plot-F"] .focus-notice .coverage-notice__headline', timeout=60_000)
+            assert note.text_content() == f"Focused cell c{x} is not among the shown cells"
+            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .mode-notice') is not None, "large mode"
+            s = _wait(page, lambda s: s["focused"] == f"c{x}" and s["geneX"] is not None
+                      and sorted(s["geneX"]) == _expect(x, parts[1])[1])
+            assert page.text_content("#focused-cell-outside") == "not in part 2 of 5"
+            marks = page.evaluate("""() => document.querySelector('.tile[data-tile-id="cell-plot-F"] .js-plotly-plot')
+                ._fullData.filter(t => t.name === 'Focused Cell').length""")
+            assert marks == 0, "no marker in large-plot mode"
         finally:
             browser.close()

@@ -1,6 +1,6 @@
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
-import { updatePlotElements, updatePlotOnTableChange, highlightFocusedEntity, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
+import { updatePlotElements, updatePlotOnTableChange, highlightFocusedEntity, noteFocusOutside, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -203,6 +203,9 @@ const CellPlotPanel = (function() {
         }
 
         async function handleFocusedCellChanged(focusedCell) {
+            // whether the new focus is a point here: also with highlighting
+            // off, and in large-plot mode, where nothing else is redrawn
+            noteFocusOutside(_plotContainer, _data, _settings, _plotType);
         
             // Determine if any setting uses obsp data
             const usesObspData = _settings.x.type === 'obsp' ||

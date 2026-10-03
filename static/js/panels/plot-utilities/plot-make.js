@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { notInSubsetLabel } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory } from './plot-make-helper.js';
-import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
+import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
@@ -714,6 +714,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         renderModeNotice(plotContainer, null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        // no marker in large-plot mode, but the line that the focus is not shown
+        noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
         updateLargePlotControls(container, true, largePlotPoints());
         return;
