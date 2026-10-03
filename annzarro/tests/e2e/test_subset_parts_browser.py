@@ -6,7 +6,7 @@ step must keep the view and load other cells: the cell names each part loads
 differ, never overlap, and the four parts together are all 200 cells.
 
 Needs Playwright with Chromium (``pip install playwright; playwright install
-chromium``); skipped without it. Starts the server on a free 127.0.0.1 port.
+chromium``); skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1. Starts the server on a free 127.0.0.1 port.
 """
 import base64
 import json
@@ -21,7 +21,21 @@ import urllib.request
 
 import pytest
 
-sync_api = pytest.importorskip("playwright.sync_api")
+# CI sets ANNZARRO_REQUIRE_BROWSER=1 where Playwright is installed: there a
+# missing browser or asset is a failure, not a skip.
+REQUIRE = os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1"
+
+
+def _skip_or_fail(reason):
+    if REQUIRE:
+        pytest.fail(f"{reason} (ANNZARRO_REQUIRE_BROWSER=1)")
+    pytest.skip(reason)
+
+
+try:
+    from playwright import sync_api
+except ImportError:  # pragma: no cover - depends on the environment
+    sync_api = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(os.path.dirname(HERE), "data", "fixture_small.zarr")
@@ -36,8 +50,10 @@ def _free_port():
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
+    if sync_api is None:
+        _skip_or_fail("Playwright is not installed")
     if not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(HERE)), "..", "static", "vendor")):
-        pytest.skip("static/vendor is not provisioned")
+        _skip_or_fail("static/vendor is not provisioned")
     tmp = tmp_path_factory.mktemp("parts")
     data = tmp / "data"
     data.mkdir()
@@ -81,7 +97,10 @@ def test_stepping_parts_loads_disjoint_cells_that_cover_the_dataset(server):
             loads.append((spec.get("part", 0), resp.json()["cells"]))
 
     with sync_api.sync_playwright() as pw:
-        browser = pw.chromium.launch()
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:  # no browser binary
+            _skip_or_fail(f"Chromium cannot start: {exc}")
         try:
             page = browser.new_page()
             page.on("response", on_response)
