@@ -11,7 +11,7 @@ import {
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
-import { mountNamePicker, fetchNameMatches } from './utils/name-picker.js';
+import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
@@ -763,7 +763,11 @@ const App = (function() {
         if (focusedCellInput) {
             _pickers.cells = mountNamePicker({
                 input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'),
-                onPick: name => DataManager.setFocusedCell(name)
+                onPick: (name, match) => {
+                    // the search said where the cell is: no second lookup
+                    if (match) DataManager.rememberCell(name, match);
+                    DataManager.setFocusedCell(name);
+                }
             });
         }
         
@@ -1047,11 +1051,22 @@ const App = (function() {
         return (query, { regex, signal }) => {
             const datasetPath = DataManager.getCurrentDataset();
             if (!datasetPath) return Promise.resolve({ matches: [], truncated: false });
-            return fetchNameMatches(Config.API.NAMES, {
+            const opts = {
                 datasetPath, entity, query, signal, limit: 100,
                 mode: regex ? 'regex' : 'substring',
                 subset: DataManager.getSubsetParam()
-            });
+            };
+            const shown = fetchNameMatches(Config.API.NAMES, opts);
+            if (entity !== 'cells' || !opts.subset || !DataManager.hasSubsetFeature('names_scope')) return shown;
+            // Under a subset every cell of the dataset can be focused: the
+            // shown cells' matches come first, and the others, tagged "not
+            // shown", follow from a dataset-wide search (slower the first
+            // time, while the server builds that name index)
+            const all = fetchNameMatches(Config.API.NAMES, { ...opts, scope: 'dataset' });
+            all.catch(() => {});
+            return shown.then(first => ({
+                ...first, more: all.then(rest => mergeScopedMatches(first, rest, opts.limit))
+            }));
         };
     }
 

@@ -633,6 +633,11 @@ const DataManager = (function() {
         return _subset && _subset.datasetPath === _currentDataset ? _subset : null;
     }
 
+    /** Does the server list `feature` in its /data/subset reply? */
+    function hasSubsetFeature(feature) {
+        return _features().has(feature);
+    }
+
     /** Can this server read a cell outside the subset (dataset_rows=)? */
     function canReadOutsideSubset() {
         return _features().has('dataset_rows');
@@ -838,9 +843,17 @@ const DataManager = (function() {
             .catch(() => {});
     }
 
-    /** Record a cell's dataset row learned elsewhere (a name search result). */
-    function rememberCellRow(name, row) {
-        if (_currentDataset) _learnRow(_currentDataset, name, row);
+    /**
+     * Record what a name search said about a cell: its dataset row, and its
+     * position among the cells shown (null when not shown), so focusing it
+     * needs no second lookup.
+     * @param {string} name
+     * @param {{row?: number, index?: number|null}} match
+     */
+    function rememberCell(name, { row, index } = {}) {
+        if (!_currentDataset) return;
+        if (Number.isInteger(row)) _learnRow(_currentDataset, name, row);
+        if (_cells instanceof RemoteNames && Number.isInteger(index)) _cells.remember(name, index);
     }
 
     /**
@@ -1989,8 +2002,9 @@ const DataManager = (function() {
         locateCell,
         cellRowParams,
         canReadOutsideSubset,
+        hasSubsetFeature,
         recordCellRows,
-        rememberCellRow,
+        rememberCell,
         cellRowHints,
         setCellRowHints,
         prewarmCellNames,
