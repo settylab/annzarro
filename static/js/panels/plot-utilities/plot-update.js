@@ -1086,6 +1086,8 @@ export function noteFocusOutside(plotContainer, data, settings, entityType = nul
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
   noteFocusOutside(plotContainer, data, settings, entityType);
+  // any ring still being read is for an older state
+  if (plotContainer) plotContainer.__ringSeq = (plotContainer.__ringSeq || 0) + 1;
   // A large plot (large-plot.js) draws no focused-cell marker
   if (data && data.large) return;
   // Capture current view state before making changes
@@ -1149,7 +1151,9 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   }
 
   if (focusedIndex === -1) {
-    // a cell the subset does not show: noteFocusOutside says so
+    // a cell the subset does not show: noteFocusOutside says so, and a ring
+    // marks where it lies in this plot
+    if (entityType === 'cells') return drawOutsideRing(plotContainer, data, settings, focusedEntity);
     removeHighlight(plotContainer);
     return;
   }
@@ -1211,6 +1215,13 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     highlightTrace.z = [zValue];
   }
 
+  // A ring drawn for a cell outside the subset is replaced, not moved: the
+  // marker style differs
+  if (plotContainer.__focusRing) {
+    plotContainer.__focusRing = false;
+    removeHighlight(plotContainer);
+  }
+
   // Update existing highlight trace if one exists; otherwise add a new one.
   const existingIdx = plotContainer.data.findIndex(trace => trace && 
     trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
@@ -1244,28 +1255,104 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
 
   // No highlight trace yet: add one, then put back the view the user had
   // (adding a trace must not reset zoom), with the configured axis titles.
-  const adding = settle('add', () => Plotly.addTraces(plotContainer, highlightTrace).then(() => {
-    if (!currentLayout) return undefined;
-    // Put back only the VIEW (zoom, camera) and the axis titles. Re-sending
-    // the whole layout snapshot taken before the add undid any layout change
-    // made meanwhile, e.g. the legend moved off the colour bar.
-    const restore = {};
-    for (const axis of ['xaxis', 'yaxis']) {
-      const ax = currentLayout[axis];
-      if (!ax) continue;
-      if (Array.isArray(ax.range)) restore[`${axis}.range`] = ax.range;
-      if (ax.autorange !== undefined) restore[`${axis}.autorange`] = ax.autorange;
-      if (ax.title) restore[`${axis}.title.text`] = settings.showAxisTitles ? (axis === 'xaxis' ? newXTitle : newYTitle) : "";
-    }
-    if (currentLayout.scene && currentLayout.scene.camera) restore['scene.camera'] = currentLayout.scene.camera;
-    return Object.keys(restore).length ? Plotly.relayout(plotContainer, restore) : undefined;
-  })).finally(() => {
+  const adding = settle('add', () => Plotly.addTraces(plotContainer, highlightTrace)
+    .then(() => restoreView(plotContainer, currentLayout, settings, newXTitle, newYTitle))).finally(() => {
     if (plotContainer.__focusHighlightAdding === adding) plotContainer.__focusHighlightAdding = null;
   });
   plotContainer.__focusHighlightAdding = adding;
   return adding;
 }
 
+
+/**
+ * After a highlight trace is added, put back only the VIEW (zoom, camera)
+ * and the axis titles. Re-sending the whole layout snapshot taken before the
+ * add undid any layout change made meanwhile, e.g. the legend moved off the
+ * colour bar.
+ */
+function restoreView(plotContainer, currentLayout, settings, xTitle, yTitle) {
+  if (!currentLayout) return undefined;
+  const restore = {};
+  for (const axis of ['xaxis', 'yaxis']) {
+    const ax = currentLayout[axis];
+    if (!ax) continue;
+    if (Array.isArray(ax.range)) restore[`${axis}.range`] = ax.range;
+    if (ax.autorange !== undefined) restore[`${axis}.autorange`] = ax.autorange;
+    if (ax.title) restore[`${axis}.title.text`] = settings.showAxisTitles ? (axis === 'xaxis' ? xTitle : yTitle) : "";
+  }
+  if (currentLayout.scene && currentLayout.scene.camera) restore['scene.camera'] = currentLayout.scene.camera;
+  return Object.keys(restore).length ? Plotly.relayout(plotContainer, restore) : undefined;
+}
+
+/** Axis types whose value is the cell's own: a ring can be placed on them. */
+const RING_AXIS_TYPES = new Set(['obs', 'obsm', 'layer']);
+
+/**
+ * Where a focused cell the subset does not show would be: a hollow red ring
+ * at its own coordinates, read by its dataset row, so a cell from another
+ * part can be placed in this part's embedding. Distinct from the filled dot
+ * of a shown cell, not coloured by the colour axis, and named like the
+ * highlight, so it is left out of hover columns, point counts and colour
+ * ranges as the highlight is (the plots offer no lasso or box selection).
+ * Not drawn when an axis is an obsp row (the cell's own column is not
+ * among the cells shown), nor in large-plot mode, which draws no marker.
+ * @returns {Promise<void>}
+ */
+export async function drawOutsideRing(plotContainer, data, settings, name) {
+  // the latest call wins: a redraw and a focus change can overlap
+  const seq = plotContainer.__ringSeq = (plotContainer.__ringSeq || 0) + 1;
+  const axes = settings.z ? [settings.x, settings.y, settings.z] : [settings.x, settings.y];
+  const clear = () => {
+    plotContainer.__focusRing = false;
+    removeHighlight(plotContainer);
+  };
+  if (data.large || !axes.every(a => a && RING_AXIS_TYPES.has(a.type))) return clear();
+  const cell = await DataManager.locateCell(name).catch(() => null);
+  if (!cell || cell.shown || !DataManager.cellRowParams(cell)) return clear();
+  let coords;
+  try {
+    coords = await Promise.all(axes.map(axis => DataManager.loadCellValue(axis, cell)));
+  } catch (error) {
+    console.warn(`The ring for ${name} is not drawn:`, error && error.message ? error.message : error);
+    return clear();
+  }
+  // the focus moved, the plot went, or a newer call took over, while the values were read
+  if (seq !== plotContainer.__ringSeq || DataManager.getFocusedCell() !== name
+      || !plotContainer.isConnected) return undefined;
+  if (coords.some(v => v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v)))) return clear();
+  const is3D = axes.length === 3;
+  const ring = {
+    x: [coords[0]],
+    y: [coords[1]],
+    mode: 'markers',
+    type: is3D ? 'scatter3d' : 'scattergl',
+    marker: {
+      size: settings.pointSize * 2,
+      symbol: 'circle-open',
+      color: 'rgba(255, 0, 0, 1)',
+      line: { color: 'rgba(255, 0, 0, 1)', width: 2 },
+      showscale: false
+    },
+    // like the filled dot: a ring on top must not take the clicks and hover
+    // of the shown points under it (the plot's note names the cell)
+    hoverinfo: 'skip',
+    name: 'Focused Cell',
+    showlegend: false
+  };
+  if (is3D) ring.z = [coords[2]];
+  const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
+  clear();
+  plotContainer.__focusRing = true;
+  const xTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
+  const yTitle = `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`;
+  try {
+    await Plotly.addTraces(plotContainer, ring);
+    await restoreView(plotContainer, currentLayout, settings, xTitle, yTitle);
+  } catch (error) {
+    console.warn('Focused-cell ring skipped:', error && error.message ? error.message : error);
+  }
+  return undefined;
+}
 
 /**
  * Apply the point size and opacity to an existing plot in at most two restyles.

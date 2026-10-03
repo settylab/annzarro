@@ -821,6 +821,43 @@ const DataManager = (function() {
     }
 
     /**
+     * One cell's value on a cell-plot axis (obs column, obsm column, or a
+     * layer's gene column), also for a cell the subset does not show: where
+     * a ring marks the focused cell of another part. Null when the cell
+     * cannot be read or the axis is not a per-cell value (obsp).
+     * @param {{type: string, key: string, column?: string}} axis
+     * @param {Object} cell - from locateCell()
+     * @returns {Promise<number|string|null>}
+     */
+    async function loadCellValue(axis, cell) {
+        const at = cellRowParams(cell);
+        if (!at || !axis || !axis.key) return null;
+        const base = { dataset_path: _currentDataset, ...at };
+        let body;
+        if (axis.type === 'obs') {
+            body = await _fetchWithCache(Config.API.OBS, { ...base, columns: axis.key });
+            const column = body && body.data && body.data[axis.key];
+            return Array.isArray(column) && column.length === 1 ? column[0] : null;
+        }
+        if (axis.type === 'obsm') {
+            body = await _fetchWithCache(`${Config.API.OBSM}/${axis.key}`,
+                { ...base, column_name: String(axis.column ?? 0) });
+        } else if (axis.type === 'layer') {
+            const gene = getGeneIndex(axis.column);
+            if (gene < 0) return null;
+            body = await _fetchWithCache(`${Config.API.LAYER}/${axis.key}`, { ...base, cols: String(gene) });
+        } else {
+            return null;
+        }
+        let value = body && body.data;
+        while (Array.isArray(value)) {
+            if (value.length !== 1) return null;
+            value = value[0];
+        }
+        return value === undefined ? null : value;
+    }
+
+    /**
      * Learn the dataset rows of cells while the current subset still shows
      * them, so they are found again in another subset by row. Called before
      * the subset changes (a part step) for the focused and the locked cells.
@@ -2029,6 +2066,7 @@ const DataManager = (function() {
         canReadOutsideSubset,
         hasSubsetFeature,
         recordCellRows,
+        loadCellValue,
         rememberCell,
         cellShown,
         cellRowHints,

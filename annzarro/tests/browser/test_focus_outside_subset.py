@@ -337,3 +337,51 @@ def test_large_plot_mode_keeps_the_focus_and_says_so(large_server):
             assert marks == 0, "no marker in large-plot mode"
         finally:
             browser.close()
+
+
+RING = """() => {
+  const g = document.querySelector('.tile[data-tile-id="cell-plot-F"] .js-plotly-plot');
+  if (!g || !g._fullData) return null;
+  const marks = g._fullData.filter(t => t.name === 'Focused Cell');
+  return marks.map(t => ({x: Array.from(t.x), y: Array.from(t.y), symbol: t.marker.symbol,
+                          hoverinfo: t.hoverinfo}));
+}"""
+
+
+def test_an_outside_focus_is_a_ring_at_its_own_coordinates(server):
+    """X_umap of cell r is (r, -r): the ring sits there, hollow, and a shown
+    point clicked afterwards gets the filled dot back."""
+    root, store = server
+    parts = [_part_rows(root, store, p) for p in range(2)]
+    x = next(r for r in parts[0] if r not in parts[1])
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.goto(_link(root, store, 1, f"c{x}"))
+            _wait(page, _shows(x, parts[1], 1))
+            t0 = time.time()
+            while time.time() - t0 < 30 and not page.evaluate(RING):
+                time.sleep(0.25)
+            marks = page.evaluate(RING)
+            assert marks == [{"x": [x], "y": [-x], "symbol": "circle-open", "hoverinfo": "skip"}], marks
+
+            # the plot still has exactly the part's points: the ring is not one
+            n = page.evaluate("""() => document.querySelector('.tile[data-tile-id="cell-plot-F"] .js-plotly-plot')
+                ._fullData.filter(t => t.name !== 'Focused Cell').reduce((s, t) => s + t.x.length, 0)""")
+            assert n == len(parts[1])
+
+            # focusing a shown cell puts the filled dot at its coordinates
+            shown = parts[1][0]
+            page.evaluate(f"""async () => {{ const {{ DataManager }} = await import('/static/js/data-manager.js');
+                DataManager.setFocusedCell('c{shown}'); }}""")
+            t0 = time.time()
+            while time.time() - t0 < 30:
+                marks = page.evaluate(RING)
+                if marks and marks[0]["x"] == [shown]:
+                    break
+                time.sleep(0.25)
+            assert len(marks) == 1 and marks[0]["x"] == [shown] and marks[0]["y"] == [-shown], marks
+            assert marks[0]["symbol"] != "circle-open"
+        finally:
+            browser.close()

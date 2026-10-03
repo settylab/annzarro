@@ -145,3 +145,93 @@ test('a size/opacity step is two restyles, not a highlight rebuild (#8)', async 
     assert.deepEqual(calls[0][1].slice(1), [{ 'marker.size': 4, 'marker.opacity': 0.3 }, [0, 1, 3]]);
     assert.deepEqual(calls[1][1].slice(1), [{ 'marker.size': 8 }, [2]]);
 });
+
+// --- a focused cell the subset does not show: the hollow ring (PR D) -------
+
+/** DataManager as it answers for 'out', a cell of another part at row 42. */
+function stubOutside({ value = (axis) => (axis.column === '0' ? 10 : 20) } = {}) {
+    const saved = { ...DataManager };
+    const reads = [];
+    Object.assign(DataManager, {
+        getFocusedCell: () => 'out',
+        locateCell: async (name) => ({ name, position: -1, row: 42, shown: false }),
+        cellRowParams: (cell) => (cell && !cell.shown ? { dataset_rows: String(cell.row) } : null),
+        loadCellValue: async (axis) => { reads.push(axis); return value(axis); }
+    });
+    return { reads, restore: () => Object.assign(DataManager, saved) };
+}
+
+const ringGraph = () => ({ isConnected: true, data: [{ name: 'data' }], layout: plot(false).layout });
+
+test('an outside focus is drawn as a hollow ring at its own coordinates', async () => {
+    calls.length = 0; failMode = null;
+    const { reads, restore } = stubOutside();
+    try {
+        await highlightFocusedEntity(ringGraph(), data, settings, 'cells');
+    } finally { restore(); }
+    assert.deepEqual(reads.map(a => a.column), ['0', '1'], 'one read per axis');
+    const adds = calls.filter(c => c[0] === 'addTraces');
+    assert.equal(adds.length, 1);
+    const ring = adds[0][1][1];
+    assert.deepEqual([ring.x, ring.y], [[10], [20]]);
+    assert.equal(ring.marker.symbol, 'circle-open', 'hollow, not the filled dot of a shown cell');
+    assert.equal(ring.name, 'Focused Cell', 'left out of hover, counts and size steps like the highlight');
+    assert.equal(ring.hoverinfo, 'skip', 'the points under it keep their hover and clicks');
+    assert.equal(ring.marker.colorscale, undefined, 'not coloured by the colour axis');
+});
+
+test('no ring for an obsp axis, nor in large-plot mode', async () => {
+    for (const [s, d] of [
+        [{ ...settings, y: { type: 'obsp', key: 'distances', column: 'out' } }, data],
+        [settings, { ...data, large: true }]
+    ]) {
+        calls.length = 0;
+        const { reads, restore } = stubOutside();
+        try {
+            await highlightFocusedEntity(ringGraph(), d, s, 'cells');
+        } finally { restore(); }
+        assert.equal(reads.length, 0);
+        assert.equal(calls.filter(c => c[0] === 'addTraces').length, 0);
+    }
+});
+
+test('no ring when a value cannot be read, or when the focus moves meanwhile', async () => {
+    calls.length = 0;
+    let stub = stubOutside({ value: () => null });
+    try {
+        await highlightFocusedEntity(ringGraph(), data, settings, 'cells');
+    } finally { stub.restore(); }
+    assert.equal(calls.filter(c => c[0] === 'addTraces').length, 0);
+
+    calls.length = 0;
+    let focused = 'out';
+    stub = stubOutside({ value: () => { focused = 'c1'; return 1; } });
+    DataManager.getFocusedCell = () => focused;
+    try {
+        await highlightFocusedEntity(ringGraph(), data, settings, 'cells');
+    } finally { stub.restore(); }
+    assert.equal(calls.filter(c => c[0] === 'addTraces').length, 0);
+});
+
+test('a shown focus after a ring replaces it with the filled dot', async () => {
+    calls.length = 0;
+    const gd = ringGraph();
+    const { restore } = stubOutside();
+    try {
+        await highlightFocusedEntity(gd, data, settings, 'cells');
+    } finally { restore(); }
+    assert.equal(gd.__focusRing, true);
+    gd.data.push({ name: 'Focused Cell', x: [10], y: [20] });
+    calls.length = 0;
+    const deleted = [];
+    const realDelete = Plotly.deleteTraces;
+    Plotly.deleteTraces = (container, idx) => { deleted.push(idx); container.data = container.data.filter((_, i) => !idx.includes(i)); return Promise.resolve(); };
+    try {
+        await highlightFocusedEntity(gd, data, settings, 'cells');    // focus 'c1' is shown
+    } finally { Plotly.deleteTraces = realDelete; }
+    assert.deepEqual(deleted, [[1]], 'the ring is removed, not moved');
+    const add = calls.find(c => c[0] === 'addTraces');
+    assert.ok(add, 'the dot is added');
+    assert.notEqual(add[1][1].marker.symbol, 'circle-open');
+    assert.equal(gd.__focusRing, false);
+});
