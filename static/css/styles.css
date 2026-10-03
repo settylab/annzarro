@@ -2600,6 +2600,18 @@ button.dtsb-button.dtsb-clear:hover {
     width: 70px;
 }
 
+/* an automatic value (utils/point-style.js): shown, but not set by the user */
+.point-size-control input.is-auto,
+.point-opacity-control input.is-auto {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.point-auto-btn {
+    padding: 0 0.4rem;
+    font-size: 0.75rem;
+}
+
 /* Tooltip */
 .tooltip {
     position: absolute;

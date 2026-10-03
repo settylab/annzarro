@@ -2,7 +2,8 @@ import { DataManager } from '../../data-manager.js';
 import { notInSubsetLabel } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
-import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
+import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle } from './panel-ui-update.js';
+import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
@@ -12,6 +13,7 @@ import {
 import { drawPlot, clearForDraw, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
+import { Config } from '../../config.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -591,6 +593,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
 
 
+/** The default size and opacity for few points: the app's (server) defaults. */
+export function pointStyleBase() {
+  const d = (Config && Config.DEFAULTS) || {};
+  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+}
+
 /**
  * Loads data for all axes and then creates the plot.
  *
@@ -634,6 +642,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
     
+    // Size and opacity the user has not set follow the number of points
+    // drawn: the subset, or every cell (utils/point-style.js)
+    const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
+    plotContainer._pointCount = nPoints;
+    applyAutoPointStyle(settings, nPoints, pointStyleBase());
+    showPointStyle(id, settings);
+
     // Check again for abort signal before showing loading indicator
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');

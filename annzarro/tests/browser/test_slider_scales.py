@@ -208,6 +208,8 @@ def test_old_linear_link_values_are_drawn_unchanged(server):
             assert (m["cmin"], m["cmax"]) == (1000, 4321.5)
             assert page.input_value(f"#point-size-input-{PID}") == "0.1"
             assert page.input_value(f"#point-opacity-input-{PID}") == "0.37"
+            assert "is-auto" not in page.get_attribute(f"#point-size-input-{PID}", "class")
+            assert "is-auto" not in page.get_attribute(f"#point-opacity-input-{PID}", "class")
             assert page.input_value(f"#color-min-{PID}") == "1000"
             assert page.input_value(f"#color-max-{PID}") == "4322"         # shown rounded
             assert not errors, errors
@@ -250,6 +252,47 @@ def test_large_plot_mode_sliders(large_server):
             bar = [t for t in page.evaluate(traces) if t["marker"].get("colorbar")]
             assert bar[0]["marker"]["cmax"] == pytest.approx(value, rel=0.01)
             assert bar[0]["marker"]["cmin"] <= colors[int(0.14 * (n - 1))]
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_automatic_point_style(server):
+    """Without a size or opacity in the link both are automatic: shown, marked, and ended by a user value."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server))
+            m = _marker(page)
+            # 200 points: the curve is flat, today's default (base.yaml: 5 px, opaque)
+            assert (m["size"], m["opacity"]) == (5, 1)
+            size_box, opacity_box = f"#point-size-input-{PID}", f"#point-opacity-input-{PID}"
+            assert page.input_value(size_box) == "5"
+            assert "is-auto" in page.get_attribute(size_box, "class")
+            assert "auto" in page.get_attribute(size_box, "title")
+            assert "active" in page.get_attribute(f"#point-auto-{PID}", "class")
+
+            _type(page, size_box, 2.5)
+            assert _marker(page)["size"] == 2.5
+            assert "is-auto" not in page.get_attribute(size_box, "class")
+            assert "is-auto" in page.get_attribute(opacity_box, "class"), "opacity is still automatic"
+            assert "active" not in page.get_attribute(f"#point-auto-{PID}", "class")
+
+            # a refresh redraws (and recomputes automatic values): the user's size stays
+            page.click(f"#refresh-plot-{PID}")
+            page.wait_for_timeout(1500)
+            assert _marker(page)["size"] == 2.5
+
+            # the saved layout (what links and sessions store) says which values are automatic
+            cfg = page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['%s']" % PID)
+            assert (cfg["pointSize"], cfg["autoPointSize"]) == (2.5, False)
+            assert (cfg["pointOpacity"], cfg["autoPointOpacity"]) == (1, True)
+
+            page.click(f"#point-auto-{PID}")
+            page.wait_for_timeout(500)
+            assert _marker(page)["size"] == 5
+            assert "is-auto" in page.get_attribute(size_box, "class")
             assert not errors, errors
             page.close()
         finally:

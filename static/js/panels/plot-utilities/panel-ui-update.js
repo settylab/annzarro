@@ -709,14 +709,17 @@ export function updateColorControlsVisibility(container, colorType, id) {
  * from an older link) pins the thumb to that end; the box shows it as is.
  */
 export function showPointStyle(id, settings) {
-  const show = (name, scale, value) => {
+  const show = (name, scale, value, auto, what) => {
+    const tip = auto ? `${what}: auto, follows the number of points drawn` : `${what} (set)`;
     const $slider = jQuery(`#${name}-${id}`);
-    if ($slider.length) $slider.val(trackValue(scale, value));
+    if ($slider.length) $slider.val(trackValue(scale, value)).attr('title', `${tip} (log scale)`);
     const $input = jQuery(`#${name}-input-${id}`);
-    if ($input.length) $input.val(value);
+    if ($input.length) $input.val(value).toggleClass('is-auto', !!auto).attr('title', tip);
   };
-  show('point-size', pointSizeScale, settings.pointSize);
-  show('point-opacity', opacityScale, settings.pointOpacity);
+  show('point-size', pointSizeScale, settings.pointSize, settings.autoPointSize, 'Marker size in px');
+  show('point-opacity', opacityScale, settings.pointOpacity, settings.autoPointOpacity, 'Marker opacity');
+  const $auto = jQuery(`#point-auto-${id}`);
+  if ($auto.length) $auto.toggleClass('active', !!(settings.autoPointSize && settings.autoPointOpacity));
 }
 
 /**

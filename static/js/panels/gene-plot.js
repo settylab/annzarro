@@ -1,3 +1,4 @@
+import { initAutoPointStyle } from '../utils/point-style.js';
 import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
@@ -38,6 +39,8 @@ const GenePlotPanel = (function() {
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_OPACITY) || 0.7,
+            autoPointSize: true,      // size and opacity follow the number of points
+            autoPointOpacity: true,   // until set (utils/point-style.js)
             colorScale: (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALE) || 'Portland',
             categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
@@ -56,6 +59,7 @@ const GenePlotPanel = (function() {
         
         // Override with provided options, if any
         Object.assign(_settings, options);
+        initAutoPointStyle(_settings, options);
         
         // Cached data
         let _data = {

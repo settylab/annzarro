@@ -157,6 +157,8 @@ export function createPanelStructure(container, id, settings) {
                        title="Marker opacity (log scale)" aria-label="Point opacity (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" max="1" step="any" value="${settings.pointOpacity}" id="point-opacity-input-${id}" title="Marker opacity, 0 to 1">
               </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-auto-${id}"
+                      title="Size and opacity follow the number of points drawn">auto</button>
             </div>
 
             <div class="color-range-controls" id="color-range-container-${id}" style="display:none;">
