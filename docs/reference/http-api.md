@@ -42,6 +42,11 @@ Paths
   `/data/obs` and `/data/var` when exactly one column is requested. Non-numeric slices answer JSON
   regardless; check `Content-Type`.
 
+`categorical=codes`
+: With `format=f32` on `/data/obs` or `/data/var` and one column that is categorical: the column
+  as integer codes plus its category list, one byte per cell up to 128 categories
+  ({ref}`categorical-codes`). Without it a categorical column answers JSON, as it always has.
+
 Errors
 : JSON `{"error": "<sentence>", "reason": "<code>", ...}`. `reason` is machine-readable (table
   below); older routes send only `error`.
@@ -70,8 +75,8 @@ These are the routes one click uses. All are `GET`, all accept `If-None-Match` a
 | `/data/varp/<key>` | `varp[key]` | `rows=<gene>` | varp key |
 | `/data/obsm/<key>` | `obsm[key]` | `column_name=0` (one axis; the web client names the column, which also works for dataframe-valued keys) or `cols=0`. Sparse obsm matrices are read with positional columns `0..n-1` | obsm key |
 | `/data/varm/<key>` | `varm[key]` | `cols=<i>`; `column_name=` | varm key |
-| `/data/obs` | `obs` columns | `columns=<name>[,<name>...]`, optional `rows=`, `include_categories=false` | none |
-| `/data/var` | `var` columns | `columns=<name>[,...]`, optional `cols=` (gene indices) | none |
+| `/data/obs` | `obs` columns | `columns=<name>[,<name>...]`, optional `rows=`, `include_categories=false`; one column: `format=f32`, `categorical=codes` | none |
+| `/data/var` | `var` columns | `columns=<name>[,...]`, optional `cols=` (gene indices); one column: `format=f32`, `categorical=codes` | none |
 | `/data/uns/<key>` | one `uns` entry, decoded: string, number, list or (for a group) a dict | `/data/uns/leiden_colors`, `/data/uns/neighbors/params/n_neighbors` | uns key, `/` for nesting |
 
 JSON replies are `{"data": ..., <identifying fields>}`. A 2-D slice keeps its shape (a gene
@@ -89,7 +94,7 @@ $ curl -s -D - -o fc.bin "http://127.0.0.1:8812/api/v1/data/layer/kompot_de_Youn
 HTTP/1.1 200 OK
 X-Annzarro-Shape: 8090,1
 X-Annzarro-Dtype: float32
-Access-Control-Expose-Headers: X-Annzarro-Shape, X-Annzarro-Dtype, X-Annzarro-Encoding, X-Annzarro-Nnz, ETag
+Access-Control-Expose-Headers: X-Annzarro-Shape, X-Annzarro-Dtype, X-Annzarro-Encoding, X-Annzarro-Nnz, X-Annzarro-Categories-Bytes, ETag
 X-Annzarro-Encoding: dense
 Content-Type: application/octet-stream
 Content-Length: 32360
@@ -149,6 +154,33 @@ DM_Kernel row of cell 2089: (1, 8090) float64 non-zero: 31
 Age (categorical, JSON fallback): dict ['Young', 'Young', 'Young']
 ```
 
+A categorical column comes binary too when the client also asks for codes:
+
+```python
+import json
+
+
+def get_categorical(route, column, **params):
+    """A categorical obs/var column as (codes, categories); code -1 is missing."""
+    r = requests.get(f"{BASE}/data/{route}", params={"dataset_path": STORE, "columns": column,
+                     "format": "f32", "categorical": "codes", **params})
+    r.raise_for_status()
+    if r.headers.get("X-Annzarro-Encoding") != "categorical":
+        raise ValueError(f"{column} is not categorical")
+    lead = int(r.headers["X-Annzarro-Categories-Bytes"])
+    codes = np.frombuffer(r.content, dtype=np.dtype(r.headers["X-Annzarro-Dtype"]).newbyteorder("<"),
+                          offset=lead)
+    return codes, json.loads(r.content[:lead])
+
+
+codes, categories = get_categorical("obs", "Age")
+print("Age codes:", codes.dtype, codes[:3], categories)
+```
+
+```text
+Age codes: int8 [2 2 2] ['Mid', 'Old', 'Young']
+```
+
 `DM_Kernel` is stored as float64 and its values do not survive a round trip through float32,
 so it travels as float64; the 31 non-zeros arrive as 372 bytes.
 
@@ -198,7 +230,10 @@ With `subset=` the cell-axis routes (`/data/cells`, `/data/obs`, `/data/obsm`, `
 cell positions in requests and replies are positions within the subset, and whole-axis reads are
 cut to it. Gene-axis routes are unchanged. JSON and `format=f32` both work; a fold-change gene
 column for `{"n":1000,"seed":0}` came back as `X-Annzarro-Shape: 1000,1`, 4,000 bytes, with its
-own `ETag`. `/data/paginated`, `/data/statistics` and `/data/by_path` cannot apply a subset and
+own `ETag`. `/data/cells` with a subset reads only the subset's names: the index is read one
+chunk at a time and only the wanted names are decoded, so naming the 100,000 cells of a
+10-million-cell store takes about 0.3 s instead of 2.9 s for reading every name
+({doc}`performance`). `/data/paginated`, `/data/statistics` and `/data/by_path` cannot apply a subset and
 refuse one with `400 subset_unsupported`. A malformed spec is `400 bad_subset` (it never falls
 back to every cell); a `where` or `balance` column the dataset does not have is `404
 key_not_found`.
@@ -211,7 +246,7 @@ key_not_found`.
 | `GET /data/dataset_structure?dataset_path=` | everything the menus need: `shape`, `n_obs`, `n_vars`, and per slot `available`, `keys` / `columns`, `info` (shape and type per key), `columns_info` (dtype per obs/var column), dataframe columns of `obsm`/`varm`. A store without `X` has `"X": {"available": false, "shape": null}` |
 | `GET /data/info?dataset_path=` | a shorter summary: `shape`, `has_*` flags, `obs_columns`, `var_columns`, `layers`, `embeddings` |
 | `GET /data/genes?dataset_path=` | `{"genes": [...], "dataset_path": ...}`, all `var_names` (146 kB here) |
-| `GET /data/cells?dataset_path=` | `{"cells": [...], ...}`, all `obs_names` (275 kB here; 36 MB at 1.17M cells) |
+| `GET /data/cells?dataset_path=` | `{"cells": [...], ...}`, all `obs_names` (275 kB here; 36 MB at 1.17M cells). With `subset=`, the subset's names only, in dataset order; the server reads just those (below) |
 | `GET /data/obsm_dataframe_columns?dataset_path=&key=` | `{"columns": [...]}` of a dataframe-valued obsm entry |
 | `GET /data/varm_dataframe_columns?dataset_path=&key=` | the same for varm |
 
