@@ -2463,6 +2463,7 @@ class ZarrReader(CacheSettings):
             logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
             raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
     
+    @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"],
                                rows) -> List[str]:
         """Names at the sorted positions ``rows``: what a cell subset shows.

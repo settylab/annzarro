@@ -89,8 +89,8 @@ def test_take_uses_the_raw_path_for_local_vlen_chunks(index_array, monkeypatch):
     used = []
     real = string_chunks._LocalVlenArray.items
 
-    def spy(self, chunk_index, positions):
-        out = real(self, chunk_index, positions)
+    def spy(self, *args):
+        out = real(self, *args)
         used.append(out is not None)
         return out
     monkeypatch.setattr(string_chunks._LocalVlenArray, "items", spy)
@@ -172,3 +172,91 @@ def test_rank_keys_block_by_block_pick_the_same_cells():
         expected = np.sort(rows[cell_subset._smallest(cell_subset.rank_keys(n_obs, seed)[rows], k)])
         got = np.sort(cell_subset._rows_with_smallest_keys(n_obs, rows, seed, k, block=500))
         assert got.tolist() == expected.tolist()
+
+
+# --- the raw path against zarr's own decode ----------------------------------
+
+def _tricky_names(n):
+    rng = np.random.default_rng(n)
+    pool = ["", "AAACCTGAGAAACCAT-1", "é漢字_ü", "😀,#;x", "a,b,c", "#hash#", "x" * 300, "y" * 256,
+            "z" * 70_000, " leading", "trailing ", "tab\tin", "q\nline"]
+    names = [f"cell_{i}" for i in range(n)]
+    for i in rng.choice(n, size=n // 4, replace=False):
+        names[i] = pool[int(rng.integers(len(pool)))] + ("" if rng.random() < 0.5 else f"_{i}")
+    return names
+
+
+def _fixed_names(n):
+    return [f"{i:08d}-lib_1105" for i in range(n)]
+
+
+def _variable_names(n):
+    # non-ASCII, '#', commas, long; no empty name and no length a multiple
+    # of 256, so the zero-run parse can vouch for every chunk
+    pool = ["é漢字_ü", "😀,#;x", "a,b,c", "#hash#", "x" * 300, "z" * 70_001, "AAACCTGAGAAACCAT-1"]
+    return [f"{pool[i % len(pool)]}{i}" for i in range(n)]
+
+
+COMPRESSORS = {
+    "blosc-zstd": lambda: numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.SHUFFLE),
+    "blosc-lz4": lambda: numcodecs.Blosc(cname="lz4", clevel=5, shuffle=numcodecs.Blosc.SHUFFLE),
+    "zstd": lambda: numcodecs.Zstd(level=3),
+    "none": lambda: None,
+}
+
+
+@pytest.mark.parametrize("compressor", sorted(COMPRESSORS))
+@pytest.mark.parametrize("make", [_tricky_names, _variable_names, _fixed_names],
+                         ids=["tricky", "variable", "fixed"])
+def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
+    n, chunk = 2_050, 256                      # the last chunk is partial (2 of 256)
+    names = make(n)
+    root = open_group(tmp_path / "s.zarr")
+    arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=COMPRESSORS[compressor]())
+    directory = str(tmp_path / "s.zarr" / "idx")
+    meta = json.load(open(directory + "/.zarray"))
+    assert [f["id"] for f in meta["filters"]] == ["vlen-utf8"]
+
+    used = []
+    real = string_chunks._LocalVlenArray.items
+    monkeypatch.setattr(string_chunks._LocalVlenArray, "items",
+                        lambda self, *a: used.append(real(self, *a)) or used[-1])
+    truth = np.asarray(arr[:]).tolist()          # zarr's own decode of every name
+    assert truth == names
+    rng = np.random.default_rng(5)
+    picks = [np.array([0]), np.array([n - 1]), np.array([0, n - 1]), np.arange(n),
+             np.arange(chunk * 8, n)]
+    picks += [np.sort(rng.choice(n, size=k, replace=False)) for k in (1, 3, 100, 1_000)]
+    for rows in picks:
+        assert string_chunks.take(arr, rows, directory) == [truth[i] for i in rows]
+    if make is not _tricky_names:
+        # every chunk, the padded last one included, is read by the raw path
+        assert used and all(u is not None for u in used), "a chunk fell back to zarr"
+
+
+def test_untested_layouts_take_the_zarr_path(tmp_path):
+    root = open_group(tmp_path / "s.zarr")
+    write_strings(root, "a", ["x", "y"], chunks=(1,), compressor=numcodecs.GZip())
+    assert string_chunks._LocalVlenArray.open(str(tmp_path / "s.zarr" / "a")) is None
+    assert string_chunks._LocalVlenArray.open(str(tmp_path / "missing")) is None
+    assert string_chunks._LocalVlenArray.open(None) is None
+
+
+def test_subset_names_are_cached_and_counted(client, monkeypatch):
+    test_client, path = client
+    calls = []
+    real = string_chunks.take
+    monkeypatch.setattr(string_chunks, "take", lambda *a, **k: calls.append(1) or real(*a, **k))
+    query = {"dataset_path": path, "subset": json.dumps({"n": 50, "seed": 1})}
+    first = test_client.get("/api/v1/data/cells", query_string=query).get_json()["cells"]
+    # a second panel, the typeahead, a reopen: names are not decoded again
+    assert test_client.get("/api/v1/data/cells", query_string=query).get_json()["cells"] == first
+    test_client.get("/api/v1/data/names", query_string={**query, "entity": "cells", "q": "cell"})
+    assert len(calls) == 1
+    from annzarro.core import get_reader
+    cache = get_reader(path).cache
+    keys = [k for k in cache._sizes_mb if ":names_at:" in k]
+    assert len(keys) == 1, keys
+    # charged by the names it holds (57 B + length each), inside memory_usage_mb
+    assert cache._sizes_mb[keys[0]] * 2**20 >= sum(57 + len(n) for n in first)
+    assert cache.memory_usage_mb >= cache._sizes_mb[keys[0]]

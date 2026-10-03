@@ -16,6 +16,10 @@ those. Everything else (other encodings, zarr format 3, remote stores, a
 chunk the parser cannot vouch for) is read through zarr, one chunk at a
 time.
 
+The raw path is taken only for a 1-D zarr-format-2 array in a local
+directory with exactly the ``vlen-utf8`` filter and no compressor, Blosc
+(lz4 or zstd) or Zstd: the combinations the equivalence test reads.
+
 The ``vlen-utf8`` chunk layout (numcodecs): a little-endian uint32 count n,
 then n items, each a uint32 byte length followed by that many UTF-8 bytes.
 Finding item k needs the lengths of items 0..k-1, which is a sequential
@@ -29,8 +33,8 @@ the end of the chunk:
   the length header of an item shorter than 16 MiB ends in a zero byte that
   the item's first text byte follows. So each header ends where a run of
   zero bytes ends. An empty item, or a length that is a multiple of 256,
-  joins two runs; the chain check then fails and the chunk is decoded by
-  numcodecs instead.
+  can join two runs; the chain check then fails and the chunk is read
+  through zarr instead.
 """
 
 from __future__ import annotations
@@ -45,9 +49,11 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def _vlen_bounds(buf: np.ndarray):
+def _vlen_bounds(buf: np.ndarray, valid: Optional[int] = None):
     """(starts, lengths) of the items of a decompressed vlen-utf8 chunk, or
-    None when neither parse can be verified."""
+    None when neither parse can be verified. ``valid``: items of the chunk
+    inside the array; the last chunk of an array is padded with empty items
+    (the fill value), which the fixed-width parse allows for."""
     if buf.size < 4:
         return None
     n = int(buf[:4].view("<u4")[0])
@@ -57,15 +63,22 @@ def _vlen_bounds(buf: np.ndarray):
     if body.size < 4 * n:
         return None
 
-    # Fixed width: n records of (4 + width) bytes, each header equal to width.
+    # Fixed width: m records of (4 + width) bytes, each header equal to width,
+    # then n - m empty items (zero headers) when the chunk is padded.
     width = int(body[:4].view("<u4")[0])
-    if body.size == n * (4 + width):
-        records = body.reshape(n, 4 + width)
-        if np.all(np.ascontiguousarray(records[:, :4]).view("<u4").ravel() == width):
-            starts = np.arange(n, dtype=np.int64) * (4 + width) + 8
-            return starts, np.full(n, width, dtype=np.int64)
+    for m in dict.fromkeys((n, n if valid is None else min(valid, n))):
+        head = m * (4 + width)
+        if m and (width or m == n) and body.size == head + 4 * (n - m) and not body[head:].any():
+            records = body[:head].reshape(m, 4 + width)
+            if np.all(np.ascontiguousarray(records[:, :4]).view("<u4").ravel() == width):
+                starts = np.arange(m, dtype=np.int64) * (4 + width) + 8
+                return starts, np.full(m, width, dtype=np.int64)
 
-    # Zero runs: header k ends at the last zero byte of a run.
+    # Zero runs: header k ends at the last zero byte of a run. Padding items
+    # (empty, all-zero headers) at the end of the last chunk are cut first.
+    pad = 0 if valid is None or valid >= n else 4 * (n - valid)
+    if pad and body.size > pad and not body[-pad:].any():
+        body, n = body[:-pad], valid
     zero = body == 0
     ends = np.flatnonzero(zero & np.append(~zero[1:], True))
     heads = ends - 3
@@ -79,11 +92,12 @@ def _vlen_bounds(buf: np.ndarray):
     return heads + 8, lengths
 
 
-def decode_vlen_items(chunk_bytes, positions: np.ndarray) -> Optional[List[str]]:
+def decode_vlen_items(chunk_bytes, positions: np.ndarray,
+                      valid: Optional[int] = None) -> Optional[List[str]]:
     """Items ``positions`` of a decompressed vlen-utf8 chunk, or None when the
     chunk cannot be parsed without decoding all of it."""
     buf = np.frombuffer(chunk_bytes, dtype=np.uint8)
-    bounds = _vlen_bounds(buf)
+    bounds = _vlen_bounds(buf, valid)
     if bounds is None:
         return None
     starts, lengths = bounds
@@ -92,6 +106,16 @@ def decode_vlen_items(chunk_bytes, positions: np.ndarray) -> Optional[List[str]]
     view = memoryview(buf)
     s, ln = starts[positions].tolist(), lengths[positions].tolist()
     return [str(view[a:a + b], "utf-8") for a, b in zip(s, ln)]
+
+
+def _tested_compressor(config) -> bool:
+    """Compressors the raw path is tested with (test_subset_names.py); any
+    other chunk is read through zarr."""
+    if config is None:
+        return True
+    if config.get("id") == "blosc":
+        return config.get("cname") in ("lz4", "zstd")
+    return config.get("id") == "zstd"
 
 
 class _LocalVlenArray:
@@ -115,7 +139,8 @@ class _LocalVlenArray:
             return None
         filters = meta.get("filters") or []
         if (meta.get("zarr_format") != 2 or meta.get("dtype") != "|O" or len(meta.get("shape") or ()) != 1
-                or [f.get("id") for f in filters] != ["vlen-utf8"]):
+                or meta.get("order", "C") != "C" or [f.get("id") for f in filters] != ["vlen-utf8"]
+                or not _tested_compressor(meta.get("compressor"))):
             return None
         try:
             return cls(directory, meta)
@@ -123,13 +148,14 @@ class _LocalVlenArray:
             logger.debug("No raw chunk access for %s: %s", directory, exc)
             return None
 
-    def items(self, chunk_index: int, positions: np.ndarray) -> Optional[List[str]]:
+    def items(self, chunk_index: int, positions: np.ndarray,
+              valid: Optional[int] = None) -> Optional[List[str]]:
         try:
             with open(os.path.join(self.directory, str(chunk_index)), "rb") as fh:
                 data = fh.read()
             if self.codec is not None:
                 data = self.codec.decode(data)
-            return decode_vlen_items(data, positions)
+            return decode_vlen_items(data, positions, valid)
         except Exception as exc:
             logger.debug("Raw read of chunk %s of %s failed (%s); reading it through zarr",
                          chunk_index, self.directory, exc)
@@ -154,7 +180,7 @@ def take(array, rows: Sequence[int], local_dir: Optional[str] = None) -> List:
     for part in np.split(rows, np.flatnonzero(np.diff(rows // chunk)) + 1):
         lo = int(part[0] // chunk) * chunk
         local = part - lo
-        names = raw.items(lo // chunk, local) if raw is not None else None
+        names = raw.items(lo // chunk, local, size - lo) if raw is not None else None
         if names is None:
             names = np.asarray(array[lo:min(lo + chunk, size)])[local].tolist()
         out.extend(names)

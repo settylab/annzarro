@@ -32,15 +32,23 @@ def write_array(group, name, data, dtype=None, chunks=None):
     return out
 
 
-def write_strings(group, name, values, chunks=None):
+_DEFAULT = object()
+
+
+def write_strings(group, name, values, chunks=None, compressor=_DEFAULT):
     """A 1-D ``vlen-utf8`` string array, the encoding anndata writes for an
     index, under either zarr major (zarr 2 would otherwise store a fixed-width
-    unicode dtype)."""
+    unicode dtype). ``compressor``: a numcodecs codec, or None for none;
+    zarr's default when omitted."""
     arr = np.asarray(values, dtype=object)
     kw = {} if chunks is None else {"chunks": chunks}
     if ZARR_V3:
+        if compressor is not _DEFAULT:
+            kw["compressors"] = None if compressor is None else compressor
         out = group.create_array(name, shape=arr.shape, dtype=str, **kw)
         out[...] = arr.astype(str)
         return out
     import numcodecs
+    if compressor is not _DEFAULT:
+        kw["compressor"] = compressor
     return group.create_dataset(name, data=arr, dtype=object, object_codec=numcodecs.VLenUTF8(), **kw)

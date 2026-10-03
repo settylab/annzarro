@@ -622,16 +622,16 @@ class SubsetView:
         if entity != "cells":
             return self._reader.get_cell_gene_names(dataset_path, entity, use_cache=use_cache)
         sub = self.subset
-        if sub._names is None:
+        take = getattr(self._reader, "get_cell_gene_names_at", None)
+        if take is not None:
             # Only the subset's names are read (by index, chunk by chunk);
             # reading every name of a 95-million-cell store to keep 100,000
-            # was most of the time it took to open one.
-            take = getattr(self._reader, "get_cell_gene_names_at", None)
-            if take is not None:
-                sub._names = list(take(dataset_path, "cells", sub.indices))
-            else:
-                names = self._reader.get_cell_gene_names(dataset_path, "cells", use_cache=use_cache)
-                sub._names = [names[i] for i in sub.indices.tolist()]
+            # was most of the time it took to open one. The reader caches
+            # them in its DatasetCache, under its memory accounting.
+            return list(take(dataset_path, "cells", sub.indices))
+        if sub._names is None:
+            names = self._reader.get_cell_gene_names(dataset_path, "cells", use_cache=use_cache)
+            sub._names = [names[i] for i in sub.indices.tolist()]
         return list(sub._names)
 
     # -- cell-axis reads ----------------------------------------------------

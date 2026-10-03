@@ -621,6 +621,7 @@ class h5adReader(CacheSettings):
             codes = _values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64))
             return np.asarray(codes), categories.tolist()
 
+    @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
         """Names at the sorted positions ``rows`` (a cell subset's names)."""
         obj_name = "obs" if entity == "cells" else "var"
