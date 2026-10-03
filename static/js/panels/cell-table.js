@@ -6,7 +6,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
@@ -143,7 +143,7 @@ const CellTablePanel = (function() {
          * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
          * @returns {Promise<void>} - Promise that resolves when the table is refreshed
          */
-        async function refreshTable(signal) {
+        async function refreshTable(signal, { inPlace = false } = {}) {
             try {
                 // If there's an existing loading operation, abort it
                 if (_currentLoadOperation) {
@@ -157,6 +157,23 @@ const CellTablePanel = (function() {
                     signal = _currentLoadOperation.signal;
                 }
                 
+                // Other cells of the same table: the rows are swapped into
+                // the table shown, so it does not blank and keeps its state
+                let preloaded = null;
+                if (inPlace && _dataTable) {
+                    const tableData = preloaded = await loadTableData(_settings, _plotType, signal);
+                    if (signal.aborted) {
+                        throw new DOMException('Table refresh aborted after loading data', 'AbortError');
+                    }
+                    if (replaceRowsInPlace(_dataTable, tableData)) {
+                        renderCoverageNotice(_tableContainer, tableData.coverage, 'cells');
+                        if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
+                            _currentLoadOperation = null;
+                        }
+                        return;
+                    }
+                }
+
                 // Show loading indicator
                 _tableContainer.innerHTML = `
                     <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
@@ -172,7 +189,7 @@ const CellTablePanel = (function() {
                 }
                 
                 // Load table data with abort signal
-                const tableData = await loadTableData(_settings, _plotType, signal);
+                const tableData = preloaded || await loadTableData(_settings, _plotType, signal);
                 
                 // Check if operation is aborted after loading data
                 if (signal.aborted) {
@@ -282,6 +299,12 @@ const CellTablePanel = (function() {
             // Check if an abort signal was provided in the update data
             const signal = updateData && updateData._abortSignal;
             
+            // Other cells of the open dataset: the same columns, new rows
+            if (updateType === 'subsetChanged') {
+                await refreshTable(signal, { inPlace: true });
+                return;
+            }
+
             if (updateType === 'datasetChanged') {
                 if (window.Config && window.Config.DEBUG_MODE) {
                     console.log(`CellTable ${_id}: Dataset changed, reinitializing table`);
@@ -302,7 +325,8 @@ const CellTablePanel = (function() {
                     const requested = Array.isArray(_settings.columns) ? _settings.columns.slice() : [];
                     await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
                     _settings.columns = requested;
-                    await refreshTable(signal);
+                    // rows swapped into the table shown when the columns match
+                    await refreshTable(signal, { inPlace: true });
                     return;
                 } catch (error) {
                     // If this is an abort error, propagate it

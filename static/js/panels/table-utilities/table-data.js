@@ -956,6 +956,25 @@ export async function reloadColumnsInPlace(dataTable, columns, tableEntityType) 
 }
 
 /**
+ * Put new rows into a table that has the same columns, keeping the table:
+ * its search, sort order, page length and scroll stay where the user left
+ * them. False when the columns differ (the caller rebuilds the table).
+ * @param {Object} dataTable - DataTables API instance
+ * @param {{data: Array, columns: Array}} tableData - from loadTableData
+ * @returns {boolean} whether the rows were replaced
+ */
+export function replaceRowsInPlace(dataTable, tableData) {
+    if (!dataTable || !tableData || !Array.isArray(tableData.data) || !tableData.data.length) return false;
+    const have = (dataTable.settings()[0].aoColumns || []).map(c => `${c.mData}|${c.sTitle}`);
+    const want = (tableData.columns || []).map(c => `${c.data}|${c.title}`);
+    if (have.length !== want.length || have.some((h, i) => h !== want[i])) return false;
+    dataTable.clear();
+    dataTable.rows.add(tableData.data);
+    dataTable.draw(false);
+    return true;
+}
+
+/**
  * Rebuild a table's column chooser: its lists of focused and locked entities
  * change with the focus and with every lock in every plot.
  * @param {Object} panelSettings - The table panel's settings

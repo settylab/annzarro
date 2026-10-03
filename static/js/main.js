@@ -437,25 +437,30 @@ const App = (function() {
     }
 
     /**
-     * Show other cells (the subset dialog's Apply): the open view, its
-     * panels, focus and layout, reopened on the new subset through the same
-     * path a panel set loads by, so every panel is rebuilt on the new cells.
+     * Show other cells (the subset dialog's Apply, a part step): the open
+     * view, its panels, focus and layout, on the new subset. Only the data
+     * changes: the panels are told `subsetChanged` and swap their points and
+     * rows in place, so no tile, control or table is rebuilt and each plot
+     * keeps the view the user chose. While a dataset is still loading, the
+     * view is reopened through the panel-set path as before.
      * @param {Object|null} spec - subset spec, or null for every cell
      * @private
      */
     async function _changeSubset(spec, { step = false } = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
-        // The view as it is (layout, panel settings, focus) on other cells:
-        // only the data is read again.
         // The focused and locked cells are found in the new subset by their
         // dataset rows, learned now while this subset still shows them
         await DataManager.recordCellRows(getFixedCells().map(c => c.cell));
-        const view = SessionManager.captureView();
-        view.subset = spec;
-        const plan = panelSetToView({ dataset: datasetPath, view });
         try {
-            await _applyPanelSet(plan, { name: step ? 'cell subset part' : 'cell subset' });
+            if (_isLoadingDataset) {
+                const view = SessionManager.captureView();
+                view.subset = spec;
+                const plan = panelSetToView({ dataset: datasetPath, view });
+                await _applyPanelSet(plan, { name: step ? 'cell subset part' : 'cell subset' });
+            } else if (!(await _swapSubset(spec))) {
+                return;     // a later request took over
+            }
             const subset = DataManager.getSubset();
             const part = subset && subset.parts > 1
                 ? ` Part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}.` : '';
@@ -463,9 +468,42 @@ const App = (function() {
                 subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).${part}`
                        : 'Showing every cell.', 'success', 3000);
         } catch (error) {
+            if (error && error.name === 'AbortError') return;
             console.error('Changing the cell subset failed:', error);
             _showNotification('Cell subset not changed', error.message || String(error), 'error');
+            SubsetControl.update();
         }
+    }
+
+    // One subset swap at a time; requests made meanwhile collapse into the
+    // last one, which runs next
+    let _subsetSwap = null;
+    let _subsetQueued = null;
+
+    /**
+     * Read the cells of `spec` and let the open panels redraw on them.
+     * @returns {Promise<boolean>} true for the request that was shown, false
+     *   for one a later request replaced before it ran
+     * @private
+     */
+    function _swapSubset(spec) {
+        const request = { spec };
+        _subsetQueued = request;
+        const run = async () => {
+            if (_subsetQueued !== request) return false;
+            _subsetQueued = null;
+            DataManager.setSubsetRequest(spec);
+            await DataManager.reloadSubset();
+            SubsetControl.update();
+            await _resolveFocusForDataset('cells');
+            _updateFocusBadge();
+            await PanelManager.notifyPanels('subsetChanged', { dataset: DataManager.getCurrentDataset() });
+            return true;
+        };
+        const next = (_subsetSwap || Promise.resolve()).catch(() => {}).then(run);
+        _subsetSwap = next;
+        next.catch(() => {}).finally(() => { if (_subsetSwap === next) _subsetSwap = null; });
+        return next;
     }
 
     /**

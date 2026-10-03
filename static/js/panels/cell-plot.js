@@ -508,6 +508,14 @@ const CellPlotPanel = (function() {
             const signal = updateData && updateData._abortSignal;
             
             // Process the update based on type
+            // Other cells of the open dataset: the selectors still apply,
+            // only the points change; drawn into the graph shown, which keeps
+            // the view the user chose
+            if (updateType === 'subsetChanged') {
+                await refreshPlot(signal);
+                return;
+            }
+
             if (updateType === 'datasetChanged') {
                 if (window.Config && window.Config.DEBUG_MODE) {
                     console.log(`CellPlot ${_id}: Dataset changed, reinitializing plot`);
@@ -521,6 +529,11 @@ const CellPlotPanel = (function() {
 
                     await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
 
+                    // Another dataset's coordinates: the zoom and camera chosen
+                    // on the previous one do not apply (the plot is drawn into
+                    // the same graph, under the new dataset's uirevision)
+                    _settings.viewport2D = null;
+                    _settings.viewport3D = null;
                     await refreshPlot(signal);
                     
                     // If we get here, the operation completed successfully
