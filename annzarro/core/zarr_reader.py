@@ -1597,6 +1597,33 @@ class ZarrReader(CacheSettings):
         
         return result
     
+    @cached_method
+    def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                          column_name: Optional[str] = None, indices: Optional[List[int]] = None):
+        """``(codes, categories)`` of a categorical obs/var column, or None
+        when the column is not categorical.
+
+        The codes are the stored integer array, read by index; nothing is
+        decoded into one string per cell, which is what made a categorical
+        column cost 12 B per cell on the wire (see array_response).
+        """
+        root = self._get_root(dataset_path=dataset_path)
+        obj = "obs" if entity == "cells" else "var"
+        if root is None or obj not in root or column_name not in root[obj]:
+            return None
+        group = root[obj][column_name]
+        if (not self._is_group(group) or group.attrs.get('encoding-type') != 'categorical'
+                or 'codes' not in group or 'categories' not in group):
+            return None
+        try:
+            categories = self._read_member(group['categories'])
+            codes = group['codes'][indices] if indices is not None else group['codes'][:]
+        except Exception as e:
+            raise_if_timeout(e)
+            raise store_read_error(group, e) from e
+        categories = categories.tolist() if hasattr(categories, 'tolist') else list(categories)
+        return np.asarray(codes), categories
+
     def _get_dataframe_column(self, group, column_name: str, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Get a specific column from a dataframe-encoded group.

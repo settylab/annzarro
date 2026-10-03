@@ -2,7 +2,7 @@ from flask import jsonify
 from pathlib import Path
 from .reader import Reader
 from .remote import raise_if_timeout
-from .array_response import array_response, binary_response, numeric_array
+from .array_response import array_response, binary_response, categorical_response, numeric_array
 from typing import Literal
 import logging
 
@@ -168,6 +168,21 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
             type: []
         }), 500
     
+def extract_obs_var_codes(dataset_path: str, reader: Reader, indices, column: str,
+                          type: Literal["cells", "genes"]):
+    """One categorical obs/var column as codes + categories (binary), or None
+    when the column is not categorical or the reader cannot give codes; the
+    caller then answers as before."""
+    get_codes = getattr(reader, "get_obs_var_codes", None)
+    if get_codes is None:
+        return None
+    result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices)
+    if result is None:
+        return None
+    codes, categories = result
+    return categorical_response(codes, categories)
+
+
 def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"], binary: bool = False):
     try:
         result = reader.get_obs_var(

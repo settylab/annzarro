@@ -36,6 +36,24 @@ When the slice is not numeric (strings, booleans, categoricals) the reply is
 the ordinary JSON body even with ``format=f32``; clients must look at
 ``Content-Type``.
 
+Categorical columns
+-------------------
+A client that also sends ``categorical=codes`` gets a categorical obs/var
+column (one column requested) as integer codes instead of one JSON string
+per cell (12 B per cell; 120 MB for 10M cells)::
+
+    Content-Type: application/octet-stream
+    X-Annzarro-Encoding:        "categorical"
+    X-Annzarro-Shape:           "n"
+    X-Annzarro-Dtype:           "int8", "int16" or "int32" (the narrowest
+                                that holds every code; -1 is a missing value)
+    X-Annzarro-Categories-Bytes: length L of the categories prefix
+
+The body is a UTF-8 JSON array of the categories, padded with spaces to L
+bytes (a multiple of 4, so the codes that follow are aligned), then n
+little-endian codes. Code k is categories[k]. A client that does not send
+``categorical=codes`` (every client before this encoding) still gets JSON.
+
 JSON
 ----
 JSON stays the default and keeps its shape contract (an n x 1 slice is still a
@@ -59,7 +77,9 @@ HEADER_SHAPE = "X-Annzarro-Shape"
 HEADER_DTYPE = "X-Annzarro-Dtype"
 HEADER_ENCODING = "X-Annzarro-Encoding"
 HEADER_NNZ = "X-Annzarro-Nnz"
-EXPOSED_HEADERS = ", ".join((HEADER_SHAPE, HEADER_DTYPE, HEADER_ENCODING, HEADER_NNZ, "ETag"))
+HEADER_CATEGORIES_BYTES = "X-Annzarro-Categories-Bytes"
+EXPOSED_HEADERS = ", ".join((HEADER_SHAPE, HEADER_DTYPE, HEADER_ENCODING, HEADER_NNZ,
+                             HEADER_CATEGORIES_BYTES, "ETag"))
 
 _F32_EXACT_INT = 2 ** 24
 
@@ -67,6 +87,12 @@ _F32_EXACT_INT = 2 ** 24
 def wants_binary(args) -> bool:
     """True when the request asked for the binary encoding (``format=f32``)."""
     return (args.get("format") or "").lower() == BINARY_FORMAT
+
+
+def wants_codes(args) -> bool:
+    """True when a binary request also accepts categorical codes
+    (``categorical=codes``)."""
+    return wants_binary(args) and (args.get("categorical") or "").lower() == "codes"
 
 
 def numeric_array(data):
@@ -126,6 +152,34 @@ def binary_response(arr: np.ndarray) -> Response:
         body = flat.tobytes()
         headers[HEADER_ENCODING] = "dense"
     return Response(body, mimetype=BINARY_MIMETYPE, headers=headers)
+
+
+def code_dtype(n_categories: int) -> np.dtype:
+    """The narrowest signed integer holding codes -1..n_categories-1."""
+    for dtype in ("<i1", "<i2"):
+        if n_categories - 1 <= np.iinfo(dtype).max:
+            return np.dtype(dtype)
+    return np.dtype("<i4")
+
+
+def categorical_response(codes: np.ndarray, categories) -> Response:
+    """A categorical column as codes plus its categories (module docstring)."""
+    categories = [c.item() if isinstance(c, np.generic) else c for c in categories]
+    codes = np.asarray(codes).reshape(-1)
+    bad = (codes < 0) | (codes >= len(categories))
+    wire = codes.astype(code_dtype(len(categories)))
+    if bad.any():
+        wire[bad] = -1
+    prefix = json.dumps(categories, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    prefix += b" " * (-len(prefix) % 4)
+    headers = {
+        HEADER_ENCODING: "categorical",
+        HEADER_SHAPE: str(int(wire.size)),
+        HEADER_DTYPE: wire.dtype.name,
+        HEADER_CATEGORIES_BYTES: str(len(prefix)),
+        "Access-Control-Expose-Headers": EXPOSED_HEADERS,
+    }
+    return Response(prefix + wire.tobytes(), mimetype=BINARY_MIMETYPE, headers=headers)
 
 
 def numeric_json_text(arr: np.ndarray) -> str:

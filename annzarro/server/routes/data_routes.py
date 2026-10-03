@@ -21,7 +21,7 @@ from ...core import name_index
 from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
-from ...core.array_response import wants_binary
+from ...core.array_response import wants_binary, wants_codes
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -590,6 +590,9 @@ def register_data_routes(app, api_version):
             columns: Comma-separated list of column names to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
+            format: "f32" for the binary encoding of one numeric column.
+            categorical: "codes" (with format=f32) for one categorical column
+                as integer codes plus its categories (core/array_response.py).
             
         Returns:
             JSON response with observation annotations
@@ -624,6 +627,11 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
+            if wants_codes(request.args) and column_names and len(column_names) == 1:
+                coded = process_file.extract_obs_var_codes(dataset_path_str, reader, row_indices,
+                                                           column_names[0], "cells")
+                if coded is not None:
+                    return coded
             return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells",
                                                 binary=wants_binary(request.args))
         except Exception as exc:
@@ -641,6 +649,9 @@ def register_data_routes(app, api_version):
             columns: Comma-separated list of column names to get.
             max_genes: Optional client-side cap on the genes requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
+            format: "f32" for the binary encoding of one numeric column.
+            categorical: "codes" (with format=f32) for one categorical column
+                as integer codes plus its categories (core/array_response.py).
             
         Returns:
             JSON response with variable annotations
@@ -674,6 +685,11 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
+            if wants_codes(request.args) and column_names and len(column_names) == 1:
+                coded = process_file.extract_obs_var_codes(dataset_path_str, reader, col_indices,
+                                                           column_names[0], "genes")
+                if coded is not None:
+                    return coded
             return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes",
                                                 binary=wants_binary(request.args))
         except Exception as exc:
