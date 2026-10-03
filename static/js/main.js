@@ -434,17 +434,21 @@ const App = (function() {
      * @param {Object|null} spec - subset spec, or null for every cell
      * @private
      */
-    async function _changeSubset(spec) {
+    async function _changeSubset(spec, { step = false } = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
+        // The view as it is (layout, panel settings, focus) on other cells:
+        // only the data is read again.
         const view = SessionManager.captureView();
         view.subset = spec;
         const plan = panelSetToView({ dataset: datasetPath, view });
         try {
-            await _applyPanelSet(plan, { name: 'cell subset' });
+            await _applyPanelSet(plan, { name: step ? 'cell subset part' : 'cell subset' });
             const subset = DataManager.getSubset();
+            const part = subset && subset.parts > 1
+                ? ` Part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}.` : '';
             _showNotification('Cell subset',
-                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).`
+                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).${part}`
                        : 'Showing every cell.', 'success', 3000);
         } catch (error) {
             console.error('Changing the cell subset failed:', error);

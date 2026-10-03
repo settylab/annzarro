@@ -8,7 +8,14 @@
  *   { n: <cells, or null for every cell passing the filter>,
  *     seed: <0 .. 2^32-1>,
  *     balance?: <obs column>,            equal-as-possible groups
- *     where?: [ condition, ... ] }       AND of conditions on obs columns
+ *     where?: [ condition, ... ],        AND of conditions on obs columns
+ *     part?: <0-based part> }            which of the k = ceil(eligible / n)
+ *                                        disjoint parts; absent means 0
+ *
+ * The parts together hold every eligible cell once, so stepping through them
+ * shows every cell. Part 0 is the subset as it was before parts existed, and
+ * is written without `part`. The UI counts parts from 1 ("Part 3 of 957" is
+ * part 2).
  *
  *   condition := { col, op: 'in'|'not_in', values: [...] }
  *              | { col, op: '>'|'>='|'<'|'<='|'=='|'!=', value: <number> }
@@ -82,6 +89,9 @@ export function canonicalSubset(spec) {
             throw new Error(`Unknown filter operator ${c.op}`);
         });
     }
+    const part = spec.part === undefined || spec.part === null ? 0 : spec.part;
+    if (!(_isInt(part) && part >= 0)) throw new Error('The part must be a whole number of at least 0');
+    if (part > 0) out.part = part;
     const length = JSON.stringify(out).length;
     if (length > MAX_SPEC_CHARS) {
         throw new Error(`This filter is ${length} characters long; at most ${MAX_SPEC_CHARS} fit in a request. Use fewer values.`);
@@ -155,6 +165,17 @@ export function describeSubset(info, total = null) {
     if (spec.where && spec.where.length) {
         lines.push(`${fmt(info.n_eligible)} cells pass the filter.`);
     }
+    if (info.parts > 1) {
+        lines.push(`Part ${fmt((info.part || 0) + 1)} of ${fmt(info.parts)}: the parts hold every cell `
+            + `${spec.where && spec.where.length ? 'passing the filter ' : ''}once; step through them with ‹ ›.`);
+        if (spec.balance && info.groups) {
+            const done = Object.entries(info.groups).filter(([, c]) => c.shown === 0).map(([g]) => g);
+            if (done.length) {
+                lines.push(`Groups already shown in full by earlier parts: ${done.length > 6
+                    ? `${done.slice(0, 5).join(', ')} and ${done.length - 5} more` : done.join(', ')}.`);
+            }
+        }
+    }
     lines.push('Every panel shows these same cells. Click to change the subset.');
     return {
         count: `${fmt(info.n)} of ${fmt(info.n_total)}`,
@@ -162,6 +183,46 @@ export function describeSubset(info, total = null) {
         title: lines.join('\n'),
         active: true
     };
+}
+
+/**
+ * The part stepper next to the badge, from the /data/subset reply: null when
+ * there is only one part (or no subset), else what it shows.
+ * @returns {{label: string, part: number, parts: number, display: number,
+ *            canPrev: boolean, canNext: boolean, title: string}|null}
+ */
+export function describeParts(info) {
+    if (!info || !info.subset || !(info.parts > 1)) return null;
+    const part = info.part || 0;
+    return {
+        label: `Part ${fmt(part + 1)} of ${fmt(info.parts)}`,
+        part, parts: info.parts, display: part + 1,
+        canPrev: part > 0, canNext: part < info.parts - 1,
+        title: `The ${fmt(info.n_eligible)} cells ${info.subset.where ? 'passing the filter ' : ''}are split into `
+            + `${fmt(info.parts)} parts of up to ${fmt(info.subset.n)}; together the parts show every one of them once.`
+            + (info.subset.balance ? ' Each part is as balanced as the cells not yet shown allow, so late parts hold the largest groups only.' : '')
+    };
+}
+
+/**
+ * The spec for another part of the same partition, or null if there is no
+ * such part. `target` is 0-based; out-of-range targets are clamped only when
+ * `clamp` is set (typed part numbers), otherwise refused (the buttons).
+ */
+export function partSpec(info, target, clamp = false) {
+    const parts = describeParts(info);
+    if (!parts) return null;
+    let part = Math.trunc(Number(target));
+    if (!Number.isFinite(part)) return null;
+    if (clamp) part = Math.min(Math.max(part, 0), parts.parts - 1);
+    if (part < 0 || part >= parts.parts || part === parts.part) return null;
+    return canonicalSubset({ ...info.subset, part });
+}
+
+/** The filter widget's label for cells not loaded because of the subset. */
+export function notInSubsetLabel(info) {
+    const parts = describeParts(info);
+    return parts ? `Not in this part (${parts.display} of ${fmt(parts.parts)})` : 'Not in cell subset';
 }
 
 /**

@@ -1,4 +1,5 @@
 import { DataManager } from '../../data-manager.js';
+import { notInSubsetLabel } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory } from './plot-make-helper.js';
 import { highlightFocusedEntity, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
@@ -1673,8 +1674,8 @@ function updateFilterWidget(plotContainer, filterStats) {
   if (notInSubset > 0) {
     hasFilters = true;
     statsList.innerHTML += `
-      <li class="filter-stats-item" title="Not loaded: outside the cell subset (Cells, above the panels)">
-        <span class="filter-reason">Not in cell subset:</span>
+      <li class="filter-stats-item" title="Not loaded: outside the cell subset or its current part (Cells, above the panels)">
+        <span class="filter-reason">${notInSubsetLabel(DataManager.getSubset())}:</span>
         <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
       </li>
     `;
