@@ -94,8 +94,8 @@ async function incrementalAxisUpdate({ staleCoverage }) {
     let refreshed = false;
     await updatePlotElements(mkContainer(), data, settings, () => { refreshed = true; },
                              { xAxis: true, layout: true });
-    const notice = created.find(e => e._attrs && e._attrs.title !== undefined);
-    const lines = notice ? String(notice._attrs.title).split('\n') : [];
+    const notice = created.find(e => e._attrs && e._attrs['data-summary'] !== undefined);
+    const lines = notice ? String(notice._attrs['data-summary']).split('\n') : [];
     return { freshX, refreshed, lines };
 }
 

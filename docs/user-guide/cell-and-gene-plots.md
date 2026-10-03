@@ -68,10 +68,40 @@ listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X
 CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
 
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
-column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and a
-notice above the plot says which source is missing, for example "obs.not_a_column: not in this
-dataset (8,090 cells)". A source that exists but cannot be read gets a "failed to read" notice with
-the reason instead.
+column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and
+the plot's status line ({ref}`plot-status-line`) says which source is missing, for example
+"obs.not_a_column: not in this dataset (8,090 cells)". A source that exists but cannot be read is
+listed as "failed to read", with the reason.
+
+(plot-status-line)=
+## What a plot does not show: the status line
+
+Under every plot is one line that says how many points it shows and why the others are missing,
+for example
+
+> **28 of 200 cells shown** · 150 not in part 2 of 4 · 21 table filter · 1 NaN hidden · details
+
+Click it for every reason with its exact count and the action that undoes it:
+
+| Reason | Undo |
+|---|---|
+| not in the cell subset, or not in its current part ({doc}`subsets`) | **Next part**, **Subset…** |
+| no x, y or z value | (none; the point has no position) |
+| a source that failed to read, is not in this dataset or needs a focused cell | (see the reason) |
+| not in the linked table (the eye toggle, {doc}`tables-and-filters`) | **Stop filtering** |
+| no colour value, with **Hide NaN** on | **Show NaN** |
+| outside the colour range, with **Hide Outliers** on | **Show outliers** |
+
+Each cell is counted once, under the first reason in this order that applies, so the counts add up
+to the number not shown. The total is the dataset's, as in the header's "Cells: 50 of 200". Counts
+of a million or more are rounded on the line (95.6M) and exact in the list. **Next part** shows
+other cells rather than giving these back, as stepping the part in the header does. A colour that
+failed to read hides no points; it is listed without a count.
+
+The line keeps its height whatever it says, so the plot does not move when it changes. In a
+narrow panel it shortens to "28 of 200 shown · details". Tags at its right state a mode: in
+large-plot mode, **Large plot: no hover/click** ({ref}`large-plot-mode`). An exported PNG or SVG
+carries the same statement above the plot.
 
 ## Defaults of a new panel
 

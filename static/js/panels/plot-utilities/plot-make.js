@@ -1,5 +1,5 @@
 import { DataManager } from '../../data-manager.js';
-import { notInSubsetLabel } from '../../utils/subset.js';
+import { outsideDetail } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
@@ -9,7 +9,7 @@ import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
-import { drawPlot, clearForDraw, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
@@ -708,14 +708,15 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // The regular path cannot draw this many points (the tab runs out
           // of memory). Say what is not available and keep any plot drawn.
           if (Array.isArray(plotContainer.data) && plotContainer.data.length) {
-            renderModeNotice(plotContainer, refusal, 'warning');
+            setStatusTag(plotContainer, 'refused', { text: 'Not drawn: see why', severity: 'warning',
+              title: refusal, pop: { text: refusal, actions: [['subset-regular', 'Subset\u2026']] } });
           } else {
             drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal,
               { source: 'large-plot mode', unit: 'cells', total: nCells }), 'cells');
           }
           return;
         }
-        renderModeNotice(plotContainer, null);
+        setStatusTag(plotContainer, 'refused', null);
         await createLargePlot(plotContainer, settings, data, container, id);
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
@@ -725,13 +726,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         return;
       }
     }
-    renderModeNotice(plotContainer, null);
+    plotContainer.__isLarge = false;
+    setStatusTag(plotContainer, 'refused', null);
+    setStatusTag(plotContainer, 'large', null);
+    setStatusTag(plotContainer, 'focus', null);
 
     // Reset cached data without changing its reference. Until this load
     // finishes, `data.generation` is null: the series are half-built, and
     // incremental updates (a table filter, a focus change) must leave them
     // alone (isPlotDataCurrent in plot-update.js).
     const generation = DataManager.getDatasetGeneration();
+    // the cells these series are of: a part step keeps the generation
+    const subsetKey = DataManager.getSubsetParam();
     Object.keys(data).forEach(key => delete data[key]);
     data.generation = null;
     
@@ -902,6 +908,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     const unit = isGenePlot ? 'genes' : 'cells';
     data.coverage = panelLoadCoverage(data, settings, unit);
     data.generation = generation;
+    data.subsetKey = subsetKey;
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
@@ -1025,40 +1032,25 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  * @returns {Promise<void>}
  */
 /**
- * Ensures the filter widget exists in the plot container
- * 
- * @param {HTMLElement} plotContainer - The container element holding the plot
- * @returns {void}
- */
-function ensureFilterWidget(plotContainer) {
-  const plotId = plotContainer.id.replace('plot-container-', '');
-  let filterWidget = document.getElementById(`filter-widget-${plotId}`);
-  
-  if (!filterWidget) {
-    // If the widget doesn't exist (was cleared), recreate it
-    filterWidget = document.createElement('div');
-    filterWidget.id = `filter-widget-${plotId}`;
-    filterWidget.className = 'datapoint-filter-widget hidden';
-    filterWidget.innerHTML = `
-      <div class="filter-stats-title">Removed Datapoints</div>
-      <ul class="filter-stats-list">
-        <!-- Filter stats will be inserted here -->
-      </ul>
-      <div class="filter-total">
-        <span>Total:</span> <span class="filter-total-count">0 (0%)</span>
-      </div>
-    `;
-    plotContainer.appendChild(filterWidget);
-  }
-}
-
-/**
  * Create a filter mask and statistics for data points based on various criteria
  * 
  * @param {Object} data - Data object containing all data values
  * @param {Object} settings - Plot settings
  * @returns {Object} - Object containing indexMask and filter statistics
  */
+/**
+ * A cell panel's coverage with the cells the subset (or its part) does not
+ * show counted in: the total becomes the dataset's, as in the header's
+ * "Cells: 50 of 200", and one reason says where the rest are.
+ * @param {Coverage} coverage
+ * @param {string} [unit]  'cells' (the default) or 'genes', which no subset limits
+ * @returns {Coverage}
+ */
+export function withSubsetCoverage(coverage, unit = 'cells') {
+  if (unit !== 'cells') return coverage;
+  return coverage.withOutside(DataManager.getCellsNotInSubset(), outsideDetail(DataManager.getSubset()));
+}
+
 /**
  * The panel's LOAD coverage, assembled from the series CURRENTLY IN `data`.
  *
@@ -1480,6 +1472,21 @@ export function createFilterMask(data, settings) {
 
   // 7. Compute filtered count
   filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
+
+  // 8. Each hidden point once, under the first reason that applies, so the
+  // reasons the panel names add up to `filtered` (classifyFilterStats)
+  const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
+  const table = tableFilterMask && settings.removeNonTableEntries ? tableFilterMask : null;
+  const nan = colorValidMask && settings.hideNaN ? colorValidMask : null;
+  const outliers = colorRangeMask && settings.hideOutliers ? colorRangeMask : null;
+  for (let i = 0; i < totalPts; i++) {
+    if (indexMask[i]) continue;
+    if (!xMask[i] || !yMask[i] || (zMask && !zMask[i])) only.coords++;
+    else if (table && !table[i]) only.table++;
+    else if (nan && !nan[i]) only.nan++;
+    else if (outliers && !outliers[i]) only.outliers++;
+  }
+  filterStats.exclusive = only;
 
   return { indexMask, filterStats };
 }
@@ -1979,120 +1986,6 @@ export function buildPlotLayout(settings, data) {
   return layout;
 }
 
-/**
- * Updates the datapoint filter widget with the current filter statistics
- * 
- * @param {HTMLElement} plotContainer - The DOM element containing the plot
- * @param {object} filterStats - Statistics about filtered datapoints
- */
-function updateFilterWidget(plotContainer, filterStats) {
-  const plotId = plotContainer.id.replace('plot-container-', '');
-  const widget = document.getElementById(`filter-widget-${plotId}`);
-  
-  if (!widget) return;
-  
-  const statsList = widget.querySelector('.filter-stats-list');
-  const totalCount = widget.querySelector('.filter-total-count');
-  
-  // Clear existing items
-  statsList.innerHTML = '';
-  
-  // Track if we have any filters to display
-  let hasFilters = false;
-  
-  // Add items for each filter reason - axis NaNs are always filtered by Plotly
-  if (filterStats.xNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">X-axis NaN:</span>
-        <span class="filter-count">${filterStats.xNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.yNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Y-axis NaN:</span>
-        <span class="filter-count">${filterStats.yNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.zNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Z-axis NaN:</span>
-        <span class="filter-count">${filterStats.zNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color NaN in the stats when hideNaN is active
-  if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color NaN:</span>
-        <span class="filter-count">${filterStats.colorNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color outliers when hideOutliers is active
-  if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color outliers:</span>
-        <span class="filter-count">${filterStats.colorOutliers.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show table filtered entries when removeNonTableEntries is active 
-  // and there are actually entries being filtered out
-  if (filterStats.tableFiltered > 0 && filterStats.tableFilterActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Table filtered:</span>
-        <span class="filter-count">${filterStats.tableFiltered.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Cells outside the subset count as hidden too, so the total accounts
-  // for every cell of the dataset
-  const notInSubset = filterStats.notInSubset || 0;
-  if (notInSubset > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item" title="Not loaded: outside the cell subset or its current part (Cells, above the panels)">
-        <span class="filter-reason">${notInSubsetLabel(DataManager.getSubset())}:</span>
-        <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-
-  // Update total count and percentage
-  const hidden = filterStats.filtered + notInSubset;
-  const all = filterStats.total + notInSubset;
-  const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
-  
-  totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
-  
-  // Show/hide the widget based on whether there are any filters
-  if (hasFilters) {
-    widget.classList.remove('hidden');
-  } else {
-    widget.classList.add('hidden');
-  }
-}
-
 export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   
   
@@ -2149,10 +2042,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     x: data.x && data.x.coverage, y: data.y && data.y.coverage,
     z: data.z && data.z.coverage
   };
-  const panelCoverage = Coverage.merge(
+  const panelCoverage = withSubsetCoverage(Coverage.merge(
     [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
     unit
-  );
+  ), unit);
   
   // Apply the filter mask only if explicit filtering is enabled
   let filteredData = data;
@@ -2185,13 +2078,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   const layout = buildPlotLayout(settings, data);
 
-  // Setup the filter widget regardless of color type; a graph already
-  // drawn stays, and the new points are drawn into it
+  // A graph already drawn stays, and the new points are drawn into it
   clearForDraw(plotContainer);
-  ensureFilterWidget(plotContainer);
-  
-  // Always update the filter widget with statistics
-  updateFilterWidget(plotContainer, filterStats);
 
   // Branch for different color types
   if (filteredData.colorType === 'categorical') {

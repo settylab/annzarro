@@ -692,6 +692,24 @@ const DataManager = (function() {
         return body.rows;
     }
 
+    /**
+     * The 0-based part of the open subset that shows a located cell, or null
+     * (no subset, a server without the feature, or a cell its filter leaves
+     * out).
+     * @param {string} name
+     * @returns {Promise<number|null>}
+     */
+    async function partOfCell(name) {
+        const subset = _openSubset();
+        if (!subset || !hasSubsetFeature('locate_parts')) return null;
+        const cell = await locateCell(name);
+        if (!cell || cell.row === null || cell.row === undefined) return null;
+        const body = await _fetchWithCache(Config.API.SUBSET_LOCATE,
+            { dataset_path: _currentDataset, subset: subset.key, dataset_rows: String(cell.row), parts: '1' });
+        const part = body && body.parts ? body.parts[0] : null;
+        return typeof part === 'number' ? part : null;
+    }
+
     /** Dataset rows of positions in the subset, one /locate call. */
     async function _rowsOfPositions(positions) {
         const subset = _openSubset();
@@ -2112,6 +2130,7 @@ const DataManager = (function() {
         cellRowParams,
         canReadOutsideSubset,
         hasSubsetFeature,
+        partOfCell,
         recordCellRows,
         loadCellValue,
         rememberCell,

@@ -93,7 +93,7 @@ show the dialog. On a large dataset the steps are the same.
 
 ```{figure} ../_static/screens/user-guide/subsets-applied.png
 :class: screenshot
-:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the statistics bar, a UMAP with fewer points coloured by cell type and a Removed Datapoints box "Total 5,090 (63%)", and a cell table "Showing 1 to 25 of 3,000 entries".
+:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the statistics bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
 
 After **Apply**: the UMAP and the cell table show the same 3,000 cells. View before the subset:
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
@@ -134,11 +134,11 @@ Part 1 of 3.
 
 ```{figure} ../_static/screens/user-guide/subsets-parts-view-2.png
 :class: screenshot
-:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1, and the Removed Datapoints box reads Not in this part (2 of 3): 5,090.
+:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1.
 
 Part 2 of 3: other cells in the same layout. The table starts with different cells, the UMAP's
-points are a different 3,000, and **Removed Datapoints** counts the rest as "Not in this part
-(2 of 3)". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
+points are a different 3,000, and the plot's status line counts the rest as "not in part 2 of
+3". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
 with the subset applied as above.
 ```
 
@@ -162,9 +162,10 @@ types earlier parts already showed in full. View:
 
 ## What a subset changes
 
-- **Cell plots** draw only the subset's cells. The **Removed Datapoints** box counts the other
-  cells as not in this part of the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
-  every cell of the dataset. Gene plots draw every gene as before.
+- **Cell plots** draw only the subset's cells. The status line under each plot
+  ({ref}`plot-status-line`) counts the other cells as not in this part of the cell subset
+  ("3,000 of 8,090 cells shown · 5,090 not in part 2 of 3"), so its total always accounts for
+  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene as before.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
@@ -178,6 +179,7 @@ types earlier parts already showed in full. View:
 The exact rule (a fixed hash of seed and row, so a notebook can reproduce the selection), the
 balancing algorithm and the request format are in {doc}`../design/subsetting`.
 
+(large-plot-mode)=
 ## Very large datasets
 
 A Cell Plot is drawn in one of two ways.
@@ -193,11 +195,15 @@ The regular plot needs 400 to 900 bytes of the browser tab's memory per point, a
 4.4 GB whatever the browser settings, so a little above 5 million points it would close the tab.
 Large-plot mode keeps the points out of that memory and can draw the 95.6 million cells of
 Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
-per-point bookkeeping, and the panel says so above the plot:
+per-point bookkeeping, and the plot's status line says so with a tag, **Large plot: no
+hover/click**. Click the tag for why and for **Subset to ≤5M to enable click**, which opens the
+subset dialog with the largest size that is drawn the regular way already chosen. A click on the
+plot itself pulses the tag, and the first such click on a panel also opens it; nothing else pops
+up:
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot
-:alt: A Cell Plot with every cell, in large-plot mode. A blue notice above the plot reads Large-plot mode (8,090 points): hover, click and table filters are off; use a subset for them. The 3D Plot button and the Hover list are greyed out.
+:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot: no hover/click. The 3D Plot button and the Hover list are greyed out.
 
 Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
 lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
@@ -205,7 +211,7 @@ lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
 
 ```{figure} ../_static/screens/user-guide/large-plot-subset.png
 :class: screenshot
-:alt: The same Cell Plot on a 4,000-cell subset: the regular plot, with the focused cell marked, the Removed Datapoints box, and every control enabled.
+:alt: The same Cell Plot on a 4,000-cell subset: the regular plot, with the focused cell marked, a status line counting the cells not in the subset, and every control enabled.
 
 The same panel on a 4,000-cell subset: the regular plot.
 ```

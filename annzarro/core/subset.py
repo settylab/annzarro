@@ -558,6 +558,91 @@ class _Codes:
         return names, lambda part, sl: lut[self.ids(part)]
 
 
+def _column_reader(n_obs: int, read_column, read_codes):
+    """``column(name)``: one obs column as _Codes (categorical) or _Values."""
+    def column(name):
+        coded = read_codes(name) if read_codes is not None else None
+        col = _Codes(*coded) if coded is not None else _Values(read_column(name))
+        if len(col) != n_obs:
+            raise SubsetError(f"obs column {name!r} has {len(col)} entries, expected {n_obs}")
+        return col
+    return column
+
+
+def _eligible_rows(spec: SubsetSpec, column) -> Optional[np.ndarray]:
+    """The rows the spec's filter keeps, as a mask; None without a filter."""
+    eligible = None
+    for cond in spec.where:
+        mask = column(cond.col).mask(cond)
+        eligible = mask if eligible is None else (eligible & mask)
+    return eligible
+
+
+def parts_of_rows(n_obs: int, spec: SubsetSpec, rows: Sequence[int],
+                  read_column: Callable[[str], Sequence],
+                  read_codes: Optional[Callable[[str], Optional[Tuple[Sequence, Sequence]]]] = None
+                  ) -> List[Optional[int]]:
+    """The part of the spec's partition that shows each dataset row; None
+    for a row its filter leaves out.
+
+    A row's part follows from its rank by rank key among the eligible rows
+    (of its balance group, when balanced): one pass over the keys a block at
+    a time, as select_indices makes, without resolving any part.
+    """
+    column = _column_reader(n_obs, read_column, read_codes)
+    eligible = _eligible_rows(spec, column)
+    n_eligible = int(n_obs if eligible is None else np.count_nonzero(eligible))
+    n = n_eligible if spec.n is None else spec.n
+    rows = np.asarray(rows, dtype=np.int64)
+    ok = (rows >= 0) & (rows < n_obs)
+    if eligible is not None:
+        ok[ok] = eligible[rows[ok]]
+    if not n or not ok.any():
+        return [None] * len(rows)
+    salt = _salt(spec.seed)
+    mine = _keys(rows[ok], salt)
+    if spec.balance is None:
+        group = np.zeros(len(mine), dtype=np.int64)
+        names, group_of = [0], (lambda part, sl: np.zeros(len(part), dtype=np.int64))
+    else:
+        names, group_of = column(spec.balance).groups(
+            eligible if eligible is not None else np.ones(n_obs, dtype=bool))
+        group = group_of(rows[ok], None)
+    rank = np.zeros(len(mine), dtype=np.int64)
+    sizes = np.zeros(len(names), dtype=np.int64)
+    for part, sl in _block_rows(n_obs, eligible):
+        groups = group_of(part, sl)
+        sizes += np.bincount(groups, minlength=len(names))
+        keys = _keys(part, salt)
+        for g in np.unique(group):
+            at = np.flatnonzero(group == g)
+            k = keys[groups == g] if spec.balance is not None else keys
+            if len(at) <= 8:     # the usual call: one focused cell
+                for i in at:
+                    rank[i] += int(np.count_nonzero(k < mine[i]))
+            else:
+                rank[at] += np.searchsorted(np.sort(k), mine[at], side="left")
+    out = np.full(len(rows), -1, dtype=np.int64)
+    if spec.balance is None:
+        out[ok] = rank // n
+    else:
+        # parts take each group's cells in rank order: walk the quotas
+        parts = max(1, -(-n_eligible // n))
+        remaining = sizes.copy()
+        first = np.zeros(len(sizes), dtype=np.int64)
+        found = np.full(len(mine), -1, dtype=np.int64)
+        for p in range(parts):
+            q = balanced_quota(remaining, n)
+            hit = (found < 0) & (rank >= first[group]) & (rank < first[group] + q[group])
+            found[hit] = p
+            if (found >= 0).all():
+                break
+            first += q
+            remaining -= q
+        out[ok] = found
+    return [int(p) if p >= 0 else None for p in out.tolist()]
+
+
 def select_indices(n_obs: int, spec: SubsetSpec,
                    read_column: Callable[[str], Sequence],
                    read_codes: Optional[Callable[[str], Optional[Tuple[Sequence, Sequence]]]] = None
@@ -570,17 +655,8 @@ def select_indices(n_obs: int, spec: SubsetSpec,
     the balance groups are then computed per category, not per cell. A
     per-cell Python loop over 95.6 million cells took minutes.
     """
-    def column(name):
-        coded = read_codes(name) if read_codes is not None else None
-        col = _Codes(*coded) if coded is not None else _Values(read_column(name))
-        if len(col) != n_obs:
-            raise SubsetError(f"obs column {name!r} has {len(col)} entries, expected {n_obs}")
-        return col
-
-    eligible = None
-    for cond in spec.where:
-        mask = column(cond.col).mask(cond)
-        eligible = mask if eligible is None else (eligible & mask)
+    column = _column_reader(n_obs, read_column, read_codes)
+    eligible = _eligible_rows(spec, column)
     n_eligible = int(n_obs if eligible is None else np.count_nonzero(eligible))
     n = n_eligible if spec.n is None else spec.n
     parts = max(1, -(-n_eligible // n)) if n else 1
@@ -702,22 +778,8 @@ def _obs_columns(reader, dataset_path) -> Optional[List[str]]:
     return meta.get("obs_columns")
 
 
-def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
-    """The resolved subset for a spec, computed once per store version."""
-    key = (dataset_path, _store_signature(dataset_path), spec.key())
-    with _lock:
-        hit = _cache.get(key)
-        if hit is not None:
-            _cache.move_to_end(key)
-            return hit
-
-    n_obs = _n_obs(reader, dataset_path)
-    known = _obs_columns(reader, dataset_path)
-    missing = [c for c in spec.columns() if known is not None and c not in known]
-    if missing:
-        raise SubsetError(f"No obs column {', '.join(repr(c) for c in missing)} in this dataset.",
-                          "key_not_found", 404)
-
+def _readers(reader, dataset_path: str):
+    """(read_column, read_codes) over the dataset's obs, for select_indices."""
     def read_column(name):
         result = reader.get_obs_var(entity="cells", dataset_path=dataset_path,
                                     column_names=[name], include_categories=False)
@@ -734,6 +796,32 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
             return None
         return get_codes(entity="cells", dataset_path=dataset_path, column_name=name)
 
+    return read_column, read_codes
+
+
+def locate_parts(reader, dataset_path: str, spec: SubsetSpec, rows) -> List[Optional[int]]:
+    """The part of ``spec`` that shows each dataset row (parts_of_rows)."""
+    read_column, read_codes = _readers(reader, dataset_path)
+    return parts_of_rows(_n_obs(reader, dataset_path), spec, rows, read_column, read_codes)
+
+
+def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
+    """The resolved subset for a spec, computed once per store version."""
+    key = (dataset_path, _store_signature(dataset_path), spec.key())
+    with _lock:
+        hit = _cache.get(key)
+        if hit is not None:
+            _cache.move_to_end(key)
+            return hit
+
+    n_obs = _n_obs(reader, dataset_path)
+    known = _obs_columns(reader, dataset_path)
+    missing = [c for c in spec.columns() if known is not None and c not in known]
+    if missing:
+        raise SubsetError(f"No obs column {', '.join(repr(c) for c in missing)} in this dataset.",
+                          "key_not_found", 404)
+
+    read_column, read_codes = _readers(reader, dataset_path)
     indices, info = select_indices(n_obs, spec, read_column, read_codes)
     subset = Subset(dataset_path, spec, indices, info)
     with _lock:

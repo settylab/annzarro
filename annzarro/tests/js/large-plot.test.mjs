@@ -11,7 +11,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const js = p => pathToFileURL(path.resolve(__dirname, "../../../static/js", p)).href;
-const { largePlotReason, largePlotPoints, largePlotNotice } = await import(js("panels/plot-utilities/large-plot.js"));
+const { largePlotReason, largePlotPoints, largePlotTag } = await import(js("panels/plot-utilities/large-plot.js"));
 const { Config, readUiSettings } = await import(js("config.js"));
 
 const settings = (over = {}) => ({
@@ -48,9 +48,14 @@ test("settings the mode cannot draw keep the regular path", () => {
   assert.match(largePlotReason(settings({ x: { type: "obsp", key: "c", column: "a" } }), n), /x axis from obsp/);
 });
 
-test("the panel notice names the mode, the point count and the way out", () => {
-  assert.equal(largePlotNotice(95624334),
+test("the strip tag names the mode; its popover the point count, the limit and the way out", () => {
+  const tag = largePlotTag(95624334);
+  assert.equal(tag.text, "Large plot: no hover/click");
+  assert.equal(tag.title,
     "Large-plot mode (95.6M points): hover, click and table filters are off; use a subset for them");
+  assert.equal(tag.pop.text, `Over ${largePlotPoints().toLocaleString("en-US")} points (95.6M here): `
+    + "drawn without hover, click or table filters to stay within browser memory.");
+  assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22645M to enable click"]]);
 });
 
 // --- the panel's controls above and below the threshold ------------------

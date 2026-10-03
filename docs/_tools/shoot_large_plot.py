@@ -43,8 +43,8 @@ def main():
         for name, subset in (("large-plot-all", None), ("large-plot-subset", {"n": 4000, "seed": 0})):
             page = sh.open(view(subset), dataset="bm_aging.zarr", viewport={"width": 1400, "height": 900})
             time.sleep(0.5)
-            notice = page.locator(".mode-notice .coverage-notice__headline")
-            sh.log.append(f"{name}: notice = {notice.inner_text() if notice.count() else None}")
+            notice = page.locator(f'.tile[data-tile-id="{T}"] .plot-status')
+            sh.log.append(f"{name}: status = {notice.get_attribute('data-summary') if notice.count() else None}")
             page.mouse.move(2, 2)
             page.locator(f'.tile[data-tile-id="{T}"] .tile-content').screenshot(path=str(OUT / f"{name}.png"))
             sh.log.append(f"wrote {name}.png")

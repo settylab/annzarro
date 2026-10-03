@@ -1,6 +1,7 @@
 /**
  * Utilities for loading and processing table data
  */
+import { notify } from '../../utils/notify.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
@@ -1094,6 +1095,6 @@ export function exportTableToCsv(dataTable, tableTitle) {
         api.button('.buttons-csv').trigger()
     } catch (error) {
         console.error('Error exporting table to CSV:', error);
-        alert('Failed to export table to CSV. See console for details.');
+        notify('CSV export failed', error.message || 'See the browser console for details.', 'error');
     }
 }

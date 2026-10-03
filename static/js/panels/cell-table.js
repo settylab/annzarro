@@ -7,7 +7,7 @@ import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
 import { loadTableData, initializeDataTable, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
-import { Coverage, GAP } from '../utils/coverage.js';
+import { Coverage, GAP, classifyError } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
@@ -249,10 +249,10 @@ const CellTablePanel = (function() {
                 } else {
                     // For actual errors, show error message
                     console.error('Error refreshing cell table:', error);
+                    // classifyError: a limit (the names of a dataset too
+                    // large to list) is not a failed read
                     drawPlaceholder(_tableContainer,
-                        error.coverage || Coverage.missing(GAP.FAILED,
-                            error.message || 'unknown error',
-                            { source: 'table data', unit: 'cells' }),
+                        error.coverage || classifyError(error, { source: 'table data', unit: 'cells' }),
                         'cells');
                 }
                 

@@ -74,15 +74,15 @@ Values outside the range are not dropped: they are drawn in the end colour of th
 
 ```{figure} ../_static/screens/user-guide/colour-range.png
 :class: screenshot
-:alt: Three fold-change UMAPs of H2-Q7. Left, full range -1.03 to 1.03. Middle, range -0.25 to 0.25: most cells saturate to dark red. Right, the same range with Hide Outliers: only 1,550 of 8,090 cells remain, with a notice and a Removed Datapoints box.
+:alt: Three fold-change UMAPs of H2-Q7. Left, full range -1.03 to 1.03. Middle, range -0.25 to 0.25: most cells saturate to dark red. Right, the same range with Hide Outliers: only 1,550 of 8,090 cells remain, and the status line under the plot counts the 6,540 outliers hidden.
 
 Left: range from the data. Middle: range fixed at −0.25 to 0.25; values beyond it take the end
 colours. Right: the same range with Hide Outliers.
 ```
 
 With **Hide Outliers** on, the right panel draws only the 1,550 of 8,090 cells whose fold change
-lies between −0.25 and 0.25. The panel says so in a notice above the plot, and the **Removed
-Datapoints** box in its lower left corner counts the removed points (here 6,540, 81 %). The axes
+lies between −0.25 and 0.25. The status line under the plot says so: "1,550 of 8,090 cells shown ·
+6,540 outliers hidden", with **Show outliers** in its details ({ref}`plot-status-line`). The axes
 keep the range of all cells, so the panel lines up with the others. The view is
 {download}`userguide-colour-range.json <../_tools/views/userguide-colour-range.json>`.
 
@@ -144,9 +144,9 @@ Several things can make a point grey, and they mean different things:
 | Dark grey `#444` in a numerical colour | the value is missing (NaN); Plotly draws missing colour values in this grey |
 | Light grey under an **NA** legend entry | a missing value in a categorical colour ({doc}`cell-and-gene-plots`) |
 
-Points whose **x** or **y** value is missing are never drawn; the **Removed Datapoints** box counts
-them as "X-axis NaN" or "Y-axis NaN". Points with a missing **colour** value stay in the plot in
-dark grey until you click **Hide NaN**, which removes them and adds a "Color NaN" count to the box.
+Points whose **x** or **y** value is missing are never drawn; the plot's status line counts them
+as "no coordinates". Points with a missing **colour** value stay in the plot in dark grey until you
+click **Hide NaN**, which removes them and adds "NaN hidden" to the status line.
 
 ```{tip}
 Because grey can mean "zero", "near zero", "missing" or "not in the table", pick a colour map

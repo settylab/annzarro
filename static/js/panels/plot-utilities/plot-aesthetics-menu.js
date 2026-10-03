@@ -1735,7 +1735,8 @@ export async function exportPlot(plotContainer, format, settings) {
     await exportWithCoverage(plotContainer, () => Plotly.downloadImage(plotContainer, config));
   } catch (err) {
     console.error('Error exporting plot:', err);
-    alert('Failed to export plot. Please try again.');
+    // beside the button, as the other export outcomes are; not a blocking alert
+    showNotification('Export failed; please try again', true, 'error');
   } finally {
     _exportInProgress = false;
     popoverContainer.dispose();

@@ -144,7 +144,8 @@ STATE = """() => {
   const busy = [...document.querySelectorAll('.loading-overlay, .spinner-border')]
       .filter(e => e.offsetParent !== null).length;
   const cells = plot('cell-plot-F'), genes = plot('gene-plot-F');
-  const notice = document.querySelector('.tile[data-tile-id="cell-plot-F"] .coverage-notice__headline');
+  const strip = document.querySelector('.tile[data-tile-id="cell-plot-F"] .plot-status');
+  const notice = strip ? {textContent: strip.dataset.summary || ''} : null;
   return {
     focused: (document.getElementById('focused-cell') || {}).value,
     part: (document.getElementById('subset-part-input') || {}).value,
@@ -294,8 +295,10 @@ def test_pick_a_cell_the_subset_does_not_show(server):
             _wait(page, _shows(x, parts[1], 1))
             page.wait_for_function("() => !document.getElementById('focused-cell-outside').hidden", timeout=20_000)
             assert page.text_content("#focused-cell-outside") == "not in part 2 of 5"
-            note = page.wait_for_selector('.tile[data-tile-id="cell-plot-F"] .focus-notice .coverage-notice__headline', timeout=20_000)
-            assert note.text_content().strip() == f"Focused cell c{x} is not among the shown cells"
+            # said beside the focus control and by the ring; a regular plot's
+            # strip carries no focus tag, and nothing toasts
+            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .ps-tag[data-tag="focus"]') is None
+            assert page.query_selector('.notification') is None
             label = page.evaluate("""() => document.querySelector(
                 '.tile[data-tile-id="cell-plot-F"] select.axis-column-select[data-axis="color"]').options[0].text""")
             assert label == f"Focused cell c{x} (not shown)"
@@ -308,14 +311,14 @@ def test_pick_a_cell_the_subset_does_not_show(server):
             page.press("#focused-cell", "Enter")
             _wait(page, _shows(r0, parts[1], 1))
             page.wait_for_function("() => document.getElementById('focused-cell-outside').hidden", timeout=20_000)
-            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .focus-notice') is None
+            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .ps-tag[data-tag="focus"]') is None
         finally:
             browser.close()
 
 
 def test_large_plot_mode_keeps_the_focus_and_says_so(large_server):
-    """No marker in large-plot mode, but the focus is kept, its rows are read and
-    the plot says it is not shown."""
+    """No marker in large-plot mode, but the focus is kept, its rows are read,
+    the plot's strip says it is not shown, and its tag goes to its part."""
     root, store = large_server
     parts = [_part_rows(root, store, p) for p in range(2)]
     x = next(r for r in parts[0] if r not in parts[1])
@@ -325,16 +328,25 @@ def test_large_plot_mode_keeps_the_focus_and_says_so(large_server):
             page = browser.new_page(viewport={"width": 1400, "height": 900})
             # large-plot mode colours by obs or a gene, not by an obsp row
             page.goto(_link(root, store, 1, f"c{x}", colour={"type": "obs", "key": "score", "column": ""}))
-            note = page.wait_for_selector(
-                '.tile[data-tile-id="cell-plot-F"] .focus-notice .coverage-notice__headline', timeout=60_000)
-            assert note.text_content() == f"Focused cell c{x} is not among the shown cells"
-            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .mode-notice') is not None, "large mode"
+            tag = page.wait_for_selector(
+                '.tile[data-tile-id="cell-plot-F"] .plot-status .ps-tag[data-tag="focus"]', timeout=60_000)
+            assert tag.text_content() == f"c{x} not shown"
+            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .ps-tag[data-tag="large"]') is not None, \
+                "large mode"
             s = _wait(page, lambda s: s["focused"] == f"c{x}" and s["geneX"] is not None
                       and sorted(s["geneX"]) == _expect(x, parts[1])[1])
             assert page.text_content("#focused-cell-outside") == "not in part 2 of 5"
             marks = page.evaluate("""() => document.querySelector('.tile[data-tile-id="cell-plot-F"] .js-plotly-plot')
                 ._fullData.filter(t => t.name === 'Focused Cell').length""")
             assert marks == 0, "no marker in large-plot mode"
+
+            # the tag's action goes to the part that shows the cell
+            page.click('.tile[data-tile-id="cell-plot-F"] .ps-tag[data-tag="focus"]')
+            page.click('.tile[data-tile-id="cell-plot-F"] .ps-pop[data-pop="focus"] [data-ps-action="focus-part"]')
+            _wait(page, lambda s: s["part"] == "1" and s["focused"] == f"c{x}")
+            page.wait_for_function("() => document.getElementById('focused-cell-outside').hidden", timeout=20_000)
+            page.wait_for_function("""() => !document.querySelector(
+                '.tile[data-tile-id="cell-plot-F"] .ps-tag[data-tag="focus"]')""", timeout=20_000)
         finally:
             browser.close()
 

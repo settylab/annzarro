@@ -92,7 +92,8 @@ STATE = """() => {
   const tile = document.querySelector('.tile[data-tile-id="cell-plot-L"]');
   if (!tile) return {points: 0, busy: 1, notice: null, placeholder: null};
   const g = tile && tile.querySelector('.js-plotly-plot');
-  const notice = tile && tile.querySelector('.mode-notice .coverage-notice__headline');
+  const tag = tile && tile.querySelector('.plot-status .ps-tag[data-tag="large"]');
+  const notice = tag ? {textContent: tag.getAttribute('title')} : null;
   const sel = (s) => tile.querySelector(s);
   const opt = (axis, v) => { const o = sel(`select.axis-type-select[data-axis="${axis}"] option[value="${v}"]`);
                              return o ? {disabled: o.disabled, title: o.getAttribute('title')} : null; };

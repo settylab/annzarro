@@ -136,7 +136,7 @@ STATE = """() => {
   const body = tile('cell-table-S') && tile('cell-table-S').querySelector('.dataTables_scrollBody table');
   const dt = body && window.jQuery && jQuery.fn.dataTable.isDataTable(body) ? jQuery(body).DataTable() : null;
   const l = g && g._fullLayout;
-  const mode = tile('cell-plot-S') && tile('cell-plot-S').querySelector('.mode-notice');
+  const mode = tile('cell-plot-S') && tile('cell-plot-S').querySelector('.ps-tag[data-tag="large"]');
   const points = g && g._fullData ? g._fullData.filter(t => !/Focused/.test(t.name || '')
         && !(t.x && t.x.length === 1 && t.x[0] === null)).reduce((s, t) => s + (t.x ? t.x.length : 0), 0) : 0;
   return {

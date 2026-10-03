@@ -80,7 +80,7 @@ function installPlotly() {
 }
 
 function notices(panel) {
-    return panel.children.filter(c => c.classList.contains('coverage-notice'));
+    return panel.children.filter(c => c.classList.contains('plot-status'));
 }
 
 // --- renderCoverageNotice ------------------------------------------------
@@ -97,7 +97,8 @@ test('a partial coverage renders one notice stating count and reason', () => {
         'points with no x value', { source: 'x-axis', unit: 'cells' }), 'cells');
     const [el] = notices(panel);
     assert.ok(el, 'a notice element was created');
-    assert.match(el.innerHTML, /3,412 of 75,000 cells shown/);
+    assert.match(el.getAttribute('data-summary'), /^3,412 of 75,000 cells shown/);
+    assert.match(el.innerHTML, /3,412 of 75,000 <span class="ps-unit">cells <\/span>shown/);
     assert.match(el.innerHTML, /x-axis/);
     assert.match(el.innerHTML, /points with no x value/);
     assert.equal(el.dataset.reason, GAP.FILTERED);
@@ -111,7 +112,7 @@ test('NO coverage renders the loud unreported badge, never silence', () => {
     renderCoverageNotice(host, undefined, 'cells');
     const [el] = notices(panel);
     assert.ok(el, 'an undescribed panel still gets a notice');
-    assert.ok(el.classList.contains('coverage-notice--unreported'));
+    assert.ok(el.classList.contains('plot-status--unreported'));
     assert.match(el.innerHTML, /not report/i);
 });
 
@@ -259,13 +260,41 @@ test('drawPlot with NO coverage still draws, and still says so', async () => {
     await drawPlot(host, [{ x: [1] }], {}, {});
     assert.equal(calls.length, 1, 'the plot is not blocked -- silence is the bug, not drawing');
     assert.match(calls[0].layout.annotations[0].text, /not reported/i);
-    assert.ok(notices(panel)[0].classList.contains('coverage-notice--unreported'));
+    assert.ok(notices(panel)[0].classList.contains('plot-status--unreported'));
 });
 
-test('drawPlot on a complete coverage adds nothing at all', async () => {
+test('drawPlot on a complete coverage keeps its strip, saying only the count', async () => {
+    // A plot's strip is always there, so the plot never moves when it changes
     const { panel, host } = installDom();
     const calls = installPlotly();
     await drawPlot(host, [{ x: [1] }], { autosize: true }, {}, Coverage.complete(10, 'cells'), 'cells');
-    assert.deepEqual(calls[0].layout.annotations, [], 'a complete panel is not cluttered');
+    assert.deepEqual(calls[0].layout.annotations, [], 'a complete panel exports no caption');
+    const [el] = notices(panel);
+    assert.ok(el.classList.contains('plot-status--ok'));
+    assert.match(el.innerHTML, /<b class="ps-headline">10 cells<\/b>/);
+    assert.doesNotMatch(el.innerHTML, /ps-pop|details/, 'nothing to detail');
+});
+
+test('the strip comes AFTER the plot, so the plot keeps its top edge', async () => {
+    const { panel, host } = installDom();
+    installPlotly();
+    await drawPlot(host, [{ x: [1] }], {}, {}, Coverage.complete(10, 'cells'), 'cells');
+    assert.deepEqual(panel.children.map(c => c.id || c.className.split(' ')[0]), ['plot-container-7', 'plot-status']);
+});
+
+test('a table strip (not persistent) goes away when nothing is missing', () => {
+    const { panel, host } = installDom();
+    renderCoverageNotice(host, Coverage.missing(GAP.FAILED, 'boom', { unit: 'cells', total: 5 }), 'cells');
+    assert.equal(notices(panel).length, 1);
+    renderCoverageNotice(host, Coverage.complete(5, 'cells'), 'cells');
     assert.equal(notices(panel).length, 0);
+});
+
+test('a trace uid is a valid CSS id fragment, and distinct names stay distinct', async () => {
+    // Plotly queries '#<id>-cb<uid>' for a colour bar: "t:total_counts" threw
+    const { traceUid } = await import('../../../static/js/utils/panel-surface.js');
+    const names = ['total_counts', 'B cell', 'B_cell', 'B:cell', 'a.b', 'NA', 'é', '_20_'];
+    const uids = names.map(traceUid);
+    for (const u of uids) assert.match(u, /^[A-Za-z0-9_-]+$/);
+    assert.equal(new Set(uids).size, names.length);
 });

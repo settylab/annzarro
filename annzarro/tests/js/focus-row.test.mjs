@@ -137,7 +137,7 @@ test('incremental colour update rewrites data.colorCoverage (refocus path)', asy
     assert.equal(refreshed, false, 'took the incremental path, not the full-render fallback');
     assert.equal(data.colorCoverage.worstReason, GAP.EMPTY,
         'colorCoverage still describes the previous colour column');
-    const notice = created.find(e => e._attrs && e._attrs.title !== undefined);
-    assert.ok(notice, 'a coverage notice was rendered');
-    assert.match(String(notice._attrs.title), /focus a gene that "corr" covers/);
+    const notice = created.find(e => e._attrs && e._attrs['data-summary'] !== undefined);
+    assert.ok(notice, 'a status strip was rendered');
+    assert.match(String(notice._attrs['data-summary']), /focus a gene that "corr" covers/);
 });

@@ -127,7 +127,7 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
    ```{figure} ../_static/screens/user-guide/tables-linked-removed.png
    :class: screenshot
    :width: 70%
-   :alt: The volcano plot showing only the 159 genes of the table, with a notice "159 of 16,285 genes shown" and a Removed Datapoints box counting 16,126 table-filtered genes.
+   :alt: The volcano plot showing only the 159 genes of the table, with the status line "159 of 16,285 genes shown · 16,126 table filter".
 
    With the eye toggle on, only the table's genes are drawn.
    ```

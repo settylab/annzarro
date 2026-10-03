@@ -2716,177 +2716,161 @@ button.dtsb-button.dtsb-clear:hover {
     to { opacity: 1; }
 }
 
-/* Datapoint filter info widget */
-/* Top-left corner, in the margin above the plotting area (at the bottom it
-   sat on the x tick labels or the centred x-axis title): one row with the title, every
-   reason and the total (each reason inline). The reasons used to show only on
-   hover, so the box read just "Total: 6,540"; before that the box stood 10 px
-   into the plot over the x tick labels. */
-.datapoint-filter-widget {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    background-color: rgba(248, 249, 250, 0.85);
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 0.72rem;
-    color: #666;
-    max-width: calc(100% - 190px);   /* clear of the modebar on the right */
-    z-index: 10;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    transition: opacity 0.3s ease;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: 8px;
-}
-
-.datapoint-filter-widget .filter-stats-list {
-    display: contents;
-}
-
-.datapoint-filter-widget .filter-stats-item {
-    display: inline-flex;
-    margin: 0;
-}
-
-.datapoint-filter-widget .filter-stats-title {
-    margin: 0;
-}
-
-.datapoint-filter-widget.hidden {
-    pointer-events: none;
-}
-
-.datapoint-filter-widget.hidden {
-    opacity: 0;
-}
-
-.filter-stats-title {
-    font-weight: 600;
-    font-size: 0.75rem;
-    margin-bottom: 3px;
-    color: #495057;
-}
-
-.filter-stats-list {
-    margin: 0;
-    padding: 0;
-    list-style-type: none;
-}
-
-.filter-stats-item {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 2px;
-}
-
-.filter-reason {
-    margin-right: 8px;
-}
-
-.filter-count {
-    font-weight: 500;
-}
-
-.filter-total {
-    margin-top: 4px;
-    padding-top: 4px;
-    border-top: 1px solid rgba(0,0,0,0.1);
-    font-weight: 600;
-    color: #495057;
-}
 /* ------------------------------------------------------------------------- */
-/* Coverage notice -- "what is missing from this plot, and why"               */
+/* Status strip -- "what is this panel not showing, and why"                  */
 /*                                                                            */
-/* Rendered by static/js/utils/panel-surface.js above a panel's plot or table */
-/* whenever the panel is showing less than the user asked for. A panel that is */
-/* complete renders none of this, so the notice is never decorative noise.     */
+/* Rendered by static/js/utils/panel-surface.js under each plot (always) and  */
+/* each table (when it is missing something). One line, fixed height: its    */
+/* text changes, the plot above it never moves. A click opens the popover     */
+/* with every reason, its count and what undoes it; tags at the right state   */
+/* a mode (large-plot) or a focused cell large-plot mode cannot mark.         */
 /*                                                                            */
+/* Sizes are multiples of the controls' unit, --ctl-u (4 px).                 */
 /* The --unreported variant is deliberately the loudest: it does not report a  */
 /* gap in the DATA, it reports that our own code failed to say anything, and   */
 /* it must not be mistakable for a normal data condition.                      */
 /* ------------------------------------------------------------------------- */
-
-.coverage-notice {
+.plot-status {
+    --ps-u: var(--ctl-u, 4px);
+    --ps-accent: #9aa9b7;
+    position: relative;
+    flex: 0 0 calc(6 * var(--ps-u));
+    height: calc(6 * var(--ps-u));
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    flex: 0 0 auto;
-    margin: 0 0 4px 0;
-    padding: 6px 10px;
-    border-radius: 4px;
-    border: 1px solid transparent;
-    border-left-width: 4px;
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-.coverage-notice__icon {
-    flex: 0 0 auto;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    margin-top: 1px;
-    border-radius: 50%;
-    font-weight: 700;
-    font-size: 11px;
-    color: #fff;
+    gap: calc(2 * var(--ps-u));
+    padding: 0 calc(2 * var(--ps-u));
+    border-top: 1px solid #dee2e6;
+    border-left: calc(0.75 * var(--ps-u)) solid var(--ps-accent);
+    background: #f8f9fa;
+    color: #33475b;
+    font-size: 12px;
+    line-height: calc(6 * var(--ps-u));
+    white-space: nowrap;
+    container-type: inline-size;
+    z-index: 5;
 }
-
-.coverage-notice__body { min-width: 0; }
-
-.coverage-notice__headline {
-    font-weight: 600;
-}
-
-.coverage-notice__reasons {
-    margin: 2px 0 0 0;
-    padding-left: 16px;
-    list-style: disc;
-}
-
-.coverage-notice__reasons li {
-    margin: 1px 0;
-    overflow-wrap: anywhere;
-}
-
-.coverage-notice--notice {
-    background: #e7f3f8;
-    border-color: #bce8f1;
-    border-left-color: #31708f;
-    color: #245269;
-}
-.coverage-notice--notice .coverage-notice__icon { background: #31708f; }
-
-.coverage-notice--warning {
-    background: #fcf8e3;
-    border-color: #faebcc;
-    border-left-color: #8a6d3b;
-    color: #7a5f34;
-}
-.coverage-notice--warning .coverage-notice__icon { background: #8a6d3b; }
-
-.coverage-notice--error {
-    background: #f2dede;
-    border-color: #ebccd1;
-    border-left-color: #a94442;
-    color: #8b3a38;
-}
-.coverage-notice--error .coverage-notice__icon { background: #a94442; }
-
-/* Our own defect, not the data's. Loud on purpose -- see coverage.js. */
-.coverage-notice--unreported {
+.plot-status--ok { --ps-accent: transparent; color: #6c757d; }
+.plot-status--notice { --ps-accent: #31708f; }
+.plot-status--warning { --ps-accent: #c09853; }
+.plot-status--error { --ps-accent: #a94442; background: #fbf1f1; }
+.plot-status--unreported {
+    --ps-accent: #8b1d8b;
     background: #fbe8fb;
-    border: 1px dashed #8b1d8b;
-    border-left: 4px solid #8b1d8b;
     color: #6d176d;
-    font-weight: 600;
+    outline: 1px dashed #8b1d8b;
+    outline-offset: -1px;
 }
-.coverage-notice--unreported .coverage-notice__icon { background: #8b1d8b; }
+
+.plot-status .ps-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(2 * var(--ps-u));
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.plot-status .ps-summary:disabled { cursor: default; }
+.plot-status .ps-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(2 * var(--ps-u));
+}
+.plot-status .ps-headline { flex: none; font-weight: 600; }
+/* Chips that do not fit wrap onto a second line, which the fixed height
+   hides: they drop from the right, whole, and the headline never shrinks. */
+.plot-status .ps-chips {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    height: calc(6 * var(--ps-u));
+    overflow: hidden;
+    column-gap: calc(2 * var(--ps-u));
+    color: #5a6b7b;
+}
+.plot-status .ps-chip::before { content: "\00b7"; margin-right: calc(2 * var(--ps-u)); color: #aab6c2; }
+.plot-status .ps-details { flex: none; color: #0d6efd; }
+.plot-status .ps-details::after { content: " \25be"; }
+.plot-status .ps-summary:hover .ps-details,
+.plot-status .ps-summary:focus-visible .ps-details { text-decoration: underline; }
+
+.plot-status .ps-tags { flex: none; display: flex; gap: var(--ps-u); }
+.plot-status .ps-tag {
+    height: calc(4.5 * var(--ps-u));
+    padding: 0 calc(1.5 * var(--ps-u));
+    border: 1px solid #c7d5e3;
+    border-radius: 3px;
+    background: #e7eef6;
+    color: #31708f;
+    font: inherit;
+    font-size: 11px;
+    line-height: calc(4.5 * var(--ps-u) - 2px);
+    cursor: pointer;
+}
+.plot-status .ps-tag--warning { background: #fcf3e3; border-color: #e6cf9f; color: #8a6d3b; }
+/* A nudge (a click the mode does not take): an outline, nothing moves */
+.plot-status .ps-tag--pulse { animation: ps-pulse 600ms ease-out; }
+@keyframes ps-pulse {
+    from { box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.55); }
+    to { box-shadow: 0 0 0 3px rgba(13, 110, 253, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .plot-status .ps-tag--pulse { animation: none; }
+}
+
+/* Narrow: "28 of 200 shown · details", then the tags */
+@container (max-width: 360px) {
+    .plot-status .ps-unit,
+    .plot-status .ps-chips { display: none; }
+}
+
+.plot-status .ps-pop {
+    position: absolute;
+    bottom: calc(100% + var(--ps-u));
+    left: calc(2 * var(--ps-u));
+    max-width: min(560px, calc(100% - 4 * var(--ps-u)));
+    padding: calc(2 * var(--ps-u)) calc(3 * var(--ps-u));
+    border: 1px solid #c9d3dd;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    color: #22313f;
+    line-height: 1.4;
+    white-space: normal;
+    z-index: 20;
+}
+.plot-status .ps-pop[hidden] { display: none; }
+.plot-status .ps-pop--tag { left: auto; right: calc(2 * var(--ps-u)); max-width: min(360px, calc(100% - 4 * var(--ps-u))); }
+.plot-status .ps-pop-title { font-weight: 600; margin-bottom: var(--ps-u); }
+.plot-status .ps-rows { width: 100%; border-collapse: collapse; }
+.plot-status .ps-rows td { padding: var(--ps-u); border-bottom: 1px solid #eef2f5; vertical-align: top; }
+.plot-status .ps-rows .ps-why { overflow-wrap: anywhere; }
+.plot-status .ps-rows .ps-n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plot-status .ps-rows .ps-do { white-space: nowrap; }
+.plot-status .ps-total td { border-bottom: 0; font-weight: 600; }
+.plot-status .ps-notes { margin: var(--ps-u) 0 0; padding-left: calc(4 * var(--ps-u)); }
+.plot-status .ps-foot { margin-top: var(--ps-u); color: #5a6b7b; font-size: 11px; }
+.plot-status .ps-pop-do { margin-top: calc(2 * var(--ps-u)); }
+.plot-status .ps-action {
+    padding: 0;
+    margin-right: calc(2 * var(--ps-u));
+    border: 0;
+    background: none;
+    color: #0d6efd;
+    font: inherit;
+    cursor: pointer;
+}
+.plot-status .ps-action:hover { text-decoration: underline; }
 
 /* Full-panel variant, used when there is nothing at all to draw. */
 .coverage-placeholder {
