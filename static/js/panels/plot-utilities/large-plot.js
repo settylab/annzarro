@@ -34,7 +34,7 @@ import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, clearForDraw, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, fitToContainer, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -405,6 +405,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
   renderModeNotice(plotContainer, largePlotNotice(n));
+  fitToContainer(plotContainer);
   // no click handler here, but a zoom is kept like in the regular plot
   attachViewportTracking(plotContainer, settings);
   // the server's cell-name index, for a later focus by name (remote-names.js)

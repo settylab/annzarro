@@ -350,7 +350,23 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     renderCoverageNotice(plotContainer, cov, unit);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
+    fitToContainer(plotContainer);
     return result;
+}
+
+/**
+ * Size a graph to its container again. A graph drawn into in place keeps the
+ * size it had; a notice added or removed above it since changes the space.
+ * @param {HTMLElement} gd
+ */
+export function fitToContainer(gd) {
+    const fl = gd && gd._fullLayout;
+    if (!fl || typeof Plotly === 'undefined' || !Plotly.Plots || !Plotly.Plots.resize) return;
+    const style = window.getComputedStyle(gd);
+    const w = parseFloat(style.width), h = parseFloat(style.height);
+    if (Math.abs(w - fl.width) > 1 || Math.abs(h - fl.height) > 1) {
+        Plotly.Plots.resize(gd).catch(() => {});
+    }
 }
 
 /**
