@@ -1,4 +1,5 @@
 import { exportWithCoverage } from '../../utils/panel-surface.js';
+import { axisTitle } from './plot-make-helper.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -1005,16 +1006,16 @@ function updateAxisVisibility(plotContainer, settings) {
     if (settings.showAxisTitles !== undefined) {
         if (is3D) {
             update['scene.xaxis.title.text'] = settings.showAxisTitles ? 
-                (settings.xaxisTitle || `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`) : '';
+                axisTitle(settings, 'x') : '';
             update['scene.yaxis.title.text'] = settings.showAxisTitles ? 
-                (settings.yaxisTitle || `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`) : '';
+                axisTitle(settings, 'y') : '';
             update['scene.zaxis.title.text'] = settings.showAxisTitles ? 
-                (settings.zaxisTitle || `${settings.z.type}.${settings.z.key}${settings.z.column ? `.${settings.z.column}` : ''}`) : '';
+                axisTitle(settings, 'z') : '';
         } else {
             update['xaxis.title.text'] = settings.showAxisTitles ? 
-                (settings.xaxisTitle || `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`) : '';
+                axisTitle(settings, 'x') : '';
             update['yaxis.title.text'] = settings.showAxisTitles ? 
-                (settings.yaxisTitle || `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`) : '';
+                axisTitle(settings, 'y') : '';
         }
     }
     
@@ -1917,8 +1918,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.showticklabels': settings.showAxisLabels !== false,
         'xaxis.color': axisColor,
         'yaxis.color': axisColor,
-        'xaxis.title.text': settings.showAxisTitles ? (settings.xaxisTitle || `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`) : '',
-        'yaxis.title.text': settings.showAxisTitles ? (settings.yaxisTitle || `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`) : '',
+        'xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
+        'yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
         'xaxis.title.font.size': settings.fontSize + 2,
         'yaxis.title.font.size': settings.fontSize + 2,
         'xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -1984,9 +1985,9 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.color': axisColor,
             'scene.yaxis.color': axisColor,
             'scene.zaxis.color': axisColor,
-            'scene.xaxis.title.text': settings.showAxisTitles ? (settings.xaxisTitle || `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`) : '',
-            'scene.yaxis.title.text': settings.showAxisTitles ? (settings.yaxisTitle || `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`) : '',
-            'scene.zaxis.title.text': settings.showAxisTitles ? (settings.zaxisTitle || `${settings.z.type}.${settings.z.key}${settings.z.column ? `.${settings.z.column}` : ''}`) : '',
+            'scene.xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
+            'scene.yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
+            'scene.zaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'z') : '',
             'scene.xaxis.title.font.size': settings.fontSize + 2,
             'scene.yaxis.title.font.size': settings.fontSize + 2,
             'scene.zaxis.title.font.size': settings.fontSize + 2,

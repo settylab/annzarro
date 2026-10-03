@@ -14,7 +14,7 @@ import {
   applyLogColorbar
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, axisTitle } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
@@ -1092,8 +1092,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   if (data && data.large) return;
   // Capture current view state before making changes
   let currentLayout = null;
-  let newXTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
-  let newYTitle = `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`;
+  let newXTitle = axisTitle(settings, 'x');
+  let newYTitle = axisTitle(settings, 'y');
   if (plotContainer && plotContainer.layout) {
     // Store current view state as a deep copy
     currentLayout = JSON.parse(JSON.stringify(plotContainer.layout));
@@ -1343,8 +1343,8 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
   const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
   clear();
   plotContainer.__focusRing = true;
-  const xTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
-  const yTitle = `${settings.y.type}.${settings.y.key}${settings.y.column ? `.${settings.y.column}` : ''}`;
+  const xTitle = axisTitle(settings, 'x');
+  const yTitle = axisTitle(settings, 'y');
   try {
     await Plotly.addTraces(plotContainer, ring);
     await restoreView(plotContainer, currentLayout, settings, xTitle, yTitle);
