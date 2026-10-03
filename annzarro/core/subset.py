@@ -238,6 +238,34 @@ def rank_keys(n_obs: int, seed: int) -> np.ndarray:
     return _splitmix64(np.arange(n_obs, dtype=_U64) ^ salt)
 
 
+#: Rows whose rank keys are computed at once when only the smallest are kept.
+_KEY_BLOCK = 1 << 20
+
+
+def _rows_with_smallest_keys(n_obs: int, rows: Optional[np.ndarray], seed: int, k: int,
+                             block: int = _KEY_BLOCK) -> np.ndarray:
+    """The k rows (of ``rows``, or of every row when None) with the smallest
+    rank keys, computed a block at a time.
+
+    The same rows as ``rows[_smallest(rank_keys(n_obs, seed)[rows], k)]``,
+    without the n_obs-long key array: at Tahoe-100M's 95.6 million cells
+    that was 0.8 GB per temporary and about 3 GB at the peak.
+    """
+    salt = _splitmix64(np.array([seed], dtype=_U64))[0]
+    total = n_obs if rows is None else len(rows)
+    best_rows = np.empty(0, dtype=np.int64)
+    best_keys = np.empty(0, dtype=_U64)
+    for start in range(0, total, block):
+        stop = min(start + block, total)
+        part = np.arange(start, stop, dtype=np.int64) if rows is None else rows[start:stop]
+        keys = _splitmix64(part.astype(_U64) ^ salt)
+        cand_rows = np.concatenate([best_rows, part])
+        cand_keys = np.concatenate([best_keys, keys])
+        keep = _smallest(cand_keys, k)
+        best_rows, best_keys = cand_rows[keep], cand_keys[keep]
+    return best_rows
+
+
 def _smallest(keys: np.ndarray, k: int) -> np.ndarray:
     """Positions of the k smallest keys (keys are distinct, so this is exact)."""
     if k >= len(keys):
@@ -335,38 +363,42 @@ def select_indices(n_obs: int, spec: SubsetSpec,
 
     ``read_column(name)`` returns one obs column for all ``n_obs`` cells.
     """
-    eligible = np.ones(n_obs, dtype=bool)
-    for cond in spec.where:
-        values = read_column(cond.col)
-        if len(values) != n_obs:
-            raise SubsetError(f"obs column {cond.col!r} has {len(values)} entries, expected {n_obs}")
-        eligible &= _condition_mask(cond, values)
-    rows = np.flatnonzero(eligible)
-    n_eligible = int(len(rows))
+    if spec.where:
+        eligible = np.ones(n_obs, dtype=bool)
+        for cond in spec.where:
+            values = read_column(cond.col)
+            if len(values) != n_obs:
+                raise SubsetError(f"obs column {cond.col!r} has {len(values)} entries, expected {n_obs}")
+            eligible &= _condition_mask(cond, values)
+        rows = np.flatnonzero(eligible)
+        n_eligible = int(len(rows))
+    else:
+        rows, n_eligible = None, int(n_obs)   # every row, never materialised
     want = n_eligible if spec.n is None else min(spec.n, n_eligible)
     info: Dict[str, Any] = {"n_total": int(n_obs), "n_eligible": n_eligible}
 
     if want >= n_eligible:
-        chosen = rows
+        chosen = np.arange(n_obs) if rows is None else rows
+    elif spec.balance is None:
+        chosen = _rows_with_smallest_keys(n_obs, rows, spec.seed, want)
     else:
+        if rows is None:
+            rows = np.arange(n_obs)
         keys = rank_keys(n_obs, spec.seed)[rows]
-        if spec.balance is None:
-            chosen = rows[_smallest(keys, want)]
-        else:
-            labels = read_column(spec.balance)
-            if len(labels) != n_obs:
-                raise SubsetError(f"obs column {spec.balance!r} has {len(labels)} entries, expected {n_obs}")
-            text = [MISSING_GROUP if _is_missing(labels[i]) else value_text(labels[i]) for i in rows]
-            names, codes = np.unique(np.asarray(text, dtype=object), return_inverse=True)
-            sizes = np.bincount(codes, minlength=len(names))
-            quota = balanced_quota(sizes, want)
-            # Order by (group, key); keep the first quota[g] of each group's run.
-            order = np.lexsort((keys, codes))
-            starts = np.concatenate([[0], np.cumsum(sizes)[:-1]])
-            pos = np.arange(len(order)) - starts[codes[order]]
-            chosen = rows[order[pos < quota[codes[order]]]]
-            info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
-                              for name, s, q in zip(names, sizes, quota)}
+        labels = read_column(spec.balance)
+        if len(labels) != n_obs:
+            raise SubsetError(f"obs column {spec.balance!r} has {len(labels)} entries, expected {n_obs}")
+        text = [MISSING_GROUP if _is_missing(labels[i]) else value_text(labels[i]) for i in rows]
+        names, codes = np.unique(np.asarray(text, dtype=object), return_inverse=True)
+        sizes = np.bincount(codes, minlength=len(names))
+        quota = balanced_quota(sizes, want)
+        # Order by (group, key); keep the first quota[g] of each group's run.
+        order = np.lexsort((keys, codes))
+        starts = np.concatenate([[0], np.cumsum(sizes)[:-1]])
+        pos = np.arange(len(order)) - starts[codes[order]]
+        chosen = rows[order[pos < quota[codes[order]]]]
+        info["groups"] = {str(name): {"total": int(s), "shown": int(q)}
+                          for name, s, q in zip(names, sizes, quota)}
     indices = np.sort(chosen).astype(np.int32 if n_obs < 2**31 else np.int64)
     info["n"] = int(len(indices))
     return indices, info

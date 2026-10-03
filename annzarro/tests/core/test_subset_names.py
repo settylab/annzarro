@@ -159,3 +159,16 @@ def test_h5ad_names_by_index(tmp_path):
         g.create_dataset("_index", data=np.array(names, dtype=object), dtype=h5py.string_dtype())
     rows = np.array([0, 3, 4, 250, 499])
     assert h5adReader().get_cell_gene_names_at(path, "cells", rows) == [names[i] for i in rows]
+
+
+def test_rank_keys_block_by_block_pick_the_same_cells():
+    """The subset without the n-long key array (3 GB at 95.6M cells): same rows."""
+    rng = np.random.default_rng(4)
+    for n_obs, k, seed in ((10_000, 37, 0), (10_000, 9_999, 3), (50_001, 1_000, 11)):
+        expected = np.sort(cell_subset._smallest(cell_subset.rank_keys(n_obs, seed), k))
+        got = np.sort(cell_subset._rows_with_smallest_keys(n_obs, None, seed, k, block=777))
+        assert got.tolist() == expected.tolist()
+        rows = np.sort(rng.choice(n_obs, size=n_obs // 3, replace=False))
+        expected = np.sort(rows[cell_subset._smallest(cell_subset.rank_keys(n_obs, seed)[rows], k)])
+        got = np.sort(cell_subset._rows_with_smallest_keys(n_obs, rows, seed, k, block=500))
+        assert got.tolist() == expected.tolist()
