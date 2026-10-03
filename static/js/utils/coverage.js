@@ -645,6 +645,31 @@ export function missingEntity(kind, name, { source = '', unit = 'values', total 
 }
 
 /**
+ * The column names a cell located by `DataManager.locateCell`, and its row
+ * cannot be read. Under a subset a cell that is not shown is still in the
+ * dataset and is read by its dataset row, so "not in this dataset" is said
+ * only when the dataset really lacks it. An older server cannot read a cell
+ * outside the subset, nor say whether the dataset has it: that is said as it is.
+ *
+ * @param {Object|null} cell  `{name, unreadable?}` from locateCell, or null
+ *                            (no cell focused).
+ * @param {Object} [opts] `{ source, unit, total, role }`
+ * @returns {Coverage}
+ */
+export function unreadableCell(cell, opts = {}) {
+    if (cell && cell.unreadable) {
+        const { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = opts;
+        return Coverage.missing(
+            GAP.UNAVAILABLE,
+            `the cell "${cell.name}" is not among the cells shown, and this server cannot `
+            + 'read a cell outside the subset',
+            { source, unit, total, role }
+        );
+    }
+    return missingEntity('cell', cell ? cell.name : null, opts);
+}
+
+/**
  * Classify a column read from a MATRIX-shaped member: `obsm`, `varm`, `obsp`,
  * `varp`, `layer`.
  *

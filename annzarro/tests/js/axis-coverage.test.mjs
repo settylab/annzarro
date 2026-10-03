@@ -64,6 +64,9 @@ function stubDataManager({ entityIndex = -1 } = {}) {
         getCurrentDataset: () => '/fixture.zarr',
         getCellIndex: () => entityIndex,
         resolveCellIndex: async () => entityIndex,
+        // every cell is shown here: located at entityIndex, or not in the dataset
+        locateCell: async (name) => (name ? { name, position: entityIndex, shown: entityIndex >= 0,
+                                              row: entityIndex >= 0 ? entityIndex : null } : null),
         getGeneIndex: () => entityIndex,
         getFocusedCell: () => 'c0',
         getFocusedGene: () => 'g0'

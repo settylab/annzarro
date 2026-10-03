@@ -7,7 +7,7 @@ import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheti
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
-  classifyError, classifyFilterStats, missingEntity, classifyFocusRow
+  classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
@@ -258,6 +258,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     coverage: missingEntity(kind, name, { source, unit, total: expected }),
     dataType: 'numerical'
   });
+  // The same for a cell located by DataManager.locateCell that cannot be read
+  const blankCellSeries = (cell, name) => ({
+    values: Array(typeof expected === 'number' ? expected : 0).fill(NaN),
+    coverage: unreadableCell(cell || (name ? { name } : null), { source, unit, total: expected }),
+    dataType: 'numerical'
+  });
 
   try {
     // Inside the try: everything below can throw, and must be classified when
@@ -387,7 +393,6 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       }
       case 'obsp':
       case 'varp': {
-        const focusKind = type === 'obsp' ? 'cell' : 'gene';
         if (!key) {
           // A dataset without any obsp/varp matrix leaves the key selector
           // empty, and the request became `/data/obsp/` with no key: a 404
@@ -401,17 +406,24 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           dataType = 'numerical';
           break;
         }
-        const focusIndex = type === 'obsp'
-          ? await DataManager.resolveCellIndex(column)
-          : DataManager.getGeneIndex(column);
-        if (focusIndex === -1) {
-          // Render the plot without the highlight; do not fail the load.
-          ({ values, coverage, dataType } = blankFocusSeries(focusKind, column));
-          break;
+        if (type === 'obsp') {
+          // The cell's row over the cells shown; a cell the subset does not
+          // show (another part, filtered out) is read by its dataset row
+          const cell = await DataManager.locateCell(column);
+          if (!DataManager.cellRowParams(cell)) {
+            // Render the plot without the highlight; do not fail the load.
+            ({ values, coverage, dataType } = blankCellSeries(cell, column));
+            break;
+          }
+          data = await DataManager.loadObsp({ datasetPath, obspKey: key, cell });
+        } else {
+          const focusIndex = DataManager.getGeneIndex(column);
+          if (focusIndex === -1) {
+            ({ values, coverage, dataType } = blankFocusSeries('gene', column));
+            break;
+          }
+          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex] });
         }
-        data = type === 'obsp'
-          ? await DataManager.loadObsp({ datasetPath, obspKey: key, rows: [focusIndex] })
-          : await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex] });
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
           values = Array.isArray(firstRow) ? firstRow : ((firstRow !== undefined && firstRow !== null) ? [firstRow] : []);
@@ -444,15 +456,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       }
       case 'layer': {
         if (plotType === 'genes') {
-          const cellIndex = await DataManager.resolveCellIndex(column);
-          if (cellIndex === -1) {
-            ({ values, coverage, dataType } = blankFocusSeries('cell', column));
+          const cell = await DataManager.locateCell(column);
+          if (!DataManager.cellRowParams(cell)) {
+            ({ values, coverage, dataType } = blankCellSeries(cell, column));
             break;
           }
           data = await DataManager.loadLayer({
             datasetPath,
             layerName: key,
-            rows: [cellIndex],
+            cell,
             cols: null
           });
           if (data.data && Array.isArray(data.data) && data.data.length > 0) {
