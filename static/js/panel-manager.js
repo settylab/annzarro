@@ -728,31 +728,42 @@ const PanelManager = (function() {
             // on exactly which tiles a hierarchy opens.
             collectTileIds(layout.hierarchy).forEach(id => panelIdsInLayout.add(id));
             
-            // First pass: Build the DOM layout structure without initializing panels
-            const rebuiltNodes = layout.hierarchy.map(node => 
-                LayoutManager.rebuildLayoutFromHierarchy(
-                    node, 
-                    _container,
-                    // Callback to create a tile element
-                    (id) => _createTileElement(id),
-                    // Empty callback - we'll initialize panels in second pass
-                    () => {}
-                )
-            );
-            
-            // The bottom "Create New Panel" chooser is restored only when the
-            // hierarchy lists it. Layouts saved by the app always do, but a
-            // hand-written link or an older panel set may not, and the chooser
-            // then never came back. Add it when the hierarchy has none.
-            const hasSelector = (nodes) => nodes.some(n => n && (n.type === 'selector' ||
-                (Array.isArray(n.children) && hasSelector(n.children))));
-            if (_container && !hasSelector(layout.hierarchy)) {
-                LayoutManager.rebuildLayoutFromHierarchy(
-                    { type: 'selector' },
-                    _container,
-                    (id) => _createTileElement(id),
-                    () => {}
+            // First pass: Build the DOM layout structure without initializing panels.
+            // A top-level selector node is the bottom "Create New Panel" chooser.
+            // Rebuilt through the layout callback it became a pane chooser, which
+            // fills the container and squeezed the panels above it (the plot then
+            // sat under the chooser and could not be clicked). It is skipped here
+            // and the welcome-variant chooser is appended below instead; selectors
+            // nested in split panes stay pane choosers.
+            const rebuiltNodes = layout.hierarchy
+                .filter(node => !(node && node.type === 'selector'))
+                .map(node =>
+                    LayoutManager.rebuildLayoutFromHierarchy(
+                        node,
+                        _container,
+                        // Callback to create a tile element
+                        (id) => _createTileElement(id),
+                        // Empty callback - we'll initialize panels in second pass
+                        () => {}
+                    )
                 );
+
+            // Every restored layout ends with the bottom chooser, whether or not
+            // the hierarchy listed it: a hand-written link or an older panel set
+            // may not, and the chooser then never came back.
+            if (_container) {
+                _welcomeSelectionTile = new SelectionTile({
+                    container: _container,
+                    variant: "welcome",
+                    showSessions: false,
+                    panels: _panels,
+                    activePanels: _activePanels,
+                    layoutManager: LayoutManager,
+                    createPanel: createPanel,
+                    panelsByType: _panelsByType,
+                    generateUniqueName: _generateUniqueName,
+                    sessionManager: window.sessionManager
+                });
             }
 
             // Set up all the handle resizing
