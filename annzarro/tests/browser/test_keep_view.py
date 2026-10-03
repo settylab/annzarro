@@ -54,12 +54,13 @@ def _free_port():
 @pytest.fixture(scope="module", params=[5_000_000, 10], ids=["regular", "large-plot"])
 def server(request, tmp_path_factory):
     home = tmp_path_factory.mktemp("home")
-    (home / "config.yaml").write_text(f"ui:\n  defaults:\n    large_plot_points: {request.param}\n")
+    cfg = home / "large.yaml"
+    cfg.write_text(f"ui:\n  defaults:\n    large_plot_points: {request.param}\n")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     # this checkout's package, not whatever "annzarro" is installed
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--config", str(cfg), "--host", "127.0.0.1",
                              "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
@@ -108,7 +109,8 @@ STATE = """() => {
     first: g.data.reduce((a, t) => a + [...(t.x || [])].reduce((b, v) => b + (Number.isFinite(v) ? v : 0), 0), 0),
     x: l.xaxis && l.xaxis.range ? l.xaxis.range.map(Number) : null,
     y: l.yaxis && l.yaxis.range ? l.yaxis.range.map(Number) : null,
-    eye: l.scene && l.scene.camera ? l.scene.camera.eye : null
+    eye: l.scene && l.scene.camera ? l.scene.camera.eye : null,
+    large: !!document.querySelector('.tile[data-tile-id="cell-plot-K"] .mode-notice')
   };
 }"""
 
@@ -173,6 +175,7 @@ def test_zoom_survives_recolour_parts_seed_and_link(server):
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(_link(root))
             s = _settle(page, lambda s: s["part"] == "1")
+            assert s["large"] == large, "large-plot mode is not what this case tests"
             view = _zoom(page, s)
             _assert_view(page.evaluate(STATE), view, "zoom")
 
