@@ -354,8 +354,12 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
     if field in ("obsm", "varm") and key is not None:
         key_shape = ((metadata.get(f"{field}_info") or {}).get(key) or {}).get("shape")
         lengths["key"] = key_shape[1] if key_shape and len(key_shape) > 1 else None
-    for name, indices, axis in (("rows", rows, row_axis), ("cols", cols, col_axis)):
-        length = lengths.get(axis) if axis else None
+    row_length = lengths.get(row_axis) if row_axis else None
+    if isinstance(reader, cell_subset.DatasetRowsView):
+        # rows name dataset rows; columns stay positions among the cells shown
+        row_length = reader.n_obs
+    col_length = lengths.get(col_axis) if col_axis else None
+    for name, indices, length in (("rows", rows, row_length), ("cols", cols, col_length)):
         if indices and length is not None:
             bad = [i for i in indices if i >= length]
             if bad:
@@ -364,13 +368,15 @@ def _check_request(dataset_path, reader, slot, key=None, rows=None, cols=None, c
                     f"{name} index {bad[0]} is out of range: this axis has {length} entries (0-{length - 1}).")
 
 
-def _reader_for(dataset_path):
+def _reader_for(dataset_path, dataset_rows=False):
     """The reader for a cell-axis request: the dataset, or with a ``subset``
     parameter the subset of its cells (core/subset.py).
 
     With a subset, every cell position in the request and the response is a
     position in the subset, and whole-axis reads return the subset's cells,
-    so obs, obsm, obsp, X and layers all describe the same cells.
+    so obs, obsm, obsp, X and layers all describe the same cells. With
+    ``dataset_rows`` the cells the request names are dataset rows instead
+    (see _row_indices); everything else stays the subset's.
     """
     reader = get_reader(dataset_path)
     raw = request.args.get("subset")
@@ -380,12 +386,47 @@ def _reader_for(dataset_path):
         resolved = cell_subset.resolve(reader, dataset_path, raw, app.config)
     except cell_subset.SubsetError as exc:
         raise DataRequestError(exc.status, exc.reason, exc.message)
-    return reader if resolved is None else cell_subset.SubsetView(reader, resolved)
+    if resolved is None:
+        return reader
+    view = cell_subset.SubsetView(reader, resolved)
+    return view.at_dataset_rows() if dataset_rows else view
+
+
+def _row_indices():
+    """The cells a cell-axis read names: ``(indices, by_dataset_row)``.
+
+    ``rows`` are positions among the cells shown (the subset's, when one
+    is in effect). ``dataset_rows`` are rows of the dataset, so a cell the
+    subset does not show (a focused cell from another part) can be read;
+    without a subset the two are the same. They are separate names so the
+    two index spaces never mix silently, and sending both is refused.
+    """
+    rows = _parse_indices(request.args.get("rows"))
+    dataset_rows = _parse_indices(request.args.get("dataset_rows"))
+    if dataset_rows is None:
+        return rows, False
+    if rows is not None:
+        raise DataRequestError(400, "rows_conflict",
+                               "Send rows (positions among the cells shown) or dataset_rows "
+                               "(rows of the dataset), not both.")
+    return dataset_rows, True
 
 
 #: Cell-dependent routes that read the store directly and cannot apply a
 #: subset. They refuse one rather than answer for every cell.
 _SUBSET_UNAWARE_ENDPOINTS = ("get_paginated_data", "get_statistics", "get_data_by_path")
+
+#: Routes that read cells by dataset row (``dataset_rows``). Any other route
+#: refuses the parameter rather than ignore it and answer for every row.
+_DATASET_ROWS_ENDPOINTS = ("get_data_X", "get_layer", "get_obs", "get_obsm", "get_obsp",
+                           "locate_subset_rows")
+
+#: What this server's cell-axis routes understand beyond rows=; the client
+#: sends dataset_rows only to a server that lists it.
+SUBSET_FEATURES = ["dataset_rows", "locate", "names_scope"]
+
+#: Rows one /data/subset/locate call translates.
+MAX_LOCATE_ROWS = 1000
 
 
 def register_data_routes(app, api_version):
@@ -489,6 +530,8 @@ def register_data_routes(app, api_version):
         Query parameters:
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
+            dataset_rows: Row indices of the dataset, also of cells the
+                subset does not show. Not together with rows.
             cols: Comma-separated list of column indices to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
@@ -503,14 +546,13 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
-        rows = request.args.get("rows")
         cols = request.args.get("cols")
         
         # Parse max cells
         max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
-        row_indices = _parse_indices(rows)
+        row_indices, by_dataset_row = _row_indices()
         col_indices = _parse_indices(cols)
 
         if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
@@ -520,7 +562,7 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            reader = _reader_for(dataset_path_str)
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "X", rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "X", None, row_indices, col_indices)
             if refusal is not None:
@@ -542,6 +584,8 @@ def register_data_routes(app, api_version):
         Query parameters:
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
+            dataset_rows: Row indices of the dataset, also of cells the
+                subset does not show. Not together with rows.
             cols: Comma-separated list of column indices to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
@@ -556,14 +600,13 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
-        rows = request.args.get("rows")
         cols = request.args.get("cols")
         
         # Parse max cells
         max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
-        row_indices = _parse_indices(rows)
+        row_indices, by_dataset_row = _row_indices()
         col_indices = _parse_indices(cols)
 
         if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
@@ -573,7 +616,7 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            reader = _reader_for(dataset_path_str)
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "layers", key=layer_name, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "layer", layer_name, row_indices, col_indices)
             if refusal is not None:
@@ -592,6 +635,8 @@ def register_data_routes(app, api_version):
         Query parameters:
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
+            dataset_rows: Row indices of the dataset, also of cells the
+                subset does not show. Not together with rows.
             columns: Comma-separated list of column names to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
@@ -609,14 +654,13 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row indices and column names
-        rows = request.args.get("rows")
         columns = request.args.get("columns")
         
         # Parse max cells
         max_cells = _request_cap("max_cells")
         
         # Convert rows to integer list and columns to string list
-        row_indices = _parse_indices(rows)
+        row_indices, by_dataset_row = _row_indices()
         column_names = _parse_strings(columns)
         
         # Check for too many cells
@@ -630,7 +674,7 @@ def register_data_routes(app, api_version):
         include_categories = request.args.get("include_categories", "true").lower() not in ["false", "0", "no"]
 
         try:
-            reader = _reader_for(dataset_path_str)
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
             if wants_codes(request.args) and column_names and len(column_names) == 1:
                 coded = process_file.extract_obs_var_codes(dataset_path_str, reader, row_indices,
@@ -712,6 +756,8 @@ def register_data_routes(app, api_version):
         Query parameters:
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
+            dataset_rows: Row indices of the dataset, also of cells the
+                subset does not show. Not together with rows.
             cols: Comma-separated list of column indices to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
@@ -727,7 +773,6 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
-        rows = request.args.get("rows")
         cols = request.args.get("cols")
         
         # Get optional column name for dataframe-encoded matrices
@@ -737,7 +782,7 @@ def register_data_routes(app, api_version):
         max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
-        row_indices = _parse_indices(rows)
+        row_indices, by_dataset_row = _row_indices()
         col_indices = _parse_indices(cols)
 
         # Check for too many genes
@@ -748,7 +793,7 @@ def register_data_routes(app, api_version):
             )
         
         try:
-            reader = _reader_for(dataset_path_str)
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "obsm", key=obsm_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "obsm", obsm_key, row_indices, col_indices,
                                           single_column=column_name is not None)
@@ -831,6 +876,8 @@ def register_data_routes(app, api_version):
         Query parameters:
             dataset_path: Path to the dataset.
             rows: Comma-separated list of row indices to get.
+            dataset_rows: Row indices of the dataset, also of cells the
+                subset does not show. Not together with rows.
             cols: Comma-separated list of column indices to get.
             max_cells: Optional client-side cap on the cells requested; a request
                 over it fails with reason cap_exceeded. No cap when omitted.
@@ -845,14 +892,13 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         # Parse row and column indices
-        rows = request.args.get("rows")
         cols = request.args.get("cols")
         
         # Parse max cells
         max_cells = _request_cap("max_cells")
         
         # Convert rows and cols to integer lists
-        row_indices = _parse_indices(rows)
+        row_indices, by_dataset_row = _row_indices()
         col_indices = _parse_indices(cols)
 
         if max_cells is not None and row_indices and col_indices and len(row_indices) * len(col_indices) > max_cells:
@@ -862,7 +908,7 @@ def register_data_routes(app, api_version):
             )
 
         try:
-            reader = _reader_for(dataset_path_str)
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "obsp", obsp_key, row_indices, col_indices)
             if refusal is not None:
@@ -1142,10 +1188,16 @@ def register_data_routes(app, api_version):
             mode: "substring" (default: exact, then prefix, then contains),
                   "exact" or "regex".
             limit: Maximum matches (default 50, at most 500).
+            subset: With entity=cells, the cells shown.
+            scope: "subset" (default: only the cells shown are matched) or
+                "dataset" (every cell of the dataset is; a cell the subset
+                does not show has index null).
 
         Returns:
-            {"matches": [{"name", "index"}], "truncated": bool, "total": n}
-            where total is the number of names on that axis.
+            {"matches": [{"name", "index", "row"}], "truncated": bool,
+            "total": n} where index is the position among the cells shown,
+            row the dataset row (the same as index without a subset), and
+            total the number of names searched.
         """
         dataset_path_str = request.args.get("dataset_path")
         if not dataset_path_str:
@@ -1161,18 +1213,28 @@ def register_data_routes(app, api_version):
         except ValueError:
             return jsonify({"error": "limit must be an integer"}), 400
         query = request.args.get("q", "")
+        scope = request.args.get("scope", "subset")
+        if scope not in ("subset", "dataset"):
+            return jsonify({"error": "scope must be 'subset' or 'dataset'"}), 400
 
         try:
             reader = _reader_for(dataset_path_str)
-            # A subset's cells are their own index: matches are subset
-            # positions, and a cell outside the subset is not found.
             subset = reader.subset if isinstance(reader, cell_subset.SubsetView) else None
-            index_key = entity if subset is None or entity != "cells" else f"cells@{subset.spec.key()}"
+            if entity != "cells":
+                subset = None
+            # A subset's cells are their own index: matches are subset
+            # positions, and a cell outside the subset is not found. With
+            # scope=dataset the dataset's index is searched (the one a
+            # request without a subset uses), and positions are mapped.
+            searched = subset if scope == "subset" else None
+            if subset is not None and searched is None:
+                reader = reader.base
+            index_key = entity if searched is None else f"cells@{searched.spec.key()}"
             def load_names():
                 # every name of the axis: read a zarr chunk at a time when the
                 # reader can (no list of every name); a subset's names are few
                 chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
-                if subset is None and chunks_of is not None:
+                if searched is None and chunks_of is not None:
                     chunks = chunks_of(dataset_path_str, entity)
                     if chunks is not None:
                         return name_index.NameChunks(chunks)
@@ -1187,6 +1249,16 @@ def register_data_routes(app, api_version):
         except re.error as exc:
             return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
         result["total"] = len(index)
+        matches = result["matches"]
+        found = [m["index"] for m in matches]
+        if subset is None:
+            rows, positions = found, found
+        elif searched is not None:
+            rows, positions = subset.to_rows(found), found
+        else:
+            rows, positions = found, [p if p >= 0 else None for p in subset.to_positions(found)]
+        for match, row, position in zip(matches, rows, positions):
+            match["index"], match["row"] = position, int(row)
         return jsonify(result)
 
     @app.before_request
@@ -1195,6 +1267,11 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"{request.path} cannot apply a cell subset; "
                                      "request it without the subset parameter.",
                             "reason": "subset_unsupported"}), 400
+        if ("dataset_rows" in request.args and f"/{api_version}/data/" in request.path
+                and request.endpoint not in _DATASET_ROWS_ENDPOINTS):
+            return jsonify({"error": f"{request.path} does not read cells by dataset row; "
+                                     "request it without the dataset_rows parameter.",
+                            "reason": "dataset_rows_unsupported"}), 400
         return None
 
     @app.route(f"/api/{api_version}/data/subset", methods=["GET"])
@@ -1212,9 +1289,10 @@ def register_data_routes(app, api_version):
             subset parameter to send>, "n": cells in the subset, "n_total":
             cells in the dataset, "n_eligible": cells passing the filter,
             "groups": per-group counts when balanced, "defaults": the
-            server's threshold/size/seed}. With no subset (all cells, or
-            "auto" below the threshold) subset and key are null and n is
-            n_total.
+            server's threshold/size/seed, "features": what the cell-axis
+            routes understand beyond rows= (SUBSET_FEATURES)}. With no
+            subset (all cells, or "auto" below the threshold) subset and
+            key are null and n is n_total.
         """
         dataset_path_str = request.args.get("dataset_path")
         if not dataset_path_str:
@@ -1229,7 +1307,47 @@ def register_data_routes(app, api_version):
                 body = {"subset": None, "key": None, "n": n_total, "n_total": n_total,
                         "n_eligible": n_total}
             body["defaults"] = cell_subset.defaults(app.config)
+            body["features"] = list(SUBSET_FEATURES)
             return jsonify(body)
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
+
+    @app.route(f"/api/{api_version}/data/subset/locate", methods=["GET"])
+    def locate_subset_rows():
+        """
+        Translate cells between positions in a subset and dataset rows,
+        without names: what a focused or locked cell is called in the next
+        subset is its dataset row, recorded while it was shown.
+
+        Query parameters:
+            dataset_path: Path to the dataset.
+            subset: The subset spec (as for every cell-axis route).
+            rows: Positions in the subset, or
+            dataset_rows: rows of the dataset (one of the two, at most
+                1,000).
+
+        Returns:
+            {"dataset_rows": [...]} for rows, or {"rows": [position or -1,
+            ...]} for dataset_rows, -1 for a row the subset does not show.
+            Without a subset both are the same numbers.
+        """
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        indices, by_dataset_row = _row_indices()
+        if indices is None:
+            return jsonify({"error": "rows or dataset_rows is required", "reason": "bad_indices"}), 400
+        if len(indices) > MAX_LOCATE_ROWS:
+            return _cap_error_response(len(indices), MAX_LOCATE_ROWS, "rows",
+                                       "Locate fewer cells per request.")
+        try:
+            reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
+            _check_request(dataset_path_str, reader, "obs", rows=indices)
+            if not isinstance(reader, cell_subset.SubsetView):
+                return jsonify({"rows" if by_dataset_row else "dataset_rows": list(indices)})
+            if by_dataset_row:
+                return jsonify({"rows": reader.subset.to_positions(indices)})
+            return jsonify({"dataset_rows": reader.subset.to_rows(indices)})
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
 
