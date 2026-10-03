@@ -243,3 +243,53 @@ def test_a_share_link_carries_the_row_hint(server):
             assert view["constants"]["cellRows"] == {f"c{r}": r}
         finally:
             browser.close()
+
+
+def test_pick_a_cell_the_subset_does_not_show(server):
+    """The picker finds every cell, the shown ones first; an outside pick is
+    focused, tagged in the menu, badged in the header and noted on the plot."""
+    root, store = server
+    parts = [_part_rows(root, store, p) for p in range(2)]
+    r0 = parts[1][0]
+    x = next(r for r in parts[0] if r not in parts[1])
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.goto(_link(root, store, 1, f"c{r0}"))
+            _wait(page, _shows(r0, parts[1], 1))
+            assert page.is_hidden("#focused-cell-outside")
+
+            page.click("#focused-cell")
+            page.fill("#focused-cell", f"c{x}")
+            option = f"""() => [...document.querySelectorAll('.name-picker-option')]
+                .find(li => li.firstChild && li.firstChild.textContent === 'c{x}')"""
+            page.wait_for_function(f"() => {{ const li = ({option})(); return li && li.classList.contains('outside'); }}",
+                                   timeout=20_000)
+            tags = page.evaluate("""() => [...document.querySelectorAll('.name-picker-option')]
+                .map(li => [li.firstChild.textContent, li.classList.contains('outside')])""")
+            shown_first = [outside for _, outside in tags]
+            assert shown_first == sorted(shown_first), f"shown cells first: {tags}"
+            page.evaluate(f"""() => {{ const li = ({option})();
+                li.dispatchEvent(new MouseEvent('mousedown', {{bubbles: true, cancelable: true}})); }}""")
+
+            _wait(page, _shows(x, parts[1], 1))
+            page.wait_for_function("() => !document.getElementById('focused-cell-outside').hidden", timeout=20_000)
+            assert page.text_content("#focused-cell-outside") == "not in part 2 of 5"
+            note = page.wait_for_selector('.tile[data-tile-id="cell-plot-F"] .focus-notice .coverage-notice__headline', timeout=20_000)
+            assert note.text_content().strip() == f"Focused cell c{x} is not among the shown cells"
+            label = page.evaluate("""() => document.querySelector(
+                '.tile[data-tile-id="cell-plot-F"] select.axis-column-select[data-axis="color"]').options[0].text""")
+            assert label == f"Focused cell c{x} (not shown)"
+
+            # focusing a shown cell again clears all three
+            page.click("#focused-cell")
+            page.fill("#focused-cell", f"c{r0}")
+            page.wait_for_function(f"() => [...document.querySelectorAll('.name-picker-option')]"
+                                   f".some(li => li.firstChild.textContent === 'c{r0}')", timeout=20_000)
+            page.press("#focused-cell", "Enter")
+            _wait(page, _shows(r0, parts[1], 1))
+            page.wait_for_function("() => document.getElementById('focused-cell-outside').hidden", timeout=20_000)
+            assert page.query_selector('.tile[data-tile-id="cell-plot-F"] .focus-notice') is None
+        finally:
+            browser.close()

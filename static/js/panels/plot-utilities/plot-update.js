@@ -18,7 +18,7 @@ import { processCategories, isLegendProxy } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
-import { renderCoverageNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
+import { renderCoverageNotice, renderModeNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 
 
@@ -1047,6 +1047,31 @@ export async function loadColorDataAndUpdatePlot(
 
 
 /**
+ * One line on a cell plot whose focused cell the subset does not show: it is
+ * focused, its rows are read, but it is not a point here. Not a coverage gap
+ * (no shown point is missing) and not counted as a removed point. Shown when
+ * highlighting is on, and always in large-plot mode, which draws no marker.
+ * @param {HTMLElement} plotContainer
+ * @param {Object} data - the plot's data ({cells, large?})
+ * @param {Object} settings
+ * @param {string|null} entityType
+ */
+export function noteFocusOutside(plotContainer, data, settings, entityType = null) {
+  if (!plotContainer || !data || (entityType || data.entities) !== 'cells') return;
+  const clear = () => renderModeNotice(plotContainer, null, 'notice', 'focus');
+  const name = DataManager.getFocusedCell();
+  if (!name || !(settings.highlightFocusedCell || data.large)) return clear();
+  const cells = data.cells;
+  if (cells && typeof cells.indexOf === 'function' && cells.indexOf(name) >= 0) return clear();
+  DataManager.locateCell(name).then(cell => {
+    if (DataManager.getFocusedCell() !== name || !plotContainer.isConnected) return;
+    const outside = cell && !cell.shown && cell.row !== null;
+    renderModeNotice(plotContainer, outside ? `Focused cell ${name} is not among the shown cells` : null,
+                     'notice', 'focus');
+  }).catch(() => {});
+}
+
+/**
  * Highlights the focused entity (cell or gene) in the Plotly plot.
  *
  * @param {HTMLElement} plotContainer - The container element holding the plot.
@@ -1060,6 +1085,7 @@ export async function loadColorDataAndUpdatePlot(
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
+  noteFocusOutside(plotContainer, data, settings, entityType);
   // A large plot (large-plot.js) draws no focused-cell marker
   if (data && data.large) return;
   // Capture current view state before making changes
@@ -1123,7 +1149,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   }
 
   if (focusedIndex === -1) {
-    console.warn(`Focused ${entityType} ${focusedEntity} not found in plot data`);
+    // a cell the subset does not show: noteFocusOutside says so
     removeHighlight(plotContainer);
     return;
   }
