@@ -1,0 +1,59 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-plot-S2",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-plot-S2": false
+  },
+  "panelConfigs": {
+   "cell-plot-S2": {
+    "id": "cell-plot-S2",
+    "title": "obs axes: Kompot log density, Young vs Old; colour obs DA log fold change",
+    "x": {
+     "type": "obs",
+     "key": "kompot_da_Young_log_density",
+     "column": ""
+    },
+    "y": {
+     "type": "obs",
+     "key": "kompot_da_Old_log_density",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "kompot_da_Young_to_Old_lfc",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ],
+    "colorScale": "RdBu",
+    "colorReversed": true,
+    "centeringActive": true
+   }
+  }
+ }
+}

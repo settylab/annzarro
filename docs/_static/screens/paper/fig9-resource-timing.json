@@ -1,0 +1,35 @@
+{
+ "dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)",
+ "clicks": [
+  {
+   "click": "gene click",
+   "point": "Tsc1",
+   "requests": [
+    {
+     "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=%2FUsers%2Fdotto%2Fgits%2Fannzarro-paper%2Fdata%2Fbm_aging.zarr&cols=1165&format=f32",
+     "ms": 16.9,
+     "transfer": 32660,
+     "body": 32360
+    }
+   ]
+  },
+  {
+   "click": "cell click",
+   "point": "HSPC_Young_3#AGGTTGTCACCGCTGA-1",
+   "requests": [
+    {
+     "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=%2FUsers%2Fdotto%2Fgits%2Fannzarro-paper%2Fdata%2Fbm_aging.zarr&rows=760&format=f32",
+     "ms": 21.6,
+     "transfer": 65440,
+     "body": 65140
+    }
+   ]
+  },
+  {
+   "click": "Previous gene (repeat)",
+   "point": "H2-Q7",
+   "requests": [],
+   "http_status": []
+  }
+ ]
+}

@@ -1,0 +1,55 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "gene-plot-S5",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "gene-plot-S5": false
+  },
+  "panelConfigs": {
+   "gene-plot-S5": {
+    "id": "gene-plot-S5",
+    "title": "var axes (volcano), colour = layer row of the focused cell (fold change)",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "colorScale": "RdBu",
+    "centeringActive": true
+   }
+  }
+ }
+}

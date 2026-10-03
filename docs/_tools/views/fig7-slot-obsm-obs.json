@@ -1,0 +1,56 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-plot-S1",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-plot-S1": false
+  },
+  "panelConfigs": {
+   "cell-plot-S1": {
+    "id": "cell-plot-S1",
+    "title": "obsm axes (X_umap), obs colour (highres_celltype, uns colours)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "highres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   }
+  }
+ }
+}

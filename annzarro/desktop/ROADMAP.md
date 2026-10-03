@@ -13,9 +13,9 @@ This document outlines the roadmap for further development of the AnnZarro deskt
 
 ## Phase 2: Enhanced Features
 
-- [ ] Bundle Python interpreter with the application
-  - [ ] Implement PyInstaller integration for Python bundling
-  - [ ] Create platform-specific Python bundling scripts
+- [x] Bundle Python interpreter with the application (PyInstaller-frozen server, see README.md)
+  - [x] Implement PyInstaller integration for Python bundling
+  - [x] Create platform-specific Python bundling scripts
   - [ ] Add virtual environment support for development mode
   
 - [ ] Improve user experience

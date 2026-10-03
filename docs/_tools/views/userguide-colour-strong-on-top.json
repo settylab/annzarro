@@ -1,0 +1,100 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-U",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-plot-S",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-U": false,
+   "gene-plot-S": false
+  },
+  "panelConfigs": {
+   "gene-plot-U": {
+    "id": "gene-plot-U",
+    "title": "Strong on top off: data order",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true,
+    "sortByColor": false
+   },
+   "gene-plot-S": {
+    "id": "gene-plot-S",
+    "title": "Strong on top on (default): largest |colour| last",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 5,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true
+   }
+  }
+ }
+}

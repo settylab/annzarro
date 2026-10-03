@@ -12,6 +12,7 @@ import {
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { getColumnDisplayName } from './table-data.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
+import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
 /**
  * Creates the basic table panel HTML structure.
@@ -38,15 +39,7 @@ export function createTablePanelStructure(container, id, settings = {}) {
     
     container.innerHTML = `
         <div class="table-panel">
-            <div class="loading-screen" id="loading-screen-${id}" style="display: none;">
-                <div class="loading-content">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h4 class="mt-3">No dataset loaded</h4>
-                    <p>Please select a dataset to begin visualization</p>
-                </div>
-            </div>
+            ${noDatasetScreenHtml(id)}
             <div class="table-controls" style="display: ${controlsDisplay};">
                 <div class="control-row">
                     <!-- Left column: Available Columns -->

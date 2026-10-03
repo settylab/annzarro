@@ -1,0 +1,48 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-plot-R",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-plot-R": false
+  },
+  "panelConfigs": {
+   "cell-plot-R": {
+    "id": "cell-plot-R",
+    "title": "Fold change of H2-Q7, read over HTTP",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "H2-Q7",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "RdBu",
+    "centeringActive": true
+   }
+  }
+ }
+}

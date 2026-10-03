@@ -1,0 +1,11 @@
+# Source: agent report of AnnZarro branch dominik/fast-transfer (PR #44), 2026-10-02; measurement script in that branch's commits.
+# Laptop (Apple M3 Max, NVMe/APFS), synthetic 1M cells x 5k genes, client-side ms including parse. repeat_304_ms = browser repeat answered 304 (empty where not reported).
+interaction,format,cold_ms,warm_ms,repeat_304_ms,payload_bytes
+gene column,json,614,576,,21500000
+gene column,binary,126,100,6,4000000
+cell row,json,32,26,,98000
+cell row,binary,29,24,0.6,20000
+obsm column,json,327,323,,19000000
+obsm column,binary,12,6,,4000000
+kNN row,json,82,82,,4000000
+kNN row,binary,14,13,,152

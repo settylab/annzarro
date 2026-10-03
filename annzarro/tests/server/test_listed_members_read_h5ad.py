@@ -43,3 +43,16 @@ def test_obsm_listing_matches_zarr(get, tmp_path):
     assert offered(z) == offered(h)
     assert {k: v.get("sparse") for k, v in z["dataframes"].items()} == \
         {k: v.get("sparse") for k, v in h["dataframes"].items()}
+
+
+def test_data_info_reads_h5ad(get, tmp_path):
+    """/data/info answered 500 for every .h5ad: it opened the path with the
+    zarr reader only. It now answers with the same summary as the zarr twin."""
+    zpath = zarr_side._store(tmp_path / "z")
+    r = get("/api/v1/data/info")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    h = r.get_json()
+    z = get("/api/v1/data/info", dataset_path=zpath).get_json()
+    for key in ("shape", "n_obs", "n_vars", "has_obs", "has_var", "has_obsm"):
+        assert h[key] == z[key], key
+    assert sorted(h["obs_columns"]) == sorted(z["obs_columns"])

@@ -1,0 +1,83 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-SA",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-table-ST",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-SA": false,
+   "cell-table-ST": false
+  },
+  "panelConfigs": {
+   "cell-plot-SA": {
+    "id": "cell-plot-SA",
+    "title": "Cell type",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "highres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8
+   },
+   "cell-table-ST": {
+    "id": "cell-table-ST",
+    "title": "Cell table",
+    "columns": [
+     {
+      "type": "obs",
+      "key": "Age",
+      "column": ""
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype",
+      "column": ""
+     }
+    ]
+   }
+  }
+ }
+}
