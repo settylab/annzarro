@@ -38,11 +38,13 @@ export const EXTRAPOLATE_FACTOR = 4;
  * - large first plot: 3.42 s for 50M, 9.03 s for 95.6M, fitted with the
  *   regular fixed cost: 62 ns per point.
  * - large recolour: 3.9 s for 50M, 6.5 s for 95.6M.
+ *
+ * measuredUpTo is the largest plot the benchmark timed on each path.
  */
 export const DEFAULT_MODEL = {
     serverPerCell: 2.0e-8,
-    regular: { first: { fixed: 0.53, perPoint: 5.5e-6 }, recolour: { fixed: 0.07, perPoint: 1.58e-6 } },
-    large: { first: { fixed: 0.53, perPoint: 6.2e-8 }, recolour: { fixed: 1.05, perPoint: 5.7e-8 } }
+    regular: { first: { fixed: 0.53, perPoint: 5.5e-6 }, recolour: { fixed: 0.07, perPoint: 1.58e-6 }, measuredUpTo: 1000000 },
+    large: { first: { fixed: 0.53, perPoint: 6.2e-8 }, recolour: { fixed: 1.05, perPoint: 5.7e-8 }, measuredUpTo: 95624334 }
 };
 
 /** The 1-2-5 sequence from `from` up to (not including) `below`. */
@@ -173,8 +175,9 @@ function _factors(model, path, samples) {
  * @param {Object} [ctx.model] defaults to DEFAULT_MODEL
  * @returns {{seconds: number, large: boolean, calibrated: boolean, extrapolated: boolean, measuredUpTo: number}}
  *   calibrated: rescaled to this session's draws on this path;
- *   extrapolated: no draw on this path measured its per-point cost, or n is
- *   more than EXTRAPOLATE_FACTOR times the largest measured.
+ *   extrapolated: n is more than EXTRAPOLATE_FACTOR times the largest plot
+ *   that measured the per-point cost (measuredUpTo): this session's draws on
+ *   the path, or the benchmark's until one of them does.
  */
 export function estimateLoad(n, { nTotal = 0, threshold = 5000000, serverTime = null, samples = null, model = DEFAULT_MODEL } = {}) {
     const large = n > threshold;
@@ -182,7 +185,9 @@ export function estimateLoad(n, { nTotal = 0, threshold = 5000000, serverTime = 
     const mine = (samples || _samples).filter(s => s.large === large);
     const f = _factors(model, path, mine);
     const t = model[path].first;
-    const measuredUpTo = mine.reduce((m, s) => Math.max(m, s.n), 0);
+    // the slope is this session's, or the benchmark's with its range
+    const measuredUpTo = f.perPointMeasured
+        ? mine.reduce((m, s) => Math.max(m, s.n), 0) : model[path].measuredUpTo;
     // The preview request times the selection alone; reading the subset's
     // rows from a big store costs more, so it can raise the modelled cost but
     // not lower it.
@@ -191,7 +196,7 @@ export function estimateLoad(n, { nTotal = 0, threshold = 5000000, serverTime = 
         seconds: server + t.fixed * f.fixed + t.perPoint * f.perPoint * n,
         large,
         calibrated: mine.length > 0,
-        extrapolated: !f.perPointMeasured || n > EXTRAPOLATE_FACTOR * measuredUpTo,
+        extrapolated: n > EXTRAPOLATE_FACTOR * measuredUpTo,
         measuredUpTo
     };
 }

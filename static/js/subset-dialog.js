@@ -286,10 +286,10 @@ const SubsetControl = (function() {
     }
 
     function _timeHtml(est) {
+        const source = est.calibrated ? 'this session\'s plots' : 'a laptop benchmark';
         const title = est.extrapolated
-            ? (est.measuredUpTo ? `Extrapolated: this session measured plots of up to ${fmt(est.measuredUpTo)} points on this path`
-                                : 'Extrapolated: no plot this size has been timed in this session')
-            : (est.calibrated ? 'Estimated from this session\'s plots' : 'Default estimate from a laptop benchmark');
+            ? `Extrapolated: ${source} timed plots of up to ${fmt(est.measuredUpTo)} points of this kind`
+            : `Estimated from ${source}`;
         return `<span class="sp-time${est.extrapolated ? ' sp-extrapolated' : ''}" title="${escapeHtml(title)}">${formatSeconds(est.seconds)}</span>`;
     }
 

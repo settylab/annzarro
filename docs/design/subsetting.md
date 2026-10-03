@@ -185,8 +185,9 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
   the slope. The preview request times the selection alone, so it can raise the
   modelled server cost but not lower it (reading a subset's rows from a large
   store costs more than selecting them).
-  An estimate is flagged as extrapolated (grey) when no draw on its path has
-  measured the slope or n is more than 4x the largest measured.
+  An estimate is flagged as extrapolated (grey) when n is more than 4x the
+  largest plot that measured its path's slope: this session's draws, or the
+  benchmark's (1M regular, 95.6M large) until a session draw does.
 - Apply reopens the current view (panels, layout, focus) on the new cells
   through the panel-set load path, so every panel is rebuilt on them.
 - With more than one part, `‹ Part 3 of 957 ›` follows the badge: buttons for

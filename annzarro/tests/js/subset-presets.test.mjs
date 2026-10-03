@@ -59,7 +59,10 @@ test('the default estimate reproduces the benchmark it was fitted to', () => {
     assert.equal(large.large, true);
     near(large.seconds, 9.03, 1.0);
     assert.equal(large.calibrated, false);
-    assert.equal(large.extrapolated, true);
+    // within the benchmark's range: 1M regular, 95.6M large
+    assert.equal(large.extrapolated, false);
+    assert.equal(estimateLoad(4000000, { nTotal: 1e8 }).extrapolated, false);
+    assert.equal(estimateLoad(4000001, { nTotal: 1e8 }).extrapolated, true);
 });
 
 test('the estimate grows with n on each path', () => {
@@ -91,14 +94,16 @@ test('calibration: big plots set the per-point cost, small ones the fixed cost',
     assert.equal(est.calibrated, true);
     assert.equal(est.extrapolated, false);
     assert.ok(est.seconds > 1.7 * base(1000000));
-    // a tiny plot alone speaks for the fixed cost, not the slope: n far
-    // above it stays extrapolated and keeps the default slope
+    // a tiny plot alone speaks for the fixed cost, not the slope: the
+    // default slope stays, with the benchmark's range
     const tiny = [{ n: 200, seconds: 0.1, kind: 'first', large: false }];
     const far = estimateLoad(1000000, { ...ctx, samples: tiny });
     assert.equal(far.calibrated, true);
-    assert.equal(far.extrapolated, true);
+    assert.equal(far.extrapolated, false);
+    assert.equal(far.measuredUpTo, DEFAULT_MODEL.regular.measuredUpTo);
     assert.ok(far.seconds < base(1000000));
     assert.ok(far.seconds > base(1000000) - DEFAULT_MODEL.regular.first.fixed);
+    assert.equal(estimateLoad(5000000, { ...ctx, samples: tiny }).extrapolated, true);
 });
 
 test('recolour timings calibrate against the recolour model', () => {
@@ -116,8 +121,10 @@ test('extrapolated beyond EXTRAPOLATE_FACTOR x the largest measured n, and per p
     assert.equal(estimateLoad(100000 * EXTRAPOLATE_FACTOR + 1, ctx).extrapolated, true);
     assert.equal(estimateLoad(1000, ctx).extrapolated, false);
     const large = estimateLoad(1e7, ctx);
-    assert.equal(large.calibrated, false);      // no large-plot draw yet
-    assert.equal(large.extrapolated, true);
+    assert.equal(large.calibrated, false);      // no large-plot draw yet: the benchmark's range
+    assert.equal(large.measuredUpTo, DEFAULT_MODEL.large.measuredUpTo);
+    assert.equal(large.extrapolated, false);
+    assert.equal(estimateLoad(4e8, ctx).extrapolated, true);
     assert.equal(estimateLoad(1e5, ctx).measuredUpTo, 100000);
 });
 

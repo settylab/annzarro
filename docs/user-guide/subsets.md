@@ -61,7 +61,8 @@ show the dialog. On a large dataset the steps are the same.
    - an **estimated load time**, rounded (`<1 s`, `~6 s`, `~2 min`). Until this session has drawn
      a Cell Plot the estimates are defaults from a laptop benchmark; after that they are rescaled
      to the plots this browser has drawn and recoloured. A grey, italic estimate is extrapolated:
-     nothing this large has been timed yet on that kind of plot. The line under the sizes says
+     the size is more than 4 times the largest plot of that kind that was timed (by the benchmark,
+     or by this session once it has drawn a plot large enough to measure). The line under the sizes says
      which kind of estimate you are reading.
 
    Sizes above the large-plot limit (5,000,000 points by default, set by the server) come after a
