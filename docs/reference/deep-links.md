@@ -72,7 +72,8 @@ companion repository `settylab/annzarro-paper`. The docs' screenshot views are i
   "constants": {                   // global focus state, all optional
     "focusedGene":  "GeneA",
     "focusedCell":  "cell-123",
-    "taxonomyId":   "tax-1"
+    "taxonomyId":   "tax-1",
+    "cellRows":     { "cell-123": 4711 }   // dataset rows of the focused and locked cells, a hint
   },
 
   // the cells every panel shows, optional (see "Cell subset" below)
@@ -115,6 +116,22 @@ part_out_of_range`) and the link opens on the dataset's default, with a notice.
 
 `focusedCell` and `focusedGene` are names (`obs_names`, `var_names`), not indices. Cell names
 may contain `#` (the demonstration data's do); inside the base64 payload that is harmless.
+
+The focused cell is kept when the link's subset does not show it, for example a cell of part 1
+in a link to part 3, or one its `where` filter leaves out: panels read its rows by dataset row
+and the header says "not shown" ({doc}`../user-guide/focus-and-lock`). It is dropped only when
+the dataset does not have the name (the panels then say so), or when the server is too old to
+read a cell outside the subset (a notice says so).
+
+`cellRows` maps the focused and locked cells to their dataset rows, where the app knew them when
+the link was made. It is only a hint: on opening, the name at that row (`obs/_index`) is read
+and must equal the key, or the hint is ignored. Names stay authoritative. The hint matters on
+very large datasets: finding a cell the subset does not show by name needs the server's
+dataset-wide name index, which takes 6.2 s to build at 50 million cells, and the hint replaces
+that with a one-row read (0.07 s). On the 50-million-cell Tahoe store, a link to part 2 of
+500 whose focused cell is in part 1 was restored in 13.4 s with the hint and 19.3 s without it,
+from page load to the focused cell's panels drawn on a server that had not built its name index
+yet. Links without the hint, including every link made before it existed, work as before.
 
 ### Hierarchy nodes
 
