@@ -130,6 +130,10 @@ may contain `#` (the demonstration data's do); inside the base64 payload that is
 }
 ```
 
+A child may itself be a split, to any depth: splitting one half of a split, horizontally or
+vertically, nests a new split node in that pane. Share links and panel sets made before this was
+fixed saved such an outer split as `"children": []` and open as an empty layout; make them again.
+
 A tile's **panel type is encoded in its id prefix**: `cell-plot-1718…` is type `cell-plot`.
 `panelTypeFromTileId` (in `deeplink.js`) is the single definition of that derivation, shared
 with `restoreLayout`. To pre-register a cell plot in a split, give its tile node

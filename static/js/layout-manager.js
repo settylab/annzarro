@@ -49,7 +49,7 @@ const LayoutManager = (function() {
      * @private
      */
     function _refreshSplitContainer(container) {
-        const panes = container.querySelectorAll('.split-pane');
+        const panes = childPanes(container);
         if (panes.length !== 2) return;
         
         const direction = container.dataset.splitDirection;
@@ -67,6 +67,19 @@ const LayoutManager = (function() {
         pane2.style.flex = `${pane2Percent}`;
     }
     
+    /**
+     * The two panes of a split container: its own children, not every pane
+     * below it. querySelectorAll('.split-pane') also returns the panes of a
+     * split nested inside one of them, so a split holding another split had
+     * four "panes", failed the two-pane check and was saved with no children:
+     * a share link or panel set made from it opened an empty layout.
+     * @param {HTMLElement} container - A .split-container
+     * @returns {HTMLElement[]} - Its direct .split-pane children, in order
+     */
+    function childPanes(container) {
+        return [...container.children].filter(c => c.classList.contains('split-pane'));
+    }
+
     /**
      * Recursively builds a hierarchy tree of the layout
      * @param {HTMLElement} element - The current element to process (container or tile)
@@ -105,7 +118,7 @@ const LayoutManager = (function() {
         // Handle split container
         if (element.classList.contains('split-container')) {
             const direction = element.dataset.splitDirection || 'horizontal';
-            const panes = element.querySelectorAll('.split-pane');
+            const panes = childPanes(element);
             
             // Default hierarchy object for split container
             const splitContainer = {
@@ -567,7 +580,7 @@ const LayoutManager = (function() {
         }
         
         // Find the other pane in this split
-        const otherPane = Array.from(splitContainer.querySelectorAll('.split-pane'))
+        const otherPane = childPanes(splitContainer)
             .find(pane => pane !== parentPane);
         
         // Get the container parent
@@ -747,6 +760,7 @@ const LayoutManager = (function() {
     return {
         init,
         buildLayoutHierarchy,
+        childPanes,
         rebuildLayoutFromHierarchy,
         setupResizableHandle,
         createSplit,

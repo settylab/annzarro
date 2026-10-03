@@ -758,7 +758,8 @@ const PanelManager = (function() {
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
                 const container = handle.parentElement;
-                const panes = container.querySelectorAll('.split-pane');
+                // its own two panes; a nested split's would make it four
+                const panes = LayoutManager.childPanes(container);
                 
                 if (panes.length === 2) {
                     const direction = container.dataset.splitDirection;
