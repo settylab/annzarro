@@ -537,11 +537,15 @@ const DataManager = (function() {
      * the names stay on the server: the first lookup by name otherwise waits
      * for that build (16 s at 50M cells). Fire and forget, once per loaded
      * dataset; nothing waits for it. Called after a large plot is drawn so the
-     * build does not compete with the plot's own requests.
+     * build does not compete with the plot's own requests. Only on a
+     * single-user server (Config.SERVER_CONFIG.single_user): the index costs
+     * server memory (11 GB for 50M names before the lean index), which a
+     * hosted server spends only for the users who search by name.
      */
     let _prewarmed = null;
     function prewarmCellNames() {
         if (!(_cells instanceof RemoteNames) || !_currentDataset) return;
+        if (!(Config.SERVER_CONFIG && Config.SERVER_CONFIG.single_user)) return;
         const key = `${_currentDataset}#${_datasetGeneration}`;
         if (_prewarmed === key) return;
         _prewarmed = key;

@@ -262,6 +262,8 @@ const Config = (function() {
         
         // Environment settings
         local_mode: false,
+        // one user on this machine (server: core/remote.py hosted_reasons)
+        single_user: false,
         
         // External integrations
         integrations: null
