@@ -21,15 +21,20 @@
  *
  * What it gives up: hover and click on points (hovermode false; there are no
  * per-point names on the traces), the focused-cell highlight, table filters,
- * 3D, and incremental updates (any change redraws). The panel says so (renderModeNotice). It is used only above
- * largePlotPoints() (default 5M) and only for the settings it supports (largePlotReason).
+ * 3D, and incremental updates (any change redraws). It is used above
+ * largePlotPoints() (default 5M). The panel says so (renderModeNotice), the
+ * controls it cannot honour are disabled (large-plot-controls.js), and
+ * settings it cannot draw are refused with a message (largePlotRefusal):
+ * above the threshold the regular path would close the tab.
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { createLayout } from './plot-make-helper.js';
 import { generateDiscreteColors } from './colors.js';
-import { drawPlot, renderModeNotice } from '../../utils/panel-surface.js';
+import { drawPlot, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
 import { Coverage, GAP } from '../../utils/coverage.js';
+import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
+import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -40,22 +45,38 @@ const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
 const NA_COLOR = 'rgba(200, 200, 200, 1)';
 
+const _an = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
+
 /**
- * Null when this panel can use the large path, otherwise why not.
+ * Null when large-plot mode can draw these settings, otherwise the sentence
+ * the panel shows instead of a plot: what is not available at this size and
+ * the two ways out. Only meaningful above largePlotPoints().
  * @param {Object} settings  cell plot settings
- * @param {number} n  cells in the plot
+ * @param {number} n  points in the plot
+ */
+export function largePlotRefusal(settings, n) {
+  const at = `is not available for ${formatPoints(n)} points: turn on a subset`;
+  if (settings.z) return `3D ${at}, or turn 3D off`;
+  if (settings.tableFilter && settings.tableFilter !== 'none') {
+    return `A table filter ${at}, or set the table filter to None`;
+  }
+  for (const axis of ['x', 'y', 'color']) {
+    const t = settings[axis] && settings[axis].type;
+    if (LARGE_TYPES[axis].includes(t)) continue;
+    return axis === 'color'
+      ? `Colour by ${_an(t)} ${t} column ${at}, or choose an obs column or a gene`
+      : `${axis === 'x' ? 'An x' : 'A y'} axis from ${t} ${at}, or choose an embedding (obsm), an obs column or a gene`;
+  }
+  return null;
+}
+
+/**
+ * Null when this panel uses the large path, otherwise why not (below the
+ * threshold, or settings the mode cannot draw).
  */
 export function largePlotReason(settings, n) {
   if (!(n > largePlotPoints())) return `${n} cells (large path above ${largePlotPoints()})`;
-  if (settings.z) return '3D';
-  if (settings.tableFilter && settings.tableFilter !== 'none') return 'table filter';
-  for (const axis of ['x', 'y', 'color']) {
-    const t = settings[axis] && settings[axis].type;
-    if (!['obsm', 'obs', 'layer', 'none'].includes(t) || (t === 'none' && axis !== 'color')) {
-      return `${axis} from ${t}`;
-    }
-  }
-  return null;
+  return largePlotRefusal(settings, n);
 }
 
 async function loadSeries(s, datasetPath, structure) {
@@ -99,16 +120,7 @@ function _parseColor(c) {
 async function sampleColorscale(scale, reverse, n) {
   let stops;
   try {
-    // Plotly resolves a scale name ('Portland', ...) to its stops while it
-    // draws; a one-point plot off screen does that without private API.
-    const div = document.createElement('div');
-    div.style.cssText = 'position:absolute;left:-9999px;width:40px;height:40px';
-    document.body.appendChild(div);
-    await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: scale } }],
-      { width: 40, height: 40 }, { staticPlot: true });
-    stops = div._fullData[0].marker.colorscale;
-    Plotly.purge(div);
-    div.remove();
+    stops = await resolveColorscale(scale);
     if (reverse) stops = stops.map(([t, c]) => [1 - t, c]).reverse();
   } catch {
     stops = null;
@@ -168,8 +180,7 @@ function pushTraces(traces, X, Y, a, b, name, color, settings, showlegend) {
 
 /** What the panel says while in this mode. */
 export function largePlotNotice(n) {
-  const m = n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n.toLocaleString();
-  return `Large-plot mode (${m} points): hover, click and table filters are off; use a subset for them`;
+  return `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`;
 }
 
 // The draw in flight per panel. A panel's first load is usually asked for
@@ -182,13 +193,13 @@ const _inflight = new WeakMap();
  * other code reads (`large`, `entities`, `generation`, `coverage`). A call
  * with the same settings while a draw is in flight joins that draw.
  */
-export function createLargePlot(plotContainer, settings, data) {
+export function createLargePlot(plotContainer, settings, data, container = null, id = null) {
   const sig = JSON.stringify([DataManager.getDatasetGeneration(), settings.x, settings.y, settings.color,
     settings.pointSize, settings.pointOpacity, settings.hideNaN, settings.hideOutliers, settings.colorMin,
     settings.colorMax, settings.colorScale, settings.colorReversed, settings.categoryPalette]);
   const current = _inflight.get(plotContainer);
   if (current && current.sig === sig) return current.promise;
-  const promise = _drawLargePlot(plotContainer, settings, data).finally(() => {
+  const promise = _drawLargePlot(plotContainer, settings, data, container, id).finally(() => {
     if (_inflight.get(plotContainer) && _inflight.get(plotContainer).promise === promise) {
       _inflight.delete(plotContainer);
     }
@@ -197,7 +208,7 @@ export function createLargePlot(plotContainer, settings, data) {
   return promise;
 }
 
-async function _drawLargePlot(plotContainer, settings, data) {
+async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const t0 = performance.now();
   const datasetPath = DataManager.getCurrentDataset();
   const structure = await DataManager.getDatasetStructure();
@@ -233,8 +244,21 @@ async function _drawLargePlot(plotContainer, settings, data) {
     }
     const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
     filtered = n - kept;
-    const palette = generateDiscreteColors(nc, settings.categoryPalette && settings.categoryPalette !== 'uns'
-      ? settings.categoryPalette : undefined);
+    // The regular path's palette rule (processCategories): the colours stored
+    // in uns.<key>_colors when the palette is 'uns' and they exist
+    let palette = null;
+    if (settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
+      try {
+        const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
+        if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
+      } catch {
+        palette = null;
+      }
+    }
+    if (!palette || !palette.length) {
+      palette = generateDiscreteColors(nc, settings.categoryPalette && settings.categoryPalette !== 'uns'
+        ? settings.categoryPalette : undefined);
+    }
     pushTraces(traces, X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings, true);
     for (let k = 0; k < nc; k++) {
       pushTraces(traces, X, Y, start[k], start[k + 1], String(cs.categories[k]),
@@ -255,6 +279,8 @@ async function _drawLargePlot(plotContainer, settings, data) {
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < n; i++) { const c = v[i]; if (c < lo) lo = c; if (c > hi) hi = c; }
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
+    // the colour range controls read only the finite min and max
+    if (container && id !== null) updateColorSliderUI(container, { color: [lo, hi] }, settings, id);
     const width = (cmax - cmin) / COLOR_BINS || 1;
     // draw order: |bin centre| ascending, so the strongest values are on top
     const order = [...Array(COLOR_BINS).keys()]
@@ -309,6 +335,9 @@ async function _drawLargePlot(plotContainer, settings, data) {
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
   renderModeNotice(plotContainer, largePlotNotice(n));
+  if (container && id !== null) {
+    updateColorControlsVisibility(container, cs && cs.codes ? 'categorical' : cs ? 'numerical' : 'constant', id);
+  }
   const t3 = performance.now();
   data.large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2 };

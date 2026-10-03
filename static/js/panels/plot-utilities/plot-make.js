@@ -9,7 +9,8 @@ import {
   classifyError, classifyFilterStats, missingEntity, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
-import { largePlotPoints, largePlotReason, createLargePlot } from './large-plot.js';
+import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
+import { updateLargePlotControls } from './large-plot-controls.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -681,16 +682,29 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
 
     // Millions of cells: typed arrays and single-colour traces (large-plot.js).
     // Its notice is cleared here and put back once a large draw succeeds.
-    renderModeNotice(plotContainer, null);
     if (!isGenePlot) {
       const nCells = (DataManager.getCells() || []).length;
-      const why = largePlotReason(settings, nCells);
-      if (!why) {
-        await createLargePlot(plotContainer, settings, data);
+      const large = nCells > largePlotPoints();
+      updateLargePlotControls(container, large, largePlotPoints());
+      if (large) {
+        const refusal = largePlotRefusal(settings, nCells);
+        if (refusal) {
+          // The regular path cannot draw this many points (the tab runs out
+          // of memory). Say what is not available and keep any plot drawn.
+          if (Array.isArray(plotContainer.data) && plotContainer.data.length) {
+            renderModeNotice(plotContainer, refusal, 'warning');
+          } else {
+            drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal,
+              { source: 'large-plot mode', unit: 'cells', total: nCells }), 'cells');
+          }
+          return;
+        }
+        renderModeNotice(plotContainer, null);
+        await createLargePlot(plotContainer, settings, data, container, id);
         return;
       }
-      if (nCells > largePlotPoints()) console.warn(`Large cell plot path not used: ${why}`);
     }
+    renderModeNotice(plotContainer, null);
 
     // Reset cached data without changing its reference. Until this load
     // finishes, `data.generation` is null: the series are half-built, and

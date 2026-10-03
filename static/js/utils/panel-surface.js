@@ -152,6 +152,29 @@ export function renderCoverageNotice(host, coverage, unit) {
 }
 
 /**
+ * The stops ([[t, colour], ...]) Plotly draws for a colour scale given by name
+ * ('Portland') or as stops. Plotly resolves names only while it draws, so this
+ * draws a one-point plot off screen and reads them back. That plot is not a
+ * panel and states no Coverage, which is why it lives here and not beside its
+ * caller (large-plot.js, which colours its traces with these stops).
+ * @param {string|Array} scale
+ * @returns {Promise<Array>}
+ */
+export async function resolveColorscale(scale) {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:absolute;left:-9999px;width:40px;height:40px';
+    document.body.appendChild(div);
+    try {
+        await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: scale } }],
+            { width: 40, height: 40 }, { staticPlot: true });
+        return div._fullData[0].marker.colorscale;
+    } finally {
+        Plotly.purge(div);
+        div.remove();
+    }
+}
+
+/**
  * Render (or clear, with `text` null) a notice that says how a panel is drawn
  * when that changes what the user can do with it, e.g. the large-plot mode
  * (large-plot.js) with hover, click and table filters off. Same look as the
@@ -159,9 +182,10 @@ export function renderCoverageNotice(host, coverage, unit) {
  *
  * @param {HTMLElement} host  The plot container.
  * @param {string|null} text
+ * @param {string} [severity]  'notice' (default) or 'warning'
  * @returns {HTMLElement|null}
  */
-export function renderModeNotice(host, text) {
+export function renderModeNotice(host, text, severity = 'notice') {
     const anchor = noticeAnchor(host);
     if (!anchor) return null;
     const key = `mode-notice-for-${anchor.id || 'panel'}`;
@@ -175,12 +199,12 @@ export function renderModeNotice(host, text) {
     }
     if (!el) {
         el = document.createElement('div');
-        el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--notice mode-notice`;
         el.dataset.modeFor = key;
         anchor.parentNode.insertBefore(el, anchor);
     }
+    el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--${severity} mode-notice`;
     el.innerHTML =
-        `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON.notice}</span>`
+        `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON[severity] || 'i'}</span>`
         + `<div class="${NOTICE_CLASS}__body"><div class="${NOTICE_CLASS}__headline">${escapeHtml(text)}</div></div>`;
     el.setAttribute('role', 'status');
     el.setAttribute('title', text);

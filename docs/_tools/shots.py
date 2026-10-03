@@ -74,9 +74,12 @@ def split(direction: str, a: dict, b: dict, pa: int = 50) -> dict:
 
 
 # --------------------------------------------------------------------------- server
-def start_server(annzarro: str, port: int, log: Path, data_dir: Path = DATA_DIR) -> subprocess.Popen:
+def start_server(annzarro: str, port: int, log: Path, data_dir: Path = DATA_DIR,
+                 config: Path | None = None) -> subprocess.Popen:
     cmd = [annzarro, "start", "--host", "127.0.0.1", "--port", str(port),
            "--data-dir", str(data_dir), "--no-browser", "--auth-disabled"]
+    if config is not None:
+        cmd += ["--config", str(config)]
     proc = subprocess.Popen(cmd, stdout=log.open("w"), stderr=subprocess.STDOUT,
                             start_new_session=True)
     for _ in range(120):
@@ -203,8 +206,9 @@ class Session:
     """Context manager: server + headless Chromium + Shooter. Prints the log on exit."""
 
     def __init__(self, port: int, out: str | Path, url: str | None = None,
-                 data_dir: Path = DATA_DIR):
+                 data_dir: Path = DATA_DIR, config: Path | None = None):
         self.port, self.out, self.url, self.data_dir = port, Path(out), url, data_dir
+        self.config = config
         self.log: list[str] = []
 
     def __enter__(self) -> "Shooter":
@@ -214,7 +218,7 @@ class Session:
             exe = str(Path(sys.executable).with_name("annzarro"))
             logf = Path(tempfile.gettempdir()) / f".server-{self.port}.log"
             self.out.mkdir(parents=True, exist_ok=True)
-            self.proc = start_server(exe, self.port, logf, self.data_dir)
+            self.proc = start_server(exe, self.port, logf, self.data_dir, self.config)
             base = f"http://127.0.0.1:{self.port}"
         self.pw = sync_playwright().start()
         self.browser = self.pw.chromium.launch()
