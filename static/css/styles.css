@@ -291,20 +291,21 @@ body {
 }
 
 /* The page-level chooser under the panels ("Create New Panel / Duplicate or
-   Reopen") keeps a usable height: below panels that fill the window it was
-   squeezed to 2 px, so closed panels could only be reached through a split.
-   A panel keeps its own height (1000 px, or what its handle was dragged to)
-   but at most the visible tile area less 5rem, so the chooser's heading
-   shows at the bottom and the rest is a scroll away; the panel itself is
-   not squeezed to make room. */
+   Reopen") is as tall as its content, never scrolls inside, and fills any
+   room left under the panels. Panels above keep the height they were given
+   or dragged to, with no cap: the page (.tile-container) scrolls instead.
+   A cap at the visible area once kept the chooser's heading in view but made
+   the height handle stop working past the window height. A new panel still
+   starts short enough to leave the chooser's heading in view
+   (createPanelWrapper). */
 .tile-container > .tile-selector {
     min-height: 320px;
-    flex-shrink: 0;
+    flex: 1 0 auto;
+    overflow: visible;
 }
 
 .tile-container > .panel-wrapper {
     flex-shrink: 0;
-    max-height: calc(100% - 5rem);
     min-height: 360px;
 }
 

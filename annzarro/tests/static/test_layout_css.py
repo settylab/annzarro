@@ -138,10 +138,11 @@ def test_bottom_chooser_keeps_a_usable_height():
     squeezed to make room for the chooser (a first fix gave it 567 px)."""
     css = open(CSS, encoding="utf-8").read()
     sel = _rule(css, ".tile-container > .tile-selector")
-    assert re.search(r"min-height:\s*3\d\dpx", sel) and "flex-shrink: 0" in sel
+    assert re.search(r"min-height:\s*3\d\dpx", sel) and "flex: 1 0 auto" in sel
+    assert "overflow: visible" in sel  # no scrolling inside the chooser
     wrap = _rule(css, ".tile-container > .panel-wrapper")
     assert "flex-shrink: 0" in wrap
-    assert re.search(r"max-height:\s*calc\(100% - [\d.]+rem\)", wrap)
+    assert "max-height" not in wrap  # a cap made the height handle stop at the window
 
 
 def test_header_is_one_row_down_to_tablet_width():
