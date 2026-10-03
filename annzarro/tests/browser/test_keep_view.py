@@ -154,6 +154,9 @@ def _new_seed(page):
     page.click("#subset-button")
     page.wait_for_selector("#subset-seed", state="visible")
     page.fill("#subset-seed", "7")
+    # Apply is enabled once the dialog has checked the spec
+    page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
+    page.wait_for_timeout(500)
     page.click("#subset-apply")
     # the dialog's backdrop fades out; until then it takes the clicks
     page.wait_for_selector("#subset-modal", state="hidden")
@@ -179,7 +182,7 @@ def test_zoom_survives_recolour_parts_seed_and_link(server):
             s = _settle(page, lambda s: s["colour"] != before)
             _assert_view(s, view, "recolour by category")
             before = s["colour"]
-            page.select_option(TILE + 'select.axis-type-select[data-axis="color"]', "X")
+            page.select_option(TILE + 'select.axis-type-select[data-axis="color"]', "layer")
             s = _settle(page, lambda s: s["colour"] != before)
             _assert_view(s, view, "recolour by gene")
 
