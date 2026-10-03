@@ -912,6 +912,50 @@ def shoot_subsets(sh, data_dir):
     page.context.close()
 
 
+def shoot_focus_outside(sh, data_dir):
+    """A focused cell outside the subset: the HSC is in part 2 of {"n": 3000, "seed": 0} on
+    bm_aging.zarr; one click on › shows part 3, which does not hold it. The walk from the HSC
+    is coloured over part 3's cells, the ring marks where the HSC lies, the header says it is
+    not shown. Then the picker lists a cell of another part, tagged."""
+    D = ds("bm_aging.zarr", data_dir)
+    v = view(split("horizontal", tile("cell-plot-W"), tile("cell-plot-T")),
+             {"cell-plot-W": cell_plot("cell-plot-W", "5-step diffusion walk from the focused cell",
+                                       obsp(WALK, HSC), colorScale="Blues", colorReversed=True),
+              "cell-plot-T": cell_plot("cell-plot-T", "Cell type",
+                                       {"type": "obs", "key": "highres_celltype", "column": ""})})
+    v["subset"] = {"n": 3000, "seed": 0, "part": 1}
+    save_view("focus-outside", v)
+    page = sh.open(v, dataset=D)
+    page.click("#subset-part-next")
+    page.wait_for_function("document.getElementById('subset-part-input').value === '3'", timeout=60000)
+    page.wait_for_function("!document.getElementById('focused-cell-outside').hidden", timeout=60000)
+    time.sleep(2)
+    sh.ready(page)
+    page.wait_for_function("""() => { const g = document.querySelector('.tile[data-tile-id="cell-plot-W"] .js-plotly-plot');
+        return g && g._fullData && g._fullData.some(t => t.name === 'Focused Cell'); }""", timeout=60000)
+    page.mouse.move(0, 0)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    time.sleep(0.5)
+    sh.log.append("focus-outside: badge = " + page.text_content("#focused-cell-outside")
+                  + " | note = " + page.evaluate("""() => { const n = document.querySelector(
+                      '.tile[data-tile-id="cell-plot-W"] .focus-notice .coverage-notice__headline');
+                      return n ? n.textContent : null; }"""))
+    capture_union(sh, page, "focus-outside-header", ["#focused-cell", "#focused-cell-outside", "#subset-parts"],
+                  marks=[(1, "#focused-cell-outside")], pad=10)
+    capture_union(sh, page, "focus-outside", [T("cell-plot-W"), T("cell-plot-T")], pad=2)
+
+    # The picker: a cell of part 1, listed after part 3's matches and tagged
+    page.click("#focused-cell")
+    page.fill("#focused-cell", "HSPC_Young_1#AAAGG")
+    page.wait_for_function("document.querySelector('.name-picker-option.outside') !== null", timeout=60000)
+    time.sleep(0.5)
+    capture_union(sh, page, "focus-outside-picker", ["#focused-cell", ".name-picker:has(#focused-cell) .name-picker-menu"],
+                  pad=6)
+    sh.log.append("focus-outside: picker = " + " | ".join(page.evaluate(
+        "[...document.querySelectorAll('.name-picker-option')].slice(0, 8).map(li => li.textContent)")))
+    page.context.close()
+
+
 def draw_tooltip(path, anchor, text, scale):
     """Draw a browser-style tooltip with `text` under `anchor` (x0, y0, x1, y1 in image
     pixels). Headless Chromium does not render native `title` tooltips into
@@ -978,7 +1022,8 @@ def shoot_subset_balanced_parts(sh, data_dir):
 STEPS = {"interface": shoot_interface, "focus": shoot_focus, "plots": shoot_plots,
          "colour": shoot_colour, "tables": shoot_tables, "panelsets": shoot_panelsets,
          "share": shoot_share, "export": shoot_export, "spatial": shoot_spatial,
-         "subsets": shoot_subsets, "subsets-balanced": shoot_subset_balanced_parts}
+         "subsets": shoot_subsets, "subsets-balanced": shoot_subset_balanced_parts,
+         "focus-outside": shoot_focus_outside}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

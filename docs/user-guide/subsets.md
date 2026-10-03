@@ -96,8 +96,10 @@ The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
 ```
 
 - **›** (3) shows the next part and **‹** (1) the previous one. The view stays as it is (layout,
-  panel settings, focused gene); only the cells change, and every panel and table follows. A
-  focused cell that is not in the new part is not focused, and a notice says so.
+  panel settings, focused cell and gene, locks); only the cells change, and every panel and
+  table follows. A focused or locked cell that is not in the new part stays focused or locked:
+  its rows are still read, over the new part's cells, and the header marks it **not in part 2
+  of 3** ({ref}`focus-outside-subset`).
 - Type a part number into the box (2) and press Enter to jump to it.
 - The parts never share a cell: stepping from part 1 to part 3 shows each cell exactly once.
 - Share links and panel sets record the part, so they reopen on the same part. A link without
@@ -147,7 +149,9 @@ types earlier parts already showed in full. View:
   every cell of the dataset. Gene plots draw every gene as before.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
-- **The Focused Cell picker** only finds cells in the subset.
+- **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
+  first; the others follow, tagged **not shown**, and can be focused too
+  ({ref}`focus-outside-subset`).
 - **Share links, panel sets and the autosaved view** store the subset's description, so they
   reopen on the same cells (a link to the subset above is 1,351 characters). A view saved with
   every cell of a large dataset records that and reopens with every cell; a view without a subset

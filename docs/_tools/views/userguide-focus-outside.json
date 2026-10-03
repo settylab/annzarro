@@ -1,0 +1,97 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-plot-W",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-plot-T",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-W": false,
+   "cell-plot-T": false
+  },
+  "panelConfigs": {
+   "cell-plot-W": {
+    "id": "cell-plot-W",
+    "title": "5-step diffusion walk from the focused cell",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "diffusion_walk_t5",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "colorScale": "Blues",
+    "colorReversed": true
+   },
+   "cell-plot-T": {
+    "id": "cell-plot-T",
+    "title": "Cell type",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "highres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8
+   }
+  }
+ },
+ "subset": {
+  "n": 3000,
+  "seed": 0,
+  "part": 1
+ }
+}

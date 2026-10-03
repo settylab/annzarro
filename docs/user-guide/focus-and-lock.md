@@ -133,6 +133,70 @@ A locked panel sends nothing when the focus moves. Locking is stored in the pane
 locked to the same slice.
 ```
 
+(focus-outside-subset)=
+## A focused cell outside the shown cells
+
+On a cell subset ({doc}`subsets`) the focused or a locked cell can be one the subset does not
+show: a cell of another part after a step with **›**, one a filter leaves out, or one picked by
+name. It stays focused (or locked), and every panel that depends on it still draws its slice
+over the cells shown. A focus is replaced only when the dataset does not have the cell at all.
+
+Here `bm_aging.zarr` is shown in parts of 3,000 cells ({download}`userguide-focus-outside.json
+<../_tools/views/userguide-focus-outside.json>`). The HSC is in part 2; one click on **›** shows
+part 3, which does not hold it:
+
+```{figure} ../_static/screens/user-guide/focus-outside.png
+:class: screenshot
+:alt: Part 3 of 3. Left, the 5-step diffusion walk from the HSC coloured over part 3's cells, with a small hollow red ring where the HSC lies; right, the same cells by cell type with the ring among the HSCs. Both panels say "Focused cell HSPC_Old_1#GAAGCCCGTGGCTCTG-1 is not among the shown cells".
+
+The walk from the HSC over the cells of part 3, which does not contain the HSC.
+```
+
+- **Its slices are read as before.** The left panel is the HSC's row of
+  `obsp/diffusion_walk_t5`, restricted to part 3's cells: where a walk from the HSC lands among
+  them. A layer row in a gene plot, and table columns that follow the cell, work the same way.
+- **A hollow red ring** marks where the cell lies, instead of the filled dot of a shown cell. It
+  is drawn when **Highlight Focused Cell** is on and every axis is the cell's own value (an obs
+  column, an embedding or a gene); it is not drawn when an axis is an obsp row, nor in
+  large-plot mode. It is not one of the plotted cells: it has no colour value and is not counted.
+- **Each cell plot says so** in a line above the plot: "Focused cell … is not among the shown
+  cells".
+- **The header marks it** next to the Focused Cell picker (1): "not in part 3 of 3", or "not
+  shown" without parts. Axis menus and table column titles that name the cell add "(not shown)".
+
+```{figure} ../_static/screens/user-guide/focus-outside-header.png
+:class: screenshot
+:alt: The header: the Focused Cell picker showing HSPC_Old_1… and next to it the badge "not in part 3 of 3" (1); below, the statistics bar at Part 3 of 3.
+
+The header after the step.
+```
+
+**Picking a cell by name** searches the whole dataset. The shown cells' matches come first;
+cells of other parts follow, tagged **not shown**, and can be picked like any other:
+
+```{figure} ../_static/screens/user-guide/focus-outside-picker.png
+:class: screenshot
+:width: 50%
+:alt: The Focused Cell picker with the text "ung_1#AAAGG" typed and two matches: HSPC_Young_1#AAAGGGCGTGTATTG… and, tagged not shown, HSPC_Young_1#AAAGGATT….
+
+Two matches: the first is in part 3, the second in another part.
+```
+
+Locks work the same way: a panel locked to a cell keeps that cell's slice through every step,
+including the parts that do not hold it. Share links and panel sets reopen with the same focus
+and locks, also when their subset does not show those cells.
+
+```{admonition} What happens on the server
+:class: note
+A shown cell is read by its position among the cells shown (`rows=780`); a cell the subset does
+not show is read by its row in the dataset (`dataset_rows=2089`), and an obsp row is then
+restricted to the cells shown on the server, so the reply is the same size either way. Before a
+step the app notes the dataset rows of the focused and locked cells (one small request), so it
+finds them in the next part without searching by name. Share links carry those rows as a hint
+(`cellRows`, {doc}`../reference/deep-links`). The requests are in
+{ref}`http-outside-cells`.
+```
+
 ## Compare two genes on one scale
 
 Lock and a fixed colour range together give a side-by-side comparison. The view
