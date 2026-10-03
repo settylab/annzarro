@@ -114,7 +114,8 @@ def test_stepping_parts_loads_disjoint_cells_that_cover_the_dataset(server):
 
             def points():
                 return page.evaluate("""() => { const g = document.querySelector('.tile[data-tile-id="cell-plot-A"] .js-plotly-plot');
-                    return g && g._fullData ? g._fullData.filter(d => d.name !== 'Focused Cell')
+                    // legend-only helper traces (meta az-legend, one null point) are not cells
+                    return g && g._fullData ? g._fullData.filter(d => d.name !== 'Focused Cell' && d.meta !== 'az-legend')
                         .reduce((s, d) => s + (d.x ? d.x.length : 0), 0) : -1; }""")
 
             def wait_for_part(part):
