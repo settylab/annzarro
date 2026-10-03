@@ -215,7 +215,10 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
                 + (item.name === committed ? ' selected' : '');
             li.setAttribute('role', 'option');
             li.setAttribute('aria-selected', i === model.highlighted ? 'true' : 'false');
-            li.textContent = item.name;
+            const label = doc.createElement('span');
+            label.className = 'name-picker-name';
+            label.textContent = item.name;
+            li.appendChild(label);
             li.title = item.name;
             if (item.outside) {
                 // in the dataset, but not among the cells shown

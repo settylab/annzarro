@@ -1711,11 +1711,18 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .name-picker-option {
+    display: flex;
+    align-items: center;
     padding: 6px 12px;
     white-space: nowrap;
+    cursor: pointer;
+}
+
+/* a long name is cut, never the "not shown" tag after it */
+.name-picker-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: pointer;
 }
 
 .name-picker-option.selected {
@@ -1730,6 +1737,7 @@ button.dtsb-button.dtsb-clear:hover {
 
 /* A cell the subset does not show: still pickable, and tagged */
 .name-picker-tag {
+    flex: none;
     margin-left: 8px;
     padding: 0 5px;
     border: 1px solid currentColor;
