@@ -30,3 +30,17 @@ def write_array(group, name, data, dtype=None, chunks=None):
     out = group.create_array(name, shape=arr.shape, dtype=arr.dtype, **kw)
     out[...] = arr
     return out
+
+
+def write_strings(group, name, values, chunks=None):
+    """A 1-D ``vlen-utf8`` string array, the encoding anndata writes for an
+    index, under either zarr major (zarr 2 would otherwise store a fixed-width
+    unicode dtype)."""
+    arr = np.asarray(values, dtype=object)
+    kw = {} if chunks is None else {"chunks": chunks}
+    if ZARR_V3:
+        out = group.create_array(name, shape=arr.shape, dtype=str, **kw)
+        out[...] = arr.astype(str)
+        return out
+    import numcodecs
+    return group.create_dataset(name, data=arr, dtype=object, object_codec=numcodecs.VLenUTF8(), **kw)

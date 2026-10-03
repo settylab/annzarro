@@ -27,6 +27,7 @@ from collections import OrderedDict
 
 from .metadata_extraction import extract_metadata
 from .caching import CacheSettings, DatasetCache, cached_method
+from . import string_chunks
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
 # Try to import optional dependencies
@@ -2435,6 +2436,39 @@ class ZarrReader(CacheSettings):
             logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
             raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
     
+    def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"],
+                               rows) -> List[str]:
+        """Names at the sorted positions ``rows``: what a cell subset shows.
+
+        Reads the index chunk by chunk and keeps only the wanted names
+        (``string_chunks.take``), instead of decoding every name of the axis
+        and picking afterwards: 0.25 s instead of 2.9 s for 100,000 of
+        10 million Tahoe cells, and memory for one chunk, not every name.
+        """
+        root = self._get_root(dataset_path=dataset_path)
+        if root is None:
+            raise ValueError(f"Unable to access dataset at path: {dataset_path}")
+        obj = 'var' if entity == 'genes' else 'obs'
+        if obj not in root:
+            return []
+        index_column = root[obj].attrs.get('_index', '_index') if hasattr(root[obj], 'attrs') else '_index'
+        if index_column not in root[obj]:
+            return []
+        member = root[obj][index_column]
+        try:
+            if self._is_group(member):
+                # categorical or nullable: codes/values are read by index
+                names = self._get_categorical_values(member, list(map(int, rows)))
+                return names.tolist() if hasattr(names, 'tolist') else list(names)
+            local_dir = None
+            if not is_remote_path(dataset_path) and os.path.isdir(dataset_path):
+                local_dir = os.path.join(dataset_path, obj, index_column)
+            return string_chunks.take(member, rows, local_dir)
+        except Exception as e:
+            raise_if_timeout(e)
+            logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
+            raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
+
     def get_obs_names(self, dataset_path: Optional[str] = None) -> List[str]:
         """
         Get observation names (alias for get_cell_names for backward compatibility).

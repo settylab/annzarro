@@ -599,6 +599,19 @@ class h5adReader(CacheSettings):
             names, _ = _column(f, group[index])
             return [None if n is None else str(n) for n in names.tolist()]
 
+    def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
+        """Names at the sorted positions ``rows`` (a cell subset's names)."""
+        obj_name = "obs" if entity == "cells" else "var"
+        with _open(dataset_path) as f:
+            if obj_name not in f:
+                return []
+            group = f[obj_name]
+            index = _index_name(group)
+            if index not in group:
+                return []
+            names, _ = _column(f, group[index], np.asarray(rows, dtype=np.int64))
+            return [None if n is None else str(n) for n in names.tolist()]
+
     @cached_method
     def get_obs_var(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                     column_names: Optional[List[str]] = None, indices: Optional[List[int]] = None,
