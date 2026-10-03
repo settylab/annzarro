@@ -424,7 +424,12 @@ def register_data_routes(app, api_version):
             
         # Use the direct access approach for stateless operation
         try:
-            _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
+            # h5ad files have their own reader; the zarr reader refuses them
+            reader = get_reader(dataset_path)
+            if reader is zarr_reader:
+                _, metadata = zarr_reader.open_dataset_by_path(dataset_path, use_cache=True)
+            else:
+                metadata = reader.get_metadata(dataset_path)
             
             # Format basic info
             shape = metadata.get('shape', (0, 0))

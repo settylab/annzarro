@@ -11,7 +11,7 @@ Core components:
 - Web interface for interactive visualization
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # Import version from package metadata if available, otherwise use the hardcoded value above
 try:
