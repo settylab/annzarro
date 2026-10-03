@@ -83,7 +83,15 @@ def wait_until_free(port, timeout=60):
             time.sleep(0.5)
         finally:
             probe.close()
-    print(f"warning: 127.0.0.1:{port} still busy after {timeout}s", flush=True)
+    print(f"warning: 127.0.0.1:{port} still busy after {timeout}s; holders:", flush=True)
+    for cmd in (["ss", "-tanp"], ["lsof", "-nP", f"-iTCP:{port}"]):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True).stdout
+            print("\n".join(l for l in out.splitlines() if str(port) in l or "State" in l), flush=True)
+        except OSError:
+            pass
+    out = subprocess.run(["ps", "-eo", "pid,ppid,args"], capture_output=True, text=True).stdout
+    print("\n".join(l for l in out.splitlines() if "annzarro" in l.lower()), flush=True)
 
 
 def take_port_when_server_starts(port, stop):
