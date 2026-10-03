@@ -2879,3 +2879,11 @@ button.dtsb-button.dtsb-clear:hover {
     max-width: 24rem;
     padding-right: 0.5rem;
 }
+
+/* A toggle that large-plot mode turns off (large-plot-controls.js) keeps its
+   on/off state, but must not read as on while it does nothing. */
+.btn.active[data-large-off="1"] {
+    color: #6c757d;
+    background-color: transparent;
+    border-color: #6c757d;
+}

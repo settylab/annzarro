@@ -34,6 +34,23 @@ class TestServer(unittest.TestCase):
         # an absolute server path; schema.yaml marks it internal (issue #32)
         self.assertNotIn('data_dir', data)
 
+    def test_config_says_whether_the_server_is_single_user(self):
+        """``single_user`` is remote.hosted_reasons' verdict: true only for a
+        loopback server with login off (the client then prewarms the cell-name
+        index, which costs server memory)."""
+        cases = [
+            ({'host': '127.0.0.1', 'auth_enabled': False}, True),
+            ({'host': '0.0.0.0', 'auth_enabled': False}, False),
+            ({'host': '127.0.0.1', 'auth_enabled': False, 'hosted': True}, False),
+        ]
+        for extra, want in cases:
+            app = create_app({'TESTING': True, 'DEBUG': False, 'data_dir': 'tests/data', **extra})
+            data = json.loads(app.test_client().get('/api/v1/config').data)
+            self.assertIs(data['single_user'], want, extra)
+        # with login on, /config needs a session; the verdict is the same function's
+        from annzarro.core.remote import hosted_reasons
+        self.assertTrue(hosted_reasons({'host': '127.0.0.1', 'auth_enabled': True}))
+
     def test_get_status(self):
         """Test getting server status."""
         response = self.client.get('/api/v1/status')

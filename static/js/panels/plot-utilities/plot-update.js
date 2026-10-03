@@ -14,7 +14,7 @@ import {
   applyLogColorbar
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories } from './plot-make-helper.js';
+import { processCategories, isLegendProxy } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
@@ -198,6 +198,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         filter: false 
     };
     
+    // A large plot (large-plot.js) has no incremental updates: redraw it
+    if (data && data.large) {
+        refreshPlot();
+        return;
+    }
+
     // Merge provided options with defaults
     const updateOptions = { ...defaultOptions, ...options };
 
@@ -888,7 +894,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             };
             
             const dataTraceIndices = plotContainer.data
-                .map((trace, i) => (trace && trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}` ? i : -1))
+                .map((trace, i) => (trace && !isLegendProxy(trace)
+                    && trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}` ? i : -1))
                 .filter(i => i !== -1);
             
             if (dataTraceIndices.length > 0) {
@@ -990,6 +997,10 @@ export async function loadColorDataAndUpdatePlot(
     id,
     refreshPlot
 ) {
+    if (data && data.large) {
+        refreshPlot();
+        return;
+    }
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
@@ -1049,6 +1060,8 @@ export async function loadColorDataAndUpdatePlot(
  * @param {string} entityType - Either "cell" or "gene" to indicate the type of entity to highlight.
  */
 export function highlightFocusedEntity(plotContainer, data, settings, entityType=null) {
+  // A large plot (large-plot.js) draws no focused-cell marker
+  if (data && data.large) return;
   // Capture current view state before making changes
   let currentLayout = null;
   let newXTitle = `${settings.x.type}.${settings.x.key}${settings.x.column ? `.${settings.x.column}` : ''}`;
@@ -1247,7 +1260,10 @@ export async function restyleMarkers(plotContainer, settings) {
         && /^focused (cell|gene)$/i.test(trace.name.trim());
     const dataIdx = [];
     const highlightIdx = [];
-    plotContainer.data.forEach((trace, i) => (isHighlight(trace) ? highlightIdx : dataIdx).push(i));
+    plotContainer.data.forEach((trace, i) => {
+        if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
+        (isHighlight(trace) ? highlightIdx : dataIdx).push(i);
+    });
     if (dataIdx.length) {
         await Plotly.restyle(plotContainer,
             { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);

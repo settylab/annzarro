@@ -24,6 +24,7 @@ export function readUiSettings(server) {
         pointOpacity: pick(d.point_opacity, 'ui_point_opacity'),
         colorScale: pick(d.color_scale, 'ui_color_scale'),
         taxonomyId: pick(d.taxonomy_id, 'ui_taxonomy_id'),
+        largePlotPoints: pick(d.large_plot_points, 'ui_large_plot_points'),
         enabledPanelTypes: pick(ui.enabled_panel_types, 'enabled_panel_types'),
         cacheMaxEntries: pick(c.max_entries, 'ui_cache_max_entries'),
         cacheMaxSizeMb: pick(c.max_size_mb, 'ui_cache_max_size_mb'),
@@ -95,6 +96,11 @@ const Config = (function() {
         MAX_GENES: 10000,
         POINT_SIZE: 5,
         POINT_OPACITY: 1.0,
+        // A Cell Plot with more points than this uses the large-plot mode
+        // (panels/plot-utilities/large-plot.js): no hover, click or table
+        // filter. The regular path draws 5M categorical points; above that it
+        // runs out of the tab's V8 heap. Server key ui.defaults.large_plot_points.
+        LARGE_PLOT_POINTS: 5000000,
         COLOR_SCALE: 'Portland',
         COLOR_SCALES: [
             "Greys", "YlGnBu", "Greens", "YlOrRd", "Bluered", "RdBu",
@@ -256,6 +262,8 @@ const Config = (function() {
         
         // Environment settings
         local_mode: false,
+        // one user on this machine (server: core/remote.py hosted_reasons)
+        single_user: false,
         
         // External integrations
         integrations: null
@@ -287,6 +295,9 @@ const Config = (function() {
                 if (ui.pointOpacity) DEFAULTS.POINT_OPACITY = ui.pointOpacity;
                 if (ui.colorScale) DEFAULTS.COLOR_SCALE = ui.colorScale;
                 if (ui.taxonomyId) DEFAULTS.TAXONOMY_ID = ui.taxonomyId;
+                if (ui.largePlotPoints !== null && ui.largePlotPoints >= 0) {
+                    DEFAULTS.LARGE_PLOT_POINTS = Number(ui.largePlotPoints);
+                }
                 if (ui.enabledPanelTypes) DEFAULTS.ENABLED_PANEL_TYPES = ui.enabledPanelTypes;
                 if (ui.cacheMaxEntries) CACHE.MAX_ENTRIES = ui.cacheMaxEntries;
                 if (ui.cacheMaxSizeMb) CACHE.MAX_SIZE_BYTES = ui.cacheMaxSizeMb * 1024 * 1024;

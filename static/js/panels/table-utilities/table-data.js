@@ -342,7 +342,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 if (columnName === 'focused_cell' || columnName === '_focused_cell') {
                     // For focused cell in obsp
                     const focusedCell = DataManager.getFocusedCell();
-                    const cellIndex = DataManager.getCellIndex(focusedCell);
+                    const cellIndex = await DataManager.resolveCellIndex(focusedCell);
                     
                     if (cellIndex >= 0) {
                         const obspData = await DataManager.loadObsp({
@@ -358,7 +358,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     };
                 } else {
                     // For fixed cell in obsp
-                    const cellIndex = DataManager.getCellIndex(columnName);
+                    const cellIndex = await DataManager.resolveCellIndex(columnName);
                     
                     if (cellIndex >= 0) {
                         const obspData = await DataManager.loadObsp({
@@ -465,7 +465,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 if (columnName === 'focused_cell' || columnName === '_focused_cell') {
                     // For focused cell in layer
                     const focusedCell = DataManager.getFocusedCell();
-                    const cellIndex = DataManager.getCellIndex(focusedCell);
+                    const cellIndex = await DataManager.resolveCellIndex(focusedCell);
                     
                     if (cellIndex >= 0) {
                         const layerData = await DataManager.loadLayer({
@@ -481,7 +481,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     };
                 } else {
                     // For fixed cell in layer
-                    const cellIndex = DataManager.getCellIndex(columnName);
+                    const cellIndex = await DataManager.resolveCellIndex(columnName);
                     
                     if (cellIndex >= 0) {
                         const layerData = await DataManager.loadLayer({

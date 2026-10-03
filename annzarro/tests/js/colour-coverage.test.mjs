@@ -58,7 +58,7 @@ const { GAP, Coverage, classifyFilterStats } = await import('../../../static/js/
 const { DataManager } = await import('../../../static/js/data-manager.js');
 const { createFilterMask, applyFilterMask, panelLoadCoverage } = await import(
     '../../../static/js/panels/plot-utilities/plot-make.js');
-const { processCategories, NO_VALUE_CATEGORY } = await import(
+const { processCategories, NO_VALUE_CATEGORY, isLegendProxy } = await import(
     '../../../static/js/panels/plot-utilities/plot-make-helper.js');
 const { loadColorDataAndUpdatePlot } = await import(
     '../../../static/js/panels/plot-utilities/plot-update.js');
@@ -87,7 +87,8 @@ function drawCategorical(data, settings) {
     const { indexMask, filterStats } = createFilterMask(data, settings);
     const filtered = (settings.hideNaN || settings.hideOutliers) ? applyFilterMask(data, indexMask) : data;
     const catValues = filtered.colorCategories || [...new Set(filtered.color)];
-    const traces = processCategories(settings, filtered, catValues);
+    // point traces only: each category's legend entry is a point-less proxy
+    const traces = processCategories(settings, filtered, catValues).filter(t => !isLegendProxy(t));
     const drawn = traces.reduce((n, t) => n + t.x.length, 0);
     return { traces, drawn, filterStats };
 }
@@ -299,7 +300,27 @@ test('#38/#46: switching to a categorical colour with Hide NaN on draws only wha
             throw new Error('fell back to a full render');
         });
     } finally { globalThis.Plotly = saved; }
-    const drawn = added.filter(t => t.name !== 'Focused Cell').reduce((n, t) => n + t.x.length, 0);
+    const points = added.filter(t => t.name !== 'Focused Cell' && !isLegendProxy(t));
+    const drawn = points.reduce((n, t) => n + t.x.length, 0);
     assert.equal(drawn, 5, `traces: ${added.map(t => `${t.name}:${t.x.length}`).join(' ')}`);
-    assert.ok(!added.some(t => t.name === NO_VALUE_CATEGORY), 'hidden points are not drawn under NA');
+    assert.ok(!points.some(t => t.name === NO_VALUE_CATEGORY), 'hidden points are not drawn under NA');
+});
+
+test('legend entries are drawn at full opacity whatever the point opacity, one per trace', () => {
+    const { data, settings } = panel({ color: ['A', 'A', 'B', null], categories: ['A', 'B'], hideNaN: false });
+    settings.pointOpacity = 0.2;
+    const filtered = data;
+    const all = processCategories(settings, filtered, ['A', 'B']);
+    const points = all.filter(t => !isLegendProxy(t)), proxies = all.filter(isLegendProxy);
+    assert.deepEqual(proxies.map(t => t.name), points.map(t => t.name), 'one entry per drawn trace, same order');
+    assert.ok(all.indexOf(proxies[0]) > all.indexOf(points[points.length - 1]), 'appended after the points');
+    for (const [p, t] of proxies.map((p, i) => [p, points[i]])) {
+        assert.equal(p.marker.opacity, 1);
+        assert.equal(p.marker.color, t.marker.color);
+        assert.equal(p.legendgroup, t.legendgroup, 'clicking the entry toggles its points');
+        assert.equal(t.showlegend, false);
+        assert.equal(t.marker.opacity, 0.2);
+        assert.deepEqual(p.x, [null]);
+    }
+    assert.equal(proxies.find(p => p.name === NO_VALUE_CATEGORY).legendrank, 1001, 'NA stays last');
 });

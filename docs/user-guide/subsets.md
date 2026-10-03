@@ -156,6 +156,66 @@ types earlier parts already showed in full. View:
 The exact rule (a fixed hash of seed and row, so a notebook can reproduce the selection), the
 balancing algorithm and the request format are in {doc}`../design/subsetting`.
 
+## Very large datasets
+
+A Cell Plot is drawn in one of two ways.
+
+- **Regular plot**, up to 5 million points: everything on this page and in
+  {doc}`cell-and-gene-plots` works, including hover, click to focus a cell, the focused-cell
+  marker, table filters and 3D.
+- **Large-plot mode**, above 5 million points: that only happens with the subset removed (or
+  larger than that) on a very large dataset. The limit is the server setting
+  `ui.defaults.large_plot_points` ({doc}`../reference/configuration`).
+
+The regular plot needs 400 to 900 bytes of the browser tab's memory per point, and a tab gets about
+4.4 GB whatever the browser settings, so a little above 5 million points it would close the tab.
+Large-plot mode keeps the points out of that memory and can draw the 95.6 million cells of
+Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
+per-point bookkeeping, and the panel says so above the plot:
+
+```{figure} ../_static/screens/user-guide/large-plot-all.png
+:class: screenshot
+:alt: A Cell Plot with every cell, in large-plot mode. A blue notice above the plot reads Large-plot mode (8,090 points): hover, click and table filters are off; use a subset for them. The 3D Plot button and the Hover list are greyed out.
+
+Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
+lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
+```
+
+```{figure} ../_static/screens/user-guide/large-plot-subset.png
+:class: screenshot
+:alt: The same Cell Plot on a 4,000-cell subset: the regular plot, with the focused cell marked, the Removed Datapoints box, and every control enabled.
+
+The same panel on a 4,000-cell subset: the regular plot.
+```
+
+In large-plot mode:
+
+- **No hover and no click on points.** Clicking a point does not focus a cell, and the focused
+  cell is not marked.
+- **Controls that would need the regular plot are off**, with the tooltip "Not available above
+  5M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
+  its z axis, the Hover list and the table filter.
+- **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
+  numeric obs column or by a gene, with the colour palette, scale and range; point size and
+  opacity. A gene's colour is drawn in 64 steps of the scale, the strongest values on top. Every
+  change redraws the panel.
+- **Categories are drawn interleaved.** The regular plot draws each category whole, in the order of
+  the legend, so where categories overlap the last ones cover the others. Large-plot mode draws
+  them in pieces of under 100,000 points, mixed through the whole draw, so no category sits
+  entirely on top. The same data can therefore look different in the two modes where categories
+  overlap.
+- **Cell names stay on the server.** The dataset opens without downloading the names of its cells.
+  Focusing a cell by name asks the server for it; on a dataset with tens of millions of cells the
+  first such search waits while the server builds its name index (about 7 s for 50 million cells;
+  a server running on your own computer builds it in the background as soon as the plot is drawn).
+- **Settings it cannot draw are refused, not attempted.** A view that asks for one, such as a
+  share link colouring by an obsp row, shows a message instead of the plot: "Colour by an obsp
+  column is not available for 95.6M points: turn on a subset, or choose an obs column or a gene".
+  A plot already on screen stays, with the message above it.
+
+Turning a subset on (or one small enough) brings the regular plot back with hover and click.
+Removing it again returns to large-plot mode.
+
 ## Measured on a large store
 
 On a synthetic store of 1,160,000 cells (Apple M3 Max, Chromium, two UMAP panels, one coloured by
