@@ -75,6 +75,15 @@ def test_server_does_not_import_the_excluded_packages():
 import importlib, json, os, sys, urllib.parse
 for m in ("dask", "fsspec", "s3fs", "gcsfs", "aiohttp"):
     sys.modules[m] = None
+excluded = {freeze.EXCLUDES!r}
+def loaded():
+    return {{m for m in sys.modules for e in excluded if m == e or m.startswith(e + ".")}}
+# What scipy itself imports with scipy.sparse depends on its version (scipy
+# before 1.15, as on Python 3.9, loads csgraph and linalg eagerly). The bundle
+# is built with a current scipy and the frozen-server smoke test runs it; here
+# only what annzarro's own code adds counts.
+import scipy.sparse
+baseline = loaded()
 for m in {modules!r}:
     importlib.import_module(m)
 from annzarro.server.core import create_app
@@ -88,9 +97,7 @@ for store in {stores!r}:
                 f"/api/v1/data/dataset_structure?dataset_path={{q}}"):
         r = client.get(url)
         assert r.status_code == 200, (url, r.status_code, r.get_data()[:300])
-excluded = {freeze.EXCLUDES!r}
-print(json.dumps(sorted({{m for m in sys.modules for e in excluded
-                         if m == e or m.startswith(e + ".")}})))
+print(json.dumps(sorted(loaded() - baseline)))
 """
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True,
                          text=True, timeout=300)
