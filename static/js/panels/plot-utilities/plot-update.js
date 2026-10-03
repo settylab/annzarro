@@ -20,6 +20,7 @@ import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, renderModeNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
+import { recordLoad } from '../../utils/subset-presets.js';
 
 
 
@@ -1001,6 +1002,7 @@ export async function loadColorDataAndUpdatePlot(
         refreshPlot();
         return;
     }
+    const started = performance.now();
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
@@ -1032,7 +1034,12 @@ export async function loadColorDataAndUpdatePlot(
                 filter: true, // Update filtering if needed.
                 layout: true
             }
-            updatePlotElements(plotContainer, data, settings, refreshPlot, options);
+            updatePlotElements(plotContainer, data, settings, refreshPlot, options)
+                .then(() => {
+                    if (data.entities !== 'genes') {
+                        recordLoad({ n: colorData.values.length, seconds: (performance.now() - started) / 1000, kind: 'recolour' });
+                    }
+                }, () => {});
 
         } else {
             console.warn('No valid color data returned, falling back to full plot reload');

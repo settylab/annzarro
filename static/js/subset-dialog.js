@@ -15,6 +15,9 @@ import {
     SUBSET_OPS, MAX_SEED, canonicalSubset, subsetParam, describeSubset,
     describeCondition, searchBuilderToWhere, describeParts, partSpec
 } from './utils/subset.js';
+import {
+    presetSizes, partsFor, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
+} from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -27,6 +30,8 @@ const SubsetControl = (function() {
     let _conditions = [];      // editor rows: {col, op, values|value}
     let _previewSeq = 0;
     let _previewTimer = null;
+    let _nTotal = 0;           // cells in the dataset
+    let _eligible = 0;         // cells passing the filter (the last preview's)
 
     /** Bind the header badge. `onApply(spec|null)` reloads the view. */
     function init({ onApply }) {
@@ -107,54 +112,71 @@ const SubsetControl = (function() {
         el.setAttribute('aria-hidden', 'true');
         el.setAttribute('aria-labelledby', 'subset-modal-title');
         el.innerHTML = `
-          <div class="modal-dialog modal-lg">
+          <div class="modal-dialog modal-dialog-scrollable subset-modal-dialog">
             <div class="modal-content">
               <div class="modal-header">
                 <h5 class="modal-title" id="subset-modal-title">Cell subset</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body subset-dialog">
-                <p class="text-muted small mb-2">Every panel, table and share link uses the same cells.
-                  The same seed always selects the same cells, and more cells with the same seed
-                  keeps every cell of fewer.</p>
-                <p class="text-muted small mb-2">The subset is the first of several disjoint parts of
-                  this size that together hold every cell; step through them with ‹ › next to the badge.</p>
-                <div class="form-check form-switch mb-2">
-                  <input class="form-check-input" type="checkbox" id="subset-enabled">
-                  <label class="form-check-label" for="subset-enabled">Show a subset of the cells</label>
+                <div class="subset-head">
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="subset-enabled">
+                    <label class="form-check-label" for="subset-enabled">Show a subset of the cells</label>
+                  </div>
+                  <span class="subset-total" id="subset-total"></span>
                 </div>
                 <div id="subset-fields">
-                  <div class="row g-2 align-items-end mb-2">
-                    <div class="col-sm-4">
-                      <label class="form-label small mb-0" for="subset-n">Cells</label>
+                  <div class="subset-section-label" id="subset-presets-label">Cells to show
+                    <span class="subset-hint">fast → complete</span></div>
+                  <div class="subset-presets" id="subset-presets" role="group" aria-labelledby="subset-presets-label">
+                    <label class="subset-preset subset-preset-all" id="subset-preset-all"
+                           title="Every cell passing the filter (one part)">
+                      <input class="subset-preset-input" type="checkbox" id="subset-n-all">
+                      <span class="sp-n">All</span><span class="sp-time"></span>
+                      <span class="sp-parts">every cell</span>
+                    </label>
+                  </div>
+                  <div class="subset-estimate-note" id="subset-estimate-note"></div>
+                  <div class="subset-grid">
+                    <label class="subset-label" for="subset-n">Cells</label>
+                    <div class="subset-field subset-n-field">
                       <input type="number" class="form-control form-control-sm" id="subset-n" min="1" step="1">
-                      <div class="form-check small mt-1">
-                        <input class="form-check-input" type="checkbox" id="subset-n-all">
-                        <label class="form-check-label" for="subset-n-all">every cell passing the filter</label>
-                      </div>
+                      <span class="subset-n-parts" id="subset-n-parts"></span>
                     </div>
-                    <div class="col-sm-4">
-                      <label class="form-label small mb-0" for="subset-seed">Seed</label>
+                    <label class="subset-label" for="subset-seed">Seed</label>
+                    <div class="subset-field">
                       <div class="input-group input-group-sm">
                         <input type="number" class="form-control" id="subset-seed" min="0" max="${MAX_SEED}" step="1">
                         <button class="btn btn-outline-secondary" type="button" id="subset-new-seed" title="Draw another seed">New seed</button>
                       </div>
                     </div>
-                    <div class="col-sm-4">
-                      <label class="form-label small mb-0" for="subset-balance">Sampling</label>
+                    <label class="subset-label" for="subset-balance">Sampling</label>
+                    <div class="subset-field">
                       <select class="form-select form-select-sm" id="subset-balance"></select>
                     </div>
-                  </div>
-                  <div class="mb-1 small fw-semibold">Filter (optional): only cells where</div>
-                  <div id="subset-conditions" class="mb-1"></div>
-                  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="subset-add-condition">Add condition</button>
-                    <span class="small text-muted">or use a cell table's filter:</span>
-                    <select class="form-select form-select-sm w-auto" id="subset-table"></select>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="subset-import">Use filter</button>
+                    <span class="subset-label">Filter</span>
+                    <div class="subset-field">
+                      <div id="subset-conditions"></div>
+                      <div class="subset-filter-actions">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="subset-add-condition">Add condition</button>
+                        <span class="small text-muted">or a cell table's filter:</span>
+                        <span class="subset-import">
+                          <select class="form-select form-select-sm" id="subset-table" aria-label="Cell table"></select>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="subset-import">Use</button>
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div id="subset-preview" class="subset-preview small" role="status" aria-live="polite"></div>
+                <details class="subset-help small text-muted">
+                  <summary>How subsets and load times work</summary>
+                  <p>Every panel, table and share link uses the same cells. The same seed always selects
+                    the same cells, and more cells with the same seed keeps every cell of fewer.</p>
+                  <p>A subset of n cells is part 1 of k = ⌈eligible / n⌉ disjoint parts that together hold
+                    every cell passing the filter; step through them with ‹ › next to the badge.</p>
+                </details>
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -164,8 +186,17 @@ const SubsetControl = (function() {
           </div>`;
         document.body.appendChild(el);
         const q = (id) => el.querySelector(`#${id}`);
-        q('subset-enabled').addEventListener('change', () => { _syncEnabled(); _schedulePreview(); });
-        q('subset-n-all').addEventListener('change', () => { q('subset-n').disabled = q('subset-n-all').checked; _schedulePreview(); });
+        q('subset-enabled').addEventListener('change', () => { _syncEnabled(); _renderPresets(); _schedulePreview(); });
+        q('subset-n-all').addEventListener('change', () => {
+            // "All" is a size like the others: choosing it turns the subset on
+            if (q('subset-n-all').checked) q('subset-enabled').checked = true;
+            _syncEnabled(); _renderPresets(); _schedulePreview();
+        });
+        q('subset-presets').addEventListener('click', (e) => {
+            const chip = e.target.closest('button.subset-preset');
+            if (chip) _choose(Number(chip.dataset.n));
+        });
+        q('subset-n').addEventListener('input', _renderPresets);
         ['subset-n', 'subset-seed', 'subset-balance'].forEach(id => q(id).addEventListener('input', _schedulePreview));
         q('subset-new-seed').addEventListener('click', () => {
             q('subset-seed').value = String(Math.floor(Math.random() * 100000));
@@ -199,6 +230,8 @@ const SubsetControl = (function() {
             .filter(name => name !== '_index')
             .map(name => ({ name, type: (info[name] && info[name].type) || '' }));
 
+        _nTotal = nTotal;
+        _eligible = (current && current.n_eligible) || nTotal;
         q('subset-enabled').checked = !!spec;
         q('subset-n').value = String(spec && spec.n !== null ? spec.n : Math.min(defaults.size, nTotal));
         q('subset-n').max = String(nTotal);
@@ -217,6 +250,7 @@ const SubsetControl = (function() {
         _renderConditions();
         _renderTables();
         _syncEnabled();
+        _renderPresets();
         _modal.show();
         _schedulePreview();
     }
@@ -224,8 +258,93 @@ const SubsetControl = (function() {
     function _syncEnabled() {
         const on = _el.querySelector('#subset-enabled').checked;
         _el.querySelector('#subset-fields').classList.toggle('subset-disabled', !on);
-        _el.querySelectorAll('#subset-fields input, #subset-fields select, #subset-fields button')
+        // the size presets stay live: choosing one turns the subset on
+        _el.querySelectorAll('#subset-fields .subset-grid input, #subset-fields .subset-grid select, #subset-fields .subset-grid button')
             .forEach(node => { node.disabled = !on || (node.id === 'subset-n' && _el.querySelector('#subset-n-all').checked); });
+    }
+
+    /** Points above which a Cell Plot uses large-plot mode (as large-plot.js reads it). */
+    function _threshold() {
+        const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+        return typeof v === 'number' && v >= 0 ? v : 5000000;
+    }
+
+    /** A size preset was chosen: show a subset of `n` cells. */
+    function _choose(n) {
+        const q = (id) => _el.querySelector(`#${id}`);
+        q('subset-enabled').checked = true;
+        q('subset-n-all').checked = false;
+        q('subset-n').value = String(n);
+        _syncEnabled();
+        _renderPresets();
+        _schedulePreview();
+    }
+
+    function _estimate(n) {
+        return estimateLoad(n, { nTotal: _nTotal, threshold: _threshold(),
+            serverTime: serverSeconds(DataManager.getCurrentDataset()) });
+    }
+
+    function _timeHtml(est) {
+        const title = est.extrapolated
+            ? (est.measuredUpTo ? `Extrapolated: this session measured plots of up to ${fmt(est.measuredUpTo)} points on this path`
+                                : 'Extrapolated: no plot this size has been timed in this session')
+            : (est.calibrated ? 'Estimated from this session\'s plots' : 'Default estimate from a laptop benchmark');
+        return `<span class="sp-time${est.extrapolated ? ' sp-extrapolated' : ''}" title="${escapeHtml(title)}">${formatSeconds(est.seconds)}</span>`;
+    }
+
+    /**
+     * The size presets for the eligible cells, each with its parts and
+     * estimated load time, the large-plot marker, and the note on where the
+     * estimates come from.
+     */
+    function _renderPresets() {
+        if (!_el) return;
+        const q = (id) => _el.querySelector(`#${id}`);
+        const box = q('subset-presets');
+        const allChip = q('subset-preset-all');
+        const threshold = _threshold();
+        const on = q('subset-enabled').checked;
+        const all = q('subset-n-all').checked;
+        const n = Number(q('subset-n').value);
+        const divider = `<div class="subset-large-divider" role="note">Large-plot mode above ${shortCount(threshold)} points:
+            no hover, click or table filters</div>`;
+        let marked = false;
+        let html = '';
+        for (const size of presetSizes(_eligible)) {
+            const est = _estimate(size);
+            if (est.large && !marked) { html += divider; marked = true; }
+            const parts = partsFor(_eligible, size);
+            const pressed = on && !all && n === size;
+            html += `<button type="button" class="subset-preset${est.large ? ' sp-large' : ''}" data-n="${size}"
+                aria-pressed="${pressed}" title="${fmt(size)} cells, part 1 of ${fmt(parts)}">
+                <span class="sp-n">${shortCount(size)}</span>${_timeHtml(est)}
+                <span class="sp-parts">${fmt(parts)} parts</span></button>`;
+        }
+        const estAll = _estimate(_eligible);
+        if (estAll.large && !marked) html += divider;
+        box.innerHTML = html;
+        box.appendChild(allChip);
+        allChip.classList.toggle('sp-large', estAll.large);
+        allChip.classList.toggle('active', on && all);
+        allChip.querySelector('.sp-parts').textContent = _eligible ? `${shortCount(_eligible)} cells` : 'every cell';
+        allChip.querySelector('.sp-time').outerHTML = _timeHtml(estAll);
+
+        const partsLabel = q('subset-n-parts');
+        partsLabel.textContent = on && !all && n > 0 && _eligible
+            ? `${fmt(partsFor(_eligible, n))} part${partsFor(_eligible, n) === 1 ? '' : 's'} · ${formatSeconds(_estimate(n).seconds)}`
+            : '';
+        q('subset-total').textContent = _nTotal
+            ? (_eligible !== _nTotal ? `${fmt(_eligible)} of ${fmt(_nTotal)} cells pass the filter` : `${fmt(_nTotal)} cells`)
+            : '';
+
+        const samples = loadSamples();
+        const upTo = samples.reduce((m, x) => Math.max(m, x.n), 0);
+        q('subset-estimate-note').innerHTML = samples.length
+            ? `Load times are estimates from this session's ${samples.length} timed plot${samples.length === 1 ? '' : 's'}
+               (up to ${fmt(upTo)} points); <span class="sp-extrapolated">grey</span> ones are extrapolated.`
+            : `Load times are defaults from a laptop benchmark until this session has drawn a plot;
+               <span class="sp-extrapolated">grey</span> ones are extrapolated.`;
     }
 
     function _renderTables() {
@@ -242,7 +361,7 @@ const SubsetControl = (function() {
         box.innerHTML = '';
         _conditions.forEach((cond, i) => {
             const row = document.createElement('div');
-            row.className = 'subset-condition d-flex flex-wrap gap-1 align-items-center mb-1';
+            row.className = 'subset-condition';
             const opInfo = SUBSET_OPS.find(o => o.op === cond.op) || SUBSET_OPS[0];
             const value = opInfo.kind === 'text'
                 ? `<input type="text" class="form-control form-control-sm subset-value" placeholder="values, comma separated"
@@ -353,10 +472,15 @@ const SubsetControl = (function() {
         box.textContent = 'Checking…';
         try {
             const params = new URLSearchParams({ dataset_path: DataManager.getCurrentDataset(), subset: subsetParam(spec) });
+            const started = performance.now();
             const resp = await fetch(`${Config.API.SUBSET}?${params}`);
             const body = await resp.json().catch(() => ({}));
             if (seq !== _previewSeq) return;
             if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+            recordServer(DataManager.getCurrentDataset(), body.n_total, (performance.now() - started) / 1000);
+            if (body.n_total) _nTotal = body.n_total;
+            if (body.n_eligible) _eligible = body.n_eligible;
+            _renderPresets();
             const shown = body.subset ? body.n : body.n_total;
             const lines = [`${fmt(shown)} of ${fmt(body.n_total)} cells will be shown.`];
             if (spec.where) lines.push(`${fmt(body.n_eligible)} pass the filter (${spec.where.map(describeCondition).join(' and ')}).`);

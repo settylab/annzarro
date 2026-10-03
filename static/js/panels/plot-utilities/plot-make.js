@@ -11,6 +11,7 @@ import {
 } from '../../utils/coverage.js';
 import { drawPlot, clearForDraw, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
+import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 
 /**
@@ -605,6 +606,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
  * @returns {Promise<void>}
  */
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false, signal = null) {
+  // the subset dialog's load-time estimate learns from these draws
+  const started = performance.now();
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
@@ -714,6 +717,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         renderModeNotice(plotContainer, null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
@@ -909,6 +913,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
       updateColorControlsVisibility(container, data.colorType, id);
+      if (!isGenePlot) recordLoad({ n: data.x.values.length, seconds: (performance.now() - started) / 1000 });
     } else {
       console.error('Insufficient data for plotting');
       const nx = data.x && data.x.values ? data.x.values.length : 0;

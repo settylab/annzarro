@@ -164,12 +164,29 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 - Stats bar: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
   `Cells: 8,090 [All cells]`. The badge's tooltip spells out the spec
   (seed, balance, filter, cells passing the filter).
-- The badge opens the dialog: on/off, cells (or "every cell passing the
-  filter"), seed and a "New seed" button, uniform or balanced sampling, filter
+- The badge opens the dialog: on/off; size presets on the 1-2-5 ladder from
+  1k below the eligible count (the three largest rungs on a dataset too small
+  for three from 1k), each with its parts ⌈eligible / n⌉ and an estimated load
+  time, and "All" (every cell passing the filter); a marker before the presets
+  above `ui.defaults.large_plot_points`; the cell count for any other size;
+  seed and a "New seed" button, uniform or balanced sampling, filter
   conditions, "use a cell table's filter". It previews what the server would
   select (`/data/subset`) before anything changes, including per-group counts,
   "no cell passes the filter" (Apply disabled), and a warning when the cells to
   draw exceed the threshold.
+- The load estimate (`static/js/utils/subset-presets.js`) is
+  server(n_total) + fixed + perPoint · n, with one (fixed, perPoint) pair for
+  the regular plot and one for large-plot mode. The defaults come from the clean
+  runs of the paper's laptop benchmark (20 ns per dataset cell to select, 0.53 s
+  + 5.5 µs per point regular, 62 ns per point large). Each Cell Plot draw and
+  recolour the page times rescales its path: a sample's log(measured / modelled)
+  goes to the per-point cost by the per-point share of the modelled time and to
+  the fixed cost by the rest, so small plots tune the fixed cost and large ones
+  the slope. The preview request times the selection alone, so it can raise the
+  modelled server cost but not lower it (reading a subset's rows from a large
+  store costs more than selecting them).
+  An estimate is flagged as extrapolated (grey) when no draw on its path has
+  measured the slope or n is more than 4x the largest measured.
 - Apply reopens the current view (panels, layout, focus) on the new cells
   through the panel-set load path, so every panel is rebuilt on them.
 - With more than one part, `‹ Part 3 of 957 ›` follows the badge: buttons for
