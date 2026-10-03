@@ -605,7 +605,7 @@ const DataManager = (function() {
     // Rows are learned from /data/names replies and from /data/subset/locate,
     // and kept for the dataset: they do not change with the subset, so a part
     // step carries a focused or locked cell over without the dataset-wide name
-    // index (16 s to build at 50M cells). Rows from a link or panel set are
+    // index (6 s to build at 50M cells). Rows from a link or panel set are
     // only hints until obs/_index at that row confirms the name.
     // ---------------------------------------------------------------------
 
