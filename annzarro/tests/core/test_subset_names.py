@@ -170,7 +170,9 @@ def test_rank_keys_block_by_block_pick_the_same_cells():
         assert got.tolist() == expected.tolist()
         rows = np.sort(rng.choice(n_obs, size=n_obs // 3, replace=False))
         expected = np.sort(rows[cell_subset._smallest(cell_subset.rank_keys(n_obs, seed)[rows], k)])
-        got = np.sort(cell_subset._rows_with_smallest_keys(n_obs, rows, seed, k, block=500))
+        mask = np.zeros(n_obs, dtype=bool)
+        mask[rows] = True
+        got = np.sort(cell_subset._rows_with_smallest_keys(n_obs, mask, seed, k, block=500))
         assert got.tolist() == expected.tolist()
 
 
