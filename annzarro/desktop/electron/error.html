@@ -138,48 +138,35 @@
     <img src="icons/icon.png" alt="AnnZarro Logo" class="logo">
     <div class="error-icon">⚠️</div>
     <h1>Server Error</h1>
-    <p>The AnnZarro server failed to start. This could be due to:</p>
-    <ul style="text-align: left; margin: 0 auto; max-width: 500px;">
-      <li>Missing Python dependencies (numpy, zarr, flask)</li>
-      <li>Another application using the same port</li>
-      <li>Permission issues</li>
-      <li>Python module structure not correctly loaded</li>
-    </ul>
-    
+    <p id="errorMessage">The AnnZarro server failed to start.</p>
+    <p id="logPath"></p>
+
     <button class="collapsible">Troubleshooting Steps</button>
     <div class="content">
       <div class="help-section">
         <h2>Try the following steps:</h2>
         <ol>
-          <li>Restart the application</li>
-          <li>Install required Python packages manually: <code>pip install numpy zarr flask</code></li>
-          <li>Check if port 8000 is already in use by another application</li>
-          <li>Check that you have proper permissions for the data directory</li>
-          <li>Try running the application from a terminal to see detailed error messages</li>
+          <li>Use "Retry" below, or quit and start the application again.</li>
+          <li>The first start after installing can take a minute while the system
+              scans the bundled server; a second attempt is usually fast.</li>
+          <li>Check that your data directory (shown below) exists and is writable.</li>
+          <li>Read the application log (path below); its "server:" lines are the
+              server's own output and name the reason it stopped.</li>
+          <li>Report the problem at https://github.com/settylab/annzarro/issues with
+              the system information and the end of the log.</li>
         </ol>
       </div>
     </div>
-    
+
     <button class="collapsible">System Information</button>
     <div class="content">
       <div class="debug-info" id="systemInfo">
         Gathering system information...
       </div>
     </div>
-    
-    <button class="collapsible">View Logs</button>
-    <div class="content">
-      <div class="debug-info" id="logInfo">
-        Log files can be found at:
-        <br>macOS: ~/Library/Logs/annzarro-desktop
-        <br>Windows: %USERPROFILE%\annzarro-desktop\Roaming\AnnZarro\logs
-        <br>Linux: ~/.config/annzarro-desktop/logs
-      </div>
-    </div>
-    
+
     <div class="actions">
-      <button class="btn" id="restartBtn">Restart Server</button>
-      <button class="btn secondary" id="checkDependenciesBtn">Check Dependencies</button>
+      <button class="btn" id="restartBtn">Retry</button>
       <button class="btn secondary" id="quitBtn">Quit Application</button>
     </div>
   </div>
@@ -189,29 +176,32 @@
     window.addEventListener('DOMContentLoaded', async () => {
       // Set up collapsible sections
       setupCollapsibles();
+
+      const reason = new URLSearchParams(window.location.search).get('error');
+      if (reason) {
+        document.getElementById('errorMessage').textContent = reason;
+      }
       
       // Get detailed app and system information
       try {
         // Get detailed app information
         const appInfo = await window.api.getAppInfo();
         const sysInfo = await window.api.getSystemInfo();
+        document.getElementById('logPath').textContent = `Details are in the log: ${appInfo.logFile}`;
         
         // Format system information for display
         document.getElementById('systemInfo').textContent = `
 App Version: ${await window.api.getVersion()}
 Packaged App: ${appInfo.isPackaged}
-Python Path: ${appInfo.pythonExecutable}
-App Data Path: ${appInfo.appDataPath}
-Virtual Env Path: ${appInfo.venvPath}
+Server: ${appInfo.serverCommand}
+Data Directory: ${appInfo.appDataPath}
+Log File: ${appInfo.logFile}
 
-OS: ${sysInfo.platform}-${sysInfo.arch}
-Node.js: ${sysInfo.nodeVersion}
-Electron: ${sysInfo.electronVersion}
+OS: ${sysInfo.platform}-${sysInfo.arch} (${sysInfo.osVersion})
 CPU Cores: ${sysInfo.cpus}
-Memory: ${Math.round(sysInfo.totalmem / (1024 * 1024 * 1024))}GB total / ${Math.round(sysInfo.freemem / (1024 * 1024 * 1024))}GB free
+Memory: ${sysInfo.totalMemory}GB total / ${sysInfo.freeMemory}GB free
 
 User Agent: ${navigator.userAgent}
-Screen Size: ${window.screen.width}x${window.screen.height}
 Date/Time: ${new Date().toLocaleString()}
         `;
       } catch (err) {
@@ -229,7 +219,7 @@ Error getting detailed info: ${err.message}
       // Set up button handlers
       document.getElementById('restartBtn').addEventListener('click', async () => {
         try {
-          document.getElementById('restartBtn').textContent = 'Restarting...';
+          document.getElementById('restartBtn').textContent = 'Retrying...';
           document.getElementById('restartBtn').disabled = true;
           
           await window.api.restartServer();
@@ -240,28 +230,8 @@ Error getting detailed info: ${err.message}
           }, 3000);
         } catch (err) {
           alert('Failed to restart the server. Please quit and restart the application.');
-          document.getElementById('restartBtn').textContent = 'Restart Server';
+          document.getElementById('restartBtn').textContent = 'Retry';
           document.getElementById('restartBtn').disabled = false;
-        }
-      });
-      
-      document.getElementById('checkDependenciesBtn').addEventListener('click', async () => {
-        try {
-          document.getElementById('checkDependenciesBtn').textContent = 'Checking...';
-          document.getElementById('checkDependenciesBtn').disabled = true;
-          
-          // This will trigger the dependency check in main.js
-          await window.api.restartServer();
-          
-          document.getElementById('checkDependenciesBtn').textContent = 'Dependencies Checked';
-          setTimeout(() => {
-            document.getElementById('checkDependenciesBtn').textContent = 'Check Dependencies';
-            document.getElementById('checkDependenciesBtn').disabled = false;
-          }, 3000);
-        } catch (err) {
-          alert('Failed to check dependencies. Please see the logs for details.');
-          document.getElementById('checkDependenciesBtn').textContent = 'Check Dependencies';
-          document.getElementById('checkDependenciesBtn').disabled = false;
         }
       });
       

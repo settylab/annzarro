@@ -1,153 +1,163 @@
 # AnnZarro Desktop Application
 
-This directory contains the code for the desktop application version of AnnZarro, which packages the web application into a standalone desktop application using Electron.
+The desktop app is an Electron window around the AnnZarro server. Users
+download it from the [releases page](https://github.com/settylab/annzarro/releases)
+(files, first-launch steps: see "Download" in the top-level README); they do
+not need Python.
 
-## Overview
+## How it works
 
-The desktop application provides a convenient way to use AnnZarro without needing to manually start a server and open a browser. It bundles the Python server and a browser window into a single application.
+- `server/annzarro-server.spec` freezes the `annzarro` command with PyInstaller
+  into a self-contained directory, `annzarro-server/` (Python, numpy, zarr,
+  h5py, scipy.sparse, Flask, the web frontend with every vendored library and
+  font, configuration defaults, licenses): 56 MB on macOS, 90 MB on Windows
+  and Linux, where numpy brings its own OpenBLAS. `annzarro.desktop.freeze`
+  lists what goes in and what is left out (scipy beyond `scipy.sparse`,
+  cryptography, ...); a test serves requests and fails if the server imports
+  anything left out.
+- The app works with no network: nothing is downloaded at first launch or
+  later, and no page loads anything from a CDN. `electron/test/offline-session.js`
+  checks this on every CI build (see "Testing").
+- The `[remote]` extra (s3/gs/http stores) is not bundled: it adds about
+  100 MB (botocore, grpc, google-auth, aiohttp) to a 56 MB server, the app is
+  meant for data on the user's own disk, and it works offline. Use
+  `pip install "annzarro[remote]"` for remote stores.
+- electron-builder copies it into the app's resources (`resources/server/`).
+- `electron/main.js` runs, on a free port from 39487:
 
-## Development
+  ```
+  annzarro-server start --host 127.0.0.1 --port <port> \
+      --data-dir ~/annzarro-data --auth-disabled --no-browser
+  ```
 
-First, download the required uv binaries for all platforms:
+  so the server listens on the loopback interface only, with login off: the
+  same local single-user mode as `annzarro start` on a laptop. Datasets are
+  only read. The window loads the UI once `GET /api/v1/datasets` answers
+  (up to 180 s: the first start after installing is slowed by Gatekeeper and
+  Defender scanning the server). Quitting the app stops the server.
+- Starting is bounded: the loading screen counts the seconds and explains a
+  slow first start; if the server has not answered after 180 s, or the
+  interface has not loaded 60 s after that, the window shows an error page
+  with the reason, the log path and a Retry button. A second launch focuses
+  the running window (one instance per profile). Each launch tags its server
+  with a random token (`ANNZARRO_INSTANCE_ID`, sent back in an
+  `X-AnnZarro-Instance` header) and only trusts the server that answers with
+  it, so two launches that pick the same port at once never adopt each other's
+  server; the one that loses the port tries the next.
+- `electron/preload.js` gives the page a native folder dialog (the folder
+  button next to the Dataset picker) and an autosave hook before quit.
 
-```bash
-# Make the script executable
-chmod +x annzarro/desktop/scripts/download_uv.sh
+### Where things are
 
-# Run the script to download uv binaries
-./annzarro/desktop/scripts/download_uv.sh
-```
+| What | Where |
+|---|---|
+| Datasets (listed in the Dataset picker) | `~/annzarro-data/datasets` (copy or symlink stores here) |
+| Saved panel sets | `~/annzarro-data/sessions` |
+| App log, including the server's output (`server:` lines) | macOS `~/Library/Logs/AnnZarro/main.log`, Windows `%APPDATA%\AnnZarro\logs\main.log`, Linux `~/.config/AnnZarro/logs/main.log` |
+| Server state (PID file, server log) | `~/.annzarro` (as for `annzarro start`) |
+| Optional settings | `~/.config/annzarro/config.yaml`, read as by `annzarro start`; host, port, data directory and login are fixed by the app |
 
-To run the desktop application in development mode:
+The error page (shown if the server does not start) names the log file.
 
-```bash
-python -m annzarro.cli desktop run
-```
+## Building from source
 
-This will start the application using your system's Python interpreter and the project files from your local directory.
-
-## Building
-
-Before building, make sure you've downloaded the uv binaries:
-
-```bash
-./annzarro/desktop/scripts/download_uv.sh
-```
-
-To build the desktop application:
-
-```bash
-python -m annzarro.cli desktop build
-```
-
-By default, this will build for your current platform. You can specify a target platform with the `--platform` option:
-
-```bash
-python -m annzarro.cli desktop build --platform windows
-python -m annzarro.cli desktop build --platform mac
-python -m annzarro.cli desktop build --platform linux
-```
-
-The built application will be available in the `annzarro/desktop/electron/dist` directory.
-
-## Prerequisites
-
-To build the desktop application, you need:
-
-- Node.js and npm installed on your system
-- Python and required dependencies
-- For Windows builds: Windows or Windows Subsystem for Linux
-- For macOS builds: macOS (signing requires an Apple Developer account)
-- For Linux builds: A Linux distribution
-
-### Setting Up a Python Environment
-
-For optimal results, you should create a dedicated Python environment for the desktop app:
-
-#### Using UV (Recommended - Faster)
-
-```bash
-# First, get the bundled UV package installer
-chmod +x annzarro/desktop/scripts/download_uv.sh
-./annzarro/desktop/scripts/download_uv.sh
-
-# Create a virtual environment and install dependencies with UV
-python -m annzarro.cli install --venv --venv-path annzarro/desktop/electron/python
-```
-
-#### Using Standard Pip
+Needs Python 3.11 (the version releases are built with; 3.9+ works), Node.js
+LTS and npm. Each platform must be built on that platform: the frozen server
+contains native libraries for the system it was built on.
 
 ```bash
-python -m annzarro.cli install --venv --venv-path annzarro/desktop/electron/python --no-uv
+python annzarro/desktop/scripts/build_server.py   # clean venv + PyInstaller -> electron/server/
+python annzarro/desktop/scripts/smoke_server.py \
+    annzarro/desktop/electron/server/annzarro-server/annzarro-server \
+    --dataset annzarro/tests/data/fixture_small.zarr  # start it, read a gene column
+cd annzarro/desktop/electron
+npm ci
+npx electron-builder --publish never              # dmg+zip / nsis+zip / AppImage+deb in dist/
 ```
 
-Or use the legacy scripts:
+`annzarro desktop build [--platform mac|windows|linux]` runs the same steps
+(`--no-build-server` reuses an existing frozen server). `annzarro desktop run`
+(or `npm start` in `electron/`) starts the app from the checkout: it uses the
+frozen server in `electron/server/` if there is one, otherwise
+`python3 -m annzarro.cli start` (set `ANNZARRO_PYTHON` to choose the
+interpreter).
 
-**On macOS/Linux:**
+### Testing
+
+To test a built app without clicking:
+
 ```bash
-# Make the script executable
-chmod +x annzarro/desktop/setup_python_env.sh
-
-# Run the setup script
-./annzarro/desktop/setup_python_env.sh
+python annzarro/desktop/scripts/smoke_app.py dist/mac-arm64/AnnZarro.app/Contents/MacOS/AnnZarro
 ```
 
-**On Windows:**
-```cmd
-annzarro\desktop\setup_python_env.bat
+It runs the app with `ANNZARRO_DESKTOP_SMOKE=1`: the app starts its server,
+loads the UI, checks that Plotly loaded and `/api/v1/datasets` answers, prints
+`ANNZARRO_DESKTOP_SMOKE ok ...` and quits. Other switches:
+`ANNZARRO_DESKTOP_DATA_DIR` (data directory), `ANNZARRO_DESKTOP_USER_DATA`
+(profile: settings, local storage, log and the single-instance lock; the
+self-test and the offline test always use a temporary one, so they never hand
+a user's launch to a test window or leave state in the user's profile),
+`ANNZARRO_SERVER_BINARY` (server to run). The app prints `ANNZARRO_DESKTOP_READY <url>` once the server
+answers. In this mode every request the window makes beyond 127.0.0.1 is
+cancelled and fails the check.
+
+A full session with the network cut off (needs `npm ci` in `electron/`):
+
+```bash
+node annzarro/desktop/electron/test/offline-session.js \
+    annzarro/desktop/electron/dist/mac-arm64/AnnZarro.app/Contents/MacOS/AnnZarro \
+    annzarro/tests/data/fixture_small.zarr report.json
 ```
 
-These methods will:
-1. Create a Python virtual environment at `annzarro/desktop/electron/python/`
-2. Install all required dependencies
-3. Install the AnnZarro package in development mode
+It opens the dataset, a cell plot, focuses a gene and a cell, opens a cell
+table and exports the plot as PNG, while the app's main process cancels and
+records every request not to 127.0.0.1. It fails on any such request, on a
+missing page or asset, a 5xx or a page error, and it first checks that a CDN
+fetch really is cancelled. `report.json` lists every static file the UI
+loaded. `scripts/size_report.py` prints the size of each component.
 
-The desktop app will automatically use this Python environment when building and running.
+Two start-up tests guard against an app that never gets past a spinner:
+
+- `scripts/port_clash_test.py <app>`: port 39487 held by a program that
+  accepts connections and never answers, and (macOS/Linux) the port taken
+  while the server starts. The app must come up on another port.
+- `node electron/test/dataset-gone.js <app> <dataset>`: open a copy of a
+  dataset, delete it, start again with the same profile; five seconds later
+  nothing may still be spinning and new panels can be added.
+
+## Versions and releases
+
+The app version is the Python package version: `bump_version.py` writes
+`pyproject.toml`'s version into `electron/package.json`, a test and the
+workflow fail if they differ, and a release tag must be `v<version>`.
+
+`.github/workflows/build.yml` builds macOS arm64 (macos-14), macOS x64
+(macos-15-intel), Windows x64 and Linux x64 (ubuntu-22.04, for an old enough
+glibc). Each job freezes the server, smoke-tests it on the v2 and v3 test
+fixtures, packages the app and launches it in self-test mode. A `v*` tag then
+creates a draft release with every file and `SHA256SUMS.txt`;
+`workflow_dispatch` only builds (files are kept as workflow artifacts).
+
+## Code signing
+
+Release builds are unsigned (macOS: ad-hoc signed). To sign, add repository
+secrets; the workflow uses them only when present:
+
+- macOS: `CSC_LINK` and `CSC_KEY_PASSWORD` (Developer ID Application
+  certificate, `.p12` as base64), `APPLE_SIGNING_IDENTITY`
+  (`Developer ID Application: Name (TEAMID)`), and for notarisation
+  `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. The hardened
+  runtime entitlements are in `electron/entitlements.mac.plist`.
+- Windows: `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` (Authenticode `.pfx`).
 
 ## Structure
 
-- `electron/` - Contains the Electron application code
-  - `main.js` - Main process script that handles the application lifecycle
-  - `preload.js` - Bridge between the renderer process and Node.js
-  - `package.json` - Electron project configuration
-  - `loading.html` - Loading screen shown while the server starts
-  - `error.html` - Error screen shown if the server fails to start
-  - `icons/` - Application icons for different platforms
-  - `bin/` - Platform-specific uv binaries
-    - `darwin-x64/` - macOS Intel binaries
-    - `darwin-arm64/` - macOS ARM (Apple Silicon) binaries
-    - `linux-x64/` - Linux x64 binaries
-    - `win32-x64/` - Windows x64 binaries
-- `scripts/` - Utility scripts for development
-  - `download_uv.sh` - Script to download uv binaries for all platforms
-- `builder.py` - Python module for building the desktop application
-
-## How It Works
-
-The desktop application:
-
-1. Starts a Python server process running AnnZarro
-2. Opens an Electron window that connects to the server
-3. Manages the server lifecycle, ensuring it starts and stops with the application
-4. Provides native OS integration (dock/taskbar, notifications, etc.)
-5. Uses uv for faster Python package management and environment setup
-6. Creates a dedicated virtual environment for Python dependencies
-
-## Customization
-
-To customize the application:
-
-- Update the icons in the `icons/` directory
-- Modify `package.json` to change the application name, description, etc.
-- Edit `main.js` to change default window size, menu options, etc.
-
-## Troubleshooting
-
-If you encounter issues:
-
-- Check the application logs in the usual Electron log locations
-  - Windows: `%USERPROFILE%\AppData\Roaming\annzarro-desktop\logs`
-  - macOS: `~/Library/Logs/annzarro-desktop`
-  - Linux: `~/.config/annzarro-desktop/logs`
-- Ensure you have all required dependencies installed
-- Try running in development mode for more detailed logs
+- `electron/` - the Electron app: `main.js` (server lifecycle, window),
+  `preload.js`, `loading.html`, `error.html`, `icons/`, `package.json`
+  (electron-builder configuration), `package-lock.json`
+- `server/` - PyInstaller entry point and spec
+- `freeze.py` - what the frozen server contains
+- `scripts/build_server.py`, `scripts/smoke_server.py`, `scripts/smoke_app.py`
+- `scripts/download_uv.sh` - used by the source installer (`annzarro-cli install`), not by the app
+- `builder.py` - `annzarro desktop` commands
+- `icon_generator.py` - `annzarro desktop icons`

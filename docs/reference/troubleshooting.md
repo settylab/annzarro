@@ -32,6 +32,16 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | `501` `missing_dependency`: `Reading https:// datasets needs the optional package(s) fsspec, aiohttp`. Reproduced | Remote extras not installed | `pip install 'annzarro[remote]'` |
 | `Configuration error: Missing required configuration: server.host / server.port / server.data_dir` | AnnZarro before PR #43, started outside its source tree | Upgrade; with this branch `annzarro start --data-dir … --port …` works from any directory (verified) |
 
+## Desktop app
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The loading screen stays for more than a few seconds | First start after installing: Gatekeeper or Defender scans the bundled server | Wait; the screen counts the seconds. After 180 s the app shows an error page instead |
+| Error page "AnnZarro could not start: …" | The server did not answer within 180 s, exited, or the interface did not load within 60 s | Read the log named on the page (its `server:` lines are the server's own output), then **Retry** ({doc}`../getting-started/desktop-app`) |
+| A panel says "No dataset loaded" after starting the app. Reproduced | The layout was restored from the last session, but its dataset was moved or deleted; a "Failed to load dataset" notice names it | Choose a dataset in the Dataset picker, or close the panel. Builds before PR #54 showed a spinner here that never stopped |
+| Starting the app again does nothing visible | AnnZarro is already running; the second start brings its window to the front | Look for the existing window (Dock, taskbar) |
+| An AnnZarro desktop app from before the preprint release (v0.1.1) needs a Python on the computer, and when it cannot stop its own server on quitting it stops every Python process whose command line contains `annzarro` | Old build | Delete it and install the current release |
+
 ## Building views
 
 | Symptom | Cause | Fix |
