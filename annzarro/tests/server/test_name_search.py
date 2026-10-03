@@ -97,11 +97,15 @@ def test_endpoint_reads_names_once_per_dataset(client_and_store):
     client, store = client_and_store
     from annzarro.core import zarr_reader
     real = zarr_reader.get_cell_gene_names
-    with patch.object(zarr_reader, "get_cell_gene_names", side_effect=real) as read:
+    real_chunks = zarr_reader.iter_cell_gene_name_chunks
+    with patch.object(zarr_reader, "get_cell_gene_names", side_effect=real) as read, \
+            patch.object(zarr_reader, "iter_cell_gene_name_chunks", side_effect=real_chunks) as chunks:
         for q in ("c", "ce", "cel", "cell_0"):
             client.get("/api/v1/data/names", query_string={
                 "dataset_path": store, "entity": "cells", "q": q})
-        assert read.call_count == 1, "the name list was re-read per keystroke"
+        # a zarr store's names are read a chunk at a time, never as one list
+        assert chunks.call_count == 1, "the names were re-read per keystroke"
+        assert read.call_count == 0, "the whole name list was read"
 
 
 def test_endpoint_rejects_bad_input(client_and_store):

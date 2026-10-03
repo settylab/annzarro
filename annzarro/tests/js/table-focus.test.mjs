@@ -42,6 +42,7 @@ const GENES = ['g0', 'g1'];
 DataManager.getCells = () => CELLS;
 DataManager.getGenes = () => GENES;
 DataManager.getCellIndex = (c) => CELLS.indexOf(c);
+DataManager.resolveCellIndex = async (c) => CELLS.indexOf(c);
 DataManager.getGeneIndex = (g) => GENES.indexOf(g);
 DataManager.getFocusedCell = () => 'c1';
 DataManager.getFocusedGene = () => 'g1';

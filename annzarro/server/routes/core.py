@@ -96,6 +96,12 @@ def register_core_routes(app, api_version):
                 client[key] = public["server"][key]
         client["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
         client["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
+        # One user on this machine (loopback, login off, no proxy, not
+        # hosted): the decision remote_stores: auto makes, from the same
+        # function. The client spends server memory ahead of need only then
+        # (the cell-name index prewarm).
+        from annzarro.core.remote import hosted_reasons
+        client["single_user"] = not hosted_reasons(app.config)
         return jsonify(client)
         
     @app.route(f"/api/{api_version}/auth/me", methods=["GET"])

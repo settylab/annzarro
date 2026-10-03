@@ -7,6 +7,16 @@ import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
+import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+import { RemoteNames } from './utils/remote-names.js';
+
+// A /cells body above this size is read as a stream into PackedNames
+// (ArrayBuffers) instead of one JSON string and an array of JS strings: about
+// 12M cells with 19-character names. Above about 24M such cells the JSON text
+// no longer fits in one V8 string at all. Below it the names stay a plain
+// array, which every view accepts; only the large Cell Plot path
+// (large-plot.js) works with packed names; it takes over above 5M cells by default.
+const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
 const BINARY_RESULT = Symbol('binarySlice');
@@ -311,7 +321,8 @@ const DataManager = (function() {
             _subset = await _resolveSubset(datasetPath, previousSubset, signal);
 
             // Load cells and genes
-            _cells = await loadCells(datasetPath, signal);
+            const nShown = _subset ? _subset.n : (_datasetStructure && _datasetStructure.n_obs);
+            _cells = await loadCells(datasetPath, signal, nShown);
             
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
@@ -509,14 +520,92 @@ const DataManager = (function() {
      * @returns {Promise<Array<string>>} - List of cell names
      * @throws {Error} If there's an error loading the cells
      */
-    async function loadCells(datasetPath, signal = null) {
+    /**
+     * The names of the cells shown, kept on the server (utils/remote-names.js):
+     * one name by index from obs/_index, one index by name from /data/names.
+     */
+    function _remoteNames(datasetPath, n) {
+        const fetchNames = async (indices) => {
+            const params = _withSubset(Config.API.OBS,
+                { dataset_path: datasetPath, columns: '_index', rows: indices.join(',') });
+            const body = await _readResponse(await fetch(`${Config.API.OBS}?${new URLSearchParams(params)}`));
+            return (body && body.data && body.data._index) || [];
+        };
+        const lookup = async (name) => {
+            const params = new URLSearchParams({ dataset_path: datasetPath, entity: 'cells', q: name,
+                mode: 'exact', limit: '1' });
+            if (_subset && _subset.datasetPath === datasetPath) params.set('subset', _subset.key);
+            const body = await _readResponse(await fetch(`${Config.API.NAMES}?${params}`));
+            const hit = body && body.matches && body.matches[0];
+            return hit && hit.name === name ? hit.index : -1;
+        };
+        return RemoteNames.wrap(new RemoteNames(n, fetchNames, lookup));
+    }
+
+    /**
+     * Have the server build its cell-name index now, in the background, when
+     * the names stay on the server: the first lookup by name otherwise waits
+     * for that build (16 s at 50M cells). Fire and forget, once per loaded
+     * dataset; nothing waits for it. Called after a large plot is drawn so the
+     * build does not compete with the plot's own requests. Only on a
+     * single-user server (Config.SERVER_CONFIG.single_user): the index costs
+     * server memory (11 GB for 50M names before the lean index), which a
+     * hosted server spends only for the users who search by name.
+     */
+    let _prewarmed = null;
+    function prewarmCellNames() {
+        if (!(_cells instanceof RemoteNames) || !_currentDataset) return;
+        if (!(Config.SERVER_CONFIG && Config.SERVER_CONFIG.single_user)) return;
+        const key = `${_currentDataset}#${_datasetGeneration}`;
+        if (_prewarmed === key) return;
+        _prewarmed = key;
+        const params = new URLSearchParams({ dataset_path: _currentDataset, entity: 'cells', q: '',
+            mode: 'exact', limit: '1' });
+        if (_subset && _subset.datasetPath === _currentDataset) params.set('subset', _subset.key);
+        fetch(`${Config.API.NAMES}?${params}`).catch(() => {});
+    }
+
+    /**
+     * Index of a cell by name, asking the server when the names are not
+     * downloaded (above the large-plot threshold); -1 when absent.
+     */
+    async function resolveCellIndex(cellName) {
+        if (!_cells) return -1;
+        if (_cells instanceof RemoteNames) return _cells.resolve(cellName);
+        return _cells.indexOf(cellName);
+    }
+
+    /** Name of cell `i` (asks the server when the names are not downloaded). */
+    async function cellNameAt(i) {
+        if (!_cells) return undefined;
+        if (_cells instanceof RemoteNames) return _cells.nameAt(i);
+        return _cells[i];
+    }
+
+    async function loadCells(datasetPath, signal = null, expected = null) {
         try {
             // Check for abort before making request
             if (signal && signal.aborted) {
                 throw new DOMException("Cells loading aborted", "AbortError");
             }
             
-            const data = await _fetchWithCache(Config.API.CELLS, { dataset_path: datasetPath }, signal);
+            // Every cell of a dataset above the large-plot threshold: the names
+            // stay on the server (large-plot mode shows none)
+            const threshold = Config.DEFAULTS.LARGE_PLOT_POINTS;
+            if (typeof expected === 'number' && typeof threshold === 'number' && expected > threshold) {
+                return _remoteNames(datasetPath, expected);
+            }
+            const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
+            const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
+            const response = await fetch(fullUrl, { signal });
+            const size = Number(response.headers.get('Content-Length') || 0);
+            if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+                const t0 = performance.now();
+                const names = await PackedNames.fromJSON(response, 'cells', size);
+                console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
+                return names;
+            }
+            const data = await _readResponse(response);
             
             // Check if response contains error information
             if (data && data.status === 'error') {
@@ -1424,10 +1513,65 @@ const DataManager = (function() {
      */
     function getCells() {
         if (!_cells) return [];
+        // Packed and remote names are read-only and too large to copy
+        if (_cells instanceof PackedNames || _cells instanceof RemoteNames) return _cells;
         // Return a copy to avoid modifying the original array
         return [..._cells]; // No sorting to maintain original order
     }
     
+    /**
+     * One numeric cell- or gene-axis vector as the decoded typed array
+     * (Float32Array, NaN where the value is missing): no plain-array copy.
+     * Null when the server answers JSON instead (a non-numeric slice).
+     * @param {string} url  e.g. `${Config.API.OBSM}/X_umap`
+     * @param {Object} params  route parameters (dataset_path, column_name, cols, ...)
+     */
+    async function loadVector(url, params) {
+        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+        return body && body[BINARY_RESULT] ? body.values : null;
+    }
+
+    /**
+     * The codes route's reply in loadCategoryCodes' shape: Uint16 codes with
+     * 0xFFFF for missing (the route sends int8/16/32 with -1).
+     */
+    function _categoryCodesFromBinary(decoded) {
+        const MISSING = 0xFFFF;
+        const src = decoded.values, n = src.length;
+        if (decoded.categories.length >= MISSING) throw new RangeError('more than 65534 categories');
+        const codes = new Uint16Array(n);
+        for (let i = 0; i < n; i++) { const c = src[i]; codes[i] = c < 0 ? MISSING : c; }
+        return { codes, categories: decoded.categories, MISSING };
+    }
+
+    /**
+     * A categorical obs column as codes (Uint16Array, `MISSING` where blank)
+     * plus its categories, read as a stream (utils/packed-names.js): the JSON
+     * body of a large dataset does not fit in one string.
+     */
+    async function loadCategoryCodes(datasetPath, column) {
+        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column });
+        const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
+        const key = `${fullUrl}#codes`;
+        const cached = CacheManager.get(key);
+        if (cached !== undefined) return cached;
+        if (_inflight.has(key)) return _inflight.get(key);
+        const pending = (async () => {
+            // A server with the codes route (format=f32&categorical=codes)
+            // answers binary integer codes; an older one ignores the request
+            // and sends the JSON labels, which are read as a stream.
+            const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`);
+            if (!response.ok) await _readResponse(response);   // throws with the server's reason
+            const result = isBinaryResponse(response)
+                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers))
+                : await categoryCodesFromJSON(response, column, (_cells || []).length);
+            CacheManager.set(key, result);
+            return result;
+        })().finally(() => _inflight.delete(key));
+        _inflight.set(key, pending);
+        return pending;
+    }
+
     /**
      * Get the cell names, sorted alphabetically
      * @returns {Array<string>} - Cell names sorted alphabetically
@@ -1534,6 +1678,8 @@ const DataManager = (function() {
         loadX,
         loadUns,
         loadByPath,
+        loadVector,
+        loadCategoryCodes,
         setFocusedCell,
         setFocusedGene,
         setTaxonomyId,
@@ -1549,6 +1695,9 @@ const DataManager = (function() {
         getTaxonomyId,
         getTaxonomySpecies,
         getCellIndex,
+        resolveCellIndex,
+        prewarmCellNames,
+        cellNameAt,
         getGeneIndex,
         isDatasetLoaded,
         // Cell subset

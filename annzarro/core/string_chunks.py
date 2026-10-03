@@ -42,7 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import List, Optional, Sequence
+from typing import Iterator, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -185,3 +185,60 @@ def take(array, rows: Sequence[int], local_dir: Optional[str] = None) -> List:
             names = np.asarray(array[lo:min(lo + chunk, size)])[local].tolist()
         out.extend(names)
     return out
+
+
+def joined_items(chunk_bytes, valid: Optional[int] = None) -> Optional[Tuple[bytes, np.ndarray]]:
+    """Every item of a decompressed vlen-utf8 chunk as one ``b"\\n"``-joined
+    bytes string plus each item's byte length, without a Python string per
+    item; None when the chunk cannot be parsed (as for decode_vlen_items).
+    An item that itself contains a newline is still one item: the lengths,
+    not the separators, delimit them."""
+    buf = np.frombuffer(chunk_bytes, dtype=np.uint8)
+    bounds = _vlen_bounds(buf, valid)
+    if bounds is None:
+        return None
+    starts, lengths = bounds
+    if valid is not None and valid < starts.size:
+        starts, lengths = starts[:valid], lengths[:valid]
+    if starts.size == 0:
+        return b"", lengths
+    edge = np.zeros(buf.size + 1, dtype=np.int32)
+    edge[starts] += 1
+    edge[starts + lengths] -= 1
+    keep = np.cumsum(edge[:-1]) > 0
+    seps = starts[1:] - 1            # the last byte of each item's length header
+    keep[seps] = True
+    out = buf.copy()
+    out[seps] = 10
+    return out[keep].tobytes(), lengths
+
+
+def iter_chunks(array, local_dir: Optional[str] = None) -> Iterator[Union[Tuple[bytes, np.ndarray], List[str]]]:
+    """Every entry of a 1-D string array, one zarr chunk at a time: a
+    ``(joined, lengths)`` pair (joined_items) for a chunk read raw, else the
+    chunk's entries as a list of strings (read through zarr). Memory stays
+    bounded by one chunk; nothing holds every entry at once."""
+    chunk = int(array.chunks[0]) or 1
+    size = int(array.shape[0])
+    raw = _LocalVlenArray.open(local_dir)
+    if raw is not None and raw.chunk != chunk:
+        raw = None
+    for lo in range(0, size, chunk):
+        valid = min(chunk, size - lo)
+        got = None
+        if raw is not None:
+            try:
+                with open(os.path.join(raw.directory, str(lo // chunk)), "rb") as fh:
+                    data = fh.read()
+                if raw.codec is not None:
+                    data = raw.codec.decode(data)
+                got = joined_items(data, valid)
+                if got is not None and got[1].size != valid:
+                    got = None
+            except Exception as exc:
+                logger.debug("Raw read of chunk %s of %s failed (%s); reading it through zarr",
+                             lo // chunk, raw.directory, exc)
+                got = None
+        if got is None:
+            got = ["" if v is None else str(v) for v in np.asarray(array[lo:lo + valid]).tolist()]
+        yield got

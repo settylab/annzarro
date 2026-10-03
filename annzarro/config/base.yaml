@@ -120,6 +120,10 @@ ui:
     # subset of subset_size cells (seed subset_seed); the header shows it and
     # its dialog changes or removes it. Every panel shows the same cells.
     subset_threshold: 200000
+    # A Cell Plot with more points than this is drawn in large-plot mode
+    # (typed arrays, no hover, click or table filter); only reachable with
+    # the subset off or larger than this.
+    large_plot_points: 5000000
     subset_size: 100000
     subset_seed: 0
 

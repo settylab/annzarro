@@ -2522,6 +2522,30 @@ class ZarrReader(CacheSettings):
             logger.error(f"Error reading names from {dataset_path}: {type(e).__name__}: {e}")
             raise RuntimeError(str(e) or f"Failed to read names ({type(e).__name__})") from e
     
+    def iter_cell_gene_name_chunks(self, dataset_path: str, entity: Literal["cells", "genes"]):
+        """Every name of the axis, one zarr chunk at a time
+        (``string_chunks.iter_chunks``), for building the name index without
+        a list of every name: 50M names as Python strings took 7 GB that the
+        process kept after the index was built. None for an index stored as
+        a categorical or nullable group (then the caller reads the list).
+        """
+        root = self._get_root(dataset_path=dataset_path)
+        if root is None:
+            raise ValueError(f"Unable to access dataset at path: {dataset_path}")
+        obj = 'var' if entity == 'genes' else 'obs'
+        if obj not in root:
+            return iter(())
+        index_column = root[obj].attrs.get('_index', '_index') if hasattr(root[obj], 'attrs') else '_index'
+        if index_column not in root[obj]:
+            return iter(())
+        member = root[obj][index_column]
+        if self._is_group(member):
+            return None
+        local_dir = None
+        if not is_remote_path(dataset_path) and os.path.isdir(dataset_path):
+            local_dir = os.path.join(dataset_path, obj, index_column)
+        return string_chunks.iter_chunks(member, local_dir)
+
     @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"],
                                rows) -> List[str]:

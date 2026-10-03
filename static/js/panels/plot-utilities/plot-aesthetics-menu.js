@@ -1529,6 +1529,10 @@ function updateLegendVisibility(plotDiv, settings) {
             update.showlegend = false;
             update.showscale   = show;
         }
+        else if (trace.meta === 'az-points') {
+            // points whose legend entry is a proxy trace (withLegendProxies)
+            update.showlegend = false;
+        }
         else {
             // categorical / other traces: toggle legend, ensure no leftover colorbars
             update.showlegend          = hasColoraxis ? false : show;

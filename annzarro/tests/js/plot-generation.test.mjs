@@ -52,7 +52,7 @@ Object.assign(DataManager, {
     getCells: () => CELLS, getGenes: () => [],
     getCurrentDataset: () => '/a.zarr',
     getDatasetGeneration: () => generation,
-    getCellIndex: () => -1, getGeneIndex: () => -1,
+    getCellIndex: () => -1, resolveCellIndex: async () => -1, getGeneIndex: () => -1,
     getFocusedCell: () => null, getFocusedGene: () => null,
     getDatasetStructure: async () => ({ obs: { columns: ['celltype'] } })
 });
