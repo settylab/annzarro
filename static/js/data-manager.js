@@ -1437,6 +1437,19 @@ const DataManager = (function() {
     }
 
     /**
+     * The codes route's reply in loadCategoryCodes' shape: Uint16 codes with
+     * 0xFFFF for missing (the route sends int8/16/32 with -1).
+     */
+    function _categoryCodesFromBinary(decoded) {
+        const MISSING = 0xFFFF;
+        const src = decoded.values, n = src.length;
+        if (decoded.categories.length >= MISSING) throw new RangeError('more than 65534 categories');
+        const codes = new Uint16Array(n);
+        for (let i = 0; i < n; i++) { const c = src[i]; codes[i] = c < 0 ? MISSING : c; }
+        return { codes, categories: decoded.categories, MISSING };
+    }
+
+    /**
      * A categorical obs column as codes (Uint16Array, `MISSING` where blank)
      * plus its categories, read as a stream (utils/packed-names.js): the JSON
      * body of a large dataset does not fit in one string.
@@ -1449,9 +1462,14 @@ const DataManager = (function() {
         if (cached !== undefined) return cached;
         if (_inflight.has(key)) return _inflight.get(key);
         const pending = (async () => {
-            const response = await fetch(fullUrl);
+            // A server with the codes route (format=f32&categorical=codes)
+            // answers binary integer codes; an older one ignores the request
+            // and sends the JSON labels, which are read as a stream.
+            const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`);
             if (!response.ok) await _readResponse(response);   // throws with the server's reason
-            const result = await categoryCodesFromJSON(response, column, (_cells || []).length);
+            const result = isBinaryResponse(response)
+                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers))
+                : await categoryCodesFromJSON(response, column, (_cells || []).length);
             CacheManager.set(key, result);
             return result;
         })().finally(() => _inflight.delete(key));
