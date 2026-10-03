@@ -1728,6 +1728,27 @@ button.dtsb-button.dtsb-clear:hover {
     color: #fff;
 }
 
+/* A cell the subset does not show: still pickable, and tagged */
+.name-picker-tag {
+    margin-left: 8px;
+    padding: 0 5px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-size: 0.75em;
+    opacity: 0.7;
+}
+
+/* Beside the focused cell in the header when the subset does not show it */
+.focus-outside-badge {
+    align-self: center;
+    margin-left: 4px;
+    white-space: nowrap;
+    color: #495057;
+    background-color: #e9ecef;
+    border: 1px solid #ced4da;
+    font-weight: normal;
+}
+
 /* Dataset selector should have a moderate width */
 #dataset-selector {
     min-width: 180px !important;

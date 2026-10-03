@@ -16,6 +16,7 @@ import { NOTIFY_EVENT } from './utils/notify.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
+import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 
 const App = (function() {
     // Private variables
@@ -798,6 +799,13 @@ const App = (function() {
             
             // Show the focused cell, whatever changed it (plot click, history, link)
             if (_pickers.cells) _pickers.cells.setValue(e.detail.cell);
+            _updateFocusBadge();
+        });
+        document.addEventListener('datasetChanged', () => _updateFocusBadge());
+        // Once a cell is located, its labels say whether the subset shows it
+        document.addEventListener('cellLocated', (e) => {
+            _relabelCell(e.detail);
+            if (e.detail.name === DataManager.getFocusedCell()) _updateFocusBadge();
         });
         
         // No asynchronous sorting events
@@ -1073,6 +1081,46 @@ const App = (function() {
     // The last focused cell a notice said was outside the subset, so a view
     // restore does not say it a second time.
     let _focusOutsideSubsetNoticed = null;
+
+    let _badgeSeq = 0;
+
+    /**
+     * The header badge beside the focused cell: "not shown", or "not in
+     * part 3 of 7" when the subset has parts, while the subset does not show
+     * the focused cell; hidden otherwise.
+     * @private
+     */
+    async function _updateFocusBadge() {
+        const badge = document.getElementById('focused-cell-outside');
+        if (!badge) return;
+        const seq = ++_badgeSeq;
+        const name = DataManager.getFocusedCell();
+        const cell = name ? await DataManager.locateCell(name).catch(() => null) : null;
+        if (seq !== _badgeSeq) return;
+        const outside = !!(cell && !cell.shown && cell.row !== null);
+        badge.hidden = !outside;
+        if (!outside) return;
+        const subset = DataManager.getSubset();
+        badge.textContent = subset && subset.parts > 1
+            ? `not in part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}`
+            : 'not shown';
+        badge.title = `${name} is focused but not among the shown cells`;
+    }
+
+    /**
+     * Add or drop "(not shown)" on the axis menu options that name a cell,
+     * once it is located (they are drawn before that is known).
+     * @private
+     */
+    function _relabelCell(cell) {
+        if (!cell || !cell.name) return;
+        const outside = !cell.shown && cell.row !== null;
+        const labels = [`Focused cell ${cell.name}`, `Locked cell ${cell.name}`];
+        for (const option of document.querySelectorAll('select.axis-column-select option')) {
+            const base = option.text.endsWith(NOT_SHOWN) ? option.text.slice(0, -NOT_SHOWN.length) : option.text;
+            if (labels.includes(base)) option.text = outside ? `${base}${NOT_SHOWN}` : base;
+        }
+    }
 
     /** Say once that the focused cell is kept although the subset does not show it. */
     function _noticeFocusOutside(name) {

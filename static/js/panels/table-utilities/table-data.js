@@ -498,12 +498,15 @@ export function getColumnDisplayName(column) {
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
     } else if (column.type === 'obsp' || column.type === 'varp' || column.type === 'layer') {
+        // a cell the subset does not show is still a column, and says so
+        const notShown = name => (DataManager.cellShown(name) === false ? ' (not shown)' : '');
         if (FOCUSED_CELL_COLUMNS.has(column.column)) {
-            return `${column.key}: ${DataManager.getFocusedCell() ?? 'no focused cell'} (follows focus)`;
+            const focused = DataManager.getFocusedCell();
+            return `${column.key}: ${focused ?? 'no focused cell'} (follows focus)${notShown(focused)}`;
         } else if (FOCUSED_GENE_COLUMNS.has(column.column)) {
             return `${column.key}: ${DataManager.getFocusedGene() ?? 'no focused gene'} (follows focus)`;
         } else if (column.column) {
-            return `${column.key}: ${column.column}`;
+            return `${column.key}: ${column.column}${notShown(column.column)}`;
         }
         return `${column.key}`;
     }

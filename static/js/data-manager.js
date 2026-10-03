@@ -48,8 +48,9 @@ const DataManager = (function() {
     // Dataset rows of cells by name, for the open dataset (see locateCell):
     // learned rows, and unconfirmed hints from a link or panel set
     let _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
-    // Where each name is in the cells shown, per dataset load and subset
-    let _located = { generation: -1, key: null, byName: new Map() };
+    // Where each name is in the cells shown, per dataset load and subset:
+    // the lookup, and its answer once there is one
+    let _located = { generation: -1, key: null, byName: new Map(), settled: new Map() };
 
     // Routes whose answer depends on which cells are shown.
     const _CELL_AXIS_ROUTES = [Config.API.CELLS, Config.API.OBS, Config.API.X];
@@ -646,7 +647,7 @@ const DataManager = (function() {
     function _locatedCache() {
         const key = _openSubset() ? _openSubset().key : null;
         if (_located.generation !== _datasetGeneration || _located.key !== key) {
-            _located = { generation: _datasetGeneration, key, byName: new Map() };
+            _located = { generation: _datasetGeneration, key, byName: new Map(), settled: new Map() };
         }
         return _located;
     }
@@ -752,10 +753,34 @@ const DataManager = (function() {
         if (!found) {
             found = _locate(name);
             cache.byName.set(name, found);
-            // a failed lookup is asked again next time
-            found.catch(() => { if (cache.byName.get(name) === found) cache.byName.delete(name); });
+            found.then(cell => {
+                if (cache.byName.get(name) !== found) return;
+                cache.settled.set(name, cell);
+                // labels and the header badge say "not shown" once this is known
+                document.dispatchEvent(new CustomEvent('cellLocated', { detail: { ...cell } }));
+            }, () => {
+                // a failed lookup is asked again next time
+                if (cache.byName.get(name) === found) cache.byName.delete(name);
+            });
         }
         return found;
+    }
+
+    /**
+     * Whether a cell is among the cells shown, as far as already known:
+     * true, false (located outside the subset), or undefined (not located
+     * yet, or the dataset does not have it). For labels drawn synchronously;
+     * a `cellLocated` event follows each lookup.
+     * @param {string} name
+     */
+    function cellShown(name) {
+        const cache = _locatedCache();
+        const cell = cache.settled.get(name);
+        if (cell) return cell.shown || (cell.row !== null ? false : undefined);
+        if (_cells && typeof name === 'string' && !(_cells instanceof RemoteNames) && _cells.indexOf(name) >= 0) {
+            return true;
+        }
+        return undefined;
     }
 
     /**
@@ -2005,6 +2030,7 @@ const DataManager = (function() {
         hasSubsetFeature,
         recordCellRows,
         rememberCell,
+        cellShown,
         cellRowHints,
         setCellRowHints,
         prewarmCellNames,
