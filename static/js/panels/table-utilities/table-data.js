@@ -522,6 +522,35 @@ export function getColumnDisplayName(column) {
  * @param {string} entityType - Type of entities ('cells' or 'genes')
  * @returns {Object} - The DataTables instance
  */
+/**
+ * Turn a table's live views of its DataTable (`currentEntries`,
+ * `searchBuilderConfig`, getters defined by initializeDataTable) into plain
+ * values, before the DataTable is destroyed.
+ *
+ * Other panels read them from a closed table: a plot whose table filter is
+ * this table keeps showing the rows that passed it, and the panel set keeps
+ * its filter. Through the getters they kept the destroyed DataTable, and
+ * every row of its data, alive for as long as the closed panel was kept for
+ * Reopen. The values are the same; only the rows are let go.
+ * @param {Object} settings - the table panel's settings
+ */
+export function freezeTableState(settings) {
+    for (const key of ['currentEntries', 'searchBuilderConfig']) {
+        const desc = Object.getOwnPropertyDescriptor(settings, key);
+        if (!desc || !desc.get) continue;
+        let value;
+        try {
+            value = settings[key];
+        } catch {
+            value = key === 'currentEntries' ? [] : {};
+        }
+        Object.defineProperty(settings, key, {
+            value: key === 'currentEntries' ? Array.from(value || []) : value,
+            writable: true, configurable: true, enumerable: desc.enumerable
+        });
+    }
+}
+
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';

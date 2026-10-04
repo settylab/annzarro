@@ -6,7 +6,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
 import { Coverage, GAP, classifyError } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
@@ -271,6 +271,9 @@ const CellTablePanel = (function() {
          */
         function cleanup() {
             if (_dataTable) {
+                // what other panels still read (a plot's table filter, the
+                // panel set) stays, as values; the DataTable's rows go
+                freezeTableState(_settings);
                 _dataTable.destroy();
                 _dataTable = null;
             }

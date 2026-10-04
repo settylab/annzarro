@@ -24,6 +24,10 @@ Config.DEFAULTS.MEMORY from what the ledger holds at that moment.
 5. A crash marker left by a page that died while drawing a panel: the panel
    is not drawn again until "Draw anyway".
 6. The cell table builds rows only for the page shown (deferRender).
+7. Closing frees only what is private to a panel: a closed table still
+   filters the plot linked to it, the focused cell and the panel set
+   outlive the panel, Reopen works, and the closed plot's ledger entry and
+   WebGL contexts are gone.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -421,3 +425,78 @@ def test_cell_table_renders_only_the_page_shown(server, page):
         const e = g.ledger.get('cell-table-t');
         return e && e.kind === 'cell-table' && e.n === 200;
     }""")
+
+
+def test_closing_frees_only_what_is_private(server, page):
+    """Closing a panel frees its own drawing, never what other panels read.
+
+    The behaviour kept is the one recorded on v030-preview (9cc53c6) before
+    the cleanup changed: a plot filtered by a table keeps showing the rows
+    that passed the table after the table is closed, also after it redraws,
+    and still lists the table as its filter; the table reopens unfiltered (its
+    search box is not saved) and the plot follows it; the focused cell and
+    the panel set outlive the panel they were set in.
+    """
+    x = {"type": "obsm", "key": "X_umap", "column": "0"}
+    y = {"type": "obsm", "key": "X_umap", "column": "1"}
+    plot = {"id": "cell-plot-B", "x": x, "y": y, "z": None, "color": {"type": "obs", "key": "cell_type", "column": ""}}
+    table = {"id": "cell-table-A", "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}
+    page.goto(_link(server, ids=(), extra={"cell-plot-B": plot, "cell-table-A": table}))
+    _drawn(page, "cell-plot-B")
+    page.wait_for_selector('.tile[data-tile-id="cell-table-A"] .dataTables_scrollBody tbody tr', timeout=30000)
+    page.select_option('.tile[data-tile-id="cell-plot-B"] select.table-filter-select', "cell-table-A")
+    page.click("#remove-non-table-entries-cell-plot-B")
+    page.fill('.tile[data-tile-id="cell-table-A"] input[type="search"]', "cell_01")
+    strip = '.tile[data-tile-id="cell-plot-B"] .plot-status'
+    page.wait_for_function(f"""() => /^100 of 200 cells shown/.test(
+        document.querySelector('{strip}')?.getAttribute('data-summary') || '')""", timeout=15000)
+    page.evaluate("""async () => {
+        const { DataManager } = await import('/static/js/data-manager.js');
+        DataManager.setFocusedCell('cell_0150');
+    }""")
+
+    page.evaluate("() => window.PanelManager.closePanel('cell-table-A')")
+    state = """() => ({
+        summary: document.querySelector('%s')?.getAttribute('data-summary') || '',
+        options: [...document.querySelectorAll('.tile[data-tile-id="cell-plot-B"] select.table-filter-select option')].map(o => o.value),
+        value: document.querySelector('.tile[data-tile-id="cell-plot-B"] select.table-filter-select').value,
+        frozen: (() => { const s = window.PanelManager.getPanel('cell-table-A').getConfig();
+                         return Array.isArray(s.currentEntries) ? s.currentEntries.length : null; })()
+    })""" % strip
+    s = page.evaluate(state)
+    assert s["summary"].startswith("100 of 200 cells shown"), s
+    assert s["options"] == ["none", "cell-table-A"] and s["value"] == "cell-table-A", s
+    assert s["frozen"] == 100, s
+    # B redrawn from scratch still applies the closed table's rows
+    page.evaluate("() => window.PanelManager.getPanel('cell-plot-B').refreshPlot()")
+    page.wait_for_timeout(1500)
+    s = page.evaluate(state)
+    assert s["summary"].startswith("100 of 200 cells shown"), s
+
+    # Reopen: the table comes back unfiltered, and B follows it
+    page.click('.panel-closed-btn[data-id="cell-table-A"]')
+    page.wait_for_selector('.tile[data-tile-id="cell-table-A"] .dataTables_scrollBody tbody tr', timeout=30000)
+    assert "of 200 entries" in page.inner_text('.tile[data-tile-id="cell-table-A"] .dataTables_info')
+    page.wait_for_function(f"""() => !/not shown|filtered out/.test(
+        document.querySelector('{strip}')?.getAttribute('data-summary') || '')""", timeout=15000)
+
+    # close the plot: its memory and WebGL contexts go, the focus and the panel set stay
+    page.evaluate("""() => {
+        const gd = document.querySelector('.tile[data-tile-id="cell-plot-B"] .js-plotly-plot');
+        window.__gls = gd._fullLayout._glcanvas.data().filter(d => d.regl).map(d => d.regl._gl);
+    }""")
+    page.evaluate("() => window.PanelManager.closePanel('cell-plot-B')")
+    assert page.evaluate("() => window.__gls.length === 2 && window.__gls.every(gl => gl.isContextLost())")
+    assert page.evaluate("""async () => {
+        const g = await import('/static/js/utils/memory-guard-ui.js');
+        const { DataManager } = await import('/static/js/data-manager.js');
+        return g.ledger.get('cell-plot-B') === null && DataManager.getFocusedCell() === 'cell_0150';
+    }""")
+    # the closed plot is still offered for Reopen and saved with the panel set
+    assert page.locator('.panel-closed-btn[data-id="cell-plot-B"]').count() == 1
+    page.wait_for_function("""() => Object.keys(localStorage).some(k => /autosave/.test(k)
+        && /cell-plot-B/.test(localStorage.getItem(k)))""", timeout=20000)
+    # Reopen B: drawn again from its settings, with the table filter
+    page.click('.panel-closed-btn[data-id="cell-plot-B"]')
+    _drawn(page, "cell-plot-B")
+    assert page.input_value('.tile[data-tile-id="cell-plot-B"] select.table-filter-select') == "cell-table-A"
