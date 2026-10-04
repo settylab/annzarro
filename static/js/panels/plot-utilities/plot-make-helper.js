@@ -1,5 +1,6 @@
 import { DataManager } from '../../data-manager.js';
 import { generateDiscreteColors } from './colors.js';
+import { recordCameraOnRelease } from '../../utils/scene-camera.js';
 
 /**
  * Generates a Plotly layout configuration based on the provided settings.
@@ -241,6 +242,8 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
  */
 export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
+  // a 3D turn released outside the plot is recorded too (scene-camera.js)
+  recordCameraOnRelease();
   if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
     plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
