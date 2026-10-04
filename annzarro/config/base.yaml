@@ -122,8 +122,9 @@ ui:
     subset_threshold: 200000
     # A Cell Plot with more points than this is drawn in large-plot mode
     # (typed arrays, no hover, click or table filter); only reachable with
-    # the subset off or larger than this.
-    large_plot_points: 5000000
+    # the subset off or larger than this. 1M keeps several regular plots
+    # (400-900 B of browser heap per point) open side by side.
+    large_plot_points: 1000000
     subset_size: 100000
     subset_seed: 0
 

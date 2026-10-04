@@ -256,7 +256,7 @@ ui:
         large_plot_points:
           type: integer
           description: A Cell Plot with more points than this is drawn in large-plot mode (no hover, click or table filter)
-          default: 5000000
+          default: 1000000
         subset_threshold:
           type: integer
           description: A dataset with more cells than this opens on a reproducible cell subset (0 = always)

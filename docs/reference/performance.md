@@ -181,9 +181,10 @@ A browser tab's JavaScript heap is capped near 4.4 GB, and browser flags do not 
 (`--js-flags=--max-old-space-size=16384` leaves `performance.memory.jsHeapSizeLimit` at 4.4 GB).
 The regular Cell Plot spends 400 to 900 bytes of that heap per point. On an Apple M3 Max (headless
 Chromium 153, WebGL on Metal) it draws 10 million points coloured by a category and 5 million
-coloured by a gene. Beyond that, the tab runs out of memory and closes.
+coloured by a gene. Beyond that, the tab runs out of memory and closes. Several plots share the
+heap, so the default limit is 1 million points per regular plot.
 
-Above `ui.defaults.large_plot_points` (5 million by default) a Cell Plot keeps its data in typed
+Above `ui.defaults.large_plot_points` (1 million by default) a Cell Plot keeps its data in typed
 arrays, outside that heap, and draws one single-colour layer per category or per colour step. The
 panel says it is in this mode (see {doc}`../user-guide/subsets`). It uses 20 bytes of heap per
 point. Measured on a synthetic store of 95,624,334 cells, the size of Tahoe-100M, before the
