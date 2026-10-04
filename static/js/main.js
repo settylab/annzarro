@@ -16,6 +16,8 @@ import { NOTIFY_EVENT } from './utils/notify.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
+import { canSnapshot, exportImage } from './utils/plot-export.js';
+import { overrideOnce } from './utils/memory-guard-ui.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 
@@ -530,6 +532,11 @@ const App = (function() {
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
             case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
+            case 'draw-anyway': case 'redraw': {
+                const panel = PanelManager.getPanel(id);
+                return !!(panel && typeof panel.refreshPlot === 'function');
+            }
+            case 'export-shown': return canSnapshot(host);
             default: return false;
         }
     }
@@ -558,6 +565,17 @@ const App = (function() {
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
             case 'show-nan': click(`hide-nan-${id}`); break;
             case 'show-outliers': click(`hide-outliers-${id}`); break;
+            case 'draw-anyway': case 'redraw': {
+                // draw-anyway: past the memory guard (or the crash marker), once
+                if (action === 'draw-anyway') overrideOnce(id);
+                const panel = PanelManager.getPanel(id);
+                if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
+                break;
+            }
+            case 'export-shown':
+                exportImage(host, 'shown', { format: 'png', filename: 'plot_' + new Date().toISOString().replace(/[:.]/g, '-') })
+                    .catch(error => console.error('Export as shown failed:', error));
+                break;
         }
     }
 

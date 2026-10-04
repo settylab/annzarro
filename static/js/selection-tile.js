@@ -1,4 +1,7 @@
 import { Config } from './config.js';
+import { DataManager } from './data-manager.js';
+import { colourKind } from './utils/memory-guard.js';
+import { newPanelCheck, refusalText, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 
 export class SelectionTile {
     /**
@@ -45,6 +48,79 @@ export class SelectionTile {
         this._initSessionsList();
       }
       this._attachCloseButton();
+      this._watchMemory();
+    }
+
+    // --- Browser memory ---
+    /**
+     * Plot tiles that would not fit in the browser's memory next to the open
+     * panels (utils/memory-guard-ui.js) are disabled, with why and what
+     * helps; they come back when a panel is closed or the subset shrinks.
+     */
+    _watchMemory() {
+      // a refused tile takes no click (its delete button still works)
+      this.tileSelector.addEventListener('click', (e) => {
+        const blocked = e.target.closest && e.target.closest('.memory-blocked');
+        if (blocked && !e.target.closest('.delete-panel-btn')) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }, true);
+      const refresh = () => {
+        if (!this.tileSelector.isConnected) {
+          document.removeEventListener(MEMORY_EVENT, refresh);
+          return;
+        }
+        this._applyMemoryState();
+      };
+      document.addEventListener(MEMORY_EVENT, refresh);
+      this._applyMemoryState();
+    }
+
+    /** The check for a plot of `type` with `config` (null: a new one) at the current cell count. */
+    _memoryCheck(type, config) {
+      if (type !== 'cell-plot' && type !== 'gene-plot') return null;
+      if (!DataManager.getCurrentDataset || !DataManager.getCurrentDataset()) return null;
+      const n = ((type === 'gene-plot' ? DataManager.getGenes() : DataManager.getCells()) || []).length;
+      if (!n) return null;
+      const threshold = Config.DEFAULTS.LARGE_PLOT_POINTS;
+      const large = type === 'cell-plot' && n > threshold && !(config && (config.z || (config.tableFilter && config.tableFilter !== 'none')));
+      return newPanelCheck(type, { n, large, colour: config ? colourKind(config, null) : 'numeric', threeD: !!(config && config.z) });
+    }
+
+    _applyMemoryState() {
+      const mark = (option, result, verb) => {
+        const blocked = !!result && result.verdict === 'block';
+        option.classList.toggle('memory-blocked', blocked);
+        option.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+        let note = option.querySelector('.memory-note');
+        if (blocked) {
+          option.title = refusalText(result, `Close a plot, or show fewer cells (a smaller subset), to ${verb} it.`);
+          if (!note) {
+            note = document.createElement('div');
+            note.className = 'memory-note';
+            option.appendChild(note);
+          }
+          note.textContent = 'Not enough browser memory';
+        } else {
+          if (note) note.remove();
+          option.removeAttribute('title');
+        }
+      };
+      try {
+        this.tileSelector.querySelectorAll('.panel-type-option').forEach(option => {
+          mark(option, this._memoryCheck(option.dataset.type, null), 'open');
+        });
+        this.tileSelector.querySelectorAll('.source-panel-option').forEach(option => {
+          const panel = this.panels.get(option.dataset.id);
+          if (!panel || !panel.getType) return;
+          const verb = this.activePanels.has(panel) ? 'duplicate' : 'reopen';
+          mark(option, this._memoryCheck(panel.getType(), panel.getConfig ? panel.getConfig() : null), verb);
+        });
+      } catch (error) {
+        // the guard must never be why a panel cannot be opened
+        console.warn('Browser memory check of the panel tiles failed', error);
+      }
     }
   
     // --- HTML Generation depending on variant ---
@@ -377,6 +453,7 @@ export class SelectionTile {
       });
       
       this._attachDeleteHandlers(grid);
+      if (this.tileSelector) this._applyMemoryState();
       
       // Update the clear button visibility
       this._updateClearButtonVisibility(hasClosedPanels);

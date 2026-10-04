@@ -39,6 +39,8 @@
 
 import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
+import { releasePlot } from './release-plot.js';
+import { forget } from './memory-guard-ui.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -500,9 +502,45 @@ export function withCoverageExportButton(config) {
         name: 'toImageWithCoverage',
         title: 'Download plot as a png',
         icon: Plotly.Icons.camera,
-        click: (gd) => exportWithCoverage(gd, () => Plotly.downloadImage(gd, opts))
+        click: (gd) => _cameraExport(gd, opts)
     }];
     return cfg;
+}
+
+/** What the modebar camera does; the plot menu installs the memory-checked export (registerCameraExport). */
+let _cameraExport = (gd, opts) => exportWithCoverage(gd, () => Plotly.downloadImage(gd, opts));
+
+/** @param {(gd: HTMLElement, opts: Object) => *} fn */
+export function registerCameraExport(fn) {
+    _cameraExport = fn;
+}
+
+/** The panel id of a plot container (`plot-container-<id>`). */
+function panelIdOf(host) {
+    return host && typeof host.id === 'string' && host.id.startsWith('plot-container-')
+        ? host.id.slice('plot-container-'.length) : null;
+}
+
+/** Per graph, the listener that says so when the browser drops its WebGL context. */
+const _lossHandlers = new WeakMap();
+
+/**
+ * Say so in the strip when the browser drops the plot's WebGL context (too
+ * many plots open, or the GPU out of memory): the plot goes blank without
+ * an error otherwise.
+ */
+function watchContextLoss(gd) {
+    if (!gd || typeof gd.on !== 'function') return;
+    let handler = _lossHandlers.get(gd);
+    if (handler && typeof gd.removeListener === 'function') gd.removeListener('plotly_webglcontextlost', handler);
+    handler = () => setStatusTag(gd, 'webgl', {
+        text: 'Plot went blank', severity: 'warning',
+        title: 'The browser dropped this plot\'s WebGL canvas',
+        pop: { text: 'The browser dropped this plot\'s WebGL canvas: too many plots are open, or the graphics '
+            + 'memory ran out. Close a plot, then redraw this one.', actions: [['redraw', 'Redraw']] }
+    });
+    _lossHandlers.set(gd, handler);
+    gd.on('plotly_webglcontextlost', handler);
 }
 
 /**
@@ -528,6 +566,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         plotContainer, withTraceUids(traces), withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
     );
     renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
+    setStatusTag(plotContainer, 'webgl', null);
+    watchContextLoss(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
     fitToContainer(plotContainer);
@@ -565,9 +605,8 @@ export function clearForDraw(plotContainer) {
         }
         return;
     }
-    if (typeof Plotly !== 'undefined' && Plotly.purge && plotContainer._fullLayout) {
-        try { Plotly.purge(plotContainer); } catch { /* not a plot container */ }
-    }
+    // the WebGL side too: Plotly.purge leaves it to the garbage collector
+    if (plotContainer._fullLayout) releasePlot(plotContainer);
     plotContainer.innerHTML = '';
 }
 
@@ -609,9 +648,10 @@ export function drawPlaceholder(host, coverage, unit) {
     const cov = coerce(coverage, unit);
     const { severity, headline, lines } = cov.describe();
 
-    if (typeof Plotly !== 'undefined' && Plotly.purge) {
-        try { Plotly.purge(host); } catch (e) { /* not a plot container */ }
-    }
+    // the plot it replaces holds nothing any more (memory-guard-ui.js)
+    if (host._fullLayout) releasePlot(host);
+    const panel = panelIdOf(host);
+    if (panel) forget(panel);
 
     const body = lines.length
         ? `<ul class="coverage-placeholder__reasons">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`

@@ -536,6 +536,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     const tableOptions = {
         data: tableData.data,
         columns: tableData.columns,
+        // rows become DOM nodes only when a page shows them: without this,
+        // DataTables builds a <tr> for every row up front (GBs at 1M cells)
+        deferRender: true,
         paging: true,
         ordering: true,
         info: true,

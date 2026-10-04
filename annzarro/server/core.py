@@ -54,6 +54,7 @@ DEFAULT_CONFIG = {
     "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
     "remote_read_timeout_s": 30,       # seconds between bytes before a 504
     "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
+    "cross_origin_isolation": "off",   # off | on | auto -- COOP/COEP headers (server/isolation.py)
     "app_name": "AnnZarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page
@@ -393,6 +394,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Set up routes
     register_routes(app)
+
+    # COOP/COEP, so the browser can measure the page's memory (isolation.py)
+    from .isolation import install_isolation
+    install_isolation(app)
 
     # The desktop app names its server with a per-launch token and only
     # trusts the answer that carries it: two launches that pick the same free

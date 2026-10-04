@@ -15,6 +15,11 @@ import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
+import { colourKind } from '../../utils/memory-guard.js';
+import { releasePlot } from '../../utils/release-plot.js';
+import {
+  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
+} from '../../utils/memory-guard-ui.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -616,6 +621,9 @@ export function pointStyleBase() {
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false, signal = null) {
   // the subset dialog's load-time estimate learns from these draws
   const started = performance.now();
+  // the browser memory guard's ledger: reserved before the draw, committed
+  // once it is drawn, cancelled otherwise (memoryGate)
+  let reserved = false, drawn = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
@@ -656,6 +664,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');
     }
+
+    // Will it fit next to the other panels? (utils/memory-guard-ui.js)
+    if (!(await memoryGate(plotContainer, settings, id, isGenePlot, nPoints))) return;
+    reserved = true;
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
@@ -733,6 +745,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         setStatusTag(plotContainer, 'refused', null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        drawn = true;
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
@@ -931,6 +944,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       console.log(`Creating plot with ${data.x.values.length} data points`);
       data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
+      drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
       await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
@@ -1030,7 +1044,76 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Always hide the loading indicator in the finally block to ensure it happens
     // regardless of success, error or abortion
     loadingIndicator.hide(plotContainer, 'full-plot');
+    if (reserved) {
+      unmark();
+      if (drawn && plotContainer.isConnected) {
+        commit(id);
+      } else {
+        cancel(id);
+        // drawn into a panel closed meanwhile: free it now, not at GC
+        if (drawn) releasePlot(plotContainer);
+      }
+    }
   }
+}
+
+/**
+ * The browser memory check before a plot is drawn: every way a plot is
+ * drawn passes here (a new, duplicated, reopened or restored panel, a subset
+ * change, a full redraw). A plot that would not fit next to what the other
+ * panels hold is not drawn, and its status strip says why and what helps;
+ * a plot that was being drawn when the previous page died waits for "Draw
+ * anyway". With ui.memory.enforce warn it is drawn, with a warning tag.
+ * @returns {Promise<boolean>} true when the draw may go on (it is then reserved)
+ */
+async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
+  const unit = isGenePlot ? 'genes' : 'cells';
+  const large = !isGenePlot && n > largePlotPoints();
+  let structure = null;
+  try { structure = await DataManager.getDatasetStructure(); } catch { /* colour kind unknown: numeric, the costliest */ }
+  const p = {
+    id, kind: isGenePlot ? 'gene-plot' : 'cell-plot', n, large, colour: colourKind(settings, structure),
+    threeD: !!settings.z,
+    livePlot: !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length)
+  };
+  const override = takeOverride(id);
+  const crashed = override ? null : crashedDrawing(id);
+  let result;
+  try {
+    result = drawCheck(p);
+  } catch (error) {
+    // the guard must never be why a plot is not drawn
+    console.warn('Browser memory check failed; drawing without it', error);
+    return true;
+  }
+  let refusal = null;
+  if (crashed) {
+    refusal = { text: 'Not drawn: the tab ended last time',
+      why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
+        + 'Draw it anyway, or show fewer cells first.',
+      actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
+  } else if (result.verdict === 'block' && !override) {
+    refusal = { text: 'Not drawn: browser memory',
+      why: refusalText(result, 'Close a plot, or show fewer cells (a smaller subset).'),
+      actions: [['subset', 'Subset\u2026']] };
+  }
+  if (refusal) {
+    if (!p.livePlot) {
+      drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal.why,
+        { source: 'browser memory', unit, total: n }), unit);
+    }
+    setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
+      pop: { text: refusal.why, actions: refusal.actions } });
+    return false;
+  }
+  setStatusTag(plotContainer, 'memory', result.verdict === 'warn'
+    ? { text: 'Over the memory budget', severity: 'warning', title: result.why,
+        pop: { text: refusalText(result, 'It is drawn anyway (ui.memory.enforce: warn); the tab may run out of memory.'),
+          actions: [['subset', 'Subset\u2026']] } }
+    : null);
+  reserve(id, p);
+  markIfRisky(result, { panel: id, n, action: 'draw' });
+  return true;
 }
 
 

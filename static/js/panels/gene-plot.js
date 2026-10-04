@@ -9,6 +9,8 @@ import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { drawPlaceholder } from '../utils/panel-surface.js';
+import { releasePlot } from '../utils/release-plot.js';
+import { forget } from '../utils/memory-guard-ui.js';
 
 /**
  * Gene Plot Panel
@@ -414,9 +416,21 @@ const GenePlotPanel = (function() {
                     _plotContainer._aestheticsCleanup = null;
                 }
 
-                Plotly.purge(_plotContainer);
+                // the WebGL side too: Plotly.purge leaves it to the garbage collector
+                releasePlot(_plotContainer);
             }
-            
+
+            // A closed panel is kept for "Reopen", and this closure with it:
+            // drop the loaded series, or closing frees nothing (a reopen
+            // loads them again). A load still running is stopped.
+            if (_currentLoadOperation) {
+                _currentLoadOperation.abort();
+                _currentLoadOperation = null;
+            }
+            Object.keys(_data).forEach(key => delete _data[key]);
+            Object.assign(_data, { x: null, y: null, z: null, color: null, entities: _plotType });
+            forget(_id);
+
             // Clear container
             _container.innerHTML = '';
         }

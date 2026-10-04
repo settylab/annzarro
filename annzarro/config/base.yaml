@@ -17,6 +17,12 @@ server:
   cert_file: null
   key_file: null
   
+  # Cross-origin isolation (COOP/COEP headers): lets Chromium measure the
+  # page's memory (performance.measureUserAgentSpecificMemory) so the memory
+  # guard can use measured rather than estimated numbers. off | on | auto
+  # (auto: on, except for pages loaded inside a frame of another site).
+  cross_origin_isolation: "off"
+
   # Proxy settings
   proxy_count: 0
   # Path the app is served under behind a reverse proxy, e.g. "/explore"
@@ -126,6 +132,25 @@ ui:
     large_plot_points: 5000000
     subset_size: 100000
     subset_seed: 0
+
+  # Browser memory guard. Before an action that needs memory in proportion
+  # to the number of points (a new or duplicated Cell Plot, a larger subset
+  # or every cell, a full-resolution image export, a recolour), the browser
+  # predicts what it will need and compares it with what is left after the
+  # open panels. A tab that runs out of memory is killed by the browser and
+  # loses everything on screen. See docs/reference/configuration.md (ui.memory).
+  memory:
+    # off: never refuse; warn: say so beside the control and let it run;
+    # block: disable the control and say why.
+    enforce: block
+    # JS heap the tab may use, in GB. null: what the browser reports
+    # (Chrome: 4.4 GB on a 64-bit desktop), or 4.4 where it reports nothing.
+    heap_gb: null
+    # Everything the tab may hold (JS heap, typed arrays), in GB. null: no
+    # limit, except half the device's memory on devices with 4 GB or less.
+    total_gb: null
+    # Predictions are multiplied by 1 + margin before they are compared.
+    margin: 0.2
 
   # Client-side cache configuration
   cache:

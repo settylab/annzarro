@@ -12,6 +12,7 @@ import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings } from '../utils/panel-settings.js';
+import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 
 const CellTablePanel = (function() {
     /**
@@ -209,6 +210,8 @@ const CellTablePanel = (function() {
                 // Initialize DataTable
                 if (tableData.data.length > 0) {
                     _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    // its rows, in the browser memory guard's ledger (a subset change redraws them)
+                    commitMemory(_id, { kind: 'cell-table', n: tableData.data.length });
                     // State what the table is NOT showing, and why. A table that
                     // silently drops an unreadable column looks identical to one
                     // whose column genuinely holds nothing.
@@ -271,6 +274,7 @@ const CellTablePanel = (function() {
                 _dataTable.destroy();
                 _dataTable = null;
             }
+            forgetMemory(_id);
             
             _container.innerHTML = '';
         }

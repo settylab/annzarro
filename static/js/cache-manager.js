@@ -128,13 +128,19 @@ const CacheManager = (function() {
     return () => _listeners.delete(callback); // unsubscribe fn
   }
 
+  /** Approximate bytes held (estimateSize of every entry), for the browser memory guard. */
+  function bytes() {
+    return _currentSize;
+  }
+
   return {
     get,
     set,
     clear,
     has,
     keys,
-    onChange
+    onChange,
+    bytes
   };
 })();
 
