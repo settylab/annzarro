@@ -70,8 +70,11 @@ export class RemoteNames {
     }
 
     _all() {
-        throw new Error(`The names of these ${this.length.toLocaleString('en-US')} cells are not loaded `
+        const error = new Error(`The names of these ${this.length.toLocaleString('en-US')} cells are not loaded `
             + '(every cell of a very large dataset); turn on a subset to list cells');
+        // not a failed read: a limit of large-plot mode (classifyError: UNAVAILABLE)
+        error.data = { reason: 'names_not_loaded' };
+        throw error;
     }
 
     [Symbol.iterator]() { return this._all(); }

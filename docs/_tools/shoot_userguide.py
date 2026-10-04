@@ -937,9 +937,9 @@ def shoot_focus_outside(sh, data_dir):
     page.evaluate("document.activeElement && document.activeElement.blur()")
     time.sleep(0.5)
     sh.log.append("focus-outside: badge = " + page.text_content("#focused-cell-outside")
-                  + " | note = " + page.evaluate("""() => { const n = document.querySelector(
-                      '.tile[data-tile-id="cell-plot-W"] .focus-notice .coverage-notice__headline');
-                      return n ? n.textContent : null; }"""))
+                  + " | status = " + page.evaluate("""() => { const n = document.querySelector(
+                      '.tile[data-tile-id="cell-plot-W"] .plot-status');
+                      return n ? n.dataset.summary : null; }"""))
     capture_union(sh, page, "focus-outside-header", ["#focused-cell", "#focused-cell-outside", "#subset-parts"],
                   marks=[(1, "#focused-cell-outside")], pad=10)
     capture_union(sh, page, "focus-outside", [T("cell-plot-W"), T("cell-plot-T")], pad=2)

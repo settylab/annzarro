@@ -122,7 +122,7 @@ test('#38 with Hide NaN on: the missing points are hidden, and the panel says so
     assert.ok(!traces.some(t => t.name === NO_VALUE_CATEGORY));
     const cov = classifyFilterStats(filterStats, 'cells');
     assert.equal(cov.headline(), '4 of 6 cells shown');
-    assert.match(cov.lines()[0], /colour: filtered out \(2 cells\) -- points with no colour value \(hide-NaN is on\)/);
+    assert.match(cov.lines()[0], /colour: filtered out \(2 cells\) -- points with no colour value \(Hide NaN is on\)/);
 });
 
 test('#38: Hide NaN and the NA trace agree on what is missing', () => {

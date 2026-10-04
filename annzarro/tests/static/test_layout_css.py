@@ -118,16 +118,23 @@ def test_split_buttons_have_distinct_unambiguous_icons():
     assert 'x1="8" y1="2" x2="8" y2="14"' in h and 'x1="2" y1="8" x2="14" y2="8"' in v
 
 
-def test_filter_box_lists_every_reason_above_the_plot():
-    """The Removed Datapoints box showed only 'Total' (its per-reason list was
-    shown on hover only) and sat on the x-axis labels. Headless on the docs'
-    colour-range view after: 'Color outliers: 6,540  Total: 6,540 (81%)',
-    in the margin above the plotting area, clear of the modebar."""
+def test_status_strip_has_a_fixed_height_under_the_plot():
+    """What a plot does not show is one strip under it (panel-surface.js), not
+    a banner above it that pushed the plot down and a floating box over it.
+    Its height is fixed (it never resizes the plot when its text changes), it
+    does not shrink in the panel's column, and chips that do not fit drop
+    whole rather than truncating the total."""
     css = open(CSS, encoding="utf-8").read()
-    box = _rule(css, ".datapoint-filter-widget")
-    assert "top: 2px" in box and "bottom:" not in box
-    assert "display: none" not in _rule(css, ".datapoint-filter-widget .filter-stats-list")
-    assert ".datapoint-filter-widget:hover .filter-stats-list" not in css
+    strip = _rule(css, ".plot-status")
+    assert "height: calc(6 * var(--ps-u))" in strip and "flex: 0 0 calc(6 * var(--ps-u))" in strip
+    chips = _rule(css, ".plot-status .ps-chips")
+    assert "flex-wrap: wrap" in chips and "overflow: hidden" in chips
+    assert "flex: none" in _rule(css, ".plot-status .ps-headline")
+    for gone in (".datapoint-filter-widget", ".coverage-notice {", ".mode-notice"):
+        assert gone not in css, gone
+    js = open(os.path.join(os.path.dirname(CSS), "..", "js", "panels", "plot-utilities", "panel-ui-make.js"),
+              encoding="utf-8").read()
+    assert "Removed Datapoints" not in js
 
 
 def test_bottom_chooser_keeps_a_usable_height():

@@ -110,7 +110,7 @@ STATE = """() => {
     x: l.xaxis && l.xaxis.range ? l.xaxis.range.map(Number) : null,
     y: l.yaxis && l.yaxis.range ? l.yaxis.range.map(Number) : null,
     eye: l.scene && l.scene.camera ? l.scene.camera.eye : null,
-    large: !!document.querySelector('.tile[data-tile-id="cell-plot-K"] .mode-notice')
+    large: !!document.querySelector('.tile[data-tile-id="cell-plot-K"] .ps-tag[data-tag="large"]')
   };
 }"""
 
