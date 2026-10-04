@@ -16,8 +16,8 @@ gene set; PCA (30), kNN graph (15 neighbours), UMAP, Leiden (igraph, resolution 
 
 Stored for AnnZarro (Zarr v2, consolidated, float32 dense, chunks by the aspect rule):
   X                 log-normalised expression of the 2,000 HVGs (dense)
-  layers/log_normalized  the same values as X, as a layer: AnnZarro's plot data sources
-                    list layers only, X is not selectable
+  layers/log_normalized  the same values as X, as a layer (written when the plot menus
+                    listed layers only; they now list X first under the layer source)
   layers/counts     raw UMI counts of those genes (CSR)
   obsm/spatial      spot centres in full-resolution image pixels (Space Ranger convention:
                     y grows downwards)

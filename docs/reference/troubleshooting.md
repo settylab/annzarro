@@ -47,7 +47,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| X is not in any source menu | As of this version the plot sources are obs/obsm/obsp/layer and var/varm/varp/layer; X is not offered | Store the matrix as a layer: `adata.layers["X"] = adata.X` ({doc}`../data/slot-map`) |
+| X is not in any source menu | X is listed under the **layer** source, first, not as a source of its own; a layer named `X` takes its place | Choose source **layer**, key **X**; to see the matrix X next to such a layer, rename the layer ({doc}`../data/slot-map`) |
 | Gene Plot shows no options (Step 18) | Default source is varm and the dataset has none | Switch the axis source to var |
 | Volcano all grey (Step 20) | Focused gene has no row in the varp matrix (outside a gene subset) | Click a gene that is in the matrix, or pick one from the Focused Gene selector |
 | Colour range looks wrong after loading a view (Steps 22-23) | Range restored from another focus | Toggle Lock Range or reset min and max |

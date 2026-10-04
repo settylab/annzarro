@@ -12,8 +12,8 @@ prepared by `docs/_tools/make_spatial_demo.py`. It holds
 - `obsm/spatial`: spot centres in full-resolution image pixels, with y growing downwards (the
   Space Ranger convention), and `obsm/spatial_upright`: the same positions as (x, −y), so the tissue
   is upright in a plot;
-- `layers/log_normalized`: log-normalised expression (also in `X`, which AnnZarro does not offer
-  as a source);
+- `layers/log_normalized`: log-normalised expression (also in `X`; both are listed under the
+  **layer** source);
 - `obsp/spatial_kernel`: a dense Gaussian kernel on spot distance (σ = 200 µm, zero beyond 3σ, rows
   summing to 1) and `obsp/spatial_distance`: spot distances in µm;
 - `obsm/X_umap` and `obs/leiden` from the expression data.
