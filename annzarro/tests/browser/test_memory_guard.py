@@ -140,12 +140,27 @@ def _link(root, ids=("cell-plot-a",), extra=None):
     return f"{root}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={payload}"
 
 
+def until(page, js, arg=None, timeout=30.0):
+    """Poll an async page function until it returns something truthy.
+
+    Not page.wait_for_function: it does not await a predicate's promise, so
+    an async predicate (a Promise, always truthy) passes at once."""
+    end = time.time() + timeout
+    while True:
+        value = page.evaluate(js, arg)
+        if value:
+            return value
+        if time.time() > end:
+            raise AssertionError(f"timed out waiting for: {js[:120]}")
+        time.sleep(0.1)
+
+
 def _drawn(page, pid):
     page.wait_for_selector(f'.tile[data-tile-id="{pid}"] .js-plotly-plot', timeout=30000)
-    page.wait_for_function(f"""async () => {{
+    until(page, """async (pid) => {
         const g = await import('/static/js/utils/memory-guard-ui.js');
-        return !!g.ledger.get('{pid}');
-    }}""", timeout=30000)
+        return !!g.ledger.get(pid) && !g.ledger.pending.has(pid);
+    }""", pid)
 
 
 # Set the page's JS heap ceiling so that exactly `free` bytes are left after

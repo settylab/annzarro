@@ -36,7 +36,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
+from annzarro.tests.browser.test_memory_guard import STORE, _serve, until  # noqa: E402
 
 B = '.tile[data-tile-id="cell-plot-B"]'
 A = '.tile[data-tile-id="cell-table-A"]'
@@ -117,12 +117,12 @@ def _subset(page, n=None, part_step=False):
         page.click("#subset-apply")
         page.wait_for_selector("#subset-modal", state="hidden")
     page.wait_for_timeout(500)
-    page.wait_for_function("""async () => {
+    until(page, """async () => {
         const g = await import('/static/js/utils/memory-guard-ui.js');
         const { DataManager } = await import('/static/js/data-manager.js');
         const e = g.ledger.get('cell-plot-B');
         return e && !g.ledger.pending.has('cell-plot-B') && e.n === DataManager.getCells().length;
-    }""", timeout=30000)
+    }""")
     page.wait_for_timeout(500)
 
 
