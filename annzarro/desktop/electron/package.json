@@ -1,7 +1,7 @@
 {
   "name": "annzarro-desktop",
   "productName": "AnnZarro",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AnnZarro desktop app: the AnnZarro single-cell viewer with its server bundled",
   "main": "main.js",
   "author": {

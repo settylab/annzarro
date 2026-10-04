@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "annzarro"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read-only browser viewer for AnnData (zarr, h5ad) built around cell-by-cell and gene-by-gene matrices"
 readme = "README.md"
 requires-python = ">=3.9"  # list[str] annotations are evaluated at import
