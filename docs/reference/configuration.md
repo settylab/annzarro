@@ -102,7 +102,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
-| `defaults.large_plot_points` | `5000000` | A Cell Plot with more points than this is drawn in large-plot mode: hover, click and table filters are off (see {doc}`../user-guide/subsets`). |
+| `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: hover, click and table filters are off (see {doc}`../user-guide/subsets`). |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |

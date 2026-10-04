@@ -32,7 +32,7 @@ const MIN_PRESETS = 3;
 export const EXTRAPOLATE_FACTOR = 4;
 
 /** Large-plot mode above this many points unless the server says otherwise (ui.defaults.large_plot_points). */
-export const DEFAULT_LARGE_PLOT_POINTS = 5000000;
+export const DEFAULT_LARGE_PLOT_POINTS = 1000000;
 /**
  * Above this many points a plot may not fit in the browser tab at all. The
  * paper's laptop benchmark drew 175M points in large-plot mode and ran out

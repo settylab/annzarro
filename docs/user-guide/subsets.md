@@ -65,7 +65,7 @@ show the dialog. On a large dataset the steps are the same.
      for the regular plot), or more than 4 times the largest this session has drawn. The line under the sizes says
      which kind of estimate you are reading.
 
-   Sizes above the large-plot limit (5,000,000 points by default, set by the server) come after a
+   Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
    dashed line that says so: large-plot mode draws them faster but without hover, click or table
    filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
    **may exceed browser memory** and is never chosen for you: a laptop's Chrome drew 175 million
@@ -184,19 +184,21 @@ balancing algorithm and the request format are in {doc}`../design/subsetting`.
 
 A Cell Plot is drawn in one of two ways.
 
-- **Regular plot**, up to 5 million points: everything on this page and in
+- **Regular plot**, up to 1 million points: everything on this page and in
   {doc}`cell-and-gene-plots` works, including hover, click to focus a cell, the focused-cell
   marker, table filters and 3D.
-- **Large-plot mode**, above 5 million points: that only happens with the subset removed (or
-  larger than that) on a very large dataset. The limit is the server setting
+- **Large-plot mode**, above 1 million points: that only happens with the subset removed (or
+  larger than that) on a large dataset. The limit is the server setting
   `ui.defaults.large_plot_points` ({doc}`../reference/configuration`).
 
 The regular plot needs 400 to 900 bytes of the browser tab's memory per point, and a tab gets about
-4.4 GB whatever the browser settings, so a little above 5 million points it would close the tab.
+4.4 GB whatever the browser settings. One regular plot of 5 million points fits, but then nothing
+else does; at 1 million points several regular plots fit side by side, each with hover, click and
+table filters.
 Large-plot mode keeps the points out of that memory and can draw the 95.6 million cells of
 Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
 per-point bookkeeping, and the plot's status line says so with a tag, **Large plot: no
-hover/click**. Click the tag for why and for **Subset to ≤5M to enable click**, which opens the
+hover/click**. Click the tag for why and for **Subset to ≤1M to enable click**, which opens the
 subset dialog with the largest size that is drawn the regular way already chosen. A click on the
 plot itself pulses the tag, and the first such click on a panel also opens it; nothing else pops
 up:
@@ -221,7 +223,7 @@ In large-plot mode:
 - **No hover and no click on points.** Clicking a point does not focus a cell, and the focused
   cell is not marked.
 - **Controls that would need the regular plot are off**, with the tooltip "Not available above
-  5M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
+  1M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
   its z axis, the Hover list and the table filter.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
   numeric obs column or by a gene, with the colour palette, scale and range; point size and

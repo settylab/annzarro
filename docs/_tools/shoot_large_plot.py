@@ -1,7 +1,7 @@
 """Screenshots of large-plot mode for user-guide/subsets.md.
 
 The real case is tens of millions of cells; the mode starts above
-ui.defaults.large_plot_points (5M by default). To regenerate on the small demo
+ui.defaults.large_plot_points (1M by default). To regenerate on the small demo
 store, the server here runs with that setting lowered to 5,000, so bm_aging's
 8,090 cells are "large" and a 4,000-cell subset is not:
 
