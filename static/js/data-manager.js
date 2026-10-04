@@ -1224,7 +1224,11 @@ const DataManager = (function() {
                 { obsm_key: obsmKey, dataset_path: params.dataset_path },
                 params.column_name !== undefined);
             
-            console.log(`Full response data from obsm endpoint:`, data);
+            // Never log the reply itself: the browser keeps every logged
+            // object (for DevTools, open or not), so each embedding column
+            // loaded stayed in memory for good, 8 bytes per cell (a subset
+            // swap of 4M cells kept 66 MB more each time; v0.2.0 twice that)
+            console.log(`obsm reply: ${data && data.data ? `${data.data.length} values` : 'no data'}`);
             
             // Check if we actually have data
             if (!data || !data.data) {
