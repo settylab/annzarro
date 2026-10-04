@@ -28,6 +28,10 @@ const DataManager = (function() {
     // Bumped whenever the loaded cells/genes change (switch, revert, clear).
     // Plot data built under an older generation belongs to another dataset.
     let _datasetGeneration = 0;
+    // Settles when the dataset being opened has its cell and gene names (or
+    // failed to open); null when no open is in flight. Until then an empty
+    // name list means "not read yet", not "this dataset has none".
+    let _namesLoading = null;
     let _genes = null;
     let _focusedCell = null;
     let _focusedGene = null;
@@ -334,6 +338,12 @@ const DataManager = (function() {
         const previousCells = _cells;
         const previousGenes = _genes;
         const previousSubset = _subset;
+        let namesSettled = () => {};
+        const namesLoading = _namesLoading = new Promise(resolve => { namesSettled = resolve; });
+        const settleNames = () => {
+            namesSettled();
+            if (_namesLoading === namesLoading) _namesLoading = null;
+        };
         
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
@@ -372,6 +382,8 @@ const DataManager = (function() {
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
+            // before datasetChanged: its listeners may draw at once
+            settleNames();
             
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {
@@ -427,6 +439,8 @@ const DataManager = (function() {
                 console.debug('Dataset loading aborted');
             }
             throw error;
+        } finally {
+            settleNames();
         }
     }
     
@@ -1936,6 +1950,16 @@ const DataManager = (function() {
     }
     
     
+    /** Whether a dataset is being opened and its names are not read yet. */
+    function namesPending() {
+        return _namesLoading !== null;
+    }
+
+    /** Resolves once the dataset being opened has its names (at once when none is). */
+    function whenNamesLoaded() {
+        return _namesLoading || Promise.resolve();
+    }
+
     /**
      * Get the cell names
      * @returns {Array<string>} - Cell names in their original order
@@ -2117,6 +2141,8 @@ const DataManager = (function() {
         getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,
+        namesPending,
+        whenNamesLoaded,
         getSortedCells,
         getGenes,
         getSortedGenes, 

@@ -624,6 +624,21 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
+
+    // A panel made while the dataset opens (within a second on a large store)
+    // came here before the names did and said the dataset had none, for good.
+    // Wait for them; only an opened dataset without names gets that sentence.
+    if (DataManager.namesPending()) {
+      loadingIndicator.show(plotContainer, 'names');
+      try {
+        await DataManager.whenNamesLoaded();
+      } finally {
+        loadingIndicator.hide(plotContainer, 'names');
+      }
+      if (signal && signal.aborted) {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      }
+    }
     
     if (isGenePlot) {
       // Validate that genes exist for gene plots
