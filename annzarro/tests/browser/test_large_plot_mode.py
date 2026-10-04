@@ -297,3 +297,35 @@ def test_legend_full_opacity_and_toggling(server, subset):
             assert set(s3["first"]) == {True} and set(s3["second"]) == {"legendonly"}
         finally:
             browser.close()
+
+
+# Counts Plotly.relayout({autosize}) calls: the full re-render a resize makes.
+RELAYOUT_COUNTER = """(() => { window.__autosize = 0; let P;
+  Object.defineProperty(window, 'Plotly', { configurable: true, get() { return P; }, set(v) {
+    if (v && v.relayout && !v.__counted) {
+      const real = v.relayout.bind(v);
+      v.relayout = (gd, upd, ...rest) => { if (upd && upd.autosize) window.__autosize++; return real(gd, upd, ...rest); };
+      v.__counted = true;
+    }
+    P = v; } }); })()"""
+
+
+def test_first_draw_fits_without_a_second_render(server):
+    """The status strip under the graph is drawn before the graph, so the graph
+    is drawn at its final height. Drawn after it, the strip took 24 px, the
+    resize observer relayouted the whole plot: a second render, 0.8 s at 95.6M."""
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            ctx = browser.new_context(viewport={"width": 1300, "height": 900})
+            ctx.add_init_script(RELAYOUT_COUNTER)
+            page = ctx.new_page()
+            page.goto(_link(server, {"type": "obs", "key": "cell_type", "column": ""}, None))   # large mode
+            _wait(page, lambda s: s["points"] == 200 and s["notice"] and not s["busy"])
+            time.sleep(1.5)                  # past the observer's debounce
+            fit = page.evaluate("""() => { const g = document.querySelector('.tile[data-tile-id="cell-plot-L"] .js-plotly-plot');
+              return {drawn: g._fullLayout.height, box: parseFloat(getComputedStyle(g).height), autosize: window.__autosize}; }""")
+            assert abs(fit["drawn"] - fit["box"]) <= 1, fit
+            assert fit["autosize"] == 0, f"a second render after the first draw: {fit}"
+        finally:
+            browser.close()

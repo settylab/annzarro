@@ -570,6 +570,12 @@ function watchContextLoss(gd) {
  */
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
+    // The notice and status strip first: it takes height from the graph, and
+    // drawn after the graph it made a second, full render once the graph was
+    // fitted to the smaller space (0.8 s at 95.6M points).
+    renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
+    // a fresh draw clears a lost-context tag; before the draw, for the same reason
+    setStatusTag(plotContainer, 'webgl', null);
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(
@@ -577,8 +583,6 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         withShownCamera(plotContainer, withCoverageAnnotation(layout, cov)),
         withCoverageExportButton(config)
     );
-    renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
-    setStatusTag(plotContainer, 'webgl', null);
     watchContextLoss(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);

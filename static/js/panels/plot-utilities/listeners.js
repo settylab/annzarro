@@ -69,6 +69,28 @@ export function setupPlotEventListeners({
 
 
 /**
+ * Whether the container's size differs from the size the plot was last drawn
+ * at (Plotly's autosize reads the same computed width and height).
+ *
+ * The observer fires once as soon as it observes, and again whenever the
+ * container's layout is touched, also when nothing moved. Each call was a
+ * full relayout: right after the first render of 95.6M points that redrew
+ * everything again, a 3.1 s freeze for a size that had not changed.
+ * @param {HTMLElement} gd - The Plotly graph div.
+ * @returns {boolean}
+ */
+export function sizeChanged(gd) {
+    const full = gd && gd._fullLayout;
+    if (!full || !full.width || !full.height) return true;
+    const style = window.getComputedStyle ? window.getComputedStyle(gd) : null;
+    const width = Math.round((style && parseFloat(style.width)) || gd.clientWidth || 0);
+    const height = Math.round((style && parseFloat(style.height)) || gd.clientHeight || 0);
+    if (!width || !height) return false;          // hidden or collapsed: nothing to fit
+    return Math.abs(width - Math.round(full.width)) > 1 || Math.abs(height - Math.round(full.height)) > 1;
+}
+
+
+/**
  * Sets up a ResizeObserver to autosize a Plotly plot when its container resizes.
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
  * @returns {ResizeObserver|null} - The created ResizeObserver instance or null if not supported.
@@ -94,7 +116,8 @@ export function setupResizeObserver(plotContainer) {
           resizeTimeout = setTimeout(() => {
             try {
               // Check if a Plotly plot exists by verifying the presence of plot data
-              if (plotContainer.data && plotContainer.data.length > 0) {
+              if (plotContainer.data && plotContainer.data.length > 0
+                  && sizeChanged(plotContainer)) {
                 Plotly.relayout(plotContainer, { autosize: true });
               }
             } catch (error) {
