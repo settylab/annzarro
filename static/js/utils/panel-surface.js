@@ -39,6 +39,7 @@
 
 import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
+import { withShownCamera } from './scene-camera.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -524,8 +525,12 @@ export function withCoverageExportButton(config) {
  */
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
+    // a graph redrawn in place keeps the camera the user turned it to; the
+    // camera saved in the settings is for a new graph
     const result = await Plotly.react(
-        plotContainer, withTraceUids(traces), withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
+        plotContainer, withTraceUids(traces),
+        withShownCamera(plotContainer, withCoverageAnnotation(layout, cov)),
+        withCoverageExportButton(config)
     );
     renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
     // long axis / colour-bar titles: shortened to fit, full text on hover
