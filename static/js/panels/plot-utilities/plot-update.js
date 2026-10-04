@@ -1374,11 +1374,13 @@ export async function restyleMarkers(plotContainer, settings) {
         && /^focused (cell|gene)$/i.test(trace.name.trim());
     const dataIdx = [];
     const highlightIdx = [];
-    // Large-plot mode: straight to the regl scene. A restyle there reruns
-    // Plotly's calc for every trace and ran the tab out of V8 heap at 95.6M
-    // (utils/gl-markers.js). It has no highlight trace.
-    if (plotContainer._largePlot && setGlMarkers(plotContainer, settings.pointSize, settings.pointOpacity,
-        (trace) => isLegendProxy(trace) || isHighlight(trace))) return;
+    // 2D: straight to the regl scene. A restyle reruns Plotly's calc for
+    // every trace: out of V8 heap at 95.6M points, the heap nearly doubled
+    // at 5M (utils/gl-markers.js). The axes keep their range.
+    const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
+    if (!is3D && setGlMarkers(plotContainer, (trace) => (isLegendProxy(trace) ? null
+        : isHighlight(trace) ? { size: settings.pointSize * 2 }
+        : { size: settings.pointSize, opacity: settings.pointOpacity }))) return;
     plotContainer.data.forEach((trace, i) => {
         if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);

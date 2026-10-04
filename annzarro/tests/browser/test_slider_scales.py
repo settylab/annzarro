@@ -315,19 +315,22 @@ def _plot_pixels(page):
     return np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
 
 
+@pytest.mark.parametrize("mode", ["regular", "large"])
 @pytest.mark.parametrize("size,opacity", [(0.5, 0.3), (1, 0.6), (2, 1), (6, 0.2)])
-def test_large_plot_marker_change_draws_like_a_fresh_load(large_server, size, opacity):
-    """Large-plot mode sets size/opacity in the regl scene, not by Plotly.restyle (a restyle reruns calc
-    for every trace: V8 out of memory at 95.6M). It must draw what a fresh load at those values draws."""
+def test_marker_change_draws_like_a_fresh_load(request, mode, size, opacity):
+    """2D plots (both modes) set size/opacity in the regl scene, not by Plotly.restyle (a restyle reruns
+    calc for every trace: V8 out of memory at 95.6M, heap nearly doubled at 5M). It must draw what a fresh
+    load at those values draws (per-point colours here; the focused-cell highlight in the regular mode)."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
     colour = {"color": {"type": "obs", "key": "total_counts", "column": ""}}
     with playwright.sync_playwright() as p:
         browser = p.chromium.launch()
         try:
-            ref_page, errors = _open(browser, _link(large_server, pointSize=size, pointOpacity=opacity, **colour))
+            ref_page, errors = _open(browser, _link(server, pointSize=size, pointOpacity=opacity, **colour))
             ref = _plot_pixels(ref_page)
             ref_page.close()
 
-            page, errors2 = _open(browser, _link(large_server, **colour))
+            page, errors2 = _open(browser, _link(server, **colour))
             page.evaluate("""() => { window.__restyles = 0; document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot')
                              .on('plotly_restyle', () => window.__restyles++); }""" % PID)
             _type(page, f"#point-size-input-{PID}", size)
@@ -337,7 +340,7 @@ def test_large_plot_marker_change_draws_like_a_fresh_load(large_server, size, op
                 return { restyles: window.__restyles, sizes: [...new Set(pts.map(t => t.marker.size))],
                          scene: [...new Set(gd._fullLayout._plots.xy._scene.markerOptions
                                  .filter((o, i) => o && pts.includes(gd.data[i])).map(o => o.size))] }; }""" % PID)
-            assert state["restyles"] == 0, "large-plot mode must not restyle"
+            assert state["restyles"] == 0, "a size/opacity change must not restyle"
             assert len(state["sizes"]) == 1 and state["sizes"] == state["scene"], state
             # the box shows the size scattergl draws: whole steps of 100/255 px
             shown = float(page.input_value(f"#point-size-input-{PID}"))
@@ -348,6 +351,43 @@ def test_large_plot_marker_change_draws_like_a_fresh_load(large_server, size, op
             differ = int((abs(got - ref).max(axis=2) > 8).sum())
             assert differ <= 0.001 * got.shape[0] * got.shape[1], f"{differ} pixels differ from a fresh load"
             assert not errors and not errors2, errors + errors2
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_hover_finds_the_point_after_a_size_change(server):
+    """Hover reads calcdata positions, which the direct regl update leaves alone: after a size change
+    the hover label is still the point under the cursor."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, highlightFocusedCell=False))
+            _type(page, f"#point-size-input-{PID}", 6)
+            _type(page, f"#point-opacity-input-{PID}", 0.3)
+            assert _marker(page)["size"] == 5.88
+            # the most isolated point of the first trace, and where it is on screen
+            target = page.evaluate("""() => {
+                const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
+                const t = gd._fullData.findIndex(d => d.x && d.x.length > 1);
+                const xs = gd._fullData[t].x, ys = gd._fullData[t].y, xa = gd._fullLayout.xaxis, ya = gd._fullLayout.yaxis;
+                const all = gd._fullData.flatMap(d => (d.x || []).map((x, i) => [xa.l2p(x), ya.l2p(d.y[i])]));
+                let best = -1, gap = -1;
+                xs.forEach((x, i) => { const px = xa.l2p(x), py = ya.l2p(ys[i]);
+                    const d = Math.min(...all.filter(q => q[0] !== px || q[1] !== py).map(q => Math.hypot(q[0] - px, q[1] - py)));
+                    if (d > gap) { gap = d; best = i; } });
+                const box = gd.querySelector('.nsewdrag').getBoundingClientRect();
+                window.__hover = null;
+                gd.on('plotly_hover', (e) => { window.__hover = { curve: e.points[0].curveNumber, i: e.points[0].pointIndex }; });
+                return { curve: t, i: best, gap, x: box.left + xa.l2p(xs[best]), y: box.top + ya.l2p(ys[best]) };
+            }""" % PID)
+            assert target["gap"] > 8, target
+            page.mouse.move(target["x"] - 40, target["y"] - 40)
+            page.mouse.move(target["x"], target["y"], steps=4)
+            page.wait_for_function("() => window.__hover !== null", timeout=5000)
+            hover = page.evaluate("() => window.__hover")
+            assert (hover["curve"], hover["i"]) == (target["curve"], target["i"]), (hover, target)
+            assert not errors, errors
             page.close()
         finally:
             browser.close()
