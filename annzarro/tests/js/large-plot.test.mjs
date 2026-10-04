@@ -1,7 +1,7 @@
 // When a Cell Plot uses the large-plot mode (static/js/panels/plot-utilities/
 // large-plot.js) and what it tells the user. The mode turns hover, click and
 // table filters off, so it must only start where the regular path cannot draw
-// (default above 5M points, configurable) and must always say so on the panel.
+// (default above 1M points, configurable) and must always say so on the panel.
 //
 // Run: `node --test annzarro/tests/js/large-plot.test.mjs` (node >= 18).
 import assert from "node:assert/strict";
@@ -21,10 +21,13 @@ const settings = (over = {}) => ({
   z: null, tableFilter: "none", ...over
 });
 
-test("default threshold is 5M points: at 5M the regular path is kept", () => {
-  assert.equal(largePlotPoints(), 5000000);
-  assert.notEqual(largePlotReason(settings(), 5000000), null);
-  assert.equal(largePlotReason(settings(), 5000001), null);
+test("default threshold is 1M points: at 1M the regular path is kept, at 1.5M it is large", () => {
+  // the rule is n > largePlotPoints() (plot-make.js): the threshold itself is regular
+  assert.equal(largePlotPoints(), 1000000);
+  assert.equal(Config.DEFAULTS.LARGE_PLOT_POINTS, 1000000);
+  assert.notEqual(largePlotReason(settings(), 1000000), null);
+  assert.equal(largePlotReason(settings(), 1000001), null);
+  assert.equal(largePlotReason(settings(), 1500000), null);
 });
 
 test("the threshold follows Config (server ui.defaults.large_plot_points)", () => {
@@ -55,7 +58,7 @@ test("the strip tag names the mode; its popover the point count, the limit and t
     "Large-plot mode (95.6M points): hover, click and table filters are off; use a subset for them");
   assert.equal(tag.pop.text, `Over ${largePlotPoints().toLocaleString("en-US")} points (95.6M here): `
     + "drawn without hover, click or table filters to stay within browser memory.");
-  assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22645M to enable click"]]);
+  assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22641M to enable click"]]);
 });
 
 // --- the panel's controls above and below the threshold ------------------
@@ -92,9 +95,9 @@ const byCls = (p, c) => p.items.find(e => e.cls === c);
 
 test("above the threshold: unsupported types, 3D, Hover and table filter off with the tooltip", () => {
   const p = panel();
-  updateLargePlotControls(p, true, 5000000);
-  const tip = largePlotTooltip(5000000);
-  assert.equal(tip, "Not available above 5M points (large-plot mode); turn on a subset to use it");
+  updateLargePlotControls(p, true, 1000000);
+  const tip = largePlotTooltip(1000000);
+  assert.equal(tip, "Not available above 1M points (large-plot mode); turn on a subset to use it");
   for (const axis of ["x", "y", "color"]) {
     assert.equal(opt(p, axis, "obsp").disabled, true, axis);
     assert.equal(opt(p, axis, "obsp").getAttribute("title"), tip);
@@ -117,9 +120,9 @@ test("above the threshold: unsupported types, 3D, Hover and table filter off wit
 
 test("below the threshold (or a subset on) everything comes back, with its own tooltip", () => {
   const p = panel();
-  updateLargePlotControls(p, true, 5000000);
-  updateLargePlotControls(p, true, 5000000);            // idempotent
-  updateLargePlotControls(p, false, 5000000);
+  updateLargePlotControls(p, true, 1000000);
+  updateLargePlotControls(p, true, 1000000);            // idempotent
+  updateLargePlotControls(p, false, 1000000);
   for (const axis of ["x", "y", "color"]) {
     assert.equal(opt(p, axis, "obsp").disabled, false);
     assert.equal(opt(p, axis, "obsp").getAttribute("title"), null);

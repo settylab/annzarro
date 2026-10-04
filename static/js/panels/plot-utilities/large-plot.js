@@ -22,10 +22,10 @@
  * What it gives up: hover and click on points (hovermode false; there are no
  * per-point names on the traces), the focused-cell highlight, table filters,
  * 3D, and incremental updates (any change redraws). It is used above
- * largePlotPoints() (default 5M). The panel says so (a status-strip tag), the
+ * largePlotPoints() (default 1M, so several regular plots fit side by side). The panel says so (a status-strip tag), the
  * controls it cannot honour are disabled (large-plot-controls.js), and
  * settings it cannot draw are refused with a message (largePlotRefusal):
- * above the threshold the regular path would close the tab.
+ * far above the threshold the regular path would close the tab.
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
@@ -42,7 +42,7 @@ import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-u
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
   const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
-  return typeof v === 'number' && v >= 0 ? v : 5000000;
+  return typeof v === 'number' && v >= 0 ? v : 1000000;
 }
 const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;

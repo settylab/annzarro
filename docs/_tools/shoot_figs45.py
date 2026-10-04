@@ -15,17 +15,14 @@ All views use bm_aging_showcase.zarr (docs/data/showcase-store.md), which adds t
 offline results (modules, ranks, classes, the fold-change z-score layer) as fields.
 """
 import argparse
-import base64
 import json
 import sys
 import time
-import zlib
-from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from shots import Session, split, tile  # noqa: E402
+from shots import Session, panelset_file, split, start_link, tile, z1  # noqa: E402
 
 DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "paper"
@@ -218,21 +215,8 @@ ALL_VIEWS = {"fig4-ab": fig4_ab, "fig4-c": fig4_c, "fig4-d": fig4_d,
 
 
 # --------------------------------------------------------------------------- artefacts
-def z1(v: dict) -> str:
-    """The app's compressed fragment: z1.<base64url(deflate-raw(JSON))>."""
-    raw = json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode()
-    c = zlib.compressobj(9, zlib.DEFLATED, -15)
-    return "z1." + base64.urlsafe_b64encode(c.compress(raw) + c.flush()).decode().rstrip("=")
-
-
 def panelset(name: str, v: dict) -> dict:
-    """A panel set file as Save Panel Set writes it (same shape as shoot_figs13.py)."""
-    cfgs = v["layout"]["panelConfigs"]
-    return {"name": name, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "dataset": DATASET, "datasetName": Path(DATASET).stem, "constants": v["constants"],
-            "panelConfigs": {k: {"id": k, "type": k.rsplit("-", 1)[0], "title": c["title"],
-                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()},
-            "view": v}
+    return panelset_file(name, v, DATASET)
 
 
 def write_artefacts() -> dict:
@@ -244,10 +228,8 @@ def write_artefacts() -> dict:
         (VIEWS / f"{name}.json").write_text(json.dumps(v, indent=1) + "\n")
         (PANELSETS / f"{name}.json").write_text(json.dumps(panelset(name, v), indent=2) + "\n")
         links[name] = {"dataset": DATASET, "fragment": "#view=" + z1(v)}
-        # The link a reader pastes: default local server, data directory as a placeholder.
-        (PANELSETS / f"{name}.url.txt").write_text(
-            f"http://127.0.0.1:8000/?dataset_path=/ABSOLUTE/PATH/TO/{DATASET}"
-            f"{links[name]['fragment']}\n")
+        # The link a reader pastes: default local server, store in its data directory.
+        (PANELSETS / f"{name}.url.txt").write_text(start_link(DATASET, v) + "\n")
     (PANELSETS / "links-figs45.json").write_text(json.dumps(links, indent=1) + "\n")
     return views
 

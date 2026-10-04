@@ -1,7 +1,7 @@
 /**
  * Cell names that stay on the server.
  *
- * Above the large-plot threshold (5M cells by default) a dataset opened with
+ * Above the large-plot threshold (1M cells by default) a dataset opened with
  * every cell does not download its names: on real Tahoe data the /cells JSON
  * took 19 of the 23 s before a 50M-cell plot appeared, and large-plot mode
  * shows no names (no hover, no click). What does need a name or an index asks

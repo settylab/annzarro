@@ -41,6 +41,14 @@ never the whole matrix ({doc}`../data/pairwise-matrices`).
 (tut-cell-walk)=
 ## 1. Follow a diffusion walk from a stem cell to a monocyte
 
+::::{dropdown} Start here: the walk and the path table
+```{literalinclude} ../_static/panelsets/paper/fig3-walk.url.txt
+:language: text
+```
+Panel set file: {download}`fig3-walk.json <../_static/panelsets/paper/fig3-walk.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 A row of the walk matrix says where a five-step random walk on the diffusion kernel, started at
 the focused cell, ends up. It is a similarity that respects the data's manifold. Walking the focus
 along a trajectory shows how far each cell state reaches.
@@ -129,6 +137,14 @@ neighbours. The next section finds where that fails.
 (tut-cell-distance-axes)=
 ## 2. Plot UMAP distance against diffusion distance
 
+::::{dropdown} Start here: distances as axes, groups on the UMAP (sections 2 and 3)
+```{literalinclude} ../_static/panelsets/paper/fig3-umap-vs-diffusion.url.txt
+:language: text
+```
+Panel set file: {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 A cell plot can take a row of obsp as an axis, not only as a colour. With the focus on one cell,
 each point is another cell, at x = its UMAP distance to the focus and y = its diffusion distance.
 Where the two agree the points fall on a rising band; where they disagree they leave it.
@@ -154,6 +170,14 @@ reverse.
 
 (tut-cell-groups-umap)=
 ## 3. Find the disagreeing cells on the UMAP
+
+::::{dropdown} Start here: the view of sections 2 and 3
+```{literalinclude} ../_static/panelsets/paper/fig3-umap-vs-diffusion.url.txt
+:language: text
+```
+Panel set file: {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 9. Add a second **Cell Plot** with UMAP axes and **Color** `obs` · `fig3_plasma_groups`.
 
@@ -206,9 +230,9 @@ paper repository and were checked when the showcase store was built ({doc}`../da
 (tut-cell-views)=
 ## Open the views
 
-Replace `/path/to/annzarro-data` with the absolute path of your data directory and
-`127.0.0.1:8000` with your server's address ({doc}`../user-guide/share-links`). `dataset_path`
-must be absolute.
+The views of this tutorial, each also in the **Start here** box of its section. They are ready
+for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+says which part to change for another server address or store location.
 
 ::::{dropdown} Section 1: walk and path table
 ```{literalinclude} ../_static/panelsets/paper/fig3-walk.url.txt

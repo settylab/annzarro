@@ -44,8 +44,8 @@ code and checked against its numbers (265 and 392 cells; ρ of the two rows 0.61
 
 ## Views
 
-Replace `/path/to/annzarro-data` with the absolute path of your data directory and the host with
-your server's ({doc}`../user-guide/share-links`).
+The links are ready for a local server with the store in its data directory; to use another
+server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} Panel a: walk and path table (opens at the HSC)
 ```{literalinclude} ../_static/panelsets/paper/fig3-walk.url.txt

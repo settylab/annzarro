@@ -36,6 +36,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| macOS: “AnnZarro” Not Opened, “Apple could not verify “AnnZarro” is free of malware…” | The app is ad-hoc signed and not notarized; since macOS 15, right-click > Open no longer gets past this | Click **Done**, then **System Settings > Privacy & Security > Open Anyway** and confirm, once ({doc}`../getting-started/desktop-app`, First launch) |
 | The loading screen stays for more than a few seconds | First start after installing: Gatekeeper or Defender scans the bundled server | Wait; the screen counts the seconds. After 180 s the app shows an error page instead |
 | Error page "AnnZarro could not start: …" | The server did not answer within 180 s, exited, or the interface did not load within 60 s | Read the log named on the page (its `server:` lines are the server's own output), then **Retry** ({doc}`../getting-started/desktop-app`) |
 | A panel says "No dataset loaded" after starting the app. Reproduced | The layout was restored from the last session, but its dataset was moved or deleted; a "Failed to load dataset" notice names it | Choose a dataset in the Dataset picker, or close the panel. Builds before PR #54 showed a spinner here that never stopped |
@@ -46,7 +47,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| X is not in any source menu | As of this version the plot sources are obs/obsm/obsp/layer and var/varm/varp/layer; X is not offered | Store the matrix as a layer: `adata.layers["X"] = adata.X` ({doc}`../data/slot-map`) |
+| X is not in any source menu | X is listed under the **layer** source, first, not as a source of its own; a layer named `X` takes its place | Choose source **layer**, key **X**; to see the matrix X next to such a layer, rename the layer ({doc}`../data/slot-map`) |
 | Gene Plot shows no options (Step 18) | Default source is varm and the dataset has none | Switch the axis source to var |
 | Volcano all grey (Step 20) | Focused gene has no row in the varp matrix (outside a gene subset) | Click a gene that is in the matrix, or pick one from the Focused Gene selector |
 | Colour range looks wrong after loading a view (Steps 22-23) | Range restored from another focus | Toggle Lock Range or reset min and max |

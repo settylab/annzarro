@@ -41,8 +41,8 @@ arrow that ends in a scatter, and moves the focus through it.
 
 ### Views
 
-Replace `/path/to/annzarro-data` with the absolute path of your data directory and the host with
-your server's ({doc}`../user-guide/share-links`).
+The links are ready for a local server with the store in its data directory; to use another
+server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} The four panels of the focus model
 ```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt

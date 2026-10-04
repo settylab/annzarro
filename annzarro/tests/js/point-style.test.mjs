@@ -6,12 +6,15 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { autoPointStyle, initAutoPointStyle, applyAutoPointStyle } from '../../../static/js/utils/point-style.js';
+import { autoPointStyle, initAutoPointStyle, applyAutoPointStyle, autoValue, AUTO_CURVE } from '../../../static/js/utils/point-style.js';
 
 const BASE = { size: 5, opacity: 1 };
 
 // the curve itself (sizes not snapped to scattergl's steps)
-const curve = (n, base = BASE) => autoPointStyle(n, base, false);
+const curve = (n, base = BASE) => ({
+    size: autoValue(n, base.size, AUTO_CURVE.size),
+    opacity: Math.min(1, autoValue(n, base.opacity, AUTO_CURVE.opacity))
+});
 
 test('small data keeps the default look', () => {
     for (const n of [0, 1, 200]) assert.deepEqual(curve(n), BASE, `n=${n}`);
@@ -89,4 +92,27 @@ test('automatic sizes are ones scattergl draws: whole steps of 100/255 px', () =
     const settings = { z: { type: 'obsm' }, pointSize: 5, pointOpacity: 1, autoPointSize: true, autoPointOpacity: true };
     applyAutoPointStyle(settings, 95.6e6, BASE);
     assert.equal(settings.pointSize, 0.92);
+});
+
+test('3D: automatic opacity is 1 at every N (Plotly draws translucent scatter3d points out of depth order)', () => {
+    for (const n of [200, 1e5, 1e6, 95.6e6]) {
+        assert.equal(autoPointStyle(n, BASE, true).opacity, 1, `n=${n}`);
+        assert.ok(autoPointStyle(n, { size: 5, opacity: 0.6 }, true).opacity === 1, 'whatever the 2D base');
+    }
+    // 2D -> 3D -> 2D on automatic opacity: the 2D value, then 1, then the 2D value again
+    const settings = { pointSize: 5, pointOpacity: 1, autoPointSize: true, autoPointOpacity: true, z: null };
+    applyAutoPointStyle(settings, 1e6, BASE);
+    const flat = settings.pointOpacity;
+    assert.ok(flat < 1);
+    settings.z = { type: 'obsm', key: 'X_umap', column: '2' };
+    applyAutoPointStyle(settings, 1e6, BASE);
+    assert.equal(settings.pointOpacity, 1);
+    settings.z = null;
+    applyAutoPointStyle(settings, 1e6, BASE);
+    assert.equal(settings.pointOpacity, flat);
+    // an opacity the user chose stays, also in 3D
+    const chosen = { pointSize: 2, pointOpacity: 0.3, autoPointSize: false, autoPointOpacity: false,
+                     z: { type: 'obsm', key: 'X_umap', column: '2' } };
+    applyAutoPointStyle(chosen, 1e6, BASE);
+    assert.equal(chosen.pointOpacity, 0.3);
 });

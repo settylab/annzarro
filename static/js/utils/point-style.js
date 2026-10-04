@@ -42,14 +42,17 @@ export function autoValue(n, base, curve) {
 }
 
 /**
- * Automatic size and opacity for `n` points. `snap`: the size is one
- * scattergl draws (2D plots; slider-scales.js snapPointSize).
+ * Automatic size and opacity for `n` points. `is3D`: a scatter3d plot,
+ * whose automatic opacity is 1 at any N (below 1 Plotly draws its points
+ * out of depth order, far ones over near ones) and whose sizes are not
+ * snapped; 2D sizes are ones scattergl draws (slider-scales.js
+ * snapPointSize).
  */
-export function autoPointStyle(n, base, snap = true) {
+export function autoPointStyle(n, base, is3D = false) {
   const size = autoValue(n, base.size, AUTO_CURVE.size);
   return {
-    size: snap ? snapPointSize(size) : size,
-    opacity: Math.min(1, autoValue(n, base.opacity, AUTO_CURVE.opacity))
+    size: is3D ? size : snapPointSize(size),
+    opacity: is3D ? 1 : Math.min(1, autoValue(n, base.opacity, AUTO_CURVE.opacity))
   };
 }
 
@@ -70,7 +73,7 @@ export function initAutoPointStyle(settings, options = {}) {
  * default for few points. Returns whether a value changed.
  */
 export function applyAutoPointStyle(settings, n, base) {
-  const auto = autoPointStyle(n, base, !settings.z);
+  const auto = autoPointStyle(n, base, !!settings.z);
   let changed = false;
   if (settings.autoPointSize && settings.pointSize !== auto.size) {
     settings.pointSize = auto.size;

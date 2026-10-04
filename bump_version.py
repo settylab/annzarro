@@ -6,6 +6,7 @@ This script updates the version number in all relevant files:
 - annzarro/__init__.py
 - pyproject.toml
 - annzarro/desktop/electron/package.json
+- annzarro/desktop/electron/package-lock.json (its root and packages[""] versions)
 
 Usage:
   python bump_version.py [major|minor|patch]
@@ -24,9 +25,12 @@ import sys
 import json
 from pathlib import Path
 
-def get_current_version():
+ROOT = Path(__file__).parent
+ELECTRON = Path("annzarro") / "desktop" / "electron"
+
+def get_current_version(root=ROOT):
     """Get the current version from __init__.py"""
-    init_path = Path(__file__).parent / "annzarro" / "__init__.py"
+    init_path = Path(root) / "annzarro" / "__init__.py"
     with open(init_path, "r") as f:
         content = f.read()
         match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
@@ -51,9 +55,9 @@ def calculate_new_version(current_version, bump_type):
             raise ValueError(f"Invalid version format: {bump_type}. Expected format: X.Y.Z")
         return bump_type
 
-def update_python_init(new_version):
+def update_python_init(new_version, root=ROOT):
     """Update the version in __init__.py"""
-    init_path = Path(__file__).parent / "annzarro" / "__init__.py"
+    init_path = Path(root) / "annzarro" / "__init__.py"
     with open(init_path, "r") as f:
         content = f.read()
     
@@ -68,16 +72,19 @@ def update_python_init(new_version):
     
     print(f"Updated version in {init_path}")
 
-def update_pyproject_toml(new_version):
-    """Update the version in pyproject.toml"""
-    path = Path(__file__).parent / "pyproject.toml"
+def update_pyproject_toml(new_version, root=ROOT):
+    """Update the version in pyproject.toml (the first line that starts
+    with ``version =``, the [project] one; not ``target-version`` and co.)"""
+    path = Path(root) / "pyproject.toml"
     with open(path, "r") as f:
         content = f.read()
     
     new_content = re.sub(
-        r'version\s*=\s*["\']([^"\']+)["\']',
+        r'^version\s*=\s*["\']([^"\']+)["\']',
         f'version = "{new_version}"',
-        content
+        content,
+        count=1,
+        flags=re.MULTILINE
     )
     
     with open(path, "w") as f:
@@ -85,18 +92,55 @@ def update_pyproject_toml(new_version):
     
     print(f"Updated version in {path}")
 
-def update_package_json(new_version):
+def _write_json(path, data):
+    # npm's layout: two-space indent and a final newline
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+def update_package_json(new_version, root=ROOT):
     """Update the version in package.json"""
-    path = Path(__file__).parent / "annzarro" / "desktop" / "electron" / "package.json"
+    path = Path(root) / ELECTRON / "package.json"
     with open(path, "r") as f:
         data = json.load(f)
     
     data["version"] = new_version
-    
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    _write_json(path, data)
     
     print(f"Updated version in {path}")
+
+def update_package_lock(new_version, root=ROOT):
+    """Update package-lock.json: its root version and packages[""], the
+    desktop app's own entry (npm writes both from package.json)."""
+    path = Path(root) / ELECTRON / "package-lock.json"
+    if not path.exists():
+        return
+    with open(path, "r") as f:
+        data = json.load(f)
+    
+    data["version"] = new_version
+    if "" in data.get("packages", {}):
+        data["packages"][""]["version"] = new_version
+    _write_json(path, data)
+    
+    print(f"Updated version in {path}")
+
+def versions(root=ROOT):
+    """Every version this script writes, by file (for checks and tests)."""
+    root = Path(root)
+    with open(root / "pyproject.toml") as f:
+        pyproject = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', f.read(), re.MULTILINE).group(1)
+    with open(root / ELECTRON / "package.json") as f:
+        package = json.load(f)["version"]
+    with open(root / ELECTRON / "package-lock.json") as f:
+        lock = json.load(f)
+    return {
+        "annzarro/__init__.py": get_current_version(root),
+        "pyproject.toml": pyproject,
+        "package.json": package,
+        "package-lock.json": lock["version"],
+        'package-lock.json packages[""]': lock.get("packages", {}).get("", {}).get("version"),
+    }
 
 def main():
     # Check arguments
@@ -119,6 +163,7 @@ def main():
         update_python_init(new_version)
         update_pyproject_toml(new_version)
         update_package_json(new_version)
+        update_package_lock(new_version)
         
         print("\nVersion bump complete!")
         print(f"Don't forget to commit these changes: git commit -m \"Bump version to {new_version}\"")

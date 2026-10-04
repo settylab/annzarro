@@ -412,7 +412,7 @@ class ZarrReader(CacheSettings):
         # Outside the try below ON PURPOSE: its broad `except Exception` turns
         # any ValueError whose text it does not recognise into `None`, which
         # the data routes then serve as empty data.
-        if not dataset_path.startswith(("s3://", "http://", "https://")):
+        if not is_remote_path(dataset_path):
             problem = zarr_format_problem(dataset_path)
             if problem:
                 logger.error(problem)

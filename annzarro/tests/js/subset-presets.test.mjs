@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const {
     presetSizes, partsFor, shortCount, estimateLoad, formatSeconds, DEFAULT_MODEL, EXTRAPOLATE_FACTOR,
-    BROWSER_POINT_CEILING, initialSize, largestRegularSize,
+    BROWSER_POINT_CEILING, initialSize, largestRegularSize, DEFAULT_LARGE_PLOT_POINTS,
     recordLoad, recordServer, serverSeconds, loadSamples, resetLoadSamples
 } = await import('../../../static/js/utils/subset-presets.js');
 
@@ -65,8 +65,13 @@ test('the default estimate reproduces the benchmark it was fitted to', () => {
     // within the benchmark's clean runs: 1M regular, 95.6M large; past them a guess
     assert.equal(large.extrapolated, false);
     assert.equal(estimateLoad(1000000, { nTotal: 1e8 }).extrapolated, false);
-    assert.equal(estimateLoad(2000000, { nTotal: 1e8 }).extrapolated, true);
-    assert.equal(estimateLoad(5000000, { nTotal: 1e8 }).extrapolated, true);  // the unclean 5M row
+    // with the default 1M threshold, 2M and 5M are large-plot mode, inside its range
+    assert.equal(estimateLoad(2000000, { nTotal: 1e8 }).large, true);
+    assert.equal(estimateLoad(2000000, { nTotal: 1e8 }).extrapolated, false);
+    // on a server that keeps them regular they are past the regular range
+    const at5M = { nTotal: 1e8, threshold: 5000000 };
+    assert.equal(estimateLoad(2000000, at5M).extrapolated, true);
+    assert.equal(estimateLoad(5000000, at5M).extrapolated, true);  // the unclean 5M row
     assert.equal(estimateLoad(2e8, { nTotal: 3e8 }).extrapolated, true);
 });
 
@@ -176,6 +181,14 @@ test('sizes above the browser ceiling are flagged and never the default', () => 
     assert.equal(initialSize(100000, N), 100000);
     assert.equal(initialSize(N, N), BROWSER_POINT_CEILING);
     assert.equal(initialSize(100000, 200), 200);
+});
+
+test('the default large-plot threshold is 1M: 1M regular, 1.5M large', () => {
+    assert.equal(DEFAULT_LARGE_PLOT_POINTS, 1000000);
+    assert.equal(estimateLoad(1000000).large, false);
+    assert.equal(estimateLoad(1500000).large, true);
+    assert.equal(largestRegularSize(95624334), 1000000);
+    assert.equal(largestRegularSize(1000000), null);
 });
 
 test('the largest size a regular plot draws', () => {

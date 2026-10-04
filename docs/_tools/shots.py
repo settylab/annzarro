@@ -27,6 +27,8 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import zlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
@@ -48,6 +50,40 @@ def encode_view(view: dict) -> str:
     """Uncompressed base64url(JSON) payload; every AnnZarro build decodes it."""
     raw = json.dumps(view, separators=(",", ":"), ensure_ascii=False).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def z1(view: dict) -> str:
+    """The app's compressed fragment: z1.<base64url(deflate-raw(JSON))>."""
+    raw = json.dumps(view, separators=(",", ":"), ensure_ascii=False).encode()
+    c = zlib.compressobj(9, zlib.DEFLATED, -15)
+    return "z1." + base64.urlsafe_b64encode(c.compress(raw) + c.flush()).decode().rstrip("=")
+
+
+# The server a reader starts with `annzarro start --data-dir <dir>` (default port).
+START_BASE = "http://127.0.0.1:8000"
+
+
+def start_link(dataset: str, view: dict) -> str:
+    """The link the docs print: the default local server and the store's file name.
+
+    A relative dataset_path names a store in the server's data directory
+    (server/confinement.py resolve_relative_dataset_paths), so the link works as
+    is when the reader's store sits there; only the host:port, or an absolute path
+    for a store elsewhere, ever needs replacing.
+    """
+    return f"{START_BASE}/?dataset_path={urllib.parse.quote(Path(dataset).name, safe='')}#view={z1(view)}"
+
+
+def panelset_file(name: str, view: dict, dataset: str) -> dict:
+    """A panel set file as Save Panel Set writes it: the panel configs plus `view`, the
+    object a share link encodes. Load Panel Set > Upload file restores dataset, focus and
+    layout from it; the dataset is the store's file name, found in the data directory."""
+    cfgs = view["layout"]["panelConfigs"]
+    return {"name": name, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "dataset": dataset, "datasetName": Path(dataset).stem, "constants": view["constants"],
+            "panelConfigs": {k: {"id": k, "type": k.rsplit("-", 1)[0], "title": c.get("title", k),
+                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()},
+            "view": view}
 
 
 def deep_link(base: str, view: dict | None, dataset: str | Path) -> str:

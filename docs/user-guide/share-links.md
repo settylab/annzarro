@@ -32,7 +32,9 @@ http://<server>/?dataset_path=<path on the server>#view=z1.<compressed view>
 ```
 
 - `dataset_path` (query) is the dataset as the server sees it: a path inside its data directory, or
-  a remote URL ({doc}`remote-datasets`).
+  a remote URL ({doc}`remote-datasets`). A path that is not absolute, such as `bm_aging.zarr`, names
+  a store in the data directory, so such a link works on any server that has that store there
+  (the tutorials' links are written this way, {ref}`tut-start-links`).
 - `#view=` (fragment) holds the view: the focused cell, focused gene and taxonomy, the cell subset
   ({doc}`subsets`), and the layout tree (splits, pane sizes in percent, which panels have their
   controls open, and each panel's full settings, including locks, colour ranges and table

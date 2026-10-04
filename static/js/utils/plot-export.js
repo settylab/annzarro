@@ -20,6 +20,7 @@
  */
 import { exportWithCoverage } from './panel-surface.js';
 import { releasePlot } from './release-plot.js';
+import { syncSceneCamera } from './scene-camera.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -76,6 +77,9 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
     document.body.appendChild(clone);
     let svg, w, h;
     try {
+        // a 3D plot: the camera on screen, which Plotly may not have recorded
+        // in gd.layout yet (scene-camera.js)
+        syncSceneCamera(gd);
         const data = (gd.data || []).map(copyObjects);
         const layout = { ...copyLayout(gd.layout), width, height };
         const config = { ...(gd._context || {}), _exportedPlot: true, staticPlot: true, setBackground: false };

@@ -58,10 +58,54 @@ print(f"http://localhost:8000/?dataset_path={urllib.parse.quote(store)}#view={pa
 ```
 
 This is the uncompressed form, which every build reads; the URL is 677 characters. Settings a
-config leaves out take their defaults. The paper's five views are complete examples with two
-panels, colour scales and table filters: `data_prep/demo_panelsets/*.view.json` in the
-companion repository `settylab/annzarro-paper`. The docs' screenshot views are in
-`docs/_tools/views/`.
+config leaves out take their defaults. The docs' screenshot views are in `docs/_tools/views/`.
+
+(deep-links-protocol-views)=
+### The paper's five protocol views
+
+The paper's protocol views of `bm_aging.zarr` are complete examples with two or three panels,
+colour scales, a lock and a table filter (`data_prep/demo_panelsets/*.view.json` in the companion
+repository `settylab/annzarro-paper`). Each link is ready for a local server with `bm_aging.zarr` in
+its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
+the same view with **Load Panel Set** > **Upload file**.
+
+::::{dropdown} A: five-step diffusion walk and the kernel row of the focused cell
+```{literalinclude} ../_static/panelsets/protocol/protocol-A-kernel-walk.url.txt
+:language: text
+```
+{download}`protocol-A-kernel-walk.json <../_static/panelsets/protocol/protocol-A-kernel-walk.json>`
+::::
+
+::::{dropdown} B: volcano coloured by the focused gene's Spearman rows (smoothed, fold change)
+```{literalinclude} ../_static/panelsets/protocol/protocol-B-volcano-spearman.url.txt
+:language: text
+```
+{download}`protocol-B-volcano-spearman.json <../_static/panelsets/protocol/protocol-B-volcano-spearman.json>`
+::::
+
+::::{dropdown} C: the focused gene's fold change, Young and Old smoothed expression
+```{literalinclude} ../_static/panelsets/protocol/protocol-C-foldchange-umap.url.txt
+:language: text
+```
+{download}`protocol-C-foldchange-umap.json <../_static/panelsets/protocol/protocol-C-foldchange-umap.json>`
+::::
+
+::::{dropdown} D: fold-change rows of a locked HSC against the focused cell
+```{literalinclude} ../_static/panelsets/protocol/protocol-D-locked-vs-focused-cell.url.txt
+:language: text
+```
+{download}`protocol-D-locked-vs-focused-cell.json <../_static/panelsets/protocol/protocol-D-locked-vs-focused-cell.json>`
+::::
+
+::::{dropdown} E: HSCs with a DA z-score above 2, masking a UMAP
+```{literalinclude} ../_static/panelsets/protocol/protocol-E-table-filter.url.txt
+:language: text
+```
+{download}`protocol-E-table-filter.json <../_static/panelsets/protocol/protocol-E-table-filter.json>`
+::::
+
+`docs/_tools/start_links.py` imports them from the paper repository, writes every link of the
+docs from its panel set file, and opens each one in a headless browser.
 
 ## The `view` object
 

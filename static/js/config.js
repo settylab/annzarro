@@ -101,9 +101,11 @@ const Config = (function() {
         POINT_OPACITY: 1.0,
         // A Cell Plot with more points than this uses the large-plot mode
         // (panels/plot-utilities/large-plot.js): no hover, click or table
-        // filter. The regular path draws 5M categorical points; above that it
-        // runs out of the tab's V8 heap. Server key ui.defaults.large_plot_points.
-        LARGE_PLOT_POINTS: 5000000,
+        // filter. The regular path costs 400-900 B of the tab's V8 heap per
+        // point (one plot of 5M categorical points fits, a few do not); 1M
+        // keeps several regular plots open at once. Server key
+        // ui.defaults.large_plot_points.
+        LARGE_PLOT_POINTS: 1000000,
         // Browser memory guard, server ui.memory (utils/memory-guard.js)
         MEMORY: null,
         COLOR_SCALE: 'Portland',

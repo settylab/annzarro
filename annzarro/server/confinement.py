@@ -19,14 +19,18 @@ naming the roots: absolute server paths stay in the server log).
 Local single-user mode (localhost, login disabled -- including the desktop
 app) is unchanged: free browsing.
 
-Remote stores (``s3://``, ``http(s)://``, anything with a URL scheme) are not
-local paths and are left alone here; they get their own allowlist elsewhere.
+Remote stores (a scheme in ``core.remote.REMOTE_SCHEMES``: ``s3://``,
+``gs://``, ``gcs://``, ``http(s)://``) are not local paths and are left alone
+here; they get their own allowlist elsewhere. Any other ``scheme://`` string
+(``file://``, ``ftp://``) is checked like a local path, so it is refused.
 """
 
 import logging
 import os
 
 from flask import current_app, jsonify, request
+
+from ..core.remote import is_remote_path
 
 from .permissions import is_shared
 from annzarro.utils.paths import default_data_dir
@@ -57,11 +61,6 @@ def allowed_roots(config):
     return [os.path.realpath(os.path.expanduser(r)) for r in roots]
 
 
-def is_remote(path):
-    """A URL-style store (``s3://``, ``https://`` ...), not a local path."""
-    return "://" in path
-
-
 def is_inside(path, roots):
     """Whether ``path`` really resolves to one of ``roots`` or below it.
 
@@ -88,7 +87,7 @@ def _requested_paths():
             if not os.path.isabs(directory) and not directory.startswith(data_dir):
                 directory = os.path.join(data_dir, directory)
             paths.append(directory)
-    return [p for p in paths if p and not is_remote(p)]
+    return [p for p in paths if p and not is_remote_path(p)]
 
 
 def resolve_relative_dataset_paths():
@@ -107,7 +106,7 @@ def resolve_relative_dataset_paths():
     args = None
     for name in ("dataset_path", "dataset_id"):
         value = request.args.get(name)
-        if not value or is_remote(value) or os.path.isabs(os.path.expanduser(value)):
+        if not value or is_remote_path(value) or os.path.isabs(os.path.expanduser(value)):
             continue
         candidate = os.path.join(os.path.expanduser(data_dir), value)
         if not os.path.exists(value) and os.path.exists(candidate):

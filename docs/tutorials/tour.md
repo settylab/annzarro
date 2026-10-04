@@ -45,6 +45,14 @@ focus.
 (tut-tour-cell-row)=
 ## 2. One cell, one row
 
+::::{dropdown} Start here: this section's walk, beside the focused cell's kernel row (protocol view A)
+```{literalinclude} ../_static/panelsets/protocol/protocol-A-kernel-walk.url.txt
+:language: text
+```
+Panel set file: {download}`protocol-A-kernel-walk.json <../_static/panelsets/protocol/protocol-A-kernel-walk.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 3. In the Welcome tile, under "Create New Panel", click **Cell Plot**. A new panel opens with
    its controls showing. Set:
    - **X** `obsm` · `X_umap` · `0`; **Y** `obsm` · `X_umap` · `1`.
@@ -70,6 +78,14 @@ largest value is 0.0126, and 90.7% of its mass is on HSCs (`figures/NOTES.md` of
 
 (tut-tour-clicks)=
 ## 3. Click to move the focus
+
+::::{dropdown} Start here: the walk and the cell types as this section sets them up
+```{literalinclude} ../_static/panelsets/paper/fig2-focus-sequence.url.txt
+:language: text
+```
+Panel set file: {download}`fig2-focus-sequence.json <../_static/panelsets/paper/fig2-focus-sequence.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 To see where each click lands, put a cell-type map beside the walk.
 
@@ -133,6 +149,14 @@ the cell whose row is shown. The arrows beside **Focused Cell** replay the seque
 
 (tut-tour-four-arrows)=
 ## 4. The four slices of the focus model
+
+::::{dropdown} Start here: the four slices this section builds
+```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+:language: text
+```
+Panel set file: {download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 The walk panel uses one of four kinds of slice. This section puts all four on screen: a 2 × 2
 grid whose left column holds cell scatters and right column gene scatters, with the top row
@@ -210,6 +234,14 @@ in a scatter.
 (tut-tour-lock)=
 ## 5. Lock a panel and move the focus past it
 
+::::{dropdown} Start here: the four slices of section 4
+```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+:language: text
+```
+Panel set file: {download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 A lock pins one panel's slice to the cell or gene it shows now, while the other panels keep
 following the focus. This is how you compare two cells or two genes side by side
 ({doc}`cells-and-genes` compares two cells gene by gene this way).
@@ -243,6 +275,14 @@ make the panel follow the focus.
 (tut-tour-overview)=
 ## 6. Four linked panels with a table
 
+::::{dropdown} Start here: the four linked panels this section builds
+```{literalinclude} ../_static/panelsets/paper/fig2-overview.url.txt
+:language: text
+```
+Panel set file: {download}`fig2-overview.json <../_static/panelsets/paper/fig2-overview.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 The paper's overview screenshot combines a walk, a volcano, a fold-change map and a cell
 table. From the grid of section 4:
 
@@ -273,6 +313,14 @@ HSCs. Click a cell ID in the table and it becomes the focused cell.
 
 (tut-tour-filter)=
 ## 7. Filter cells with two conditions and mask a plot
+
+::::{dropdown} Start here: the filtered table and the masked UMAP (protocol view E)
+```{literalinclude} ../_static/panelsets/paper/fig2-table-filter.url.txt
+:language: text
+```
+Panel set file: {download}`fig2-table-filter.json <../_static/panelsets/paper/fig2-table-filter.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 A cell table's "Advanced Search" holds any number of conditions combined with AND or OR,
 nested if needed. A plot can take the rows that pass as a mask ("Table filter"). The mask
@@ -392,13 +440,34 @@ dataset path included). Anyone who can
 reach the same server and dataset path opens exactly this view ({doc}`../user-guide/share-links`,
 {doc}`../reference/deep-links`).
 
+(tut-start-links)=
 (tut-tour-views)=
 ## Open the views
 
-Each view of this tour is a share link. Replace `/path/to/annzarro-data` with the absolute path
-of your data directory and `127.0.0.1:8000` with your server's address
-({doc}`../user-guide/share-links`). `dataset_path` must be absolute; a bare file name is not
-found.
+Every section with a **Start here** box, here and in the other tutorials, has a share link to its
+view, so you can start at any section. The links are written for the server of
+{doc}`../getting-started/quickstart`:
+
+```text
+http://127.0.0.1:8000/?dataset_path=bm_aging.zarr#view=z1...
+└─────────┬─────────┘               └─────┬─────┘      └─┬─┘
+1. your server                      2. the store       3. the view
+```
+
+- **1. Your server address.** Replace `http://127.0.0.1:8000` with the address you open AnnZarro
+  at (another port, a remote host, an SSH tunnel's local port).
+- **2. The store.** `dataset_path=bm_aging.zarr` (or `bm_aging_showcase.zarr`) is a file name: the
+  server looks for it in its data directory (`--data-dir`, default `~/annzarro-data`). If the
+  store is there, leave it. If it is elsewhere, replace the name with the store's absolute path;
+  only a local single-user server opens paths outside the data directory
+  ({doc}`../deployment/authentication`).
+- **3. The view**: everything after `#view=` (layout, panels, focus). Copy it unchanged.
+
+The same view as a file: download the box's panel set file and load it with **Load Panel Set** >
+**Upload file** ({ref}`tut-tour-load-file`). The file names its store by file name too, and does
+not depend on the server address.
+
+The views of this tour:
 
 ::::{dropdown} Sections 4 and 5: the four slices of the focus model
 ```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt

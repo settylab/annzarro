@@ -160,6 +160,9 @@ before any path is looked at.
   Dataset picker and refused if opened by path. The startup log names every such link.
 - On a local single-user server (loopback, no login) there is no confinement: you can open any
   path your account can read.
+- Only `s3://`, `gs://`, `gcs://`, `http://` and `https://` count as remote stores; they skip
+  this check and follow the remote-store policy below. Any other `scheme://` path (`file://`,
+  `ftp://`) is checked as a local path, so on a shared server it is refused.
 
 ## Remote stores
 
