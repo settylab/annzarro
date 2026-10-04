@@ -1098,12 +1098,15 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       actions: [['subset', 'Subset\u2026']] };
   }
   if (refusal) {
+    // no plot yet: the placeholder says it (with the way out); a plot drawn
+    // before stays, and its strip says this one was not drawn
     if (!p.livePlot) {
       drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal.why,
-        { source: 'browser memory', unit, total: n }), unit);
+        { source: 'browser memory', unit, total: n }), unit, { actions: refusal.actions });
+    } else {
+      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
+        pop: { text: refusal.why, actions: refusal.actions } });
     }
-    setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
-      pop: { text: refusal.why, actions: refusal.actions } });
     return false;
   }
   setStatusTag(plotContainer, 'memory', result.verdict === 'warn'

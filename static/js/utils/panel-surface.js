@@ -346,6 +346,13 @@ function wireStrips() {
         closeAll(strip && strip._host ? strip : null);
     }, true);
     document.addEventListener('click', (e) => {
+        // an action offered by a placeholder (drawPlaceholder's actions)
+        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder');
+        const placed = placeholder && e.target.closest('[data-ps-action]');
+        if (placed && placeholder.parentNode) {
+            _actions.run(placed.dataset.psAction, placeholder.parentNode);
+            return;
+        }
         const strip = e.target.closest && e.target.closest(`.${STRIP_CLASS}`);
         if (!strip || !strip._host) return;
         const host = strip._host;
@@ -643,7 +650,7 @@ function withTraceUids(traces) {
  * @param {Coverage} coverage
  * @param {string} [unit]
  */
-export function drawPlaceholder(host, coverage, unit) {
+export function drawPlaceholder(host, coverage, unit, { actions } = {}) {
     if (!host) return;
     const cov = coerce(coverage, unit);
     const { severity, headline, lines } = cov.describe();
@@ -656,10 +663,13 @@ export function drawPlaceholder(host, coverage, unit) {
     const body = lines.length
         ? `<ul class="coverage-placeholder__reasons">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
         : '';
+    // what undoes it, as the strip offers it ([action, label] pairs, see registerStatusActions)
+    const todo = actions && actions.length ? actionButtons(actions, host) : '';
     host.innerHTML =
         `<div class="coverage-placeholder coverage-placeholder--${severity}" role="status">`
         + `<div class="coverage-placeholder__headline">${escapeHtml(headline || 'Nothing to show')}</div>`
         + body
+        + (todo ? `<div class="coverage-placeholder__do">${todo}</div>` : '')
         + `</div>`;
 
     // The placeholder IS the statement here -- it occupies the whole panel

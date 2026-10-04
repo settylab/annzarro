@@ -43,19 +43,21 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
     window.addEventListener('pagehide', () => clearPending(storage()));
 }
 
-/** The action the previous page died in, if it was drawing panel `id` (read once). */
+/**
+ * The action the previous page died in, if it was drawing panel `id`. It
+ * holds for this page until "Draw anyway" (overrideOnce): a panel's init and
+ * the dataset's arrival both ask to draw it.
+ */
 export function crashedDrawing(id) {
-    if (_crashed && _crashed.panel === id) {
-        const c = _crashed;
-        _crashed = null;
-        return c;
-    }
-    return null;
+    return _crashed && _crashed.panel === id ? _crashed : null;
 }
 
 /** Panels the user told to draw although the guard or the crash marker said no. */
 const _overrides = new Set();
-export function overrideOnce(id) { _overrides.add(id); }
+export function overrideOnce(id) {
+    _overrides.add(id);
+    if (_crashed && _crashed.panel === id) _crashed = null;
+}
 export function takeOverride(id) { return _overrides.delete(id); }
 
 // -- settings, limits, what is held ------------------------------------------
