@@ -461,3 +461,61 @@ def test_3d_keeps_a_chosen_opacity(faint_server):
             page.close()
         finally:
             browser.close()
+
+
+SORT_STATE = """() => { const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
+    const pts = gd.data.filter(t => t.x && t.x.length > 1);
+    const c = pts[0].marker.color.map(v => Math.abs(v));
+    const b = document.getElementById('sort-by-color-%s');
+    return { type: pts[0].type, sorted: pts.some(t => !!t._azOrder),
+             ascending: c.every((v, i) => i === 0 || c[i - 1] <= v),
+             highlight: gd.data.some(t => /^focused (cell|gene)$/i.test((t.name || '').trim())),
+             disabled: b.disabled, active: b.classList.contains('active'), title: b.title }; }""" % (PID, PID)
+
+
+def test_strong_on_top_is_off_in_3d(server):
+    """In 3D depth decides which points are in front: the toggle is disabled with that reason, the
+    points keep data order whatever the setting, and the 2D setting applies again back in 2D."""
+    colour = {"color": {"type": "obs", "key": "total_counts", "column": ""}}
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, **colour))
+            s = page.evaluate(SORT_STATE)
+            assert (s["type"], s["sorted"], s["ascending"], s["disabled"], s["active"]) == ("scattergl", True, True, False, True), s
+
+            page.click(f"#z-axis-toggle-{PID}")
+            page.wait_for_function(SORT_STATE.replace("return {", "return pts.length && pts[0].type === 'scatter3d' && {"),
+                                   timeout=30000)
+            page.wait_for_timeout(500)
+            s = page.evaluate(SORT_STATE)
+            assert s["disabled"] and s["title"] == "In 3D, depth decides which points are in front", s
+            assert s["active"], "the 2D setting is shown, not changed"
+            assert not s["sorted"] and not s["ascending"], "3D points keep data order"
+            assert s["highlight"], "the focused-cell highlight still works in 3D"
+
+            page.click(f"#z-axis-toggle-{PID}")
+            page.wait_for_function(SORT_STATE.replace("return {", "return pts.length && pts[0].type === 'scattergl' && {"),
+                                   timeout=30000)
+            page.wait_for_timeout(500)
+            s = page.evaluate(SORT_STATE)
+            assert (s["sorted"], s["ascending"], s["disabled"], s["active"]) == (True, True, False, True), s
+            assert s["title"] == "Draw the largest |colour| values on top"
+
+            # off in 2D stays off through a 3D round trip
+            page.click(f"#sort-by-color-{PID}")
+            page.wait_for_timeout(800)
+            assert page.evaluate(SORT_STATE)["active"] is False
+            for kind in ("scatter3d", "scattergl"):
+                page.click(f"#z-axis-toggle-{PID}")
+                page.wait_for_function(SORT_STATE.replace("return {", f"return pts.length && pts[0].type === '{kind}' && {{"),
+                                       timeout=30000)
+                page.wait_for_timeout(500)
+            s = page.evaluate(SORT_STATE)
+            assert (s["active"], s["sorted"], s["disabled"]) == (False, False, False), s
+            cfg = page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['%s']" % PID)
+            assert cfg["sortByColor"] is False and not cfg.get("z"), cfg
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()

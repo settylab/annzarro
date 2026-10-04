@@ -2,7 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import { notInSubsetLabel } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
-import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle } from './panel-ui-update.js';
+import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
@@ -648,6 +648,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     plotContainer._pointCount = nPoints;
     applyAutoPointStyle(settings, nPoints, pointStyleBase());
     showPointStyle(id, settings);
+    showColorSortControl(id, settings);
 
     // Check again for abort signal before showing loading indicator
     if (signal && signal.aborted) {
@@ -1264,10 +1265,20 @@ export function colorSortOrder(colors) {
   return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
 }
 
+/**
+ * Whether strong-on-top reorders points: on (the default) in a 2D plot. In
+ * 3D depth decides which points are in front, so the sort means nothing
+ * there and is skipped; settings.sortByColor is kept for 2D.
+ */
+export function colorSortApplies(settings) {
+  return !!settings && settings.sortByColor !== false && !settings.z;
+}
+
 export async function sortTracesByColor(gd, settings) {
-  if (!gd || !Array.isArray(gd.data) || settings.sortByColor === false || typeof Plotly === 'undefined') return;
+  if (!gd || !Array.isArray(gd.data) || !colorSortApplies(settings) || typeof Plotly === 'undefined') return;
   for (let i = 0; i < gd.data.length; i++) {
     const t = gd.data[i];
+    if (t && t.type === 'scatter3d') continue;
     const colors = t && t.marker && t.marker.color;
     if (!Array.isArray(colors) || t.marker.colorscale === undefined || t._azOrder) continue;
     const order = colorSortOrder(colors);

@@ -729,6 +729,21 @@ export function showPointStyle(id, settings) {
 }
 
 /**
+ * The "Strong on top" toggle: disabled in 3D, where depth decides which
+ * points are in front (plot-make.js colorSortApplies), and shown with its
+ * 2D state, which applies again when the plot returns to 2D.
+ */
+export function showColorSortControl(id, settings) {
+  const $button = jQuery(`#sort-by-color-${id}`);
+  if (!$button.length) return;
+  const is3D = !!settings.z;
+  $button.prop('disabled', is3D).attr('title', is3D
+    ? 'In 3D, depth decides which points are in front'
+    : 'Draw the largest |colour| values on top');
+  $.updateButtonState($button, settings.sortByColor !== false);
+}
+
+/**
  * The scales of the colour min and max sliders (slider-scales.js), or null
  * when no value is finite. Both move in quantile space; centred at 0 they
  * move over |value|, the min thumb mirrored, so min = -max position for
