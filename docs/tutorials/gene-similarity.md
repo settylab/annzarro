@@ -41,6 +41,14 @@ expressed in the same cell states whether or not they change. Both are dense
 (tut-gene-volcano-row)=
 ## 1. Colour a volcano by the focused gene's row
 
+::::{dropdown} Start here: the volcano coloured by the focused gene's row (steps 1 and 2)
+```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 1. Open `bm_aging_showcase.zarr` from **Dataset**.
 2. In the bottom selector, add a gene plot. Open its controls (the chevron in the tile header).
 3. Set **X** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y** to `var`,
@@ -96,6 +104,14 @@ DE genes alone could not contain them.
 (tut-gene-refocus)=
 ## 2. Click a gene to follow another row
 
+::::{dropdown} Start here: the volcano of step 1
+```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 1. Click the point at mean log2 fold change 0.14, Mahalanobis 12.6. That is H2-Aa, an MHC class II
    gene. The header's **Focused Gene** changes to `H2-Aa`, the red marker moves to it, and the
    plot recolours with H2-Aa's row.
@@ -127,6 +143,14 @@ class II antigen presentation, correlated with each other at only 0.20. Use the 
 
 (tut-gene-modules)=
 ## 3. Compare the graded row with discrete modules
+
+::::{dropdown} Start here: rank strips and the module table
+```{literalinclude} ../_static/panelsets/paper/fig4-c.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 The conventional route clusters the 190 DE genes by average linkage on 1 − ρ and cuts the tree
 at the silhouette maximum, k = 3. AnnZarro does not cluster. The showcase store holds the
@@ -178,6 +202,14 @@ of it, and at this data size a weak one: the silhouette is flat (0.23 to 0.25 fo
 
 (tut-gene-two-rows)=
 ## 4. Separate a shared age response from a shared expression pattern
+
+::::{dropdown} Start here: the smoothed row against the fold-change row
+```{literalinclude} ../_static/panelsets/paper/fig4-d.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
 
 Two genes can correlate because they change together with age, or merely because they are
 expressed in the same cells. Plot the two rows of the focused gene against each other. Both axes
@@ -251,9 +283,9 @@ its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` follows the focused gene
 (tut-gene-views)=
 ## Open the views
 
-Each view is a share link with the panels configured. Replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
-directory that holds the store on the server, then open
-the link ({doc}`../user-guide/share-links`). `dataset_path` must be absolute.
+The views of this tutorial, each also in the **Start here** box of its section. They are ready
+for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: volcano coloured by the focused gene's row (H2-Q7)
 ```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt

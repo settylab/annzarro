@@ -40,8 +40,8 @@ rebuilds them exactly.
 
 ## Views
 
-Replace `/path/to/annzarro-data` with the absolute path of your data directory and the host with
-your server's ({doc}`../user-guide/share-links`).
+The links are ready for a local server with the store in its data directory; to use another
+server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} Panel a: four linked panels
 ```{literalinclude} ../_static/panelsets/paper/fig2-overview.url.txt
