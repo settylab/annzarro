@@ -56,6 +56,8 @@ test('a closed table keeps its rows and filter as values, not through the DataTa
     }
     // what the panel set and Reopen read: the same keys and values
     assert.deepEqual(JSON.parse(JSON.stringify({ ...t.settings })).currentEntries, [3, 1, 4]);
+    // no row names given: no filter by name
+    assert.equal(t.settings.closedSelection, undefined);
     // the frozen values can be replaced by a later config, as plain settings
     assignKnownSettings(t.settings, { currentEntries: [9] });
     assert.deepEqual(t.settings.currentEntries, [9]);
@@ -76,4 +78,12 @@ test('a getter that throws freezes to an empty selection rather than failing the
     Object.defineProperty(s, 'currentEntries', { configurable: true, enumerable: true, get: () => { throw new Error('gone'); } });
     freezeTableState(s);
     assert.deepEqual(s.currentEntries, []);
+});
+
+test('with its row names, the filter is also kept by name, outside any config', () => {
+    const t = liveTable();
+    freezeTableState(t.settings, { rowNames: ['c0', 'c1', 'c2', 'c3', 'c4'], rows: 5 });
+    assert.deepEqual([...t.settings.closedSelection.passing], ['c3', 'c1', 'c4']);
+    assert.equal(t.settings.closedSelection.seen.length, 5);
+    assert.equal(JSON.stringify({ ...t.settings }).includes('closedSelection'), false);
 });

@@ -5,6 +5,7 @@ import { notify } from '../../utils/notify.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
+import { freezeSelection } from '../../utils/closed-table.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -532,9 +533,16 @@ export function getColumnDisplayName(column) {
  * its filter. Through the getters they kept the destroyed DataTable, and
  * every row of its data, alive for as long as the closed panel was kept for
  * Reopen. The values are the same; only the rows are let go.
+ *
+ * Row indexes only mean something for the cells the rows were loaded for, so
+ * the filter is also kept as names (`closedSelection`): a plot filtered by
+ * the closed table uses them after a subset or part change.
  * @param {Object} settings - the table panel's settings
+ * @param {Object} [opts]
+ * @param {ArrayLike<string>} [opts.rowNames] - the name of each row, in row order
+ * @param {number} [opts.rows] - rows the table had
  */
-export function freezeTableState(settings) {
+export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
     for (const key of ['currentEntries', 'searchBuilderConfig']) {
         const desc = Object.getOwnPropertyDescriptor(settings, key);
         if (!desc || !desc.get) continue;
@@ -548,6 +556,12 @@ export function freezeTableState(settings) {
             value: key === 'currentEntries' ? Array.from(value || []) : value,
             writable: true, configurable: true, enumerable: desc.enumerable
         });
+    }
+    // the filter as names, for the cells of any later subset or part
+    // (utils/closed-table.js); never copied into a config (toJSON)
+    if (rowNames) {
+        const selection = freezeSelection(settings.currentEntries, rowNames, rows);
+        settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
     }
 }
 

@@ -16,6 +16,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
+import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -884,7 +885,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('Table entities data loading aborted', 'AbortError');
         }
-        await updateTableEntities(data, settings);
+        await updateTableEntities(data, settings, plotContainer);
       })()
     );
 
@@ -1598,16 +1599,29 @@ export function createFilterMask(data, settings) {
  * Updates the table entities Set in the data object based on the current table selection
  * Also creates tableFilterMask for filtering operations
  * 
+ * A CLOSED table's filter is applied by name (utils/closed-table.js): its
+ * row indexes belong to the cells it was closed on. Cells it never had are
+ * not shown, and the plot's status line says the filter is out of date.
+ *
  * @param {Object} data - Data object to update with tableEntities
  * @param {Object} settings - Plot settings containing tableFilter
+ * @param {HTMLElement} [plotContainer] - where to say a closed table's filter is out of date
  * @returns {Promise<boolean>} - Promise resolving to true if tableEntities changed, false otherwise
  */
-export async function updateTableEntities(data, settings) {
+export async function updateTableEntities(data, settings, plotContainer = null) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  const stale = (s) => {
+    data.tableFilterStale = s;
+    if (plotContainer) {
+      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: s.text,
+        pop: { text: s.text, actions: [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']] } } : null);
+    }
+  };
   
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
+    stale(null);
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -1636,19 +1650,30 @@ export async function updateTableEntities(data, settings) {
   }
   
   // Create a new Set of table entities
-  const newTableEntities = new Set();
+  let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  
-  // Get entity names based on indices in the table
-  tableConfig.currentEntries.forEach(index => {
-    if (entities && index < entities.length) {
-      const entityName = entities[index];
-      if (entityName) {
-        newTableEntities.add(entityName);
+  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel));
+
+  if (closed) {
+    // by name, on the cells shown now
+    const { passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []);
+    newTableEntities = passing;
+    const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
+  } else {
+    stale(null);
+    // Get entity names based on indices in the table
+    tableConfig.currentEntries.forEach(index => {
+      if (entities && index < entities.length) {
+        const entityName = entities[index];
+        if (entityName) {
+          newTableEntities.add(entityName);
+        }
       }
-    }
-  });
+    });
+  }
   
   // Compare with existing tableEntities to see if they've changed
   let changed = false;

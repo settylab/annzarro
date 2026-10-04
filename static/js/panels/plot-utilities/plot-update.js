@@ -1415,7 +1415,7 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   }
   
   // Use the new updateTableEntities function to efficiently update table entities
-  const tableEntitiesChanged = await updateTableEntities(data, settings);
+  const tableEntitiesChanged = await updateTableEntities(data, settings, plotContainer);
   
   // If table entities didn't change, no need to update the plot
   if (!tableEntitiesChanged) {

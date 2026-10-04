@@ -537,8 +537,22 @@ const App = (function() {
                 return !!(panel && typeof panel.refreshPlot === 'function');
             }
             case 'export-shown': return canSnapshot(host);
+            case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+            case 'table-filter-off': return !!_tableFilterSelect(id);
             default: return false;
         }
+    }
+
+    /** The table a plot panel is filtered by (its tableFilter setting), or null. */
+    function _tableFilterOf(id) {
+        const panel = PanelManager.getPanel(id);
+        const cfg = panel && panel.getConfig ? panel.getConfig() : null;
+        return cfg && cfg.tableFilter && cfg.tableFilter !== 'none' ? cfg.tableFilter : null;
+    }
+
+    /** A plot panel's table-filter select. */
+    function _tableFilterSelect(id) {
+        return document.querySelector(`.tile[data-tile-id="${id}"] select.table-filter-select`);
     }
 
     /**
@@ -570,6 +584,19 @@ const App = (function() {
                 if (action === 'draw-anyway') overrideOnce(id);
                 const panel = PanelManager.getPanel(id);
                 if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
+                break;
+            }
+            case 'reopen-table': {
+                const btn = document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+                if (btn) btn.click();
+                break;
+            }
+            case 'table-filter-off': {
+                const select = _tableFilterSelect(id);
+                if (select) {
+                    select.value = 'none';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 break;
             }
             case 'export-shown':

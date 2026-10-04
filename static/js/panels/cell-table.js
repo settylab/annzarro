@@ -273,7 +273,7 @@ const CellTablePanel = (function() {
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go
-                freezeTableState(_settings);
+                freezeTableState(_settings, { rowNames: DataManager.getCells(), rows: _dataTable.rows().count() });
                 _dataTable.destroy();
                 _dataTable = null;
             }
