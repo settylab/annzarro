@@ -36,6 +36,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| macOS: “AnnZarro” Not Opened, “Apple could not verify “AnnZarro” is free of malware…” | The app is ad-hoc signed and not notarized; since macOS 15, right-click > Open no longer gets past this | Click **Done**, then **System Settings > Privacy & Security > Open Anyway** and confirm, once ({doc}`../getting-started/desktop-app`, First launch) |
 | The loading screen stays for more than a few seconds | First start after installing: Gatekeeper or Defender scans the bundled server | Wait; the screen counts the seconds. After 180 s the app shows an error page instead |
 | Error page "AnnZarro could not start: …" | The server did not answer within 180 s, exited, or the interface did not load within 60 s | Read the log named on the page (its `server:` lines are the server's own output), then **Retry** ({doc}`../getting-started/desktop-app`) |
 | A panel says "No dataset loaded" after starting the app. Reproduced | The layout was restored from the last session, but its dataset was moved or deleted; a "Failed to load dataset" notice names it | Choose a dataset in the Dataset picker, or close the panel. Builds before PR #54 showed a spinner here that never stopped |

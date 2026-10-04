@@ -217,4 +217,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" assets/* \
             --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
             --title "AnnZarro ${GITHUB_REF_NAME#v}" \
-            --notes "Desktop apps for Windows, macOS and Linux. The builds are not code-signed: see the first-launch notes in README.md (Desktop app). Verify downloads against SHA256SUMS.txt."
+            --notes "Desktop apps for Windows, macOS and Linux. The builds are not signed with a developer identity (the macOS app is ad-hoc signed, not notarized), so the first launch needs one extra step. macOS 15 and 26: macOS says \"AnnZarro\" Not Opened; click Done, then System Settings > Privacy & Security > Security > Open Anyway, and confirm (once). macOS 14 and earlier: right-click the app > Open. Windows: More info > Run anyway. Details: https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html (First launch). Verify downloads against SHA256SUMS.txt."

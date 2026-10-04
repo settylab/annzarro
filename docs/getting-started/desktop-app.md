@@ -40,12 +40,20 @@ app; use the Python package with the `remote` extra for those ({doc}`installatio
 
 ## First launch
 
-The builds are not code-signed yet, so the first launch needs one extra step:
+The builds are not code-signed with a developer identity yet (the macOS app is only ad-hoc
+signed and not notarized), so the first launch needs one extra step:
 
-- **macOS**: the system says Apple cannot check AnnZarro for malicious software. Open
-  **System Settings > Privacy & Security**, scroll to the message about AnnZarro and click
-  **Open Anyway** (once). Or, in a terminal:
-  `xattr -dr com.apple.quarantine /Applications/AnnZarro.app`.
+- **macOS 15 (Sequoia) and macOS 26 (Tahoe)**: opening the app the first time shows
+  **“AnnZarro” Not Opened** (the name may read “AnnZarro.app”): *Apple could not verify
+  “AnnZarro” is free of malware that may harm your Mac or compromise your privacy.*, with the
+  buttons **Done** and **Move to Trash**. Click **Done**. Then open **System Settings > Privacy &
+  Security**, scroll down to **Security**, where it says **“AnnZarro” was blocked to protect your
+  Mac.**, and click **Open Anyway**. macOS asks once more (**Open “AnnZarro”?**); confirm, and
+  enter your password or use Touch ID when asked. This is needed once; later starts open
+  normally. Since macOS 15, right-click (Control-click) > **Open** no longer gets past this check.
+- **macOS 14 (Sonoma) and earlier**: right-click (Control-click) the app in Applications, choose
+  **Open**, then **Open** in the dialog. Once is enough. **System Settings > Privacy & Security >
+  Open Anyway** works there too.
 - **Windows**: SmartScreen says "Windows protected your PC". Click **More info**, then
   **Run anyway**.
 - **Linux**: no extra step beyond `chmod +x` for the AppImage. On Ubuntu 24.04 and later an
