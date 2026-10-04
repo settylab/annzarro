@@ -623,7 +623,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
   const started = performance.now();
   // the browser memory guard's ledger: reserved before the draw, committed
   // once it is drawn, cancelled otherwise (memoryGate)
-  let reserved = false, drawn = false;
+  let reserved = 0, drawn = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
@@ -666,8 +666,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
 
     // Will it fit next to the other panels? (utils/memory-guard-ui.js)
-    if (!(await memoryGate(plotContainer, settings, id, isGenePlot, nPoints))) return;
-    reserved = true;
+    const token = await memoryGate(plotContainer, settings, id, isGenePlot, nPoints);
+    if (token === null) return;
+    reserved = token;
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
@@ -1047,9 +1048,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (reserved) {
       unmark();
       if (drawn && plotContainer.isConnected) {
-        commit(id);
+        commit(id, null, reserved);
       } else {
-        cancel(id);
+        cancel(id, reserved);
         // drawn into a panel closed meanwhile: free it now, not at GC
         if (drawn) releasePlot(plotContainer);
       }
@@ -1064,7 +1065,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  * panels hold is not drawn, and its status strip says why and what helps;
  * a plot that was being drawn when the previous page died waits for "Draw
  * anyway". With ui.memory.enforce warn it is drawn, with a warning tag.
- * @returns {Promise<boolean>} true when the draw may go on (it is then reserved)
+ * @returns {Promise<number|null>} null when refused; else the draw's ledger
+ *   token (0: the check failed and nothing was reserved)
  */
 async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
   const unit = isGenePlot ? 'genes' : 'cells';
@@ -1084,7 +1086,7 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
   } catch (error) {
     // the guard must never be why a plot is not drawn
     console.warn('Browser memory check failed; drawing without it', error);
-    return true;
+    return 0;
   }
   let refusal = null;
   if (crashed) {
@@ -1107,16 +1109,16 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
         pop: { text: refusal.why, actions: refusal.actions } });
     }
-    return false;
+    return null;
   }
   setStatusTag(plotContainer, 'memory', result.verdict === 'warn'
     ? { text: 'Over the memory budget', severity: 'warning', title: result.why,
         pop: { text: refusalText(result, 'It is drawn anyway (ui.memory.enforce: warn); the tab may run out of memory.'),
           actions: [['subset', 'Subset\u2026']] } }
     : null);
-  reserve(id, p);
+  const token = reserve(id, p);
   markIfRisky(result, { panel: id, n, action: 'draw' });
-  return true;
+  return token;
 }
 
 

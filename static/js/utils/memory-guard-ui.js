@@ -217,12 +217,12 @@ ledger.onChange(() => {
     }, 50);
 });
 
-/** A panel's draw starts. */
-export function reserve(id, p) { ledger.reserve(id, p); }
-/** A panel's draw finished. */
-export function commit(id, p = null) { ledger.commit(id, p); _scheduleMeasure(); }
+/** A panel's draw starts; returns its token (Ledger.reserve). */
+export function reserve(id, p) { return ledger.reserve(id, p); }
+/** A panel's draw finished (that draw's token, or a cost `p`, e.g. a table's rows). */
+export function commit(id, p = null, token = null) { ledger.commit(id, p, token); _scheduleMeasure(); }
 /** A panel's draw did not happen. */
-export function cancel(id) { ledger.cancel(id); }
+export function cancel(id, token = null) { ledger.cancel(id, token); }
 /** A panel was closed or cleared. */
 export function forget(id) { ledger.remove(id); _scheduleMeasure(); }
 

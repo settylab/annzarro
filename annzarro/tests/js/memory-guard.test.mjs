@@ -299,3 +299,31 @@ test('crash marker: what was running when the tab died, read once; a crash earns
     for (let i = 0; i < 6; i++) learnFromCrash(s);
     assert.equal(learnedMargin(s), 1);
 });
+
+test('overlapping draws of one panel: the first one ending does not settle the second', () => {
+    // seen on a new panel: init and the dataset's arrival both start a draw;
+    // the first is aborted after the second reserved
+    const L = new Ledger();
+    const p = { kind: 'cell-plot', n: 1e6, colour: 'numeric' };
+    const t1 = L.reserve('a', p);
+    const t2 = L.reserve('a', p);
+    assert.notEqual(t1, t2);
+    L.cancel('a', t1);                  // the aborted first draw
+    assert.equal(L.pending.has('a'), true, 'the second draw is still reserved');
+    L.commit('a', null, t2);
+    assert.ok(L.get('a'), 'and its end commits the panel');
+    assert.equal(L.pending.has('a'), false);
+    // an older draw that finishes after a newer one started still records the plot
+    const t3 = L.reserve('b', p);
+    const t4 = L.reserve('b', { ...p, n: 2e6 });
+    L.commit('b', null, t3);
+    assert.equal(L.get('b').n, 1e6);
+    assert.equal(L.pending.get('b').token, t4, 'the newer draw stays reserved');
+    L.commit('b', null, t4);
+    assert.equal(L.get('b').n, 2e6);
+    // removing a panel drops its unsettled draws too
+    L.reserve('c', p);
+    L.remove('c');
+    L.commit('c', null, 999);
+    assert.equal(L.get('c'), null);
+});

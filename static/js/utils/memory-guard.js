@@ -287,7 +287,9 @@ export class Ledger {
     constructor(model = DEFAULT_MODEL) {
         this.model = model;
         this.entries = new Map();     // id -> {kind, n, large, colour, threeD, resident, peak, title}
-        this.pending = new Map();     // id -> same, while drawing
+        this.pending = new Map();     // id -> same, while drawing (the panel's latest draw)
+        this._drawing = new Map();    // token -> entry, every draw not yet settled
+        this._seq = 0;
         this.cacheBytes = 0;
         this.observed = null;         // {bytes, at, source}: a measured total, when the browser gives one
         this._listeners = new Set();
@@ -302,29 +304,50 @@ export class Ledger {
             resident: c.resident, peak: c.peak };
     }
 
-    /** A draw of panel `id` starts; until commit or cancel it counts at its peak. */
+    /**
+     * A draw of panel `id` starts; until commit or cancel it counts at its
+     * peak. Returns the draw's token: a panel can start a second draw before
+     * the first one ends (init and the dataset's arrival both draw), and
+     * the first one's end must not settle the second one's reservation.
+     */
     reserve(id, p) {
-        this.pending.set(id, this._entry(id, p));
+        const token = ++this._seq;
+        const e = { ...this._entry(id, p), token };
+        this.pending.set(id, e);
+        this._drawing.set(token, e);
         this._changed();
+        return token;
     }
 
-    /** The draw finished: the panel now holds its resident cost (the reserved one, or `p`). */
-    commit(id, p = null) {
-        const e = p ? this._entry(id, p) : this.pending.get(id);
-        this.pending.delete(id);
+    /**
+     * The draw finished: the panel now holds its resident cost. With a
+     * token, that draw's reservation; with `p`, that cost; else the
+     * panel's current reservation.
+     */
+    commit(id, p = null, token = null) {
+        const e = p ? this._entry(id, p) : (token ? this._drawing.get(token) : this.pending.get(id));
+        if (token) this._drawing.delete(token);
+        const cur = this.pending.get(id);
+        if (cur && (!token || cur.token === token)) this.pending.delete(id);
         if (e) this.entries.set(id, e);
         this._changed();
     }
 
     /** The draw did not happen (aborted, refused, failed): what was held before stays. */
-    cancel(id) {
-        if (this.pending.delete(id)) this._changed();
+    cancel(id, token = null) {
+        if (token) this._drawing.delete(token);
+        const cur = this.pending.get(id);
+        if (cur && (!token || cur.token === token)) {
+            this.pending.delete(id);
+            this._changed();
+        }
     }
 
     /** The panel was closed or emptied. */
     remove(id) {
         const a = this.entries.delete(id);
         const b = this.pending.delete(id);
+        for (const [t, e] of this._drawing) if (e.id === id) this._drawing.delete(t);
         if (a || b) this._changed();
     }
 

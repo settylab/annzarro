@@ -256,6 +256,13 @@ def test_tiles_follow_the_headroom_and_close_frees(server, page):
     page.wait_for_function("""() => [...document.querySelectorAll('.panel-type-option[data-type="cell-plot"]')]
         .every(o => !o.classList.contains('memory-blocked'))""", timeout=5000)
 
+    # a panel created interactively is in the ledger once drawn (its init and
+    # the dataset both start a draw; the first one's end must not lose the second)
+    page.evaluate("""() => window.PanelManager.createPanelInLayout('cell-plot', { id: 'cell-plot-n',
+        x: { type: 'obsm', key: 'X_umap', column: '0' }, y: { type: 'obsm', key: 'X_umap', column: '1' },
+        color: { type: 'obs', key: 'cell_type' } })""")
+    _drawn(page, "cell-plot-n")
+
 
 def test_subset_chips_count_every_open_plot(server, page):
     ids = ("cell-plot-a", "cell-plot-b", "cell-plot-c")
