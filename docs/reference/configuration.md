@@ -59,7 +59,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `cache_enabled` | `true` | Server-side cache of dataset metadata and read results. |
 | `cache_memory_mb` | `4000` | Memory bound of that cache, per process (per gunicorn worker). `base.yaml` alone: 1000. |
 | `cache_dataset_limit` | `20` | Datasets kept open in the cache. |
-| `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `http(s)://` stores; see {doc}`../deployment/authentication`. |
+| `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. |
 | `remote_credentials` | `anonymous` | `anonymous` (unsigned requests) or `environment` (the AWS and Google standard credential chains of the server account). |
 | `remote_connect_timeout_s` | `10` | Seconds to establish a connection to a remote store. |

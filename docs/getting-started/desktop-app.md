@@ -8,7 +8,7 @@ separate Python installation and no login. It is the "Desktop app" arrangement o
 
 Standalone apps for macOS, Windows and Linux are published with each release on the
 [GitHub releases page](https://github.com/settylab/annzarro/releases) of `settylab/annzarro`.
-`<version>` below is the release, for example `0.2.0`.
+`<version>` below is the release, for example `0.3.0`.
 
 | System | File | What it is |
 |---|---|---|
@@ -124,11 +124,12 @@ is in {doc}`../reference/cli`.
 ## Making a release
 
 The app version is the Python package version in `pyproject.toml`. `bump_version.py` writes it
-to `annzarro/__init__.py` and `annzarro/desktop/electron/package.json`, and CI refuses a build
-where they differ.
+to `annzarro/__init__.py`, `annzarro/desktop/electron/package.json` and its `package-lock.json`.
+CI refuses a build whose `package.json` differs, and `annzarro/tests/utils/test_bump_version.py`
+checks that all of them agree.
 
-1. `python bump_version.py 0.2.0`, commit, merge.
-2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+1. `python bump_version.py 0.3.0`, commit, merge.
+2. Tag and push: `git tag v0.3.0 && git push origin v0.3.0`.
 3. The workflow `.github/workflows/build.yml` builds and smoke-tests macOS (arm64, x64), Windows
    and Linux, then creates a **draft** release with all files and `SHA256SUMS.txt`. Review it
    and publish.
