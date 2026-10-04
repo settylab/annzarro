@@ -2398,6 +2398,9 @@ button.dtsb-button.dtsb-clear:hover {
         column-gap: calc(4 * var(--ctl-u));
         row-gap: var(--ctl-u);
     }
+    /* As tall as a numerical colour's Map, Min and Max rows also for a
+       categorical one, so switching between the two does not move the plot. */
+    .ctl-colour { min-height: calc(3 * var(--ctl-h) + 5 * var(--ctl-u) + 1px); }  /* + padding, rule */
     .ctl-colour > .color-range-inputs { grid-column: 1; grid-row: 2 / span 2; }
     .ctl-colour > .ctl-toggles { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
     .ctl-points {
@@ -2443,13 +2446,13 @@ button.dtsb-button.dtsb-clear:hover {
     min-height: var(--ctl-h);
 }
 
-/* label | track | number box; an extra item (a marker, a reset) takes an
-   implicit track of its own width after the box. */
+/* label | track | number box; the auto button takes an implicit 4th track
+   of its own width after the box (placed there, or it would start a row). */
 .ctl-row.ctl-slider {
     grid-template-columns: var(--ctl-label) minmax(3rem, 1fr) var(--ctl-num);
     grid-auto-columns: auto;
 }
-.point-auto { display: flex; }
+.point-auto { display: flex; grid-column: 4; }
 .plot-controls .point-auto-btn {
     padding: 0 calc(1.5 * var(--ctl-u));
     font-size: 0.75rem;

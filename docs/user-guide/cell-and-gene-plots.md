@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Table filter; Size and Opacity sliders; Palette; Hide NaN; Equal aspect.
+:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -23,32 +23,32 @@ Cell plot controls, coloured by a categorical obs column.
    obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
 5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
-6. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
+6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
+   ({doc}`spatial-coordinates`).
+7. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
    as a red dot with a black ring. On by default.
-   **Refresh**, at the end of the row, reloads the panel's data and redraws it.
-7. **Plot Options** opens appearance and export settings ({doc}`export`).
-8. **Table** links the plot to a table ({doc}`tables-and-filters`).
-9. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
-   The sliders move on a log scale, so their left half is the small sizes and faint opacities a
-   plot of millions of cells needs: size 0.2 to 2 and opacity 0.002 to 0.045. The size slider
-   stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
-   which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
-   sliders' range.
+8. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
+   {doc}`colour-scales`).
+9. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
+   points of the **NA** legend entry). Numerical colours have more buttons next to it
+   ({doc}`colour-scales`).
+10. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
+    The sliders move on a log scale, so their left half is the small sizes and faint opacities a
+    plot of millions of cells needs: size 0.2 to 2 and opacity 0.002 to 0.045. The size slider
+    stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
+    which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
+    sliders' range.
 
-   Until you set them, both are **automatic**: they follow the number of points drawn (the
-   subset, or every cell; not the size of the panel), from the default 5 px and opaque at a few
-   thousand points down to 3 px / 0.61 at 100,000, 2 px / 0.39 at a million and 0.92 px / 0.16
-   at 95.6 million. An automatic value is shown in grey italics and changes when the number of
-   points does, for example when you turn the subset off. Moving a slider or typing a value sets it; it then stays
-   as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
-   while its value is automatic; click it to make that value automatic again.
-10. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
-    {doc}`colour-scales`).
-11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
-    points of the **NA** legend entry).
-12. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
-    ({doc}`spatial-coordinates`). Numerical colours have more buttons next to Hide NaN
-    ({doc}`colour-scales`).
+    Until you set them, both are **automatic**: they follow the number of points drawn (the
+    subset, or every cell; not the size of the panel), from the default 5 px and opaque at a few
+    thousand points down to 3 px / 0.61 at 100,000, 2 px / 0.39 at a million and 0.92 px / 0.16
+    at 95.6 million. An automatic value is shown in grey italics and changes when the number of
+    points does, for example when you turn the subset off. Moving a slider or typing a value sets it; it then stays
+    as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
+    while its value is automatic; click it to make that value automatic again.
+11. **Table** links the plot to a table ({doc}`tables-and-filters`).
+12. **Plot Options** opens appearance and export settings ({doc}`export`). **Refresh**, next to
+    it, reloads the panel's data and redraws it.
 
 A toggle that is on is filled blue and starts with a check mark. The controls rearrange with the
 panel's width: side by side in a wide panel, stacked in a narrow one.

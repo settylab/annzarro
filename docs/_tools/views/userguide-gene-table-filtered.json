@@ -32,7 +32,11 @@
       "percentage": 50,
       "controlsVisible": false
      }
-    ]
+    ],
+    "height": 1000
+   },
+   {
+    "type": "selector"
    }
   ],
   "controlState": {
@@ -80,6 +84,8 @@
     },
     "pointSize": 5,
     "pointOpacity": 0.8,
+    "autoPointSize": false,
+    "autoPointOpacity": false,
     "colorScale": "RdBu",
     "categoryPalette": "uns",
     "colorMin": -1,

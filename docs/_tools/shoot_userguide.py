@@ -410,10 +410,10 @@ def shoot_plots(sh, data_dir):
     capture(sh, page, "plots-cell-controls", c + " .plot-controls", marks=[
         (1, f"{c} .axis-type-select[data-axis=x]"), (2, f"{c} .axis-key-select[data-axis=x]"),
         (3, f"{c} .axis-column-select[data-axis=x]"), (4, f"{c} .color-selector-container .axis-selector"),
-        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=highlight-focused-cell]"),
-        (7, f"{c} [id^=aesthetics-menu-btn]"), (8, f"{c} .table-filter-controls"),
-        (9, f"{c} .point-controls"), (10, f"{c} [id^=category-palette]"),
-        (11, f"{c} [id^=hide-nan]"), (12, f"{c} [id^=equal-aspect]")])
+        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=equal-aspect]"),
+        (7, f"{c} [id^=highlight-focused-cell]"), (8, f"{c} [id^=category-palette]"),
+        (9, f"{c} [id^=hide-nan]"), (10, f"{c} .point-controls"),
+        (11, f"{c} .table-filter-controls"), (12, f"{c} [id^=aesthetics-menu-btn]")])
     toggle_controls(sh, page, "cell-plot-C")      # hide the controls: the plot fills the tile again
     capture(sh, page, "plots-categorical", c + " .tile-content")
     page.context.close()
