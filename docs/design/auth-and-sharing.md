@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Authentication and sharing
 
 Status: design. Part (a) has shipped (v0.3.0); parts (b) to (e) are the plan for
