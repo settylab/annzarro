@@ -524,10 +524,13 @@ export function withCoverageExportButton(config) {
  */
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
+    // The notice and status strip first: it takes height from the graph, and
+    // drawn after the graph it made a second, full render once the graph was
+    // fitted to the smaller space (0.8 s at 95.6M points).
+    renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
     const result = await Plotly.react(
         plotContainer, withTraceUids(traces), withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
     );
-    renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
     fitToContainer(plotContainer);
