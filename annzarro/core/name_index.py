@@ -59,42 +59,55 @@ class NameIndex:
 
     def __init__(self, names):
         """``names``: a sequence of names, or a NameChunks of them (read a
-        chunk at a time, never all as Python strings at once)."""
+        chunk at a time, never all as Python strings at once).
+
+        Built in place: the haystack grows in one bytearray (no list of parts
+        joined at the end, which held every name twice), name lengths are
+        int32 per chunk, and the original spelling is kept only for the chunks
+        whose names differ from their lower-cased form. At 95.6M Tahoe names
+        the build peaked at 9.0 GB and kept 4.15 GB; see the PR for after.
+        """
         if isinstance(names, NameChunks):
             chunks = names.chunks
         else:
             chunks = (names[a:a + self._CHUNK] for a in range(0, len(names), self._CHUNK))
         sep = _SEP.encode()
-        self._hay_parts: List[bytes] = [sep]
+        self._hay = bytearray(sep)
         self._hay_lens: List[np.ndarray] = []
-        self._orig_parts: List[bytes] = []
-        self._orig_lens: List[np.ndarray] = []
-        self._need_orig = False
+        # (first row, blob, offsets) for chunks whose names are not their
+        # lower-cased form; every other name is read back from the haystack
+        self._orig_chunks: List[Tuple[int, bytes, np.ndarray]] = []
+        self._n_added = 0
         for chunk in chunks:
             if isinstance(chunk, tuple):
                 self._add_joined(*chunk)
             else:
                 self._add_list(["" if v is None else str(v) for v in chunk])
-        n = int(sum(x.size for x in self._hay_lens))
+        n = self._n_added
         self._n = n
-        self._hay = b"".join(self._hay_parts) if n else sep * 2
-        lens = np.concatenate(self._hay_lens) if self._hay_lens else np.zeros(0, np.int64)
-        starts = np.empty(n, dtype=np.int64)
+        if not n:
+            self._hay = bytearray(sep * 2)
+        lens = np.concatenate(self._hay_lens) if self._hay_lens else np.zeros(0, np.int32)
+        del self._hay_lens
+        dtype = np.uint32 if len(self._hay) < 2 ** 32 else np.uint64
+        starts = np.empty(n, dtype=dtype)
         if n:
+            # start of name k: 1 + sum over j < k of (len_j + 1)
             starts[0] = 1
-            np.cumsum(lens[:-1] + 1, out=starts[1:])
-            starts[1:] += 1
-        self._starts = starts.astype(np.uint32 if len(self._hay) < 2 ** 32 else np.uint64)
-        if self._need_orig:
-            off = np.zeros(n + 1, dtype=np.int64)
-            np.cumsum(np.concatenate(self._orig_lens), out=off[1:])
-            blob = b"".join(self._orig_parts)
-            self._orig = blob
-            self._orig_off = off.astype(np.uint32 if len(blob) < 2 ** 32 else np.uint64)
-        else:
-            self._orig = None
-            self._orig_off = None
-        del self._hay_parts, self._hay_lens, self._orig_parts, self._orig_lens, self._need_orig
+            acc = np.cumsum(lens[:-1], dtype=np.uint64)
+            acc += np.arange(2, n + 1, dtype=np.uint64)
+            starts[1:] = acc
+        del lens
+        self._starts = starts
+        self._orig_first = np.array([c[0] for c in self._orig_chunks], dtype=np.int64)
+        del self._n_added
+
+    def _note_orig(self, joined: bytes, lengths: np.ndarray) -> None:
+        """Keep a chunk's original spelling (its names differ from the
+        haystack's lower-cased form)."""
+        off = np.zeros(lengths.size + 1, dtype=np.int64)
+        np.cumsum(lengths, out=off[1:])
+        self._orig_chunks.append((self._n_added, joined, off))
 
     def _add_joined(self, joined: bytes, lengths: np.ndarray) -> None:
         """One chunk as newline-joined UTF-8 and item byte lengths
@@ -105,13 +118,13 @@ class NameIndex:
             return
         if joined.isascii() and joined.count(_SEP.encode()) == k - 1:
             low = joined.lower()
-            self._hay_parts.append(low)
-            self._hay_parts.append(_SEP.encode())
-            self._hay_lens.append(np.asarray(lengths, dtype=np.int64))
-            self._orig_parts.append(joined.replace(_SEP.encode(), b""))
-            self._orig_lens.append(np.asarray(lengths, dtype=np.int64))
+            self._hay += low
+            self._hay += _SEP.encode()
+            lens = np.asarray(lengths, dtype=np.int32)
             if low != joined:
-                self._need_orig = True
+                self._note_orig(joined.replace(_SEP.encode(), b""), lens)
+            self._hay_lens.append(lens)
+            self._n_added += k
             return
         names, pos = [], 0
         for ln in lengths.tolist():
@@ -126,33 +139,35 @@ class NameIndex:
         joined = _SEP.join(part)
         if joined.isascii() and joined.count(_SEP) == len(part) - 1:
             # one byte per character, no newline inside a name: whole-chunk ops
-            lens = np.fromiter(map(len, part), dtype=np.int64, count=len(part))
+            lens = np.fromiter(map(len, part), dtype=np.int32, count=len(part))
             low = joined.lower()
-            self._hay_parts.append(low.encode("ascii"))
+            self._hay += low.encode("ascii")
             if low != joined:
-                self._need_orig = True
-            self._orig_parts.append(joined.replace(_SEP, "").encode("ascii"))
-            self._orig_lens.append(lens)
-            self._hay_lens.append(lens)
+                self._note_orig(joined.replace(_SEP, "").encode("ascii"), lens)
         else:
             # lower() may change a name's length ('İ'); a newline becomes a space
             low = [x.lower().replace(_SEP, " ").encode() for x in part]
             enc = [x.encode() for x in part]
-            self._hay_parts.append(sep.join(low))
-            self._hay_lens.append(np.fromiter(map(len, low), dtype=np.int64, count=len(low)))
-            self._orig_parts.append(b"".join(enc))
-            self._orig_lens.append(np.fromiter(map(len, enc), dtype=np.int64, count=len(enc)))
+            self._hay += sep.join(low)
+            lens = np.fromiter(map(len, low), dtype=np.int32, count=len(low))
             if any(lo != e for lo, e in zip(low, enc)):
-                self._need_orig = True
-        self._hay_parts.append(sep)
+                self._note_orig(b"".join(enc), np.fromiter(map(len, enc), dtype=np.int32, count=len(enc)))
+        self._hay_lens.append(lens)
+        self._hay += sep
+        self._n_added += len(part)
 
     def __len__(self) -> int:
         return self._n
 
     def name(self, row: int) -> str:
         """The original name of ``row``."""
-        if self._orig is not None:
-            return self._orig[int(self._orig_off[row]):int(self._orig_off[row + 1])].decode()
+        if self._orig_first.size:
+            k = int(np.searchsorted(self._orig_first, row, side="right")) - 1
+            if k >= 0:
+                first, blob, off = self._orig_chunks[k]
+                if row - first < off.size - 1:
+                    i = row - first
+                    return blob[int(off[i]):int(off[i + 1])].decode()
         a = int(self._starts[row])
         b = int(self._starts[row + 1]) - 1 if row + 1 < self._n else len(self._hay) - 1
         return self._hay[a:b].decode()
@@ -161,7 +176,7 @@ class NameIndex:
         """Original names in dataset order from ``start``, decoded a chunk at a time."""
         for a in range(start, self._n, self._CHUNK):
             b = min(a + self._CHUNK, self._n)
-            if self._orig is not None:
+            if self._orig_first.size:
                 for r in range(a, b):
                     yield self.name(r)
             else:

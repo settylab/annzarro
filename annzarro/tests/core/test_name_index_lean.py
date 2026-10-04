@@ -179,7 +179,29 @@ def test_ascii_lowercase_names_keep_no_second_copy(chunk):
     saved = NameIndex._CHUNK
     NameIndex._CHUNK = chunk
     try:
-        assert NameIndex(names)._orig is None, "lower-case ASCII names are read back from the haystack"
+        assert not NameIndex(names)._orig_chunks, "lower-case ASCII names are read back from the haystack"
+    finally:
+        NameIndex._CHUNK = saved
+
+
+@pytest.mark.parametrize("chunk", [3, 64, 1 << 20])
+def test_only_chunks_with_upper_case_keep_their_spelling(chunk):
+    """One chunk with capitals among lower-case ones: that chunk alone keeps
+    its original spelling, and every name and search is as before."""
+    names = [f"cell_{i:05d}" for i in range(300)]
+    for i in range(130, 140):
+        names[i] = f"Cell_{i:05d}_HSC"
+    _compare(names, chunk)
+    saved = NameIndex._CHUNK
+    NameIndex._CHUNK = chunk
+    try:
+        idx = NameIndex(names)
+        assert [idx.name(i) for i in range(len(names))] == names
+        kept = sum(len(c[1]) for c in idx._orig_chunks)
+        total = sum(map(len, names))
+        assert 0 < kept <= total
+        if chunk < len(names):
+            assert kept < total, "only the chunks with capitals are kept twice"
     finally:
         NameIndex._CHUNK = saved
 
