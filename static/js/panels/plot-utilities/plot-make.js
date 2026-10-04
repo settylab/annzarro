@@ -729,6 +729,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         renderModeNotice(plotContainer, null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        plotContainer._largePlot = true;     // restyleMarkers: size/opacity go to the regl scene
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
@@ -736,6 +737,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         return;
       }
     }
+    plotContainer._largePlot = false;
     renderModeNotice(plotContainer, null);
 
     // Reset cached data without changing its reference. Until this load

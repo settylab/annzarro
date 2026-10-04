@@ -15,7 +15,7 @@ import {
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate } from './plot-make-helper.js';
 import { formatRangeValue } from '../../utils/array-stats.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig } from '../../utils/slider-scales.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
 export function setupPlotEventListeners({
@@ -201,11 +201,13 @@ export function setupPlotControlListeners(
     // takes any value as typed (in px / alpha), also off the track's range.
     // Setting either one ends its automatic value (utils/point-style.js);
     // its auto button brings it back.
-    const pointStyle = (name, key, autoKey, scale, valid) => {
+    // Sizes snap to the steps scattergl draws (2D); 3D markers take any size.
+    const sizeSnap = (v, other) => (settings.z ? other(v) : snapPointSize(v));
+    const pointStyle = (name, key, autoKey, scale, valid, snap) => {
       const $slider = $controlsContainer.find(`#${name}-${id}`);
       const $input = $controlsContainer.find(`#${name}-input-${id}`);
       $slider.on('input', (e) => {
-        settings[key] = roundSig(valueAt(scale, e.target.value));
+        settings[key] = snap(valueAt(scale, e.target.value), roundSig);
         settings[autoKey] = false;
         showPointStyle(id, settings);
         redrawStyling();
@@ -213,7 +215,7 @@ export function setupPlotControlListeners(
       $input.on('change', (e) => {
         const v = parseFloat(e.target.value);
         if (!valid(v)) { $input.val(settings[key]); return; }
-        settings[key] = v;
+        settings[key] = snap(v, (x) => x);
         settings[autoKey] = false;
         showPointStyle(id, settings);
         redrawStyling();
@@ -225,8 +227,9 @@ export function setupPlotControlListeners(
         redrawStyling();
       });
     };
-    pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0);
-    pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1);
+    pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0, sizeSnap);
+    pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1,
+      (v, other) => other(v));
     
     // --- Hover columns: reload only those columns and relabel the traces ---
     const $hoverSelect = $controlsContainer.find(`#hover-columns-${id}`);

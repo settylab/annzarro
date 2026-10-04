@@ -20,6 +20,7 @@ import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, renderModeNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
+import { setGlMarkers } from '../../utils/gl-markers.js';
 
 
 
@@ -1373,6 +1374,11 @@ export async function restyleMarkers(plotContainer, settings) {
         && /^focused (cell|gene)$/i.test(trace.name.trim());
     const dataIdx = [];
     const highlightIdx = [];
+    // Large-plot mode: straight to the regl scene. A restyle there reruns
+    // Plotly's calc for every trace and ran the tab out of V8 heap at 95.6M
+    // (utils/gl-markers.js). It has no highlight trace.
+    if (plotContainer._largePlot && setGlMarkers(plotContainer, settings.pointSize, settings.pointOpacity,
+        (trace) => isLegendProxy(trace) || isHighlight(trace))) return;
     plotContainer.data.forEach((trace, i) => {
         if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);

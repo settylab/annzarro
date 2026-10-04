@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     SLIDER_STEPS, POINT_SIZE_RANGE, OPACITY_RANGE, pointSizeScale, opacityScale, logScale,
-    quantileScale, mirroredScale, sortedSample, capTies, trackValue, valueAt, roundSig
+    quantileScale, mirroredScale, sortedSample, capTies, trackValue, valueAt, roundSig, snapPointSize, SIZE_STEP
 } from '../../../static/js/utils/slider-scales.js';
 
 const close = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
@@ -60,9 +60,9 @@ test('opacity 1.0 is reached exactly at the right end of the track', () => {
 
 test('the bottom 10% of the tracks is the low range large plots need', () => {
     // at 95.6M cells: size about 0.3-2 px, opacity about 0.005-0.2
-    const size10 = valueAt(pointSizeScale, SLIDER_STEPS / 10);
+    const size10 = snapPointSize(valueAt(pointSizeScale, SLIDER_STEPS / 10));
     const opacity10 = valueAt(opacityScale, SLIDER_STEPS / 10);
-    assert.ok(size10 > 0.2 && size10 < 0.4, `size at 10%: ${size10}`);
+    assert.equal(size10, 0.392, `size at 10%: ${size10}`);   // the smallest size scattergl draws
     assert.ok(opacity10 > 0.002 && opacity10 < 0.005, `opacity at 10%: ${opacity10}`);
     // and the useful ranges span a good part of the track, not its bottom tenth
     assert.ok(pointSizeScale.toPos(2) - pointSizeScale.toPos(0.3) > 0.35);
@@ -207,4 +207,25 @@ test('centred at 0: the min thumb mirrors the max thumb position for position', 
     // a min thumb on -max sits at the left end, on -min at the right end
     assert.equal(min.toPos(-8, 'low'), 0);
     assert.equal(min.toPos(-abs.min, 'high'), 1);
+});
+
+test('snapped sizes: whole steps of 100/255 px, at least one', () => {
+    assert.equal(snapPointSize(5), 5.1);
+    assert.equal(snapPointSize(0.92), 0.784);
+    assert.equal(snapPointSize(0.1), 0.392);     // rounds to 0 steps: a stray marker; one step instead
+    assert.equal(snapPointSize(20), 20);
+    for (let k = 1; k <= 255; k++) {
+        const v = snapPointSize(k * SIZE_STEP);
+        assert.equal(Math.round(255 * v / 100), k, `step ${k}: ${v}`);   // the 3-digit value draws that step
+    }
+});
+
+test('the size track reaches every step and never skips one', () => {
+    let prev = 0, seen = new Set();
+    for (let t = 0; t <= SLIDER_STEPS; t++) {
+        const k = Math.round(snapPointSize(valueAt(pointSizeScale, t)) / SIZE_STEP);
+        assert.ok(k === prev || k === prev + 1 || t === 0, `track ${t}: step ${prev} -> ${k}`);
+        seen.add(k); prev = k;
+    }
+    assert.equal(seen.size, 51);                     // 1..51 steps: 0.392 .. 20 px
 });

@@ -30,15 +30,18 @@ Cell plot controls, coloured by a categorical obs column.
 8. **Filter by Table** links the plot to a table ({doc}`tables-and-filters`).
 9. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
    The sliders move on a log scale, so their left half is the small sizes and faint opacities a
-   plot of millions of cells needs: size 0.2 to 2 and opacity 0.002 to 0.045. The size slider
-   stops at 0.2 px, below which WebGL draws a marker larger again, and opacity at 0.002, below
-   which a point is not drawn at all (8-bit alpha). The boxes take any value, also outside the
-   sliders' range.
+   plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
+   markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the
+   size it is drawn at); the size slider starts at one step and opacity at 0.002, below which a
+   point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
+   range.
 
    Until you set them, both are **automatic**: they follow the number of points drawn (the
-   subset, or every cell; not the size of the panel), from the default 5 px and opaque at a few
-   thousand points down to 3 px / 0.61 at 100,000, 2 px / 0.39 at a million and 0.92 px / 0.16
-   at 95.6 million. An automatic value is shown in grey italics and changes when the number of
+   subset, or every cell; not the size of the panel), from the default 5.1 px and opaque at a
+   few thousand points down to 3.14 px / 0.61 at 100,000, 1.96 px / 0.39 at a million and
+   0.784 px / 0.16 at 95.6 million. These values were picked on screenshots of a 95.6-million-cell
+   UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
+   0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An automatic value is shown in grey italics and changes when the number of
    points does, for example when you turn the subset off. Moving a slider or typing a value sets it; it then stays
    as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
    while its value is automatic; click it to make that value automatic again.

@@ -23,15 +23,17 @@ export const SLIDER_STEPS = 1000;
  * Bounds measured in Chromium with Plotly 2.20 scattergl, on SwiftShader and
  * on the Metal GPU (same result), at device scale factor 1 and 2:
  *
- *   - size: the drawn marker grows in steps of about 0.4 px and is
- *     monotone from 0.2 px up. Below 0.2 it is NOT: 0.1 px draws three times
- *     the ink of 0.2 px (0.25 vs 0.07 px^2 at DSF 1, 1.0 vs 0.3 at DSF 2), so
- *     the track stops at 0.2.
+ *   - size: regl-scatter2d (Plotly's scattergl) keeps a marker size in 8
+ *     bits of a fixed 100 px: round(255 * size / 100). So 2D markers come in
+ *     steps of 100/255 = 0.392 px (SIZE_STEP), and a size that rounds to 0
+ *     (below 0.196) draws a stray larger marker: 0.1 px drew three times the
+ *     ink of 0.2 px. The track starts at one step and its values, like the
+ *     automatic ones, are snapped to steps (snapPointSize).
  *   - opacity: WebGL keeps alpha in 8 bits. 0.001 draws nothing, even 100
  *     points stacked; 0.002 is the smallest that draws (one alpha level).
  *     1.0 is the track's right end, so it is reached exactly.
  */
-export const POINT_SIZE_RANGE = Object.freeze({ min: 0.2, max: 20 });
+export const POINT_SIZE_RANGE = Object.freeze({ min: 100 / 255, max: 20 });
 export const OPACITY_RANGE = Object.freeze({ min: 0.002, max: 1 });
 
 const clamp01 = (p) => (p <= 0 ? 0 : p >= 1 ? 1 : p);
@@ -56,6 +58,19 @@ export function logScale(min, max) {
       return (Math.log(v) - lo) / span;
     }
   };
+}
+
+/** The size step scattergl draws in (see above). */
+export const SIZE_STEP = 100 / 255;
+
+/**
+ * The size scattergl draws for `v`: a whole number of SIZE_STEPs, at least
+ * one, to 3 significant digits (which still round to the same step).
+ */
+export function snapPointSize(v) {
+  if (!Number.isFinite(v)) return v;
+  const k = Math.max(1, Math.round(v / SIZE_STEP));
+  return Number((k * SIZE_STEP).toPrecision(3));
 }
 
 export const pointSizeScale = logScale(POINT_SIZE_RANGE.min, POINT_SIZE_RANGE.max);

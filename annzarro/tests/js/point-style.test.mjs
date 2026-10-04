@@ -10,22 +10,25 @@ import { autoPointStyle, initAutoPointStyle, applyAutoPointStyle } from '../../.
 
 const BASE = { size: 5, opacity: 1 };
 
+// the curve itself (sizes not snapped to scattergl's steps)
+const curve = (n, base = BASE) => autoPointStyle(n, base, false);
+
 test('small data keeps the default look', () => {
-    for (const n of [0, 1, 200]) assert.deepEqual(autoPointStyle(n, BASE), BASE, `n=${n}`);
-    const k = autoPointStyle(1000, BASE);   // a thousand points: within 2%
+    for (const n of [0, 1, 200]) assert.deepEqual(curve(n), BASE, `n=${n}`);
+    const k = curve(1000);   // a thousand points: within 2%
     assert.ok(k.size >= 4.9 && k.opacity >= 0.98, JSON.stringify(k));
 });
 
 test('large data gets smaller, fainter points; smooth and monotone in N', () => {
-    let prev = autoPointStyle(1, BASE);
+    let prev = curve(1);
     for (let e = 0.5; e <= 8.5; e += 0.05) {
-        const s = autoPointStyle(10 ** e, BASE);
+        const s = curve(10 ** e);
         assert.ok(s.size <= prev.size && s.opacity <= prev.opacity, `n=1e${e}`);
         // no step: neighbouring N (12% apart) differ by one rounding step at most
         assert.ok(s.size >= prev.size * 0.9 && s.opacity >= prev.opacity * 0.9, `jump at n=1e${e}`);
         prev = s;
     }
-    const big = autoPointStyle(95.6e6, BASE);
+    const big = curve(95.6e6);
     assert.ok(big.size >= 0.5 && big.size <= 1.5, `95.6M size ${big.size}`);
     assert.ok(big.opacity >= 0.1 && big.opacity <= 0.3, `95.6M opacity ${big.opacity}`);
 });
@@ -68,7 +71,22 @@ test('automatic values follow N; a value the user set survives N changes', () =>
 });
 
 test('the base follows the server default for few points', () => {
-    assert.deepEqual(autoPointStyle(100, { size: 3, opacity: 0.6 }), { size: 3, opacity: 0.6 });
-    const s = autoPointStyle(1e7, { size: 3, opacity: 0.6 });
+    assert.deepEqual(curve(100, { size: 3, opacity: 0.6 }), { size: 3, opacity: 0.6 });
+    const s = curve(1e7, { size: 3, opacity: 0.6 });
     assert.ok(s.size < 3 && s.opacity < 0.6);
+});
+
+test('automatic sizes are ones scattergl draws: whole steps of 100/255 px', () => {
+    const step = 100 / 255;
+    for (const n of [200, 1e4, 1e5, 1e6, 1e7, 95.6e6]) {
+        const { size } = autoPointStyle(n, BASE);
+        const k = Math.round(size / step);
+        assert.ok(k >= 1 && Math.round(255 * size / 100) === k, `n=${n}: ${size}`);
+    }
+    assert.equal(autoPointStyle(200, BASE).size, 5.1);       // the default 5 draws as 13 steps
+    assert.equal(autoPointStyle(95.6e6, BASE).size, 0.784);  // 0.92 draws as 2 steps
+    // 3D (scatter3d) sizes are not quantised: no snapping there
+    const settings = { z: { type: 'obsm' }, pointSize: 5, pointOpacity: 1, autoPointSize: true, autoPointOpacity: true };
+    applyAutoPointStyle(settings, 95.6e6, BASE);
+    assert.equal(settings.pointSize, 0.92);
 });

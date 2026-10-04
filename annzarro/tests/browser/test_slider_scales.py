@@ -146,7 +146,7 @@ def test_sliders_low_end_and_number_boxes(server):
             # --- size: 10% of the log track is about 0.3 px, not 2 px
             _click_track(page, f"#point-size-{PID}", 0.10)
             size = float(page.input_value(f"#point-size-input-{PID}"))
-            assert 0.25 <= size <= 0.4, size
+            assert size == 0.392, size                     # the smallest size scattergl draws
             assert _marker(page)["size"] == pytest.approx(size)
 
             # --- opacity: 10% of the log track is about 0.004, not 0.1
@@ -180,14 +180,15 @@ def test_sliders_low_end_and_number_boxes(server):
 
             # --- the number boxes edit the plot, also off the tracks' range
             _type(page, f"#point-size-input-{PID}", 1.7)
-            assert _marker(page)["size"] == 1.7
+            assert _marker(page)["size"] == 1.57          # snapped: 4 steps of 100/255 px
+            assert page.input_value(f"#point-size-input-{PID}") == "1.57"
             _type(page, f"#point-opacity-input-{PID}", 0.003)
             assert _marker(page)["opacity"] == 0.003
             _type(page, f"#color-max-{PID}", 20000)
             assert _marker(page)["cmax"] == 20000
             assert page.input_value(f"#color-max-slider-{PID}") == "1000"   # pinned to the end
-            _type(page, f"#point-size-input-{PID}", 0.1)                     # below the track
-            assert _marker(page)["size"] == 0.1
+            _type(page, f"#point-size-input-{PID}", 0.1)                     # below one step
+            assert _marker(page)["size"] == 0.392
             assert page.input_value(f"#point-size-{PID}") == "0"
             assert not errors, errors
             page.close()
@@ -233,7 +234,7 @@ def test_large_plot_mode_sliders(large_server):
 
             _click_track(page, f"#point-size-{PID}", 0.10)
             size = float(page.input_value(f"#point-size-input-{PID}"))
-            assert 0.25 <= size <= 0.4, size
+            assert size == 0.392, size
             page.wait_for_timeout(800)
             sizes = {t["marker"]["size"] for t in page.evaluate(traces) if t.get("x") and len(t["x"]) > 1}
             assert sizes == {size}, sizes
@@ -265,17 +266,18 @@ def test_automatic_point_style(server):
         try:
             page, errors = _open(browser, _link(server))
             m = _marker(page)
-            # 200 points: the curve is flat, today's default (base.yaml: 5 px, opaque)
-            assert (m["size"], m["opacity"]) == (5, 1)
+            # 200 points: the curve is flat, today's default (base.yaml: 5 px, opaque), as the
+            # size scattergl draws it: 13 steps of 100/255 px = 5.1 (5 drew the same)
+            assert (m["size"], m["opacity"]) == (5.1, 1)
             size_box, opacity_box = f"#point-size-input-{PID}", f"#point-opacity-input-{PID}"
-            assert page.input_value(size_box) == "5"
+            assert page.input_value(size_box) == "5.1"
             assert "is-auto" in page.get_attribute(size_box, "class")
             assert "auto" in page.get_attribute(size_box, "title")
             assert "active" in page.get_attribute(f"#point-size-auto-{PID}", "class")
             assert "active" in page.get_attribute(f"#point-opacity-auto-{PID}", "class")
 
             _type(page, size_box, 2.5)
-            assert _marker(page)["size"] == 2.5
+            assert _marker(page)["size"] == 2.35            # snapped to 6 steps
             assert "is-auto" not in page.get_attribute(size_box, "class")
             assert "is-auto" in page.get_attribute(opacity_box, "class"), "opacity is still automatic"
             assert "active" not in page.get_attribute(f"#point-size-auto-{PID}", "class")
@@ -284,18 +286,68 @@ def test_automatic_point_style(server):
             # a refresh redraws (and recomputes automatic values): the user's size stays
             page.click(f"#refresh-plot-{PID}")
             page.wait_for_timeout(1500)
-            assert _marker(page)["size"] == 2.5
+            assert _marker(page)["size"] == 2.35
 
             # the saved layout (what links and sessions store) says which values are automatic
             cfg = page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['%s']" % PID)
-            assert (cfg["pointSize"], cfg["autoPointSize"]) == (2.5, False)
+            assert (cfg["pointSize"], cfg["autoPointSize"]) == (2.35, False)
             assert (cfg["pointOpacity"], cfg["autoPointOpacity"]) == (1, True)
 
             page.click(f"#point-size-auto-{PID}")
             page.wait_for_timeout(500)
-            assert _marker(page)["size"] == 5
+            assert _marker(page)["size"] == 5.1
             assert "is-auto" in page.get_attribute(size_box, "class")
             assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def _plot_pixels(page):
+    """The plot at fixed axes, as an image array (the axes do not follow a marker change)."""
+    import io
+    import numpy as np
+    from PIL import Image
+    page.evaluate("""() => Plotly.relayout(document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot'),
+                     {'xaxis.range': [-3, 3], 'yaxis.range': [-3, 3]})""" % PID)
+    page.wait_for_timeout(800)
+    png = page.locator(f'.tile[data-tile-id="{PID}"] .js-plotly-plot').screenshot()
+    return np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
+
+
+@pytest.mark.parametrize("size,opacity", [(0.5, 0.3), (1, 0.6), (2, 1), (6, 0.2)])
+def test_large_plot_marker_change_draws_like_a_fresh_load(large_server, size, opacity):
+    """Large-plot mode sets size/opacity in the regl scene, not by Plotly.restyle (a restyle reruns calc
+    for every trace: V8 out of memory at 95.6M). It must draw what a fresh load at those values draws."""
+    colour = {"color": {"type": "obs", "key": "total_counts", "column": ""}}
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            ref_page, errors = _open(browser, _link(large_server, pointSize=size, pointOpacity=opacity, **colour))
+            ref = _plot_pixels(ref_page)
+            ref_page.close()
+
+            page, errors2 = _open(browser, _link(large_server, **colour))
+            page.evaluate("""() => { window.__restyles = 0; document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot')
+                             .on('plotly_restyle', () => window.__restyles++); }""" % PID)
+            _type(page, f"#point-size-input-{PID}", size)
+            _type(page, f"#point-opacity-input-{PID}", opacity)
+            state = page.evaluate("""() => { const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
+                const pts = gd.data.filter(t => t.x && t.x.length > 1);
+                return { restyles: window.__restyles, sizes: [...new Set(pts.map(t => t.marker.size))],
+                         scene: [...new Set(gd._fullLayout._plots.xy._scene.markerOptions
+                                 .filter((o, i) => o && pts.includes(gd.data[i])).map(o => o.size))] }; }""" % PID)
+            assert state["restyles"] == 0, "large-plot mode must not restyle"
+            assert len(state["sizes"]) == 1 and state["sizes"] == state["scene"], state
+            # the box shows the size scattergl draws: whole steps of 100/255 px
+            shown = float(page.input_value(f"#point-size-input-{PID}"))
+            assert round(255 * shown / 100) == max(1, round(255 * size / 100)), shown
+            assert state["sizes"][0] == shown
+            got = _plot_pixels(page)
+            assert got.shape == ref.shape
+            differ = int((abs(got - ref).max(axis=2) > 8).sum())
+            assert differ <= 0.001 * got.shape[0] * got.shape[1], f"{differ} pixels differ from a fresh load"
+            assert not errors and not errors2, errors + errors2
             page.close()
         finally:
             browser.close()
