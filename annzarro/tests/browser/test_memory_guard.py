@@ -440,9 +440,10 @@ def test_closing_frees_only_what_is_private(server, page):
     The behaviour kept is the one recorded on v030-preview (9cc53c6) before
     the cleanup changed: a plot filtered by a table keeps showing the rows
     that passed the table after the table is closed, also after it redraws,
-    and still lists the table as its filter; the table reopens unfiltered (its
-    search box is not saved) and the plot follows it; the focused cell and
-    the panel set outlive the panel they were set in.
+    and still lists the table as its filter; the focused cell and the panel
+    set outlive the panel they were set in. The table then reopened
+    unfiltered (its search was not saved); since T8 it reopens with its
+    search, and the plot keeps its cells.
     """
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
@@ -480,11 +481,12 @@ def test_closing_frees_only_what_is_private(server, page):
     s = page.evaluate(state)
     assert s["summary"].startswith("100 of 200 cells shown"), s
 
-    # Reopen: the table comes back unfiltered, and B follows it
+    # Reopen: the table comes back with its search (user decision T8, since
+    # v030-preview it came back unfiltered), and B still shows its 100 cells
     page.click('.panel-closed-btn[data-id="cell-table-A"]')
     page.wait_for_selector('.tile[data-tile-id="cell-table-A"] .dataTables_scrollBody tbody tr', timeout=30000)
-    assert "of 200 entries" in page.inner_text('.tile[data-tile-id="cell-table-A"] .dataTables_info')
-    page.wait_for_function(f"""() => !/not shown|filtered out/.test(
+    assert "of 100 entries" in page.inner_text('.tile[data-tile-id="cell-table-A"] .dataTables_info')
+    page.wait_for_function(f"""() => /^100 of 200 cells shown/.test(
         document.querySelector('{strip}')?.getAttribute('data-summary') || '')""", timeout=15000)
 
     # close the plot: its memory and WebGL contexts go, the focus and the panel set stay

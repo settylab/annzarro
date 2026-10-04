@@ -87,3 +87,19 @@ test('with its row names, the filter is also kept by name, outside any config', 
     assert.equal(t.settings.closedSelection.seen.length, 5);
     assert.equal(JSON.stringify({ ...t.settings }).includes('closedSelection'), false);
 });
+
+test("the search box's text is kept with the panel like its filter", () => {
+    let destroyed = false;
+    const s = { searchText: '' };
+    Object.defineProperty(s, 'searchText', { configurable: true, enumerable: true,
+        get: () => { if (destroyed) throw new Error('destroyed'); return 'cell_01'; } });
+    freezeTableState(s);
+    destroyed = true;
+    assert.equal(s.searchText, 'cell_01');
+    assert.equal(JSON.parse(JSON.stringify(s)).searchText, 'cell_01');
+    // a getter that fails freezes to no search
+    const t = {};
+    Object.defineProperty(t, 'searchText', { configurable: true, enumerable: true, get: () => { throw new Error('x'); } });
+    freezeTableState(t);
+    assert.equal(t.searchText, '');
+});

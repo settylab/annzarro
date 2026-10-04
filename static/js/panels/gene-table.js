@@ -39,6 +39,7 @@ const GeneTablePanel = (function() {
             responsive: false, // Disable responsive (use container size)
             fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
+            searchText: '',
             currentEntries: [],
             filteredGenes: null
         };
@@ -199,10 +200,9 @@ const GeneTablePanel = (function() {
                 
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
-                    // deep copy linked searchBuilderConfig
-                    const sb_data = JSON.parse(JSON.stringify(_settings.searchBuilderConfig));
-                    delete _settings.searchBuilderConfig;
-                    _settings.searchBuilderConfig = sb_data;
+                    // the filter, the search and the rows passing them as
+                    // values: the next DataTable starts from them
+                    freezeTableState(_settings);
                     _dataTable.destroy();
                     _dataTable = null;
                 }

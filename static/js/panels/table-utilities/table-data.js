@@ -525,7 +525,7 @@ export function getColumnDisplayName(column) {
  */
 /**
  * Turn a table's live views of its DataTable (`currentEntries`,
- * `searchBuilderConfig`, getters defined by initializeDataTable) into plain
+ * `searchBuilderConfig`, `searchText`, getters defined by initializeDataTable) into plain
  * values, before the DataTable is destroyed.
  *
  * Other panels read them from a closed table: a plot whose table filter is
@@ -543,14 +543,14 @@ export function getColumnDisplayName(column) {
  * @param {number} [opts.rows] - rows the table had
  */
 export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
-    for (const key of ['currentEntries', 'searchBuilderConfig']) {
+    for (const key of ['currentEntries', 'searchBuilderConfig', 'searchText']) {
         const desc = Object.getOwnPropertyDescriptor(settings, key);
         if (!desc || !desc.get) continue;
         let value;
         try {
             value = settings[key];
         } catch {
-            value = key === 'currentEntries' ? [] : {};
+            value = key === 'currentEntries' ? [] : key === 'searchText' ? '' : {};
         }
         Object.defineProperty(settings, key, {
             value: key === 'currentEntries' ? Array.from(value || []) : value,
@@ -591,6 +591,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthMenu: [10, 25, 50, 100, 250],
         // Default search options
         search: {
+            // the search box as saved (Reopen, panel sets, share links)
+            search:         settings.searchText || '',
             regex:          useRegex,
             smart:          useSmart,
             caseInsensitive: useCaseInsensitive
@@ -869,6 +871,19 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
           } catch (error) {
             console.warn('Failed to get searchBuilder details, returning empty object', error);
             return {};
+          }
+        }
+      });
+
+    // the search box's text, kept with the panel like its SearchBuilder
+    Object.defineProperty(settings, 'searchText', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          try {
+            return dataTable.search() || '';
+          } catch {
+            return '';
           }
         }
       });
