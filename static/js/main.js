@@ -13,6 +13,8 @@ import {
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { installSessionExpiryHandler } from './utils/session-expiry.js';
+import { appRoot } from './utils/app-url.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
@@ -36,6 +38,14 @@ const App = (function() {
         window._updateErrorPreview = _updateErrorPreview;
         
         try {
+
+            // When the login expires mid-session, go to the login page and
+            // come back to this dataset and view (utils/session-expiry.js)
+            installSessionExpiryHandler({
+                root: appRoot(),
+                currentViewUrl: () => ((_lastLoadedDatasetPath || DataManager.getCurrentDataset())
+                    ? _buildShareView() : window.location.href)
+            });
 
             // Make SessionManager and PanelManager accessible globally
             window.sessionManager = SessionManager;

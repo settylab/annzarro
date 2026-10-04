@@ -86,3 +86,11 @@ def test_fragment_sanitising():
     assert safe_fragment("#view=1") == "#view=1"
     assert safe_fragment("#a\r\nb") == ""
     assert safe_fragment(None) == ""
+
+
+def test_api_401_names_the_reason(app):
+    """The frontend tells an ended login from other 401s by this reason
+    (static/js/utils/session-expiry.js)."""
+    resp = app.test_client().get("/api/v1/auth/me")
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "Authentication required", "reason": "login_required"}

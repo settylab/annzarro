@@ -193,7 +193,9 @@ def login_required_response():
     posts it back (see templates/login.html).
     """
     if request.path.startswith("/api/"):
-        return jsonify({"error": "Authentication required"}), 401
+        # reason lets the frontend tell an expired login from other 401s
+        # (static/js/utils/session-expiry.js)
+        return jsonify({"error": "Authentication required", "reason": "login_required"}), 401
     root = request.script_root
     target = root + (request.full_path.rstrip("?") if request.query_string else request.path)
     if safe_next(target, root) == root + "/":
