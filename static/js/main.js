@@ -18,6 +18,8 @@ import { appRoot } from './utils/app-url.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
+import { canSnapshot, exportImage } from './utils/plot-export.js';
+import { overrideOnce } from './utils/memory-guard-ui.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 
@@ -540,8 +542,27 @@ const App = (function() {
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
             case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
+            case 'draw-anyway': case 'redraw': {
+                const panel = PanelManager.getPanel(id);
+                return !!(panel && typeof panel.refreshPlot === 'function');
+            }
+            case 'export-shown': return canSnapshot(host);
+            case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+            case 'table-filter-off': return !!_tableFilterSelect(id);
             default: return false;
         }
+    }
+
+    /** The table a plot panel is filtered by (its tableFilter setting), or null. */
+    function _tableFilterOf(id) {
+        const panel = PanelManager.getPanel(id);
+        const cfg = panel && panel.getConfig ? panel.getConfig() : null;
+        return cfg && cfg.tableFilter && cfg.tableFilter !== 'none' ? cfg.tableFilter : null;
+    }
+
+    /** A plot panel's table-filter select. */
+    function _tableFilterSelect(id) {
+        return document.querySelector(`.tile[data-tile-id="${id}"] select.table-filter-select`);
     }
 
     /**
@@ -568,6 +589,30 @@ const App = (function() {
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
             case 'show-nan': click(`hide-nan-${id}`); break;
             case 'show-outliers': click(`hide-outliers-${id}`); break;
+            case 'draw-anyway': case 'redraw': {
+                // draw-anyway: past the memory guard (or the crash marker), once
+                if (action === 'draw-anyway') overrideOnce(id);
+                const panel = PanelManager.getPanel(id);
+                if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
+                break;
+            }
+            case 'reopen-table': {
+                const btn = document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+                if (btn) btn.click();
+                break;
+            }
+            case 'table-filter-off': {
+                const select = _tableFilterSelect(id);
+                if (select) {
+                    select.value = 'none';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                break;
+            }
+            case 'export-shown':
+                exportImage(host, 'shown', { format: 'png', filename: 'plot_' + new Date().toISOString().replace(/[:.]/g, '-') })
+                    .catch(error => console.error('Export as shown failed:', error));
+                break;
         }
     }
 

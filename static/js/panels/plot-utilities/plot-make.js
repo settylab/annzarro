@@ -15,6 +15,12 @@ import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
+import { colourKind } from '../../utils/memory-guard.js';
+import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { releasePlot } from '../../utils/release-plot.js';
+import {
+  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
+} from '../../utils/memory-guard-ui.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -616,6 +622,9 @@ export function pointStyleBase() {
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false, signal = null) {
   // the subset dialog's load-time estimate learns from these draws
   const started = performance.now();
+  // the browser memory guard's ledger: reserved before the draw, committed
+  // once it is drawn, cancelled otherwise (memoryGate)
+  let reserved = 0, drawn = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
@@ -672,6 +681,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');
     }
+
+    // Will it fit next to the other panels? (utils/memory-guard-ui.js)
+    const token = await memoryGate(plotContainer, settings, id, isGenePlot, nPoints);
+    if (token === null) return;
+    reserved = token;
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
@@ -749,6 +763,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         }
         setStatusTag(plotContainer, 'refused', null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        drawn = true;
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
@@ -886,7 +901,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('Table entities data loading aborted', 'AbortError');
         }
-        await updateTableEntities(data, settings);
+        await updateTableEntities(data, settings, plotContainer);
       })()
     );
 
@@ -947,6 +962,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       console.log(`Creating plot with ${data.x.values.length} data points`);
       data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
+      drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
       await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
@@ -1046,7 +1062,80 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Always hide the loading indicator in the finally block to ensure it happens
     // regardless of success, error or abortion
     loadingIndicator.hide(plotContainer, 'full-plot');
+    if (reserved) {
+      unmark();
+      if (drawn && plotContainer.isConnected) {
+        commit(id, null, reserved);
+      } else {
+        cancel(id, reserved);
+        // drawn into a panel closed meanwhile: free it now, not at GC
+        if (drawn) releasePlot(plotContainer);
+      }
+    }
   }
+}
+
+/**
+ * The browser memory check before a plot is drawn: every way a plot is
+ * drawn passes here (a new, duplicated, reopened or restored panel, a subset
+ * change, a full redraw). A plot that would not fit next to what the other
+ * panels hold is not drawn, and its status strip says why and what helps;
+ * a plot that was being drawn when the previous page died waits for "Draw
+ * anyway". With ui.memory.enforce warn it is drawn, with a warning tag.
+ * @returns {Promise<number|null>} null when refused; else the draw's ledger
+ *   token (0: the check failed and nothing was reserved)
+ */
+async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
+  const unit = isGenePlot ? 'genes' : 'cells';
+  const large = !isGenePlot && n > largePlotPoints();
+  let structure = null;
+  try { structure = await DataManager.getDatasetStructure(); } catch { /* colour kind unknown: numeric, the costliest */ }
+  const p = {
+    id, kind: isGenePlot ? 'gene-plot' : 'cell-plot', n, large, colour: colourKind(settings, structure),
+    threeD: !!settings.z,
+    livePlot: !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length)
+  };
+  const override = takeOverride(id);
+  const crashed = override ? null : crashedDrawing(id);
+  let result;
+  try {
+    result = drawCheck(p);
+  } catch (error) {
+    // the guard must never be why a plot is not drawn
+    console.warn('Browser memory check failed; drawing without it', error);
+    return 0;
+  }
+  let refusal = null;
+  if (crashed) {
+    refusal = { text: 'Not drawn: the tab ended last time',
+      why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
+        + 'Draw it anyway, or show fewer cells first.',
+      actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
+  } else if (result.verdict === 'block' && !override) {
+    refusal = { text: 'Not drawn: browser memory',
+      why: refusalText(result, 'Close a plot, or show fewer cells (a smaller subset).'),
+      actions: [['subset', 'Subset\u2026']] };
+  }
+  if (refusal) {
+    // no plot yet: the placeholder says it (with the way out); a plot drawn
+    // before stays, and its strip says this one was not drawn
+    if (!p.livePlot) {
+      drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal.why,
+        { source: 'browser memory', unit, total: n }), unit, { actions: refusal.actions });
+    } else {
+      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
+        pop: { text: refusal.why, actions: refusal.actions } });
+    }
+    return null;
+  }
+  setStatusTag(plotContainer, 'memory', result.verdict === 'warn'
+    ? { text: 'Over the memory budget', severity: 'warning', title: result.why,
+        pop: { text: refusalText(result, 'It is drawn anyway (ui.memory.enforce: warn); the tab may run out of memory.'),
+          actions: [['subset', 'Subset\u2026']] } }
+    : null);
+  const token = reserve(id, p);
+  markIfRisky(result, { panel: id, n, action: 'draw' });
+  return token;
 }
 
 
@@ -1536,16 +1625,29 @@ export function createFilterMask(data, settings) {
  * Updates the table entities Set in the data object based on the current table selection
  * Also creates tableFilterMask for filtering operations
  * 
+ * A CLOSED table's filter is applied by name (utils/closed-table.js): its
+ * row indexes belong to the cells it was closed on. Cells it never had are
+ * not shown, and the plot's status line says the filter is out of date.
+ *
  * @param {Object} data - Data object to update with tableEntities
  * @param {Object} settings - Plot settings containing tableFilter
+ * @param {HTMLElement} [plotContainer] - where to say a closed table's filter is out of date
  * @returns {Promise<boolean>} - Promise resolving to true if tableEntities changed, false otherwise
  */
-export async function updateTableEntities(data, settings) {
+export async function updateTableEntities(data, settings, plotContainer = null) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  const stale = (s) => {
+    data.tableFilterStale = s;
+    if (plotContainer) {
+      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: s.text,
+        pop: { text: s.text, actions: [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']] } } : null);
+    }
+  };
   
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
+    stale(null);
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -1574,19 +1676,30 @@ export async function updateTableEntities(data, settings) {
   }
   
   // Create a new Set of table entities
-  const newTableEntities = new Set();
+  let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  
-  // Get entity names based on indices in the table
-  tableConfig.currentEntries.forEach(index => {
-    if (entities && index < entities.length) {
-      const entityName = entities[index];
-      if (entityName) {
-        newTableEntities.add(entityName);
+  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel));
+
+  if (closed) {
+    // by name, on the cells shown now
+    const { passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []);
+    newTableEntities = passing;
+    const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
+  } else {
+    stale(null);
+    // Get entity names based on indices in the table
+    tableConfig.currentEntries.forEach(index => {
+      if (entities && index < entities.length) {
+        const entityName = entities[index];
+        if (entityName) {
+          newTableEntities.add(entityName);
+        }
       }
-    }
-  });
+    });
+  }
   
   // Compare with existing tableEntities to see if they've changed
   let changed = false;

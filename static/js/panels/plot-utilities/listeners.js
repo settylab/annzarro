@@ -311,7 +311,7 @@ export function setupPlotControlListeners(
         // First update the table entities asynchronously
         try {
           // Import updateTableEntities dynamically to avoid circular dependencies
-          const entitiesChanged = await updateTableEntities(data, settings);
+          const entitiesChanged = await updateTableEntities(data, settings, plotContainer);
           
           // Then update the plot elements - only if table entities changed or filter was cleared
           if (entitiesChanged || !selectedTableId || selectedTableId === 'none') {

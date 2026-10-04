@@ -278,6 +278,12 @@ body {
 .subset-preset.sp-over { border-color: #d4a23c; background: #fff8e6; }
 .subset-preset .sp-warn { flex-basis: 100%; font-size: 0.68rem; line-height: 1.15; color: #8a5a00; }
 .subset-preset[aria-pressed="true"] .sp-warn, .subset-preset.active .sp-warn { color: inherit; }
+/* a size that does not fit in the browser's memory next to the open panels (utils/memory-guard-ui.js) */
+.subset-preset.sp-memory, .subset-preset.sp-memory:hover { border-color: #dee2e6; background: #f8f9fa; color: #8a8f94; cursor: not-allowed; }
+.subset-preset.sp-memory .subset-preset-input { cursor: not-allowed; }
+.subset-preset .sp-mem { flex-basis: 100%; font-size: 0.68rem; line-height: 1.15; color: #a94442; }
+.subset-memory { font-size: 0.72rem; color: var(--bs-secondary-color, #6c757d); margin-right: auto; font-variant-numeric: tabular-nums; }
+.subset-memory.subset-memory--short { color: #a94442; }
 .sp-extrapolated { color: #8a8f94; font-style: italic; }
 .subset-preset[aria-pressed="true"] .sp-extrapolated, .subset-preset.active .sp-extrapolated { color: inherit; opacity: 0.8; }
 /* "All" is the #subset-n-all checkbox, laid over its chip */
@@ -3071,6 +3077,12 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .coverage-placeholder__reasons li { margin: 2px 0; overflow-wrap: anywhere; }
+/* what undoes it (drawPlaceholder's actions), as the status strip offers it */
+.coverage-placeholder__do { margin-top: 6px; }
+.coverage-placeholder__do .ps-action {
+    padding: 0; margin-right: 12px; border: 0; background: none; color: #0d6efd; font: inherit; cursor: pointer;
+}
+.coverage-placeholder__do .ps-action:hover { text-decoration: underline; }
 
 .coverage-placeholder--notice {
     background: #e7f3f8; border-color: #bce8f1; border-left-color: #31708f; color: #245269;
@@ -3140,3 +3152,9 @@ button.dtsb-button.dtsb-clear:hover {
     background-color: transparent;
     border-color: #6c757d;
 }
+
+/* panel tiles that would not fit in the browser's memory (selection-tile.js) */
+.selection-panel-option.memory-blocked { opacity: 0.55; cursor: not-allowed; }
+.selection-panel-option .memory-note { font-size: 0.72rem; color: #a94442; margin-top: 0.25rem; }
+/* export: why full resolution is off, and the plot as shown beside it */
+.export-memory-note { line-height: 1.25; }

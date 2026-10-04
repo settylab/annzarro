@@ -22,6 +22,7 @@ import { renderCoverageNotice, setStatusTag, withCoverageAnnotation } from '../.
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
+import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 
 
 
@@ -877,6 +878,15 @@ export async function loadColorDataAndUpdatePlot(
         refreshPlot();
         return;
     }
+    // the new colour series and the restyle need memory next to the old ones
+    const memory = recolourCheck(plotContainer);
+    if (memory.verdict === 'block') {
+        const why = refusalText(memory, 'Close a plot, or show fewer cells (a smaller subset).');
+        setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
+            title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
+        return;
+    }
+    setStatusTag(plotContainer, 'memory', null);
     const started = performance.now();
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
@@ -1405,7 +1415,7 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   }
   
   // Use the new updateTableEntities function to efficiently update table entities
-  const tableEntitiesChanged = await updateTableEntities(data, settings);
+  const tableEntitiesChanged = await updateTableEntities(data, settings, plotContainer);
   
   // If table entities didn't change, no need to update the plot
   if (!tableEntitiesChanged) {

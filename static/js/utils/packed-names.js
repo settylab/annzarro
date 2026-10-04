@@ -52,6 +52,22 @@ export class PackedNames {
         return out;
     }
 
+    /** Names given as strings (any iterable), packed. */
+    static fromArray(names) {
+        const parts = [];
+        let total = 0;
+        for (const name of names) {
+            const b = _encoder.encode(String(name));
+            parts.push(b);
+            total += b.length;
+        }
+        const bytes = new Uint8Array(total);
+        const offsets = new Uint32Array(parts.length + 1);
+        let at = 0;
+        parts.forEach((b, i) => { bytes.set(b, at); at += b.length; offsets[i + 1] = at; });
+        return new PackedNames(bytes, offsets, parts.length);
+    }
+
     *[Symbol.iterator]() { for (let i = 0; i < this.length; i++) yield this.at(i); }
     forEach(fn) { for (let i = 0; i < this.length; i++) fn(this.at(i), i, this); }
     map(fn) { const out = new Array(this.length); for (let i = 0; i < this.length; i++) out[i] = fn(this.at(i), i, this); return out; }

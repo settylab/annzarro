@@ -6,12 +6,13 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
 import { Coverage, GAP, classifyError } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings } from '../utils/panel-settings.js';
+import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 
 const CellTablePanel = (function() {
     /**
@@ -38,6 +39,7 @@ const CellTablePanel = (function() {
             responsive: false, // Disable responsive (use container size)
             fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
+            searchText: '',
             currentEntries: [],
             filteredCells: null
         };
@@ -198,10 +200,9 @@ const CellTablePanel = (function() {
                 
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
-                    // deep copy linked searchBuilderConfig
-                    const sb_data = JSON.parse(JSON.stringify(_settings.searchBuilderConfig));
-                    delete _settings.searchBuilderConfig;
-                    _settings.searchBuilderConfig = sb_data;
+                    // the filter, the search and the rows passing them as
+                    // values: the next DataTable starts from them
+                    freezeTableState(_settings);
                     _dataTable.destroy();
                     _dataTable = null;
                 }
@@ -209,6 +210,8 @@ const CellTablePanel = (function() {
                 // Initialize DataTable
                 if (tableData.data.length > 0) {
                     _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    // its rows, in the browser memory guard's ledger (a subset change redraws them)
+                    commitMemory(_id, { kind: 'cell-table', n: tableData.data.length });
                     // State what the table is NOT showing, and why. A table that
                     // silently drops an unreadable column looks identical to one
                     // whose column genuinely holds nothing.
@@ -268,9 +271,13 @@ const CellTablePanel = (function() {
          */
         function cleanup() {
             if (_dataTable) {
+                // what other panels still read (a plot's table filter, the
+                // panel set) stays, as values; the DataTable's rows go
+                freezeTableState(_settings, { rowNames: DataManager.getCells(), rows: _dataTable.rows().count() });
                 _dataTable.destroy();
                 _dataTable = null;
             }
+            forgetMemory(_id);
             
             _container.innerHTML = '';
         }
