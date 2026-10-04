@@ -72,6 +72,15 @@ show the dialog. On a large dataset the steps are the same.
    points and ran out of memory at 182 million. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
+
+   **Sizes that do not fit in the browser are greyed out.** A subset applies to every Cell Plot
+   and cell table at once, and each plot keeps its old points until the new ones are drawn, so
+   the browser needs room for all of them together. A size (or **All**) that would not fit next
+   to what the open panels already hold is disabled and says **needs ~X GB**; hover it for
+   "needs ~X GB of browser JS memory; Y GB free with N plots open". Close a plot, or pick a
+   smaller size, and it comes back. The line at the bottom of the dialog gives the browser
+   memory still free; with a size typed in **Cells** that does not fit, it says so and **Apply**
+   stays off ([Browser memory](#browser-memory)).
 4. **Seed**: any whole number from 0 to 4,294,967,295. **New seed** draws another one. The same
    seed always selects the same cells, and more cells with the same seed keep every cell of fewer:
    going from 50,000 to 100,000 cells adds cells and does not swap the ones on screen.
@@ -243,6 +252,32 @@ In large-plot mode:
 
 Turning a subset on (or one small enough) brings the regular plot back with hover and click.
 Removing it again returns to large-plot mode.
+
+(browser-memory)=
+## Browser memory
+
+A browser tab that runs out of memory does not slow down: the browser closes it, and every panel,
+filter and focus on screen is lost. Before anything that needs memory in proportion to the
+number of points, AnnZarro estimates what it will need and compares it with what is left after
+the panels already open:
+
+- **opening, duplicating or reopening a Cell Plot** (its tile in **Create New Panel** or
+  **Duplicate or Reopen** is greyed out, with the reason when you hover it);
+- **a larger subset, All, or every cell** (the dialog's sizes, above);
+- **a full-resolution image export** ({doc}`export`);
+- **a recolour or a redraw** of a plot.
+
+What does not fit is not started, and the panel or the control says what it needs, what is free
+and what helps: close a plot, or show fewer cells. The limit that matters is the browser's
+JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer whatever its RAM; a Cell Plot
+holds about 20 bytes of it per point in large-plot mode and 400 to 900 bytes in a regular plot.
+The numbers are estimates from measurements on a laptop ("estimated" in the dialog's memory
+line); the server's administrator can loosen or tighten them (`ui.memory`,
+{doc}`../reference/configuration`).
+
+If the tab does close while drawing a plot, the next visit restores the panel set but leaves that
+plot undrawn, with **Draw anyway** and **Subset…**, so the same plot does not close the tab
+again; the browser also becomes a little more careful in its estimates from then on.
 
 ## Measured on a large store
 
