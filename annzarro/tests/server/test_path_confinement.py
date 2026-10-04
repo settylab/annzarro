@@ -209,3 +209,16 @@ def test_hosted_legacy_listing_omits_links_that_escape(listing_layout):
 def test_local_listing_keeps_links(listing_layout):
     names = _names(_app(listing_layout).test_client().get("/api/v1/datasets"))
     assert {"inside.zarr", "alias.zarr", "link.zarr"} <= names
+
+
+@pytest.mark.parametrize("url", ["file:///etc/secret.zarr", "ftp://host/secret.zarr", "foo://x/y.zarr"])
+def test_urls_of_unsupported_schemes_are_checked_like_paths(hosted, url):
+    # only core.remote.REMOTE_SCHEMES count as remote; anything else is not
+    # waved through as a URL
+    assert _refused(_structure(hosted, url))
+
+
+@pytest.mark.parametrize("url", ["s3://bucket/a.zarr", "gs://bucket/a.zarr", "gcs://bucket/a.zarr",
+                                 "http://host/a.zarr", "https://host/a.zarr"])
+def test_remote_stores_are_left_to_the_remote_policy(hosted, url):
+    assert not _refused(_structure(hosted, url))

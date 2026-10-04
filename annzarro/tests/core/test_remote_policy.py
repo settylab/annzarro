@@ -5,6 +5,8 @@ the opener. The HTTP round trip is covered by
 ``annzarro/tests/integration/test_remote_http_store.py``.
 """
 
+import sys
+
 import pytest
 
 import annzarro.core as core
@@ -73,6 +75,19 @@ def opened(monkeypatch):
 ])
 def test_get_reader_sends_remote_urls_to_zarr_without_local_check(url, opened):
     assert core.get_reader(url) is core.zarr_reader
+    assert opened == [url]
+
+
+@pytest.mark.parametrize("scheme", sorted(remote.REMOTE_SCHEMES))
+def test_every_remote_scheme_skips_the_local_format_check(scheme, opened, monkeypatch):
+    """_get_root once listed s3/http/https by hand, so gs:// and gcs:// URLs
+    were stat'ed as local directories before being opened remotely."""
+    def local_check(path):
+        raise AssertionError(f"local format check on {path}")
+    # the module, not core.zarr_reader (the reader instance of that name)
+    monkeypatch.setattr(sys.modules["annzarro.core.zarr_reader"], "zarr_format_problem", local_check)
+    url = f"{scheme}://bucket/pbmc.zarr"
+    core.zarr_reader._get_root(url)
     assert opened == [url]
 
 

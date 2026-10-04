@@ -23,6 +23,7 @@ from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from annzarro.utils.paths import default_data_dir
+from ..core.remote import is_remote_path
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,7 @@ def resolve_dataset_segment(endpoint, values):
     if not values or not values.get("dataset_path"):
         return
     segment = values["dataset_path"]
-    if "://" in segment:
+    if is_remote_path(segment):
         return
     data_dir = current_app.config.get("data_dir") or default_data_dir()
     values["dataset_path"] = os.path.join(data_dir, segment)
@@ -275,7 +276,7 @@ def require_dataset_segment():
     """404 for a ``/datasets/<path>`` that does not exist, instead of the
     routes' 200-with-an-error-body, 400 or 500."""
     path = (request.view_args or {}).get("dataset_path")
-    if path and "://" not in path and not os.path.exists(path):
+    if path and not is_remote_path(path) and not os.path.exists(path):
         return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
                                  "to the server's data directory.",
                         "reason": "not_found"}), 404
