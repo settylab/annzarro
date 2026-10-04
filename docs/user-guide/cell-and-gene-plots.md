@@ -42,7 +42,9 @@ Cell plot controls, coloured by a categorical obs column.
    0.784 px / 0.16 at 95.6 million. These values were picked on screenshots of a 95.6-million-cell
    UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
    0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An automatic value is shown in grey italics and changes when the number of
-   points does, for example when you turn the subset off. Moving a slider or typing a value sets it; it then stays
+   points does, for example when you turn the subset off. In a 3D plot the automatic opacity is
+   always 1: below 1, Plotly draws 3D points out of depth order (far points over near ones). An
+   opacity you choose is kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value sets it; it then stays
    as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
    while its value is automatic; click it to make that value automatic again.
 10. **Color Palette** (categorical colour) or **Color Map** and range controls (numerical colour,

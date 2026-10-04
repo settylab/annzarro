@@ -709,8 +709,8 @@ export function updateColorControlsVisibility(container, colorType, id) {
  * from an older link) pins the thumb to that end; the box shows it as is.
  */
 export function showPointStyle(id, settings) {
-  const show = (name, scale, value, auto, what) => {
-    const tip = auto ? `${what}: auto, follows the number of points drawn (not the panel size)` : `${what} (set)`;
+  const show = (name, scale, value, auto, what, note = '') => {
+    const tip = (auto ? `${what}: auto, follows the number of points drawn (not the panel size)` : `${what} (set)`) + note;
     const $slider = jQuery(`#${name}-${id}`);
     if ($slider.length) $slider.val(trackValue(scale, value)).attr('title', `${tip} (log scale)`);
     const $input = jQuery(`#${name}-input-${id}`);
@@ -718,12 +718,14 @@ export function showPointStyle(id, settings) {
     const $auto = jQuery(`#${name}-auto-${id}`);
     if ($auto.length) {
       $auto.toggleClass('active', !!auto).attr('aria-pressed', String(!!auto)).attr('title', auto
-        ? `${what} is automatic: it follows the number of points drawn, not the panel size`
-        : `Make the ${what.toLowerCase()} automatic again: follow the number of points drawn`);
+        ? `${what} is automatic: it follows the number of points drawn, not the panel size${note}`
+        : `Make the ${what.toLowerCase()} automatic again: follow the number of points drawn${note}`);
     }
   };
   show('point-size', pointSizeScale, settings.pointSize, settings.autoPointSize, 'Marker size');
-  show('point-opacity', opacityScale, settings.pointOpacity, settings.autoPointOpacity, 'Marker opacity');
+  // 3D: automatic opacity is 1 (utils/point-style.js); a chosen one is kept, with this warning
+  show('point-opacity', opacityScale, settings.pointOpacity, settings.autoPointOpacity, 'Marker opacity',
+    settings.z ? '. In 3D, below 1 Plotly draws the points out of depth order (far ones over near ones); automatic is 1' : '');
 }
 
 /**

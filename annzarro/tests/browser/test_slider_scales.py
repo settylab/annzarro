@@ -391,3 +391,73 @@ def test_hover_finds_the_point_after_a_size_change(server):
             page.close()
         finally:
             browser.close()
+
+
+@pytest.fixture(scope="module")
+def faint_server(tmp_path_factory):
+    """Server default opacity 0.5: on the 200-cell fixture the 2D automatic opacity is then 0.5, not 1."""
+    home = tmp_path_factory.mktemp("home-faint")
+    cfg = home / "faint.yaml"
+    cfg.write_text("ui:\n  defaults:\n    point_opacity: 0.5\n")
+    proc, root = _serve(home, "--config", str(cfg))
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+POINTS = """() => { const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
+    const t = gd.data.filter(t => t.x && t.x.length > 1);
+    return { types: [...new Set(t.map(d => d.type))], opacity: [...new Set(t.map(d => d.marker.opacity))] }; }""" % PID
+
+
+def test_3d_automatic_opacity_is_one(faint_server):
+    """Plotly draws translucent scatter3d points out of depth order, so automatic opacity is 1 in 3D;
+    back in 2D it is the 2D automatic value again. The opacity tooltip says why."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(faint_server))
+            box = f"#point-opacity-input-{PID}"
+            assert page.evaluate(POINTS) == {"types": ["scattergl"], "opacity": [0.5]}
+            assert page.input_value(box) == "0.5"
+
+            page.click(f"#z-axis-toggle-{PID}")
+            page.wait_for_function(POINTS.replace("return {", "return t.length && t[0].type === 'scatter3d' && {"),
+                                   timeout=30000)
+            page.wait_for_timeout(500)
+            assert page.evaluate(POINTS) == {"types": ["scatter3d"], "opacity": [1]}
+            assert page.input_value(box) == "1"
+            assert page.input_value(f"#point-opacity-{PID}") == "1000"        # the slider at its right end
+            assert "is-auto" in page.get_attribute(box, "class")
+            assert "depth order" in page.get_attribute(box, "title")
+
+            page.click(f"#z-axis-toggle-{PID}")
+            page.wait_for_function(POINTS.replace("return {", "return t.length && t[0].type === 'scattergl' && {"),
+                                   timeout=30000)
+            page.wait_for_timeout(500)
+            assert page.evaluate(POINTS) == {"types": ["scattergl"], "opacity": [0.5]}
+            assert page.input_value(box) == "0.5"
+            assert "depth order" not in page.get_attribute(box, "title")
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_3d_keeps_a_chosen_opacity(faint_server):
+    """An opacity the user chose (here from the link) stays in 3D; only the tooltip warns."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(faint_server, pointOpacity=0.3))
+            page.click(f"#z-axis-toggle-{PID}")
+            page.wait_for_function(POINTS.replace("return {", "return t.length && t[0].type === 'scatter3d' && {"),
+                                   timeout=30000)
+            page.wait_for_timeout(500)
+            assert page.evaluate(POINTS)["opacity"] == [0.3]
+            assert page.input_value(f"#point-opacity-input-{PID}") == "0.3"
+            assert "depth order" in page.get_attribute(f"#point-opacity-input-{PID}", "title")
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
