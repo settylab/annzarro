@@ -363,6 +363,10 @@ def test_export_when_it_does_not_fit_offers_the_plot_as_shown(server, page):
         shown.click()
     path = dl.value.path()
     assert tuple(_png_size(path)) == tuple(size)
+    # a download closes the menu, sooner or later: open it again for the next one
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#download-shown-svg-cell-plot-a", state="hidden")
+    _open_menu(page)
     with page.expect_download() as dl:
         page.click("#download-shown-svg-cell-plot-a")
     svg = open(dl.value.path(), encoding="utf-8").read()
