@@ -947,8 +947,13 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
       $tableFilterSelect.val('none');
       
       // Get panel to call onDataUpdate if needed
+      // Only when a table was really selected and is gone: re-selecting
+      // 'none' over 'none' changed nothing, but asked every plot for an
+      // update, and a large plot redraws on any update. That was a second
+      // full draw of every large plot right after its first (+2.7 s at 50M
+      // cells by gene, v0.3.0).
       const panel = window.PanelManager ? window.PanelManager.getPanel(id) : null;
-      if (panel && panel.onDataUpdate && currentValue) {
+      if (panel && panel.onDataUpdate && currentValue && currentValue !== 'none') {
         // store new tableFilter in settings of the panel
         panel.setConfig({ tableFilter: 'none' });
         // Call onDataUpdate with tableChanged event, passing empty data to avoid issues with id property

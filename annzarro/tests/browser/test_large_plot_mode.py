@@ -329,3 +329,24 @@ def test_first_draw_fits_without_a_second_render(server):
             assert fit["autosize"] == 0, f"a second render after the first draw: {fit}"
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("colour", [{"type": "obs", "key": "total_counts", "column": ""},
+                                    {"type": "obs", "key": "cell_type", "column": ""}], ids=["numeric", "category"])
+def test_a_large_plot_is_drawn_once_on_load(server, colour):
+    """v0.3.0 drew every large plot twice on load: the table-filter dropdown,
+    set to 'none' over 'none', asked the plot for an update, and a large
+    plot redraws on any update (+2.7 s at 50M cells by gene)."""
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1300, "height": 900})
+            draws = []
+            page.on("console", lambda m: draws.append(m.text) if m.text.startswith("Large cell plot") else None)
+            page.goto(_link(server, colour, None))
+            # 200 points, plus the colour bar's one-point trace when numeric
+            _wait(page, lambda s: s["points"] >= 200 and s["notice"] and not s["busy"])
+            time.sleep(2)
+            assert len(draws) == 1, draws
+        finally:
+            browser.close()
