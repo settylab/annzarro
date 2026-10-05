@@ -563,3 +563,33 @@ def test_large_plot_recolour_replaces_itself(large_server, page):
         const g = await import('/static/js/utils/memory-guard-ui.js');
         return !g.ledger.pending.has('cell-plot-a') && !!g.ledger.get('cell-plot-a');
     }""")
+
+
+def test_large_plot_redraw_lets_the_old_plot_go(large_server, page):
+    """A large-mode redraw (a recolour) does not keep the plot it replaces.
+
+    On 12f93f8 it did: Plotly.react into the drawn large plot kept the old
+    calc beside the new one for good (95.6M points: 1.93 GB of JS heap after
+    the draw, 3.46 GB after any recolour; 150M: the first recolour crashed
+    the tab), so the guard's rule that such a redraw replaces the plot was
+    false. Here a WeakRef to the old plot's calcdata must be empty after the
+    recolour and a forced GC, and the old WebGL contexts lost.
+    """
+    page.goto(_link(large_server))
+    _drawn(page, "cell-plot-a")
+    page.evaluate("""() => {
+        const gd = document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot');
+        window.__oldCalc = new WeakRef(gd.calcdata);
+        window.__oldGl = gd._fullLayout._glcanvas.data().filter(d => d.regl).map(d => d.regl._gl);
+    }""")
+    page.evaluate("""async () => {
+        const p = window.PanelManager.getPanel('cell-plot-a');
+        p.setConfig({ color: { type: 'obs', key: 'total_counts', column: '' } });
+        await p.refreshPlot();
+    }""")
+    _drawn(page, "cell-plot-a")
+    cdp = page.context.new_cdp_session(page)
+    for _ in range(3):
+        cdp.send("HeapProfiler.collectGarbage")
+    assert page.evaluate("() => window.__oldGl.length > 0 && window.__oldGl.every(gl => gl.isContextLost())")
+    assert page.evaluate("() => window.__oldCalc.deref() === undefined"), "the old plot's calcdata is still alive"
