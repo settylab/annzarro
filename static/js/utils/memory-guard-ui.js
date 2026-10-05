@@ -15,7 +15,7 @@
 import { Config } from '../config.js';
 import { CacheManager } from '../cache-manager.js';
 import {
-    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, check, addCost, predictSubsetChange,
+    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
     formatGB, CONTEXTS_PER_PLOT
 } from './memory-guard.js';
@@ -104,9 +104,11 @@ export function headroomText() {
  */
 export function drawCheck({ id, kind, n, large = false, colour = 'numeric', threeD = false, livePlot = false }) {
     const cost = panelCost({ kind, n, large, colour, threeD }).peak;
-    const need = { ...cost, contexts: livePlot ? 0 : cost.contexts };
-    let h = held([id]);
     const old = ledger.get(id);
+    // a plot redrawn in place in large-plot mode replaces itself (drawNeed)
+    const add = drawNeed(cost, livePlot ? old : null, large);
+    const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
+    let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
     return _check(need, h, ledger.plotCount() + (old ? 0 : 1));
 }

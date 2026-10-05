@@ -205,6 +205,35 @@ export function addCost(a, b, k = 1) {
     return { heap: a.heap + k * b.heap, off: a.off + k * b.off, gpu: a.gpu + k * b.gpu, contexts: a.contexts + k * b.contexts };
 }
 
+/** The larger of two costs, term by term. */
+export function maxCost(a, b) {
+    return { heap: Math.max(a.heap, b.heap), off: Math.max(a.off, b.off), gpu: Math.max(a.gpu, b.gpu),
+        contexts: Math.max(a.contexts, b.contexts) };
+}
+
+/**
+ * Whether a redraw of a drawn plot REPLACES it rather than adding to it: a
+ * large-plot-mode plot redrawn in large-plot mode (a recolour, a part step,
+ * any change there redraws). Measured at 95.6M points: 1.94 GB on the heap
+ * before, during (peak 1.96 GB) and after, so the old and the new plot never
+ * coexist. The regular path is not measured that way and stays old + new.
+ */
+export function replacesInPlace(old, large) {
+    return !!(old && old.large && large);
+}
+
+/**
+ * What a draw adds on top of what is held, when `old` is what the panel holds
+ * now (null for a new plot): the whole peak, or for a plot replaced in place
+ * only its growth beyond the old plot.
+ */
+export function drawNeed(peak, old, large) {
+    if (!replacesInPlace(old, large)) return peak;
+    const r = old.resident;
+    return { heap: Math.max(0, peak.heap - r.heap), off: Math.max(0, peak.off - r.off),
+        gpu: Math.max(0, peak.gpu - r.gpu), contexts: 0 };
+}
+
 /**
  * What a plot or table panel holds once drawn (`resident`) and needs while
  * it is drawn (`peak`, which includes the resident part).
@@ -490,7 +519,9 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
         if (p.kind === 'cell-plot' || p.kind === 'cell-table') {
             const large = p.kind === 'cell-plot' && n > threshold && canLarge(p);
             const c = panelCost({ ...p, n, large }, model);
-            peak = addCost(addCost(peak, old), c.peak);
+            // a large plot redrawn large replaces itself; anything else keeps
+            // its old points until the new ones are drawn
+            peak = addCost(peak, replacesInPlace(p, large) ? maxCost(old, c.peak) : addCost(old, c.peak));
             after = addCost(after, c.resident);
             changed++;
         } else {

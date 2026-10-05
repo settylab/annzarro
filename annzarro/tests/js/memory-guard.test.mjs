@@ -327,3 +327,49 @@ test('overlapping draws of one panel: the first one ending does not settle the s
     L.commit('c', null, 999);
     assert.equal(L.get('c'), null);
 });
+
+test('95.6M every cell: a recolour or part step is allowed, a second plot, a full export and 182M are not', async () => {
+    // the regression on 12f93f8: a large-mode recolour is a full redraw, and the
+    // guard added the new plot's peak to the old plot it replaces (4.43 GB
+    // against 4.03). Measured at 95.6M: 1.94 GB before, 1.96 GB peak, 1.94 GB
+    // after: the two never coexist.
+    const { drawNeed, replacesInPlace } = await import('../../../static/js/utils/memory-guard.js');
+    const N = 95624334;
+    const s = memorySettings({});
+    const limits = readLimits(CHROME, s);
+    const L = new Ledger();
+    L.commit('a', { kind: 'cell-plot', n: N, large: true, colour: 'numeric' });
+    const old = L.get('a');
+    const heldWithOld = addCostLocal(L.totals({ exclude: ['a'] }), old.resident);
+
+    // recolour (gene -> category): redraw in place
+    const peak = panelCost({ kind: 'cell-plot', n: N, large: true, colour: 'categorical' }).peak;
+    assert.equal(replacesInPlace(old, true), true);
+    const recolour = check({ ...drawNeed(peak, old, true), contexts: 0 }, heldWithOld, limits, s);
+    assert.equal(recolour.verdict, 'ok', recolour.why);
+    // the old double count would refuse it
+    assert.equal(check({ ...peak, contexts: 0 }, heldWithOld, limits, s).verdict, 'block');
+
+    // a part step or a larger subset in large-plot mode: replaces too
+    const step = predictSubsetChange(N, L.panels(), 1e6);
+    const now = L.totals();
+    const base = L.totals({ exclude: ['a'] });
+    const need = { heap: base.heap + step.peak.heap - now.heap, off: 0, gpu: 0, contexts: 0 };
+    assert.equal(check(need, now, limits, s).verdict, 'ok');
+
+    // a second every-cell plot: refused
+    const second = panelCost({ kind: 'cell-plot', n: N, large: true }).peak;
+    assert.equal(check(drawNeed(second, null, true), L.totals(), limits, s).verdict, 'block');
+    // a full-resolution export (the measured F1 crash): refused
+    assert.equal(check(exportCost({ n: N, large: true, width: 1200, height: 800, scale: 2 }), L.totals(), limits, s).verdict, 'block');
+    // 182M first draw (the measured V8 OOM): refused
+    const first = panelCost({ kind: 'cell-plot', n: 182e6, large: true }).peak;
+    assert.equal(check(first, new Ledger().totals(), limits, s).verdict, 'block');
+    // a regular plot redrawn keeps old + new (not measured as a replace)
+    assert.equal(replacesInPlace({ large: false, resident: zero() }, false), false);
+    assert.deepEqual(drawNeed(first, { large: false, resident: first }, true), first);
+});
+
+function addCostLocal(a, b) {
+    return { heap: a.heap + b.heap, off: a.off + b.off, gpu: a.gpu + b.gpu, contexts: a.contexts };
+}

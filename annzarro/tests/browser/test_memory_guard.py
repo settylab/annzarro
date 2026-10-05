@@ -524,3 +524,42 @@ def test_closing_frees_only_what_is_private(server, page):
     page.click('.panel-closed-btn[data-id="cell-plot-B"]')
     _drawn(page, "cell-plot-B")
     assert page.input_value('.tile[data-tile-id="cell-plot-B"] select.table-filter-select') == "cell-table-A"
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    """Large-plot mode above 100 points: the fixture's 200 cells draw large."""
+    root, proc = _serve(tmp_path_factory, "ui:\n  defaults:\n    large_plot_points: 100\n")
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_large_plot_recolour_replaces_itself(large_server, page):
+    """A large-mode recolour redraws the plot in place: the guard charges only
+    its growth, not the new plot on top of the old (12f93f8 refused the
+    recolour of the 95.6M plot that way)."""
+    page.goto(_link(large_server))
+    _drawn(page, "cell-plot-a")
+    assert page.evaluate("""async () => (await import('/static/js/utils/memory-guard-ui.js')).ledger.get('cell-plot-a').large""")
+    # less free than a whole new plot needs, more than nothing
+    need = page.evaluate("""async () => {
+        const m = await import('/static/js/utils/memory-guard.js');
+        return m.panelCost({ kind: 'cell-plot', n: 200, large: true, colour: 'numeric' }).peak.heap * 1.2;
+    }""")
+    page.evaluate(SET_FREE, need * 0.5)
+    # a new plot would be refused
+    page.wait_for_function("""() => [...document.querySelectorAll('.panel-type-option[data-type="cell-plot"]')]
+        .every(o => o.classList.contains('memory-blocked'))""", timeout=5000)
+    # the recolour goes through
+    page.evaluate("""async () => {
+        const p = window.PanelManager.getPanel('cell-plot-a');
+        p.setConfig({ color: { type: 'obs', key: 'total_counts', column: '' } });
+        await p.refreshPlot();
+    }""")
+    assert page.locator('.tile[data-tile-id="cell-plot-a"] .ps-tag[data-tag="memory"]').count() == 0
+    assert page.locator('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder').count() == 0
+    until(page, """async () => {
+        const g = await import('/static/js/utils/memory-guard-ui.js');
+        return !g.ledger.pending.has('cell-plot-a') && !!g.ledger.get('cell-plot-a');
+    }""")
