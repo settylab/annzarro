@@ -205,12 +205,6 @@ export function addCost(a, b, k = 1) {
     return { heap: a.heap + k * b.heap, off: a.off + k * b.off, gpu: a.gpu + k * b.gpu, contexts: a.contexts + k * b.contexts };
 }
 
-/** The larger of two costs, term by term. */
-export function maxCost(a, b) {
-    return { heap: Math.max(a.heap, b.heap), off: Math.max(a.off, b.off), gpu: Math.max(a.gpu, b.gpu),
-        contexts: Math.max(a.contexts, b.contexts) };
-}
-
 /**
  * Whether a redraw of a drawn plot REPLACES it rather than adding to it: a
  * large-plot-mode plot redrawn in large-plot mode (a recolour, a part step,
@@ -225,13 +219,20 @@ export function replacesInPlace(old, large) {
 /**
  * What a draw adds on top of what is held, when `old` is what the panel holds
  * now (null for a new plot): the whole peak, or for a plot replaced in place
- * only its growth beyond the old plot.
+ * its growth beyond the old plot, with the margin on the NEW plot's peak:
+ * check() multiplies the need by (1 + margin), so the need returned is
+ * max(0, peak - old / (1 + margin)), and the check charges
+ * max(0, (1 + margin) * peak - old). A same-size redraw is thus still
+ * charged margin x its peak (a short spike while V8 frees the old arrays,
+ * which a sampled peak can miss); a larger redraw (a subset step up) the
+ * whole growth with the margin.
  */
-export function drawNeed(peak, old, large) {
+export function drawNeed(peak, old, large, margin = DEFAULT_SETTINGS.margin) {
     if (!replacesInPlace(old, large)) return peak;
     const r = old.resident;
-    return { heap: Math.max(0, peak.heap - r.heap), off: Math.max(0, peak.off - r.off),
-        gpu: Math.max(0, peak.gpu - r.gpu), contexts: 0 };
+    const k = 1 + margin;
+    return { heap: Math.max(0, peak.heap - r.heap / k), off: Math.max(0, peak.off - r.off / k),
+        gpu: Math.max(0, peak.gpu - r.gpu / k), contexts: 0 };
 }
 
 /**
@@ -512,7 +513,8 @@ export function largestFitting(fits, lo, hi) {
  * @returns {{peak: Object, after: Object, changed: number}} peak and after
  *   include the unchanged panels; the caller adds app and cache (Ledger.totals of nothing)
  */
-export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL, canLarge = () => true) {
+export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL, canLarge = () => true,
+    margin = DEFAULT_SETTINGS.margin) {
     let peak = zero(), after = zero(), changed = 0;
     for (const p of panels) {
         const old = p.resident || panelCost(p, model).resident;
@@ -521,7 +523,7 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
             const c = panelCost({ ...p, n, large }, model);
             // a large plot redrawn large replaces itself; anything else keeps
             // its old points until the new ones are drawn
-            peak = addCost(peak, replacesInPlace(p, large) ? maxCost(old, c.peak) : addCost(old, c.peak));
+            peak = addCost(peak, replacesInPlace(p, large) ? addCost(old, drawNeed(c.peak, p, large, margin)) : addCost(old, c.peak));
             after = addCost(after, c.resident);
             changed++;
         } else {

@@ -345,8 +345,12 @@ test('95.6M every cell: a recolour or part step is allowed, a second plot, a ful
     // recolour (gene -> category): redraw in place
     const peak = panelCost({ kind: 'cell-plot', n: N, large: true, colour: 'categorical' }).peak;
     assert.equal(replacesInPlace(old, true), true);
-    const recolour = check({ ...drawNeed(peak, old, true), contexts: 0 }, heldWithOld, limits, s);
+    const recolour = check({ ...drawNeed(peak, old, true, s.margin), contexts: 0 }, heldWithOld, limits, s);
     assert.equal(recolour.verdict, 'ok', recolour.why);
+    // the margin stays on the new plot: a same-size redraw is charged
+    // 1.2 x peak - old = 0.39 GB, not nothing
+    assert.ok(Math.abs(recolour.needBytes - (1.2 * peak.heap - old.resident.heap)) < 1e3, recolour.needBytes);
+    assert.ok(recolour.needBytes > 0.35 * GB);
     // the old double count would refuse it
     assert.equal(check({ ...peak, contexts: 0 }, heldWithOld, limits, s).verdict, 'block');
 
@@ -359,7 +363,7 @@ test('95.6M every cell: a recolour or part step is allowed, a second plot, a ful
 
     // a second every-cell plot: refused
     const second = panelCost({ kind: 'cell-plot', n: N, large: true }).peak;
-    assert.equal(check(drawNeed(second, null, true), L.totals(), limits, s).verdict, 'block');
+    assert.equal(check(drawNeed(second, null, true, s.margin), L.totals(), limits, s).verdict, 'block');
     // a full-resolution export (the measured F1 crash): refused
     assert.equal(check(exportCost({ n: N, large: true, width: 1200, height: 800, scale: 2 }), L.totals(), limits, s).verdict, 'block');
     // 182M first draw (the measured V8 OOM): refused
@@ -367,7 +371,31 @@ test('95.6M every cell: a recolour or part step is allowed, a second plot, a ful
     assert.equal(check(first, new Ledger().totals(), limits, s).verdict, 'block');
     // a regular plot redrawn keeps old + new (not measured as a replace)
     assert.equal(replacesInPlace({ large: false, resident: zero() }, false), false);
-    assert.deepEqual(drawNeed(first, { large: false, resident: first }, true), first);
+    assert.deepEqual(drawNeed(first, { large: false, resident: first }, true, s.margin), first);
+});
+
+test('a larger redraw in place is charged its whole growth with the margin; 150M recolours, 175M is never drawn', async () => {
+    const { drawNeed } = await import('../../../static/js/utils/memory-guard.js');
+    const s = memorySettings({});
+    const limits = readLimits(CHROME, s);
+    const at = (n) => { const L = new Ledger(); L.commit('a', { kind: 'cell-plot', n, large: true }); return L; };
+    // a subset step up, 50M -> 95.6M: 1.2 x 1.94 - 1.02 = 1.31 GB
+    const L = at(50e6);
+    const old = L.get('a');
+    const peak = panelCost({ kind: 'cell-plot', n: 95624334, large: true }).peak;
+    const need = drawNeed(peak, old, true, s.margin);
+    assert.ok(Math.abs(1.2 * need.heap - (1.2 * peak.heap - old.resident.heap)) < 1e3);
+    assert.ok(1.2 * need.heap > 1.3 * GB);
+    // a step down is charged the margin of the new plot only if it exceeds the old: 0
+    assert.equal(drawNeed(panelCost({ kind: 'cell-plot', n: 10e6, large: true }).peak, old, true, s.margin).heap, 0);
+    // recolour at 150M: 3.21 held + 0.61 = 3.81 of 4.03, allowed
+    const L150 = at(150e6);
+    const o150 = L150.get('a');
+    const held150 = { ...L150.totals({ exclude: ['a'] }), heap: L150.totals({ exclude: ['a'] }).heap + o150.resident.heap };
+    const p150 = panelCost({ kind: 'cell-plot', n: 150e6, large: true }).peak;
+    assert.equal(check({ ...drawNeed(p150, o150, true, s.margin), contexts: 0 }, held150, limits, s).verdict, 'ok');
+    // 175M: the first draw is refused (4.25 vs 3.86), so its recolour never arises
+    assert.equal(check(panelCost({ kind: 'cell-plot', n: 175e6, large: true }).peak, new Ledger().totals(), limits, s).verdict, 'block');
 });
 
 function addCostLocal(a, b) {
