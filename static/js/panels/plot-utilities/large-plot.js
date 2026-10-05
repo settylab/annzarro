@@ -35,6 +35,7 @@ import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
+import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -450,6 +451,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     total: n, filtered, exclusive: only, xNaN: only.coords, yNaN: only.coords, zNaN: 0,
     hideNaNActive: !!settings.hideNaN, hideOutliersActive: !!settings.hideOutliers, tableFilterActive: false
   }, 'cells'));
+  // Drawn from nothing, not into the graph shown: a Plotly.react into the
+  // drawn large plot kept the old plot's calc and scene beside the new one
+  // for good (1.93 -> 3.46 GB of JS heap at 95.6M points after a recolour,
+  // a crashed tab at 150M). The view is kept in the settings, not the graph.
+  if (plotContainer._fullLayout) releasePlot(plotContainer);
   clearForDraw(plotContainer);
   await drawPlot(plotContainer, traces, layout,
     { responsive: true, displayModeBar: true, displaylogo: false,

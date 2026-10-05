@@ -15,7 +15,7 @@
 import { Config } from '../config.js';
 import { CacheManager } from '../cache-manager.js';
 import {
-    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, check, addCost, predictSubsetChange,
+    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
     formatGB, CONTEXTS_PER_PLOT
 } from './memory-guard.js';
@@ -104,9 +104,11 @@ export function headroomText() {
  */
 export function drawCheck({ id, kind, n, large = false, colour = 'numeric', threeD = false, livePlot = false }) {
     const cost = panelCost({ kind, n, large, colour, threeD }).peak;
-    const need = { ...cost, contexts: livePlot ? 0 : cost.contexts };
-    let h = held([id]);
     const old = ledger.get(id);
+    // a plot redrawn in place in large-plot mode replaces itself (drawNeed)
+    const add = drawNeed(cost, livePlot ? old : null, large, settings().margin);
+    const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
+    let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
     return _check(need, h, ledger.plotCount() + (old ? 0 : 1));
 }
@@ -143,7 +145,7 @@ export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) 
  */
 export function subsetCheck(n, threshold) {
     const panels = ledger.panels();
-    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD);
+    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings().margin);
     const now = held();
     const base = held(panels.map(p => p.id));
     // what the change adds: the peak of all panels less what they hold now
