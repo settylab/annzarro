@@ -674,12 +674,29 @@ const LayoutManager = (function() {
      * @param {number} [height] - Height in px; DEFAULT_PANEL_HEIGHT when missing
      * @returns {HTMLElement} - The wrapper, empty
      */
+    /**
+     * The height a panel without a saved one starts at: the tile container's
+     * visible height, between the wrapper's CSS minimum (360 px) and
+     * DEFAULT_PANEL_HEIGHT; the default when the container has no layout yet.
+     * @param {HTMLElement} container - The tile container
+     * @returns {number} px
+     */
+    function initialPanelHeight(container) {
+        const room = container ? container.clientHeight : 0;
+        if (!(room > 0)) return DEFAULT_PANEL_HEIGHT;
+        return Math.max(360, Math.min(DEFAULT_PANEL_HEIGHT, room));
+    }
+
     function createPanelWrapper(container, before, height) {
         const panelWrapper = document.createElement('div');
         panelWrapper.className = 'panel-wrapper';
         // A saved or dragged height is kept as is, with no cap; the page
-        // scrolls to the bottom chooser
-        panelWrapper.style.height = `${height > 0 ? height : DEFAULT_PANEL_HEIGHT}px`;
+        // scrolls to the bottom chooser. A panel without one (new, or from a
+        // link or layout that records none) starts as tall as the window
+        // shows, at most DEFAULT_PANEL_HEIGHT: at 1000 px fixed it ran past a
+        // window under about 1110 px, and the plot's x axis opened below the
+        // fold (v0.3.0). The chooser is a scroll away.
+        panelWrapper.style.height = `${height > 0 ? height : initialPanelHeight(container)}px`;
         panelWrapper.style.width = '100%';
         panelWrapper.style.overflow = 'hidden';
         panelWrapper.style.position = 'relative';
