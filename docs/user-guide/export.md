@@ -54,6 +54,25 @@ points are embedded as a bitmap (an `<image>` in the SVG). For vector points, ex
 draw the figure in Python (below).
 ```
 
+## When a full-resolution export does not fit
+
+A PNG, JPEG, WEBP or SVG export draws the plot a second time, off screen, at the size you chose.
+That second drawing needs about as much of the browser's memory as the plot itself, whatever the
+image size: with tens of millions of points it can be more than the tab has left, and a tab that
+runs out of memory is closed by the browser ({ref}`browser-memory`). So before it starts,
+AnnZarro checks that it fits next to the open panels. When it does not:
+
+- the **JPEG**, **SVG**, **WEBP** and **PNG** buttons are greyed out, and the line under them
+  says what the export needs and what is free;
+- **As shown (W × H px): PNG, SVG** appears beside them. It exports the plot exactly as it is
+  on screen, at twice the size of the tile in pixels, from what is already drawn: it needs
+  only the image's own memory, never the points. Its SVG holds the axes, labels and legend as
+  vector graphics and the points as one bitmap, as the full export's does;
+- the camera button in the plot's toolbar does not export; the plot's status line says why,
+  with **Export as shown**.
+
+To get the full resolution back, close another plot or show fewer cells.
+
 ## Export a table as CSV
 
 **Export CSV** in a table's controls writes the rows that pass the table's filter, in the current

@@ -33,7 +33,9 @@ export function readUiSettings(server) {
         autosaveStorageKey: pick(a.storage_key, 'ui_autosave_storage_key'),
         autosaveSessionName: pick(a.session_name, 'ui_autosave_session_name'),
         autosaveShowInList: pick(a.show_in_list, 'ui_autosave_show_in_list'),
-        autosaveAutoRestore: pick(a.auto_restore, 'ui_autosave_auto_restore')
+        autosaveAutoRestore: pick(a.auto_restore, 'ui_autosave_auto_restore'),
+        // the browser memory guard's settings, as sent (utils/memory-guard.js memorySettings checks them)
+        memory: ui.memory && typeof ui.memory === 'object' ? ui.memory : null
     };
 }
 const Config = (function() {
@@ -99,9 +101,13 @@ const Config = (function() {
         POINT_OPACITY: 1.0,
         // A Cell Plot with more points than this uses the large-plot mode
         // (panels/plot-utilities/large-plot.js): no hover, click or table
-        // filter. The regular path draws 5M categorical points; above that it
-        // runs out of the tab's V8 heap. Server key ui.defaults.large_plot_points.
-        LARGE_PLOT_POINTS: 5000000,
+        // filter. The regular path costs 400-900 B of the tab's V8 heap per
+        // point (one plot of 5M categorical points fits, a few do not); 1M
+        // keeps several regular plots open at once. Server key
+        // ui.defaults.large_plot_points.
+        LARGE_PLOT_POINTS: 1000000,
+        // Browser memory guard, server ui.memory (utils/memory-guard.js)
+        MEMORY: null,
         COLOR_SCALE: 'Portland',
         COLOR_SCALES: [
             "Greys", "YlGnBu", "Greens", "YlOrRd", "Bluered", "RdBu",
@@ -308,6 +314,7 @@ const Config = (function() {
                 if (ui.autosaveSessionName) AUTOSAVE.SESSION_NAME = ui.autosaveSessionName;
                 if (ui.autosaveShowInList !== null) AUTOSAVE.SHOW_IN_LIST = ui.autosaveShowInList;
                 if (ui.autosaveAutoRestore !== null) AUTOSAVE.AUTO_RESTORE = ui.autosaveAutoRestore;
+                if (ui.memory) DEFAULTS.MEMORY = ui.memory;
 
                 // Override StringDB settings if provided
                 if (SERVER_CONFIG.integrations && SERVER_CONFIG.integrations.string_db) {

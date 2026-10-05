@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X-Axis type, key and column drop-downs; the Color row; 3D Plot; Highlight Focused Cell; Plot Options; Filter by Table; Size and Opacity sliders; Color Palette; Hide NaN; Equal aspect.
+:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -20,22 +20,45 @@ Cell plot controls, coloured by a categorical obs column.
 1. **Type**: the AnnData slot the axis reads from.
 2. **Key**: the column or matrix in that slot.
 3. **Column**: which column of the matrix, or which focused row or column (see the tables below).
-   For obs and var it reads "N/A".
+   obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
-5. **3D Plot** adds a **Z-Axis (3D)** row and draws the plot in 3D. Click it again for 2D.
-6. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
+5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
+6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
+   ({doc}`spatial-coordinates`).
+7. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
    as a red dot with a black ring. On by default.
-   **Refresh**, next to it, reloads the panel's data and redraws it.
-7. **Plot Options** opens appearance and export settings ({doc}`export`).
-8. **Filter by Table** links the plot to a table ({doc}`tables-and-filters`).
-9. **Size** (0.1 to 20) and **Opacity** (0.01 to 1) of the points.
-10. **Color Palette** (categorical colour) or **Color Map** and range controls (numerical colour,
-    {doc}`colour-scales`).
-11. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
-    points of the **NA** legend entry).
-12. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
-    ({doc}`spatial-coordinates`). Numerical colours have more buttons in the same row
-    ({doc}`colour-scales`).
+8. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
+   {doc}`colour-scales`).
+9. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
+   points of the **NA** legend entry). Numerical colours have more buttons next to it
+   ({doc}`colour-scales`).
+10. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
+    The sliders move on a log scale, so their left half is the small sizes and faint opacities a
+    plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
+    markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the
+    size it is drawn at); the size slider starts at one step and opacity at 0.002, below which a
+    point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
+    range.
+
+    Until you set them, both are **automatic**: they follow the number of points drawn (the
+    subset, or every cell; not the size of the panel), from the default 5.1 px and opaque at a
+    few thousand points down to 3.14 px / 0.61 at 100,000, 1.96 px / 0.39 at a million and
+    0.784 px / 0.16 at 95.6 million. These values were picked on screenshots of a 95.6-million-cell
+    UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
+    0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An
+    automatic value is shown in grey italics and changes when the number of points does, for
+    example when you turn the subset off. In a 3D plot the automatic opacity is always 1: below 1,
+    Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
+    kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
+    sets it; it then stays
+    as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
+    while its value is automatic; click it to make that value automatic again.
+11. **Table** links the plot to a table ({doc}`tables-and-filters`).
+12. **Plot Options** opens appearance and export settings ({doc}`export`). **Refresh**, next to
+    it, reloads the panel's data and redraws it.
+
+A toggle that is on is filled blue and starts with a check mark. The controls rearrange with the
+panel's width: side by side in a wide panel, stacked in a narrow one.
 
 Every change redraws the panel straight away.
 
@@ -68,10 +91,40 @@ listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X
 CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
 
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
-column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and a
-notice above the plot says which source is missing, for example "obs.not_a_column: not in this
-dataset (8,090 cells)". A source that exists but cannot be read gets a "failed to read" notice with
-the reason instead.
+column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and
+the plot's status line ({ref}`plot-status-line`) says which source is missing, for example
+"obs.not_a_column: not in this dataset (8,090 cells)". A source that exists but cannot be read is
+listed as "failed to read", with the reason.
+
+(plot-status-line)=
+## What a plot does not show: the status line
+
+Under every plot is one line that says how many points it shows and why the others are missing,
+for example
+
+> **28 of 200 cells shown** · 150 not in part 2 of 4 · 21 table filter · 1 NaN hidden · details
+
+Click it for every reason with its exact count and the action that undoes it:
+
+| Reason | Undo |
+|---|---|
+| not in the cell subset, or not in its current part ({doc}`subsets`) | **Next part**, **Subset…** |
+| no x, y or z value | (none; the point has no position) |
+| a source that failed to read, is not in this dataset or needs a focused cell | (see the reason) |
+| not in the linked table (the eye toggle, {doc}`tables-and-filters`) | **Stop filtering** |
+| no colour value, with **Hide NaN** on | **Show NaN** |
+| outside the colour range, with **Hide Outliers** on | **Show outliers** |
+
+Each cell is counted once, under the first reason in this order that applies, so the counts add up
+to the number not shown. The total is the dataset's, as in the header's "Cells: 50 of 200". Counts
+of a million or more are rounded on the line (95.6M) and exact in the list. **Next part** shows
+other cells rather than giving these back, as stepping the part in the header does. A colour that
+failed to read hides no points; it is listed without a count.
+
+The line keeps its height whatever it says, so the plot does not move when it changes. In a
+narrow panel it shortens to "28 of 200 shown · details". Tags at its right state a mode: in
+large-plot mode, **Large plot: no hover/click** ({ref}`large-plot-mode`). An exported PNG or SVG
+carries the same statement above the plot.
 
 ## Defaults of a new panel
 
@@ -132,8 +185,8 @@ missing is therefore still numerical.
 
 - **Categorical**: one trace per category with a legend, and every point drawn. Points with a
   missing value are drawn in grey under an **NA** legend entry, and values that are not among the
-  column's categories appear as categories of their own. **Color Palette** offers "As stored in
-  adata.uns if available" (uses `uns/<key>_colors`, as scanpy writes them; the default),
+  column's categories appear as categories of their own. **Palette** offers "As stored in
+  adata.uns" (uses `uns/<key>_colors`, as scanpy writes them; the default),
   **hue** (evenly spaced hues), discrete palettes (Accent, Dark2, Paired, Pastel1, Pastel2, Set1,
   Set2, Set3, tab10, tab20, tab20b, tab20c, RetroMetro, DutchField, RiverNights, SpringPastels,
   Tableau10, Plotly), continuous palettes sampled into discrete colours (89 maps from Blues to winter,

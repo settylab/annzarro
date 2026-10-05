@@ -58,8 +58,8 @@ Hover labels and table filters check most statements; offline ones are marked. S
 
 ## Views
 
-Share links (replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
-directory that holds the store; the path must be absolute):
+Share links. The links are ready for a local server with the store in its data directory; to use another
+server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} Panels a to c
 ```{literalinclude} ../_static/panelsets/paper/fig5-abc.url.txt

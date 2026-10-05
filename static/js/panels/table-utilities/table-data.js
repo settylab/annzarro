@@ -1,9 +1,11 @@
 /**
  * Utilities for loading and processing table data
  */
+import { notify } from '../../utils/notify.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
+import { freezeSelection } from '../../utils/closed-table.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -521,6 +523,48 @@ export function getColumnDisplayName(column) {
  * @param {string} entityType - Type of entities ('cells' or 'genes')
  * @returns {Object} - The DataTables instance
  */
+/**
+ * Turn a table's live views of its DataTable (`currentEntries`,
+ * `searchBuilderConfig`, `searchText`, getters defined by initializeDataTable) into plain
+ * values, before the DataTable is destroyed.
+ *
+ * Other panels read them from a closed table: a plot whose table filter is
+ * this table keeps showing the rows that passed it, and the panel set keeps
+ * its filter. Through the getters they kept the destroyed DataTable, and
+ * every row of its data, alive for as long as the closed panel was kept for
+ * Reopen. The values are the same; only the rows are let go.
+ *
+ * Row indexes only mean something for the cells the rows were loaded for, so
+ * the filter is also kept as names (`closedSelection`): a plot filtered by
+ * the closed table uses them after a subset or part change.
+ * @param {Object} settings - the table panel's settings
+ * @param {Object} [opts]
+ * @param {ArrayLike<string>} [opts.rowNames] - the name of each row, in row order
+ * @param {number} [opts.rows] - rows the table had
+ */
+export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
+    for (const key of ['currentEntries', 'searchBuilderConfig', 'searchText']) {
+        const desc = Object.getOwnPropertyDescriptor(settings, key);
+        if (!desc || !desc.get) continue;
+        let value;
+        try {
+            value = settings[key];
+        } catch {
+            value = key === 'currentEntries' ? [] : key === 'searchText' ? '' : {};
+        }
+        Object.defineProperty(settings, key, {
+            value: key === 'currentEntries' ? Array.from(value || []) : value,
+            writable: true, configurable: true, enumerable: desc.enumerable
+        });
+    }
+    // the filter as names, for the cells of any later subset or part
+    // (utils/closed-table.js); never copied into a config (toJSON)
+    if (rowNames) {
+        const selection = freezeSelection(settings.currentEntries, rowNames, rows);
+        settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
+    }
+}
+
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
@@ -535,6 +579,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     const tableOptions = {
         data: tableData.data,
         columns: tableData.columns,
+        // rows become DOM nodes only when a page shows them: without this,
+        // DataTables builds a <tr> for every row up front (GBs at 1M cells)
+        deferRender: true,
         paging: true,
         ordering: true,
         info: true,
@@ -544,6 +591,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         lengthMenu: [10, 25, 50, 100, 250],
         // Default search options
         search: {
+            // the search box as saved (Reopen, panel sets, share links)
+            search:         settings.searchText || '',
             regex:          useRegex,
             smart:          useSmart,
             caseInsensitive: useCaseInsensitive
@@ -826,6 +875,19 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         }
       });
 
+    // the search box's text, kept with the panel like its SearchBuilder
+    Object.defineProperty(settings, 'searchText', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          try {
+            return dataTable.search() || '';
+          } catch {
+            return '';
+          }
+        }
+      });
+
     // Keep track of previous entries to detect changes
     let previousEntries = [];
     
@@ -1094,6 +1156,6 @@ export function exportTableToCsv(dataTable, tableTitle) {
         api.button('.buttons-csv').trigger()
     } catch (error) {
         console.error('Error exporting table to CSV:', error);
-        alert('Failed to export table to CSV. See console for details.');
+        notify('CSV export failed', error.message || 'See the browser console for details.', 'error');
     }
 }

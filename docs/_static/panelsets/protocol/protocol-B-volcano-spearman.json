@@ -1,0 +1,202 @@
+{
+  "name": "protocol-B-volcano-spearman",
+  "timestamp": "2026-10-04T20:45:51+00:00",
+  "dataset": "bm_aging.zarr",
+  "datasetName": "bm_aging",
+  "constants": {
+    "focusedGene": "S100a9",
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "gene-plot-B1": {
+      "id": "gene-plot-B1",
+      "type": "gene-plot",
+      "title": "B | volcano, colour = Spearman (smoothed) to focused gene",
+      "config": {
+        "id": "gene-plot-B1",
+        "title": "B | volcano, colour = Spearman (smoothed) to focused gene",
+        "x": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mean_lfc",
+          "column": ""
+        },
+        "y": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mahalanobis",
+          "column": ""
+        },
+        "z": null,
+        "color": {
+          "type": "varp",
+          "key": "spearman_smoothed",
+          "column": "S100a9",
+          "locked": false
+        },
+        "pointSize": 5,
+        "pointOpacity": 0.8,
+        "colorScale": "RdBu",
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "colorMin": -1,
+        "colorMax": 1,
+        "lockColorRange": true
+      },
+      "isSelectionTile": false
+    },
+    "gene-plot-B2": {
+      "id": "gene-plot-B2",
+      "type": "gene-plot",
+      "title": "B' | volcano, colour = Spearman (fold change) to focused gene",
+      "config": {
+        "id": "gene-plot-B2",
+        "title": "B' | volcano, colour = Spearman (fold change) to focused gene",
+        "x": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mean_lfc",
+          "column": ""
+        },
+        "y": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mahalanobis",
+          "column": ""
+        },
+        "z": null,
+        "color": {
+          "type": "varp",
+          "key": "spearman_fold_change",
+          "column": "S100a9",
+          "locked": false
+        },
+        "pointSize": 5,
+        "pointOpacity": 0.8,
+        "colorScale": "RdBu",
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "colorMin": -1,
+        "colorMax": 1,
+        "lockColorRange": true
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedGene": "S100a9",
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "gene-plot-B1",
+              "controlsVisible": true
+            },
+            {
+              "type": "tile",
+              "id": "gene-plot-B2",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "gene-plot-B1": false,
+        "gene-plot-B2": false
+      },
+      "panelConfigs": {
+        "gene-plot-B1": {
+          "id": "gene-plot-B1",
+          "title": "B | volcano, colour = Spearman (smoothed) to focused gene",
+          "x": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mean_lfc",
+            "column": ""
+          },
+          "y": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mahalanobis",
+            "column": ""
+          },
+          "z": null,
+          "color": {
+            "type": "varp",
+            "key": "spearman_smoothed",
+            "column": "S100a9",
+            "locked": false
+          },
+          "pointSize": 5,
+          "pointOpacity": 0.8,
+          "colorScale": "RdBu",
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "colorMin": -1,
+          "colorMax": 1,
+          "lockColorRange": true
+        },
+        "gene-plot-B2": {
+          "id": "gene-plot-B2",
+          "title": "B' | volcano, colour = Spearman (fold change) to focused gene",
+          "x": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mean_lfc",
+            "column": ""
+          },
+          "y": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mahalanobis",
+            "column": ""
+          },
+          "z": null,
+          "color": {
+            "type": "varp",
+            "key": "spearman_fold_change",
+            "column": "S100a9",
+            "locked": false
+          },
+          "pointSize": 5,
+          "pointOpacity": 0.8,
+          "colorScale": "RdBu",
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "colorMin": -1,
+          "colorMax": 1,
+          "lockColorRange": true
+        }
+      }
+    }
+  }
+}

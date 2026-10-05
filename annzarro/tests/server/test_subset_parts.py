@@ -60,3 +60,26 @@ def test_balanced_parts_report_their_groups(get):
     info = get("/api/v1/data/subset", subset=spec).get_json()
     assert sum(c["shown"] for c in info["groups"].values()) == info["n"]
     assert all({"total", "shown", "before"} <= set(c) for c in info["groups"].values())
+
+
+@pytest.mark.parametrize("spec", [
+    {"n": 60, "seed": 2},
+    {"n": 50, "seed": 1, "balance": "leiden"},
+    {"n": 40, "seed": 3, "where": [{"col": "total_counts", "op": ">", "value": 1000}]},
+], ids=["uniform", "balanced", "filtered"])
+def test_locate_says_which_part_shows_a_row(get, spec):
+    """/subset/locate?parts=1: the part that shows each dataset row, so a
+    focused cell outside the part shown can be gone to (the status strip's
+    "Go to its part"), without resolving every part."""
+    parts = get("/api/v1/data/subset", subset=spec).get_json()["parts"]
+    where = {}
+    for part in range(parts):
+        rows = get("/api/v1/data/subset/locate", subset=dict(spec, part=part),
+                   rows=",".join(map(str, range(get("/api/v1/data/subset", subset=dict(spec, part=part))
+                                                .get_json()["n"])))).get_json()["dataset_rows"]
+        where.update({r: part for r in rows})
+    rows = list(range(0, N_OBS, 7))
+    reply = get("/api/v1/data/subset/locate", subset=spec, dataset_rows=",".join(map(str, rows)), parts="1")
+    assert reply.status_code == 200, reply.get_json()
+    assert reply.get_json()["parts"] == [where.get(r) for r in rows]
+    assert "locate_parts" in get("/api/v1/data/subset", subset=spec).get_json()["features"]

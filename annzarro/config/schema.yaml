@@ -56,6 +56,12 @@ server:
       description: Path to SSL key file
       default: null
       security: sensitive
+    cross_origin_isolation:
+      type: [string, boolean]
+      enum: ["off", "on", "auto"]
+      description: Send COOP/COEP headers so the browser can measure the page's memory; auto = on unless the page is loaded in a frame
+      default: off
+      security: internal
     url_prefix:
       type: string
       description: "Path the app is served under behind a reverse proxy, e.g. /explore (empty = the root)"
@@ -256,7 +262,7 @@ ui:
         large_plot_points:
           type: integer
           description: A Cell Plot with more points than this is drawn in large-plot mode (no hover, click or table filter)
-          default: 5000000
+          default: 1000000
         subset_threshold:
           type: integer
           description: A dataset with more cells than this opens on a reproducible cell subset (0 = always)
@@ -269,6 +275,27 @@ ui:
           type: integer
           description: Seed of that subset (same seed, same cells)
           default: 0
+    memory:
+      type: object
+      description: Browser memory guard (predicts what an action needs and refuses one that would crash the tab)
+      properties:
+        enforce:
+          type: string
+          enum: ["off", "warn", "block"]
+          description: "What happens when an action does not fit: off (nothing), warn (say so, let it run), block (disable it and say why)"
+          default: block
+        heap_gb:
+          type: [number, "null"]
+          description: JS heap the tab may use, in GB; null = the browser's own limit (4.4 GB where it reports none)
+          default: null
+        total_gb:
+          type: [number, "null"]
+          description: Everything the tab may hold (JS heap and typed arrays), in GB; null = no limit except on devices with 4 GB or less
+          default: null
+        margin:
+          type: number
+          description: Safety margin; predictions are multiplied by 1 + margin
+          default: 0.2
     cache:
       type: object
       description: Client-side cache settings

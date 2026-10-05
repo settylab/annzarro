@@ -15,7 +15,7 @@ import { RemoteNames } from './utils/remote-names.js';
 // 12M cells with 19-character names. Above about 24M such cells the JSON text
 // no longer fits in one V8 string at all. Below it the names stay a plain
 // array, which every view accepts; only the large Cell Plot path
-// (large-plot.js) works with packed names; it takes over above 5M cells by default.
+// (large-plot.js) works with packed names; it takes over above 1M cells by default.
 const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
@@ -28,6 +28,10 @@ const DataManager = (function() {
     // Bumped whenever the loaded cells/genes change (switch, revert, clear).
     // Plot data built under an older generation belongs to another dataset.
     let _datasetGeneration = 0;
+    // Settles when the dataset being opened has its cell and gene names (or
+    // failed to open); null when no open is in flight. Until then an empty
+    // name list means "not read yet", not "this dataset has none".
+    let _namesLoading = null;
     let _genes = null;
     let _focusedCell = null;
     let _focusedGene = null;
@@ -334,6 +338,12 @@ const DataManager = (function() {
         const previousCells = _cells;
         const previousGenes = _genes;
         const previousSubset = _subset;
+        let namesSettled = () => {};
+        const namesLoading = _namesLoading = new Promise(resolve => { namesSettled = resolve; });
+        const settleNames = () => {
+            namesSettled();
+            if (_namesLoading === namesLoading) _namesLoading = null;
+        };
         
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
@@ -372,6 +382,8 @@ const DataManager = (function() {
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
+            // before datasetChanged: its listeners may draw at once
+            settleNames();
             
             // Dispatch a datasetChanged event for components to react to dataset loading
             if (!silent) {
@@ -427,6 +439,8 @@ const DataManager = (function() {
                 console.debug('Dataset loading aborted');
             }
             throw error;
+        } finally {
+            settleNames();
         }
     }
     
@@ -690,6 +704,24 @@ const DataManager = (function() {
         const body = await _fetchWithCache(Config.API.SUBSET_LOCATE,
             { dataset_path: _currentDataset, subset: subset.key, dataset_rows: rows.join(',') });
         return body.rows;
+    }
+
+    /**
+     * The 0-based part of the open subset that shows a located cell, or null
+     * (no subset, a server without the feature, or a cell its filter leaves
+     * out).
+     * @param {string} name
+     * @returns {Promise<number|null>}
+     */
+    async function partOfCell(name) {
+        const subset = _openSubset();
+        if (!subset || !hasSubsetFeature('locate_parts')) return null;
+        const cell = await locateCell(name);
+        if (!cell || cell.row === null || cell.row === undefined) return null;
+        const body = await _fetchWithCache(Config.API.SUBSET_LOCATE,
+            { dataset_path: _currentDataset, subset: subset.key, dataset_rows: String(cell.row), parts: '1' });
+        const part = body && body.parts ? body.parts[0] : null;
+        return typeof part === 'number' ? part : null;
     }
 
     /** Dataset rows of positions in the subset, one /locate call. */
@@ -1192,7 +1224,11 @@ const DataManager = (function() {
                 { obsm_key: obsmKey, dataset_path: params.dataset_path },
                 params.column_name !== undefined);
             
-            console.log(`Full response data from obsm endpoint:`, data);
+            // Never log the reply itself: the browser keeps every logged
+            // object (for DevTools, open or not), so each embedding column
+            // loaded stayed in memory for good, 8 bytes per cell (a subset
+            // swap of 4M cells kept 66 MB more each time; v0.2.0 twice that)
+            console.log(`obsm reply: ${data && data.data ? `${data.data.length} values` : 'no data'}`);
             
             // Check if we actually have data
             if (!data || !data.data) {
@@ -1918,6 +1954,16 @@ const DataManager = (function() {
     }
     
     
+    /** Whether a dataset is being opened and its names are not read yet. */
+    function namesPending() {
+        return _namesLoading !== null;
+    }
+
+    /** Resolves once the dataset being opened has its names (at once when none is). */
+    function whenNamesLoaded() {
+        return _namesLoading || Promise.resolve();
+    }
+
     /**
      * Get the cell names
      * @returns {Array<string>} - Cell names in their original order
@@ -2099,6 +2145,8 @@ const DataManager = (function() {
         getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,
+        namesPending,
+        whenNamesLoaded,
         getSortedCells,
         getGenes,
         getSortedGenes, 
@@ -2112,6 +2160,7 @@ const DataManager = (function() {
         cellRowParams,
         canReadOutsideSubset,
         hasSubsetFeature,
+        partOfCell,
         recordCellRows,
         loadCellValue,
         rememberCell,

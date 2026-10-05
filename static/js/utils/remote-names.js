@@ -1,7 +1,7 @@
 /**
  * Cell names that stay on the server.
  *
- * Above the large-plot threshold (5M cells by default) a dataset opened with
+ * Above the large-plot threshold (1M cells by default) a dataset opened with
  * every cell does not download its names: on real Tahoe data the /cells JSON
  * took 19 of the 23 s before a 50M-cell plot appeared, and large-plot mode
  * shows no names (no hover, no click). What does need a name or an index asks
@@ -70,8 +70,11 @@ export class RemoteNames {
     }
 
     _all() {
-        throw new Error(`The names of these ${this.length.toLocaleString('en-US')} cells are not loaded `
+        const error = new Error(`The names of these ${this.length.toLocaleString('en-US')} cells are not loaded `
             + '(every cell of a very large dataset); turn on a subset to list cells');
+        // not a failed read: a limit of large-plot mode (classifyError: UNAVAILABLE)
+        error.data = { reason: 'names_not_loaded' };
+        throw error;
     }
 
     [Symbol.iterator]() { return this._all(); }

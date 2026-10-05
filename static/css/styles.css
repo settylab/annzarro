@@ -245,8 +245,89 @@ body {
 }
 .subset-part-input { width: 4.5em; padding: 0 0.2rem; font-size: 0.78rem; border: 1px solid #adb5bd; border-radius: 0.3rem; }
 .subset-part-label { margin: 0 0.15rem; }
-.subset-dialog .subset-disabled { opacity: 0.5; }
-.subset-preview { min-height: 2.5em; white-space: pre-line; }
+/* The dialog sits on a 4px grid (--u): rows 8px apart, sections 12px, a
+   label | field track that stacks below 480px. */
+.subset-modal-dialog { max-width: 46rem; }
+.subset-dialog { --u: 0.25rem; display: flex; flex-direction: column; gap: calc(3 * var(--u)); }
+.subset-dialog .subset-disabled .subset-grid,
+.subset-dialog .subset-disabled .subset-presets > * { opacity: 0.55; }
+.subset-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(2 * var(--u)); }
+.subset-total { font-size: 0.8rem; color: var(--bs-secondary-color, #6c757d); font-variant-numeric: tabular-nums; }
+.subset-section-label { font-size: 0.8rem; font-weight: 600; margin-bottom: calc(2 * var(--u)); display: flex; justify-content: space-between; }
+.subset-hint { font-weight: 400; color: var(--bs-secondary-color, #6c757d); }
+
+/* size presets: equal cells on a wrapping grid, fast (left) to complete */
+.subset-presets {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr));
+    gap: calc(2 * var(--u));
+}
+.subset-preset {
+    position: relative; display: flex; flex-wrap: wrap; align-items: baseline; align-content: flex-start;
+    column-gap: var(--u); padding: var(--u) calc(2 * var(--u)); margin: 0;
+    border: 1px solid #ced4da; border-radius: 0.375rem; background: #fff; color: #212529;
+    text-align: left; line-height: 1.25; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+/* hover only darkens the border: a filled chip is the selected one, and only it */
+.subset-preset:hover { border-color: #6c757d; }
+.subset-preset:focus-visible, .subset-preset:focus-within { outline: 2px solid rgba(13, 110, 253, 0.5); outline-offset: 1px; }
+.subset-preset[aria-pressed="true"], .subset-preset.active { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+.subset-preset .sp-n { font-weight: 600; font-size: 0.875rem; white-space: nowrap; }
+.subset-preset .sp-time { font-size: 0.72rem; margin-left: auto; white-space: nowrap; }
+.subset-preset .sp-parts { flex-basis: 100%; font-size: 0.72rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.subset-preset.sp-large { border-style: dashed; }
+.subset-preset.sp-over { border-color: #d4a23c; background: #fff8e6; }
+.subset-preset .sp-warn { flex-basis: 100%; font-size: 0.68rem; line-height: 1.15; color: #8a5a00; }
+.subset-preset[aria-pressed="true"] .sp-warn, .subset-preset.active .sp-warn { color: inherit; }
+/* a size that does not fit in the browser's memory next to the open panels (utils/memory-guard-ui.js) */
+.subset-preset.sp-memory, .subset-preset.sp-memory:hover { border-color: #dee2e6; background: #f8f9fa; color: #8a8f94; cursor: not-allowed; }
+.subset-preset.sp-memory .subset-preset-input { cursor: not-allowed; }
+.subset-preset .sp-mem { flex-basis: 100%; font-size: 0.68rem; line-height: 1.15; color: #a94442; }
+.subset-memory { font-size: 0.72rem; color: var(--bs-secondary-color, #6c757d); margin-right: auto; font-variant-numeric: tabular-nums; }
+.subset-memory.subset-memory--short { color: #a94442; }
+.sp-extrapolated { color: #8a8f94; font-style: italic; }
+.subset-preset[aria-pressed="true"] .sp-extrapolated, .subset-preset.active .sp-extrapolated { color: inherit; opacity: 0.8; }
+/* "All" is the #subset-n-all checkbox, laid over its chip */
+.subset-preset-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.subset-large-divider {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: calc(2 * var(--u));
+    font-size: 0.72rem; color: #8a5a00;
+}
+.subset-large-divider::before, .subset-large-divider::after { content: ""; flex: 1; border-top: 1px dashed #d4a23c; }
+.subset-estimate-note { font-size: 0.72rem; color: var(--bs-secondary-color, #6c757d); margin-top: calc(2 * var(--u)); }
+
+/* label | field tracks */
+.subset-grid {
+    display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: center;
+    gap: calc(2 * var(--u)) calc(3 * var(--u)); margin-top: calc(3 * var(--u));
+}
+.subset-label { font-size: 0.8rem; font-weight: 600; margin: 0; }
+.subset-grid > .subset-label:last-of-type { align-self: start; padding-top: calc(1.5 * var(--u)); }
+.subset-field { min-width: 0; }
+.subset-n-field { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.subset-n-field .form-control { max-width: 9rem; }
+.subset-field > .input-group, .subset-field > .form-select { max-width: 18rem; }
+.subset-n-parts { font-size: 0.8rem; color: var(--bs-secondary-color, #6c757d); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.subset-condition { display: flex; flex-wrap: wrap; gap: var(--u); align-items: center; margin-bottom: var(--u); }
+.subset-condition .subset-col { max-width: 12rem; }
+.subset-condition .subset-op { max-width: 8rem; }
+.subset-condition .subset-value-wrap { flex: 1 1 8rem; min-width: 0; }
+.subset-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)); }
+.subset-import { display: inline-flex; gap: var(--u); min-width: 0; }
+.subset-import .form-select { width: auto; max-width: 12rem; }
+.subset-preview { min-height: 2.5em; white-space: pre-line; margin: 0; }
+.subset-help summary { cursor: pointer; }
+.subset-help p { margin: var(--u) 0 0; }
+@media (max-width: 480px) {
+    .subset-grid { grid-template-columns: minmax(0, 1fr); row-gap: var(--u); }
+    .subset-grid > .subset-label:not(:first-child) { margin-top: calc(2 * var(--u)); }
+    /* four chips across a 360px phone */
+    .modal-body.subset-dialog { padding: calc(3 * var(--u)); }
+    .subset-presets { grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr)); }
+    .subset-preset { padding: var(--u) calc(1.5 * var(--u)); }
+    .subset-preset .sp-n { font-size: 0.8125rem; }
+    .subset-preset .sp-time, .subset-preset .sp-parts { font-size: 0.66rem; }
+    .subset-dialog .subset-section-label .subset-hint { display: none; }
+}
 
 /* Main Content Area */
 .tile-container {
@@ -319,6 +400,9 @@ body {
 
 .tile-title {
     flex: 1;
+    /* an <input> keeps its default width (20 characters) as its minimum and
+       pushed the close button out of a narrow tile */
+    min-width: 0;
     margin: 0;
     padding: 0.25rem 0.5rem;
     border: 1px solid transparent;
@@ -335,6 +419,7 @@ body {
 
 .tile-controls {
     display: flex;
+    flex: none;
     gap: 0.25rem;
 }
 
@@ -440,6 +525,8 @@ body {
     height: 100%;
 }
 
+/* Plot controls: the layout is under "Plot controls grid" below. JS sets
+   display flex/none on .plot-controls (controls-visibility.js). */
 .plot-controls {
     padding: 0.5rem;
     border-bottom: 1px solid #dee2e6;
@@ -471,6 +558,8 @@ body {
     padding: 0.5rem;
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
+    /* the columns stack in a narrow panel (below), by the panel's width */
+    container: table-controls / inline-size;
 }
 
 
@@ -964,6 +1053,31 @@ button.dtsb-button.dtsb-clear:hover {
     flex-direction: column;
     min-height: 0; /* Allow shrinking */
     padding-left: 0.5rem; /* Add a bit of padding for separation */
+}
+
+/* The selected list and its buttons give way instead of pushing the panel
+   wider (they used to need 250 px plus two 120 px buttons); below 520 px the
+   two columns stack. */
+.table-controls .selected-columns { min-width: 0; }
+.table-controls .action-buttons {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+.table-controls .action-buttons .btn { min-width: 0; }
+
+@container table-controls (max-width: 519px) {
+    .table-controls .control-row {
+        flex-direction: column;
+        max-height: none;
+    }
+    .table-controls .column-selector,
+    .table-controls .column-actions {
+        width: 100%;
+        padding-left: 0;
+    }
+    .table-controls .column-selector { max-height: 220px; }
 }
 
 /* Table length control in panel */
@@ -2301,139 +2415,288 @@ button.dtsb-button.dtsb-clear:hover {
     border: 2px dashed #dee2e6;
     border-radius: 0.5rem;
 }
+/* Special buttons for layer, obsp, varp types */
+/* ---- Plot controls grid ---------------------------------------------------
+   Every size is a multiple of --ctl-u (4 px). Each row is label | field, and
+   a slider row label | track | number box, on tracks shared by every row, so
+   labels, tracks and boxes line up across rows and groups.
 
-/* Plot Controls */
-.axis-selector-container {
+   The groups (panel-ui-make.js) are laid out from the width of the panel's
+   controls, not the window, because splits resize panels:
+     < 560 px     one column: Axes, Colour, Points, actions;
+     560-959 px   Axes | Points, Colour across both, then the toggles under
+                  the axes and Refresh / Plot Options under the points;
+     >= 960 px    Axes | Colour | Points, the toggles under the axes (the
+                  shortest column), Refresh / Plot Options at the foot of
+                  the points.
+   With a constant colour the Colour group is hidden and .ctl-no-colour
+   (updateColorControlsVisibility) drops its area, so it leaves no hole. */
+.plot-controls {
+    --ctl-u: 4px;
+    --ctl-label: 3.5rem;
+    --ctl-num: 4.5rem;
+    --ctl-h: 1.75rem;
+    --ctl-rule: 1px solid #e3e6ea;
+    container: plot-controls / inline-size;
+    padding: calc(2 * var(--ctl-u));
+    gap: calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+}
+
+.ctl-grid {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: calc(3 * var(--ctl-u)) calc(4 * var(--ctl-u));
+}
+
+.ctl-group {
     display: flex;
     flex-direction: column;
-    margin-bottom: 0.5rem;
+    gap: var(--ctl-u);
+    min-width: 0;
 }
 
-.axis-selector-label {
+/* One column: a hairline above every group but the first. */
+.ctl-colour,
+.ctl-points {
+    border-top: var(--ctl-rule);
+    padding-top: calc(3 * var(--ctl-u));
+}
+
+@container plot-controls (min-width: 560px) {
+    .ctl-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "axes points" "colour colour" "acts end";
+    }
+    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "acts end"; }
+    .ctl-axes { grid-area: axes; }
+    .ctl-colour {
+        grid-area: colour;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: calc(4 * var(--ctl-u));
+        row-gap: var(--ctl-u);
+    }
+    /* As tall as a numerical colour's Map, Min and Max rows also for a
+       categorical one, so switching between the two does not move the plot. */
+    .ctl-colour { min-height: calc(3 * var(--ctl-h) + 5 * var(--ctl-u) + 1px); }  /* + padding, rule */
+    .ctl-colour > .color-range-inputs { grid-column: 1; grid-row: 2 / span 2; }
+    .ctl-colour > .ctl-toggles { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
+    .ctl-points {
+        grid-area: points;
+        border-top: 0;
+        padding-top: 0;
+        border-left: var(--ctl-rule);
+        padding-left: calc(4 * var(--ctl-u));
+    }
+    .ctl-grid > .ctl-actions { display: contents; }
+    .ctl-grid .ctl-actions-toggles { grid-area: acts; align-self: start; }
+    .ctl-grid .ctl-actions-end { grid-area: end; justify-self: end; align-self: start; }
+}
+
+@container plot-controls (min-width: 960px) {
+    .ctl-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: auto 1fr;
+        grid-template-areas: "axes colour points" "acts colour points";
+    }
+    .ctl-grid.ctl-no-colour {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "axes points" "acts points";
+    }
+    /* Refresh / Plot Options sit in the points column's last line, which
+       the group keeps free, so the first row is only as tall as the axes. */
+    .ctl-points { padding-bottom: calc(var(--ctl-h) + var(--ctl-u)); }
+    .ctl-grid .ctl-actions-end { grid-area: points; align-self: end; }
+    .ctl-colour {
+        display: flex;
+        border-top: 0;
+        padding-top: 0;
+        border-left: var(--ctl-rule);
+        padding-left: calc(4 * var(--ctl-u));
+    }
+}
+
+.ctl-row {
+    display: grid;
+    grid-template-columns: var(--ctl-label) minmax(0, 1fr);
+    align-items: center;
+    column-gap: calc(2 * var(--ctl-u));
+    min-height: var(--ctl-h);
+}
+
+/* label | track | number box; the auto button takes an implicit 4th track
+   of its own width after the box (placed there, or it would start a row). */
+.ctl-row.ctl-slider {
+    grid-template-columns: var(--ctl-label) minmax(3rem, 1fr) var(--ctl-num);
+    grid-auto-columns: auto;
+}
+.point-auto { display: flex; grid-column: 4; }
+.plot-controls .point-auto-btn {
+    padding: 0 calc(1.5 * var(--ctl-u));
+    font-size: 0.75rem;
+}
+
+.ctl-label,
+.plot-controls .ctl-label {
+    margin: 0;
     font-weight: 500;
-    margin-bottom: 0.25rem;
+    color: #495057;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
+.ctl-field,
 .axis-selector {
     display: flex;
-    gap: 0.25rem;
     align-items: center;
+    gap: var(--ctl-u);
+    min-width: 0;
 }
 
-/* Special buttons for layer, obsp, varp types */
+.plot-controls .form-select-sm,
+.plot-controls .form-control-sm {
+    min-height: var(--ctl-h);
+    height: var(--ctl-h);
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 0.8125rem;
+}
+
+.plot-controls .form-select-sm {
+    padding-left: calc(2 * var(--ctl-u));
+    padding-right: calc(6 * var(--ctl-u));
+    background-position: right calc(1.5 * var(--ctl-u)) center;
+}
+
+.plot-controls .form-range {
+    min-width: 0;
+    height: var(--ctl-h);
+}
+
+/* The type select is one track wide (obs, obsm, layer all fit), so the keys
+   line up; the key takes two thirds of the rest, the column one third. */
+.axis-selector .axis-type-select {
+    flex: 0 0 4.5rem;
+    min-width: 0;
+}
+/* Key and column start from their own widest option and give way in
+   proportion, so a short column (0, 1) leaves the room to a long key. */
+.axis-selector .axis-key-select,
+.axis-selector .axis-column-select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+}
+
+/* A constant colour has no key or column: the type select says so in full. */
+.axis-selector:has(> .axis-type-select option[value="none"]:checked) > .axis-type-select {
+    flex: 0 1 auto;
+}
+.axis-selector:has(> .axis-type-select option[value="none"]:checked) > :not(.axis-type-select) {
+    display: none;
+}
+.ctl-field > .form-select { flex: 1 1 auto; min-width: 0; }
+
+/* obs and var columns have no column: the disabled "N/A" select is not shown
+   and the key select takes its width. */
+.axis-selector .axis-column-select:disabled:has(> option:only-child[value=""]) {
+    display: none;
+}
+
+.hover-columns-controls { align-items: start; }
+.hover-columns-controls .ctl-label { line-height: var(--ctl-h); }
+.plot-controls .hover-columns-select {
+    height: auto;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.color-range-inputs,
+.color-range-sliders,
+.point-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ctl-u);
+    min-width: 0;
+}
+
+/* Toggles wrap; they never push the panel wider. */
+.ctl-toggles,
+.ctl-toggles > .btn-group,
+.ctl-actions,
+.ctl-actions-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ctl-u);
+    align-items: center;
+    min-width: 0;
+}
+/* Bootstrap's .btn-group joins and stretches its buttons; here they are
+   separate toggles of their own width. */
+.ctl-toggles > .btn-group > .btn,
+.ctl-log > .btn {
+    flex: 0 0 auto;
+    border-radius: 0.25rem;
+    margin-left: 0;
+}
+.ctl-log {
+    display: inline-flex;
+    gap: var(--ctl-u);
+}
+.ctl-log .log-floor-input { width: 6.5rem; }
+
+.ctl-actions { justify-content: space-between; }
+@container plot-controls (max-width: 379px) {
+    .ctl-actions .ctl-btn-text { display: none; }
+}
+.ctl-actions-end {
+    display: inline-flex;
+    gap: var(--ctl-u);
+    margin-left: auto;
+}
+
+/* A toggle that is on says so with a check mark too, not by colour alone.
+   Not the lock (its icon says it) nor auto (its box turns italic), whose
+   width must not change under the track beside it. */
+.plot-controls .btn[aria-pressed="true"]:not([data-large-off="1"]):not(.axis-lock-btn):not(.point-auto-btn)::before {
+    content: "\2713";
+    margin-right: var(--ctl-u);
+}
+
+.plot-controls .btn-sm {
+    min-height: var(--ctl-h);
+    padding: 0 calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+    line-height: calc(var(--ctl-h) - 2px);
+    white-space: nowrap;
+}
+
+/* The 3rd axis row only appears with 3D on; axis lock/refocus buttons only
+   for layer, obsp and varp axes. */
 [class^="axis-special-buttons"] {
     display: flex;
+    flex: none;
     align-items: center;
-    margin-left: 4px;
+    gap: 2px;
 }
 
 [class^="axis-special-buttons"] .btn {
-    padding: 0.25rem 0.375rem;
+    padding: 0 0.375rem;
     font-size: 0.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 28px;
-    height: 28px;
-}
-
-[class^="axis-special-buttons"] .btn:first-child {
-    margin-right: 2px;
+    min-width: var(--ctl-h, 28px);
+    height: var(--ctl-h, 28px);
 }
 
 /* Ensure refocus button is hidden by default */
 .axis-refocus-btn {
     display: none;
-}
-
-.color-selector-container {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 0.5rem;
-}
-
-.color-range-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    background-color: #f8f9fa;
-    border-radius: 0.25rem;
-    margin-top: 0.5rem;
-}
-
-/* Ensure buttons within color range controls stay on same line */
-.color-range-controls .btn-toolbar,
-.color-range-controls .btn-group {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    width: auto !important;
-    justify-content: flex-start !important;
-}
-
-.color-range-controls .btn-group .btn {
-    white-space: nowrap !important;
-    flex: 0 0 auto !important;
-    display: inline-block !important;
-    position: relative !important;
-}
-
-/* Remove margin that might be causing wrapping */
-.color-range-controls .btn-group.me-2 {
-    margin-right: 0 !important;
-}
-
-/* Fix for specific buttons */
-[id^="center-colormap-"],
-[id^="hide-outliers-"],
-[id^="lock-range-"] {
-    display: inline-block !important;
-    width: auto !important;
-}
-
-.color-palette-selector,
-.category-palette-selector {
-    width: 150px;
-    margin-bottom: 0.5rem;
-}
-
-.color-range-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-}
-
-.color-range-sliders {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-}
-
-.color-min-slider-container,
-.color-max-slider-container {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.color-min-slider-container label,
-.color-max-slider-container label {
-    width: 40px;
-    font-size: 0.875rem;
-    margin-bottom: 0;
-}
-
-.color-min-slider-container input[type="range"],
-.color-max-slider-container input[type="range"] {
-    flex: 1;
-}
-
-.color-min-slider-container input[type="number"],
-.color-max-slider-container input[type="number"] {
-    width: 80px;
 }
 
 .color-options-buttons {
@@ -2582,17 +2845,11 @@ button.dtsb-button.dtsb-clear:hover {
     background-color: #f8f9fa;
 }
 
-/* Point styling controls */
-.point-controls {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.point-size-control, .point-opacity-control {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
+/* an automatic value (utils/point-style.js): shown, but not set by the user */
+.point-size-control input.is-auto,
+.point-opacity-control input.is-auto {
+    color: #6c757d;
+    font-style: italic;
 }
 
 /* Tooltip */
@@ -2641,177 +2898,161 @@ button.dtsb-button.dtsb-clear:hover {
     to { opacity: 1; }
 }
 
-/* Datapoint filter info widget */
-/* Top-left corner, in the margin above the plotting area (at the bottom it
-   sat on the x tick labels or the centred x-axis title): one row with the title, every
-   reason and the total (each reason inline). The reasons used to show only on
-   hover, so the box read just "Total: 6,540"; before that the box stood 10 px
-   into the plot over the x tick labels. */
-.datapoint-filter-widget {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    background-color: rgba(248, 249, 250, 0.85);
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 0.72rem;
-    color: #666;
-    max-width: calc(100% - 190px);   /* clear of the modebar on the right */
-    z-index: 10;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    transition: opacity 0.3s ease;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: 8px;
-}
-
-.datapoint-filter-widget .filter-stats-list {
-    display: contents;
-}
-
-.datapoint-filter-widget .filter-stats-item {
-    display: inline-flex;
-    margin: 0;
-}
-
-.datapoint-filter-widget .filter-stats-title {
-    margin: 0;
-}
-
-.datapoint-filter-widget.hidden {
-    pointer-events: none;
-}
-
-.datapoint-filter-widget.hidden {
-    opacity: 0;
-}
-
-.filter-stats-title {
-    font-weight: 600;
-    font-size: 0.75rem;
-    margin-bottom: 3px;
-    color: #495057;
-}
-
-.filter-stats-list {
-    margin: 0;
-    padding: 0;
-    list-style-type: none;
-}
-
-.filter-stats-item {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 2px;
-}
-
-.filter-reason {
-    margin-right: 8px;
-}
-
-.filter-count {
-    font-weight: 500;
-}
-
-.filter-total {
-    margin-top: 4px;
-    padding-top: 4px;
-    border-top: 1px solid rgba(0,0,0,0.1);
-    font-weight: 600;
-    color: #495057;
-}
 /* ------------------------------------------------------------------------- */
-/* Coverage notice -- "what is missing from this plot, and why"               */
+/* Status strip -- "what is this panel not showing, and why"                  */
 /*                                                                            */
-/* Rendered by static/js/utils/panel-surface.js above a panel's plot or table */
-/* whenever the panel is showing less than the user asked for. A panel that is */
-/* complete renders none of this, so the notice is never decorative noise.     */
+/* Rendered by static/js/utils/panel-surface.js under each plot (always) and  */
+/* each table (when it is missing something). One line, fixed height: its    */
+/* text changes, the plot above it never moves. A click opens the popover     */
+/* with every reason, its count and what undoes it; tags at the right state   */
+/* a mode (large-plot) or a focused cell large-plot mode cannot mark.         */
 /*                                                                            */
+/* Sizes are multiples of the controls' unit, --ctl-u (4 px).                 */
 /* The --unreported variant is deliberately the loudest: it does not report a  */
 /* gap in the DATA, it reports that our own code failed to say anything, and   */
 /* it must not be mistakable for a normal data condition.                      */
 /* ------------------------------------------------------------------------- */
-
-.coverage-notice {
+.plot-status {
+    --ps-u: var(--ctl-u, 4px);
+    --ps-accent: #9aa9b7;
+    position: relative;
+    flex: 0 0 calc(6 * var(--ps-u));
+    height: calc(6 * var(--ps-u));
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    flex: 0 0 auto;
-    margin: 0 0 4px 0;
-    padding: 6px 10px;
-    border-radius: 4px;
-    border: 1px solid transparent;
-    border-left-width: 4px;
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-.coverage-notice__icon {
-    flex: 0 0 auto;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    margin-top: 1px;
-    border-radius: 50%;
-    font-weight: 700;
-    font-size: 11px;
-    color: #fff;
+    gap: calc(2 * var(--ps-u));
+    padding: 0 calc(2 * var(--ps-u));
+    border-top: 1px solid #dee2e6;
+    border-left: calc(0.75 * var(--ps-u)) solid var(--ps-accent);
+    background: #f8f9fa;
+    color: #33475b;
+    font-size: 12px;
+    line-height: calc(6 * var(--ps-u));
+    white-space: nowrap;
+    container-type: inline-size;
+    z-index: 5;
 }
-
-.coverage-notice__body { min-width: 0; }
-
-.coverage-notice__headline {
-    font-weight: 600;
-}
-
-.coverage-notice__reasons {
-    margin: 2px 0 0 0;
-    padding-left: 16px;
-    list-style: disc;
-}
-
-.coverage-notice__reasons li {
-    margin: 1px 0;
-    overflow-wrap: anywhere;
-}
-
-.coverage-notice--notice {
-    background: #e7f3f8;
-    border-color: #bce8f1;
-    border-left-color: #31708f;
-    color: #245269;
-}
-.coverage-notice--notice .coverage-notice__icon { background: #31708f; }
-
-.coverage-notice--warning {
-    background: #fcf8e3;
-    border-color: #faebcc;
-    border-left-color: #8a6d3b;
-    color: #7a5f34;
-}
-.coverage-notice--warning .coverage-notice__icon { background: #8a6d3b; }
-
-.coverage-notice--error {
-    background: #f2dede;
-    border-color: #ebccd1;
-    border-left-color: #a94442;
-    color: #8b3a38;
-}
-.coverage-notice--error .coverage-notice__icon { background: #a94442; }
-
-/* Our own defect, not the data's. Loud on purpose -- see coverage.js. */
-.coverage-notice--unreported {
+.plot-status--ok { --ps-accent: transparent; color: #6c757d; }
+.plot-status--notice { --ps-accent: #31708f; }
+.plot-status--warning { --ps-accent: #c09853; }
+.plot-status--error { --ps-accent: #a94442; background: #fbf1f1; }
+.plot-status--unreported {
+    --ps-accent: #8b1d8b;
     background: #fbe8fb;
-    border: 1px dashed #8b1d8b;
-    border-left: 4px solid #8b1d8b;
     color: #6d176d;
-    font-weight: 600;
+    outline: 1px dashed #8b1d8b;
+    outline-offset: -1px;
 }
-.coverage-notice--unreported .coverage-notice__icon { background: #8b1d8b; }
+
+.plot-status .ps-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(2 * var(--ps-u));
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.plot-status .ps-summary:disabled { cursor: default; }
+.plot-status .ps-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(2 * var(--ps-u));
+}
+.plot-status .ps-headline { flex: none; font-weight: 600; }
+/* Chips that do not fit wrap onto a second line, which the fixed height
+   hides: they drop from the right, whole, and the headline never shrinks. */
+.plot-status .ps-chips {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    height: calc(6 * var(--ps-u));
+    overflow: hidden;
+    column-gap: calc(2 * var(--ps-u));
+    color: #5a6b7b;
+}
+.plot-status .ps-chip::before { content: "\00b7"; margin-right: calc(2 * var(--ps-u)); color: #aab6c2; }
+.plot-status .ps-details { flex: none; color: #0d6efd; }
+.plot-status .ps-details::after { content: " \25be"; }
+.plot-status .ps-summary:hover .ps-details,
+.plot-status .ps-summary:focus-visible .ps-details { text-decoration: underline; }
+
+.plot-status .ps-tags { flex: none; display: flex; gap: var(--ps-u); }
+.plot-status .ps-tag {
+    height: calc(4.5 * var(--ps-u));
+    padding: 0 calc(1.5 * var(--ps-u));
+    border: 1px solid #c7d5e3;
+    border-radius: 3px;
+    background: #e7eef6;
+    color: #31708f;
+    font: inherit;
+    font-size: 11px;
+    line-height: calc(4.5 * var(--ps-u) - 2px);
+    cursor: pointer;
+}
+.plot-status .ps-tag--warning { background: #fcf3e3; border-color: #e6cf9f; color: #8a6d3b; }
+/* A nudge (a click the mode does not take): an outline, nothing moves */
+.plot-status .ps-tag--pulse { animation: ps-pulse 600ms ease-out; }
+@keyframes ps-pulse {
+    from { box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.55); }
+    to { box-shadow: 0 0 0 3px rgba(13, 110, 253, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .plot-status .ps-tag--pulse { animation: none; }
+}
+
+/* Narrow: "28 of 200 shown · details", then the tags */
+@container (max-width: 360px) {
+    .plot-status .ps-unit,
+    .plot-status .ps-chips { display: none; }
+}
+
+.plot-status .ps-pop {
+    position: absolute;
+    bottom: calc(100% + var(--ps-u));
+    left: calc(2 * var(--ps-u));
+    max-width: min(560px, calc(100% - 4 * var(--ps-u)));
+    padding: calc(2 * var(--ps-u)) calc(3 * var(--ps-u));
+    border: 1px solid #c9d3dd;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    color: #22313f;
+    line-height: 1.4;
+    white-space: normal;
+    z-index: 20;
+}
+.plot-status .ps-pop[hidden] { display: none; }
+.plot-status .ps-pop--tag { left: auto; right: calc(2 * var(--ps-u)); max-width: min(360px, calc(100% - 4 * var(--ps-u))); }
+.plot-status .ps-pop-title { font-weight: 600; margin-bottom: var(--ps-u); }
+.plot-status .ps-rows { width: 100%; border-collapse: collapse; }
+.plot-status .ps-rows td { padding: var(--ps-u); border-bottom: 1px solid #eef2f5; vertical-align: top; }
+.plot-status .ps-rows .ps-why { overflow-wrap: anywhere; }
+.plot-status .ps-rows .ps-n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plot-status .ps-rows .ps-do { white-space: nowrap; }
+.plot-status .ps-total td { border-bottom: 0; font-weight: 600; }
+.plot-status .ps-notes { margin: var(--ps-u) 0 0; padding-left: calc(4 * var(--ps-u)); }
+.plot-status .ps-foot { margin-top: var(--ps-u); color: #5a6b7b; font-size: 11px; }
+.plot-status .ps-pop-do { margin-top: calc(2 * var(--ps-u)); }
+.plot-status .ps-action {
+    padding: 0;
+    margin-right: calc(2 * var(--ps-u));
+    border: 0;
+    background: none;
+    color: #0d6efd;
+    font: inherit;
+    cursor: pointer;
+}
+.plot-status .ps-action:hover { text-decoration: underline; }
 
 /* Full-panel variant, used when there is nothing at all to draw. */
 .coverage-placeholder {
@@ -2836,6 +3077,12 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .coverage-placeholder__reasons li { margin: 2px 0; overflow-wrap: anywhere; }
+/* what undoes it (drawPlaceholder's actions), as the status strip offers it */
+.coverage-placeholder__do { margin-top: 6px; }
+.coverage-placeholder__do .ps-action {
+    padding: 0; margin-right: 12px; border: 0; background: none; color: #0d6efd; font: inherit; cursor: pointer;
+}
+.coverage-placeholder__do .ps-action:hover { text-decoration: underline; }
 
 .coverage-placeholder--notice {
     background: #e7f3f8; border-color: #bce8f1; border-left-color: #31708f; color: #245269;
@@ -2898,17 +3145,6 @@ button.dtsb-button.dtsb-clear:hover {
 .session-card-owner i {
     margin-right: 4px;
 }
-
-/* Hover columns picker (settings.hoverInfo) */
-.hover-columns-controls {
-    display: flex;
-    align-items: flex-start;
-}
-.hover-columns-controls .hover-columns-select {
-    max-width: 24rem;
-    padding-right: 0.5rem;
-}
-
 /* A toggle that large-plot mode turns off (large-plot-controls.js) keeps its
    on/off state, but must not read as on while it does nothing. */
 .btn.active[data-large-off="1"] {
@@ -2916,3 +3152,9 @@ button.dtsb-button.dtsb-clear:hover {
     background-color: transparent;
     border-color: #6c757d;
 }
+
+/* panel tiles that would not fit in the browser's memory (selection-tile.js) */
+.selection-panel-option.memory-blocked { opacity: 0.55; cursor: not-allowed; }
+.selection-panel-option .memory-note { font-size: 0.72rem; color: #a94442; margin-top: 0.25rem; }
+/* export: why full resolution is off, and the plot as shown beside it */
+.export-memory-note { line-height: 1.25; }

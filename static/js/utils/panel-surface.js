@@ -7,16 +7,26 @@
  * why" structural rather than a convention someone remembers to follow:
  *
  *   - `drawPlot()`      draws (Plotly.react: into the graph already there, else a
- *                       new one) and renders the notice after it;
+ *                       new one) and states the coverage in the status strip
+ *                       under it;
  *   - `drawPlaceholder()` replaces the old `innerHTML = '<div class="alert">'`
  *                       empty states, which said "Insufficient data" and never
  *                       said why;
- *   - `renderCoverageNotice()` annotates a table, or any container.
+ *   - `renderCoverageNotice()` states it under a table, or any container.
+ *
+ * ## One strip per panel
+ *
+ * Everything a panel does not show, and why, is in ONE place: its status
+ * strip, a fixed-height line under the plot ("28 of 200 cells shown · 150 not
+ * in part 2 of 4 · 21 table filter") that opens on click into every reason,
+ * with counts that add up and the action that undoes each. A mode that limits
+ * the panel (large-plot mode) is a tag in the same strip (`setStatusTag`).
+ * A plot's strip is always there, so the plot never moves when it changes.
  *
  * ## The default is loud
  *
  * A caller that passes no coverage gets `Coverage.unreported()`, which renders
- * a visible magenta "this panel does not report what it is missing" badge --
+ * a visible magenta "this panel does not report what it is missing" strip --
  * on screen AND in the exported image. A contributor who adds a render path and
  * forgets to describe its gaps therefore sees a defect immediately instead of
  * shipping a clean plot that lies by omission. There is no code path through
@@ -27,19 +37,14 @@
  * cannot be routed around without the guard going red.
  */
 
-import { Coverage, GAP } from './coverage.js';
+import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
+import { releasePlot } from './release-plot.js';
+import { forget } from './memory-guard-ui.js';
+import { withShownCamera } from './scene-camera.js';
 
-/** Class prefix for the notice element; styled in static/css/styles.css. */
-const NOTICE_CLASS = 'coverage-notice';
-
-/** Icon per severity. Text, not an icon font -- exports and copy-paste keep it. */
-const SEVERITY_ICON = Object.freeze({
-    notice: 'i',
-    warning: '!',
-    error: '!',
-    unreported: '?'
-});
+/** Class of the status strip; styled in static/css/styles.css. */
+const STRIP_CLASS = 'plot-status';
 
 /** Annotation colours, matched to the CSS severity palette. */
 const ANNOTATION_COLOR = Object.freeze({
@@ -49,8 +54,19 @@ const ANNOTATION_COLOR = Object.freeze({
     unreported: '#8b1d8b'
 });
 
-/** How many reason lines the on-plot annotation carries before eliding. */
+/** How many reason lines the exported caption carries before eliding. */
 const MAX_ANNOTATION_LINES = 3;
+
+/** Reason chips the strip shows before "details"; the rest are in the popover. */
+const MAX_CHIPS = 3;
+
+/** What undoes each kind of hidden point: [action, label]. See registerStatusActions. */
+const KIND_ACTIONS = Object.freeze({
+    outside: [['next-part', 'Next part'], ['subset', 'Subset…']],
+    table: [['stop-table', 'Stop filtering']],
+    nan: [['show-nan', 'Show NaN']],
+    outliers: [['show-outliers', 'Show outliers']]
+});
 
 function coerce(coverage, unit) {
     // The load-bearing line of this module: no coverage means "nobody said",
@@ -65,92 +81,298 @@ function escapeHtml(s) {
 }
 
 /**
- * Find the element the notice should be inserted before. For a plot this is the
- * Plotly target itself (whose children Plotly owns and wipes), so the notice
- * lives as its previous sibling and survives every re-render.
+ * The strip lives AFTER `host`, as its next sibling: for a plot the host is
+ * the Plotly target itself (whose children Plotly owns and wipes), so the
+ * strip survives every re-render.
  */
-function noticeAnchor(host) {
+function stripAnchor(host) {
     return (host && host.parentNode) ? host : null;
 }
 
+function stripKey(anchor) {
+    return `${STRIP_CLASS}-for-${(anchor && anchor.id) || 'panel'}`;
+}
+
 /**
- * Find this panel's existing notice among its parent's children.
+ * Find this panel's strip among its parent's children.
  *
  * A direct scan rather than `querySelector(':scope > ...')`: `:scope` is not
  * available in every browser this tool is opened in, and a selector that
- * silently matches nothing would leave the notice stacking on every re-render
+ * silently matches nothing would leave strips stacking on every re-render
  * -- a silent failure inside the mechanism built to end silent failures.
  */
-function findNotice(anchor) {
+function findStrip(anchor) {
     const parent = anchor && anchor.parentNode;
     if (!parent || !parent.children) return null;
-    const key = noticeKey(anchor);
+    const key = stripKey(anchor);
     for (const child of Array.from(parent.children)) {
         if (child.dataset && child.dataset.coverageFor === key) return child;
     }
     return null;
 }
 
-function noticeKey(anchor) {
-    return `${NOTICE_CLASS}-for-${(anchor && anchor.id) || 'panel'}`;
+/** What each host's strip states: {coverage, unit, persistent, tags, open}. */
+const _state = new WeakMap();
+
+function stateOf(host) {
+    let s = _state.get(host);
+    if (!s) {
+        s = { coverage: null, unit: 'values', persistent: false, tags: new Map(), open: null };
+        _state.set(host, s);
+    }
+    return s;
+}
+
+/** Undo actions, supplied by the app (main.js); see registerStatusActions. */
+let _actions = { available: () => false, run: () => {} };
+
+/**
+ * Let the app run the strip's undo actions: `available(action, host)` says
+ * whether to offer one ('next-part', 'subset', 'subset-regular', 'stop-table',
+ * 'show-nan', 'show-outliers', 'focus-part'), `run(action, host)` does it.
+ * @param {{available: Function, run: Function}} actions
+ */
+export function registerStatusActions(actions) {
+    _actions = actions;
+    for (const strip of (typeof document !== 'undefined' && document.querySelectorAll
+        ? document.querySelectorAll(`.${STRIP_CLASS}`) : [])) {
+        if (strip._host) paint(strip._host);
+    }
+}
+
+function actionButtons(list, host) {
+    return (list || [])
+        .filter(([action]) => _actions.available(action, host))
+        .map(([action, label]) => `<button type="button" class="ps-action" data-ps-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`)
+        .join('');
+}
+
+function stripHtml(host, s) {
+    const cov = coerce(s.coverage, s.unit);
+    const b = breakdown(cov);
+    const unitWord = escapeHtml(b.unit);
+    const headline = escapeHtml(b.headline).replace(` ${unitWord} shown`, ` <span class="ps-unit">${unitWord} </span>shown`);
+    const chips = [
+        ...b.rows.map(r => `${compactCount(r.count)} ${r.chip}`),
+        ...b.notes.map(n => n.label.split(' -- ')[0])
+    ];
+    const chipHtml = chips.slice(0, MAX_CHIPS)
+        .map(c => `<span class="ps-chip">${escapeHtml(c)}</span>`).join('');
+    const rows = b.rows.map(r =>
+        `<tr data-kind="${escapeHtml(r.kind)}"><td class="ps-why">${escapeHtml(r.label)}</td>`
+        + `<td class="ps-n">${exactCount(r.count)}</td>`
+        + `<td class="ps-do">${actionButtons(KIND_ACTIONS[r.kind], host)}</td></tr>`).join('');
+    const total = b.rows.length
+        ? `<tr class="ps-total"><td>Not shown</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
+    const notes = b.notes.length
+        ? `<ul class="ps-notes">${b.notes.map(n => `<li data-reason="${escapeHtml(n.reason)}">${escapeHtml(n.label)}</li>`).join('')}</ul>` : '';
+    const title = b.hidden
+        ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not shown`
+        : b.headlineExact;
+    const hasDetail = b.rows.length || b.notes.length;
+    const mainPop = hasDetail
+        ? `<div class="ps-pop" data-pop="main" role="dialog" aria-label="${escapeHtml(title)}"${s.open === 'main' ? '' : ' hidden'}>`
+            + `<div class="ps-pop-title">${escapeHtml(title)}</div>`
+            + (rows ? `<table class="ps-rows">${rows}${total}</table>` : '')
+            + notes
+            + (b.rows.length > 1 ? '<div class="ps-foot">Each cell is counted once, under the first reason that applies.</div>' : '')
+            + '</div>'
+        : '';
+    let tags = '';
+    let tagPops = '';
+    for (const [kind, tag] of s.tags) {
+        const sev = escapeHtml(tag.severity || 'notice');
+        tags += `<button type="button" class="ps-tag ps-tag--${sev}" data-tag="${escapeHtml(kind)}"`
+            + ` aria-expanded="${s.open === kind}" title="${escapeHtml(tag.title || tag.text)}">${escapeHtml(tag.text)}</button>`;
+        if (tag.pop) {
+            tagPops += `<div class="ps-pop ps-pop--tag" data-pop="${escapeHtml(kind)}" role="dialog"`
+                + ` aria-label="${escapeHtml(tag.text)}"${s.open === kind ? '' : ' hidden'}>`
+                + `<div class="ps-pop-text">${escapeHtml(tag.pop.text)}</div>`
+                + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div></div>`;
+        }
+    }
+    return `<button type="button" class="ps-summary" aria-haspopup="dialog" aria-expanded="${s.open === 'main'}"`
+        + `${hasDetail ? '' : ' disabled'}>`
+        + `<span class="ps-text"><b class="ps-headline">${headline}</b>`
+        + `<span class="ps-chips">${chipHtml}</span></span>`
+        + (hasDetail ? '<span class="ps-details">details</span>' : '')
+        + '</button>'
+        + `<span class="ps-tags">${tags}</span>`
+        + mainPop + tagPops;
+}
+
+/** Draw (or remove) the strip of `host` from its state. */
+function paint(host) {
+    const anchor = stripAnchor(host);
+    if (!anchor) return null;
+    const s = stateOf(host);
+    let el = findStrip(anchor);
+    const cov = coerce(s.coverage, s.unit);
+    if (!s.coverage && !s.persistent) {
+        if (el) el.remove();
+        return null;
+    }
+    if (!s.persistent && cov.isComplete && s.tags.size === 0) {
+        if (el) el.remove();
+        return null;
+    }
+    if (!el) {
+        el = document.createElement('div');
+        el.dataset.coverageFor = stripKey(anchor);
+        // the strip element stays for the panel's life, so a screen reader
+        // hears its changes (a live region that is replaced is not heard)
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        const parent = anchor.parentNode;
+        const after = parent.children[Array.from(parent.children).indexOf(anchor) + 1] || null;
+        parent.insertBefore(el, after);
+    }
+    el._host = host;
+    const severity = cov.isComplete ? 'ok' : cov.severity;
+    el.className = `${STRIP_CLASS} ${STRIP_CLASS}--${severity}`;
+    el.dataset.reason = cov.isComplete ? 'ok' : cov.worstReason;
+    // compared with what was written, not with innerHTML, which the browser
+    // normalises
+    const html = stripHtml(host, s);
+    if (el._html !== html) {
+        el.innerHTML = html;
+        el._html = html;
+    }
+    // the whole statement as text, one reason per line (for tests, logs and
+    // copy); not a title: nothing about the strip pops up on hover
+    el.setAttribute('data-summary', [cov.headline(), ...cov.lines()].filter(Boolean).join('\n'));
+    return el;
 }
 
 /**
- * Render (or clear) the coverage notice attached to `host`.
+ * State the coverage of `host` in its status strip: one line under the plot
+ * (or table) that says how many entities are shown, the main reasons for the
+ * rest, and, on click, every reason with its count and what undoes it.
  *
  * Idempotent: repeated calls update the same element rather than stacking.
- * A complete coverage REMOVES the notice, so a panel that recovers stops
- * claiming a gap it no longer has.
+ * A persistent strip (a plot's) is always there, so its plot never moves when
+ * the text changes; another (a table's) is removed when nothing is missing.
  *
  * @param {HTMLElement} host  The plot or table container.
  * @param {Coverage} coverage
  * @param {string} [unit]  Fallback unit when coverage is absent.
- * @returns {HTMLElement|null} The notice element, or null when there is none.
+ * @param {{persistent?: boolean}} [opts]
+ * @returns {HTMLElement|null} The strip, or null when there is none.
  */
-export function renderCoverageNotice(host, coverage, unit) {
-    const anchor = noticeAnchor(host);
-    if (!anchor) return null;
-
-    const cov = coerce(coverage, unit);
-    const parent = anchor.parentNode;
-    let el = findNotice(anchor);
-
-    if (cov.isComplete) {
-        if (el) el.remove();
-        return null;
-    }
-
-    const { severity, headline, lines } = cov.describe();
-
-    if (!el) {
-        el = document.createElement('div');
-        el.className = NOTICE_CLASS;
-        el.dataset.coverageFor = noticeKey(anchor);
-        parent.insertBefore(el, anchor);
-    }
-
-    el.classList.remove(
-        `${NOTICE_CLASS}--notice`, `${NOTICE_CLASS}--warning`,
-        `${NOTICE_CLASS}--error`, `${NOTICE_CLASS}--unreported`
-    );
-    el.classList.add(`${NOTICE_CLASS}--${severity}`);
-    el.dataset.reason = cov.worstReason;
-
-    const detail = lines.length
-        ? `<ul class="${NOTICE_CLASS}__reasons">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
-        : '';
-
-    el.innerHTML =
-        `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON[severity] || '!'}</span>`
-        + `<div class="${NOTICE_CLASS}__body">`
-        + `<div class="${NOTICE_CLASS}__headline">${escapeHtml(headline)}</div>`
-        + detail
-        + `</div>`;
-    el.setAttribute('role', 'status');
-    el.setAttribute('title', [headline, ...lines].join('\n'));
-
-    return el;
+export function renderCoverageNotice(host, coverage, unit, { persistent } = {}) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    s.coverage = coerce(coverage, unit);
+    s.unit = unit || s.coverage.unit;
+    if (persistent !== undefined) s.persistent = persistent;
+    return paint(host);
 }
+
+/**
+ * Put (or with `tag` null take away) a tag at the right of the strip: a
+ * state of the panel that changes what the user can do with it, e.g.
+ * large-plot mode with hover and click off. A tag with `pop` opens a popover
+ * when clicked, with `pop.text` and `pop.actions` ([action, label] pairs).
+ *
+ * @param {HTMLElement} host
+ * @param {string} kind  e.g. 'large', 'focus', 'refused'
+ * @param {{text: string, title?: string, severity?: string,
+ *   pop?: {text: string, actions?: Array}}|null} tag
+ */
+export function setStatusTag(host, kind, tag) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    const before = s.tags.get(kind);
+    if (!tag && !before) return findStrip(stripAnchor(host));
+    if (tag && before && JSON.stringify(tag) === JSON.stringify(before)) return findStrip(stripAnchor(host));
+    if (tag) s.tags.set(kind, tag); else s.tags.delete(kind);
+    if (!tag && s.open === kind) s.open = null;
+    return paint(host);
+}
+
+/** Tag popovers already opened by a nudge, `${panel}:${kind}`: once per session. */
+const _nudged = new Set();
+
+/**
+ * The user tried something a tag says is off (a click on a large plot):
+ * pulse the tag, and the first time per panel in this session also open its
+ * popover. Never a toast, and never a popover on its own after the first.
+ * @param {HTMLElement} host
+ * @param {string} kind
+ * @returns {boolean} whether the popover was opened
+ */
+export function nudgeStatusTag(host, kind) {
+    const anchor = stripAnchor(host);
+    const strip = anchor && findStrip(anchor);
+    const s = _state.get(host);
+    if (!strip || !s || !s.tags.has(kind)) return false;
+    strip.dataset.pulses = String(Number(strip.dataset.pulses || 0) + 1);
+    const tag = strip.querySelector && strip.querySelector(`.ps-tag[data-tag="${kind}"]`);
+    if (tag) {
+        tag.classList.remove('ps-tag--pulse');
+        void tag.offsetWidth;       // restart the animation
+        tag.classList.add('ps-tag--pulse');
+        setTimeout(() => tag.classList.remove('ps-tag--pulse'), 700);
+    }
+    const key = `${anchor.id || 'panel'}:${kind}`;
+    if (_nudged.has(key) || !s.tags.get(kind).pop) return false;
+    _nudged.add(key);
+    s.open = kind;
+    paint(host);
+    return true;
+}
+
+function setOpen(host, which) {
+    const s = _state.get(host);
+    if (!s || s.open === which) return;
+    s.open = which;
+    paint(host);
+}
+
+function closeAll(except = null) {
+    for (const strip of document.querySelectorAll(`.${STRIP_CLASS}`)) {
+        if (strip !== except && strip._host) setOpen(strip._host, null);
+    }
+}
+
+/** One delegated listener for every strip: open, close, run an action. */
+function wireStrips() {
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function'
+        || document.__plotStatusWired) return;
+    document.__plotStatusWired = true;
+    // A press outside a strip closes its popovers: a press, not a click, so
+    // the click a nudge opens a popover with (nudgeStatusTag) keeps it open
+    document.addEventListener('pointerdown', (e) => {
+        const strip = e.target.closest && e.target.closest(`.${STRIP_CLASS}`);
+        closeAll(strip && strip._host ? strip : null);
+    }, true);
+    document.addEventListener('click', (e) => {
+        // an action offered by a placeholder (drawPlaceholder's actions)
+        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder');
+        const placed = placeholder && e.target.closest('[data-ps-action]');
+        if (placed && placeholder.parentNode) {
+            _actions.run(placed.dataset.psAction, placeholder.parentNode);
+            return;
+        }
+        const strip = e.target.closest && e.target.closest(`.${STRIP_CLASS}`);
+        if (!strip || !strip._host) return;
+        const host = strip._host;
+        const s = stateOf(host);
+        const action = e.target.closest('[data-ps-action]');
+        if (action) {
+            setOpen(host, null);
+            _actions.run(action.dataset.psAction, host);
+            return;
+        }
+        const tag = e.target.closest('.ps-tag');
+        if (tag) { setOpen(host, s.open === tag.dataset.tag ? null : tag.dataset.tag); return; }
+        if (e.target.closest('.ps-summary')) setOpen(host, s.open === 'main' ? null : 'main');
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAll();
+    });
+}
+wireStrips();
 
 /**
  * The stops ([[t, colour], ...]) Plotly draws for a colour scale given by name
@@ -176,45 +398,6 @@ export async function resolveColorscale(scale) {
 }
 
 /**
- * Render (or clear, with `text` null) a notice that says how a panel is drawn
- * when that changes what the user can do with it, e.g. the large-plot mode
- * (large-plot.js) with hover, click and table filters off. Same look as the
- * coverage notice, kept as a separate element so neither replaces the other.
- *
- * @param {HTMLElement} host  The plot container.
- * @param {string|null} text
- * @param {string} [severity]  'notice' (default) or 'warning'
- * @param {string} [kind]  'mode' (default); another kind is a notice of its
- *   own beside it, e.g. 'focus' for a focused cell the subset does not show
- * @returns {HTMLElement|null}
- */
-export function renderModeNotice(host, text, severity = 'notice', kind = 'mode') {
-    const anchor = noticeAnchor(host);
-    if (!anchor) return null;
-    const key = `${kind}-notice-for-${anchor.id || 'panel'}`;
-    let el = null;
-    for (const child of Array.from(anchor.parentNode.children || [])) {
-        if (child.dataset && child.dataset.modeFor === key) el = child;
-    }
-    if (!text) {
-        if (el) el.remove();
-        return null;
-    }
-    if (!el) {
-        el = document.createElement('div');
-        el.dataset.modeFor = key;
-        anchor.parentNode.insertBefore(el, anchor);
-    }
-    el.className = `${NOTICE_CLASS} ${NOTICE_CLASS}--${severity} ${kind}-notice`;
-    el.innerHTML =
-        `<span class="${NOTICE_CLASS}__icon" aria-hidden="true">${SEVERITY_ICON[severity] || 'i'}</span>`
-        + `<div class="${NOTICE_CLASS}__body"><div class="${NOTICE_CLASS}__headline">${escapeHtml(text)}</div></div>`;
-    el.setAttribute('role', 'status');
-    el.setAttribute('title', text);
-    return el;
-}
-
-/**
  * Build the Plotly layout annotation that carries the gap into EXPORTED images.
  *
  * A PNG saved from a panel must not be cleaner than the panel was: the DOM
@@ -228,20 +411,27 @@ export function coverageAnnotation(coverage) {
     const cov = coerce(coverage);
     if (cov.isComplete) return null;
 
-    const { severity, headline, lines } = cov.describe();
+    // The strip's breakdown, in the strip's words: "28 of 200 cells shown",
+    // then one line per reason with its exact count
+    const { severity } = cov.describe();
+    const b = breakdown(cov);
+    const lines = [
+        ...b.rows.map(r => `${exactCount(r.count)} ${r.chip}`),
+        ...b.notes.map(n => n.label)
+    ].map(escapeHtml);
     const shown = lines.slice(0, MAX_ANNOTATION_LINES);
     const elided = lines.length - shown.length;
     if (elided > 0) shown.push(`...and ${elided} more`);
 
-    const text = [`<b>${headline}</b>`, ...shown].filter(Boolean).join('<br>');
+    const text = [`<b>${escapeHtml(b.headlineExact)}</b>`, ...shown].filter(Boolean).join('<br>');
 
     return {
         // Tagged so the plot code can find and replace its own annotation
         // without disturbing any annotation a future feature may add.
         name: 'coverage-notice',
         text,
-        // Hidden on screen, where the banner above the plot already says it
-        // (the two were shown together, the box overlapping the plot), and
+        // Hidden on screen, where the status strip under the plot says it
+        // (a box over the plot covered points), and
         // shown only while an image is exported (exportWithCoverage). Placed
         // above the plotting area, right-aligned, in the top margin.
         visible: false,
@@ -320,9 +510,45 @@ export function withCoverageExportButton(config) {
         name: 'toImageWithCoverage',
         title: 'Download plot as a png',
         icon: Plotly.Icons.camera,
-        click: (gd) => exportWithCoverage(gd, () => Plotly.downloadImage(gd, opts))
+        click: (gd) => _cameraExport(gd, opts)
     }];
     return cfg;
+}
+
+/** What the modebar camera does; the plot menu installs the memory-checked export (registerCameraExport). */
+let _cameraExport = (gd, opts) => exportWithCoverage(gd, () => Plotly.downloadImage(gd, opts));
+
+/** @param {(gd: HTMLElement, opts: Object) => *} fn */
+export function registerCameraExport(fn) {
+    _cameraExport = fn;
+}
+
+/** The panel id of a plot container (`plot-container-<id>`). */
+function panelIdOf(host) {
+    return host && typeof host.id === 'string' && host.id.startsWith('plot-container-')
+        ? host.id.slice('plot-container-'.length) : null;
+}
+
+/** Per graph, the listener that says so when the browser drops its WebGL context. */
+const _lossHandlers = new WeakMap();
+
+/**
+ * Say so in the strip when the browser drops the plot's WebGL context (too
+ * many plots open, or the GPU out of memory): the plot goes blank without
+ * an error otherwise.
+ */
+function watchContextLoss(gd) {
+    if (!gd || typeof gd.on !== 'function') return;
+    let handler = _lossHandlers.get(gd);
+    if (handler && typeof gd.removeListener === 'function') gd.removeListener('plotly_webglcontextlost', handler);
+    handler = () => setStatusTag(gd, 'webgl', {
+        text: 'Plot went blank', severity: 'warning',
+        title: 'The browser dropped this plot\'s WebGL canvas',
+        pop: { text: 'The browser dropped this plot\'s WebGL canvas: too many plots are open, or the graphics '
+            + 'memory ran out. Close a plot, then redraw this one.', actions: [['redraw', 'Redraw']] }
+    });
+    _lossHandlers.set(gd, handler);
+    gd.on('plotly_webglcontextlost', handler);
 }
 
 /**
@@ -344,10 +570,20 @@ export function withCoverageExportButton(config) {
  */
 export async function drawPlot(plotContainer, traces, layout, config, coverage, unit) {
     const cov = coerce(coverage, unit);
+    // The notice and status strip first: it takes height from the graph, and
+    // drawn after the graph it made a second, full render once the graph was
+    // fitted to the smaller space (0.8 s at 95.6M points).
+    renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
+    // a fresh draw clears a lost-context tag; before the draw, for the same reason
+    setStatusTag(plotContainer, 'webgl', null);
+    // a graph redrawn in place keeps the camera the user turned it to; the
+    // camera saved in the settings is for a new graph
     const result = await Plotly.react(
-        plotContainer, withTraceUids(traces), withCoverageAnnotation(layout, cov), withCoverageExportButton(config)
+        plotContainer, withTraceUids(traces),
+        withShownCamera(plotContainer, withCoverageAnnotation(layout, cov)),
+        withCoverageExportButton(config)
     );
-    renderCoverageNotice(plotContainer, cov, unit);
+    watchContextLoss(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
     fitToContainer(plotContainer);
@@ -371,8 +607,8 @@ export function fitToContainer(gd) {
 
 /**
  * Empty `plotContainer` for the next `drawPlot`, but keep a graph that is
- * drawn there: drawPlot reacts into it. Anything else (a placeholder, an old
- * filter widget) goes; a graph whose DOM is gone is purged first, so react
+ * drawn there: drawPlot reacts into it. Anything else (a placeholder) goes;
+ * a graph whose DOM is gone is purged first, so react
  * does not diff against a figure that is no longer on screen.
  * @param {HTMLElement} plotContainer
  */
@@ -381,14 +617,12 @@ export function clearForDraw(plotContainer) {
     const live = plotContainer._fullLayout && plotContainer.querySelector(':scope > .plot-container');
     if (live) {
         for (const child of Array.from(plotContainer.children)) {
-            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')
-                && !child.classList.contains('datapoint-filter-widget')) child.remove();
+            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')) child.remove();
         }
         return;
     }
-    if (typeof Plotly !== 'undefined' && Plotly.purge && plotContainer._fullLayout) {
-        try { Plotly.purge(plotContainer); } catch { /* not a plot container */ }
-    }
+    // the WebGL side too: Plotly.purge leaves it to the garbage collector
+    if (plotContainer._fullLayout) releasePlot(plotContainer);
     plotContainer.innerHTML = '';
 }
 
@@ -396,11 +630,20 @@ export function clearForDraw(plotContainer) {
  * Traces with a `uid`: their name where names are unique. React matches
  * traces by uid, so what the user set on one (a legend click hiding a
  * category) follows that category when another part lacks some of them.
+ *
+ * Plotly puts the uid into element ids it later queries as CSS selectors
+ * (a colour bar's '#...-cb<uid>'), so it is spelled with [A-Za-z0-9_-]
+ * only: "t:total_counts" made the next draw throw 'not a valid selector'.
+ * Other characters are written as _<hex>_, which keeps uids distinct.
  */
+export function traceUid(name) {
+    return 't-' + Array.from(name).map(c => (/[A-Za-z0-9-]/.test(c) ? c : `_${c.codePointAt(0).toString(16)}_`)).join('');
+}
+
 function withTraceUids(traces) {
     const names = traces.map(t => t && t.name);
     if (names.some(n => typeof n !== 'string' || !n) || new Set(names).size !== names.length) return traces;
-    return traces.map(t => (t.uid ? t : { ...t, uid: `t:${t.name}` }));
+    return traces.map(t => (t.uid ? t : { ...t, uid: traceUid(t.name) }));
 }
 
 /**
@@ -416,29 +659,38 @@ function withTraceUids(traces) {
  * @param {Coverage} coverage
  * @param {string} [unit]
  */
-export function drawPlaceholder(host, coverage, unit) {
+export function drawPlaceholder(host, coverage, unit, { actions } = {}) {
     if (!host) return;
     const cov = coerce(coverage, unit);
     const { severity, headline, lines } = cov.describe();
 
-    if (typeof Plotly !== 'undefined' && Plotly.purge) {
-        try { Plotly.purge(host); } catch (e) { /* not a plot container */ }
-    }
+    // the plot it replaces holds nothing any more (memory-guard-ui.js)
+    if (host._fullLayout) releasePlot(host);
+    const panel = panelIdOf(host);
+    if (panel) forget(panel);
 
     const body = lines.length
         ? `<ul class="coverage-placeholder__reasons">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
         : '';
+    // what undoes it, as the strip offers it ([action, label] pairs, see registerStatusActions)
+    const todo = actions && actions.length ? actionButtons(actions, host) : '';
     host.innerHTML =
         `<div class="coverage-placeholder coverage-placeholder--${severity}" role="status">`
         + `<div class="coverage-placeholder__headline">${escapeHtml(headline || 'Nothing to show')}</div>`
         + body
+        + (todo ? `<div class="coverage-placeholder__do">${todo}</div>` : '')
         + `</div>`;
 
     // The placeholder IS the statement here -- it occupies the whole panel
-    // body. Drop any notice bar left over from a previous successful render so
+    // body. Drop the strip left over from a previous successful render so
     // the gap is stated once, not twice.
-    const stale = findNotice(noticeAnchor(host));
-    if (stale) stale.remove();
+    if (stripAnchor(host)) {
+        const s = stateOf(host);
+        s.coverage = null;
+        s.persistent = false;
+        s.open = null;
+        paint(host);
+    }
 }
 
 export { Coverage, GAP };

@@ -21,7 +21,7 @@ globalThis.document = { getElementById: mkEl, createElement: () => mkEl(Math.ran
 
 globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '{}' });
 
-const { describeParts, partSpec, notInSubsetLabel, canonicalSubset, describeSubset, normalizeViewSubset } =
+const { describeParts, partSpec, outsideDetail, canonicalSubset, describeSubset, normalizeViewSubset } =
     await import('../../../static/js/utils/subset.js');
 const { normalizeView } = await import('../../../static/js/utils/deeplink.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
@@ -40,8 +40,9 @@ test('the badge says which part, counted from 1', () => {
     assert.equal(describeParts({ ...info(0), parts: 1 }), null, 'one part: no stepper');
     assert.equal(describeParts(null), null);
     assert.match(describeSubset(info(2)).title, /Part 3 of 957/);
-    assert.equal(notInSubsetLabel(info(2)), 'Not in this part (3 of 957)');
-    assert.equal(notInSubsetLabel(null), 'Not in cell subset');
+    // the status strip's words, and the header badge's: "not in part 3 of 957"
+    assert.equal(outsideDetail(info(2)), 'not in part 3 of 957');
+    assert.equal(outsideDetail(null), 'not in the cell subset');
     assert.match(describeParts(info(5, { balance: 'drug' })).title, /largest groups only/);
 });
 

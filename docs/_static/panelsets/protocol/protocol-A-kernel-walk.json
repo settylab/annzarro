@@ -1,0 +1,214 @@
+{
+  "name": "protocol-A-kernel-walk",
+  "timestamp": "2026-10-04T20:45:51+00:00",
+  "dataset": "bm_aging.zarr",
+  "datasetName": "bm_aging",
+  "constants": {
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "focusedGene": "S100a9",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "cell-plot-A1": {
+      "id": "cell-plot-A1",
+      "type": "cell-plot",
+      "title": "A | 5-step diffusion walk from focused cell",
+      "config": {
+        "id": "cell-plot-A1",
+        "title": "A | 5-step diffusion walk from focused cell",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obsp",
+          "key": "diffusion_walk_t5",
+          "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+          "locked": false
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "colorScale": "Hot",
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ],
+        "colorReversed": true
+      },
+      "isSelectionTile": false
+    },
+    "cell-plot-A2": {
+      "id": "cell-plot-A2",
+      "type": "cell-plot",
+      "title": "A | sparse DM_Kernel row of focused cell",
+      "config": {
+        "id": "cell-plot-A2",
+        "title": "A | sparse DM_Kernel row of focused cell",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obsp",
+          "key": "DM_Kernel",
+          "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+          "locked": false
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "colorScale": "Hot",
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ],
+        "colorReversed": true
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "focusedGene": "S100a9",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "cell-plot-A1",
+              "controlsVisible": true
+            },
+            {
+              "type": "tile",
+              "id": "cell-plot-A2",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "cell-plot-A1": false,
+        "cell-plot-A2": false
+      },
+      "panelConfigs": {
+        "cell-plot-A1": {
+          "id": "cell-plot-A1",
+          "title": "A | 5-step diffusion walk from focused cell",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obsp",
+            "key": "diffusion_walk_t5",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+            "locked": false
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "colorScale": "Hot",
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorReversed": true
+        },
+        "cell-plot-A2": {
+          "id": "cell-plot-A2",
+          "title": "A | sparse DM_Kernel row of focused cell",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obsp",
+            "key": "DM_Kernel",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+            "locked": false
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "colorScale": "Hot",
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorReversed": true
+        }
+      }
+    }
+  }
+}

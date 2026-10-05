@@ -1,11 +1,11 @@
 import { DataManager } from '../../data-manager.js';
-import { notInSubsetLabel } from '../../utils/subset.js';
 import { 
   loadAxisData, 
   createFilterMask, 
   applyFilterMask, 
   updateTableEntities,
   panelLoadCoverage,
+  withSubsetCoverage,
   stableAxisRanges,
   applyHoverInfo,
   sortTracesByColor,
@@ -18,134 +18,14 @@ import { processCategories, isLegendProxy, axisTitle } from './plot-make-helper.
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
-import { renderCoverageNotice, renderModeNotice, withCoverageAnnotation } from '../../utils/panel-surface.js';
+import { renderCoverageNotice, setStatusTag, withCoverageAnnotation } from '../../utils/panel-surface.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
+import { setGlMarkers } from '../../utils/gl-markers.js';
+import { recordLoad } from '../../utils/subset-presets.js';
+import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 
 
 
-/**
- * Updates the datapoint filter widget with the current filter statistics
- * 
- * @param {HTMLElement} plotContainer - The DOM element containing the plot
- * @param {object} filterStats - Statistics about filtered datapoints
- * @param {number} filterStats.xNaN - Number of NaN values in x-axis data
- * @param {number} filterStats.yNaN - Number of NaN values in y-axis data
- * @param {number} filterStats.zNaN - Number of NaN values in z-axis data
- * @param {number} filterStats.colorNaN - Number of NaN values in color data
- * @param {number} filterStats.colorOutliers - Number of outliers in color data
- * @param {number} filterStats.tableFiltered - Number of table-filtered datapoints
- * @param {number} filterStats.total - Total number of datapoints
- * @param {number} filterStats.filtered - Total number of filtered datapoints
- */
-function updateFilterWidget(plotContainer, filterStats) {
-    const plotId = plotContainer.id.replace('plot-container-', '');
-    const widget = document.getElementById(`filter-widget-${plotId}`);
-    
-    if (!widget) return;
-    
-    const statsList = widget.querySelector('.filter-stats-list');
-    const totalCount = widget.querySelector('.filter-total-count');
-    
-    // Clear existing items
-    statsList.innerHTML = '';
-    
-    // Track if we have any filters to display
-    let hasFilters = false;
-    
-    // Add items for each filter reason - axis NaNs are always filtered by Plotly
-    if (filterStats.xNaN > 0) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item">
-                <span class="filter-reason">X-axis NaN:</span>
-                <span class="filter-count">${filterStats.xNaN}</span>
-            </li>
-        `;
-    }
-    
-    if (filterStats.yNaN > 0) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item">
-                <span class="filter-reason">Y-axis NaN:</span>
-                <span class="filter-count">${filterStats.yNaN}</span>
-            </li>
-        `;
-    }
-    
-    if (filterStats.zNaN > 0) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item">
-                <span class="filter-reason">Z-axis NaN:</span>
-                <span class="filter-count">${filterStats.zNaN}</span>
-            </li>
-        `;
-    }
-    
-    // Only show color NaN in the stats when hideNaN is active
-    if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item">
-                <span class="filter-reason">Color NaN:</span>
-                <span class="filter-count">${filterStats.colorNaN}</span>
-            </li>
-        `;
-    }
-    
-    // Only show color outliers when hideOutliers is active
-    if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item">
-                <span class="filter-reason">Color outliers:</span>
-                <span class="filter-count">${filterStats.colorOutliers}</span>
-            </li>
-        `;
-    }
-    
-    // Show table filtered entries when table filter is active and either 
-    // they're being removed or there are some to remove
-    if (filterStats.tableFilterActive) {
-        if (filterStats.tableFiltered > 0) {
-            hasFilters = true;
-            statsList.innerHTML += `
-                <li class="filter-stats-item">
-                    <span class="filter-reason">Table filtered:</span>
-                    <span class="filter-count">${filterStats.tableFiltered}</span>
-                </li>
-            `;
-        }
-    }
-    
-    // Cells outside the subset count as hidden too, so the total accounts
-    // for every cell of the dataset
-    const notInSubset = filterStats.notInSubset || 0;
-    if (notInSubset > 0) {
-        hasFilters = true;
-        statsList.innerHTML += `
-            <li class="filter-stats-item" title="Not loaded: outside the cell subset or its current part (Cells, above the panels)">
-                <span class="filter-reason">${notInSubsetLabel(DataManager.getSubset())}:</span>
-                <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
-            </li>
-        `;
-    }
-
-    // Update total count and percentage
-    const hidden = filterStats.filtered + notInSubset;
-    const all = filterStats.total + notInSubset;
-    const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
-    
-    totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
-    
-    // Show/hide the widget based on whether there are any filters
-    if (hasFilters) {
-        widget.classList.remove('hidden');
-    } else {
-        widget.classList.add('hidden');
-    }
-}
 
 /**
  * Whether `data` is a complete load for the dataset that is loaded now.
@@ -256,9 +136,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         // First create the mask and get statistics - always run this to count NaNs
         const { indexMask, filterStats } = createFilterMask(data, settings);
         
-        // Update the filter widget with statistics
-        updateFilterWidget(plotContainer, filterStats);
-
         // Restate the panel's coverage. An incremental update changes what is
         // on screen, so a notice left over from the previous render would be
         // stale -- and a stale "all shown" is the same lie as no notice at all.
@@ -271,7 +148,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         const loaded = panelLoadCoverage(data, settings, coverageUnit);
         data.coverage = loaded;
         // Per AXIS, not per panel: only the series that loaded x can explain x.
-        const liveCoverage = Coverage.merge([
+        const liveCoverage = withSubsetCoverage(Coverage.merge([
             loaded,
             classifyFilterStats(filterStats, coverageUnit, {
                 axisCoverage: {
@@ -279,8 +156,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     z: data.z && data.z.coverage
                 }
             })
-        ], coverageUnit);
-        renderCoverageNotice(plotContainer, liveCoverage, coverageUnit);
+        ], coverageUnit), coverageUnit);
+        renderCoverageNotice(plotContainer, liveCoverage, coverageUnit, { persistent: true });
         try {
             const relaid = withCoverageAnnotation(
                 (plotContainer.layout || {}), liveCoverage
@@ -1001,6 +878,16 @@ export async function loadColorDataAndUpdatePlot(
         refreshPlot();
         return;
     }
+    // the new colour series and the restyle need memory next to the old ones
+    const memory = recolourCheck(plotContainer);
+    if (memory.verdict === 'block') {
+        const why = refusalText(memory, 'Close a plot, or show fewer cells (a smaller subset).');
+        setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
+            title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
+        return;
+    }
+    setStatusTag(plotContainer, 'memory', null);
+    const started = performance.now();
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
@@ -1032,7 +919,12 @@ export async function loadColorDataAndUpdatePlot(
                 filter: true, // Update filtering if needed.
                 layout: true
             }
-            updatePlotElements(plotContainer, data, settings, refreshPlot, options);
+            updatePlotElements(plotContainer, data, settings, refreshPlot, options)
+                .then(() => {
+                    if (data.entities !== 'genes') {
+                        recordLoad({ n: colorData.values.length, seconds: (performance.now() - started) / 1000, kind: 'recolour' });
+                    }
+                }, () => {});
 
         } else {
             console.warn('No valid color data returned, falling back to full plot reload');
@@ -1047,10 +939,11 @@ export async function loadColorDataAndUpdatePlot(
 
 
 /**
- * One line on a cell plot whose focused cell the subset does not show: it is
- * focused, its rows are read, but it is not a point here. Not a coverage gap
- * (no shown point is missing) and not counted as a removed point. Shown when
- * highlighting is on, and always in large-plot mode, which draws no marker.
+ * The status-strip tag of a LARGE cell plot whose focused cell the subset
+ * does not show: large-plot mode draws no ring for it, so the strip says it,
+ * and the tag's action goes to the part that shows it. A regular plot draws
+ * the ring, and the header badge beside the focus control says it for every
+ * panel, so it carries no tag: one fact, one place.
  * @param {HTMLElement} plotContainer
  * @param {Object} data - the plot's data ({cells, large?})
  * @param {Object} settings
@@ -1058,16 +951,18 @@ export async function loadColorDataAndUpdatePlot(
  */
 export function noteFocusOutside(plotContainer, data, settings, entityType = null) {
   if (!plotContainer || !data || (entityType || data.entities) !== 'cells') return;
-  const clear = () => renderModeNotice(plotContainer, null, 'notice', 'focus');
+  const clear = () => setStatusTag(plotContainer, 'focus', null);
   const name = DataManager.getFocusedCell();
-  if (!name || !(settings.highlightFocusedCell || data.large)) return clear();
-  const cells = data.cells;
-  if (cells && typeof cells.indexOf === 'function' && cells.indexOf(name) >= 0) return clear();
+  if (!name || !data.large) return clear();
   DataManager.locateCell(name).then(cell => {
     if (DataManager.getFocusedCell() !== name || !plotContainer.isConnected) return;
-    const outside = cell && !cell.shown && cell.row !== null;
-    renderModeNotice(plotContainer, outside ? `Focused cell ${name} is not among the shown cells` : null,
-                     'notice', 'focus');
+    if (!(cell && !cell.shown && cell.row !== null)) return clear();
+    setStatusTag(plotContainer, 'focus', {
+      text: `${name} not shown`,
+      title: `The focused cell ${name} is not in this part; large-plot mode draws no marker for it`,
+      pop: { text: `The focused cell ${name} is not among the cells shown.`,
+             actions: [['focus-part', 'Go to its part']] }
+    });
   }).catch(() => {});
 }
 
@@ -1151,7 +1046,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   }
 
   if (focusedIndex === -1) {
-    // a cell the subset does not show: noteFocusOutside says so, and a ring
+    // a cell the subset does not show: the header badge says so, and a ring
     // marks where it lies in this plot
     if (entityType === 'cells') return drawOutsideRing(plotContainer, data, settings, focusedEntity);
     removeHighlight(plotContainer);
@@ -1373,6 +1268,13 @@ export async function restyleMarkers(plotContainer, settings) {
         && /^focused (cell|gene)$/i.test(trace.name.trim());
     const dataIdx = [];
     const highlightIdx = [];
+    // 2D: straight to the regl scene. A restyle reruns Plotly's calc for
+    // every trace: out of V8 heap at 95.6M points, the heap nearly doubled
+    // at 5M (utils/gl-markers.js). The axes keep their range.
+    const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
+    if (!is3D && setGlMarkers(plotContainer, (trace) => (isLegendProxy(trace) ? null
+        : isHighlight(trace) ? { size: settings.pointSize * 2 }
+        : { size: settings.pointSize, opacity: settings.pointOpacity }))) return;
     plotContainer.data.forEach((trace, i) => {
         if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);
@@ -1502,9 +1404,18 @@ export async function refocusAxisOnEntity(
  */
 export async function updatePlotOnTableChange(plotContainer, data, settings, refreshPlot) {
   console.log(`Updating plot after table change with filter: ${settings.tableFilter || 'none'}`);
+
+  // A table that reloads for a new subset or part says so while this plot's
+  // own reload for it is in flight, and that notice aborts it (one batch of
+  // panel updates at a time, panel-manager.js): the series here are half
+  // built, or still the previous cells'. Load them again, table and all.
+  const cellPlot = settings && settings.highlightFocusedGene === undefined;
+  if (cellPlot && (!isPlotDataCurrent(data) || data.subsetKey !== DataManager.getSubsetParam())) {
+    return refreshPlot();
+  }
   
   // Use the new updateTableEntities function to efficiently update table entities
-  const tableEntitiesChanged = await updateTableEntities(data, settings);
+  const tableEntitiesChanged = await updateTableEntities(data, settings, plotContainer);
   
   // If table entities didn't change, no need to update the plot
   if (!tableEntitiesChanged) {

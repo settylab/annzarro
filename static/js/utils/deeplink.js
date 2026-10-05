@@ -415,7 +415,7 @@ export function remapPanelReferences(configs, idMap) {
  * put 8,090 numbers into every share link (a 25,340-character URL) and
  * panel set. They are recomputed when the panel loads.
  */
-export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells'];
+export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells', 'closedSelection'];
 
 /**
  * A copy of a panel config without its derived state, for serialization.

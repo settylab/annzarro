@@ -1,3 +1,4 @@
+import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { updatePlotElements, updatePlotOnTableChange, highlightFocusedEntity, noteFocusOutside, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
@@ -8,6 +9,8 @@ import { setupPlotEventListeners } from './plot-utilities/listeners.js';
 import { setupAxisSelector, focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { drawPlaceholder } from '../utils/panel-surface.js';
+import { releasePlot } from '../utils/release-plot.js';
+import { forget } from '../utils/memory-guard-ui.js';
 
 /**
  * Cell Plot Panel
@@ -38,6 +41,8 @@ const CellPlotPanel = (function() {
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_OPACITY) || 0.7,
+            autoPointSize: true,      // size and opacity follow the number of points
+            autoPointOpacity: true,   // until set (utils/point-style.js)
             colorScale: (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALE) || 'Portland',
             categoryPalette: 'uns', // Default to using colors from uns if available
             colorMin: null,
@@ -56,6 +61,7 @@ const CellPlotPanel = (function() {
         
         // Override with provided options, if any
         Object.assign(_settings, options);
+        initAutoPointStyle(_settings, options);
         
         // Cached data
         let _data = {
@@ -430,9 +436,21 @@ const CellPlotPanel = (function() {
                     _plotContainer._aestheticsCleanup = null;
                 }
                 
-                Plotly.purge(_plotContainer);
+                // the WebGL side too: Plotly.purge leaves it to the garbage collector
+                releasePlot(_plotContainer);
             }
-            
+
+            // A closed panel is kept for "Reopen", and this closure with it:
+            // drop the loaded series, or closing frees nothing (a reopen
+            // loads them again). A load still running is stopped.
+            if (_currentLoadOperation) {
+                _currentLoadOperation.abort();
+                _currentLoadOperation = null;
+            }
+            Object.keys(_data).forEach(key => delete _data[key]);
+            Object.assign(_data, { x: null, y: null, z: null, color: null });
+            forget(_id);
+
             // Clear container
             _container.innerHTML = '';
         }

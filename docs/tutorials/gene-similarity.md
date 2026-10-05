@@ -41,14 +41,22 @@ expressed in the same cell states whether or not they change. Both are dense
 (tut-gene-volcano-row)=
 ## 1. Colour a volcano by the focused gene's row
 
+::::{dropdown} Start here: the volcano coloured by the focused gene's row (steps 1 and 2)
+```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 1. Open `bm_aging_showcase.zarr` from **Dataset**.
 2. In the bottom selector, add a gene plot. Open its controls (the chevron in the tile header).
-3. Set **X-Axis** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y-Axis** to `var`,
+3. Set **X** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y** to `var`,
    `kompot_de_Young_to_Old_mahalanobis`. You now have the Kompot volcano.
 4. Set **Color** to `varp`, `spearman_fold_change`. The third box reads "Focused gene …"; leave it
    there, so the colour follows the focus. Leave the lock next to it open
    ({doc}`../user-guide/focus-and-lock`).
-5. Under the colour options, choose **Color Map** `RdBu`, type `-1` in **Min** and `1` in **Max**,
+5. Under the colour options, choose **Map** `RdBu`, type `-1` in **Min** and `1` in **Max**,
    and press **Lock Range**. Correlations then keep one scale for every focused gene
    ({doc}`../user-guide/colour-scales`).
 6. Make sure **Highlight Focused Gene** is on (blue).
@@ -96,6 +104,14 @@ DE genes alone could not contain them.
 (tut-gene-refocus)=
 ## 2. Click a gene to follow another row
 
+::::{dropdown} Start here: the volcano of step 1
+```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 1. Click the point at mean log2 fold change 0.14, Mahalanobis 12.6. That is H2-Aa, an MHC class II
    gene. The header's **Focused Gene** changes to `H2-Aa`, the red marker moves to it, and the
    plot recolours with H2-Aa's row.
@@ -128,15 +144,23 @@ class II antigen presentation, correlated with each other at only 0.20. Use the 
 (tut-gene-modules)=
 ## 3. Compare the graded row with discrete modules
 
+::::{dropdown} Start here: rank strips and the module table
+```{literalinclude} ../_static/panelsets/paper/fig4-c.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 The conventional route clusters the 190 DE genes by average linkage on 1 − ρ and cuts the tree
 at the silhouette maximum, k = 3. AnnZarro does not cluster. The showcase store holds the
 paper's result as `var/fig4_module_k3` (87, 68 and 35 genes) together with each DE gene's rank by
 ρ with H2-Q7 and with S100a9. This step uses those precomputed columns; it works for these two
 genes only.
 
-1. Add a gene plot. Set **X-Axis** to `var`, `fig4c_rank_H2-Q7`, **Y-Axis** to `var`,
-   `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Color Palette** stays at "As
-   stored in adata.uns if available", which gives the paper's purple, green and amber.
+1. Add a gene plot. Set **X** to `var`, `fig4c_rank_H2-Q7`, **Y** to `var`,
+   `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Palette** stays at "As
+   stored in adata.uns", which gives the paper's purple, green and amber.
 2. Non-DE genes have no rank, so 16,096 genes have no x value and are not drawn. The tile says so
    in a blue notice ("189 of 16,285 genes shown").
 3. Add a second gene plot with `fig4c_rank_S100a9`, `rho_fc_S100a9` and the same colour.
@@ -179,12 +203,20 @@ of it, and at this data size a weak one: the silhouette is flat (0.23 to 0.25 fo
 (tut-gene-two-rows)=
 ## 4. Separate a shared age response from a shared expression pattern
 
+::::{dropdown} Start here: the smoothed row against the fold-change row
+```{literalinclude} ../_static/panelsets/paper/fig4-d.url.txt
+:language: text
+```
+Panel set file: {download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. The link is
+ready for a local server; {ref}`what to change for yours <tut-start-links>`.
+::::
+
 Two genes can correlate because they change together with age, or merely because they are
 expressed in the same cells. Plot the two rows of the focused gene against each other. Both axes
 are live `varp` rows: one click redraws the whole scatter.
 
-1. Add a gene plot. Set **X-Axis** to `varp`, `spearman_smoothed`, "Focused gene …", and
-   **Y-Axis** to `varp`, `spearman_fold_change`, "Focused gene …". Leave both locks open.
+1. Add a gene plot. Set **X** to `varp`, `spearman_smoothed`, "Focused gene …", and
+   **Y** to `varp`, `spearman_fold_change`, "Focused gene …". Leave both locks open.
 2. Set **Color** to `var`, `fig4d_class` (showcase store, precomputed for H2-Q7), or to `var`,
    `kompot_de_Young_to_Old_is_de` on `bm_aging.zarr`.
 3. Focus `H2-Q7`. It sits at (1, 1), marked red.
@@ -251,9 +283,9 @@ its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` follows the focused gene
 (tut-gene-views)=
 ## Open the views
 
-Each view is a share link with the panels configured. Replace `127.0.0.1:8000` with your server's host and port and `/ABSOLUTE/PATH/TO` with the
-directory that holds the store on the server, then open
-the link ({doc}`../user-guide/share-links`). `dataset_path` must be absolute.
+The views of this tutorial, each also in the **Start here** box of its section. They are ready
+for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: volcano coloured by the focused gene's row (H2-Q7)
 ```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt

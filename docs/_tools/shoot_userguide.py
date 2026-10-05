@@ -410,10 +410,10 @@ def shoot_plots(sh, data_dir):
     capture(sh, page, "plots-cell-controls", c + " .plot-controls", marks=[
         (1, f"{c} .axis-type-select[data-axis=x]"), (2, f"{c} .axis-key-select[data-axis=x]"),
         (3, f"{c} .axis-column-select[data-axis=x]"), (4, f"{c} .color-selector-container .axis-selector"),
-        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=highlight-focused-cell]"),
-        (7, f"{c} [id^=aesthetics-menu-btn]"), (8, f"{c} .table-filter-controls"),
-        (9, f"{c} .point-controls"), (10, f"{c} [id^=category-palette]"),
-        (11, f"{c} [id^=hide-nan]"), (12, f"{c} [id^=equal-aspect]")])
+        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=equal-aspect]"),
+        (7, f"{c} [id^=highlight-focused-cell]"), (8, f"{c} [id^=category-palette]"),
+        (9, f"{c} [id^=hide-nan]"), (10, f"{c} .point-controls"),
+        (11, f"{c} .table-filter-controls"), (12, f"{c} [id^=aesthetics-menu-btn]")])
     toggle_controls(sh, page, "cell-plot-C")      # hide the controls: the plot fills the tile again
     capture(sh, page, "plots-categorical", c + " .tile-content")
     page.context.close()
@@ -496,8 +496,8 @@ def shoot_colour(sh, data_dir):
         (3, f"{d} .color-max-slider-container"), (4, f"{d} [id^=center-colormap]"),
         (5, f"{d} [id^=reverse-colormap]"), (6, f"{d} [id^=lock-range]"),
         (7, f"{d} [id^=hide-outliers]"), (8, f"{d} [id^=hide-nan]"),
-        (9, f"{d} [id^=equal-aspect]"), (10, f"{d} [id^=sort-by-color]"),
-        (11, f"{d} [id^=log-color]"), (12, f"{d} [id^=log-floor]")])
+        (9, f"{d} [id^=sort-by-color]"), (10, f"{d} [id^=log-color]"),
+        (11, f"{d} [id^=log-floor]")])
     sh.log.append("colour: Min/Max boxes = " + json.dumps(page.evaluate(
         f"[document.querySelector('{d} [id^=color-min-]:not([id*=slider])').value,"
         f" document.querySelector('{d} [id^=color-max-]:not([id*=slider])').value]")))
@@ -937,9 +937,9 @@ def shoot_focus_outside(sh, data_dir):
     page.evaluate("document.activeElement && document.activeElement.blur()")
     time.sleep(0.5)
     sh.log.append("focus-outside: badge = " + page.text_content("#focused-cell-outside")
-                  + " | note = " + page.evaluate("""() => { const n = document.querySelector(
-                      '.tile[data-tile-id="cell-plot-W"] .focus-notice .coverage-notice__headline');
-                      return n ? n.textContent : null; }"""))
+                  + " | status = " + page.evaluate("""() => { const n = document.querySelector(
+                      '.tile[data-tile-id="cell-plot-W"] .plot-status');
+                      return n ? n.dataset.summary : null; }"""))
     capture_union(sh, page, "focus-outside-header", ["#focused-cell", "#focused-cell-outside", "#subset-parts"],
                   marks=[(1, "#focused-cell-outside")], pad=10)
     capture_union(sh, page, "focus-outside", [T("cell-plot-W"), T("cell-plot-T")], pad=2)

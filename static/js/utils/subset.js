@@ -219,10 +219,10 @@ export function partSpec(info, target, clamp = false) {
     return canonicalSubset({ ...info.subset, part });
 }
 
-/** The filter widget's label for cells not loaded because of the subset. */
-export function notInSubsetLabel(info) {
+/** Where the cells a subset does not load are: the status strip's "not in part 3 of 957". */
+export function outsideDetail(info) {
     const parts = describeParts(info);
-    return parts ? `Not in this part (${parts.display} of ${fmt(parts.parts)})` : 'Not in cell subset';
+    return parts ? `not in part ${fmt(parts.display)} of ${fmt(parts.parts)}` : 'not in the cell subset';
 }
 
 /**

@@ -19,7 +19,7 @@ globalThis.Plotly = new Proxy({}, { get: () => () => Promise.resolve() });
 
 /** Fake controls keyed by selector; jQuery(container).find(sel) looks them up. */
 function makeControls(id, { min = '0', max = '100' } = {}) {
-    const mk = (value) => ({ value, attrs: {} });
+    const mk = (value) => ({ value, attrs: {}, data: {}, props: {} });
     return {
         [`#color-min-${id}`]: mk(min), [`#color-max-${id}`]: mk(max),
         [`#color-min-slider-${id}`]: mk(min), [`#color-max-slider-${id}`]: mk(max),
@@ -33,7 +33,9 @@ function wrap(el) {
             if (typeof k === 'object') { if (el) Object.assign(el.attrs, k); return w; }
             if (v === undefined) return el?.attrs[k];
             if (el) el.attrs[k] = v; return w;
-        }
+        },
+        data(k, v) { if (v === undefined) return el?.data[k]; if (el) el.data[k] = v; return w; },
+        prop(k, v) { if (v === undefined) return el?.props[k]; if (el) el.props[k] = v; return w; }
     };
     return w;
 }
@@ -61,7 +63,9 @@ test('first load with a restored range shows THAT range', () => {
     updateColorSliderUI(controls, data, settings, 'q', true);
     assert.equal(controls['#color-min-q'].value, '-1');
     assert.equal(controls['#color-max-q'].value, '3.14');
-    assert.equal(controls['#color-max-slider-q'].value, '3.14159');
+    // the slider is a percentile track: its thumb shows 3.14159 in quantile space
+    const scale = controls['#color-max-slider-q'].data.scale;
+    assert.ok(Math.abs(scale.fromPos(Number(controls['#color-max-slider-q'].value) / 1000) - 3.14159) < 0.05);
     assert.equal(settings.colorMax, 3.14159, 'the restored value itself is not rounded');
 });
 
@@ -89,4 +93,47 @@ test('a small range is shown with its significant digits, not rounded to 0.01', 
     assert.equal(controls['#color-min-t'].value, '0');
     assert.equal(controls['#color-max-t'].value, '0.0123');
     assert.equal(settings.colorMax, 0.012345, 'the range itself keeps full precision');
+});
+
+test('the sliders are percentile tracks, the boxes and settings keep values', () => {
+    const controls = makeControls('u');
+    const settings = { colorMin: null, colorMax: null, lockColorRange: false };
+    // skewed: one huge value; a linear track would put everything else in its first 1%
+    const values = [...Array(99).keys()].map((i) => i / 10).concat([1000]);
+    updateColorSliderUI(controls, { color: values }, settings, 'u', false);
+    assert.equal(settings.colorMax, 1000);
+    assert.equal(controls['#color-max-slider-u'].value, '1000');
+    assert.equal(controls['#color-min-slider-u'].value, '0');
+    const scale = controls['#color-max-slider-u'].data.scale;
+    assert.ok(scale.fromPos(0.5) < 6, 'the middle of the track is the median, not 500');
+    assert.equal(controls['#color-max-slider-u'].props.disabled, false);
+});
+
+test('typed arrays (large-plot mode) feed the sliders as well', () => {
+    const controls = makeControls('w');
+    const settings = { colorMin: null, colorMax: null, lockColorRange: false };
+    updateColorSliderUI(controls, { color: new Float32Array([NaN, 1, 2, 3, 40]) }, settings, 'w', false);
+    assert.equal(settings.colorMin, 1);
+    assert.equal(settings.colorMax, 40);
+});
+
+test('a constant column disables the sliders but keeps the boxes', () => {
+    const controls = makeControls('c');
+    const settings = { colorMin: null, colorMax: null, lockColorRange: false };
+    updateColorSliderUI(controls, { color: [4, 4, 4] }, settings, 'c', false);
+    assert.equal(controls['#color-min-slider-c'].props.disabled, true);
+    assert.equal(controls['#color-max-slider-c'].props.disabled, true);
+    assert.equal(controls['#color-min-c'].value, '4');
+});
+
+test('centred at 0: symmetric range, min thumb mirrors the max thumb', () => {
+    const controls = makeControls('z');
+    const settings = { colorMin: null, colorMax: null, lockColorRange: false, centeringActive: true };
+    updateColorSliderUI(controls, { color: [-3, -1, 0.5, 2, 8] }, settings, 'z', false);
+    assert.equal(settings.colorMin, -8);
+    assert.equal(settings.colorMax, 8);
+    assert.equal(controls['#color-min-slider-z'].value, '0');
+    assert.equal(controls['#color-max-slider-z'].value, '1000');
+    const lo = controls['#color-min-slider-z'].data.scale, hi = controls['#color-max-slider-z'].data.scale;
+    for (const p of [0.1, 0.37, 0.8]) assert.ok(Math.abs(lo.fromPos(1 - p) + hi.fromPos(p)) < 1e-12);
 });

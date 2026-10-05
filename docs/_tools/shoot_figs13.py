@@ -20,17 +20,14 @@ obs fig3_plasma_groups).
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import sys
 import time
-import zlib
-from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from shots import Session, split, tile  # noqa: E402
+from shots import Session, panelset_file, split, start_link, tile, z1  # noqa: E402
 
 DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "paper"
@@ -211,22 +208,8 @@ def fig3bc_view() -> dict:
 
 
 # --------------------------------------------------------------------------- artefacts
-def z1(v: dict) -> str:
-    """The app's compressed fragment: z1.<base64url(deflate-raw(JSON))>."""
-    raw = json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode()
-    c = zlib.compressobj(9, zlib.DEFLATED, -15)
-    return "z1." + base64.urlsafe_b64encode(c.compress(raw) + c.flush()).decode().rstrip("=")
-
-
 def panelset(name: str, v: dict, dataset: str) -> dict:
-    """A panel set file as Save Panel Set writes it: the panel configs plus `view`, the same
-    object a share link encodes. Loading it restores the dataset, focus and split layout."""
-    cfgs = v["layout"]["panelConfigs"]
-    return {"name": name, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "dataset": dataset, "datasetName": Path(dataset).stem, "constants": v["constants"],
-            "panelConfigs": {k: {"id": k, "type": k.rsplit("-", 1)[0], "title": c["title"],
-                                 "config": c, "isSelectionTile": False} for k, c in cfgs.items()},
-            "view": v}
+    return panelset_file(name, v, dataset)
 
 
 ALL_VIEWS = {
@@ -248,8 +231,7 @@ def write_artefacts() -> None:
         (VIEWS / f"{name}.json").write_text(json.dumps(v, indent=1) + "\n")
         (PANELSETS / f"{name}.json").write_text(json.dumps(panelset(name, v, ds), indent=2) + "\n")
         links[name] = {"dataset": ds, "fragment": "#view=" + z1(v)}
-        (PANELSETS / f"{name}.url.txt").write_text(
-            f"http://127.0.0.1:8000/?dataset_path=/path/to/annzarro-data/{ds}#view={z1(v)}\n")
+        (PANELSETS / f"{name}.url.txt").write_text(start_link(ds, v) + "\n")
     (PANELSETS / "links-figs13.json").write_text(json.dumps(links, indent=1) + "\n")
 
 

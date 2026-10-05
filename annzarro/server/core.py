@@ -23,6 +23,7 @@ from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from annzarro.utils.paths import default_data_dir
+from ..core.remote import is_remote_path
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ DEFAULT_CONFIG = {
     "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
     "remote_read_timeout_s": 30,       # seconds between bytes before a 504
     "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
+    "cross_origin_isolation": "off",   # off | on | auto -- COOP/COEP headers (server/isolation.py)
     "app_name": "AnnZarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
     "contact_info": {                  # Contact information shown on login page
@@ -192,7 +194,9 @@ def login_required_response():
     posts it back (see templates/login.html).
     """
     if request.path.startswith("/api/"):
-        return jsonify({"error": "Authentication required"}), 401
+        # reason lets the frontend tell an expired login from other 401s
+        # (static/js/utils/session-expiry.js)
+        return jsonify({"error": "Authentication required", "reason": "login_required"}), 401
     root = request.script_root
     target = root + (request.full_path.rstrip("?") if request.query_string else request.path)
     if safe_next(target, root) == root + "/":
@@ -265,7 +269,7 @@ def resolve_dataset_segment(endpoint, values):
     if not values or not values.get("dataset_path"):
         return
     segment = values["dataset_path"]
-    if "://" in segment:
+    if is_remote_path(segment):
         return
     data_dir = current_app.config.get("data_dir") or default_data_dir()
     values["dataset_path"] = os.path.join(data_dir, segment)
@@ -275,7 +279,7 @@ def require_dataset_segment():
     """404 for a ``/datasets/<path>`` that does not exist, instead of the
     routes' 200-with-an-error-body, 400 or 500."""
     path = (request.view_args or {}).get("dataset_path")
-    if path and "://" not in path and not os.path.exists(path):
+    if path and not is_remote_path(path) and not os.path.exists(path):
         return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
                                  "to the server's data directory.",
                         "reason": "not_found"}), 404
@@ -393,6 +397,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # Set up routes
     register_routes(app)
+
+    # COOP/COEP, so the browser can measure the page's memory (isolation.py)
+    from .isolation import install_isolation
+    install_isolation(app)
 
     # The desktop app names its server with a per-launch token and only
     # trusts the answer that carries it: two launches that pick the same free

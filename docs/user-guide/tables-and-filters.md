@@ -101,15 +101,15 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
 ## Link a plot to a table
 
 1. Open the volcano plot's controls.
-2. In **Filter by Table** (1), choose **Gene table**. The list offers every gene table on the
+2. In **Table** (1), choose **Gene table**. The list offers every gene table on the
    canvas (for a cell plot, every cell table).
 
    ```{figure} ../_static/screens/user-guide/tables-filter-select.png
    :class: screenshot
    :width: 60%
-   :alt: The Filter by Table row with the drop-down set to "Gene table" (1) and the eye toggle (2).
+   :alt: The Table filter row with the drop-down set to "Gene table" (1) and the eye toggle (2).
 
-   Filter by Table (1) and the remove toggle (2).
+   Table filter (1) and the remove toggle (2).
    ```
 
 3. Genes outside the table's filter turn flat grey; the 159 genes in it keep their colour.
@@ -127,7 +127,7 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
    ```{figure} ../_static/screens/user-guide/tables-linked-removed.png
    :class: screenshot
    :width: 70%
-   :alt: The volcano plot showing only the 159 genes of the table, with a notice "159 of 16,285 genes shown" and a Removed Datapoints box counting 16,126 table-filtered genes.
+   :alt: The volcano plot showing only the 159 genes of the table, with the status line "159 of 16,285 genes shown · 16,126 table filter".
 
    With the eye toggle on, only the table's genes are drawn.
    ```

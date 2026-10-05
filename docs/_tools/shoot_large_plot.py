@@ -1,7 +1,7 @@
 """Screenshots of large-plot mode for user-guide/subsets.md.
 
 The real case is tens of millions of cells; the mode starts above
-ui.defaults.large_plot_points (5M by default). To regenerate on the small demo
+ui.defaults.large_plot_points (1M by default). To regenerate on the small demo
 store, the server here runs with that setting lowered to 5,000, so bm_aging's
 8,090 cells are "large" and a 4,000-cell subset is not:
 
@@ -43,8 +43,8 @@ def main():
         for name, subset in (("large-plot-all", None), ("large-plot-subset", {"n": 4000, "seed": 0})):
             page = sh.open(view(subset), dataset="bm_aging.zarr", viewport={"width": 1400, "height": 900})
             time.sleep(0.5)
-            notice = page.locator(".mode-notice .coverage-notice__headline")
-            sh.log.append(f"{name}: notice = {notice.inner_text() if notice.count() else None}")
+            notice = page.locator(f'.tile[data-tile-id="{T}"] .plot-status')
+            sh.log.append(f"{name}: status = {notice.get_attribute('data-summary') if notice.count() else None}")
             page.mouse.move(2, 2)
             page.locator(f'.tile[data-tile-id="{T}"] .tile-content').screenshot(path=str(OUT / f"{name}.png"))
             sh.log.append(f"wrote {name}.png")

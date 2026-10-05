@@ -1,0 +1,200 @@
+{
+  "name": "protocol-D-locked-vs-focused-cell",
+  "timestamp": "2026-10-04T20:45:51+00:00",
+  "dataset": "bm_aging.zarr",
+  "datasetName": "bm_aging",
+  "constants": {
+    "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+    "focusedGene": "S100a9",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "gene-plot-D1": {
+      "id": "gene-plot-D1",
+      "type": "gene-plot",
+      "title": "D | fold change: locked HSC (x) vs focused cell (y)",
+      "config": {
+        "id": "gene-plot-D1",
+        "title": "D | fold change: locked HSC (x) vs focused cell (y)",
+        "x": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+          "locked": true
+        },
+        "y": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+          "locked": false
+        },
+        "z": null,
+        "color": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mahalanobis",
+          "column": ""
+        },
+        "pointSize": 5,
+        "pointOpacity": 0.8,
+        "colorScale": "Viridis",
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ]
+      },
+      "isSelectionTile": false
+    },
+    "cell-plot-D2": {
+      "id": "cell-plot-D2",
+      "type": "cell-plot",
+      "title": "D | cell types (locate the two cells)",
+      "config": {
+        "id": "cell-plot-D2",
+        "title": "D | cell types (locate the two cells)",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obs",
+          "key": "highres_celltype",
+          "column": ""
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "colorScale": "Viridis",
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ]
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+      "focusedGene": "S100a9",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 60,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 40,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "gene-plot-D1",
+              "controlsVisible": true
+            },
+            {
+              "type": "tile",
+              "id": "cell-plot-D2",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "gene-plot-D1": false,
+        "cell-plot-D2": false
+      },
+      "panelConfigs": {
+        "gene-plot-D1": {
+          "id": "gene-plot-D1",
+          "title": "D | fold change: locked HSC (x) vs focused cell (y)",
+          "x": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+            "locked": true
+          },
+          "y": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+            "locked": false
+          },
+          "z": null,
+          "color": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mahalanobis",
+            "column": ""
+          },
+          "pointSize": 5,
+          "pointOpacity": 0.8,
+          "colorScale": "Viridis",
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ]
+        },
+        "cell-plot-D2": {
+          "id": "cell-plot-D2",
+          "title": "D | cell types (locate the two cells)",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obs",
+            "key": "highres_celltype",
+            "column": ""
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "colorScale": "Viridis",
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

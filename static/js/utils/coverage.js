@@ -68,6 +68,11 @@ export const GAP = Object.freeze({
     UNFOCUSED: 'unfocused',
     /** The request hit a server-side cap (max_cells/max_genes per request). */
     CAPPED: 'capped',
+    /**
+     * Cells the cell subset (or its current part) does not show. Not loaded
+     * at all, so no filter counts them; `withOutside` adds them to the total.
+     */
+    OUTSIDE: 'outside',
     /** Nobody described this surface's coverage. A defect, rendered as one. */
     UNREPORTED: 'unreported'
 });
@@ -110,6 +115,7 @@ const REASON_HEADLINE = Object.freeze({
     [GAP.EMPTY]: 'Some values are empty',
     [GAP.FAILED]: 'Some data could not be read',
     [GAP.FILTERED]: 'Some points are hidden',
+    [GAP.OUTSIDE]: 'Some cells are not in the subset',
     [GAP.UNAVAILABLE]: 'Some data is not available for this dataset',
     [GAP.UNFOCUSED]: 'Nothing is focused yet',
     [GAP.CAPPED]: 'The request hit a server limit',
@@ -121,10 +127,16 @@ const GAP_LABEL = Object.freeze({
     [GAP.EMPTY]: 'no values',
     [GAP.FAILED]: 'failed to read',
     [GAP.FILTERED]: 'filtered out',
+    [GAP.OUTSIDE]: 'not loaded',
     [GAP.UNAVAILABLE]: 'not in this dataset',
     [GAP.UNFOCUSED]: 'needs a focused selection',
     [GAP.CAPPED]: 'server limit reached',
     [GAP.UNREPORTED]: 'not reported'
+});
+
+/** A label that says more than its reason's, for a gap of this kind. */
+const KIND_LABEL = Object.freeze({
+    mode: 'not available in large-plot mode'
 });
 
 /**
@@ -136,6 +148,7 @@ const GAP_LABEL = Object.freeze({
 const SEVERITY_RANK = Object.freeze({
     ok: 0,
     [GAP.FILTERED]: 1,
+    [GAP.OUTSIDE]: 1,
     [GAP.UNFOCUSED]: 1,
     [GAP.EMPTY]: 2,
     [GAP.UNAVAILABLE]: 2,
@@ -147,6 +160,7 @@ const SEVERITY_RANK = Object.freeze({
 /** Severity bucket used for styling; see `.coverage-notice--*` in styles.css. */
 const SEVERITY_CLASS = Object.freeze({
     [GAP.FILTERED]: 'notice',
+    [GAP.OUTSIDE]: 'notice',
     [GAP.UNFOCUSED]: 'notice',
     [GAP.EMPTY]: 'warning',
     [GAP.UNAVAILABLE]: 'warning',
@@ -176,6 +190,11 @@ function isBlank(v) {
  * @property {string} detail  Free text shown to the user; say what and why.
  * @property {string} source  Where it applies, e.g. `obs.celltype`, `x-axis`.
  * @property {number|null} count  How many entities this gap accounts for.
+ * @property {string} kind  What undoes it, for the status strip: 'outside',
+ *   'coords', 'table', 'nan', 'outliers', 'mode' (a limit of large-plot
+ *   mode), or '' (nothing the panel can undo).
+ * @property {boolean} hides  Whether those entities are off the screen. A gap
+ *   of a DESCRIBES contributor (a colour column) does not hide its points.
  */
 
 /**
@@ -203,7 +222,9 @@ export class Coverage {
                 reason: isReason(g.reason) ? g.reason : GAP.UNREPORTED,
                 detail: g.detail || '',
                 source: g.source || '',
-                count: typeof g.count === 'number' ? g.count : null
+                count: typeof g.count === 'number' ? g.count : null,
+                hides: this.role === ROLE.DESCRIBES ? false : g.hides !== false,
+                kind: g.kind || ''
             }))
         );
         Object.freeze(this);
@@ -263,6 +284,23 @@ export class Coverage {
         return new Coverage({
             shown: this.shown, total: this.total, unit: this.unit, role: this.role,
             gaps: [...this.gaps, { reason, detail, source, count }]
+        });
+    }
+
+    /**
+     * Returns a new Coverage that also counts `count` entities the subset (or
+     * its part) does not show: they join the total, and a gap says why. The
+     * total is then the dataset's, as the header's "Cells: 50 of 200" is.
+     * @param {number} count
+     * @param {string} detail  e.g. 'not in part 2 of 4'
+     */
+    withOutside(count, detail) {
+        if (!(count > 0)) return this;
+        return new Coverage({
+            shown: this.shown,
+            total: typeof this.total === 'number' ? this.total + count : this.total,
+            unit: this.unit, role: this.role,
+            gaps: [{ reason: GAP.OUTSIDE, detail, source: 'subset', count, kind: 'outside' }, ...this.gaps]
         });
     }
 
@@ -435,7 +473,7 @@ export class Coverage {
     lines() {
         return this.gaps.map(g => {
             const where = g.source ? `${g.source}: ` : '';
-            const label = GAP_LABEL[g.reason] || g.reason;
+            const label = KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason;
             const count = typeof g.count === 'number' && g.count > 0
                 ? ` (${fmt(g.count)} ${this.unit})` : '';
             const why = g.detail ? ` -- ${g.detail}` : '';
@@ -788,6 +826,13 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     // dataset (settylab/annzarro#45 answers a missing obs/var column or
     // obsm/varm/obsp/varp/layer key with 404 instead of an empty 200). Read as
     // a generic failure it turned every absent column into "failed to read".
+    // `names_not_loaded`: the cell names of a dataset too large to list
+    // (remote-names.js) -- a limit of large-plot mode: nothing failed, and the
+    // dataset does have them, so not "not in this dataset" either.
+    if (serverReason === 'names_not_loaded') {
+        return new Coverage({ shown: 0, total, unit, role,
+            gaps: [{ reason: GAP.UNAVAILABLE, detail: message, source, count: total, kind: 'mode' }] });
+    }
     if (serverReason === 'not_found' || serverReason === 'key_not_found') {
         return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });
     }
@@ -808,7 +853,10 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
  * through Coverage puts them on the plot itself, in the same voice as every
  * other reason.
  *
- * @param {Object} filterStats  As produced by `createFilterMask`.
+ * @param {Object} filterStats  As produced by `createFilterMask`. With
+ *   `exclusive` ({coords, table, nan, outliers}: each hidden point counted
+ *   once, under the first of those that applies) the lines add up to
+ *   `filtered`; without it, the per-reason counts, which may overlap.
  * @param {string} unit  'cells' | 'genes'.
  * @param {Object} [opts]
  * @param {Object} [opts.axisCoverage]  `{ x, y, z }` -- the coverage reported by
@@ -825,8 +873,8 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
 
     const total = typeof filterStats.total === 'number' ? filterStats.total : null;
     const gaps = [];
-    const add = (count, source, detail) => {
-        if (count > 0) gaps.push({ reason: GAP.FILTERED, detail, source, count });
+    const add = (count, source, detail, kind = '') => {
+        if (count > 0) gaps.push({ reason: GAP.FILTERED, detail, source, count, kind });
     };
 
     // A series-level reason and a filter line are the SAME FACT only when the
@@ -875,17 +923,45 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
         add(count, source, detail);
     };
 
-    addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
-    addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
-    addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
-    if (filterStats.hideNaNActive) {
-        add(filterStats.colorNaN, 'colour', 'points with no colour value (hide-NaN is on)');
-    }
-    if (filterStats.hideOutliersActive) {
-        add(filterStats.colorOutliers, 'colour', 'points outside the colour range (hide-outliers is on)');
-    }
-    if (filterStats.tableFilterActive) {
-        add(filterStats.tableFiltered, 'table filter', 'points not in the linked table');
+    const only = filterStats.exclusive;
+    if (only) {
+        // Each hidden point counted once, under the first reason that applies
+        // (createFilterMask), so the lines add up to `filtered`. The points an
+        // axis's own series already accounts for are its line, not this one.
+        const axes = ['x', 'y', 'z'].filter(a => filterStats[`${a}NaN`] > 0);
+        let accounted = 0;
+        for (const a of axes) {
+            const cov = axisCoverage && axisCoverage[a];
+            if (!(cov instanceof Coverage) || !cov.gaps.some(g => g.reason !== GAP.UNREPORTED)) continue;
+            const n = accountedFor(cov);
+            if (n !== null) accounted += Math.min(Math.max(0, n), filterStats[`${a}NaN`]);
+        }
+        const coords = Math.max(0, (only.coords || 0) - accounted);
+        if (only.coords > 0 && coords === 0) suppressed = true;
+        add(coords, axes.length === 1 ? `${axes[0]}-axis` : 'coordinates',
+            `points with no ${axes.join('/') || 'x/y'} value`, 'coords');
+        if (filterStats.tableFilterActive) {
+            add(only.table, 'table filter', 'points not in the linked table', 'table');
+        }
+        if (filterStats.hideNaNActive) {
+            add(only.nan, 'colour', 'points with no colour value (Hide NaN is on)', 'nan');
+        }
+        if (filterStats.hideOutliersActive) {
+            add(only.outliers, 'colour', 'points outside the colour range (Hide Outliers is on)', 'outliers');
+        }
+    } else {
+        addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
+        addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
+        addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
+        if (filterStats.hideNaNActive) {
+            add(filterStats.colorNaN, 'colour', 'points with no colour value (Hide NaN is on)');
+        }
+        if (filterStats.hideOutliersActive) {
+            add(filterStats.colorOutliers, 'colour', 'points outside the colour range (Hide Outliers is on)');
+        }
+        if (filterStats.tableFilterActive) {
+            add(filterStats.tableFiltered, 'table filter', 'points not in the linked table');
+        }
     }
 
     const hidden = typeof filterStats.filtered === 'number' ? filterStats.filtered : null;
@@ -898,4 +974,96 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
     // sentence -- the series-level reason supplies the sentence.
     if (gaps.length === 0 && !suppressed) return Coverage.complete(total, unit);
     return new Coverage({ shown, total, unit, gaps });
+}
+
+/**
+ * A count for the status strip: exact below a million ("99,812"), compact
+ * above ("95.6M"). The popover uses exact counts throughout (`exactCount`).
+ * @param {number} n
+ * @returns {string}
+ */
+export function compactCount(n) {
+    if (typeof n !== 'number' || !isFinite(n)) return String(n);
+    if (Math.abs(n) < 1e6) return exactCount(n);
+    const [div, unit] = Math.abs(n) >= 1e9 ? [1e9, 'B'] : [1e6, 'M'];
+    const x = n / div;
+    return (Math.abs(x) >= 100 ? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/, '')) + unit;
+}
+
+/** A count with thousands separators: "95,624,334". */
+export function exactCount(n) {
+    return typeof n === 'number' && isFinite(n) ? n.toLocaleString('en-US') : String(n);
+}
+
+/** Short chip text per kind of hidden point; see `breakdown`. */
+const KIND_CHIP = Object.freeze({
+    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden'
+});
+
+/** Order in which the breakdown lists reasons, as createFilterMask attributes them. */
+const KIND_ORDER = Object.freeze({ outside: 0, coords: 1, '': 2, table: 3, nan: 4, outliers: 5 });
+
+/**
+ * What the status strip and its popover say about a Coverage: the headline
+ * and one row per reason.
+ *
+ * `rows` are the gaps that take points off the screen, with their counts; the
+ * counts add up to `hidden` (total - shown). Whatever they do not account for
+ * is a row of its own, `unattributed`, rendered as UNREPORTED is: a reason
+ * nobody gave is displayed, never dropped. `notes` are gaps that hide nothing
+ * (a colour column that failed to read over points that are all drawn) or
+ * carry no count.
+ *
+ * @param {Coverage} coverage
+ * @returns {{shown: ?number, total: ?number, hidden: ?number, unit: string,
+ *   severity: string, headline: string, headlineExact: string,
+ *   rows: Array<{kind: string, reason: string, chip: string, label: string,
+ *   count: number}>, notes: Array<{reason: string, label: string}>,
+ *   unattributed: number}}
+ */
+export function breakdown(coverage) {
+    const cov = coverage instanceof Coverage ? coverage : Coverage.unreported();
+    const { shown, total, unit } = cov;
+    const counted = typeof shown === 'number' && typeof total === 'number';
+    const hidden = counted ? Math.max(0, total - shown) : null;
+    const label = (g) => {
+        if (g.reason === GAP.OUTSIDE) return g.detail.charAt(0).toUpperCase() + g.detail.slice(1);
+        const where = g.source ? `${g.source}: ` : '';
+        return `${where}${KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason}${g.detail ? ` -- ${g.detail}` : ''}`;
+    };
+    const chip = (g) => g.reason === GAP.OUTSIDE ? g.detail
+        : KIND_CHIP[g.kind] || `${g.source ? `${g.source} ` : ''}${GAP_LABEL[g.reason] || g.reason}`;
+    const rows = [];
+    const notes = [];
+    for (const g of cov.gaps) {
+        if (g.hides && typeof g.count === 'number' && g.count > 0 && counted) {
+            rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count });
+        } else {
+            notes.push({ reason: g.reason, label: label(g) });
+        }
+    }
+    rows.sort((a, b) => (KIND_ORDER[a.kind] ?? 2) - (KIND_ORDER[b.kind] ?? 2));
+    const sum = rows.reduce((t, r) => t + r.count, 0);
+    const unattributed = counted ? Math.max(0, hidden - sum) : 0;
+    if (unattributed > 0) {
+        rows.push({ kind: 'unattributed', reason: GAP.UNREPORTED, chip: 'no reason given',
+            label: GAP_LABEL[GAP.UNREPORTED] + ' -- nothing says why these are not shown', count: unattributed });
+    }
+    let headline;
+    let headlineExact;
+    if (!counted) {
+        headline = headlineExact = cov.headline() || (typeof total === 'number' ? `${exactCount(total)} ${unit}` : unit);
+    } else if (hidden === 0) {
+        headline = `${compactCount(total)} ${unit}`;
+        headlineExact = `${exactCount(total)} ${unit}`;
+    } else {
+        let a = compactCount(shown);
+        const b = compactCount(total);
+        // "95.6M of 95.6M" would say nothing is missing
+        if (a === b) a = exactCount(shown);
+        headline = `${a} of ${b} ${unit} shown`;
+        headlineExact = `${exactCount(shown)} of ${exactCount(total)} ${unit} shown`;
+    }
+    return { shown, total, hidden, unit, severity: cov.isComplete ? 'ok' : cov.severity,
+        headline, headlineExact, rows, notes, unattributed };
 }

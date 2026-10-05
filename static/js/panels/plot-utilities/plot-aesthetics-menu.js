@@ -1,5 +1,7 @@
-import { exportWithCoverage } from '../../utils/panel-surface.js';
+import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle } from './plot-make-helper.js';
+import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
+import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -337,20 +339,7 @@ export function createPopoverContent(id, settings) {
         <!-- Export Section -->
         <div class="aesthetics-section">
             <h6>Export</h6>
-            <div class="d-flex flex-wrap gap-2 mb-2">
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="jpeg" id = "download-jpeg-${id}" data-id="${id}">
-                    <i class="fas fa-file-image"></i> JPEG
-                </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="svg" id = "download-svg-${id}" data-id="${id}">
-                    <i class="fas fa-file-image"></i> SVG
-                </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="webp" id = "download-webp-${id}" data-id="${id}">
-                    <i class="fas fa-file-image"></i> WEBP
-                </button>
-                <button class="btn btn-sm btn-outline-primary export-btn" data-format="png"id = "download-png-${id}" data-id="${id}">
-                    <i class="fas fa-file-image"></i> PNG
-                </button>
-            </div>
+            ${exportButtonsHtml(id, settings)}
             
             <div class="mb-2">
                 <label class="form-label mb-1">Dimensions</label>
@@ -371,6 +360,53 @@ export function createPopoverContent(id, settings) {
         </div>
     </div>
     `;
+}
+
+/** The export's pixel size and scale from the panel's settings. */
+function exportOptions(settings) {
+  return { width: settings.exportWidth || 1200, height: settings.exportHeight || 800, scale: settings.scaleExport ? 2 : 1 };
+}
+
+const EXPORT_ADVICE = 'Export it as shown instead, close a plot, or show fewer cells.';
+
+/**
+ * The export buttons. A full-resolution export draws the plot again, which
+ * needs about as much browser memory as the plot itself; when that does not
+ * fit (utils/memory-guard-ui.js) its buttons are disabled with the reason
+ * written under them, and the plot as shown on screen, which costs only its
+ * pixels, is offered beside them.
+ */
+function exportButtonsHtml(id, settings) {
+  const gd = document.getElementById(`plot-container-${id}`);
+  let check;
+  try { check = gd && gd._fullLayout ? exportCheck(gd, exportOptions(settings)) : null; } catch { check = null; }
+  const blocked = !!check && check.verdict === 'block';
+  const short = !!check && !check.fits;
+  const why = short ? refusalText(check, EXPORT_ADVICE) : '';
+  const off = blocked ? ` disabled aria-disabled="true" title="${escapeAttr(why)}"` : '';
+  const full = ['jpeg', 'svg', 'webp', 'png'].map(f =>
+    `<button class="btn btn-sm btn-outline-primary export-btn" data-format="${f}" data-how="full" id="download-${f}-${id}" data-id="${id}"${off}>
+                    <i class="fas fa-file-image"></i> ${f.toUpperCase()}
+                </button>`).join('');
+  let shown = '';
+  if (short && gd && canSnapshot(gd)) {
+    const { width, height } = snapshotSize(gd);
+    shown = `<div class="d-flex flex-wrap gap-2 mb-1 export-shown-row">
+                <span class="small align-self-center">As shown (${width} \u00d7 ${height} px):</span>
+                ${['png', 'svg'].map(f => `<button class="btn btn-sm btn-outline-primary export-btn" data-format="${f}" data-how="shown"
+                    id="download-shown-${f}-${id}" data-id="${id}" title="The plot as it is on screen; needs only its pixels">
+                    <i class="fas fa-camera"></i> ${f.toUpperCase()}</button>`).join('')}
+            </div>`;
+  }
+  const note = short
+    ? `<div class="small mb-2 export-memory-note ${blocked ? 'text-danger' : 'text-warning-emphasis'}" role="note">${escapeAttr(
+        blocked ? `Full resolution: ${why}` : `Full resolution may run out of memory: ${why}`)}</div>`
+    : '';
+  return `<div class="d-flex flex-wrap gap-2 mb-2">${full}</div>${note}${shown}`;
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -893,10 +929,12 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         // Export button handler
         const exportBtn = target.closest('.export-btn');
         if (exportBtn) {
+            // a click, not the change/input events this handler also gets
+            if (e.type !== 'click' || exportBtn.disabled) return;
             const format = exportBtn.getAttribute('data-format');
             const targetId = exportBtn.getAttribute('data-id');
             if (targetId === id && format) {
-                exportPlot(plotContainer, format, settings);
+                exportPlot(plotContainer, format, settings, exportBtn.getAttribute('data-how') || 'full');
             }
             return;
         }
@@ -1686,26 +1724,23 @@ let _exportInProgress = false;
  * @param {HTMLElement} plotContainer - Plot container element
  * @param {string} format            - 'svg', 'png', 'jpeg', 'webp'
  * @param {Object} settings          - may include exportWidth, exportHeight, scaleExport
+ * @param {string} [how]             - 'full' (drawn again at the export's size) or 'shown' (as on screen)
  */
-export async function exportPlot(plotContainer, format, settings) {
+export async function exportPlot(plotContainer, format, settings, how = 'full') {
   if (!plotContainer) return;
   if (_exportInProgress) {
     console.warn('Export already in progress – please wait.');
     return;
   }
-  const downloadButton = document.getElementById(`download-${format}-${getPanelId(plotContainer)}`);
-  _exportInProgress = true;
-
-  const width  = settings.exportWidth  || 1200;
-  const height = settings.exportHeight ||  800;0
-  const scale  = settings.scaleExport ? 2 : 1;
+  const panelId = getPanelId(plotContainer);
+  const downloadButton = document.getElementById(how === 'shown' ? `download-shown-${format}-${panelId}` : `download-${format}-${panelId}`);
+  const opts = exportOptions(settings);
   const filename = 'plot_' + new Date()
     .toISOString()
     .replace(/[:.]/g, '-');
 
-  const config = { format, width, height, scale, filename };
-
   const showNotification = (message, autoHide = true, type = 'success') => {
+      if (!downloadButton) return null;
       // Remove any existing notification
       const existingPopover = bootstrap.Popover.getInstance(downloadButton);
       if (existingPopover) existingPopover.dispose();
@@ -1730,39 +1765,59 @@ export async function exportPlot(plotContainer, format, settings) {
       
     };
 
+  // checked again at the click: the panels open may have changed since the menu was drawn
+  const check = how === 'full' ? exportCheck(plotContainer, opts) : null;
+  if (check && check.verdict === 'block') {
+    showNotification(`Not exported: ${refusalText(check, EXPORT_ADVICE)}`, true, 'error');
+    return;
+  }
+  _exportInProgress = true;
   const popoverContainer = showNotification("Preparing Image", false);
   try {
-    await exportWithCoverage(plotContainer, () => Plotly.downloadImage(plotContainer, config));
+    await guarded(check, { panel: panelId, action: 'export', format }, () =>
+      exportImage(plotContainer, how, { format, ...opts, filename }));
   } catch (err) {
     console.error('Error exporting plot:', err);
-    alert('Failed to export plot. Please try again.');
+    // beside the button, as the other export outcomes are; not a blocking alert
+    showNotification('Export failed; please try again', true, 'error');
   } finally {
     _exportInProgress = false;
-    popoverContainer.dispose();
-    console.log("Download Completed")
+    if (popoverContainer) popoverContainer.dispose();
   }
 }
 
 /**
- * Copy the Plotly plot to clipboard as a PNG image
+ * The modebar camera: a full-resolution PNG when it fits; otherwise the
+ * status strip says why, with "Export as shown" (a click, never a reroute).
+ */
+registerCameraExport(async (gd, opts) => {
+  const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
+  const check = exportCheck(gd, o);
+  if (check.verdict === 'block') {
+    const why = refusalText(check, EXPORT_ADVICE);
+    setStatusTag(gd, 'memory', { text: 'Not exported: browser memory', severity: 'warning', title: why,
+      pop: { text: why, actions: canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
+    nudgeStatusTag(gd, 'memory');
+    return;
+  }
+  await guarded(check, { panel: getPanelId(gd), action: 'export', format: 'png' }, () =>
+    exportImage(gd, 'full', { format: opts.format || 'png', ...o, filename: opts.filename || 'annzarro_plot' }));
+});
+
+/**
+ * Copy the Plotly plot to clipboard as a PNG image: one image, drawn once
+ * (full resolution when it fits in memory, else not copied).
  * @param {HTMLElement} plotContainer – Plotly graph div
  * @param {Object} settings – May include exportWidth, exportHeight
  */
 async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
-    const width  = settings.exportWidth  || 1200;
-    const height = settings.exportHeight ||  800;
-    
-    // Get the button for positioning the popover
+    const opts = { ...exportOptions(settings), scale: 1 };
     const copyBtn = document.getElementById(`copy-to-clipboard-${getPanelId(plotContainer)}`);
-    
-    // Helper function to show notification popover
     const showNotification = (message, type = 'success') => {
-      // Remove any existing notification
+      if (!copyBtn) return;
       const existingPopover = bootstrap.Popover.getInstance(copyBtn);
       if (existingPopover) existingPopover.dispose();
-      
-      // Create new notification popover
       const popover = new bootstrap.Popover(copyBtn, {
         content: message,
         placement: 'top',
@@ -1770,77 +1825,26 @@ async function copyPlotToClipboard(plotContainer, settings) {
         trigger: 'manual',
         delay: { hide: 1500 }
       });
-      
-      // Show and auto-hide after 2 seconds
       popover.show();
       setTimeout(() => {
         if (popover) popover.dispose();
       }, 2000);
     };
-  
-    try {
-      // 1) Render plot to a data‐URL
-      const dataUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, {
-        format: 'png', width, height, scale: 1
-      }));
-  
-      // 2) Convert the data‐URL to a Blob
-      const blob = await fetch(dataUrl).then(res => res.blob());
-  
-      // 3) Attempt to write the blob into the clipboard
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]);
-        showNotification('✔️ Plot image copied to clipboard!', 'success');
-      } else {
-        throw new Error('Clipboard API not supported');
-      }
+    const check = exportCheck(plotContainer, opts);
+    if (check.verdict === 'block') {
+      showNotification(`Not copied: ${refusalText(check, EXPORT_ADVICE)}`, 'error');
+      return;
     }
-    catch (err) {
-      console.warn('Clipboard copy failed, trying fallback:', err);
-      
-      try {
-        // Fallback: render to canvas, use canvas.toBlob() API
-        const imgUrl = await exportWithCoverage(plotContainer, () => Plotly.toImage(plotContainer, { format:'png', width, height }));
-        const img = new Image();
-        
-        img.onload = function() {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          
-          canvas.toBlob(async blob => {
-            try {
-              if (navigator.clipboard && window.ClipboardItem) {
-                await navigator.clipboard.write([
-                  new ClipboardItem({ 'image/png': blob })
-                ]);
-                showNotification('✔️ Plot image copied to clipboard!', 'success');
-              } else {
-                throw new Error('Clipboard API not supported');
-              }
-            } catch (err) {
-              console.error('All clipboard methods failed, downloading instead:', err);
-              const downloadLink = document.createElement('a');
-              downloadLink.href = URL.createObjectURL(blob);
-              downloadLink.download = `plot_${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
-              document.body.appendChild(downloadLink);
-              downloadLink.click();
-              document.body.removeChild(downloadLink);
-              
-              showNotification('Plot saved as PNG', 'info');
-            }
-          }, 'image/png');
-        };
-        
-        img.src = imgUrl;
-      } catch (finalErr) {
-        console.error('All copy methods failed:', finalErr);
-        showNotification('Could not copy image', 'error');
-      }
+    try {
+      const dataUrl = await guarded(check, { panel: getPanelId(plotContainer), action: 'export', format: 'png' },
+        () => exportWithCoverage(plotContainer, () => fullImage(plotContainer, { format: 'png', ...opts })));
+      const blob = await fetch(dataUrl).then(res => res.blob());
+      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('Clipboard API not supported');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      showNotification('Plot image copied to clipboard', 'success');
+    } catch (err) {
+      console.error('Copy to clipboard failed:', err);
+      showNotification('Could not copy image', 'error');
     }
   }
 

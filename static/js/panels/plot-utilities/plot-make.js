@@ -1,17 +1,26 @@
 import { DataManager } from '../../data-manager.js';
-import { notInSubsetLabel } from '../../utils/subset.js';
+import { outsideDetail } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
-import { updateColorSliderUI, updateColorControlsVisibility } from './panel-ui-update.js';
+import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
+import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
-import { drawPlot, clearForDraw, drawPlaceholder, renderModeNotice } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
+import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
+import { Config } from '../../config.js';
+import { colourKind } from '../../utils/memory-guard.js';
+import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { releasePlot } from '../../utils/release-plot.js';
+import {
+  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
+} from '../../utils/memory-guard-ui.js';
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -591,6 +600,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
 
 
+/** The default size and opacity for few points: the app's (server) defaults. */
+export function pointStyleBase() {
+  const d = (Config && Config.DEFAULTS) || {};
+  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+}
+
 /**
  * Loads data for all axes and then creates the plot.
  *
@@ -605,6 +620,11 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
  * @returns {Promise<void>}
  */
 export async function loadDataAndCreatePlot(container, plotContainer, settings, data, id, isFirstLoad = false, signal = null) {
+  // the subset dialog's load-time estimate learns from these draws
+  const started = performance.now();
+  // the browser memory guard's ledger: reserved before the draw, committed
+  // once it is drawn, cancelled otherwise (memoryGate)
+  let reserved = 0, drawn = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
@@ -613,6 +633,21 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
+
+    // A panel made while the dataset opens (within a second on a large store)
+    // came here before the names did and said the dataset had none, for good.
+    // Wait for them; only an opened dataset without names gets that sentence.
+    if (DataManager.namesPending()) {
+      loadingIndicator.show(plotContainer, 'names');
+      try {
+        await DataManager.whenNamesLoaded();
+      } finally {
+        loadingIndicator.hide(plotContainer, 'names');
+      }
+      if (signal && signal.aborted) {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      }
+    }
     
     if (isGenePlot) {
       // Validate that genes exist for gene plots
@@ -634,10 +669,23 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
     }
     
+    // Size and opacity the user has not set follow the number of points
+    // drawn: the subset, or every cell (utils/point-style.js)
+    const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
+    plotContainer._pointCount = nPoints;
+    applyAutoPointStyle(settings, nPoints, pointStyleBase());
+    showPointStyle(id, settings);
+    showColorSortControl(id, settings);
+
     // Check again for abort signal before showing loading indicator
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');
     }
+
+    // Will it fit next to the other panels? (utils/memory-guard-ui.js)
+    const token = await memoryGate(plotContainer, settings, id, isGenePlot, nPoints);
+    if (token === null) return;
+    reserved = token;
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
@@ -705,15 +753,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // The regular path cannot draw this many points (the tab runs out
           // of memory). Say what is not available and keep any plot drawn.
           if (Array.isArray(plotContainer.data) && plotContainer.data.length) {
-            renderModeNotice(plotContainer, refusal, 'warning');
+            setStatusTag(plotContainer, 'refused', { text: 'Not drawn: see why', severity: 'warning',
+              title: refusal, pop: { text: refusal, actions: [['subset-regular', 'Subset\u2026']] } });
           } else {
             drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal,
               { source: 'large-plot mode', unit: 'cells', total: nCells }), 'cells');
           }
           return;
         }
-        renderModeNotice(plotContainer, null);
+        setStatusTag(plotContainer, 'refused', null);
         await createLargePlot(plotContainer, settings, data, container, id);
+        drawn = true;
+        recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
@@ -721,13 +772,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         return;
       }
     }
-    renderModeNotice(plotContainer, null);
+    plotContainer.__isLarge = false;
+    setStatusTag(plotContainer, 'refused', null);
+    setStatusTag(plotContainer, 'large', null);
+    setStatusTag(plotContainer, 'focus', null);
 
     // Reset cached data without changing its reference. Until this load
     // finishes, `data.generation` is null: the series are half-built, and
     // incremental updates (a table filter, a focus change) must leave them
     // alone (isPlotDataCurrent in plot-update.js).
     const generation = DataManager.getDatasetGeneration();
+    // the cells these series are of: a part step keeps the generation
+    const subsetKey = DataManager.getSubsetParam();
     Object.keys(data).forEach(key => delete data[key]);
     data.generation = null;
     
@@ -845,7 +901,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('Table entities data loading aborted', 'AbortError');
         }
-        await updateTableEntities(data, settings);
+        await updateTableEntities(data, settings, plotContainer);
       })()
     );
 
@@ -898,6 +954,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     const unit = isGenePlot ? 'genes' : 'cells';
     data.coverage = panelLoadCoverage(data, settings, unit);
     data.generation = generation;
+    data.subsetKey = subsetKey;
 
     // Validate that x and y axes have data.
     if (data.x && data.x.values && data.x.values.length > 0 &&
@@ -905,10 +962,12 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       console.log(`Creating plot with ${data.x.values.length} data points`);
       data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
+      drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
       await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
       updateColorControlsVisibility(container, data.colorType, id);
+      if (!isGenePlot) recordLoad({ n: data.x.values.length, seconds: (performance.now() - started) / 1000 });
     } else {
       console.error('Insufficient data for plotting');
       const nx = data.x && data.x.values ? data.x.values.length : 0;
@@ -1003,7 +1062,80 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // Always hide the loading indicator in the finally block to ensure it happens
     // regardless of success, error or abortion
     loadingIndicator.hide(plotContainer, 'full-plot');
+    if (reserved) {
+      unmark();
+      if (drawn && plotContainer.isConnected) {
+        commit(id, null, reserved);
+      } else {
+        cancel(id, reserved);
+        // drawn into a panel closed meanwhile: free it now, not at GC
+        if (drawn) releasePlot(plotContainer);
+      }
+    }
   }
+}
+
+/**
+ * The browser memory check before a plot is drawn: every way a plot is
+ * drawn passes here (a new, duplicated, reopened or restored panel, a subset
+ * change, a full redraw). A plot that would not fit next to what the other
+ * panels hold is not drawn, and its status strip says why and what helps;
+ * a plot that was being drawn when the previous page died waits for "Draw
+ * anyway". With ui.memory.enforce warn it is drawn, with a warning tag.
+ * @returns {Promise<number|null>} null when refused; else the draw's ledger
+ *   token (0: the check failed and nothing was reserved)
+ */
+async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
+  const unit = isGenePlot ? 'genes' : 'cells';
+  const large = !isGenePlot && n > largePlotPoints();
+  let structure = null;
+  try { structure = await DataManager.getDatasetStructure(); } catch { /* colour kind unknown: numeric, the costliest */ }
+  const p = {
+    id, kind: isGenePlot ? 'gene-plot' : 'cell-plot', n, large, colour: colourKind(settings, structure),
+    threeD: !!settings.z,
+    livePlot: !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length)
+  };
+  const override = takeOverride(id);
+  const crashed = override ? null : crashedDrawing(id);
+  let result;
+  try {
+    result = drawCheck(p);
+  } catch (error) {
+    // the guard must never be why a plot is not drawn
+    console.warn('Browser memory check failed; drawing without it', error);
+    return 0;
+  }
+  let refusal = null;
+  if (crashed) {
+    refusal = { text: 'Not drawn: the tab ended last time',
+      why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
+        + 'Draw it anyway, or show fewer cells first.',
+      actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
+  } else if (result.verdict === 'block' && !override) {
+    refusal = { text: 'Not drawn: browser memory',
+      why: refusalText(result, 'Close a plot, or show fewer cells (a smaller subset).'),
+      actions: [['subset', 'Subset\u2026']] };
+  }
+  if (refusal) {
+    // no plot yet: the placeholder says it (with the way out); a plot drawn
+    // before stays, and its strip says this one was not drawn
+    if (!p.livePlot) {
+      drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal.why,
+        { source: 'browser memory', unit, total: n }), unit, { actions: refusal.actions });
+    } else {
+      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
+        pop: { text: refusal.why, actions: refusal.actions } });
+    }
+    return null;
+  }
+  setStatusTag(plotContainer, 'memory', result.verdict === 'warn'
+    ? { text: 'Over the memory budget', severity: 'warning', title: result.why,
+        pop: { text: refusalText(result, 'It is drawn anyway (ui.memory.enforce: warn); the tab may run out of memory.'),
+          actions: [['subset', 'Subset\u2026']] } }
+    : null);
+  const token = reserve(id, p);
+  markIfRisky(result, { panel: id, n, action: 'draw' });
+  return token;
 }
 
 
@@ -1020,40 +1152,25 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
  * @returns {Promise<void>}
  */
 /**
- * Ensures the filter widget exists in the plot container
- * 
- * @param {HTMLElement} plotContainer - The container element holding the plot
- * @returns {void}
- */
-function ensureFilterWidget(plotContainer) {
-  const plotId = plotContainer.id.replace('plot-container-', '');
-  let filterWidget = document.getElementById(`filter-widget-${plotId}`);
-  
-  if (!filterWidget) {
-    // If the widget doesn't exist (was cleared), recreate it
-    filterWidget = document.createElement('div');
-    filterWidget.id = `filter-widget-${plotId}`;
-    filterWidget.className = 'datapoint-filter-widget hidden';
-    filterWidget.innerHTML = `
-      <div class="filter-stats-title">Removed Datapoints</div>
-      <ul class="filter-stats-list">
-        <!-- Filter stats will be inserted here -->
-      </ul>
-      <div class="filter-total">
-        <span>Total:</span> <span class="filter-total-count">0 (0%)</span>
-      </div>
-    `;
-    plotContainer.appendChild(filterWidget);
-  }
-}
-
-/**
  * Create a filter mask and statistics for data points based on various criteria
  * 
  * @param {Object} data - Data object containing all data values
  * @param {Object} settings - Plot settings
  * @returns {Object} - Object containing indexMask and filter statistics
  */
+/**
+ * A cell panel's coverage with the cells the subset (or its part) does not
+ * show counted in: the total becomes the dataset's, as in the header's
+ * "Cells: 50 of 200", and one reason says where the rest are.
+ * @param {Coverage} coverage
+ * @param {string} [unit]  'cells' (the default) or 'genes', which no subset limits
+ * @returns {Coverage}
+ */
+export function withSubsetCoverage(coverage, unit = 'cells') {
+  if (unit !== 'cells') return coverage;
+  return coverage.withOutside(DataManager.getCellsNotInSubset(), outsideDetail(DataManager.getSubset()));
+}
+
 /**
  * The panel's LOAD coverage, assembled from the series CURRENTLY IN `data`.
  *
@@ -1249,10 +1366,20 @@ export function colorSortOrder(colors) {
   return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
 }
 
+/**
+ * Whether strong-on-top reorders points: on (the default) in a 2D plot. In
+ * 3D depth decides which points are in front, so the sort means nothing
+ * there and is skipped; settings.sortByColor is kept for 2D.
+ */
+export function colorSortApplies(settings) {
+  return !!settings && settings.sortByColor !== false && !settings.z;
+}
+
 export async function sortTracesByColor(gd, settings) {
-  if (!gd || !Array.isArray(gd.data) || settings.sortByColor === false || typeof Plotly === 'undefined') return;
+  if (!gd || !Array.isArray(gd.data) || !colorSortApplies(settings) || typeof Plotly === 'undefined') return;
   for (let i = 0; i < gd.data.length; i++) {
     const t = gd.data[i];
+    if (t && t.type === 'scatter3d') continue;
     const colors = t && t.marker && t.marker.color;
     if (!Array.isArray(colors) || t.marker.colorscale === undefined || t._azOrder) continue;
     const order = colorSortOrder(colors);
@@ -1476,6 +1603,21 @@ export function createFilterMask(data, settings) {
   // 7. Compute filtered count
   filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
 
+  // 8. Each hidden point once, under the first reason that applies, so the
+  // reasons the panel names add up to `filtered` (classifyFilterStats)
+  const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
+  const table = tableFilterMask && settings.removeNonTableEntries ? tableFilterMask : null;
+  const nan = colorValidMask && settings.hideNaN ? colorValidMask : null;
+  const outliers = colorRangeMask && settings.hideOutliers ? colorRangeMask : null;
+  for (let i = 0; i < totalPts; i++) {
+    if (indexMask[i]) continue;
+    if (!xMask[i] || !yMask[i] || (zMask && !zMask[i])) only.coords++;
+    else if (table && !table[i]) only.table++;
+    else if (nan && !nan[i]) only.nan++;
+    else if (outliers && !outliers[i]) only.outliers++;
+  }
+  filterStats.exclusive = only;
+
   return { indexMask, filterStats };
 }
 
@@ -1483,16 +1625,29 @@ export function createFilterMask(data, settings) {
  * Updates the table entities Set in the data object based on the current table selection
  * Also creates tableFilterMask for filtering operations
  * 
+ * A CLOSED table's filter is applied by name (utils/closed-table.js): its
+ * row indexes belong to the cells it was closed on. Cells it never had are
+ * not shown, and the plot's status line says the filter is out of date.
+ *
  * @param {Object} data - Data object to update with tableEntities
  * @param {Object} settings - Plot settings containing tableFilter
+ * @param {HTMLElement} [plotContainer] - where to say a closed table's filter is out of date
  * @returns {Promise<boolean>} - Promise resolving to true if tableEntities changed, false otherwise
  */
-export async function updateTableEntities(data, settings) {
+export async function updateTableEntities(data, settings, plotContainer = null) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  const stale = (s) => {
+    data.tableFilterStale = s;
+    if (plotContainer) {
+      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: s.text,
+        pop: { text: s.text, actions: [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']] } } : null);
+    }
+  };
   
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
+    stale(null);
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -1521,19 +1676,30 @@ export async function updateTableEntities(data, settings) {
   }
   
   // Create a new Set of table entities
-  const newTableEntities = new Set();
+  let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  
-  // Get entity names based on indices in the table
-  tableConfig.currentEntries.forEach(index => {
-    if (entities && index < entities.length) {
-      const entityName = entities[index];
-      if (entityName) {
-        newTableEntities.add(entityName);
+  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel));
+
+  if (closed) {
+    // by name, on the cells shown now
+    const { passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []);
+    newTableEntities = passing;
+    const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
+  } else {
+    stale(null);
+    // Get entity names based on indices in the table
+    tableConfig.currentEntries.forEach(index => {
+      if (entities && index < entities.length) {
+        const entityName = entities[index];
+        if (entityName) {
+          newTableEntities.add(entityName);
+        }
       }
-    }
-  });
+    });
+  }
   
   // Compare with existing tableEntities to see if they've changed
   let changed = false;
@@ -1974,120 +2140,6 @@ export function buildPlotLayout(settings, data) {
   return layout;
 }
 
-/**
- * Updates the datapoint filter widget with the current filter statistics
- * 
- * @param {HTMLElement} plotContainer - The DOM element containing the plot
- * @param {object} filterStats - Statistics about filtered datapoints
- */
-function updateFilterWidget(plotContainer, filterStats) {
-  const plotId = plotContainer.id.replace('plot-container-', '');
-  const widget = document.getElementById(`filter-widget-${plotId}`);
-  
-  if (!widget) return;
-  
-  const statsList = widget.querySelector('.filter-stats-list');
-  const totalCount = widget.querySelector('.filter-total-count');
-  
-  // Clear existing items
-  statsList.innerHTML = '';
-  
-  // Track if we have any filters to display
-  let hasFilters = false;
-  
-  // Add items for each filter reason - axis NaNs are always filtered by Plotly
-  if (filterStats.xNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">X-axis NaN:</span>
-        <span class="filter-count">${filterStats.xNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.yNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Y-axis NaN:</span>
-        <span class="filter-count">${filterStats.yNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  if (filterStats.zNaN > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Z-axis NaN:</span>
-        <span class="filter-count">${filterStats.zNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color NaN in the stats when hideNaN is active
-  if (filterStats.colorNaN > 0 && filterStats.hideNaNActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color NaN:</span>
-        <span class="filter-count">${filterStats.colorNaN.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show color outliers when hideOutliers is active
-  if (filterStats.colorOutliers > 0 && filterStats.hideOutliersActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Color outliers:</span>
-        <span class="filter-count">${filterStats.colorOutliers.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Only show table filtered entries when removeNonTableEntries is active 
-  // and there are actually entries being filtered out
-  if (filterStats.tableFiltered > 0 && filterStats.tableFilterActive) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item">
-        <span class="filter-reason">Table filtered:</span>
-        <span class="filter-count">${filterStats.tableFiltered.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-  
-  // Cells outside the subset count as hidden too, so the total accounts
-  // for every cell of the dataset
-  const notInSubset = filterStats.notInSubset || 0;
-  if (notInSubset > 0) {
-    hasFilters = true;
-    statsList.innerHTML += `
-      <li class="filter-stats-item" title="Not loaded: outside the cell subset or its current part (Cells, above the panels)">
-        <span class="filter-reason">${notInSubsetLabel(DataManager.getSubset())}:</span>
-        <span class="filter-count">${notInSubset.toLocaleString('en-US')}</span>
-      </li>
-    `;
-  }
-
-  // Update total count and percentage
-  const hidden = filterStats.filtered + notInSubset;
-  const all = filterStats.total + notInSubset;
-  const percentage = all > 0 ? Math.round((hidden / all) * 100) : 0;
-  
-  totalCount.textContent = `${hidden.toLocaleString('en-US')} (${percentage}%)`;
-  
-  // Show/hide the widget based on whether there are any filters
-  if (hasFilters) {
-    widget.classList.remove('hidden');
-  } else {
-    widget.classList.add('hidden');
-  }
-}
-
 export async function createPlot(container, plotContainer, settings, data, id, isFirstLoad = false) {
   
   
@@ -2144,10 +2196,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     x: data.x && data.x.coverage, y: data.y && data.y.coverage,
     z: data.z && data.z.coverage
   };
-  const panelCoverage = Coverage.merge(
+  const panelCoverage = withSubsetCoverage(Coverage.merge(
     [loadCoverage, classifyFilterStats(filterStats, unit, { axisCoverage })],
     unit
-  );
+  ), unit);
   
   // Apply the filter mask only if explicit filtering is enabled
   let filteredData = data;
@@ -2180,13 +2232,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   const layout = buildPlotLayout(settings, data);
 
-  // Setup the filter widget regardless of color type; a graph already
-  // drawn stays, and the new points are drawn into it
+  // A graph already drawn stays, and the new points are drawn into it
   clearForDraw(plotContainer);
-  ensureFilterWidget(plotContainer);
-  
-  // Always update the filter widget with statistics
-  updateFilterWidget(plotContainer, filterStats);
 
   // Branch for different color types
   if (filteredData.colorType === 'categorical') {

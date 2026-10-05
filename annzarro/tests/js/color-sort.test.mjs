@@ -27,7 +27,7 @@ globalThis.Plotly = new Proxy({}, { get: (_, k) => k !== 'restyle' ? () => Promi
 } });
 globalThis.fetch = async () => ({ ok: false, statusText: 'test' });
 
-const { colorSortOrder, sortTracesByColor, unsortTraces } =
+const { colorSortOrder, sortTracesByColor, unsortTraces, colorSortApplies } =
     await import('../../../static/js/panels/plot-utilities/plot-make.js');
 
 test('order: by |colour| ascending, missing first, stable for ties', () => {
@@ -65,4 +65,20 @@ test('sortByColor false keeps data order', async () => {
     const g = gd();
     await sortTracesByColor(g, { sortByColor: false });
     assert.deepEqual(g.data[1].text, ['a', 'b', 'c', 'd']);
+});
+
+test('3D: depth decides what is in front, so strong-on-top does not reorder', async () => {
+    assert.equal(colorSortApplies({}), true);                                   // on by default in 2D
+    assert.equal(colorSortApplies({ sortByColor: false }), false);
+    assert.equal(colorSortApplies({ z: { type: 'obsm', key: 'X_umap', column: '2' } }), false);
+    assert.equal(colorSortApplies({ sortByColor: true, z: null }), true);      // the 2D setting applies again
+    const trace = () => ({ type: 'scatter3d', x: [1, 2, 3], y: [1, 2, 3], z: [1, 2, 3],
+                           marker: { color: [5, -1, 2], colorscale: 'Viridis' } });
+    const gd = { data: [trace()] };
+    await sortTracesByColor(gd, { sortByColor: true, z: { type: 'obsm', key: 'X_umap', column: '2' } });
+    assert.deepEqual(gd.data[0].x, [1, 2, 3], 'points keep data order in 3D');
+    assert.equal(gd.data[0]._azOrder, undefined);
+    const stray = { data: [trace()] };                                          // a scatter3d trace is never sorted
+    await sortTracesByColor(stray, { sortByColor: true });
+    assert.deepEqual(stray.data[0].x, [1, 2, 3]);
 });

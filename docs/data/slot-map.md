@@ -41,11 +41,11 @@ once per panel and reused while you click.
 | `uns['{col}_colors']` | categories | the whole list | category colours for `obs[col]` | written by scanpy plotting functions |
 
 ```{important}
-**Store what you want to colour by in `layers`.** Layers are offered in both plot types,
-for gene columns and cell rows. As of this version, X is served by the API but not offered in
-the plot menus (Cell Plot sources: obs, obsm, obsp, layer; Gene Plot sources: var, varm, varp,
-layer). A layer works whether or not a later version adds X, so if X holds the expression you
-want, also keep it as a layer: `adata.layers["X"] = adata.X`.
+**Store what you want to colour by in `X` or `layers`.** Both are offered in both plot types,
+for gene columns and cell rows: the **layer** source lists `X` first, then the layers (Cell Plot
+sources: obs, obsm, obsp, layer; Gene Plot sources: var, varm, varp, layer; the same for every
+axis and the colour). If the store also has a layer named `X`, that layer is listed instead of
+the matrix `X`.
 ```
 
 ## Required and optional
@@ -94,7 +94,7 @@ The exact byte layout is in {doc}`../reference/wire-format`.
   `raw_counts`, `cc_counts`.
 - `var`: Kompot differential expression statistics.
 - `varp`: `spearman_fold_change` and `spearman_smoothed` (16,285 × 16,285, dense float32).
-- `X`: scaled expression (z-scores) stored as CSC. As of this version it is not offered in the plot menus (see above).
+- `X`: scaled expression (z-scores) stored as CSC, offered as **X** under the layer source (see above).
 
 You can list the same thing for any store with the structure endpoint:
 
@@ -146,7 +146,7 @@ of the focused gene H2-Q7.
 :::{grid-item}
 ```{figure} ../_static/screens/paper/slot-varp-controls.png
 :class: screenshot
-:alt: Plot controls: X-Axis var kompot_de_Young..., Y-Axis var kompot_de_Young..., Color varp spearman_fold_change "Focused gene to H2-Q7" with a lock button, colour map RdBu, min -1, max 1, Lock Range on.
+:alt: Plot controls: X var kompot_de_Young..., Y var kompot_de_Young..., Color varp spearman_fold_change "Focused gene to H2-Q7" with a lock button, colour map RdBu, min -1, max 1, Lock Range on.
 
 **The controls of that plot.** Slot, key, and "Focused gene" with its lock.
 ```

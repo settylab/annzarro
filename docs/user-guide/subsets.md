@@ -46,14 +46,41 @@ show the dialog. On a large dataset the steps are the same.
    ```{figure} ../_static/screens/user-guide/subsets-dialog.png
    :class: screenshot
    :width: 80%
-   :alt: The Cell subset dialog: "Show a subset of the cells" switched on, Cells 3000, Seed 0 with a New seed button, Sampling "Balanced across Age", one filter condition "n_genes_by_counts ≥ 1000", the cell table filter import, and the preview "3,000 of 8,090 cells will be shown. 8,063 pass the filter. Per group: Mid 1,000/2,052, Old 1,000/3,106, Young 1,000/2,905".
+   :alt: The Cell subset dialog: "Show a subset of the cells" switched on, the size presets 1k, 2k and 5k with their parts and load estimates and All, Cells 3000, Seed 0 with a New seed button, Sampling "Balanced across Age", one filter condition "n_genes_by_counts ≥ 1000", the cell table filter import, and the preview "3,000 of 8,090 cells will be shown. 8,063 pass the filter. Per group: Mid 1,000/2,052, Old 1,000/3,106, Young 1,000/2,905".
 
    A balanced, filtered subset of 3,000 cells.
    ```
 
 2. Switch on **Show a subset of the cells** (switch it off to show every cell).
-3. **Cells**: how many cells to show, here `3000`. Tick **every cell passing the filter** to keep
-   all cells that pass the conditions below instead of a fixed number.
+3. **Cells to show**: a row of round sizes (1k, 5k, 10k, 50k, then 100k, 200k, 500k, 1M, 2M, 5M,
+   ... up to the number of cells passing the filter), ordered from fast to complete, and **All**. Click one to choose it;
+   the current size is highlighted. Each size shows:
+   - the number of **parts** it splits the cells into (k = ⌈cells passing the filter / size⌉; see
+     [Stepping through every cell](#stepping-through-every-cell)). The parts follow the filter
+     as you edit it;
+   - an **estimated load time**, rounded (`<1 s`, `~6 s`, `~2 min`). Until this session has drawn
+     a Cell Plot the estimates are defaults from a laptop benchmark; after that they are rescaled
+     to the plots this browser has drawn and recoloured. A grey, italic estimate is a guess:
+     the size is past the largest plot of that kind the benchmark timed cleanly (1 million points
+     for the regular plot), or more than 4 times the largest this session has drawn. The line under the sizes says
+     which kind of estimate you are reading.
+
+   Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
+   dashed line that says so: large-plot mode draws them faster but without hover, click or table
+   filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
+   **may exceed browser memory** and is never chosen for you: a laptop's Chrome drew 175 million
+   points and ran out of memory at 182 million. For any other size, type it in **Cells**, here `3000`; the
+   parts and estimate follow it. **All** keeps every cell that passes the conditions below
+   instead of a fixed number.
+
+   **Sizes that do not fit in the browser are greyed out.** A subset applies to every Cell Plot
+   and cell table at once, and each plot keeps its old points until the new ones are drawn, so
+   the browser needs room for all of them together. A size (or **All**) that would not fit next
+   to what the open panels already hold is disabled and says **needs ~X GB**; hover it for
+   "needs ~X GB of browser JS memory; Y GB free with N plots open". Close a plot, or pick a
+   smaller size, and it comes back. The line at the bottom of the dialog gives the browser
+   memory still free; with a size typed in **Cells** that does not fit, it says so and **Apply**
+   stays off ([Browser memory](#browser-memory)).
 4. **Seed**: any whole number from 0 to 4,294,967,295. **New seed** draws another one. The same
    seed always selects the same cells, and more cells with the same seed keep every cell of fewer:
    going from 50,000 to 100,000 cells adds cells and does not swap the ones on screen.
@@ -61,11 +88,11 @@ show the dialog. On a large dataset the steps are the same.
    group of that column an equal share where the group sizes allow; a group smaller than its share
    is taken whole and the rest is spread over the others. Here, **Balanced across Age** takes
    1,000 cells from each of Mid, Old and Young.
-6. **Filter (optional): only cells where**: click **Add condition** and choose an obs column, an
+6. **Filter**: click **Add condition** and choose an obs column, an
    operator and a value. Text columns offer "is one of" and "is not one of" (values comma
    separated); numeric columns offer >, ≥, <, ≤, =, ≠ and "between". Conditions are joined by AND;
    a cell with a missing value passes no condition. Here, `n_genes_by_counts ≥ 1000`.
-   **Use filter** copies the filter of an open cell table instead (a top-level AND of conditions
+   **Use** next to a cell table copies that table's filter of an open cell table instead (a top-level AND of conditions
    on obs columns; anything else is reported as not copied). Unlike the table, which only holds
    the cells already loaded, the subset applies the conditions to every cell of the dataset.
 7. The preview line under the form says how many cells will be shown, how many pass the filter
@@ -75,7 +102,7 @@ show the dialog. On a large dataset the steps are the same.
 
 ```{figure} ../_static/screens/user-guide/subsets-applied.png
 :class: screenshot
-:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the statistics bar, a UMAP with fewer points coloured by cell type and a Removed Datapoints box "Total 5,090 (63%)", and a cell table "Showing 1 to 25 of 3,000 entries".
+:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the statistics bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
 
 After **Apply**: the UMAP and the cell table show the same 3,000 cells. View before the subset:
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
@@ -116,11 +143,11 @@ Part 1 of 3.
 
 ```{figure} ../_static/screens/user-guide/subsets-parts-view-2.png
 :class: screenshot
-:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1, and the Removed Datapoints box reads Not in this part (2 of 3): 5,090.
+:alt: Part 2 of 3: the same UMAP and cell table with another 3,000 cells; the first table row is now HSPC_Mid_1#AAAGGATAGGCCGCTT-1.
 
 Part 2 of 3: other cells in the same layout. The table starts with different cells, the UMAP's
-points are a different 3,000, and **Removed Datapoints** counts the rest as "Not in this part
-(2 of 3)". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
+points are a different 3,000, and the plot's status line counts the rest as "not in part 2 of
+3". View: {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`
 with the subset applied as above.
 ```
 
@@ -144,9 +171,10 @@ types earlier parts already showed in full. View:
 
 ## What a subset changes
 
-- **Cell plots** draw only the subset's cells. The **Removed Datapoints** box counts the other
-  cells as not in this part of the cell subset (here 5,090, 63 % of 8,090), so its total always accounts for
-  every cell of the dataset. Gene plots draw every gene as before.
+- **Cell plots** draw only the subset's cells. The status line under each plot
+  ({ref}`plot-status-line`) counts the other cells as not in this part of the cell subset
+  ("3,000 of 8,090 cells shown · 5,090 not in part 2 of 3"), so its total always accounts for
+  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene as before.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
@@ -160,26 +188,33 @@ types earlier parts already showed in full. View:
 The exact rule (a fixed hash of seed and row, so a notebook can reproduce the selection), the
 balancing algorithm and the request format are in {doc}`../design/subsetting`.
 
+(large-plot-mode)=
 ## Very large datasets
 
 A Cell Plot is drawn in one of two ways.
 
-- **Regular plot**, up to 5 million points: everything on this page and in
+- **Regular plot**, up to 1 million points: everything on this page and in
   {doc}`cell-and-gene-plots` works, including hover, click to focus a cell, the focused-cell
   marker, table filters and 3D.
-- **Large-plot mode**, above 5 million points: that only happens with the subset removed (or
-  larger than that) on a very large dataset. The limit is the server setting
+- **Large-plot mode**, above 1 million points: that only happens with the subset removed (or
+  larger than that) on a large dataset. The limit is the server setting
   `ui.defaults.large_plot_points` ({doc}`../reference/configuration`).
 
 The regular plot needs 400 to 900 bytes of the browser tab's memory per point, and a tab gets about
-4.4 GB whatever the browser settings, so a little above 5 million points it would close the tab.
+4.4 GB whatever the browser settings. One regular plot of 5 million points fits, but then nothing
+else does; at 1 million points several regular plots fit side by side, each with hover, click and
+table filters.
 Large-plot mode keeps the points out of that memory and can draw the 95.6 million cells of
 Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
-per-point bookkeeping, and the panel says so above the plot:
+per-point bookkeeping, and the plot's status line says so with a tag, **Large plot: no
+hover/click**. Click the tag for why and for **Subset to ≤1M to enable click**, which opens the
+subset dialog with the largest size that is drawn the regular way already chosen. A click on the
+plot itself pulses the tag, and the first such click on a panel also opens it; nothing else pops
+up:
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot
-:alt: A Cell Plot with every cell, in large-plot mode. A blue notice above the plot reads Large-plot mode (8,090 points): hover, click and table filters are off; use a subset for them. The 3D Plot button and the Hover list are greyed out.
+:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot: no hover/click. The 3D Plot button and the Hover list are greyed out.
 
 Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
 lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
@@ -187,7 +222,7 @@ lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
 
 ```{figure} ../_static/screens/user-guide/large-plot-subset.png
 :class: screenshot
-:alt: The same Cell Plot on a 4,000-cell subset: the regular plot, with the focused cell marked, the Removed Datapoints box, and every control enabled.
+:alt: The same Cell Plot on a 4,000-cell subset: the regular plot, with the focused cell marked, a status line counting the cells not in the subset, and every control enabled.
 
 The same panel on a 4,000-cell subset: the regular plot.
 ```
@@ -197,7 +232,7 @@ In large-plot mode:
 - **No hover and no click on points.** Clicking a point does not focus a cell, and the focused
   cell is not marked.
 - **Controls that would need the regular plot are off**, with the tooltip "Not available above
-  5M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
+  1M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
   its z axis, the Hover list and the table filter.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
   numeric obs column or by a gene, with the colour palette, scale and range; point size and
@@ -219,6 +254,32 @@ In large-plot mode:
 
 Turning a subset on (or one small enough) brings the regular plot back with hover and click.
 Removing it again returns to large-plot mode.
+
+(browser-memory)=
+## Browser memory
+
+A browser tab that runs out of memory does not slow down: the browser closes it, and every panel,
+filter and focus on screen is lost. Before anything that needs memory in proportion to the
+number of points, AnnZarro estimates what it will need and compares it with what is left after
+the panels already open:
+
+- **opening, duplicating or reopening a Cell Plot** (its tile in **Create New Panel** or
+  **Duplicate or Reopen** is greyed out, with the reason when you hover it);
+- **a larger subset, All, or every cell** (the dialog's sizes, above);
+- **a full-resolution image export** ({doc}`export`);
+- **a recolour or a redraw** of a plot.
+
+What does not fit is not started, and the panel or the control says what it needs, what is free
+and what helps: close a plot, or show fewer cells. The limit that matters is the browser's
+JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer whatever its RAM; a Cell Plot
+holds about 20 bytes of it per point in large-plot mode and 400 to 900 bytes in a regular plot.
+The numbers are estimates from measurements on a laptop ("estimated" in the dialog's memory
+line); the server's administrator can loosen or tighten them (`ui.memory`,
+{doc}`../reference/configuration`).
+
+If the tab does close while drawing a plot, the next visit restores the panel set but leaves that
+plot undrawn, with **Draw anyway** and **Subset…**, so the same plot does not close the tab
+again; the browser also becomes a little more careful in its estimates from then on.
 
 ## Measured on a large store
 

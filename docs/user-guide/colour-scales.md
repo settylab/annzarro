@@ -11,29 +11,37 @@ The numerical colour controls appear in a panel's controls once its colour is nu
 
 ```{figure} ../_static/screens/user-guide/colour-controls.png
 :class: screenshot
-:alt: Numerical colour controls with twelve numbered parts: Color Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse Colormap, Lock Range, Hide Outliers, Hide NaN, Equal aspect, Strong on top, Log and the floor box.
+:alt: Numerical colour controls with eleven numbered parts: Map drop-down, Min slider and box, Max slider and box, Center at 0, Reverse, Lock Range, Hide Outliers, Hide NaN, Strong on top, Log and the floor box.
 
 Numerical colour controls of the fold-change panel.
 ```
 
-1. **Color Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
+1. **Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
    Portland, Jet, Hot, Blackbody, Earth, Electric, Viridis, Cividis, Inferno, Magma, Plasma.
    A new panel uses Portland unless the server sets another default (`ui.defaults.color_scale`,
    {doc}`../reference/configuration`).
 2. **Min**: slider and number box for the value drawn in the first colour of the map.
 3. **Max**: the same for the last colour.
+
+   The sliders move over **percentiles** of the coloured values, not over the value range: the
+   middle of a slider is the median. For a skewed gene, where the 99th percentile may be 30 and
+   the maximum 725, the useful values then fill the slider instead of its first 4%. A value
+   repeated by many points (the zeros of a sparse gene) holds at most 2% of a slider. With
+   **Center at 0** both sliders move over percentiles of the absolute values, Min mirroring Max.
+   The number boxes and the saved settings keep values, not percentiles; a typed value outside
+   the data puts the slider at its end. A column with a single value has nothing to slide over:
+   its sliders are disabled, the boxes still work.
 4. **Center at 0** makes the range symmetric: Min = −m and Max = m, where m is the largest absolute
    value in the data.
-5. **Reverse Colormap** flips the map end for end.
+5. **Reverse** flips the map end for end.
 6. **Lock Range** keeps Min and Max fixed when the data change.
 7. **Hide Outliers** removes points whose value lies outside Min to Max. The axes keep their range.
 8. **Hide NaN** removes points with no value (also offered for categorical colours, where it
    removes the grey **NA** points). The axes keep their range.
-9. **Equal aspect** gives x and y the same scale ({doc}`spatial-coordinates`).
-10. **Strong on top** (on by default) draws the points with the largest absolute colour value
-    last, so they are not hidden under weaker ones.
-11. **Log** switches to a log10 colour scale.
-12. **floor** is the smallest value the log scale shows; empty means the smallest positive value
+9. **Strong on top** (on by default) draws the points with the largest absolute colour value
+   last, so they are not hidden under weaker ones.
+10. **Log** switches to a log10 colour scale.
+11. **floor** is the smallest value the log scale shows; empty means the smallest positive value
     in the data.
 
 The Min and Max boxes show 3 significant digits (0.0126, −1.03), and a value you type is used
@@ -53,8 +61,7 @@ Left: sequential (Blues, reversed, 0 to 0.012). Right: diverging (RdBu, Center a
 ```
 
 1. Open the panel's controls.
-2. In **Color Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse
-   Colormap** to draw zero in the light colour and large values in dark blue.
+2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse** to draw zero in the light colour and large values in dark blue.
 3. For the fold change, choose **RdBu** and click **Center at 0**. Min and Max become −1.03 and
    1.03 for H2-Q7.
 
@@ -74,15 +81,15 @@ Values outside the range are not dropped: they are drawn in the end colour of th
 
 ```{figure} ../_static/screens/user-guide/colour-range.png
 :class: screenshot
-:alt: Three fold-change UMAPs of H2-Q7. Left, full range -1.03 to 1.03. Middle, range -0.25 to 0.25: most cells saturate to dark red. Right, the same range with Hide Outliers: only 1,550 of 8,090 cells remain, with a notice and a Removed Datapoints box.
+:alt: Three fold-change UMAPs of H2-Q7. Left, full range -1.03 to 1.03. Middle, range -0.25 to 0.25: most cells saturate to dark red. Right, the same range with Hide Outliers: only 1,550 of 8,090 cells remain, and the status line under the plot counts the 6,540 outliers hidden.
 
 Left: range from the data. Middle: range fixed at −0.25 to 0.25; values beyond it take the end
 colours. Right: the same range with Hide Outliers.
 ```
 
 With **Hide Outliers** on, the right panel draws only the 1,550 of 8,090 cells whose fold change
-lies between −0.25 and 0.25. The panel says so in a notice above the plot, and the **Removed
-Datapoints** box in its lower left corner counts the removed points (here 6,540, 81 %). The axes
+lies between −0.25 and 0.25. The status line under the plot says so: "1,550 of 8,090 cells shown ·
+6,540 outliers hidden", with **Show outliers** in its details ({ref}`plot-status-line`). The axes
 keep the range of all cells, so the panel lines up with the others. The view is
 {download}`userguide-colour-range.json <../_tools/views/userguide-colour-range.json>`.
 
@@ -144,9 +151,9 @@ Several things can make a point grey, and they mean different things:
 | Dark grey `#444` in a numerical colour | the value is missing (NaN); Plotly draws missing colour values in this grey |
 | Light grey under an **NA** legend entry | a missing value in a categorical colour ({doc}`cell-and-gene-plots`) |
 
-Points whose **x** or **y** value is missing are never drawn; the **Removed Datapoints** box counts
-them as "X-axis NaN" or "Y-axis NaN". Points with a missing **colour** value stay in the plot in
-dark grey until you click **Hide NaN**, which removes them and adds a "Color NaN" count to the box.
+Points whose **x** or **y** value is missing are never drawn; the plot's status line counts them
+as "no coordinates". Points with a missing **colour** value stay in the plot in dark grey until you
+click **Hide NaN**, which removes them and adds "NaN hidden" to the status line.
 
 ```{tip}
 Because grey can mean "zero", "near zero", "missing" or "not in the table", pick a colour map

@@ -13,8 +13,13 @@ import {
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { installSessionExpiryHandler } from './utils/session-expiry.js';
+import { appRoot } from './utils/app-url.js';
 import { sameSubset } from './utils/subset.js';
 import { SubsetControl } from './subset-dialog.js';
+import { registerStatusActions } from './utils/panel-surface.js';
+import { canSnapshot, exportImage } from './utils/plot-export.js';
+import { overrideOnce } from './utils/memory-guard-ui.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 
@@ -35,6 +40,14 @@ const App = (function() {
         window._updateErrorPreview = _updateErrorPreview;
         
         try {
+
+            // When the login expires mid-session, go to the login page and
+            // come back to this dataset and view (utils/session-expiry.js)
+            installSessionExpiryHandler({
+                root: appRoot(),
+                currentViewUrl: () => ((_lastLoadedDatasetPath || DataManager.getCurrentDataset())
+                    ? _buildShareView() : window.location.href)
+            });
 
             // Make SessionManager and PanelManager accessible globally
             window.sessionManager = SessionManager;
@@ -461,12 +474,7 @@ const App = (function() {
             } else if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }
-            const subset = DataManager.getSubset();
-            const part = subset && subset.parts > 1
-                ? ` Part ${(subset.part + 1).toLocaleString('en-US')} of ${subset.parts.toLocaleString('en-US')}.` : '';
-            _showNotification('Cell subset',
-                subset ? `Showing ${subset.n.toLocaleString('en-US')} of ${subset.n_total.toLocaleString('en-US')} cells (seed ${subset.subset.seed}).${part}`
-                       : 'Showing every cell.', 'success', 3000);
+            // No toast: the header and every plot's status strip say what is shown
         } catch (error) {
             if (error && error.name === 'AbortError') return;
             console.error('Changing the cell subset failed:', error);
@@ -504,6 +512,108 @@ const App = (function() {
         _subsetSwap = next;
         next.catch(() => {}).finally(() => { if (_subsetSwap === next) _subsetSwap = null; });
         return next;
+    }
+
+    /**
+     * Say at a form field what is wrong with it (the browser's own bubble,
+     * anchored to the field), instead of a blocking alert.
+     * @private
+     */
+    function _invalid(input, message) {
+        input.setCustomValidity(message);
+        input.reportValidity();
+        for (const ev of ['input', 'change']) input.addEventListener(ev, () => input.setCustomValidity(''), { once: true });
+    }
+
+    /**
+     * Whether a panel's status strip offers `action` (see registerStatusActions
+     * in utils/panel-surface.js).
+     * @param {string} action
+     * @param {HTMLElement} host - the panel's plot container
+     * @private
+     */
+    function _statusActionAvailable(action, host) {
+        const id = (host && host.id || '').replace(/^plot-container-/, '');
+        const subset = DataManager.getSubset();
+        switch (action) {
+            case 'next-part': return !!(subset && subset.parts > 1 && subset.part < subset.parts - 1);
+            case 'subset': case 'subset-regular': return !!DataManager.getCurrentDataset();
+            case 'focus-part': return DataManager.hasSubsetFeature('locate_parts');
+            case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
+            case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
+            case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
+            case 'draw-anyway': case 'redraw': {
+                const panel = PanelManager.getPanel(id);
+                return !!(panel && typeof panel.refreshPlot === 'function');
+            }
+            case 'export-shown': return canSnapshot(host);
+            case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+            case 'table-filter-off': return !!_tableFilterSelect(id);
+            default: return false;
+        }
+    }
+
+    /** The table a plot panel is filtered by (its tableFilter setting), or null. */
+    function _tableFilterOf(id) {
+        const panel = PanelManager.getPanel(id);
+        const cfg = panel && panel.getConfig ? panel.getConfig() : null;
+        return cfg && cfg.tableFilter && cfg.tableFilter !== 'none' ? cfg.tableFilter : null;
+    }
+
+    /** A plot panel's table-filter select. */
+    function _tableFilterSelect(id) {
+        return document.querySelector(`.tile[data-tile-id="${id}"] select.table-filter-select`);
+    }
+
+    /**
+     * Run a status-strip action: what undoes one reason a panel shows fewer
+     * cells. The panel's own toggles do the undoing, so the strip and the
+     * controls cannot disagree.
+     * @private
+     */
+    async function _runStatusAction(action, host) {
+        const id = (host && host.id || '').replace(/^plot-container-/, '');
+        const click = (elId) => { const el = document.getElementById(elId); if (el) el.click(); };
+        switch (action) {
+            case 'next-part': SubsetControl.step(1); break;
+            case 'subset': SubsetControl.open(); break;
+            case 'subset-regular':
+                document.dispatchEvent(new CustomEvent('annzarro:open-subset', { detail: { preset: 'largest-regular' } }));
+                break;
+            case 'focus-part': {
+                const part = await DataManager.partOfCell(DataManager.getFocusedCell());
+                if (part !== null) SubsetControl.goTo(part);
+                else _showNotification('Part not found', 'The subset\'s filter leaves the focused cell out.', 'warning');
+                break;
+            }
+            case 'stop-table': click(`remove-non-table-entries-${id}`); break;
+            case 'show-nan': click(`hide-nan-${id}`); break;
+            case 'show-outliers': click(`hide-outliers-${id}`); break;
+            case 'draw-anyway': case 'redraw': {
+                // draw-anyway: past the memory guard (or the crash marker), once
+                if (action === 'draw-anyway') overrideOnce(id);
+                const panel = PanelManager.getPanel(id);
+                if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
+                break;
+            }
+            case 'reopen-table': {
+                const btn = document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
+                if (btn) btn.click();
+                break;
+            }
+            case 'table-filter-off': {
+                const select = _tableFilterSelect(id);
+                if (select) {
+                    select.value = 'none';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                break;
+            }
+            case 'export-shown':
+                exportImage(host, 'shown', { format: 'png', filename: 'plot_' + new Date().toISOString().replace(/[:.]/g, '-') })
+                    .catch(error => console.error('Export as shown failed:', error));
+                break;
+        }
     }
 
     /**
@@ -590,6 +700,7 @@ const App = (function() {
         // Cell count and subset badge in the stats bar; its dialog reloads
         // the open view on the chosen cells
         SubsetControl.init({ onApply: _changeSubset });
+        registerStatusActions({ available: _statusActionAvailable, run: _runStatusAction });
         
         // Setup keyboard shortcuts
         _initKeyboardShortcuts();
@@ -1160,12 +1271,13 @@ const App = (function() {
         }
     }
 
-    /** Say once that the focused cell is kept although the subset does not show it. */
+    /**
+     * The focused cell is kept although the subset does not show it. No
+     * toast: the badge beside the focus control says so (_updateFocusBadge),
+     * and the plots mark where it lies.
+     */
     function _noticeFocusOutside(name) {
-        if (_focusOutsideSubsetNoticed === name) return;
         _focusOutsideSubsetNoticed = name;
-        _showNotification('Focused cell not shown',
-            `${name} is focused but not among the shown cells.`, 'info', 5000);
     }
 
     /**
@@ -1911,7 +2023,7 @@ const App = (function() {
             let sessionName = sessionNameInput.value.trim();
             
             if (!sessionName) {
-                alert('Please enter a panel set name');
+                _invalid(sessionNameInput, 'Enter a panel set name');
                 return;
             }
             
@@ -1952,7 +2064,7 @@ const App = (function() {
                 // Handle file upload
                 const fileInput = document.getElementById('session-file-upload');
                 if (fileInput.files.length === 0) {
-                    alert('Please select a file to upload');
+                    _invalid(fileInput, 'Choose a file to upload');
                     return;
                 }
                 
@@ -2076,31 +2188,53 @@ const App = (function() {
     let _notificationCounter = 0;
     
     /**
-     * Show a notification message (toast) that doesn't block UI interaction
+     * Show a toast: the outcome of something the user did (a link copied, a
+     * panel set saved, an export that failed). Persistent state -- what a
+     * panel does not show, a mode it is in -- belongs in the panel's status
+     * strip (utils/panel-surface.js), never here.
+     *
+     * One at a time: a new toast replaces the one shown, and the same toast
+     * again only restarts its timer. Errors stay until closed.
      * @param {string} title - Notification title
      * @param {string} message - Notification message
      * @param {string} type - Notification type ('error', 'warning', 'info', 'success')
-     * @param {number} [duration=5000] - How long to show the notification (ms)
+     * @param {number} [duration] - How long to show it (ms); default 4 s for
+     *   success, 8 s for info and warning, until closed for an error
      * @private
      */
-    function _showNotification(title, message, type = 'info', duration = 10000) {
+    function _showNotification(title, message, type = 'info', duration = undefined) {
         console.log(`Notification (${type}): ${title} - ${message}`);
-        
-        // Generate a unique ID for this notification
-        const notificationId = `notification-${Date.now()}-${_notificationCounter++}`;
-        
+        if (duration === undefined) duration = type === 'error' ? 0 : type === 'success' ? 4000 : 8000;
+
         // Create container if it doesn't exist (thread-safe)
         let container = document.getElementById('notification-container');
         if (!container) {
             container = document.createElement('div');
             container.id = 'notification-container';
+            container.setAttribute('role', 'status');
+            container.setAttribute('aria-live', 'polite');
             document.body.appendChild(container);
         }
-        
+
+        // The toast shown now (a question asked by _askNotification waits for
+        // its answer and is not replaced)
+        const current = [...container.children].find(el =>
+            el.classList.contains('notification') && !el.classList.contains('notification-ask'));
+        if (current && current.dataset.key === JSON.stringify([title, message, type])) {
+            _armNotification(current.id, duration);
+            return current.id;
+        }
+        if (current) _dropNotification(current.id);
+
+        // Generate a unique ID for this notification
+        const notificationId = `notification-${Date.now()}-${_notificationCounter++}`;
+
         // Create the notification element
         const notification = document.createElement('div');
         notification.id = notificationId;
         notification.className = `notification notification-${type}`;
+        notification.dataset.key = JSON.stringify([title, message, type]);
+        if (type === 'error') notification.setAttribute('role', 'alert');
         
         // Add close button
         const closeBtn = document.createElement('button');
@@ -2136,20 +2270,29 @@ const App = (function() {
             });
         });
         
-        // Clear any existing timer for this notification (shouldn't happen, but just to be safe)
+        _armNotification(notificationId, duration);
+        return notificationId;
+    }
+
+    /** (Re)start the timer that removes a toast; 0 keeps it until closed. */
+    function _armNotification(notificationId, duration) {
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
+            _notificationTimers.delete(notificationId);
         }
-        
-        // Set timeout to remove and track it
-        const timer = setTimeout(() => {
-            _removeNotification(notificationId);
-        }, duration);
-        
-        // Store the timer reference
-        _notificationTimers.set(notificationId, timer);
-        
-        return notificationId;
+        if (duration > 0) {
+            _notificationTimers.set(notificationId, setTimeout(() => _removeNotification(notificationId), duration));
+        }
+    }
+
+    /** Take a toast away at once, without its fade: the next one replaces it. */
+    function _dropNotification(notificationId) {
+        if (_notificationTimers.has(notificationId)) {
+            clearTimeout(_notificationTimers.get(notificationId));
+            _notificationTimers.delete(notificationId);
+        }
+        const el = document.getElementById(notificationId);
+        if (el) el.remove();
     }
     
     /**

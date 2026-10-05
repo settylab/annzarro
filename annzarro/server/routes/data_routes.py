@@ -423,7 +423,7 @@ _DATASET_ROWS_ENDPOINTS = ("get_data_X", "get_layer", "get_obs", "get_obsm", "ge
 
 #: What this server's cell-axis routes understand beyond rows=; the client
 #: sends dataset_rows only to a server that lists it.
-SUBSET_FEATURES = ["dataset_rows", "locate", "names_scope"]
+SUBSET_FEATURES = ["dataset_rows", "locate", "names_scope", "locate_parts"]
 
 #: Rows one /data/subset/locate call translates.
 MAX_LOCATE_ROWS = 1000
@@ -1329,6 +1329,9 @@ def register_data_routes(app, api_version):
         Returns:
             {"dataset_rows": [...]} for rows, or {"rows": [position or -1,
             ...]} for dataset_rows, -1 for a row the subset does not show.
+            With dataset_rows and parts=1 also {"parts": [part or null, ...]}:
+            the part of the subset's partition that shows each row (null for
+            a row its filter leaves out).
             Without a subset both are the same numbers.
         """
         dataset_path_str = request.args.get("dataset_path")
@@ -1346,7 +1349,11 @@ def register_data_routes(app, api_version):
             if not isinstance(reader, cell_subset.SubsetView):
                 return jsonify({"rows" if by_dataset_row else "dataset_rows": list(indices)})
             if by_dataset_row:
-                return jsonify({"rows": reader.subset.to_positions(indices)})
+                out = {"rows": reader.subset.to_positions(indices)}
+                if request.args.get("parts") == "1":
+                    out["parts"] = cell_subset.locate_parts(get_reader(dataset_path_str), dataset_path_str,
+                                                            reader.subset.spec, indices)
+                return jsonify(out)
             return jsonify({"dataset_rows": reader.subset.to_rows(indices)})
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)

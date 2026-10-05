@@ -22,27 +22,28 @@
  * What it gives up: hover and click on points (hovermode false; there are no
  * per-point names on the traces), the focused-cell highlight, table filters,
  * 3D, and incremental updates (any change redraws). It is used above
- * largePlotPoints() (default 5M). The panel says so (renderModeNotice), the
+ * largePlotPoints() (default 1M, so several regular plots fit side by side). The panel says so (a status-strip tag), the
  * controls it cannot honour are disabled (large-plot-controls.js), and
  * settings it cannot draw are refused with a message (largePlotRefusal):
- * above the threshold the regular path would close the tab.
+ * far above the threshold the regular path would close the tab.
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { buildPlotLayout } from './plot-make.js';
+import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, clearForDraw, fitToContainer, renderModeNotice, resolveColorscale } from '../../utils/panel-surface.js';
-import { Coverage, GAP } from '../../utils/coverage.js';
+import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
+import { releasePlot } from '../../utils/release-plot.js';
+import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
   const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
-  return typeof v === 'number' && v >= 0 ? v : 5000000;
+  return typeof v === 'number' && v >= 0 ? v : 1000000;
 }
 const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
@@ -232,9 +233,47 @@ function colourBar(settings, title) {
     titleside: pos.titleside, orientation: pos.orientation };
 }
 
-/** What the panel says while in this mode. */
-export function largePlotNotice(n) {
-  return `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`;
+/**
+ * The status-strip tag a panel carries while in this mode, from its first
+ * draw: the limit is visible before anyone clicks. Its popover says why and
+ * offers the subset that lifts it.
+ * @param {number} n - points drawn
+ */
+export function largePlotTag(n) {
+  const limit = largePlotPoints();
+  return {
+    text: 'Large plot: no hover/click',
+    title: `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`,
+    pop: {
+      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn without hover, click or `
+        + 'table filters to stay within browser memory.',
+      actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} to enable click`]]
+    }
+  };
+}
+
+/**
+ * A click on the plot area of a large plot, which has no click: pulse the
+ * strip's tag, and the first time per panel open its popover. A drag (zoom,
+ * pan) is not a click, and neither is one on the modebar or legend.
+ * @param {HTMLElement} plotContainer
+ */
+function watchLargeClicks(plotContainer) {
+  if (plotContainer.__largeClicks) return;
+  plotContainer.__largeClicks = true;
+  // pointer events, not click: Plotly's drag layer takes the mouse between
+  // press and release, so no click reaches the graph
+  let down = null;
+  plotContainer.addEventListener('pointerdown', (e) => {
+    down = plotContainer.__isLarge && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
+      ? { x: e.clientX, y: e.clientY } : null;
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    if (!down || !plotContainer.isConnected) { down = null; return; }
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    down = null;
+    if (moved <= 4) nudgeStatusTag(plotContainer, 'large');
+  }, true);
 }
 
 // The draw in flight per panel. A panel's first load is usually asked for
@@ -285,6 +324,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
   let filtered;
+  // why each dropped point is not drawn, the first reason that applies
+  const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
 
   if (cs && cs.codes) {
     // categorical: key = category, missing values last-but-drawn-first
@@ -293,8 +334,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
       const c = cs.codes[i];
-      key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? DROP
-        : c === cs.MISSING ? (settings.hideNaN ? DROP : NA) : c;
+      if (x[i] !== x[i] || y[i] !== y[i]) { key[i] = DROP; only.coords++; }
+      else if (c === cs.MISSING) {
+        key[i] = settings.hideNaN ? DROP : NA;
+        if (settings.hideNaN) only.nan++;
+      } else key[i] = c;
     }
     const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
     filtered = n - kept;
@@ -344,9 +388,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     }
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < n; i++) { const c = v[i]; if (c < lo) lo = c; if (c > hi) hi = c; }
+    // Every change redraws here, a colour slider's too, so the range follows
+    // the data (unless locked) only when the coloured values changed; on any
+    // other redraw it is the range the user set. It used to be reset on every
+    // redraw, after cmin/cmax were read: a dragged bound was drawn once, then
+    // the boxes and settings went back to the data range.
+    const source = JSON.stringify([generation, settings.color]);
+    const keepRange = plotContainer._largeColorSource === undefined || plotContainer._largeColorSource === source;
+    plotContainer._largeColorSource = source;
+    // the colour range sliders move over percentiles of a sample of v
+    if (container && id !== null) updateColorSliderUI(container, { color: v }, settings, id, keepRange);
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
-    // the colour range controls read only the finite min and max
-    if (container && id !== null) updateColorSliderUI(container, { color: [lo, hi] }, settings, id);
     const width = (cmax - cmin) / COLOR_BINS || 1;
     // draw order: |bin centre| ascending, so the strongest values are on top
     const order = [...Array(COLOR_BINS).keys()]
@@ -357,9 +409,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const key = new Uint16Array(n);
     for (let i = 0; i < n; i++) {
       const c = v[i];
-      if (x[i] !== x[i] || y[i] !== y[i]) { key[i] = DROP; continue; }
-      if (c !== c) { key[i] = settings.hideNaN ? DROP : 0; continue; }
-      if (settings.hideOutliers && (c < cmin || c > cmax)) { key[i] = DROP; continue; }
+      if (x[i] !== x[i] || y[i] !== y[i]) { key[i] = DROP; only.coords++; continue; }
+      if (c !== c) { key[i] = settings.hideNaN ? DROP : 0; if (settings.hideNaN) only.nan++; continue; }
+      if (settings.hideOutliers && (c < cmin || c > cmax)) { key[i] = DROP; only.outliers++; continue; }
       const bin = Math.min(COLOR_BINS - 1, Math.max(0, Math.floor((c - cmin) / width)));
       key[i] = rank[bin];
     }
@@ -388,23 +440,30 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     for (let i = 0; i < n; i++) key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? 1 : 0;
     const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1);
     filtered = n - kept;
+    only.coords = filtered;
     pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
     layout.showlegend = false;
   }
   const t2 = performance.now();
 
-  let coverage = Coverage.complete(n, 'cells');
-  if (filtered > 0) {
-    coverage = Coverage.partial(n - filtered, n, GAP.FILTERED,
-      `${filtered.toLocaleString()} cells without a value (or outside the colour range) are not drawn`,
-      { source: 'filter', unit: 'cells' });
-  }
+  // every series here is whole or threw, so the gaps are the points dropped
+  const coverage = withSubsetCoverage(classifyFilterStats({
+    total: n, filtered, exclusive: only, xNaN: only.coords, yNaN: only.coords, zNaN: 0,
+    hideNaNActive: !!settings.hideNaN, hideOutliersActive: !!settings.hideOutliers, tableFilterActive: false
+  }, 'cells'));
+  // Drawn from nothing, not into the graph shown: a Plotly.react into the
+  // drawn large plot kept the old plot's calc and scene beside the new one
+  // for good (1.93 -> 3.46 GB of JS heap at 95.6M points after a recolour,
+  // a crashed tab at 150M). The view is kept in the settings, not the graph.
+  if (plotContainer._fullLayout) releasePlot(plotContainer);
   clearForDraw(plotContainer);
   await drawPlot(plotContainer, traces, layout,
     { responsive: true, displayModeBar: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
-  renderModeNotice(plotContainer, largePlotNotice(n));
+  setStatusTag(plotContainer, 'large', largePlotTag(n));
+  plotContainer.__isLarge = true;
+  watchLargeClicks(plotContainer);
   fitToContainer(plotContainer);
   // no click handler here, but a zoom is kept like in the regular plot
   attachViewportTracking(plotContainer, settings);

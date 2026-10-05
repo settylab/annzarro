@@ -34,6 +34,8 @@
  * ends) sets that axis's `autorange: false`, unless the same call sets them.
  */
 
+import { syncSceneCamera } from './scene-camera.js';
+
 const VIRTUAL = new Set(['restyle', 'relayout', 'update', 'addTraces', 'deleteTraces']);
 
 const _batches = new Map();   // gd -> { data, layout, origData, origLayout }
@@ -245,8 +247,10 @@ function _draw(gd) {
     const b = _end(gd);
     _uninstall();
     if (gd.data !== b.origData) return Promise.resolve(gd);   // replaced meanwhile (newPlot)
+    syncSceneCamera(gd);
     return real.react(gd, b.data, b.layout);
 }
+
 
 /**
  * Run `fn` with the Plotly edits of `gd` batched, then draw them once.
@@ -262,6 +266,8 @@ export async function withPlotlyBatch(gd, fn) {
         return fn();
     }
     _install();
+    // the copy below starts from the camera on screen
+    syncSceneCamera(gd);
     const origData = gd.data;
     const origLayout = gd.layout || {};
     const b = { origData, origLayout, data: origData.map(copyContainers), layout: copyContainers(origLayout) };

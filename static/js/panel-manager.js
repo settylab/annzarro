@@ -885,6 +885,10 @@ const PanelManager = (function() {
                     // Don't delete from _panels so they're still available for cloning
                 }
             });
+
+            // the restored panels, offered under "Duplicate or Reopen" (the
+            // chooser above was built before they existed)
+            updateSourcePanelSelection();
         } 
         // Handle legacy formats
         else if (layout.tiles || layout.structure) {
