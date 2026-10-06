@@ -30,8 +30,8 @@ to the view it ends on, as a share link and a panel set file.
 The links are ready for a local server with `bm_aging.zarr` in its data directory (Worked examples
 1 to 5) or the Tahoe-100M store (Worked example 6); to use another server address or a store
 elsewhere, see {ref}`tut-start-links`. Each panel set file loads the same view with **Load Panel
-Set** > **Upload file**. The views of Worked examples 1 to 5 are the paper repository's
-`data_prep/demo_panelsets/*.view.json`.
+Set** > **Upload file**. The panel set files below are the views the paper's Worked examples end
+on.
 
 ::::{dropdown} Worked example 1: walk a diffusion neighbourhood across the embedding
 The five-step diffusion walk and the kernel row of the focused cell. Tutorial:
