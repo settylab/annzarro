@@ -248,28 +248,22 @@ export function wrapScatterglModule(module) {
 }
 
 /**
- * Install the wrapper on the Plotly that is loaded. Plotly does not export
- * its trace modules; a detached, never-shown graph with one invisible
- * scattergl trace is made to reach it and purged again. Safe to call often:
- * every call after the first returns the first one's promise.
+ * Install the wrapper once per page. Plotly does not export its trace
+ * modules: `probeModule` reaches the scattergl one (panel-surface.js draws
+ * a detached one-trace graph for it, the only place plots are created).
+ * Every call after the first returns the first one's promise.
+ * @param {() => Promise<Object>} probeModule - resolves to Plotly's scattergl trace module
  * @returns {Promise<boolean>} whether the wrapper is in place
  */
-export function installGlColors(Plotly = globalThis.Plotly) {
+export function installGlColors(probeModule) {
   if (installing) return installing;
-  if (!Plotly || typeof Plotly.newPlot !== 'function' || typeof document === 'undefined') {
-    return Promise.resolve(false);
-  }
+  if (typeof probeModule !== 'function') return Promise.resolve(false);
   installing = (async () => {
-    const probe = document.createElement('div');
     try {
-      await Plotly.newPlot(probe, [{ type: 'scattergl', visible: false }]);
-      const module = probe._fullData && probe._fullData[0] && probe._fullData[0]._module;
-      return wrapScatterglModule(module);
+      return wrapScatterglModule(await probeModule());
     } catch (err) {
       console.warn('Point colours: not installed:', err && err.message);
       return false;
-    } finally {
-      try { Plotly.purge(probe); } catch (_) { /* nothing drawn */ }
     }
   })();
   return installing;
