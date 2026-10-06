@@ -17,6 +17,7 @@ import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { colourTitle } from '../../utils/plot-titles.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -2270,7 +2271,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend = { 
         ...(layout.legend || {}), 
         title: { 
-          text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -2382,8 +2383,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       // Common colorbar settings for table entities
       const colorbarSettings = {
         title: {
-          text: `${settings.color.type}.${settings.color.key}` +
-                (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           side: 'right',
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
@@ -2540,9 +2540,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.cmax = cmax;
       baseTrace.marker.colorbar = {
         title: {
-          text:
-            `${settings.color.type}.${settings.color.key}` +
-            (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           side: 'right',
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,

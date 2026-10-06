@@ -23,6 +23,7 @@ import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { colourTitle } from '../../utils/plot-titles.js';
 
 
 
@@ -356,8 +357,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
                         colorbar: {
                             title: {
-                                text: `${settings.color.type}.${settings.color.key}` + 
-                                      (settings.color.column ? `.${settings.color.column}` : ''),
+                                text: colourTitle(settings.color),
                                 side: 'right',
                                 font: { size: 12 }
                             },
@@ -419,8 +419,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Update the legend title for categorical data
                 Plotly.relayout(plotContainer, {
-                    'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
-                                        (settings.color.column ? `.${settings.color.column}` : ''),
+                    'legend.title.text': colourTitle(settings.color),
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,
                         family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -560,8 +559,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
                         colorbar: {
                           title: {
-                            text: `${settings.color.type}.${settings.color.key}` + 
-                                  (settings.color.column ? `.${settings.color.column}` : ''),
+                            text: colourTitle(settings.color),
                             side: 'right'
                           },
                           titleside: 'right'
@@ -799,7 +797,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 if (data.colorType === 'numerical') {
                     const colorbar = {
                         title: {
-                            text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
+                            text: colourTitle(settings.color),
                             side: 'right',
                             font: { 
                                 size: settings.fontSize ? settings.fontSize + 2 : 14,
@@ -818,8 +816,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 } else if (data.colorType === 'categorical') {
                     // Update the legend title for categorical data
                     Plotly.relayout(plotContainer, {
-                        'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
-                                           (settings.color.column ? `.${settings.color.column}` : ''),
+                        'legend.title.text': colourTitle(settings.color),
                         'legend.title.font': { 
                             size: settings.fontSize ? settings.fontSize + 2 : 14,
                             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',

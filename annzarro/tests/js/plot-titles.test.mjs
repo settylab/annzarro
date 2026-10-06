@@ -35,3 +35,25 @@ test('a graph without a laid-out size is left alone', () => {
     assert.doesNotThrow(() => fitPlotTitles({}));
     assert.doesNotThrow(() => fitPlotTitles(null));
 });
+
+test('the colour title reads as a label, not a raw key', async () => {
+    const { colourTitle } = await import('../../../static/js/utils/plot-titles.js');
+    assert.equal(colourTitle({ type: 'obsp', key: 'chemical_synapses', column: 'AVA' }), 'chemical_synapses · row AVA');
+    assert.equal(colourTitle({ type: 'varp', key: 'gene_corr', column: 'Gata1' }), 'gene_corr · row Gata1');
+    assert.equal(colourTitle({ type: 'obs', key: 'total_counts', column: '' }), 'total_counts');
+    assert.equal(colourTitle({ type: 'obsm', key: 'X_pca', column: '3' }), 'X_pca · 3');
+    assert.equal(colourTitle({ type: 'layer', key: 'counts', column: 'Gata1' }), 'counts · Gata1');
+    assert.equal(colourTitle({ type: 'none', key: '', column: '' }), '');
+});
+
+test('every colour bar and legend title goes through colourTitle', async () => {
+    // The raw `${settings.color.type}.${settings.color.key}` was written out at
+    // nine sites; one left behind would show the old key after some redraws.
+    const { readFileSync } = await import('node:fs');
+    const dir = new URL('../../../static/js/panels/plot-utilities/', import.meta.url);
+    for (const f of ['plot-make.js', 'plot-update.js', 'large-plot.js']) {
+        const src = readFileSync(new URL(f, dir), 'utf8');
+        assert.doesNotMatch(src, /\$\{settings\.color\.type\}\.\$\{settings\.color\.key\}/, f);
+        assert.match(src, /colourTitle\(settings\.color\)/, f);
+    }
+});
