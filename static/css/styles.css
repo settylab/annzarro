@@ -3158,3 +3158,12 @@ button.dtsb-button.dtsb-clear:hover {
 .selection-panel-option .memory-note { font-size: 0.72rem; color: #a94442; margin-top: 0.25rem; }
 /* export: why full resolution is off, and the plot as shown beside it */
 .export-memory-note { line-height: 1.25; }
+
+/* The Map picker's swatch: the colour map as drawn, low on the left
+   (panel-ui-update.js showScalePreview). */
+.color-scale-preview {
+    flex: 0 0 2.5rem;
+    height: calc(0.5 * var(--ctl-h));
+    border: 1px solid #ced4da;
+    border-radius: 2px;
+}

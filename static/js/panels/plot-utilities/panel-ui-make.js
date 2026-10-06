@@ -1,5 +1,6 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
+import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -122,9 +123,10 @@ export function createPanelStructure(container, id, settings) {
               <div class="ctl-field">
                 <select class="form-select form-select-sm color-palette-selector" id="color-scale-${id}">
                   ${COLOR_SCALES.map(scale => `
-                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
+                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scaleOptionLabel(scale)}</option>
                   `).join('')}
                 </select>
+                <span class="color-scale-preview" id="color-scale-preview-${id}" aria-hidden="true"></span>
                 <select class="form-select form-select-sm category-palette-selector" id="category-palette-${id}" style="display:none;">
                   <option value="">Loading palettes...</option>
                   <!-- Options populated by external logic -->
@@ -539,6 +541,11 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   if ($reverseColormapButton.length) {
     $.updateButtonState($reverseColormapButton, settings.colorReversed);
   }
+  // The swatch draws an off-screen plot to resolve the map: once the
+  // browser is idle, not on the way to the panel's first plot.
+  const preview = () => showScalePreview(jQuery(`#color-range-container-${id}`), id, settings);
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(preview, { timeout: 5000 });
+  else setTimeout(preview, 1000);
   
   // We can't update color sliders here because the data isn't loaded yet
   // Color sliders will be updated after data is loaded during plot creation

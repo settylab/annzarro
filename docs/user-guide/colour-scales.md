@@ -19,7 +19,9 @@ Numerical colour controls of the fold-change panel.
 1. **Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
    Portland, Jet, Hot, Blackbody, Earth, Electric, Viridis, Cividis, Inferno, Magma, Plasma.
    A new panel uses Portland unless the server sets another default (`ui.defaults.color_scale`,
-   {doc}`../reference/configuration`).
+   {doc}`../reference/configuration`). Each sequential map is listed with the way it runs from
+   low to high values, for example **Blues (dark → light)** and **Reds (light → dark)**; the swatch
+   beside the drop-down shows the map as drawn, low on the left, Reverse included.
 2. **Min**: slider and number box for the value drawn in the first colour of the map.
 3. **Max**: the same for the last colour.
 
@@ -61,7 +63,7 @@ Left: sequential (Blues, reversed, 0 to 0.012). Right: diverging (RdBu, Center a
 ```
 
 1. Open the panel's controls.
-2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse** to draw zero in the light colour and large values in dark blue.
+2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light (the drop-down says so), so click **Reverse** to draw zero in the light colour and large values in dark blue. The swatch beside the drop-down turns round with it. Greys, Greens, YlGnBu and YlOrRd run dark to light as well; Reds runs light to dark.
 3. For the fold change, choose **RdBu** and click **Center at 0**. Min and Max become −1.03 and
    1.03 for H2-Q7.
 

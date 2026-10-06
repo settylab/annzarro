@@ -1,5 +1,5 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
-    colorSliderValue, showColorBound, showPointStyle } from './panel-ui-update.js';
+    colorSliderValue, showColorBound, showPointStyle, showScalePreview } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
@@ -465,6 +465,7 @@ export function setupColorControls(
     $colorScaleSelect.on('change', (e) => {
         const newColorScale = jQuery(e.target).val();
         settings.colorScale = newColorScale;
+        showScalePreview($container, id, settings);
         _updatePlotElements({ colors: true, colorScale: true });
     });
 
@@ -720,6 +721,7 @@ export function setupColorControls(
     $reverseColormapButton.on('click', () => {
         settings.colorReversed = !settings.colorReversed;
         $.updateButtonState($reverseColormapButton, settings.colorReversed);
+        showScalePreview($container, id, settings);
         _updatePlotElements({ colorScale: true, colors: true });
     });
 
