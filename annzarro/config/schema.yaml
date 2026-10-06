@@ -79,6 +79,16 @@ server:
       description: Directories beyond data_dir that dataset paths may resolve into on a confined server
       default: []
       security: internal
+    workers:
+      type: integer
+      description: gunicorn worker processes (annzarro/server/gunicorn_config.py); each keeps its own dataset cache
+      default: 4
+      security: internal
+    threads:
+      type: integer
+      description: gunicorn threads per worker (gthread worker class)
+      default: 4
+      security: internal
     arbitrary_paths:
       type: string
       enum: [auto, admins, none]

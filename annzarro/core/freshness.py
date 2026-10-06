@@ -249,29 +249,48 @@ def _record_check(dataset_path, body) -> None:
         logger.warning(f"Refresh of {dataset_path} not recorded: {exc}")
 
 
-# the next walk per dataset in this process; every caller that arrived before
-# it starts shares it
-_walks = {}
+# per dataset in this process: one walk at a time, and at most one walk
+# scheduled for the end of the interval
+_run_locks = {}
+_scheduled = {}           # key -> (floor, threading.Timer)
 _walks_lock = threading.Lock()
 
 
+def _run_lock(key):
+    with _walks_lock:
+        return _run_locks.setdefault(key, threading.Lock())
+
+
+def _from_record(record) -> dict:
+    """The answer a recorded walk gives, without walking again."""
+    status = record.get("status", "full")
+    return {"changed": bool(record.get("changed", False)), "checked": status == "full",
+            "status": status, **(record.get("inspected") or {}), "waited_s": 0.0, "shared": True}
+
+
 def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
-               budget_s: float = DEEP_BUDGET_S, inspect=None, sleep=time.sleep) -> dict:
+               budget_s: float = DEEP_BUDGET_S, inspect=None, after=None) -> dict:
     """A refresh: walk the store and start a new generation if it changed
     since the last walk.
 
     Any user may ask for this, so it is bounded, but never answered with a
     walk older than the call: a user who writes from Jupyter and presses
-    Refresh must see the write.
+    Refresh must see the write. And it never holds the request: a worker
+    that slept here for the rate limit stalled every other user of a sync
+    gunicorn worker (issue #83).
 
     * An unchanged store keeps its generation, and so its ETags and every
       user's cached reads: no user can make the server re-read a store that
       did not change.
     * A dataset is walked at most once per ``min_interval_s``, across
-      processes (the last walk is recorded beside the generation file). A
-      call inside the window waits for one walk at the window's end
-      (trailing edge, at most ``min_interval_s``), shared by every caller
-      that arrived before it started; ``waited_s`` says how long.
+      processes (the last walk is recorded beside the generation file).
+      Outside the window the walk runs now (bounded by ``budget_s``).
+      Inside it, or while another walk runs, one walk is scheduled for the
+      window's end, shared by every caller, and the call answers at once
+      ``{"status": "scheduled", "after": t, "retry_after_s": s}``. Asking
+      again with ``after=t`` returns the result of the first walk that
+      started at or after ``t`` once there is one (and ``scheduled`` again
+      until then).
     * A walk stops at ``budget_s``: a store too large to fingerprint fully
       answers ``status: "partial"`` and is not bumped (an admin's
       cache/reset still is).
@@ -281,42 +300,50 @@ def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
     Returns ``{"changed", "checked", "status", "waited_s", ...inspected}``.
     """
     key = _key(dataset_path)
-    arrived = time.time()
-    while True:
+    now = time.time()
+    floor = now if after is None else min(float(after), now)
+    record = last_check(dataset_path)
+    if after is not None and record.get("started", 0) >= floor:
+        return _from_record(record)
+    due = max(floor, record.get("started", 0) + min_interval_s)
+    if due <= now:
+        lock = _run_lock(key)
+        if lock.acquire(blocking=False):
+            try:
+                return {**_walk(dataset_path, budget_s, inspect, time.time()), "waited_s": 0.0}
+            finally:
+                lock.release()
+        due = now                                 # a walk is running: the next one
+    _schedule(dataset_path, key, floor, due, budget_s, inspect)
+    return {"changed": None, "checked": False, "status": "scheduled", "waited_s": 0.0,
+            "after": floor, "retry_after_s": round(max(0.2, due - now) + 0.2, 1)}
+
+
+def _schedule(dataset_path, key, floor, due, budget_s, inspect):
+    """Make sure a walk that starts at or after ``floor`` runs at ``due``."""
+    with _walks_lock:
+        pending = _scheduled.get(key)
+        if pending is not None and pending[0] >= floor:
+            return                                # it already covers this call
+        timer = threading.Timer(max(0.0, due - time.time()), _scheduled_walk,
+                                args=(dataset_path, key, floor, budget_s, inspect))
+        timer.daemon = True
+        _scheduled[key] = (floor, timer)
+    timer.start()
+
+
+def _scheduled_walk(dataset_path, key, floor, budget_s, inspect):
+    with _run_lock(key):                          # after a walk that is running
         with _walks_lock:
-            walk = _walks.get(key)
-            if walk is not None and walk["started"] is None:
-                mine = False                      # not started yet: it is after this call
-            elif walk is not None:
-                mine = None                       # running since before this call: wait, then a new one
-            else:
-                previous = last_check(dataset_path).get("started", 0)
-                walk = {"done": threading.Event(), "result": None, "started": None,
-                        "at": max(arrived, previous + min_interval_s)}
-                _walks[key] = walk
-                mine = True
-        if mine is None:
-            walk["done"].wait(budget_s + 30)
-            continue
-        if mine is False:
-            walk["done"].wait(min_interval_s + budget_s + 30)
-            if walk["result"] is not None:
-                return {**walk["result"], "waited_s": round(time.time() - arrived, 1), "shared": True}
-            continue
+            pending = _scheduled.get(key)
+            if pending is not None and pending[0] == floor:
+                del _scheduled[key]
+        if last_check(dataset_path).get("started", 0) >= floor:
+            return                                # another process walked meanwhile
         try:
-            delay = walk["at"] - time.time()
-            if delay > 0:
-                sleep(min(delay, min_interval_s))
-            with _walks_lock:
-                walk["started"] = time.time()
-            result = _walk(dataset_path, budget_s, inspect, walk["started"])
-            walk["result"] = result
-            return {**result, "waited_s": round(walk["started"] - arrived, 1)}
-        finally:
-            walk["done"].set()
-            with _walks_lock:
-                if _walks.get(key) is walk:
-                    del _walks[key]
+            _walk(dataset_path, budget_s, inspect, time.time())
+        except Exception as exc:                  # a background thread: log, never raise
+            logger.warning(f"Scheduled refresh of {dataset_path} failed: {exc}")
 
 
 def _walk(dataset_path, budget_s, inspect, started):
@@ -332,7 +359,7 @@ def _walk(dataset_path, budget_s, inspect, started):
         bump(dataset_path, reason="refresh", **inspected)
     _record_check(dataset_path, {"started": started, "time": time.time(),
                                  "deep": deep if status == "full" else previous.get("deep"),
-                                 "status": status, "inspected": inspected})
+                                 "status": status, "inspected": inspected, "changed": changed})
     result = {"changed": changed, "checked": status == "full", "status": status, **inspected}
     if status == "partial":
         result["message"] = (f"Store too large to fingerprint fully in {budget_s:g} s: changes that only "

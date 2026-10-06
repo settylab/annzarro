@@ -282,13 +282,23 @@ const DataManager = (function() {
      * and reported, not thrown: the refresh in this browser still goes ahead.
      * @returns {Promise<Object|null>} `{changed, checked}` or null
      */
-    async function revalidateDataset(datasetPath = _currentDataset) {
+    async function revalidateDataset(datasetPath = _currentDataset, { wait = ms => new Promise(r => setTimeout(r, ms)), maxPolls = 6 } = {}) {
         if (!datasetPath) return null;
         try {
-            const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams({ dataset_path: datasetPath })}`,
-                { method: 'POST' });
-            if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
-            return await response.json();
+            // Inside the server's refresh interval the server schedules one
+            // walk for the interval's end and answers at once ("scheduled",
+            // with `after`); the waiting happens here, not in a server worker
+            // (issue #83). Asking again with `after` returns that walk's result.
+            const params = { dataset_path: datasetPath };
+            for (let poll = 0; ; poll++) {
+                const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
+                    { method: 'POST' });
+                if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+                const result = await response.json();
+                if (result.status !== 'scheduled' || poll >= maxPolls) return result;
+                params.after = String(result.after);
+                await wait(Math.max(200, (Number(result.retry_after_s) || 1) * 1000));
+            }
         } catch (error) {
             console.warn('The server did not re-check the dataset:', error && error.message);
             return null;
