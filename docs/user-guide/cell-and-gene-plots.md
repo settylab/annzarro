@@ -213,6 +213,28 @@ genes without a module, drawn in grey as **NA**. View:
 {download}`userguide-categorical-na.json <../_tools/views/userguide-categorical-na.json>`.
 ```
 
+(many-categories)=
+### Columns with many categories
+
+A categorical column can have as many categories as cells: a barcode or a sample-cell id stored as
+a categorical. How it is coloured depends on its number of categories (shown in the dataset
+structure):
+
+- **Up to 100**: one legend entry per category, as above.
+- **101 to 10,000**: the categories share 64 colours (category *k* is drawn in colour *k* mod 64),
+  and the legend is one line, for example "1,344 categories (colours shared)". Clicking it hides
+  and shows every coloured point. Hovering a point names its category. "As stored in adata.uns"
+  colours are not used here.
+- **More than 10,000** (`ui.defaults.category_colour_limit`, {doc}`../reference/configuration`):
+  the plot is drawn without colour and the panel says why, for example "obs.barcode has 1,000,000
+  distinct values, too many to colour by (the limit is 10,000): show it in the hover or in a table
+  instead". Nothing is downloaded for the colour.
+
+Such a column works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
+table column at any size: AnnZarro reads its labels only for the cells shown, not its whole
+category list. Balancing a subset across it is not offered ({doc}`subsets`).
+
+(hover-columns)=
 ## Hover
 
 Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a

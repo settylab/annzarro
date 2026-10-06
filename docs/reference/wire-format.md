@@ -132,6 +132,14 @@ categorical) the reply is the stored integer codes:
 Any other column under `categorical=codes` answers exactly as without it (numeric binary, or
 JSON), as does a request for several columns.
 
+A column with more than 65,536 categories (a barcode or cell id stored as a categorical has one
+per cell), or a request with `categories=used`, gets only the categories its rows use, in
+increasing order of their stored code, and the codes renumbered into that list.
+`X-Annzarro-Categories-Total` then gives the column's number of categories, so a client never
+takes the short list for the column's. The server reads only those categories: 100,000 cells of a
+column with a category per cell send at most 100,000 labels, whatever the dataset's size
+({ref}`many-categories`).
+
 ```console
 $ curl -s -D - -o age.bin "http://127.0.0.1:8812/api/v1/data/obs?dataset_path=$DS&columns=Age&format=f32&categorical=codes" | grep -i '^x-annzarro\|^content-length'
 X-Annzarro-Encoding: categorical
