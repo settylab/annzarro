@@ -413,3 +413,33 @@ def test_log_toggle_redraws_without_refresh(request, mode):
             page.close()
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_untick_redraws_without_refresh(request, mode):
+    """The other direction on its own: a panel opened WITH Log, Log unticked, no Refresh. The colour
+    bar goes back to the linear data range with Plotly's own ticks, and the boxes follow."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LOG))
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(HI)), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI)), bar
+            assert bar["tickvals"] is None and bar["ticktext"] is None, bar
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            assert _saved(page)["color"].get("log") is False
+            if mode == "regular":   # the colours themselves are back to data values
+                colours = page.evaluate(f"""() => document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot')
+                                            .data[0].marker.color.filter(Number.isFinite)""")
+                assert max(colours) == pytest.approx(HI)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
