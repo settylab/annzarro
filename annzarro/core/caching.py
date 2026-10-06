@@ -455,6 +455,15 @@ def cached_method(func):
         if dataset_path is None and not (root_arg is not None and hasattr(root_arg, 'store')):
             logger.debug(f"CACHE[{method_name}]: Skipping cache (no dataset path)")
             return func(self, *args, **kwargs)
+        if dataset_path is None:
+            # Called with a root only: the dataset is its store's path. Kept
+            # under it, an entry is cleared with the dataset and keyed by its
+            # freshness token like every other; without, it was neither (zarr
+            # 2's DirectoryStore has a path), and a reset or a new token left
+            # the old metadata to be served from it.
+            store_path = getattr(root_arg.store, 'path', None) or getattr(root_arg.store, 'dir_path', None)
+            if store_path:
+                dataset_path = str(store_path)
 
         # Convert path to string for cache key
         path_str = None if dataset_path is None else str(dataset_path)

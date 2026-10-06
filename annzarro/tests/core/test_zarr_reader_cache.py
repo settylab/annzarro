@@ -165,3 +165,12 @@ def test_cache_size_management(zarr_reader, tmp_path):
     zarr_reader._add_to_cache("path:big1:x", np.zeros((1000, 1000)), cache_type='matrix')  # ~8 MB
     zarr_reader._add_to_cache("path:big2:x", np.zeros((1000, 1000)), cache_type='matrix')
     assert zarr_reader.cache.memory_usage_mb <= 10
+
+
+def test_clearing_a_dataset_clears_every_entry_of_it(zarr_reader, zarr_test_dataset):
+    """Metadata extracted from a root (no dataset_path) was kept under no
+    dataset under zarr 2: clearing the dataset left it, and it was served
+    again after the store changed."""
+    _populate(zarr_reader, zarr_test_dataset)
+    zarr_reader.clear_cache(dataset_path=zarr_test_dataset)
+    assert zarr_reader.get_cache_info()["item_counts"]["total"] == 0
