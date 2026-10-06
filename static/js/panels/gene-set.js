@@ -382,10 +382,15 @@ const GeneSetPanel = (function() {
             return _snapshot;
         }
 
-        /** The dataset's ids, as the enrichment background. */
+        /** The dataset's ids, as the enrichment background (once per dataset and ID column). */
+        let _background = null;
         function background() {
-            const ids = selectionIds(_genes, { idColumn: _settings.idColumn, idOf }).genes;
-            return { list: ids, hash: setHash(ids) };
+            const key = `${_dataset}\u0001${_settings.idColumn}\u0001${_genes.length}`;
+            if (!_background || _background.key !== key || (_ids && _background.ids !== _ids)) {
+                const list = selectionIds(_genes, { idColumn: _settings.idColumn, idOf }).genes;
+                _background = { key, ids: _ids, list, hash: setHash(list) };
+            }
+            return _background;
         }
 
         function serviceConfig() {
@@ -491,7 +496,9 @@ const GeneSetPanel = (function() {
                 const { input, key } = inputFor(a);
                 const run = _runner.get(a.id);
                 if (!fresh && !needsFetch(run, key)) continue;
-                const blocked = blockedReason(a, input);
+                const blocked = a.kind === 'gene' && _focus.name && !_focus.id
+                    ? { kind: 'empty', message: `${_focus.name} has no value in the ID column ${_settings.idColumn}.` }
+                    : blockedReason(a, input);
                 if (blocked) {
                     _runner.abort(a.id);
                     _runner.update(a.id, r => ({ ...startRun(r, key, Date.now()), status: 'error', lastInputHash: key,
@@ -505,7 +512,8 @@ const GeneSetPanel = (function() {
             if (policy() === 'off' || offline()) { paintAll(); return; }
             const consent = createConsent({ policy: policy(), storage: safeStorage() });
             const requests = [];
-            for (const t of toFetch) {
+            // a cached result is shown without a request, so without asking
+            for (const t of toFetch.filter(x => x.fresh || !_runner.has(x.key))) {
                 for (const host of hostsOf(t.adapter, t.input)) {
                     requests.push({ host, persistable: !t.adapter.privacy, adapter: t.adapter, input: t.input });
                 }
@@ -534,6 +542,8 @@ const GeneSetPanel = (function() {
             if (!p) return;
             if (answer === 'cancel') {
                 _notice = 'Not sent: nothing left this browser.';
+                // auto-update waits for the next Run, rather than asking again at every change
+                _armed = false;
                 paintAll();
                 return;
             }
@@ -909,11 +919,14 @@ const GeneSetPanel = (function() {
             } else if (g === 'ids') {
                 tone = 'stale';
                 text = `Cannot read the ID column ${_settings.idColumn}: ${_ids.error}`;
-            } else if (!_snapshot) {
+            } else if (_pending) {
+                text = 'Waiting for your answer below: nothing has been sent yet.';
+            } else if (!_snapshot || !anyResult()) {
                 const where = hostsSummary();
                 text = policy() === 'off'
                     ? `External services are turned off on this server. ${fmt(n)} genes from "${_source.title}"${tag}; the Links work.`
-                    : `Not run yet. Run sends ${fmt(n)} gene ids${where ? ` to ${where}` : ''}.${tag}`;
+                    : offline() ? `This browser is offline: nothing can be sent; the Links work. ${fmt(n)} genes from "${_source.title}".${tag}`
+                        : `Not run yet. Run sends ${fmt(n)} gene ids${where ? ` to ${where}` : ''}.${tag}`;
                 if (_settings.autoUpdate && policy() !== 'off') text += ' Auto-update starts with the first Run.';
                 if (_notice) text = `${_notice} ${text}`;
                 if (policy() !== 'off') barActions.appendChild(barButton(`⟳ Run · ${fmt(n)} genes`, () => runNow()));
@@ -949,6 +962,11 @@ const GeneSetPanel = (function() {
         function reopenSource() {
             const btn = document.querySelector(`.panel-closed-btn[data-id="${CSS.escape(_settings.tableFilter)}"]`);
             if (btn) btn.click();
+        }
+
+        /** Whether any visible section has run (or been refused) since the snapshot. */
+        function anyResult() {
+            return !!_runner && visibleAdapters().some(a => _runner.get(a.id).status !== 'idle');
         }
 
         function sectionSummary() {

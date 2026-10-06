@@ -26,6 +26,10 @@ the test. A page error fails the test.
 10. A closed source table: its frozen selection is used; one restored closed
     (no selection) is said to be unknown.
 11. With cross-origin isolation on, the network image still shows (blob:).
+12. Species: a local name, a typed taxonomy id, and NCBI Taxonomy's
+    suggestions only when asked for (mocked); a new species makes the panel
+    stale.
+13. Offline: Run sends nothing and says why; the Links still work.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -64,6 +68,7 @@ REPLIES = [
     ("enrichr-add", r"maayanlab\.cloud/Enrichr/addList$", "enrichr-addList.json", "application/json"),
     ("enrichr", r"maayanlab\.cloud/Enrichr/enrich\?", "enrichr-enrich.json", "application/json"),
     ("reactome", r"reactome\.org/AnalysisService/identifiers/projection", "reactome-projection.json", "application/json"),
+    ("ncbi-taxon", r"api\.ncbi\.nlm\.nih\.gov/datasets/v2/taxonomy/taxon_suggest/", "ncbi-taxon_suggest.json", "application/json"),
 ]
 
 
@@ -509,3 +514,41 @@ def test_species_from_the_picker_makes_the_panel_stale(env):
     page.keyboard.press("Enter")
     until(page, "async () => (await import('/static/js/data-manager.js')).DataManager.getTaxonomyId() === '7955'")
     assert services.counts().get("mygene-card", 0) == 1, "no request while picking"
+
+
+def test_a_species_from_ncbi_only_when_asked(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    species = f"{GS} #gs-species-gene-set-G"
+    page.click(species)
+    page.fill(species, "zebraf")
+    page.wait_for_selector(f'{GS} .name-picker-option:has-text("Search NCBI Taxonomy")')
+    assert services.calls == [], "typing sends nothing"
+    page.click(f'{GS} .name-picker-option:has-text("Search NCBI Taxonomy")')
+    # NCBI's answer: a name only it knows is listed
+    page.wait_for_selector(f'{GS} .name-picker-option:has-text("Zebrafish picornavirus 1 · 2563826")')
+    assert services.count("ncbi-taxon") == 1
+    assert services.calls[0][2].endswith("/taxon_suggest/zebraf")
+    page.click(f'{GS} .name-picker-option:has-text("Danio rerio (zebrafish) · 7955")')
+    until(page, "async () => (await import('/static/js/data-manager.js')).DataManager.getTaxonomyId() === '7955'")
+    labels = page.locator(f"{GS} .gs-links__focus a").all_inner_texts()
+    assert "ZFIN" not in labels, "no ZFIN link without a ZFIN id"
+    assert "NCBI Gene" in labels and "Alliance" in labels
+
+
+def test_offline_sends_nothing_and_links_work(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.context.set_offline(True)
+    until(page, "() => navigator.onLine === false")
+    page.click(f"{GS} .gs-run")
+    page.wait_for_timeout(800)
+    assert page.locator(f"{GS} .gs-consent:not([hidden])").count() == 0
+    placeholder = page.inner_text(f'{GS} .gs-section[data-section="string-enrichment"] .coverage-placeholder')
+    assert "This browser is offline. Links still work" in placeholder
+    assert "This browser is offline" in bar(page)
+    assert page.locator(f"{GS} .gs-links__focus a").count() >= 8
+    assert services.calls == []
+    page.context.set_offline(False)

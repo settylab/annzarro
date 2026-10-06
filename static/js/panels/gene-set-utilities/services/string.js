@@ -39,7 +39,7 @@ export const CATEGORY_LABELS = Object.freeze({
     RCTM: 'Reactome', WikiPathways: 'WikiPathways', Pfam: 'Pfam', InterPro: 'InterPro', SMART: 'SMART',
     Keyword: 'UniProt keyword', PMID: 'Publications', COMPARTMENTS: 'Compartments', TISSUES: 'Tissues',
     DISEASES: 'Diseases', HPO: 'Human phenotype', NetworkNeighborAL: 'Local network cluster',
-    GWAS: 'GWAS Catalog', Hallmark: 'MSigDB Hallmark'
+    GWAS: 'GWAS Catalog', Hallmark: 'MSigDB Hallmark', MPO: 'Mammalian phenotype'
 });
 
 function api(input) {
