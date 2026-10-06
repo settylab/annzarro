@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Remove the GPL/LGPL desktop-integration libraries electron-builder adds to the AppImage.
 
-    python annzarro/desktop/scripts/repack_appimage.py AnnZarro-x.y.z-linux-x86_64.AppImage \\
-        --appimagetool appimagetool-x86_64.AppImage
+    python annzarro/desktop/scripts/repack_appimage.py AnnZarro-x.y.z-linux-x86_64.AppImage
 
 electron-builder copies a fixed set of libraries into every x64 AppImage's
 usr/lib, with no option to leave them out: libindicator (GPL-3.0),
@@ -10,8 +9,9 @@ libappindicator (GPL-3.0/LGPL-2.1), libgconf-2 and libnotify (LGPL), and the
 X11 libraries libXss and libXtst (MIT). AnnZarro uses none of the first four
 (no tray icon, no desktop notifications; Electron loads libnotify only on
 demand), so this unpacks the AppImage, deletes them, adds the X11 libraries'
-licences as LICENSES.appimage-libraries.txt, and packs it again with
-appimagetool and the original AppImage runtime. Any other library in usr/lib
+licences as LICENSES.appimage-libraries.txt, and packs it again the way
+electron-builder does: mksquashfs (squashfs-tools, xz, which the runtime
+reads) behind the original AppImage runtime. Any other library in usr/lib
 stops the script.
 """
 
@@ -47,13 +47,10 @@ def run(cmd, **kw):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("appimage")
-    p.add_argument("--appimagetool", required=True)
     args = p.parse_args(argv)
     appimage = Path(args.appimage).resolve()
-    tool = Path(args.appimagetool).resolve()
-    for exe in (appimage, tool):
-        exe.chmod(0o755)
-    env = dict(os.environ, APPIMAGE_EXTRACT_AND_RUN="1", ARCH="x86_64")
+    appimage.chmod(0o755)
+    env = dict(os.environ, APPIMAGE_EXTRACT_AND_RUN="1")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -86,10 +83,13 @@ def main(argv=None):
                           (NOTICES / notice).read_text(encoding="utf-8").strip(), ""]
             (root / NOTICE_NAME).write_text("\n".join(parts) + "\n", encoding="utf-8")
         out = tmp / appimage.name
-        # xz: the runtime electron-builder embeds reads only xz and zlib
-        # squashfs images (appimagetool defaults to zstd).
-        run([tool, "--no-appstream", "--comp", "xz", "--runtime-file", runtime, root, out], env=env,
-            stdout=subprocess.DEVNULL)
+        # As electron-builder packs it: the squashfs image after an offset the
+        # size of the runtime, then the runtime written over the start.
+        run(["mksquashfs", root, out, "-offset", str(len(runtime.read_bytes())), "-all-root",
+             "-noappend", "-no-progress", "-quiet", "-no-xattrs", "-no-fragments",
+             "-comp", "xz", "-Xdict-size", "100%", "-b", "1048576"], stdout=subprocess.DEVNULL)
+        with open(out, "r+b") as f:
+            f.write(runtime.read_bytes())
         shutil.move(str(out), str(appimage))
         appimage.chmod(0o755)
     print("removed: " + ("; ".join(removed) or "nothing"))
