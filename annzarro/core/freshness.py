@@ -138,7 +138,13 @@ def bump(dataset_path=None, **recorded) -> None:
     in the file for the next refresh (``state``).
     """
     key = _key(dataset_path)
-    body = {"dataset_path": None if dataset_path is None else str(dataset_path),
+    # What an earlier bump recorded (a stale consolidated metadata finding)
+    # holds until a refresh records otherwise: a cache reset right after a
+    # refresh (the desktop's Refresh does both) used to drop it, and the
+    # store was read through the stale metadata again.
+    kept = {k: v for k, v in state(dataset_path).items() if k not in ("dataset_path", "time", "reason")} \
+        if dataset_path is not None else {}
+    body = {**kept, "dataset_path": None if dataset_path is None else str(dataset_path),
             "time": time.time(), **recorded}
     folder = _generation_dir()
     try:
