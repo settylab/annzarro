@@ -177,9 +177,15 @@ export function describeSubset(info, total = null) {
         }
     }
     lines.push('Every panel shows these same cells. Click to change the subset.');
+    // the badge names what shapes the cells, not just the seed: a balance
+    // (it was only in the tooltip) and that a filter applies
+    const badgeParts = ['Subset', `seed ${spec.seed}`];
+    if (spec.balance) badgeParts.push(`balanced by ${spec.balance}`);
+    if (spec.where && spec.where.length) badgeParts.push('filtered');
     return {
         count: `${fmt(info.n)} of ${fmt(info.n_total)}`,
-        badge: `Subset · seed ${spec.seed}`,
+        badge: badgeParts.join(' · '),
+        badgeParts,
         title: lines.join('\n'),
         active: true
     };

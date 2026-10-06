@@ -12,6 +12,9 @@ const els = {};
 const mkEl = (id) => (els[id] = els[id] || {
     id, hidden: false, disabled: false, value: '', textContent: '', title: '', max: '',
     _on: {}, classList: { toggle() {}, add() {}, remove() {} },
+    // the badge is written as spans (subset-dialog.js update)
+    appendChild(c) { this.textContent += c.textContent; return c; },
+    setAttribute(k, v) { this[k] = v; },
     addEventListener(type, fn) { (this._on[type] = this._on[type] || []).push(fn); },
     fire(type, ev = {}) { (this._on[type] || []).forEach(fn => fn(ev)); }
 });

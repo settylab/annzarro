@@ -88,7 +88,17 @@ const SubsetControl = (function() {
         }
         if (button) {
             button.hidden = !DataManager.getCurrentDataset();
-            button.textContent = text.badge;
+            // one span per part: a narrow header shortens the badge from
+            // its end (styles.css .subset-badge), the seed and the balance
+            // name stay; the title has it all
+            button.textContent = '';
+            (text.badgeParts || [text.badge]).forEach((part, i) => {
+                const span = document.createElement('span');
+                span.className = i === 0 ? 'sb-part sb-first' : 'sb-part';
+                span.textContent = i === 0 ? part : ` · ${part}`;
+                button.appendChild(span);
+            });
+            button.setAttribute('aria-label', text.badge);
             button.title = text.title;
             button.classList.toggle('subset-active', text.active);
         }

@@ -11,7 +11,7 @@ import {
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
-import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
+import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -881,7 +881,7 @@ const App = (function() {
         const focusedGeneInput = document.getElementById('focused-gene');
         if (focusedGeneInput) {
             _pickers.genes = mountNamePicker({
-                input: focusedGeneInput, noun: 'gene', search: _nameSearch('genes'),
+                input: focusedGeneInput, noun: 'gene', search: _nameSearch('genes'), indexState: _nameIndexState('genes'),
                 onPick: name => DataManager.setFocusedGene(name)
             });
         }
@@ -918,7 +918,7 @@ const App = (function() {
         const focusedCellInput = document.getElementById('focused-cell');
         if (focusedCellInput) {
             _pickers.cells = mountNamePicker({
-                input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'),
+                input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'), indexState: _nameIndexState('cells'),
                 onPick: (name, match) => {
                     // the search said where the cell is: no second lookup
                     if (match) DataManager.rememberCell(name, match);
@@ -1235,6 +1235,22 @@ const App = (function() {
             return shown.then(first => ({
                 ...first, more: all.then(rest => mergeScopedMatches(first, rest, opts.limit))
             }));
+        };
+    }
+
+    /**
+     * Whether the search a picker waits for is waiting for its name index:
+     * the dataset-wide one for the cells a subset does not show ('more'),
+     * else the one asked.
+     * @private
+     */
+    function _nameIndexState(entity) {
+        return (pending) => {
+            const datasetPath = DataManager.getCurrentDataset();
+            if (!datasetPath) return Promise.resolve(null);
+            const subset = DataManager.getSubsetParam();
+            return fetchNameIndexState(Config.API.NAMES, { datasetPath, entity, subset,
+                scope: pending === 'more' ? 'dataset' : 'subset' });
         };
     }
 
