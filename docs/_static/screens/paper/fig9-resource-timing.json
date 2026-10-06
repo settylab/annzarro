@@ -7,7 +7,7 @@
    "requests": [
     {
      "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=bm_aging.zarr&cols=1165&format=f32",
-     "ms": 16.9,
+     "ms": 14.2,
      "transfer": 32660,
      "body": 32360
     }
@@ -19,7 +19,7 @@
    "requests": [
     {
      "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=bm_aging.zarr&rows=760&format=f32",
-     "ms": 21.6,
+     "ms": 34.2,
      "transfer": 65440,
      "body": 65140
     }

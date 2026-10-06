@@ -83,10 +83,9 @@ admins only, and under gunicorn it clears only the worker that answers, so resta
 
 ### Memory
 
-Server memory follows the chunks being read, not the store. The paper's lab deployment served
-33 datasets totalling 2.2 TiB on disk with three server processes of 0.58-0.75 GB resident
-memory each. On the paper's HPC benchmark, serving one row of a 160 GB dense matrix peaked at
-109 MB. A selection on a sparse matrix's other axis (a gene column of CSR, a cell row of CSC),
+Server memory follows the chunks being read, not the store. In the paper's v0.4.0 laptop
+benchmark the server idled at 78 MiB and peaked at 81-102 MiB while serving a gene column or a
+cell row of layers of 0.2 to 20 GB ({doc}`performance`). A selection on a sparse matrix's other axis (a gene column of CSR, a cell row of CSC),
 in zarr and in h5ad, is a bounded scan that holds at most one block of stored indices, not the
 whole matrix; it still decompresses every chunk, so it stays slow. The one pattern that still
 needs memory on the order of the matrix is a cell row of a dense layer stored in whole-gene
@@ -114,8 +113,8 @@ plotly.js for plots, DataTables (with SearchBuilder) for tables, select2 and chr
 | `config.js` | API endpoints, defaults, limits |
 
 The browser holds only the vectors on screen: one float per cell per displayed vector, plus
-the cell and gene name lists. At 1.17 million cells the cell-name list alone is 36 MB, which is
-the slow part of opening such a dataset ({doc}`troubleshooting`).
+the names of the cells shown. The Focused Cell and Focused Gene pickers search names on the
+server, so a dataset of millions of cells never sends its full name list ({doc}`troubleshooting`).
 
 ## What AnnZarro does not do
 

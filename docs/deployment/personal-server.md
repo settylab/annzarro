@@ -80,14 +80,14 @@ Run the server in a job on a compute node, never on a login node.
 4. When you are done, `scancel` the job.
 
 **Memory.** The server's result cache is bounded by `server.cache_memory_mb`, 4,000 MB with the
-default configuration, plus the chunks being read. On the paper's lab deployment each server
-process used 0.58 to 0.92 GB resident while serving 33 datasets
+default configuration, plus the chunks being read; serving one gene column or cell row of a
+0.2-20 GB layer took 81-102 MiB in the paper's v0.4.0 laptop benchmark
 ({doc}`../reference/performance`). Request memory for both, or lower the cache, for example
 with `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`.
 
 **Chunks matter more than size.** The slowest interaction is decided by the chunk layout of
-the stores, not by their size; on a busy shared node a badly chunked layer made the first read
-of one cell's row take up to 26 s ({doc}`../data/chunking`).
+the stores, not by their size; with whole-gene chunks one cell's row decompresses the whole
+layer ({doc}`../data/chunking`).
 
 **Home directories.** The log and PID file go to `~/.annzarro`. Set `ANNZARRO_HOME` to a
 scratch or project directory if your home quota is small.

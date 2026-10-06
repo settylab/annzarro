@@ -120,8 +120,7 @@ login, no confinement).
 **Workers and memory.** Each gunicorn worker is a separate process with its own result cache,
 so memory grows with `workers x cache_memory_mb`. The production default for
 `cache_memory_mb` is 4,000 MB; with four workers that allows 16 GB of cache, which is why the
-example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. On the paper's lab deployment, three server processes used 0.58 to 0.92 GB
-resident each while serving 33 datasets (2.2 TiB on disk). Logins work across workers because
+example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. Logins work across workers because
 the session cookie is signed with one key stored beside the users file.
 
 **Timeouts.** gunicorn kills a worker whose request takes longer than its timeout (60 s in the
