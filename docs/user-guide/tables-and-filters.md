@@ -44,8 +44,11 @@ The `obsp`, `varp` and `layers` tabs list one choice per matrix and cell or gene
 A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer
 rows (cells). A column keeps the cell or gene it was added for: picking `H2-Q7 (focused)` and then
 focusing Cd74 leaves the column `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To
-add Cd74's row, pick it on the tab while Cd74 is focused. Columns saved by an older version that
-followed the focus are listed as "*matrix*: follows the focused gene (…)" and still follow it.
+add Cd74's row, pick it on the tab while Cd74 is focused. A link, panel set or session that names
+a column only as "the focused gene" (or cell) instead of by name gets that column pinned when it
+opens: to the gene or cell the view itself focuses, with the filter conditions on it kept. If the
+view focuses none, the column is removed with its conditions and a notice says so. No table
+column follows the focus.
 
 ## Sort and search
 

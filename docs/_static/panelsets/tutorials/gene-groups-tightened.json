@@ -1,0 +1,550 @@
+{
+ "name": "Gene groups: tightened, auto-update on",
+ "timestamp": "2026-10-06T22:35:41+00:00",
+ "dataset": "bm_aging.zarr",
+ "datasetName": "bm_aging",
+ "constants": {
+  "focusedGene": "H2-Q7",
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "gene-table-g": {
+   "id": "gene-table-g",
+   "type": "gene-table",
+   "title": "Genes like H2-Q7 that rise in this HSC",
+   "config": {
+    "id": "gene-table-g",
+    "title": "Genes like H2-Q7 that rise in this HSC",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     },
+     {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "H2-Q7"
+     },
+     {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "responsive": false,
+    "fixedHeader": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": ">",
+       "data": "spearman_fold_change: H2-Q7",
+       "origData": "varp_spearman_fold_change_H2-Q7",
+       "type": "num",
+       "value": [
+        "0.5"
+       ]
+      },
+      {
+       "condition": ">",
+       "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+       "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+       "type": "num",
+       "value": [
+        "0.2"
+       ]
+      }
+     ],
+     "logic": "AND"
+    },
+    "searchText": "",
+    "filteredGenes": null
+   },
+   "isSelectionTile": false
+  },
+  "gene-plot-g": {
+   "id": "gene-plot-g",
+   "type": "gene-plot",
+   "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+   "config": {
+    "id": "gene-plot-g",
+    "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": "",
+     "history": {
+      "var": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": true,
+     "history": {
+      "varp": {
+       "key": null,
+       "columns": {}
+      }
+     }
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "autoPointSize": false,
+    "autoPointOpacity": false,
+    "colorScale": "RdBu",
+    "categoryPalette": "uns",
+    "colorMin": -1,
+    "colorMax": 1,
+    "colorReversed": false,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "subsettedGenes": null,
+    "hideNonSubset": false,
+    "showGrid": true,
+    "lockColorRange": true,
+    "highlightFocusedGene": true,
+    "exportWidth": 1200,
+    "exportHeight": 800,
+    "tableFilter": "gene-table-g",
+    "removeNonTableEntries": false,
+    "hideNaN": false,
+    "showAxisTitles": true,
+    "showAxisLabels": true,
+    "showAxisLines": true,
+    "showZeroLines": false,
+    "showLegend": true,
+    "bgColor": "#ffffff",
+    "gridColor": "#e6e6e6",
+    "axisColor": "#000000",
+    "textColor": "#000000",
+    "zeroLineColor": "#cccccc",
+    "backdropColor": "#f0f0f0",
+    "axisLineWidth": 1,
+    "gridLineWidth": 1,
+    "zeroLineWidth": 1,
+    "tickDensity": "auto",
+    "fontSize": 12,
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "margins": {
+     "l": 80,
+     "r": 80,
+     "t": 80,
+     "b": 60,
+     "pad": 4
+    },
+    "scaleExport": false,
+    "legendPosition": "right",
+    "enableZoom": true,
+    "enablePan": true,
+    "showHoverInfo": true,
+    "centeringActive": false,
+    "viewport2D": null,
+    "colorRangeUnits": "data"
+   },
+   "isSelectionTile": false
+  },
+  "gene-set-g": {
+   "id": "gene-set-g",
+   "type": "gene-set",
+   "title": "Gene Set Analysis",
+   "config": {
+    "id": "gene-set-g",
+    "title": "Gene Set Analysis",
+    "tableFilter": "gene-table-g",
+    "idColumn": "auto",
+    "idType": "auto",
+    "autoUpdate": true,
+    "sections": {
+     "mygene-card": {
+      "visible": true,
+      "params": {}
+     },
+     "string-enrichment": {
+      "visible": true,
+      "params": {}
+     },
+     "gprofiler-gost": {
+      "visible": true,
+      "params": {}
+     },
+     "string-network": {
+      "visible": true,
+      "params": {}
+     },
+     "mygene-mapping": {
+      "visible": true,
+      "params": {}
+     },
+     "string-partners": {
+      "visible": false,
+      "params": {}
+     },
+     "hpa": {
+      "visible": false,
+      "params": {}
+     },
+     "enrichr": {
+      "visible": false,
+      "params": {}
+     },
+     "reactome": {
+      "visible": false,
+      "params": {}
+     },
+     "links": {
+      "visible": true,
+      "params": {}
+     }
+    },
+    "sectionOrder": [
+     "links",
+     "mygene-card",
+     "string-enrichment",
+     "gprofiler-gost",
+     "string-network",
+     "mygene-mapping",
+     "string-partners",
+     "hpa",
+     "enrichr",
+     "reactome"
+    ],
+    "links": {
+     "columns": null,
+     "listOpen": false
+    },
+    "consent": {
+     "selection": "j-3e004f8deb0c617bc9f9feeb",
+     "hosts": [
+      "biit.cs.ut.ee",
+      "mygene.info",
+      "version-12-5.string-db.org"
+     ]
+    }
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "H2-Q7",
+   "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "vertical",
+     "children": [
+      {
+       "type": "tile",
+       "id": "gene-table-g",
+       "controlsVisible": true
+      },
+      {
+       "type": "split",
+       "direction": "horizontal",
+       "children": [
+        {
+         "type": "tile",
+         "id": "gene-plot-g",
+         "controlsVisible": false
+        },
+        {
+         "type": "tile",
+         "id": "gene-set-g",
+         "controlsVisible": true
+        }
+       ],
+       "panes": [
+        {
+         "percentage": 50,
+         "controlsVisible": false
+        },
+        {
+         "percentage": 50,
+         "controlsVisible": true
+        }
+       ]
+      }
+     ],
+     "panes": [
+      {
+       "percentage": 40,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 60,
+       "controlsVisible": false
+      }
+     ],
+     "height": 2400
+    },
+    {
+     "type": "selector"
+    }
+   ],
+   "controlState": {
+    "gene-table-g": false,
+    "gene-plot-g": false,
+    "gene-set-g": true
+   },
+   "panelConfigs": {
+    "gene-table-g": {
+     "id": "gene-table-g",
+     "title": "Genes like H2-Q7 that rise in this HSC",
+     "columns": [
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mahalanobis",
+       "column": ""
+      },
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mean_lfc",
+       "column": ""
+      },
+      {
+       "type": "varp",
+       "key": "spearman_fold_change",
+       "column": "H2-Q7"
+      },
+      {
+       "type": "layer",
+       "key": "kompot_de_Young_to_Old_fold_change",
+       "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+      }
+     ],
+     "searchBuilderEnabled": true,
+     "responsive": false,
+     "fixedHeader": true,
+     "searchBuilderConfig": {
+      "criteria": [
+       {
+        "condition": ">",
+        "data": "spearman_fold_change: H2-Q7",
+        "origData": "varp_spearman_fold_change_H2-Q7",
+        "type": "num",
+        "value": [
+         "0.5"
+        ]
+       },
+       {
+        "condition": ">",
+        "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+        "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+        "type": "num",
+        "value": [
+         "0.2"
+        ]
+       }
+      ],
+      "logic": "AND"
+     },
+     "searchText": "",
+     "filteredGenes": null
+    },
+    "gene-plot-g": {
+     "id": "gene-plot-g",
+     "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+     "x": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": "",
+      "history": {
+       "var": {
+        "key": null,
+        "columns": {}
+       }
+      }
+     },
+     "y": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": "",
+      "history": {
+       "var": {
+        "key": null,
+        "columns": {}
+       }
+      }
+     },
+     "z": null,
+     "color": {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "H2-Q7",
+      "locked": true,
+      "history": {
+       "varp": {
+        "key": null,
+        "columns": {}
+       }
+      }
+     },
+     "pointSize": 6,
+     "pointOpacity": 0.9,
+     "autoPointSize": false,
+     "autoPointOpacity": false,
+     "colorScale": "RdBu",
+     "categoryPalette": "uns",
+     "colorMin": -1,
+     "colorMax": 1,
+     "colorReversed": false,
+     "hoverInfo": [
+      {
+       "type": "var",
+       "key": "_index"
+      }
+     ],
+     "subsettedGenes": null,
+     "hideNonSubset": false,
+     "showGrid": true,
+     "lockColorRange": true,
+     "highlightFocusedGene": true,
+     "exportWidth": 1200,
+     "exportHeight": 800,
+     "tableFilter": "gene-table-g",
+     "removeNonTableEntries": false,
+     "hideNaN": false,
+     "showAxisTitles": true,
+     "showAxisLabels": true,
+     "showAxisLines": true,
+     "showZeroLines": false,
+     "showLegend": true,
+     "bgColor": "#ffffff",
+     "gridColor": "#e6e6e6",
+     "axisColor": "#000000",
+     "textColor": "#000000",
+     "zeroLineColor": "#cccccc",
+     "backdropColor": "#f0f0f0",
+     "axisLineWidth": 1,
+     "gridLineWidth": 1,
+     "zeroLineWidth": 1,
+     "tickDensity": "auto",
+     "fontSize": 12,
+     "fontFamily": "Arial, Helvetica, sans-serif",
+     "margins": {
+      "l": 80,
+      "r": 80,
+      "t": 80,
+      "b": 60,
+      "pad": 4
+     },
+     "scaleExport": false,
+     "legendPosition": "right",
+     "enableZoom": true,
+     "enablePan": true,
+     "showHoverInfo": true,
+     "centeringActive": false,
+     "viewport2D": null,
+     "colorRangeUnits": "data"
+    },
+    "gene-set-g": {
+     "id": "gene-set-g",
+     "title": "Gene Set Analysis",
+     "tableFilter": "gene-table-g",
+     "idColumn": "auto",
+     "idType": "auto",
+     "autoUpdate": true,
+     "sections": {
+      "mygene-card": {
+       "visible": true,
+       "params": {}
+      },
+      "string-enrichment": {
+       "visible": true,
+       "params": {}
+      },
+      "gprofiler-gost": {
+       "visible": true,
+       "params": {}
+      },
+      "string-network": {
+       "visible": true,
+       "params": {}
+      },
+      "mygene-mapping": {
+       "visible": true,
+       "params": {}
+      },
+      "string-partners": {
+       "visible": false,
+       "params": {}
+      },
+      "hpa": {
+       "visible": false,
+       "params": {}
+      },
+      "enrichr": {
+       "visible": false,
+       "params": {}
+      },
+      "reactome": {
+       "visible": false,
+       "params": {}
+      },
+      "links": {
+       "visible": true,
+       "params": {}
+      }
+     },
+     "sectionOrder": [
+      "links",
+      "mygene-card",
+      "string-enrichment",
+      "gprofiler-gost",
+      "string-network",
+      "mygene-mapping",
+      "string-partners",
+      "hpa",
+      "enrichr",
+      "reactome"
+     ],
+     "links": {
+      "columns": null,
+      "listOpen": false
+     },
+     "consent": {
+      "selection": "j-3e004f8deb0c617bc9f9feeb",
+      "hosts": [
+       "biit.cs.ut.ee",
+       "mygene.info",
+       "version-12-5.string-db.org"
+      ]
+     }
+    }
+   }
+  }
+ }
+}
