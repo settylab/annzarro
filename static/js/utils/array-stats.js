@@ -133,11 +133,133 @@ export function logColorValues(values, floor = null) {
   };
 }
 
-/** Colour-bar ticks at whole decades, labelled with the original values. */
+// Mantissas per decade, finest first; the finest that gives at most
+// LOG_TICKS_MAX ticks over the range is used (1-2-5 for 1 to 82).
+const LOG_TICK_MANTISSAS = [[1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 5], [1, 3], [1]];
+const LOG_TICKS_MAX = 8;
+
+/** A tick label in original units: 0.002, 50, 2000; 5e-6 and 1e7 outside 1e-3..1e3. */
+function logTickLabel(v, digits = 3) {
+  const [m, e] = v.toExponential(digits - 1).split('e').map(Number);
+  return e >= -3 && e <= 3 ? String(Number(v.toPrecision(digits))) : `${m}e${e}`;
+}
+
+/**
+ * Colour-bar ticks for a log colour scale over [logMin, logMax] (log10
+ * units), labelled with the original values. They were whole decades only,
+ * so data from 1 to 82 had two ticks, 1 and 10, and a range inside one
+ * decade had none. Now: 1-2-5 (or 1-3, or every decade) per decade,
+ * whichever is finest with at most 8 ticks; over very many decades every
+ * n-th decade; and inside a decade, evenly spaced values (2.5, 3, 3.5).
+ * @returns {{tickvals: number[], ticktext: string[]}|null} null for no range
+ */
 export function logColorbarTicks(logMin, logMax) {
-  const lo = Math.ceil(logMin), hi = Math.floor(logMax);
-  const tickvals = [];
-  for (let k = lo; k <= hi; k++) tickvals.push(k);
-  if (tickvals.length < 2) return null;
-  return { tickvals, ticktext: tickvals.map(k => (k >= -3 && k <= 3 ? String(Number((10 ** k).toPrecision(1))) : `1e${k}`)) };
+  if (!(Number.isFinite(logMin) && Number.isFinite(logMax) && logMax > logMin)) return null;
+  const eps = 1e-9;
+  const lo = Math.floor(logMin), hi = Math.ceil(logMax);
+  let tickvals = null;
+  if (hi - lo <= 4 * LOG_TICKS_MAX) {
+    for (const mantissas of LOG_TICK_MANTISSAS) {
+      const t = [];
+      for (let k = lo; k <= hi && t.length <= LOG_TICKS_MAX; k++) {
+        for (const m of mantissas) {
+          const x = k + Math.log10(m);
+          if (x >= logMin - eps && x <= logMax + eps) t.push(x);
+        }
+      }
+      if (t.length <= LOG_TICKS_MAX) { tickvals = t; break; }
+    }
+  }
+  if (!tickvals) {
+    // many decades: every 2nd, 5th, 10th, ... one
+    const first = Math.ceil(logMin - eps), last = Math.floor(logMax + eps);
+    const need = (last - first + 1) / LOG_TICKS_MAX;
+    const every = [2, 3, 5, 10, 20, 25, 50, 100, 200, 500].find(n => n >= need) || Math.ceil(need);
+    tickvals = [];
+    for (let k = Math.ceil(first / every) * every; k <= last; k += every) tickvals.push(k);
+  }
+  if (tickvals.length < 3) {
+    // less than a decade: evenly spaced values in original units
+    const a = 10 ** logMin, b = 10 ** logMax;
+    const raw = (b - a) / 4, mag = 10 ** Math.floor(Math.log10(raw));
+    let step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= raw * (1 - eps));
+    const even = () => {
+      const t = [];
+      for (let i = Math.ceil(a / step - eps); i * step <= b * (1 + eps); i++) t.push(Math.log10(i * step));
+      return t;
+    };
+    tickvals = even();
+    while (tickvals.length < 3) { step /= 2; tickvals = even(); }
+    // enough digits to tell neighbouring ticks apart
+    const digits = Math.min(15, Math.max(3, Math.ceil(Math.log10(b / step)) + 1));
+    return { tickvals, ticktext: tickvals.map(x => logTickLabel(10 ** x, digits)) };
+  }
+  return { tickvals, ticktext: tickvals.map(x => logTickLabel(10 ** x)) };
+}
+
+/**
+ * The colour Min and Max are data values: under a log colour scale the user
+ * types 82, not 1.914. The plot is drawn in log10 units, so settings.colorMin
+ * and settings.colorMax hold log10 values while Log is on (the boxes, saved
+ * views and share links show and store data values); these convert.
+ */
+
+/** Settings (drawn) units to data units: 10^v under Log. */
+export function colorBoundToData(v, log) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return v ?? null;
+  return log ? Number((10 ** v).toPrecision(12)) : v;
+}
+
+/**
+ * Data units to settings (drawn) units: log10(v) under Log. At or below
+ * zero there is no log10: Min is drawn from the floor (everything at or
+ * below the floor has the floor's colour anyway); Max is refused.
+ * @param {number|null} v - typed or stored value, data units
+ * @param {boolean} log
+ * @param {'min'|'max'} which
+ * @param {number|null} [floor] - the log scale's floor, data units
+ * @returns {{value: number|null, refused?: string, note?: string}}
+ */
+export function colorBoundFromData(v, log, which, floor = null) {
+  if (!log || v === null || v === undefined || !Number.isFinite(v)) return { value: v ?? null };
+  if (v > 0) return { value: Math.log10(v) };
+  if (which === 'max') return { value: null, refused: `Max must be above 0 on a log colour scale (${v} has no log).` };
+  const f = typeof floor === 'number' && floor > 0 ? floor : null;
+  return {
+    value: f === null ? null : Math.log10(f),
+    note: `Min ${v} is at or below 0, which has no log: the scale starts at the floor`
+      + (f === null ? '.' : `, ${formatRangeValue(f)}.`)
+  };
+}
+
+/** Marker for colour bounds stored in data units; views saved before it stored log10 under Log. */
+export const COLOR_RANGE_UNITS = 'data';
+
+/**
+ * The colour bounds as a panel's config stores them (getConfig: panel sets,
+ * share links, sessions, copies of a panel): data units, marked.
+ */
+export function storedColorRange(settings) {
+  const log = !!(settings.color && settings.color.log);
+  return { colorMin: colorBoundToData(settings.colorMin, log), colorMax: colorBoundToData(settings.colorMax, log),
+    colorRangeUnits: COLOR_RANGE_UNITS };
+}
+
+/**
+ * A config as a panel's settings take it: bounds stored in data units
+ * (colorRangeUnits: 'data') go back to drawn units. A view saved before
+ * that marker stored drawn units already (log10 under Log) and is kept
+ * as is, so old links open with the range they had.
+ * @returns {Object} a copy without colorRangeUnits
+ */
+export function restoreColorRange(config) {
+  if (!config || typeof config !== 'object') return config;
+  const { colorRangeUnits, ...out } = config;
+  const log = !!(out.color && out.color.log);
+  if (colorRangeUnits === COLOR_RANGE_UNITS && log) {
+    for (const [key, which] of [['colorMin', 'min'], ['colorMax', 'max']]) {
+      if (key in out) out[key] = colorBoundFromData(out[key], true, which).value;
+    }
+  }
+  return out;
 }

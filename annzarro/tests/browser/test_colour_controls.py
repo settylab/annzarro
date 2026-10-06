@@ -5,13 +5,18 @@ coloured by a numeric column and checks:
 
 - the Map picker labels which way each sequential map runs, the labels agree
   with the loaded Plotly's own scales, and the swatch beside the picker
-  follows Reverse (static/js/utils/color-scales.js).
+  follows Reverse (static/js/utils/color-scales.js);
+- under Log, Min and Max are data values (typing 5000 draws up to 5000, not
+  10^5000), values with no log10 are explained, the colour bar has 1-2-5
+  ticks, saved views store data values and links saved before (log10 under
+  Log) open with the range they had, in both drawing paths.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 """
 import base64
 import json
+import math
 import os
 import socket
 import subprocess
@@ -40,14 +45,13 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def server(tmp_path_factory):
+def _serve(home, *extra):
     port = _free_port()
-    env = dict(os.environ, ANNZARRO_HOME=str(tmp_path_factory.mktemp("home")), ANNZARRO_HEADLESS="1",
+    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     # this checkout's package, not whatever "annzarro" is installed
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
+                             "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled", *extra],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
     for _ in range(120):
@@ -59,6 +63,24 @@ def server(tmp_path_factory):
     else:
         proc.kill()
         pytest.fail("server did not start")
+    return proc, root
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    proc, root = _serve(tmp_path_factory.mktemp("home"))
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    """The same fixture drawn by the large-plot path (binned colour traces)."""
+    home = tmp_path_factory.mktemp("home-large")
+    cfg = home / "large.yaml"
+    cfg.write_text("ui:\n  defaults:\n    large_plot_points: 100\n")
+    proc, root = _serve(home, "--config", str(cfg))
     yield root
     proc.terminate()
     proc.wait(10)
@@ -146,3 +168,107 @@ def test_map_picker_labels_the_direction(server):
             page.close()
         finally:
             browser.close()
+
+
+LOG = {"type": "obs", "key": "total_counts", "column": "", "log": True}   # 103 .. 9950
+
+# the trace carrying the colour bar, i.e. the points (one invisible point in large-plot mode)
+BAR = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    const t = gd.data.find(t => t.marker && t.marker.colorbar && Array.isArray(t.marker.color));
+    const cb = t.marker.colorbar;
+    return {{ cmin: t.marker.cmin, cmax: t.marker.cmax, tickvals: cb.tickvals || null, ticktext: cb.ticktext || null }};
+}}"""
+
+
+def _type(page, sel, value):
+    page.fill(sel, str(value))
+    page.locator(sel).dispatch_event("change")
+    page.wait_for_timeout(600)
+
+
+def _notices(page):
+    return page.evaluate("() => [...document.querySelectorAll('.notification')].map(n => n.textContent.replace(/\\s+/g, ' '))")
+
+
+def _saved(page):
+    return page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['%s']" % PID)
+
+
+def test_log_limits_are_data_values(server):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LOG))
+            lo, hi = math.log10(102.97683205853679), math.log10(9949.681746793087)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(lo), pytest.approx(hi))
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            # 1-2-5 ticks in data units (whole decades gave one tick, 1000, and Plotly's log10 labels)
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"]
+            assert [10 ** v for v in bar["tickvals"]] == [pytest.approx(float(t)) for t in bar["ticktext"]]
+
+            # typed values are data values
+            _type(page, f"#color-max-{PID}", 5000)
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(5000))
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"]
+            # what links and panel sets store: data values, marked as such
+            cfg = _saved(page)
+            assert (cfg["colorMax"], cfg["colorRangeUnits"]) == (5000, "data")
+            assert cfg["colorMin"] == pytest.approx(102.97683205853679)
+
+            # at or below 0 there is no log: Min starts at the floor, Max is refused, both say why
+            _type(page, f"#color-min-{PID}", 0)
+            assert page.evaluate(BAR)["cmin"] == pytest.approx(lo)
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert any("at or below 0" in n and "floor" in n for n in _notices(page)), _notices(page)
+            _type(page, f"#color-max-{PID}", -1)
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(math.log10(5000)), "Max unchanged"
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            assert any("Max must be above 0" in n for n in _notices(page)), _notices(page)
+
+            # a locked range keeps its data values when Log goes off and on again
+            page.click(f"#lock-range-{PID}")
+            page.click(f"#log-color-{PID}")
+            page.wait_for_timeout(1000)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(102.97683205853679), pytest.approx(5000))
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            page.click(f"#log-color-{PID}")
+            page.wait_for_timeout(1000)
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(math.log10(5000))
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_limits_in_old_and_new_links(request, mode):
+    """A link saved before 0.4 stored log10 bounds under Log; it opens with the range it had."""
+    root = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            old = dict(color=LOG, colorMin=2.5, colorMax=3.5, lockColorRange=True)            # no marker: log10
+            new = dict(color=LOG, colorMin=316.2277660168379, colorMax=3162.2776601683795,
+                       lockColorRange=True, colorRangeUnits="data")
+            for extra in (old, new):
+                page, errors = _open(browser, _link(root, **extra))
+                bar = page.evaluate(BAR)
+                assert (bar["cmin"], bar["cmax"]) == (pytest.approx(2.5), pytest.approx(3.5)), (mode, extra)
+                assert page.input_value(f"#color-min-{PID}") == "316"
+                assert page.input_value(f"#color-max-{PID}") == "3162"
+                assert bar["ticktext"] == ["500", "1000", "2000"], bar
+                cfg = _saved(page)
+                assert (cfg["colorMin"], cfg["colorMax"]) == (pytest.approx(316.2277660168379), pytest.approx(3162.2776601683795))
+                assert cfg["colorRangeUnits"] == "data"
+                assert not errors, errors
+                page.close()
+        finally:
+            browser.close()
+

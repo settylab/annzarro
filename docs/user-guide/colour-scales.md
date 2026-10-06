@@ -116,6 +116,14 @@ linear scale everything but the top decade is one colour. Click **Log** to colou
 value. Values at or below the **floor** (including zeros) take the floor's colour. Type a floor,
 for example `1e-5`, or leave the box empty to use the smallest positive value.
 
+**Min** and **Max** stay in the data's units under Log: for counts from 1 to 82, type `1` and `82`,
+not their logarithms. A value with no logarithm is not used as typed: a Min at or below 0 starts the
+scale at the floor, a Max at or below 0 is refused, and a notice says so. The colour bar is
+labelled in data units, at 1, 2, 5 (or 1, 3, or whole decades over a wide range) times each power
+of ten. Panel sets and share links store data values too; a link saved with AnnZarro 0.3 or
+earlier, which stored the logarithms under Log, opens with the range it had. With **Lock Range** on,
+switching Log on or off keeps the same data values.
+
 ```{figure} ../_static/screens/user-guide/colour-log.png
 :class: screenshot
 :alt: The HSC's diffusion walk row in Viridis. Left, linear: only a small patch near the HSC is not dark purple. Right, log with floor 1e-5: the walk's reach spreads in green and blue over the progenitor region, the colour bar runs from 1e-5 to 0.01.

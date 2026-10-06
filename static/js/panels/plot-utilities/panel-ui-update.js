@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { formatRangeValue } from '../../utils/array-stats.js';
+import { formatRangeValue, colorBoundToData } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
@@ -783,6 +783,14 @@ export function colorSliderScales(values, centered) {
   return abs && { min: mirroredScale(abs), max: abs };
 }
 
+/**
+ * A colour bound as the Min/Max boxes show it: in data units, also under a
+ * log colour scale, where settings hold log10 (array-stats.js).
+ */
+export function colorBoundText(settings, v) {
+  return formatRangeValue(colorBoundToData(v, !!(settings.color && settings.color.log)));
+}
+
 /** The colour value a min/max slider shows (its scale, else its raw value). */
 export function colorSliderValue(slider) {
   const scale = jQuery(slider).data('scale');
@@ -813,8 +821,8 @@ function showColorRange($container, id, scales, settings) {
     showColorBound($colorMinSlider, settings.colorMin, 'low');
     showColorBound($colorMaxSlider, settings.colorMax, 'high');
   }
-  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
-  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
+  if ($colorMinInput.length) $colorMinInput.val(colorBoundText(settings, settings.colorMin));
+  if ($colorMaxInput.length) $colorMaxInput.val(colorBoundText(settings, settings.colorMax));
 }
 
 /**

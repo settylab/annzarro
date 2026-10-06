@@ -421,8 +421,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     // the colour bar: one invisible point carrying the scale
     const bar = colourBar(settings, colourTitle(settings.color));
     if (settings.color.log) {
-      // whole decades labelled in original units, as applyLogColorbar does
-      const ticks = logColorbarTicks(lo, hi);
+      // labelled in original units over the drawn range, as applyLogColorbar does
+      const ticks = logColorbarTicks(cmin, cmax);
       if (ticks) Object.assign(bar, { tickvals: ticks.tickvals, ticktext: ticks.ticktext });
     }
     traces.push({

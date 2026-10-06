@@ -1,6 +1,7 @@
 import { listAvailableColormaps } from './colors.js';
 import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
+import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -139,12 +140,12 @@ export function createPanelStructure(container, id, settings) {
                 <div class="color-min-slider-container ctl-row ctl-slider">
                   <label class="ctl-label" for="color-min-${id}">Min</label>
                   <input type="range" class="form-range" id="color-min-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="0" title="Percentile of the coloured values" aria-label="Colour minimum (percentile)">
-                  <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${settings.colorMin ?? 0}">
+                  <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${colorBoundToData(settings.colorMin, !!settings.color?.log) ?? 0}">
                 </div>
                 <div class="color-max-slider-container ctl-row ctl-slider">
                   <label class="ctl-label" for="color-max-${id}">Max</label>
                   <input type="range" class="form-range" id="color-max-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="${SLIDER_STEPS}" title="Percentile of the coloured values" aria-label="Colour maximum (percentile)">
-                  <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${settings.colorMax ?? 100}">
+                  <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${colorBoundToData(settings.colorMax, !!settings.color?.log) ?? 100}">
                 </div>
               </div>
             </div>

@@ -1431,8 +1431,14 @@ export async function applyLogColorbar(gd, data, settings) {
   if (idx < 0) return;
   const update = {};
   if (data.colorLog) {
-    const finite = data.color.filter(v => Number.isFinite(v));
-    const ticks = finite.length ? logColorbarTicks(arrayMin(finite), arrayMax(finite)) : null;
+    // over the drawn range: the set Min/Max, else the data's
+    let lo = settings.colorMin, hi = settings.colorMax;
+    if (lo == null || hi == null) {
+      const finite = data.color.filter(v => Number.isFinite(v));
+      if (lo == null) lo = finite.length ? arrayMin(finite) : NaN;
+      if (hi == null) hi = finite.length ? arrayMax(finite) : NaN;
+    }
+    const ticks = logColorbarTicks(lo, hi);
     update['marker.colorbar.tickvals'] = [ticks ? ticks.tickvals : null];
     update['marker.colorbar.ticktext'] = [ticks ? ticks.ticktext : null];
   } else {

@@ -137,3 +137,15 @@ test('centred at 0: symmetric range, min thumb mirrors the max thumb', () => {
     const lo = controls['#color-min-slider-z'].data.scale, hi = controls['#color-max-slider-z'].data.scale;
     for (const p of [0.1, 0.37, 0.8]) assert.ok(Math.abs(lo.fromPos(1 - p) + hi.fromPos(p)) < 1e-12);
 });
+
+test('under Log the boxes show data values, the settings log10', () => {
+    // data 1 .. 82 on a log scale: the boxes read 1 and 82, not 0 and 1.91
+    // (typing 82 used to mean 10^82)
+    const controls = makeControls('l');
+    const settings = { color: { type: 'obs', key: 'n', log: true }, colorMin: null, colorMax: null, lockColorRange: false };
+    updateColorSliderUI(controls, { color: [0, 0.5, 1, Math.log10(82)] }, settings, 'l', false);
+    assert.equal(settings.colorMin, 0);
+    assert.equal(settings.colorMax, Math.log10(82));
+    assert.equal(controls['#color-min-l'].value, '1');
+    assert.equal(controls['#color-max-l'].value, '82');
+});
