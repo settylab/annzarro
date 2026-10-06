@@ -1,21 +1,21 @@
 request,format,median_ms,bytes,encoding,dtype,n
-"gene column, dense layer (fold change)",json,16.5,116748,json,,10
+"gene column, dense layer (fold change)",json,17.4,116818,json,,10
 "gene column, dense layer (fold change)",f32,12.3,32360,dense,float32,10
-"gene column, X (CSC)",json,13.7,108105,json,,10
+"gene column, X (CSC)",json,13.7,108175,json,,10
 "gene column, X (CSC)",f32,11.7,32360,dense,float32,10
-"gene column, CSR layer (logged_counts)",json,73.3,39657,json,,10
-"gene column, CSR layer (logged_counts)",f32,72.3,4656,sparse,float32,10
-"cell row, dense layer (fold change)",json,20.6,204028,json,,10
-"cell row, dense layer (fold change)",f32,17.7,65140,dense,float32,10
-"cell row, X (CSC)",json,218.9,191217,json,,10
-"cell row, X (CSC)",f32,214.8,65140,dense,float32,10
-"obsp row, dense (diffusion_walk_t5)",json,14.4,47605,json,,10
-"obsp row, dense (diffusion_walk_t5)",f32,13.0,27864,sparse,float32,10
-"obsp row, sparse kNN (connectivities)",json,9.2,16443,json,,10
-"obsp row, sparse kNN (connectivities)",f32,8.9,144,sparse,float32,10
-"varp row, dense (spearman_fold_change)",json,23.0,186736,json,,10
-"varp row, dense (spearman_fold_change)",f32,17.0,65140,dense,float32,10
-obsm column (X_umap),json,2.7,97031,json,,10
+"gene column, CSR layer (logged_counts)",json,73.6,39727,json,,10
+"gene column, CSR layer (logged_counts)",f32,71.5,4656,sparse,float32,10
+"cell row, dense layer (fold change)",json,20.0,204098,json,,10
+"cell row, dense layer (fold change)",f32,15.8,65140,dense,float32,10
+"cell row, X (CSC)",json,240.2,191287,json,,10
+"cell row, X (CSC)",f32,235.2,65140,dense,float32,10
+"obsp row, dense (diffusion_walk_t5)",json,16.1,47675,json,,10
+"obsp row, dense (diffusion_walk_t5)",f32,13.4,27864,sparse,float32,10
+"obsp row, sparse kNN (connectivities)",json,9.6,16513,json,,10
+"obsp row, sparse kNN (connectivities)",f32,9.4,144,sparse,float32,10
+"varp row, dense (spearman_fold_change)",json,25.1,186806,json,,10
+"varp row, dense (spearman_fold_change)",f32,16.0,65140,dense,float32,10
+obsm column (X_umap),json,2.7,97101,json,,10
 obsm column (X_umap),f32,1.0,32360,dense,float32,10
-obs column (DA z-score),json,3.0,156792,json,,10
-obs column (DA z-score),f32,1.0,64720,dense,float64,10
+obs column (DA z-score),json,3.4,156862,json,,10
+obs column (DA z-score),f32,1.2,64720,dense,float64,10

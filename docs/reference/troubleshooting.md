@@ -41,7 +41,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Error page "AnnZarro could not start: …" | The server did not answer within 180 s, exited, or the interface did not load within 60 s | Read the log named on the page (its `server:` lines are the server's own output), then **Retry** ({doc}`../getting-started/desktop-app`) |
 | A panel says "No dataset loaded" after starting the app. Reproduced | The layout was restored from the last session, but its dataset was moved or deleted; a "Failed to load dataset" notice names it | Choose a dataset in the Dataset picker, or close the panel. Builds before PR #54 showed a spinner here that never stopped |
 | Starting the app again does nothing visible | AnnZarro is already running; the second start brings its window to the front | Look for the existing window (Dock, taskbar) |
-| An AnnZarro desktop app from before the preprint release (v0.1.1) needs a Python on the computer, and when it cannot stop its own server on quitting it stops every Python process whose command line contains `annzarro` | Old build | Delete it and install the current release |
+| An AnnZarro desktop app from before the preprint release needs a Python on the computer, and when it cannot stop its own server on quitting it stops every Python process whose command line contains `annzarro` | Old build | Delete it and install the current release |
 
 ## Building views
 
