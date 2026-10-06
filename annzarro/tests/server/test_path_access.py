@@ -1,13 +1,13 @@
 """
 Which dataset paths each requester may open (``server.arbitrary_paths``).
 
-Default (``auto``): on a shared server (login on, or a network host) every
-local path a request names must resolve -- realpath, so ``..`` and symlinks
-are followed -- inside ``data_dir`` or ``allowed_dirs``, for everyone,
-admins included. The single user of a local server (loopback, no login: a
-laptop, the desktop app) may open any path. ``admins`` additionally lets
-admins of a shared server open any path; ``none`` confines local servers
-too.
+On a shared server (login on, or a network host) every local path a request
+names must resolve -- realpath, so ``..`` and symlinks are followed --
+inside ``data_dir`` or ``allowed_dirs``, except for admins under the default
+``admins`` (each such open is logged with the admin's name). The single
+user of a local server (loopback, no login: a laptop, the desktop app) may
+open any path. ``local-only`` confines admins of a shared server too; ``none``
+confines everyone, local servers included.
 
 Every route that takes a path is listed in ROUTES and probed with each
 escape in ESCAPES; test_every_route_is_classified fails when a route is
@@ -151,11 +151,12 @@ def _probe(client, root, method, template, name, path):
     return client.open(_url(template, root, path), method=method)
 
 
-CONFINED = [("open-net", {}), ("user", {}), ("admin", {}), ("user", {"arbitrary_paths": "admins"}),
+CONFINED = [("open-net", {}), ("user", {}), ("user", {"arbitrary_paths": "admins"}),
+            ("admin", {"arbitrary_paths": "local-only"}), ("user", {"arbitrary_paths": "none"}),
             ("local", {"arbitrary_paths": "none"}), ("admin", {"arbitrary_paths": "none"})]
 
 
-@pytest.mark.parametrize("who,settings", CONFINED, ids=[f"{w}-{s.get('arbitrary_paths', 'auto')}" for w, s in CONFINED])
+@pytest.mark.parametrize("who,settings", CONFINED, ids=[f"{w}-{s.get('arbitrary_paths', 'default')}" for w, s in CONFINED])
 @pytest.mark.parametrize("method,template", ROUTES, ids=[t.split("?")[0] for _, t in ROUTES])
 def test_escapes_are_refused(layout, who, settings, method, template):
     client = _cached_client(layout, who, **settings)
@@ -166,10 +167,11 @@ def test_escapes_are_refused(layout, who, settings, method, template):
         assert _refused(resp), f"{name} {path!r}: {resp.status_code} {resp.get_data(as_text=True)[:200]}"
 
 
-OPEN = [("local", {}), ("local", {"arbitrary_paths": "admins"}), ("admin", {"arbitrary_paths": "admins"})]
+OPEN = [("local", {}), ("local", {"arbitrary_paths": "local-only"}), ("admin", {}),
+        ("admin", {"arbitrary_paths": "admins"})]
 
 
-@pytest.mark.parametrize("who,settings", OPEN, ids=[f"{w}-{s.get('arbitrary_paths', 'auto')}" for w, s in OPEN])
+@pytest.mark.parametrize("who,settings", OPEN, ids=[f"{w}-{s.get('arbitrary_paths', 'default')}" for w, s in OPEN])
 @pytest.mark.parametrize("method,template", ROUTES, ids=[t.split("?")[0] for _, t in ROUTES])
 def test_arbitrary_paths_where_allowed(layout, who, settings, method, template):
     client = _cached_client(layout, who, **settings)
@@ -214,6 +216,41 @@ def test_revoking_admin_takes_effect_at_once(layout):
         AuthManager(user_file=str(layout / "users.json")).set_admin("root", True)
 
 
+def test_admins_may_open_any_path_by_default_and_each_open_is_logged(layout):
+    import logging
+    client = _client(layout, "admin")          # create_app resets the root handlers
+    records = []
+    handler = logging.Handler(level=logging.INFO)
+    handler.emit = records.append
+    log = logging.getLogger("annzarro.server.confinement")
+    log.addHandler(handler)
+    level = log.level
+    log.setLevel(logging.INFO)
+    try:
+        path = escapes(layout)["absolute"]
+        resp = client.get("/api/v1/data/info", query_string={"dataset_path": path})
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(level)
+    assert resp.status_code == 200
+    assert any("Admin 'root' opened a path outside the data directory" in r.getMessage() and path in r.getMessage()
+               for r in records)
+
+
+def test_the_default_is_admins(layout, monkeypatch, tmp_path):
+    from annzarro.server.confinement import arbitrary_paths_mode
+    assert arbitrary_paths_mode({}) == "admins"
+    for var in list(os.environ):
+        if var.startswith("ANNZARRO_"):
+            monkeypatch.delenv(var)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ConfigManager, "SYSTEM_CONFIG_PATH", str(tmp_path / "none.yaml"))
+    mgr = ConfigManager()
+    mgr.load_config(env="production")
+    assert mgr.config["server"]["arbitrary_paths"] == "admins"
+    assert mgr._load_schema()["server"]["properties"]["arbitrary_paths"]["default"] == "admins"
+
+
 def test_anonymous_gets_401_not_403(layout):
     client = _client(layout, "user", arbitrary_paths="admins")
     client.get("/logout")
@@ -223,8 +260,8 @@ def test_anonymous_gets_401_not_403(layout):
 
 @pytest.mark.parametrize("who,settings,expected", [
     ("local", {}, True), ("local", {"arbitrary_paths": "none"}, False), ("open-net", {}, False),
-    ("user", {}, False), ("admin", {}, False), ("admin", {"arbitrary_paths": "admins"}, True),
-    ("user", {"arbitrary_paths": "admins"}, False),
+    ("user", {}, False), ("admin", {}, True), ("admin", {"arbitrary_paths": "local-only"}, False),
+    ("admin", {"arbitrary_paths": "none"}, False), ("user", {"arbitrary_paths": "admins"}, False),
 ])
 def test_auth_me_says_whether_any_path_opens(layout, who, settings, expected):
     assert _client(layout, who, **settings).get("/api/v1/auth/me").get_json()["may_open_any_path"] is expected

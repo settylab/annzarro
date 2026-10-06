@@ -91,9 +91,9 @@ server:
       security: internal
     arbitrary_paths:
       type: string
-      enum: [auto, admins, none]
-      description: "Who may open dataset paths outside data_dir/allowed_dirs: auto = only the user of a local single-user server; admins = also admins of a shared server; none = nobody"
-      default: auto
+      enum: [admins, local-only, none]
+      description: "Who may open dataset paths outside data_dir/allowed_dirs: admins = admins of a shared server (logged) and the user of a local single-user server; local-only = only that local user; none = nobody"
+      default: admins
       security: internal
     static_dir:
       type: [string, "null"]

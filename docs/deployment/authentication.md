@@ -162,14 +162,23 @@ before any path is looked at.
 
   | `arbitrary_paths` | shared server (login on, or a network host) | local single-user server (loopback, no login) |
   |---|---|---|
-  | `auto` (default) | nobody, admins included | its one user: any path the account can read |
-  | `admins` | admins only; each such open is logged with the admin's name | its one user |
+  | `admins` (default) | admins only; each such open is logged with the admin's name | its one user: any path the account can read |
+  | `local-only` | nobody, admins included | its one user |
   | `none` | nobody | nobody |
 
+  **An admin login can read any file the server process can read.** With the default, the
+  server opens whatever path an admin types, so treat an admin password like access to the
+  service account's files. To confine admins as well, set:
+
+  ```yaml
+  server:
+    arbitrary_paths: none     # or local-only, which leaves a laptop's own user free
+  ```
+
+  (`ANNZARRO_SERVER_ARBITRARY_PATHS=none` does the same.) Other users are always confined.
   Admin status is read from the users file on every request, so `annzarro user set-admin
   --no-admin` takes effect at once. `GET /api/v1/auth/me` reports `may_open_any_path` for the
-  current user. Turn `admins` on only if your admins should be able to read every file the
-  server account can read: the server opens whatever path they type.
+  current user.
 - Only `s3://`, `gs://`, `gcs://`, `http://` and `https://` count as remote stores; they skip
   this check and follow the remote-store policy below. Any other `scheme://` path (`file://`,
   `ftp://`) is checked as a local path, so on a shared server it is refused.

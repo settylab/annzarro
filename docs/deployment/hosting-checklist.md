@@ -30,9 +30,10 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Data directory and allowed directories are what you mean to share.**
   `annzarro config show --config <file>` lists `server.data_dir` and `server.allowed_dirs`. Every
   readable store under those trees can be opened by every user, linked or not.
-- **No arbitrary paths.** `server.arbitrary_paths` is `auto` (or unset): nobody, admins
-  included, can open a path outside those trees. Set `admins` only if admins may read every
-  file the service account can read.
+- **Admins can read any file the server process can.** By default
+  (`server.arbitrary_paths: admins`) an admin may open any path the service account can read,
+  and each such open is logged with the admin's name; other users stay confined to the trees
+  above. Keep the admin list short, or lock admins in too with `server.arbitrary_paths: none`.
 - **Threaded workers.** The bundled gunicorn configuration uses `gthread` (`server.threads`,
   default 4); keep it if you start gunicorn with your own options.
 - **Stores read-only for the service account;** only `<data_dir>/sessions/` writable.
@@ -59,7 +60,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 
 | A signed-in user can | A signed-in user cannot |
 |---|---|
-| list and open every dataset under `data_dir` and `allowed_dirs` | open files or list directories outside those trees (with `server.arbitrary_paths: admins`, admins can) |
+| list and open every dataset under `data_dir` and `allowed_dirs` | open files or list directories outside those trees (admins can, unless `server.arbitrary_paths` is `none` or `local-only`) |
 | read every slot of those datasets (X, layers, obs/var, obsm/varm, obsp/varp, uns), one vector or a bounded slice at a time | download a whole matrix: a reply larger than `max_response_elements` is refused with 413 |
 | save, load, export, duplicate and import panel sets | change or delete another user's panel set (admins can) |
 | open remote stores under `remote_allowlist` | make the server fetch any other URL |

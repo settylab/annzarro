@@ -19,11 +19,13 @@ naming the roots: absolute server paths stay in the server log).
 Who may open a path OUTSIDE those roots is ``server.arbitrary_paths``
 (``may_open_any_path``):
 
-* ``auto`` (default): on a shared server nobody, admins included; on a local
+* ``admins`` (default): admins of a shared server with login, every such
+  open logged with the admin's name; other users never. On a local
   single-user server (localhost, login disabled: a laptop, the desktop app)
   its one user, who owns the machine and its files anyway.
-* ``admins``: as ``auto``, and admins of a shared server with login.
-* ``none``: nobody, local servers included.
+* ``local-only``: only that local single-user; on a shared server nobody, admins
+  included.
+* ``none``: nobody, local servers included (the lock-down setting).
 
 Remote stores (a scheme in ``core.remote.REMOTE_SCHEMES``: ``s3://``,
 ``gs://``, ``gcs://``, ``http(s)://``) are not local paths and are left alone
@@ -51,12 +53,13 @@ PATH_ARGS = ("dataset_path", "dataset_id", "dir")
 DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
 
 
-ARBITRARY_PATH_MODES = ("auto", "admins", "none")
+ARBITRARY_PATH_MODES = ("admins", "local-only", "none")
+DEFAULT_ARBITRARY_PATHS = "admins"
 
 
 def arbitrary_paths_mode(config):
-    """``server.arbitrary_paths``, validated (``auto`` when unset)."""
-    mode = str(config.get("arbitrary_paths") or "auto").strip().lower()
+    """``server.arbitrary_paths``, validated (``admins`` when unset)."""
+    mode = str(config.get("arbitrary_paths") or DEFAULT_ARBITRARY_PATHS).strip().lower()
     if mode not in ARBITRARY_PATH_MODES:
         raise ValueError(f"server.arbitrary_paths must be one of {', '.join(ARBITRARY_PATH_MODES)}, "
                          f"not {config.get('arbitrary_paths')!r}")
