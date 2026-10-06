@@ -8,7 +8,6 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/settylab/annzarro/blob/main/LICENSE)
 [![Docs](https://readthedocs.org/projects/annzarro/badge/?version=latest)](https://annzarro.readthedocs.io)
 [![Tests](https://github.com/settylab/annzarro/actions/workflows/tests.yml/badge.svg)](https://github.com/settylab/annzarro/actions/workflows/tests.yml)
-[![DOI](https://zenodo.org/badge/966413721.svg)](https://zenodo.org/badge/latestdoi/966413721)
 
 A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers
 leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
@@ -71,7 +70,7 @@ similarity, the user guide, data preparation, deployment, and the CLI, configura
 ## Citation
 
 Citation metadata are in [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff)
-(GitHub's "Cite this repository"); from v0.4.1, each release is archived on Zenodo with a DOI. Otto D.J., Baasri S. and Setty M. AnnZarro.
+(GitHub's "Cite this repository"). Otto D.J., Baasri S. and Setty M. AnnZarro.
 Protocol preprint in preparation.
 
 ```bibtex
