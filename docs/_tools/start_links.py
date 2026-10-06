@@ -9,6 +9,7 @@ Writes
 
 Run:
   .venv-docs/bin/python docs/_tools/start_links.py protocol   # import A-E from the paper repository
+  .venv-docs/bin/python docs/_tools/start_links.py scale      # the Tahoe-100M views of the scale figure
   .venv-docs/bin/python docs/_tools/start_links.py write      # every .url.txt from its .json
   .venv-docs/bin/python docs/_tools/start_links.py check      # open each link headless
 
@@ -16,6 +17,13 @@ Run:
 ~/gits/annzarro-paper/data) through a temporary data directory of symlinks, opens every link with
 its host:port swapped for the test server, and fails on a page error or a panel that does not
 draw. It also reports panel settings the app dropped while loading (renamed or retired keys).
+Links to a store that is not available are skipped; set ANNZARRO_SCALE_STORE to a Tahoe-100M
+store (or any prefix of it, e.g. its first 2 million cells) to check the scale links against it.
+
+`scale` writes the views of the paper's scale figure (docs/paper/scale.md) from the view files
+of its screenshots, figures/scale/v030/*.view.json in the paper repository, adding the cell
+subset each panel was drawn with: a deep link records the subset and the part, while the
+screenshot script set them through the app.
 """
 from __future__ import annotations
 
@@ -46,6 +54,28 @@ PROTOCOL = {  # paper view file -> docs name
 }
 PROTOCOL_DATASET = "bm_aging.zarr"
 
+# The scale figure: docs name -> (paper view file in figures/scale/v030, subset, title, changes)
+SCALE_STORE = "tahoe_panel_95.6M_plot.zarr"
+DEFAULT_SUBSET = {"n": 100000, "seed": 0}
+SCALE = {
+    "scale-every-cell-by-cell-line": ("tahoe95M_umap_all_cat", None,
+                                      "Every cell by cell line", {}),
+    "scale-every-cell-by-fn1": ("tahoe95M_umap_cmax30_all_gene", None,
+                                "Every cell by FN1, scale capped at 30", {}),
+    "scale-every-cell-zoom": ("tahoe95M_umap_default_all_zoom", None,
+                              "Every cell, zoomed into one island",
+                              {"pointSize": 5, "pointOpacity": 1,
+                               "viewport2D": {"xrange": [14, 14.33], "yrange": [7.8, 8.15]}}),
+    "scale-default-subset": ("tahoe95M_umap_default_sub_cat", DEFAULT_SUBSET,
+                             "Default subset, part 1", {"pointSize": 5, "pointOpacity": 1}),
+    "scale-next-part": ("tahoe95M_umap_default_sub_cat", DEFAULT_SUBSET | {"part": 1},
+                        "Default subset, part 2", {"pointSize": 5, "pointOpacity": 1}),
+    "scale-balanced-subset": ("tahoe95M_umap_default_sub_cat",
+                              DEFAULT_SUBSET | {"balance": "cell_line_id"},
+                              "Subset balanced across cell lines",
+                              {"pointSize": 5, "pointOpacity": 1}),
+}
+
 
 def panel_set_files() -> list[Path]:
     return sorted(p for p in PANELSETS.glob("*/*.json") if not p.name.startswith("links-"))
@@ -58,6 +88,20 @@ def import_protocol() -> None:
         view = json.loads((PAPER / "data_prep" / "demo_panelsets" / f"{src}.view.json").read_text())
         (out / f"{name}.json").write_text(
             json.dumps(panelset_file(name, view, PROTOCOL_DATASET), indent=2) + "\n")
+        print("wrote", out / f"{name}.json")
+
+
+def import_scale() -> None:
+    out = PANELSETS / "paper"
+    for name, (src, subset, title, changes) in SCALE.items():
+        given = json.loads((PAPER / "figures" / "scale" / "v030" / f"{src}.view.json").read_text())
+        assert Path(given["store"]).name == SCALE_STORE, given["store"]
+        view = {k: v for k, v in given["view"].items() if k != "subset"}
+        view["subset"] = subset
+        for cfg in view["layout"]["panelConfigs"].values():
+            cfg.update(changes, title=title)
+        (out / f"{name}.json").write_text(
+            json.dumps(panelset_file(name, view, SCALE_STORE), indent=2) + "\n")
         print("wrote", out / f"{name}.json")
 
 
@@ -122,6 +166,8 @@ def check() -> int:
     data_dir = Path(tempfile.mkdtemp(prefix="start-links-"))
     for store in ("bm_aging.zarr", "bm_aging_showcase.zarr"):
         os.symlink(DATA_DIR / store, data_dir / store)
+    if os.environ.get("ANNZARRO_SCALE_STORE"):
+        os.symlink(Path(os.environ["ANNZARRO_SCALE_STORE"]).resolve(), data_dir / SCALE_STORE)
     proc, root = _serve(data_dir)
     failures = 0
     try:
@@ -129,6 +175,9 @@ def check() -> int:
             browser = p.chromium.launch()
             for path in panel_set_files():
                 ps = json.loads(path.read_text())
+                if not (data_dir / ps["dataset"]).exists():
+                    print(f"skip {path.parent.name}/{path.stem}: {ps['dataset']} not available")
+                    continue
                 link = path.with_suffix(".url.txt").read_text().strip()
                 assert link.startswith(START_BASE + "/?dataset_path="), link
                 configs = ps["view"]["layout"]["panelConfigs"]
@@ -164,10 +213,12 @@ def check() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("what", choices=["protocol", "write", "check"])
+    ap.add_argument("what", choices=["protocol", "scale", "write", "check"])
     what = ap.parse_args().what
     if what == "protocol":
         import_protocol()
+    elif what == "scale":
+        import_scale()
     elif what == "write":
         write_links()
     else:

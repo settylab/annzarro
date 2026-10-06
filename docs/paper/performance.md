@@ -13,7 +13,8 @@ This figure is measured, not drawn in the app. Each panel answers one question a
 click costs: bytes sent (a), time (b), server memory (c) and the effect of chunk shape (d).
 What these mean for your own data and how to tune a store is in
 {doc}`../reference/performance` and {doc}`../data/chunking`. This page records the measurement
-conditions and how to rerun the benchmark.
+conditions and how to rerun the benchmark. For the same costs at the scale of Tahoe-100M, in the
+browser, see {doc}`scale`.
 
 | Panel | Measures | Key numbers, as in the paper's caption |
 |---|---|---|

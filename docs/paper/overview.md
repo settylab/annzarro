@@ -152,6 +152,7 @@ AnnZarro adds: a stored cells × cells or genes × genes matrix becomes a colour
 the focused cell or gene picks which row every linked panel shows. The table also records what
 AnnZarro does not do: annotation editing, differential expression on the fly, tissue image
 underlays and a static-site mode. A Cells strip gives, per tool, the largest dataset built from
-Tahoe-100M of which it drew every cell within a 16 GiB client memory budget. The panel is not an AnnZarro view and has no walkthrough here. The
+Tahoe-100M of which it drew every cell within a 16 GiB client memory budget; AnnZarro's own
+measurements on Tahoe-100M are on {doc}`scale`. The panel is not an AnnZarro view and has no walkthrough here. The
 source behind every cell of the table is listed in the paper's companion repository
 (`figures/COMPARISON_NOTES.md` in settylab/annzarro-paper, checked October 2026).

@@ -48,6 +48,12 @@ stay valid when the paper's figures are renumbered.
 :link-type: doc
 :::
 
+:::{grid-item-card} Scale: Tahoe-100M
+:img-top: ../_static/figures/paper/scale-thumb.png
+:link: scale
+:link-type: doc
+:::
+
 :::{grid-item-card} Performance: what one click costs
 :img-top: ../_static/figures/paper/performance-thumb.png
 :link: performance
@@ -65,5 +71,6 @@ cell-by-cell
 gene-by-gene
 cells-and-genes
 deployment
+scale
 performance
 ```
