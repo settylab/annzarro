@@ -68,8 +68,9 @@ show the dialog. On a large dataset the steps are the same.
    Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
    dashed line that says so: large-plot mode draws them faster but without hover, click or table
    filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
-   **may exceed browser memory** and is never chosen for you: a laptop's Chrome drew 175 million
-   points and ran out of memory at 182 million. For any other size, type it in **Cells**, here `3000`; the
+   **may exceed browser memory** and is never chosen for you: in the paper's v0.4.0 runs on a
+   laptop, the memory guard allowed every cell up to 150 million and declined 160 million; with
+   the guard off, Chrome drew 175 million points and stopped responding at 200 million. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
 

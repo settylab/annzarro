@@ -8,7 +8,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Fold-change or smoothed layers missing (Steps 4, 7) | `kompot.cleanup()` was run before saving, as in the Kompot tutorial | Re-run differential expression without the cleanup call ({doc}`../data/kompot`) |
+| Fold-change or smoothed layers missing (Step 5) | `kompot.cleanup()` was run before saving, as in the Kompot tutorial | Re-run differential expression without the cleanup call ({doc}`../data/kompot`) |
 | `TypeError: string indices must be integers` when reading `last_run_info` (Step 5) | Kompot 0.8 stores the run record as a JSON string | `json.loads` it first ({doc}`../data/kompot`) |
 | A key from `field_names` is not in the object | `field_names` lists keys that were not stored | Test membership before use |
 | `ValueError: Cannot overwrite/edit a store with consolidated metadata` (Step 10). Reproduced | `write_zarr` consolidated the store | Open with `zarr.open_group(path, mode="r+", use_consolidated=False)` |
@@ -28,7 +28,6 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | A column, layer or obsp/varp key written with `anndata.io.write_elem` is missing from the menus, or answers `404` `key_not_found` | The store has consolidated metadata, and it was not updated after the write (`zarr.consolidate_metadata`), so zarr does not list the new element | The same: **Refresh dataset** (notice "Consolidated metadata out of date"; the element appears), then `zarr.consolidate_metadata(path)` and refresh |
 | `404` `key_not_found` ("No layers key '…' in this dataset") or `400` `index_out_of_range`. Reproduced | A key, column or index the dataset does not have, often from a panel set or link made for another store | Check the keys with `GET /api/v1/data/dataset_structure` |
 | Changes to a store do not show up | A rewrite (anndata `write_elem`, a new `.h5ad`) is seen on the next read; an in-place overwrite of chunk files (`g["obs/x"][:] = v`) is not, because nothing at the store's top level changes | Click **Refresh dataset** in the header: any user may, and the server re-checks the store on disk and serves a change from every worker. `POST /api/v1/data/refresh?dataset_path=` does the same from a script; `POST /api/v1/cache/reset` (admins only on a shared server) also clears the server's cache ({ref}`revalidation`) |
-| First view slow on datasets with about 1M cells (Step 12) | The Focused Cell selector lists every cell name (36 MB at 1.17M cells) | Expected in this release; selecting cells by clicking works |
 | Remote dataset refused with `403` `access_denied`: "Remote datasets are disabled on this server (remote_stores: auto (…))" or "Remote dataset URL is not under an allowed prefix" | The server is shared (login on, a network host, gunicorn, or `proxy_count` above 0) and the URL is not in `remote_allowlist`. Builds before 58122bc (PR #43) also refused on a laptop because `proxy_count` defaulted to 1 | Add the URL prefix to `server.remote_allowlist`; on a single-user laptop server check that `proxy_count` is 0 and login is off, then the startup log reads `remote_stores: auto (local single-user server)` ({doc}`../user-guide/remote-datasets`) |
 | `501` `missing_dependency`: `Reading https:// datasets needs the optional package(s) fsspec, aiohttp`. Reproduced | Remote extras not installed | `pip install 'annzarro[remote]'` |
 | `Configuration error: Missing required configuration: server.host / server.port / server.data_dir` | AnnZarro before PR #43, started outside its source tree | Upgrade; with this branch `annzarro start --data-dir … --port …` works from any directory (verified) |
@@ -51,17 +50,19 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | X is not in any source menu | X is listed under the **layer** source, first, not as a source of its own; a layer named `X` takes its place | Choose source **layer**, key **X**; to see the matrix X next to such a layer, rename the layer ({doc}`../data/slot-map`) |
 | Gene Plot shows no options (Step 18) | Default source is varm and the dataset has none | Switch the axis source to var |
 | Volcano all grey (Step 20) | Focused gene has no row in the varp matrix (outside a gene subset) | Click a gene that is in the matrix, or pick one from the Focused Gene selector |
-| Colour range looks wrong after loading a view (Steps 22-23) | Range restored from another focus | Toggle Lock Range or reset min and max |
-| Each gene click takes seconds (Steps 15, 22) | The layer is CSR (whole-matrix load per gene), or dense and chunked wide in genes | Store it CSC, or rechunk by the aspect rule ({doc}`../data/chunking`) |
-| First click on a new cell in a cell-row plot takes over 20 s (Steps 25-27) | Layer chunked as whole gene columns (all cells × a few genes), so one cell row decompresses the entire layer | Rechunk; repeat clicks are faster but still decompress the layer |
+| Colour range looks wrong after loading a view (Step 23) | Range restored from another focus | Toggle Lock Range or reset min and max |
+| Each gene click takes seconds (Step 22) | The layer is CSR (whole-matrix load per gene), or dense and chunked wide in genes | Store it CSC, or rechunk by the aspect rule ({doc}`../data/chunking`) |
+| First click on a new cell in a cell-row plot takes over 20 s (Step 25) | Layer chunked as whole gene columns (all cells × a few genes), so one cell row decompresses the entire layer | Rechunk; repeat clicks are faster but still decompress the layer |
+| First search for a cell by name takes several seconds on tens of millions of cells (Step 35) | The server builds its index of cell names on the first search (6.3-6.8 s at 50 million cells in the paper's runs; 0.8 s once a local server has built it in the background) | Expected once per dataset and server; later searches are fast |
+| Hover and clicks do nothing in a Cell Plot; a notice above it reads Large-plot mode (Step 36) | More than 1 million points are drawn, for example with the subset switched off | Switch the subset back on (Step 32) and step through parts (Step 34) ({doc}`../user-guide/subsets`) |
 | Cell rows of X are slow (215 ms here, more at scale) | X stored CSC: a cell row scans every chunk of the matrix (in bounded blocks, so memory stays small) | Expected trade-off; use a dense layer for cell-row views |
 
 ## Sharing and hosting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Shared link returns "Request Line is too large" (Step 34) | A legacy `?view=` link longer than gunicorn's 4,094-byte request line | Use Share Link on this release: it puts the view in the `#view=` fragment, compressed, which never reaches the server ({doc}`deep-links`) |
-| Remote users see no login (Step 38) | Server bound to localhost, or started with `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` | Run behind a proxy with gunicorn, or start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
+| Shared link returns "Request Line is too large" (Step 39) | A legacy `?view=` link longer than gunicorn's 4,094-byte request line | Use Share Link on this release: it puts the view in the `#view=` fragment, compressed, which never reaches the server ({doc}`deep-links`) |
+| Remote users see no login (Step 43) | Server bound to localhost, or started with `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` | Run behind a proxy with gunicorn, or start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
 | Login works over `http://` but not over `https://`, or the reverse | `auth.cookie_secure: true` sends the cookie only over HTTPS; behind a TLS proxy with `proxy_count: 0` the server does not see that the request was HTTPS | Leave `cookie_secure: auto` and set `proxy_count` to the number of proxies ({doc}`../deployment/authentication`) |
 | Everyone is locked out after a few failed logins | Lockout is per username and client address; with `proxy_count` too low all users appear to come from the proxy's address | Set `server.proxy_count: 1` behind nginx |
 | `403` with `"reason": "outside_data_dir"`. Reproduced | Hosted server (login on, or network host) and a `dataset_path` outside the data directory | Put the store under the data directory, or add its folder to `server.allowed_dirs` |

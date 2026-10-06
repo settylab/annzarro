@@ -1,10 +1,10 @@
 {
   "name": "protocol-B-volcano-spearman",
-  "timestamp": "2026-10-04T20:45:51+00:00",
+  "timestamp": "2026-10-06T16:23:43+00:00",
   "dataset": "bm_aging.zarr",
   "datasetName": "bm_aging",
   "constants": {
-    "focusedGene": "S100a9",
+    "focusedGene": "H2-Q7",
     "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
     "taxonomyId": "10090"
   },
@@ -30,7 +30,7 @@
         "color": {
           "type": "varp",
           "key": "spearman_smoothed",
-          "column": "S100a9",
+          "column": "H2-Q7",
           "locked": false
         },
         "pointSize": 5,
@@ -69,7 +69,7 @@
         "color": {
           "type": "varp",
           "key": "spearman_fold_change",
-          "column": "S100a9",
+          "column": "H2-Q7",
           "locked": false
         },
         "pointSize": 5,
@@ -91,7 +91,7 @@
   "view": {
     "v": 1,
     "constants": {
-      "focusedGene": "S100a9",
+      "focusedGene": "H2-Q7",
       "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
       "taxonomyId": "10090"
     },
@@ -147,7 +147,7 @@
           "color": {
             "type": "varp",
             "key": "spearman_smoothed",
-            "column": "S100a9",
+            "column": "H2-Q7",
             "locked": false
           },
           "pointSize": 5,
@@ -180,7 +180,7 @@
           "color": {
             "type": "varp",
             "key": "spearman_fold_change",
-            "column": "S100a9",
+            "column": "H2-Q7",
             "locked": false
           },
           "pointSize": 5,

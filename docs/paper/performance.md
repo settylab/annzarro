@@ -24,9 +24,7 @@ browser, see {doc}`scale`.
 | d | cold cell row against cold gene column, one point per chunk shape | whole-gene chunks make one cell row decompress the whole layer (45 s on HPC); anndata's default chunks keep both reads fast |
 
 Conditions: panel a counts bytes in the binary format the current AnnZarro sends. Panels b to d
-were measured with AnnZarro 0.1.1 (commit `63b57e6`), which sent vectors as JSON; a
-supplementary figure of the paper compares JSON with the binary encoding at one million cells
-(stored in `figures/fast_transfer_pr44.csv`). Laptop: Apple M3 Max, 128 GB, NVMe/APFS,
+were measured with AnnZarro 0.1.1 (commit `63b57e6`), which sent vectors as JSON. Laptop: Apple M3 Max, 128 GB, NVMe/APFS,
 synthetic n × 5,000 float32 stores; *cold* is a fresh server on a fresh APFS clone, *warm* a
 new index with the page cache warm. HPC: Xeon Gold 6254 nodes, 4 CPUs per job, NFS
 (`/hpc/temp`), real datasets; *warm* repeats the same index, the more favourable definition.

@@ -46,7 +46,8 @@ every cell is bounded by the tab's JavaScript heap. The steps behind each view a
   the paper's benchmark results ({ref}`paper-companion`). They have no view. On your own machine, the
   times depend on the disk, the browser and the GPU.
 - **Times are the paper's.** The views were not timed for this page; on a 95.6-million-cell store
-  expect several seconds per every-cell view (6.3 to 7.6 s in the paper's runs).
+  expect several seconds per every-cell view. The paper's benchmark drew every cell in 5 to 6 s;
+  its screenshots of panels a, b and c were drawn 6.4, 7.3 and 6.3 s after the page was opened.
 
 (paper-scale-views)=
 ## Views
@@ -102,7 +103,7 @@ Loading one restores the dataset, the subset, the focus and the layout, like the
 ({doc}`../user-guide/panel-sets`).
 
 The views are written by `docs/_tools/start_links.py scale` from the view files of the paper's
-screenshots (`figures/scale/v030/*.view.json` in the paper's companion repository,
+v0.4.0 screenshots (`figures/scale/*.view.json` in the paper's companion repository,
 {ref}`paper-companion`). The script adds what
 the screenshot script set through the app: the subset, the part, and the zoom and point size of
 panel c.
