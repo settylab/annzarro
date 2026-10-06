@@ -291,6 +291,19 @@ const DataManager = (function() {
     }
 
     /**
+     * What a panel's Refresh needs before it redraws: the server re-checks
+     * the dataset against the disk (revalidateDataset) and this browser's
+     * copies of the dataset's replies are dropped, so the redraw reads past
+     * them. Without this a Refresh within 60 s of a load sent no request.
+     * @returns {Promise<Object|null>} the server's `{changed, checked}`, or null
+     */
+    async function reloadDatasetData(datasetPath = _currentDataset) {
+        const result = await revalidateDataset(datasetPath);
+        clearDatasetCache(datasetPath);
+        return result;
+    }
+
+    /**
      * Reset backend zarr reader cache for a specific dataset or all datasets
      * @param {string} [datasetPath] - Optional dataset path to reset cache for
      * @returns {Promise<Object>} - Cache reset result information
@@ -2227,6 +2240,7 @@ const DataManager = (function() {
         refreshCacheForDataset,
         clearDatasetCache,
         revalidateDataset,
+        reloadDatasetData,
         resetBackendCache,
         getCacheKeys: () => CacheManager.keys(),
         // History navigation functions

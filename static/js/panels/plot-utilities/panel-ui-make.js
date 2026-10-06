@@ -217,7 +217,7 @@ export function createPanelStructure(container, id, settings) {
               <button class="btn btn-sm active btn-primary" id="highlight-focused-gene-${id}" aria-pressed="true" style="display:none;">Highlight Focused Gene</button>
             </span>
             <span class="ctl-actions-end" role="group" aria-label="Plot actions">
-              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
+              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Read the data again (re-checked against the disk) and redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
               <button class="btn btn-sm btn-outline-secondary" id="aesthetics-menu-btn-${id}" title="Plot options" aria-label="Plot options"><i class="fas fa-sliders-h"></i> <span class="ctl-btn-text">Plot Options</span></button>
             </span>
           </div>

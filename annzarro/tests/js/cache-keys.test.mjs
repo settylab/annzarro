@@ -81,3 +81,19 @@ test('a refresh asks the server to re-check the dataset, for every user', async 
     globalThis.fetch = async () => new Response('{}', { status: 500 });
     assert.equal(await DataManager.revalidateDataset('/x.zarr'), null);
 });
+
+test('a panel Refresh re-checks the dataset and reads past the cached replies', async () => {
+    // Refresh used to redraw from CacheManager: within 60 s of a load it sent
+    // no request at all, though the docs say it reloads the panel's data.
+    CacheManager.clear();
+    const path = '/data/b.zarr';
+    CacheManager.set(`/api/v1/data/obs?${new URLSearchParams({ dataset_path: path, columns: 'n' })}`, [1]);
+    const calls = [];
+    globalThis.fetch = async (url, opts) => {
+        calls.push(opts && opts.method);
+        return new Response('{"changed": false, "checked": true}', { status: 200 });
+    };
+    assert.deepEqual(await DataManager.reloadDatasetData(path), { changed: false, checked: true });
+    assert.deepEqual(calls, ['POST']);
+    assert.deepEqual(CacheManager.keys(), []);
+});

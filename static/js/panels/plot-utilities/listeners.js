@@ -308,7 +308,9 @@ export function setupPlotControlListeners(
   
     // --- Refresh Plot Button ---
     const $refreshPlotButton = $controlsContainer.find(`#refresh-plot-${id}`);
-    $refreshPlotButton.on('click', () => {
+    // reloads the panel's data: re-checked on the server, past this browser's copies
+    $refreshPlotButton.on('click', async () => {
+      await DataManager.reloadDatasetData();
       loadDataAndCreatePlot();
     });
     
