@@ -12,7 +12,7 @@ row colours, or places, every cell. First you follow a diffusion walk from a ste
 monocyte; then you plot, for one plasma cell, its UMAP distance to every cell against its
 diffusion distance, and find the cells where the two disagree.
 
-The results are the panels of Fig. 3 of the AnnZarro paper ({doc}`../paper/fig3-cell-by-cell`).
+The results are the panels of the AnnZarro paper's cell-by-cell figure ({doc}`../paper/cell-by-cell`).
 If you have not used AnnZarro before, {doc}`tour` introduces the focus and the controls.
 
 ## What you need
@@ -42,10 +42,10 @@ never the whole matrix ({doc}`../data/pairwise-matrices`).
 ## 1. Follow a diffusion walk from a stem cell to a monocyte
 
 ::::{dropdown} Start here: the walk and the path table
-```{literalinclude} ../_static/panelsets/paper/fig3-walk.url.txt
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-walk.url.txt
 :language: text
 ```
-Panel set file: {download}`fig3-walk.json <../_static/panelsets/paper/fig3-walk.json>`. The link is
+Panel set file: {download}`cell-by-cell-walk.json <../_static/panelsets/paper/cell-by-cell-walk.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -127,8 +127,8 @@ among GMPs (`figures/NOTES.md` of the paper): a progenitor is similar to many st
    largest value in the four rows. Click **Lock Range** again to let each row scale itself.
 
 :::{note}
-**Paper Fig. 3a.** The four frames are panel a of the paper figure, there drawn with a log colour
-scale and the path as a line ({ref}`differences <fig3-differences>`).
+**Paper, cell by cell, panel a.** The four frames are panel a of the paper figure, there drawn with a log colour
+scale and the path as a line ({ref}`differences <cell-by-cell-differences>`).
 :::
 
 Along this trajectory the UMAP is a fair guide: the walk from each stop lands on its UMAP
@@ -138,10 +138,10 @@ neighbours. The next section finds where that fails.
 ## 2. Plot UMAP distance against diffusion distance
 
 ::::{dropdown} Start here: distances as axes, groups on the UMAP (sections 2 and 3)
-```{literalinclude} ../_static/panelsets/paper/fig3-umap-vs-diffusion.url.txt
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.url.txt
 :language: text
 ```
-Panel set file: {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`. The link is
+Panel set file: {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -172,10 +172,10 @@ reverse.
 ## 3. Find the disagreeing cells on the UMAP
 
 ::::{dropdown} Start here: the view of sections 2 and 3
-```{literalinclude} ../_static/panelsets/paper/fig3-umap-vs-diffusion.url.txt
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.url.txt
 :language: text
 ```
-Panel set file: {download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`. The link is
+Panel set file: {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -194,7 +194,7 @@ and memory B cells at the far left of the UMAP; the orange clusters sit next to 
 ```
 
 :::{note}
-**Paper Fig. 3b and 3c.** The two panels are panels b and c of the paper figure.
+**Paper, cell by cell, panels b and c.** The two panels are panels b and c of the paper figure.
 :::
 
 The UMAP places the plasma cell beside pDCs, NK cells, basophils and T cells, but its diffusion
@@ -235,20 +235,20 @@ for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tu
 says which part to change for another server address or store location.
 
 ::::{dropdown} Section 1: walk and path table
-```{literalinclude} ../_static/panelsets/paper/fig3-walk.url.txt
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-walk.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Sections 2 and 3: distances as axes, groups on the UMAP
-```{literalinclude} ../_static/panelsets/paper/fig3-umap-vs-diffusion.url.txt
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.url.txt
 :language: text
 ```
 ::::
 
 The same panels as panel set files ({ref}`tut-tour-load-file`):
-{download}`fig3-walk.json <../_static/panelsets/paper/fig3-walk.json>`,
-{download}`fig3-umap-vs-diffusion.json <../_static/panelsets/paper/fig3-umap-vs-diffusion.json>`.
+{download}`cell-by-cell-walk.json <../_static/panelsets/paper/cell-by-cell-walk.json>`,
+{download}`cell-by-cell-umap-vs-diffusion.json <../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.json>`.
 
 ## Your own data
 

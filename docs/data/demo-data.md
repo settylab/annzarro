@@ -132,11 +132,11 @@ Cell names contain `#`. Deep links encode it; type it URL-encoded if you build a
 Where to see these fields in use:
 
 - `obsp/diffusion_walk_t5`, `obsp/DM_Kernel` and the embeddings: {doc}`../tutorials/cell-similarity`
-  (paper figure: {doc}`../paper/fig3-cell-by-cell`).
+  (paper figure: {doc}`../paper/cell-by-cell`).
 - `varp/spearman_fold_change`, `varp/spearman_smoothed` and the Kompot `var` columns:
-  {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/fig4-gene-by-gene`).
+  {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/gene-by-gene`).
 - The fold-change and smoothed layers: {doc}`../tutorials/cells-and-genes`
-  (paper figure: {doc}`../paper/fig5-cells-and-genes`).
+  (paper figure: {doc}`../paper/cells-and-genes`).
 - All of them together: {doc}`../tutorials/tour`.
 
 A copy with extra precomputed fields, used where a tutorial needs a number the app cannot

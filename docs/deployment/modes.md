@@ -1,6 +1,6 @@
 # Deployment modes
 
-The same software runs in three arrangements (paper Fig. 6, {doc}`../paper/fig6-deployment`).
+The same software runs in three arrangements (paper figure {doc}`../paper/deployment`).
 They differ in where the browser, the server and the data are, and in who can reach the server.
 In all three, the browser receives only the vectors on screen and the server reads only the
 chunks it needs, so the data never have to be copied to the viewer's machine.

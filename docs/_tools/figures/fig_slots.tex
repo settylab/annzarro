@@ -55,13 +55,13 @@
   \node[sldim, anchor=west, align=left] at (-1.0,3.2) {uns: category colours\\and run records};
 
   % what each array drives
-  \node[note] (nvarp) at (10.0,4.6) {\textbf{Gene plot colour}: the focused gene's row of a gene-by-gene matrix, e.g.\ correlation modules over a volcano (Fig.~4).};
+  \node[note] (nvarp) at (10.0,4.6) {\textbf{Gene plot colour}: the focused gene's row of a gene-by-gene matrix, e.g.\ correlation modules over a volcano (paper: gene by gene).};
   \node[note] (nvar) at (10.0,1.2) {\textbf{Gene plot axes and gene tables}: per-gene statistics (var) and per-group statistics (varm), e.g.\ a Kompot volcano.};
-  \node[note] (nx) at (10.0,-2.0) {\textbf{Both directions}: the focused gene's column colours cells (expression, fold change); the focused cell's row colours genes (Fig.~5).};
+  \node[note] (nx) at (10.0,-2.0) {\textbf{Both directions}: the focused gene's column colours cells (expression, fold change); the focused cell's row colours genes (paper: cells and genes).};
   \draw[lead] (9.2,4.6) -- (nvarp.west);
   \draw[lead] (9.2,1.2) -- (nvar.west);
   \draw[lead] (9.5,-2.0) -- (nx.west);
-  \node[note, anchor=north, text width=4.0cm] (nobsp) at (1.0,-4.45) {\textbf{Cell plot colour}: the focused cell's row of a kernel, graph or distance (Fig.~3).};
+  \node[note, anchor=north, text width=4.0cm] (nobsp) at (1.0,-4.45) {\textbf{Cell plot colour}: the focused cell's row of a kernel, graph or distance (paper: cell by cell).};
   \node[note, anchor=north, text width=4.4cm] (nobs) at (6.1,-4.45) {\textbf{Cell plot axes, colours and masks}: embeddings and spatial positions (obsm), annotations and scores (obs), table filters.};
 \end{tikzpicture}}
 \endgroup

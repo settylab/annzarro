@@ -1,21 +1,21 @@
 {
-  "name": "fig5-a-cells",
-  "timestamp": "2026-10-02T21:26:49+00:00",
-  "dataset": "bm_aging_showcase.zarr",
-  "datasetName": "bm_aging_showcase",
+  "name": "interface-table-filter",
+  "timestamp": "2026-10-02T21:33:48+00:00",
+  "dataset": "bm_aging.zarr",
+  "datasetName": "bm_aging",
   "constants": {
-    "focusedGene": "S100a9",
     "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "focusedGene": "S100a9",
     "taxonomyId": "10090"
   },
   "panelConfigs": {
-    "cell-table-5t": {
-      "id": "cell-table-5t",
+    "cell-table-E1": {
+      "id": "cell-table-E1",
       "type": "cell-table",
-      "title": "Cells with S100a9 fold change < -0.5",
+      "title": "HSC with DA z-score > 2",
       "config": {
-        "id": "cell-table-5t",
-        "title": "Cells with S100a9 fold change < -0.5",
+        "id": "cell-table-E1",
+        "title": "HSC with DA z-score > 2",
         "columns": [
           {
             "type": "obs",
@@ -23,35 +23,49 @@
             "column": ""
           },
           {
-            "type": "layer",
-            "key": "kompot_de_Young_to_Old_fold_change",
-            "column": "focused_gene"
+            "type": "obs",
+            "key": "kompot_da_Young_to_Old_lfc_zscore",
+            "column": ""
+          },
+          {
+            "type": "obs",
+            "key": "Age",
+            "column": ""
           }
         ],
         "searchBuilderConfig": {
-          "logic": "AND",
           "criteria": [
             {
-              "condition": "<",
-              "data": "kompot_de_Young_to_Old_fold_change: S100a9",
-              "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_gene",
+              "condition": "=",
+              "data": "highres_celltype",
+              "origData": "obs_highres_celltype_main",
+              "type": "string",
+              "value": [
+                "HSC"
+              ]
+            },
+            {
+              "condition": ">",
+              "data": "kompot_da_Young_to_Old_lfc_zscore",
+              "origData": "obs_kompot_da_Young_to_Old_lfc_zscore_main",
               "type": "num",
               "value": [
-                "-0.5"
+                "2"
               ]
             }
-          ]
+          ],
+          "logic": "AND"
         }
       },
       "isSelectionTile": false
     },
-    "cell-plot-5t": {
-      "id": "cell-plot-5t",
+    "cell-plot-E2": {
+      "id": "cell-plot-E2",
       "type": "cell-plot",
-      "title": "Cells in the table (others grey)",
+      "title": "UMAP masked by the table filter",
       "config": {
-        "id": "cell-plot-5t",
-        "title": "Cells in the table (others grey)",
+        "id": "cell-plot-E2",
+        "title": "UMAP masked by the table filter",
         "x": {
           "type": "obsm",
           "key": "X_umap",
@@ -64,13 +78,12 @@
         },
         "z": null,
         "color": {
-          "type": "layer",
-          "key": "kompot_de_Young_to_Old_fold_change",
-          "column": "S100a9",
-          "locked": false
+          "type": "obs",
+          "key": "kompot_da_Young_to_Old_lfc_zscore",
+          "column": ""
         },
         "pointSize": 3,
-        "pointOpacity": 0.85,
+        "pointOpacity": 0.8,
         "highlightFocusedCell": true,
         "hoverInfo": [
           {
@@ -84,8 +97,8 @@
         ],
         "colorScale": "RdBu",
         "centeringActive": true,
-        "tableFilter": "cell-table-5t",
-        "removeNonTableEntries": false
+        "tableFilter": "cell-table-E1",
+        "hideNonSubset": false
       },
       "isSelectionTile": false
     }
@@ -93,8 +106,8 @@
   "view": {
     "v": 1,
     "constants": {
-      "focusedGene": "S100a9",
       "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "focusedGene": "S100a9",
       "taxonomyId": "10090"
     },
     "layout": {
@@ -116,25 +129,25 @@
           "children": [
             {
               "type": "tile",
-              "id": "cell-table-5t",
+              "id": "cell-table-E1",
               "controlsVisible": false
             },
             {
               "type": "tile",
-              "id": "cell-plot-5t",
+              "id": "cell-plot-E2",
               "controlsVisible": false
             }
           ]
         }
       ],
       "controlState": {
-        "cell-table-5t": false,
-        "cell-plot-5t": false
+        "cell-table-E1": false,
+        "cell-plot-E2": false
       },
       "panelConfigs": {
-        "cell-table-5t": {
-          "id": "cell-table-5t",
-          "title": "Cells with S100a9 fold change < -0.5",
+        "cell-table-E1": {
+          "id": "cell-table-E1",
+          "title": "HSC with DA z-score > 2",
           "columns": [
             {
               "type": "obs",
@@ -142,29 +155,43 @@
               "column": ""
             },
             {
-              "type": "layer",
-              "key": "kompot_de_Young_to_Old_fold_change",
-              "column": "focused_gene"
+              "type": "obs",
+              "key": "kompot_da_Young_to_Old_lfc_zscore",
+              "column": ""
+            },
+            {
+              "type": "obs",
+              "key": "Age",
+              "column": ""
             }
           ],
           "searchBuilderConfig": {
-            "logic": "AND",
             "criteria": [
               {
-                "condition": "<",
-                "data": "kompot_de_Young_to_Old_fold_change: S100a9",
-                "origData": "layer_kompot_de_Young_to_Old_fold_change_focused_gene",
+                "condition": "=",
+                "data": "highres_celltype",
+                "origData": "obs_highres_celltype_main",
+                "type": "string",
+                "value": [
+                  "HSC"
+                ]
+              },
+              {
+                "condition": ">",
+                "data": "kompot_da_Young_to_Old_lfc_zscore",
+                "origData": "obs_kompot_da_Young_to_Old_lfc_zscore_main",
                 "type": "num",
                 "value": [
-                  "-0.5"
+                  "2"
                 ]
               }
-            ]
+            ],
+            "logic": "AND"
           }
         },
-        "cell-plot-5t": {
-          "id": "cell-plot-5t",
-          "title": "Cells in the table (others grey)",
+        "cell-plot-E2": {
+          "id": "cell-plot-E2",
+          "title": "UMAP masked by the table filter",
           "x": {
             "type": "obsm",
             "key": "X_umap",
@@ -177,13 +204,12 @@
           },
           "z": null,
           "color": {
-            "type": "layer",
-            "key": "kompot_de_Young_to_Old_fold_change",
-            "column": "S100a9",
-            "locked": false
+            "type": "obs",
+            "key": "kompot_da_Young_to_Old_lfc_zscore",
+            "column": ""
           },
           "pointSize": 3,
-          "pointOpacity": 0.85,
+          "pointOpacity": 0.8,
           "highlightFocusedCell": true,
           "hoverInfo": [
             {
@@ -197,8 +223,8 @@
           ],
           "colorScale": "RdBu",
           "centeringActive": true,
-          "tableFilter": "cell-table-5t",
-          "removeNonTableEntries": false
+          "tableFilter": "cell-table-E1",
+          "hideNonSubset": false
         }
       }
     }

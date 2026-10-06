@@ -10,8 +10,8 @@ slice.
 
 This tour builds that model in the app, then uses it: it walks a diffusion kernel along
 haematopoiesis, filters cells with a two-condition table, and saves and shares the result.
-Along the way you rebuild the paper's Fig. 1 as a live layout and its Fig. 2 screenshots
-({doc}`../paper/fig1-overview`, {doc}`../paper/fig2-interface`).
+Along the way you rebuild the focus model of the paper's overview figure as a live layout, and
+the screenshots of its interface figure ({doc}`../paper/overview`, {doc}`../paper/interface`).
 
 ## What you need
 
@@ -80,10 +80,10 @@ largest value is 0.0126, and 90.7% of its mass is on HSCs (`figures/NOTES.md` of
 ## 3. Click to move the focus
 
 ::::{dropdown} Start here: the walk and the cell types as this section sets them up
-```{literalinclude} ../_static/panelsets/paper/fig2-focus-sequence.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-focus-sequence.url.txt
 :language: text
 ```
-Panel set file: {download}`fig2-focus-sequence.json <../_static/panelsets/paper/fig2-focus-sequence.json>`. The link is
+Panel set file: {download}`interface-focus-sequence.json <../_static/panelsets/paper/interface-focus-sequence.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -142,7 +142,7 @@ because a progenitor's walk spreads over more cells. The colour-bar title ends w
 the cell whose row is shown. The arrows beside **Focused Cell** replay the sequence.
 
 :::{note}
-**Paper Fig. 2b.** These four frames are panel b of the paper figure.
+**Paper, interface, panel b.** These four frames are panel b of the paper figure.
 :::
 
 {doc}`cell-similarity` uses this panel to ask what a kernel row says that the UMAP does not.
@@ -151,10 +151,10 @@ the cell whose row is shown. The arrows beside **Focused Cell** replay the seque
 ## 4. The four slices of the focus model
 
 ::::{dropdown} Start here: the four slices this section builds
-```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+```{literalinclude} ../_static/panelsets/paper/overview-focus-model.url.txt
 :language: text
 ```
-Panel set file: {download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`. The link is
+Panel set file: {download}`overview-focus-model.json <../_static/panelsets/paper/overview-focus-model.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -227,7 +227,7 @@ module). In both gene scatters the large dot moved to H2-Aa.
 ```
 
 :::{note}
-**Paper Fig. 1a.** The four panels are the four arrows of the focus-model diagram, each ending
+**Paper, overview, panel a.** The four panels are the four arrows of the focus-model diagram, each ending
 in a scatter.
 :::
 
@@ -235,10 +235,10 @@ in a scatter.
 ## 5. Lock a panel and move the focus past it
 
 ::::{dropdown} Start here: the four slices of section 4
-```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+```{literalinclude} ../_static/panelsets/paper/overview-focus-model.url.txt
 :language: text
 ```
-Panel set file: {download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`. The link is
+Panel set file: {download}`overview-focus-model.json <../_static/panelsets/paper/overview-focus-model.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -276,10 +276,10 @@ make the panel follow the focus.
 ## 6. Four linked panels with a table
 
 ::::{dropdown} Start here: the four linked panels this section builds
-```{literalinclude} ../_static/panelsets/paper/fig2-overview.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-overview.url.txt
 :language: text
 ```
-Panel set file: {download}`fig2-overview.json <../_static/panelsets/paper/fig2-overview.json>`. The link is
+Panel set file: {download}`interface-overview.json <../_static/panelsets/paper/interface-overview.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -308,17 +308,17 @@ HSCs. Click a cell ID in the table and it becomes the focused cell.
 ```
 
 :::{note}
-**Paper Fig. 2a.** This layout is panel a of the paper figure.
+**Paper, interface, panel a.** This layout is panel a of the paper figure.
 :::
 
 (tut-tour-filter)=
 ## 7. Filter cells with two conditions and mask a plot
 
 ::::{dropdown} Start here: the filtered table and the masked UMAP (protocol view E)
-```{literalinclude} ../_static/panelsets/paper/fig2-table-filter.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-table-filter.url.txt
 :language: text
 ```
-Panel set file: {download}`fig2-table-filter.json <../_static/panelsets/paper/fig2-table-filter.json>`. The link is
+Panel set file: {download}`interface-table-filter.json <../_static/panelsets/paper/interface-table-filter.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -357,7 +357,7 @@ z-score is above 2, all in the HSC cluster. Edit a condition and the mask follow
 ```
 
 :::{note}
-**Paper Fig. 2c.** This view is panel c of the paper figure.
+**Paper, interface, panel c.** This view is panel c of the paper figure.
 :::
 
 (tut-tour-save)=
@@ -370,7 +370,7 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
 
     ```{figure} ../_static/screens/paper/fig2-save-panel-set.png
     :class: screenshot
-    :alt: Save Panel Set dialog with the name fig2-table-filter.
+    :alt: Save Panel Set dialog with the name interface-table-filter.
     :width: 60%
     ```
 
@@ -396,7 +396,7 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
 
    ```{figure} ../_static/screens/paper/fig2-upload-panel-set.png
    :class: screenshot
-   :alt: Load Panel Set dialog in upload mode with fig1-focus-model.json selected.
+   :alt: Load Panel Set dialog in upload mode with overview-focus-model.json selected.
    :width: 60%
    ```
 
@@ -470,34 +470,34 @@ not depend on the server address.
 The views of this tour:
 
 ::::{dropdown} Sections 4 and 5: the four slices of the focus model
-```{literalinclude} ../_static/panelsets/paper/fig1-focus-model.url.txt
+```{literalinclude} ../_static/panelsets/paper/overview-focus-model.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Section 3: walk and cell types (four clicks)
-```{literalinclude} ../_static/panelsets/paper/fig2-focus-sequence.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-focus-sequence.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Section 6: four linked panels
-```{literalinclude} ../_static/panelsets/paper/fig2-overview.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-overview.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Section 7: two-condition filter masking a UMAP
-```{literalinclude} ../_static/panelsets/paper/fig2-table-filter.url.txt
+```{literalinclude} ../_static/panelsets/paper/interface-table-filter.url.txt
 :language: text
 ```
 ::::
 
 The same panels as panel set files ({ref}`tut-tour-load-file`):
-{download}`fig1-focus-model.json <../_static/panelsets/paper/fig1-focus-model.json>`,
-{download}`fig2-focus-sequence.json <../_static/panelsets/paper/fig2-focus-sequence.json>`,
-{download}`fig2-overview.json <../_static/panelsets/paper/fig2-overview.json>`,
-{download}`fig2-table-filter.json <../_static/panelsets/paper/fig2-table-filter.json>`.
+{download}`overview-focus-model.json <../_static/panelsets/paper/overview-focus-model.json>`,
+{download}`interface-focus-sequence.json <../_static/panelsets/paper/interface-focus-sequence.json>`,
+{download}`interface-overview.json <../_static/panelsets/paper/interface-overview.json>`,
+{download}`interface-table-filter.json <../_static/panelsets/paper/interface-table-filter.json>`.
 
 ## What you learned
 

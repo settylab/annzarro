@@ -1,5 +1,5 @@
 {
-  "name": "fig3-umap-vs-diffusion",
+  "name": "cell-by-cell-umap-vs-diffusion",
   "timestamp": "2026-10-02T21:33:48+00:00",
   "dataset": "bm_aging_showcase.zarr",
   "datasetName": "bm_aging_showcase",

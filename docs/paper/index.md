@@ -1,53 +1,56 @@
 # Paper figures
 
 Reference pages for the figures of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation), on the demonstration data `bm_aging.zarr` (8,090 cells × 16,285 genes; ageing
-murine bone marrow processed with Kompot {cite:p}`otto2025kompot`). Each page shows the figure
-and links to where the documentation covers it. Figs. 2 to 5 are reproduced step by step
-inside the {doc}`../tutorials/index`.
+preparation). Each page shows the figure, says which parts AnnZarro reproduces, and links to
+the views: share links and panel set files that reopen every view shown in the figure. The
+interface, cell-by-cell, gene-by-gene and cells-and-genes figures are rebuilt step by step in
+the {doc}`../tutorials/index`.
+
+The pages are named after what a figure shows, not after its number in the paper, so they
+stay valid when the paper's figures are renumbered.
 
 ::::{grid} 2 3 3 3
 :gutter: 2
 
-:::{grid-item-card} Fig. 1 · Focus model, slot map, comparison
-:img-top: ../_static/figures/paper/fig1-thumb.png
-:link: fig1-overview
+:::{grid-item-card} Overview: focus model, slots and comparison
+:img-top: ../_static/figures/paper/overview-thumb.png
+:link: overview
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 2 · Interface
-:img-top: ../_static/figures/paper/fig2-thumb.png
-:link: fig2-interface
+:::{grid-item-card} Interface
+:img-top: ../_static/figures/paper/interface-thumb.png
+:link: interface
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 3 · Cell by cell
-:img-top: ../_static/figures/paper/fig3-thumb.png
-:link: fig3-cell-by-cell
+:::{grid-item-card} Cell by cell
+:img-top: ../_static/figures/paper/cell-by-cell-thumb.png
+:link: cell-by-cell
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 4 · Gene by gene
-:img-top: ../_static/figures/paper/fig4-thumb.png
-:link: fig4-gene-by-gene
+:::{grid-item-card} Gene by gene
+:img-top: ../_static/figures/paper/gene-by-gene-thumb.png
+:link: gene-by-gene
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 5 · Cells and genes
-:img-top: ../_static/figures/paper/fig5-thumb.png
-:link: fig5-cells-and-genes
+:::{grid-item-card} Cells and genes
+:img-top: ../_static/figures/paper/cells-and-genes-thumb.png
+:link: cells-and-genes
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 6 · Deployment
-:img-top: ../_static/figures/paper/fig6-thumb.png
-:link: fig6-deployment
+:::{grid-item-card} Deployment
+:img-top: ../_static/figures/paper/deployment-thumb.png
+:link: deployment
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 7 · Performance
-:img-top: ../_static/figures/paper/fig7-thumb.png
-:link: fig7-performance
+:::{grid-item-card} Performance: what one click costs
+:img-top: ../_static/figures/paper/performance-thumb.png
+:link: performance
 :link-type: doc
 :::
 ::::
@@ -56,11 +59,11 @@ inside the {doc}`../tutorials/index`.
 :hidden:
 :maxdepth: 1
 
-fig1-overview
-fig2-interface
-fig3-cell-by-cell
-fig4-gene-by-gene
-fig5-cells-and-genes
-fig6-deployment
-fig7-performance
+overview
+interface
+cell-by-cell
+gene-by-gene
+cells-and-genes
+deployment
+performance
 ```
