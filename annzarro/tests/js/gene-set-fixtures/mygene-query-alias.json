@@ -1,0 +1,1 @@
+[{"query":"NOTAGENE","notfound":true},{"query":"P53","_id":"7157","_score":19.205172,"ensembl":{"gene":"ENSG00000141510"},"entrezgene":"7157","name":"tumor protein p53","symbol":"TP53","type_of_gene":"protein-coding"}]

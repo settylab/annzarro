@@ -1,15 +1,17 @@
-"""Screenshots, views and panel sets for the guides to paper Figures 4 and 5.
+"""Screenshots, views and panel sets for the paper-figure guides gene by gene and cells and genes
+(docs/paper/gene-by-gene.md, cells-and-genes.md). Screenshot names with fig4/fig5 keep an earlier
+figure numbering; panel sets and views are named after the guide.
 
     .venv-docs/bin/python docs/_tools/shoot_figs45.py [--port 8815] [--only 4ab 4c 4d 5abc 5d]
 
 Writes
-  docs/_tools/views/fig{4,5}-*.json                  deep-link `view` objects
-  docs/_static/panelsets/paper/fig{4,5}-*.json       panel sets for Load Panel Set > Upload file
+  docs/_tools/views/{gene-by-gene,cells-and-genes}-*.json   deep-link `view` objects
+  docs/_static/panelsets/paper/<same names>.json     panel sets for Load Panel Set > Upload file
   docs/_static/panelsets/paper/links-figs45.json     compressed `#view=z1.` fragments per view
-  docs/_static/panelsets/paper/fig{4,5}-*.url.txt    the full link, included by the pages
+  docs/_static/panelsets/paper/<same names>.url.txt  the full link, included by the pages
   docs/_static/screens/paper/fig{4,5}*.png           screenshots
 
-Figure 4 = figures/fig3_gene_by_gene.py and Figure 5 = figures/fig4_cells_by_genes.py in
+Gene by gene = figures/fig3_gene_by_gene.py and cells and genes = figures/fig4_cells_by_genes.py in
 settylab/annzarro-paper. Cells and genes are the paper's (data_prep/demo_panelsets/examples.json).
 All views use bm_aging_showcase.zarr (docs/data/showcase-store.md), which adds the paper's
 offline results (modules, ranks, classes, the fold-change z-score layer) as fields.
@@ -210,8 +212,8 @@ def fig5_d_noise() -> dict:
     return view(cfg, split("horizontal", tile("gene-plot-5d"), tile("gene-table-5d"), 55), "S100a9", MONO)
 
 
-ALL_VIEWS = {"fig4-ab": fig4_ab, "fig4-c": fig4_c, "fig4-d": fig4_d,
-             "fig5-abc": fig5_abc, "fig5-a-cells": fig5_a_cells, "fig5-d": fig5_d, "fig5-d-noise": fig5_d_noise}
+ALL_VIEWS = {"gene-by-gene-ab": fig4_ab, "gene-by-gene-c": fig4_c, "gene-by-gene-d": fig4_d,
+             "cells-and-genes-abc": fig5_abc, "cells-and-genes-a-cells": fig5_a_cells, "cells-and-genes-d": fig5_d, "cells-and-genes-d-noise": fig5_d_noise}
 
 
 # --------------------------------------------------------------------------- artefacts
@@ -346,7 +348,7 @@ def shrink(paths) -> None:
 SINGLE = {"width": 1000, "height": 700}
 
 def shoot_4ab(s, views) -> None:
-    page = s.open(views["fig4-ab"] | {"constants": views["fig4-ab"]["constants"] | {"focusedGene": "S100a9"}},
+    page = s.open(views["gene-by-gene-ab"] | {"constants": views["gene-by-gene-ab"]["constants"] | {"focusedGene": "S100a9"}},
                   dataset=DATASET, viewport=SINGLE)
     got = pick(s, page, "gene", "H2-Q7")
     s.log.append(f"4a picked H2-Q7 -> {got}; traces {traces(page, 'gene-plot-4a')}")
@@ -361,7 +363,7 @@ def shoot_4ab(s, views) -> None:
 
 
 def shoot_4c(s, views) -> None:
-    page = s.open(views["fig4-c"], dataset=DATASET, viewport={"width": 1600, "height": 1000})
+    page = s.open(views["gene-by-gene-c"], dataset=DATASET, viewport={"width": 1600, "height": 1000})
     s.log.append(f"4c table {table_info(page, 'gene-table-4c')}")
     s.log.append(f"4c strips {traces(page, 'gene-plot-4c1')} / {traces(page, 'gene-plot-4c2')}")
     s.log.append(f"4c rows {table_rows(page, 'gene-table-4c', 5)}")
@@ -372,7 +374,7 @@ def shoot_4c(s, views) -> None:
 
 
 def shoot_4d(s, views) -> None:
-    page = s.open(views["fig4-d"], dataset=DATASET, viewport=SINGLE | {"width": 1250})
+    page = s.open(views["gene-by-gene-d"], dataset=DATASET, viewport=SINGLE | {"width": 1250})
     s.log.append(f"4d traces {traces(page, 'gene-plot-4d')}")
     s.shot(page, "fig4d-page", {"gene-plot-4d": "fig4d-plot"})
     hover_shot(s, page, "gene-plot-4d", "H2-K1", "fig4d-hover-h2k1")
@@ -385,12 +387,12 @@ def shoot_4d(s, views) -> None:
 
 
 def shoot_5abc(s, views) -> None:
-    page = s.open(views["fig5-abc"], dataset=DATASET, viewport={"width": 1600, "height": 640})
+    page = s.open(views["cells-and-genes-abc"], dataset=DATASET, viewport={"width": 1600, "height": 640})
     s.shot(page, "fig5abc-page", {"cell-plot-5a": "fig5a-fc", "cell-plot-5b": "fig5b-young",
                                   "cell-plot-5c": "fig5c-old"})
     page.context.close()
     # The colour controls of panel b, open, in a tall window so the plot keeps its size.
-    page = s.open(views["fig5-abc"], dataset=DATASET, viewport={"width": 1600, "height": 1300})
+    page = s.open(views["cells-and-genes-abc"], dataset=DATASET, viewport={"width": 1600, "height": 1300})
     toggle_controls(s, page, "cell-plot-5b")
     page.locator('.tile[data-tile-id="cell-plot-5b"] .color-range-controls').screenshot(
         path=str(OUT / "fig5b-range-controls.png"))
@@ -405,7 +407,7 @@ def only(v: dict, tid: str) -> dict:
 
 
 def shoot_5a_cells(s, views) -> None:
-    page = s.open(views["fig5-a-cells"], dataset=DATASET, viewport={"width": 1600, "height": 900})
+    page = s.open(views["cells-and-genes-a-cells"], dataset=DATASET, viewport={"width": 1600, "height": 900})
     info = table_info(page, "cell-table-5t")
     page.locator('.tile[data-tile-id="cell-table-5t"] .dtsb-searchBuilder, '
                  '.tile[data-tile-id="cell-table-5t"] .dtsb-group').first.wait_for()
@@ -413,7 +415,7 @@ def shoot_5a_cells(s, views) -> None:
     s.shot(page, "fig5a-cells-page", {"cell-table-5t": "fig5a-cells-table", "cell-plot-5t": "fig5a-cells-umap"})
     page.context.close()
     # Check of the guide's second step (no screenshot): AND cell type = HSC, expected 288.
-    v = json.loads(json.dumps(views["fig5-a-cells"]))
+    v = json.loads(json.dumps(views["cells-and-genes-a-cells"]))
     v["layout"]["panelConfigs"]["cell-table-5t"]["searchBuilderConfig"]["criteria"].append(
         crit("highres_celltype", "obs_highres_celltype_main", "=", "HSC", "string"))
     page = s.open(v, dataset=DATASET, viewport={"width": 1600, "height": 900})
@@ -422,12 +424,12 @@ def shoot_5a_cells(s, views) -> None:
 
 
 def shoot_5d(s, views) -> None:
-    page = s.open(views["fig5-d"], dataset=DATASET, viewport={"width": 1600, "height": 1000})
+    page = s.open(views["cells-and-genes-d"], dataset=DATASET, viewport={"width": 1600, "height": 1000})
     s.log.append(f"5d table {table_info(page, 'gene-table-5d')}; rows {table_rows(page, 'gene-table-5d', 3)}; "
                  f"traces {traces(page, 'gene-plot-5d')}")
     s.shot(page, "fig5d-page", {"gene-table-5d": "fig5d-table"})
     page.context.close()
-    page = s.open(only(views["fig5-d"], "gene-plot-5d"), dataset=DATASET,
+    page = s.open(only(views["cells-and-genes-d"], "gene-plot-5d"), dataset=DATASET,
                   viewport=SINGLE | {"width": 1100})
     s.shot(page, "fig5d-plot-page", {"gene-plot-5d": "fig5d-plot"})
     hover_shot(s, page, "gene-plot-5d", "Apoe", "fig5d-hover-apoe")
@@ -437,7 +439,7 @@ def shoot_5d(s, views) -> None:
         path=str(OUT / "fig5d-controls.png"))
     page.context.close()
 
-    page = s.open(views["fig5-d-noise"], dataset=DATASET, viewport={"width": 1600, "height": 900})
+    page = s.open(views["cells-and-genes-d-noise"], dataset=DATASET, viewport={"width": 1600, "height": 900})
     s.log.append(f"5d noise table {table_info(page, 'gene-table-5d')}; rows {table_rows(page, 'gene-table-5d')}")
     s.shot(page, "fig5d-noise-page", {"gene-plot-5d": "fig5d-noise-plot", "gene-table-5d": "fig5d-noise-table"})
     page.context.close()

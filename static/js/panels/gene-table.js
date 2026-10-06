@@ -420,6 +420,10 @@ const GeneTablePanel = (function() {
         // Public API
         return {
             init,
+            // whether its rows are read (its DataTable built, or its first
+            // load over): "not loaded yet" is not "no gene passes", and a
+            // gene set panel reading it tells them apart
+            isReady: () => !!_dataTable || !_isFirstLoad,
             refreshTable,
             cleanup,
             destroy,

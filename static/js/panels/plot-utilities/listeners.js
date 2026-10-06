@@ -1,7 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
-    colorSliderValue, showColorBound, showPointStyle } from './panel-ui-update.js';
+    colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -14,7 +14,8 @@ import {
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate } from './plot-make-helper.js';
-import { formatRangeValue } from '../../utils/array-stats.js';
+import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
+import { notify } from '../../utils/notify.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
@@ -307,7 +308,16 @@ export function setupPlotControlListeners(
   
     // --- Refresh Plot Button ---
     const $refreshPlotButton = $controlsContainer.find(`#refresh-plot-${id}`);
-    $refreshPlotButton.on('click', () => {
+    // reloads the panel's data: re-checked on the server, past this browser's copies
+    // (the server may wait for its next walk of the dataset, up to
+    // server.refresh_min_interval_s: the panel shows it is busy meanwhile)
+    $refreshPlotButton.on('click', async () => {
+      loadingIndicator.show(plotContainer, 'refresh');
+      try {
+        await DataManager.reloadDatasetData();
+      } finally {
+        loadingIndicator.hide(plotContainer, 'refresh');
+      }
       loadDataAndCreatePlot();
     });
     
@@ -465,6 +475,7 @@ export function setupColorControls(
     $colorScaleSelect.on('change', (e) => {
         const newColorScale = jQuery(e.target).val();
         settings.colorScale = newColorScale;
+        showScalePreview($container, id, settings);
         _updatePlotElements({ colors: true, colorScale: true });
     });
 
@@ -488,10 +499,10 @@ export function setupColorControls(
 
     // Helper to update color range values without affecting slider UI
     function _updateColorRange(min, max, updateSliders = true, triggerPlotUpdate = true) {
-        settings.colorMin = min !== '' ? parseFloat(min) : null;
-        settings.colorMax = max !== '' ? parseFloat(max) : null;
-        $colorMinInput.val(settings.colorMin !== null ? settings.colorMin : '');
-        $colorMaxInput.val(settings.colorMax !== null ? settings.colorMax : '');
+        settings.colorMin = min !== '' && min !== null ? parseFloat(min) : null;
+        settings.colorMax = max !== '' && max !== null ? parseFloat(max) : null;
+        $colorMinInput.val(settings.colorMin !== null ? colorBoundText(settings, settings.colorMin) : '');
+        $colorMaxInput.val(settings.colorMax !== null ? colorBoundText(settings, settings.colorMax) : '');
 
         if (updateSliders) {
             // an empty bound shows the data's end of the track
@@ -520,7 +531,7 @@ export function setupColorControls(
             // centred scale: the other bound mirrors the typed one
             const mirrored = -value;
             settings[other === 'min' ? 'colorMin' : 'colorMax'] = mirrored;
-            (other === 'min' ? $colorMinInput : $colorMaxInput).val(formatRangeValue(mirrored));
+            (other === 'min' ? $colorMinInput : $colorMaxInput).val(colorBoundText(settings, mirrored));
             showColorBound(other === 'min' ? $colorMinSlider : $colorMaxSlider, mirrored, other === 'min' ? 'low' : 'high');
             updateColorRangeDirect(other, mirrored);
         }
@@ -531,18 +542,35 @@ export function setupColorControls(
         });
     }
 
+    // The boxes take data values, also under Log (settings then hold log10):
+    // typing 82 means 82, not 10^82. A value with no log10 is explained.
+    function _typedBound(which, text) {
+        const typed = text !== '' ? parseFloat(text) : null;
+        if (typed === null || !Number.isFinite(typed)) return typed;
+        const log = !!(settings.color && settings.color.log);
+        const { value, note, refused } = colorBoundFromData(typed, log, which, data.colorLog ? data.colorLog.floor : null);
+        if (refused || note) notify('Log colour scale', refused || note, 'warning');
+        if (refused) return undefined;
+        return value;
+    }
+
     $colorMinInput.on('change', (e) => {
-        const minValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (minValue !== null && Number.isFinite(minValue)) {
+        const minValue = _typedBound('min', e.target.value);
+        if (minValue === undefined) {
+            $colorMinInput.val(colorBoundText(settings, settings.colorMin));
+        } else if (minValue !== null && Number.isFinite(minValue)) {
             _applyTypedBound('min', minValue);
+            $colorMinInput.val(colorBoundText(settings, minValue));
         } else {
             _updateColorRange(minValue, settings.colorMax, true);
         }
     });
 
     $colorMaxInput.on('change', (e) => {
-        const maxValue = e.target.value !== '' ? parseFloat(e.target.value) : null;
-        if (maxValue !== null && Number.isFinite(maxValue)) {
+        const maxValue = _typedBound('max', e.target.value);
+        if (maxValue === undefined) {
+            $colorMaxInput.val(colorBoundText(settings, settings.colorMax));
+        } else if (maxValue !== null && Number.isFinite(maxValue)) {
             _applyTypedBound('max', maxValue);
         } else {
             _updateColorRange(settings.colorMin, maxValue, true);
@@ -643,6 +671,17 @@ export function setupColorControls(
     };
     $logColorButton.on('click', () => {
         if (!settings.color) return;
+        if (settings.lockColorRange) {
+            // a locked range stays the same data values in the new units
+            const was = !!settings.color.log;
+            const floor = was ? (data.colorLog ? data.colorLog.floor : null) : null;
+            const min = colorBoundToData(settings.colorMin, was), max = colorBoundToData(settings.colorMax, was);
+            const lo = colorBoundFromData(min, !was, 'min', floor ?? settings.color.logFloor ?? null);
+            const hi = colorBoundFromData(max, !was, 'max');
+            if (lo.note || hi.refused) notify('Log colour scale', hi.refused || lo.note, 'warning');
+            settings.colorMin = lo.value;
+            settings.colorMax = hi.value;
+        }
         settings.color.log = !settings.color.log;
         $.updateButtonState($logColorButton, settings.color.log);
         _reapplyLog();
@@ -679,7 +718,7 @@ export function setupColorControls(
     // --- Min slider --- use debounce for smoother performance
     $colorMinSlider.on('input', $.debounce((e) => {
         const minValue = colorSliderValue(e.target);
-        $colorMinInput.val(formatRangeValue(minValue));
+        $colorMinInput.val(colorBoundText(settings, minValue));
         settings.colorMin = minValue;
         updateColorRangeDirect('min', minValue);
         _updatePlotElements({
@@ -692,7 +731,7 @@ export function setupColorControls(
     // --- Max slider --- use debounce for smoother performance
     $colorMaxSlider.on('input', $.debounce((e) => {
         const maxValue = colorSliderValue(e.target);
-        $colorMaxInput.val(formatRangeValue(maxValue));
+        $colorMaxInput.val(colorBoundText(settings, maxValue));
         settings.colorMax = maxValue;
         updateColorRangeDirect('max', maxValue);
         _updatePlotElements({
@@ -720,6 +759,7 @@ export function setupColorControls(
     $reverseColormapButton.on('click', () => {
         settings.colorReversed = !settings.colorReversed;
         $.updateButtonState($reverseColormapButton, settings.colorReversed);
+        showScalePreview($container, id, settings);
         _updatePlotElements({ colorScale: true, colors: true });
     });
 
@@ -748,8 +788,8 @@ export function setupColorControls(
         const maxValue = -minValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMinInput.val(formatRangeValue(minValue));
-        $csColorMaxInput.val(formatRangeValue(maxValue));
+        $csColorMinInput.val(colorBoundText(settings, minValue));
+        $csColorMaxInput.val(colorBoundText(settings, maxValue));
         showColorBound($csColorMaxSlider, maxValue, 'high');
         
         // Update the plot with the new range values
@@ -823,8 +863,8 @@ export function setupColorControls(
         const minValue = -maxValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
-        $csColorMaxInput.val(formatRangeValue(maxValue));
-        $csColorMinInput.val(formatRangeValue(minValue));
+        $csColorMaxInput.val(colorBoundText(settings, maxValue));
+        $csColorMinInput.val(colorBoundText(settings, minValue));
         showColorBound($csColorMinSlider, minValue, 'low');
         
         // Update the plot with the new range values

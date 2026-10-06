@@ -33,7 +33,9 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-DATA_DIR = Path(os.environ.get("ANNZARRO_DOCS_DATA", Path.home() / "gits/annzarro-paper/data"))
+# The stores the docs use (bm_aging.zarr, bm_aging_showcase.zarr, ...): ANNZARRO_DOCS_DATA, or the
+# default data directory of `annzarro start`.
+DATA_DIR = Path(os.environ.get("ANNZARRO_DOCS_DATA", Path.home() / "annzarro-data"))
 VIEWPORT = {"width": 1600, "height": 1000}
 DSF = 1.5
 

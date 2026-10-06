@@ -89,6 +89,8 @@ class ConfigManager:
         "ANNZARRO_HOME", "ANNZARRO_HEADLESS", "ANNZARRO_AUTH_DISABLED",
         "ANNZARRO_ELECTRON_APP", "ANNZARRO_ELECTRON_MODE", "ANNZARRO_LOCAL_MODE",
         "ANNZARRO_ENV", "ANNZARRO_CONFIG",
+        # read by GET /api/v1/config (routes/core.py), over integrations.external_requests
+        "ANNZARRO_EXTERNAL_REQUESTS",
     }
 
     # Keys an ANNZARRO_<SECTION>_<KEY> variable may set although the built-in

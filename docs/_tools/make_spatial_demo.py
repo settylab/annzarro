@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Build spatial_demo.zarr: a small public Visium dataset prepared for AnnZarro.
 
-    /Users/dotto/gits/annzarro-paper/.venv/bin/python docs/_tools/make_spatial_demo.py
+    python docs/_tools/make_spatial_demo.py [--out spatial_demo.zarr] [--download-dir _downloads]
 
 Source: 10x Genomics, "Mouse Brain Serial Section 1 (Sagittal-Anterior)", Visium Spatial Gene
 Expression, Space Ranger 1.1.0, sample V1_Mouse_Brain_Sagittal_Anterior. Licence: Creative
@@ -44,7 +44,6 @@ import zarr
 from scipy.spatial.distance import cdist
 from scipy.stats import rankdata
 
-PAPER = Path.home() / "gits/annzarro-paper"
 SAMPLE = "V1_Mouse_Brain_Sagittal_Anterior"
 SOURCE = {
     "dataset": "Mouse Brain Serial Section 1 (Sagittal-Anterior), Visium Spatial Gene Expression, Space Ranger 1.1.0",
@@ -81,8 +80,8 @@ def spearman_columns(S):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=str(PAPER / "data" / "spatial_demo.zarr"))
-    ap.add_argument("--download-dir", default=str(PAPER / "data" / "_downloads"))
+    ap.add_argument("--out", default="spatial_demo.zarr")
+    ap.add_argument("--download-dir", default="_downloads")
     args = ap.parse_args()
     t0 = time.perf_counter()
     sc.settings.datasetdir = Path(args.download_dir)

@@ -11,6 +11,7 @@ import { Coverage, GAP } from '../utils/coverage.js';
 import { drawPlaceholder } from '../utils/panel-surface.js';
 import { releasePlot } from '../utils/release-plot.js';
 import { forget } from '../utils/memory-guard-ui.js';
+import { restoreColorRange, storedColorRange } from '../utils/array-stats.js';
 
 /**
  * Cell Plot Panel
@@ -59,8 +60,9 @@ const CellPlotPanel = (function() {
         };
         
         
-        // Override with provided options, if any
-        Object.assign(_settings, options);
+        // Override with provided options, if any (colour bounds stored in
+        // data units go back to drawn units: array-stats.js restoreColorRange)
+        Object.assign(_settings, restoreColorRange(options));
         initAutoPointStyle(_settings, options);
         
         // Cached data
@@ -496,7 +498,8 @@ const CellPlotPanel = (function() {
         function getConfig() {
             return {
                 title: _title,
-                ..._settings
+                ..._settings,
+                ...storedColorRange(_settings)   // Min/Max in data units, also under Log
             };
         }
         
@@ -611,6 +614,7 @@ const CellPlotPanel = (function() {
          */
         function setConfig(config) {
             if (!config) return;
+            config = restoreColorRange(config);
             
             // Update settings with new configuration
             Object.keys(config).forEach(key => {
@@ -624,6 +628,7 @@ const CellPlotPanel = (function() {
          */
         function updateConfig(config) {
             if (!config) return;
+            config = restoreColorRange(config);
             
             // Update title if provided
             if (config.title) {

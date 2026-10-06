@@ -19,43 +19,41 @@ AnnZarro-ready Zarr store.
 The raw data are the CITE-seq ageing atlas on Zenodo,
 [doi:10.5281/zenodo.15587768](https://doi.org/10.5281/zenodo.15587768) (CC BY 4.0). The file is
 `murine_bone_marrow_aging.h5ad`, 2,439,076,864 bytes, MD5 `3e346c91e029e5fde551a9ebf9ecee78`.
-Three scripts in the paper repository
-([settylab/annzarro-paper](https://github.com/settylab/annzarro-paper), folder `data_prep/`) turn it into
-the store:
+One script in this repository turns it into the store:
+{download}`bm_aging.py <../_tools/datasets/bm_aging.py>` (in `docs/_tools/datasets/`). It
+runs the paper's Procedure, Steps 3 to 10:
 
-1. `download_data.sh` downloads the h5ad with parallel range requests and checks the MD5.
-2. `run_kompot.py` runs the Kompot tutorial as a script. It computes Palantir diffusion maps
+1. **Download** the h5ad from Zenodo in parallel range requests and check its MD5.
+2. **Kompot**, as in the Kompot getting-started tutorial: Palantir diffusion maps
    {cite:p}`setty2019` on `X_pca_harmony` (40 components), then `kompot.da` and `kompot.de`
-   (Young to Old, `logged_counts`, `DM_EigenVectors`). Unlike the notebook it does **not**
-   call `kompot.cleanup()`, so the smoothed and fold-change layers that AnnZarro shows are kept.
-3. `prepare_annzarro_store.py` adds the pairwise matrices and writes the Zarr store:
-   - a dense 5-step diffusion walk in `obsp`;
-   - two gene x gene Spearman correlations in `varp`;
-   - X converted to CSC;
-   - every dense array rewritten as float32 with (1024, 1024) chunks, then the metadata
-     consolidated again.
+   (Young to Old, `logged_counts`, `DM_EigenVectors`). Unlike the tutorial it does **not** call
+   `kompot.cleanup()`, so the smoothed and fold-change layers that AnnZarro shows are kept. It
+   writes `bm_aging_processed.h5ad` (5.6 GB).
+3. **The store**: a dense five-step diffusion walk in `obsp`; two gene × gene Spearman
+   correlations in `varp`; dense arrays as float32; X and `logged_counts` as CSC; zarr format 2;
+   chunks by the aspect rule ({doc}`chunking`), then the metadata consolidated again.
 
-   {doc}`preparing-a-store` explains each step.
-
-`data_prep/README.md` and `data_prep/VALIDATION.md` in that repository record the commands,
-timings and every correction to the draft procedure.
+{doc}`preparing-a-store` explains each step.
 
 ## Regenerate it
 
-Run from the root of the paper repository with its analysis environment (scanpy, Kompot 0.8,
-Palantir). The whole run takes about two minutes after the download and needs about 32 GB
-of RAM, because the Kompot layers are float64 in memory.
+Install the versions the paper validated; Kompot's numbers change between versions:
 
 ```bash
-PY=.venv/bin/python
-N=16 data_prep/download_data.sh data                              # ~5 min, network-bound
-$PY data_prep/run_kompot.py --timings data/run_kompot_timings.json   # ~62 s
-$PY data_prep/prepare_annzarro_store.py --report data/prepare_report.json   # ~51 s
+pip install kompot==0.8.0 palantir==1.4.5 mellon==1.7.1 anndata==0.12.19 zarr==3.1.6 \
+    numpy==2.4.6 scipy==1.17.1
+python bm_aging.py --workdir bm_aging     # writes bm_aging/bm_aging.zarr
 ```
 
+It needs curl, the 2.4 GB download, about 30 GB of RAM (the Kompot layers are float64 in
+memory) and about 13 GB of disk for the download (2.4 GB), the processed h5ad (5.6 GB) and the store (4.8 GB). On an Apple
+M3 Max laptop (16 cores, 128 GB) the whole run took 3 min 51 s, 2 min of it the download, with
+a peak of 30.0 GB. Each stage reuses the previous stage's file if it is there; `--from store`
+rebuilds only the store from the processed h5ad. The store is 4,782,754,971 bytes in 3,837 files; move it
+into your server's data directory.
+
 The processed store is not yet available as a download. The paper's data availability
-statement says it will be deposited on Zenodo with the release. Until then, regenerate it
-as above.
+statement says it will be deposited on Zenodo with the release.
 
 To check a copy, hash every file of the directory store in a fixed order:
 
@@ -75,9 +73,11 @@ def store_md5(root):
 The store behind this documentation gives `b0d150cf4161887febefafe460b0a4b4`.
 
 ```{note}
-The checksum identifies one build, not the recipe. Re-running Kompot gives float differences
-of about 4e-7 in the fold-change layer, so a rebuilt store hashes differently. The scientific
-numbers do not change. Compare them with `figures/numbers/*.json` in the paper repository instead.
+The checksum identifies one build, not the recipe. A rebuild with `bm_aging.py` differs from
+this store in its chunk shapes (the store behind these docs has (1024, 1024) chunks and a CSR
+`logged_counts`; the script follows the current Procedure) and by about 1e-6 in Kompot's
+float outputs, so it hashes differently. The numbers the docs quote do not change: the same 190
+DE genes, Mahalanobis threshold 5.82, and every value the views read agrees to within 2.2e-6.
 ```
 
 ## What is in it
@@ -132,11 +132,11 @@ Cell names contain `#`. Deep links encode it; type it URL-encoded if you build a
 Where to see these fields in use:
 
 - `obsp/diffusion_walk_t5`, `obsp/DM_Kernel` and the embeddings: {doc}`../tutorials/cell-similarity`
-  (paper figure: {doc}`../paper/fig3-cell-by-cell`).
+  (paper figure: {doc}`../paper/cell-by-cell`).
 - `varp/spearman_fold_change`, `varp/spearman_smoothed` and the Kompot `var` columns:
-  {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/fig4-gene-by-gene`).
+  {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/gene-by-gene`).
 - The fold-change and smoothed layers: {doc}`../tutorials/cells-and-genes`
-  (paper figure: {doc}`../paper/fig5-cells-and-genes`).
+  (paper figure: {doc}`../paper/cells-and-genes`).
 - All of them together: {doc}`../tutorials/tour`.
 
 A copy with extra precomputed fields, used where a tutorial needs a number the app cannot

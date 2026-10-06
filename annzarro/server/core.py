@@ -49,6 +49,7 @@ DEFAULT_CONFIG = {
     "cache_memory_mb": 1000,           # Maximum memory in MB for backend caching
     "cache_enabled": True,             # Whether to enable backend caching
     "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
+    "refresh_min_interval_s": 10,      # POST /data/refresh walks a dataset at most this often
     "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
     "remote_allowlist": [],            # URL prefixes remote datasets must start with
     "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
@@ -363,6 +364,14 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     logger.info(f"Zarr reader configured with: cache_memory_mb={app.config.get('cache_memory_mb')}, "
                f"cache_enabled={app.config.get('cache_enabled')}, "
                f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
+
+    # A server that starts cannot know what changed on disk while none ran:
+    # every dataset starts a new generation (core/freshness.py), so a
+    # browser's cached replies are revalidated against the stores as they
+    # are now. The generations outlive the process, and a chunk write made
+    # while the server was down kept its old ETags through a restart.
+    from annzarro.core import freshness
+    freshness.bump(None, reason="server_start")
 
     # Initialize h5ad reader with cache settings from config
     configure_h5ad_reader(app.config)

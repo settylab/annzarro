@@ -60,6 +60,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `cache_enabled` | `true` | Server-side cache of dataset metadata and read results. |
 | `cache_memory_mb` | `4000` | Memory bound of that cache, per process (per gunicorn worker). `base.yaml` alone: 1000. |
 | `cache_dataset_limit` | `20` | Datasets kept open in the cache. |
+| `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner waits for the next walk, at the end of the interval (at most this long), shared by everyone waiting: a refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. |
 | `remote_credentials` | `anonymous` | `anonymous` (unsigned requests) or `environment` (the AWS and Google standard credential chains of the server account). |
@@ -97,7 +98,7 @@ Defaults sent to the browser through `/api/v1/config`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table` | Panel types offered in "Create New Panel". |
+| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set` | Panel types offered in "Create New Panel". |
 | `defaults.point_size`, `defaults.point_opacity` | `5`, `1.0` | Marker size and opacity for a few thousand points; with more points a panel's automatic values shrink from these (see Cell and gene plots). |
 | `defaults.color_scale` | `Portland` | Initial continuous colour scale. |
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
@@ -128,7 +129,7 @@ Typed arrays are outside that heap and are limited only by the computer's memory
 is the setting that matters; `total_gb` is for computers with little memory.
 
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
-points (annzarro-paper `benchmark/scale`): a Cell Plot in large-plot mode holds 20.2 bytes of the
+points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
 JavaScript heap per point (1.94 GB at 95.6 million points, 3.53 GB at 175 million; 182 million
 crashed); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs
@@ -160,6 +161,31 @@ ui:
 
 `server.cross_origin_isolation: auto` lets Chromium measure the page's memory, and the guard
 then corrects its estimate with the measured total ("measured" in the subset dialog).
+
+## `integrations`
+
+The external services the Gene Set Analysis panel asks ({doc}`../user-guide/gene-set`). Public:
+the browser calls them itself, the server never does.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on` overrides it. |
+| `gene_set.services` | `null` | The sections offered, by adapter id (`string-network`) or service (`string`, `gprofiler`, `mygene`, `enrichr`, `reactome`, `hpa`). `null`: all of them. |
+| `gene_set.timeout_ms` | `20000` | Time one request may take, in ms. A timed-out request is tried once more. |
+| `string_db.base_url` | `https://version-12-5.string-db.org/api` | STRING's API. A versioned host, so a result can be reproduced; it says its version in the section. |
+| `string_db.version` | `12.5` | The version shown with STRING's results. |
+
+```yaml
+integrations:
+  external_requests: "off"     # an air-gapped or confidential deployment
+```
+
+```yaml
+integrations:
+  external_requests: "on"      # users agreed out of band; no question asked
+  gene_set:
+    services: [string, gprofiler, mygene]
+```
 
 ## Security tiers
 

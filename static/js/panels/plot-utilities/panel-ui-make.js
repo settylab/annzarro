@@ -1,5 +1,7 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle } from './panel-ui-update.js';
+import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
+import { scaleOptionLabel } from '../../utils/color-scales.js';
+import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -122,9 +124,10 @@ export function createPanelStructure(container, id, settings) {
               <div class="ctl-field">
                 <select class="form-select form-select-sm color-palette-selector" id="color-scale-${id}">
                   ${COLOR_SCALES.map(scale => `
-                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scale}</option>
+                    <option value="${scale}" ${scale === settings.colorScale ? 'selected' : ''}>${scaleOptionLabel(scale)}</option>
                   `).join('')}
                 </select>
+                <span class="color-scale-preview" id="color-scale-preview-${id}" aria-hidden="true"></span>
                 <select class="form-select form-select-sm category-palette-selector" id="category-palette-${id}" style="display:none;">
                   <option value="">Loading palettes...</option>
                   <!-- Options populated by external logic -->
@@ -137,12 +140,12 @@ export function createPanelStructure(container, id, settings) {
                 <div class="color-min-slider-container ctl-row ctl-slider">
                   <label class="ctl-label" for="color-min-${id}">Min</label>
                   <input type="range" class="form-range" id="color-min-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="0" title="Percentile of the coloured values" aria-label="Colour minimum (percentile)">
-                  <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${settings.colorMin ?? 0}">
+                  <input type="number" class="form-control form-control-sm" id="color-min-${id}" value="${colorBoundToData(settings.colorMin, !!settings.color?.log) ?? 0}">
                 </div>
                 <div class="color-max-slider-container ctl-row ctl-slider">
                   <label class="ctl-label" for="color-max-${id}">Max</label>
                   <input type="range" class="form-range" id="color-max-slider-${id}" min="0" max="${SLIDER_STEPS}" step="1" value="${SLIDER_STEPS}" title="Percentile of the coloured values" aria-label="Colour maximum (percentile)">
-                  <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${settings.colorMax ?? 100}">
+                  <input type="number" class="form-control form-control-sm" id="color-max-${id}" value="${colorBoundToData(settings.colorMax, !!settings.color?.log) ?? 100}">
                 </div>
               </div>
             </div>
@@ -214,7 +217,7 @@ export function createPanelStructure(container, id, settings) {
               <button class="btn btn-sm active btn-primary" id="highlight-focused-gene-${id}" aria-pressed="true" style="display:none;">Highlight Focused Gene</button>
             </span>
             <span class="ctl-actions-end" role="group" aria-label="Plot actions">
-              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
+              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Read the data again (re-checked against the disk) and redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
               <button class="btn btn-sm btn-outline-secondary" id="aesthetics-menu-btn-${id}" title="Plot options" aria-label="Plot options"><i class="fas fa-sliders-h"></i> <span class="ctl-btn-text">Plot Options</span></button>
             </span>
           </div>
@@ -538,6 +541,21 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   const $reverseColormapButton = jQuery(`#reverse-colormap-${id}`);
   if ($reverseColormapButton.length) {
     $.updateButtonState($reverseColormapButton, settings.colorReversed);
+  }
+  // The swatch draws an off-screen plot to resolve the map: only once the
+  // swatch is on screen (controls open, colour numerical), and then when
+  // the browser is idle, not on the way to the panel's first plot.
+  const preview = () => showScalePreview(jQuery(`#color-range-container-${id}`), id, settings);
+  const whenIdle = () => (typeof requestIdleCallback === 'function'
+    ? requestIdleCallback(preview, { timeout: 5000 }) : setTimeout(preview, 1000));
+  const swatch = document.getElementById(`color-scale-preview-${id}`);
+  if (swatch && typeof IntersectionObserver === 'function') {
+    const seen = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) { seen.disconnect(); whenIdle(); }
+    });
+    seen.observe(swatch);
+  } else {
+    whenIdle();
   }
   
   // We can't update color sliders here because the data isn't loaded yet

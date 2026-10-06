@@ -298,3 +298,22 @@ test("buildDeepLinkUrl puts the view in the fragment, never the query", async ()
   const parsed = parseDeepLinkLocation(url);
   assert.deepEqual(normalizeView(await decodeViewPayload(parsed.payload)), normalizeView(view));
 });
+
+test("a gene set panel round-trips with its source table, and the id remap follows it", async () => {
+  const { remapPanelReferences, serializableConfig } = await import(pathToFileURL(MODULE_PATH).href);
+  const view = sampleLayoutView();
+  const gs = {
+    id: "gene-set-1718000000003", title: "Gene Set Analysis 1",
+    tableFilter: "gene-table-1718000000002", idColumn: "gene_symbols", autoUpdate: false,
+    sections: { "string-network": { visible: true, params: { requiredScore: 700 } }, links: { visible: true, params: {} } },
+    sectionOrder: ["links", "string-network"], links: { columns: null, listOpen: false },
+  };
+  view.layout.hierarchy.push({ type: "tile", id: gs.id });
+  view.layout.panelConfigs[gs.id] = serializableConfig(gs);
+  const decoded = decodeView(encodeView(view));
+  assert.deepEqual(decoded.layout.panelConfigs[gs.id], gs);
+  assert.equal(panelTypeFromTileId(gs.id), "gene-set");
+  assert.ok(collectTileIds(decoded.layout.hierarchy).includes(gs.id));
+  remapPanelReferences(Object.values(decoded.layout.panelConfigs), { "gene-table-1718000000002": "gene-table-9" });
+  assert.equal(decoded.layout.panelConfigs[gs.id].tableFilter, "gene-table-9");
+});

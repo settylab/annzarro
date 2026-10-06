@@ -19,7 +19,9 @@ Numerical colour controls of the fold-change panel.
 1. **Map**: Greys, YlGnBu, Greens, YlOrRd, Bluered, RdBu, Reds, Blues, Picnic, Rainbow,
    Portland, Jet, Hot, Blackbody, Earth, Electric, Viridis, Cividis, Inferno, Magma, Plasma.
    A new panel uses Portland unless the server sets another default (`ui.defaults.color_scale`,
-   {doc}`../reference/configuration`).
+   {doc}`../reference/configuration`). Each sequential map is listed with the way it runs from
+   low to high values, for example **Blues (dark → light)** and **Reds (light → dark)**; the swatch
+   beside the drop-down shows the map as drawn, low on the left, Reverse included.
 2. **Min**: slider and number box for the value drawn in the first colour of the map.
 3. **Max**: the same for the last colour.
 
@@ -61,7 +63,7 @@ Left: sequential (Blues, reversed, 0 to 0.012). Right: diverging (RdBu, Center a
 ```
 
 1. Open the panel's controls.
-2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light, so click **Reverse** to draw zero in the light colour and large values in dark blue.
+2. In **Map**, choose **Blues**. Plotly's Blues runs from dark to light (the drop-down says so), so click **Reverse** to draw zero in the light colour and large values in dark blue. The swatch beside the drop-down turns round with it. Greys, Greens, YlGnBu and YlOrRd run dark to light as well; Reds runs light to dark.
 3. For the fold change, choose **RdBu** and click **Center at 0**. Min and Max become −1.03 and
    1.03 for H2-Q7.
 
@@ -113,6 +115,14 @@ Kernel rows, transition probabilities and counts often span several orders of ma
 linear scale everything but the top decade is one colour. Click **Log** to colour by log10 of the
 value. Values at or below the **floor** (including zeros) take the floor's colour. Type a floor,
 for example `1e-5`, or leave the box empty to use the smallest positive value.
+
+**Min** and **Max** stay in the data's units under Log: for counts from 1 to 82, type `1` and `82`,
+not their logarithms. A value with no logarithm is not used as typed: a Min at or below 0 starts the
+scale at the floor, a Max at or below 0 is refused, and a notice says so. The colour bar is
+labelled in data units, at 1, 2, 5 (or 1, 3, or whole decades over a wide range) times each power
+of ten. Panel sets and share links store data values too; a link saved with AnnZarro 0.3 or
+earlier, which stored the logarithms under Log, opens with the range it had. With **Lock Range** on,
+switching Log on or off keeps the same data values.
 
 ```{figure} ../_static/screens/user-guide/colour-log.png
 :class: screenshot

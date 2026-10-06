@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 
 import {
     GAP, ROLE, Coverage, classifyColumn, classifyValues, classifyError,
-    classifyFilterStats
+    classifyFilterStats, countNoun, breakdown
 } from '../../../static/js/utils/coverage.js';
 
 test('complete coverage says nothing', () => {
@@ -736,4 +736,29 @@ test('#41: unsupported_type and read_failed are failures that keep the server se
         assert.equal(c.worstReason, GAP.FAILED, reason);
         assert.match(c.lines()[0], /Nucleus/);
     }
+});
+
+test('the gene set panel names its gaps by kind: not found, request failed, not covered, over the limit, turned off', () => {
+    const line = (reason, kind) => new Coverage({ shown: 0, total: 20, unit: 'genes',
+        gaps: [{ reason, kind, source: 'STRING', count: 20, detail: 'x' }] }).lines()[0];
+    assert.equal(line(GAP.UNAVAILABLE, 'unmapped'), 'STRING: not found by the service (20 genes) -- x');
+    assert.equal(line(GAP.FAILED, 'request'), 'STRING: request failed (20 genes) -- x');
+    assert.equal(line(GAP.UNAVAILABLE, 'unsupported'), 'STRING: not covered by the service (20 genes) -- x');
+    assert.equal(line(GAP.CAPPED, 'over-limit'), "STRING: over the service's limit (20 genes) -- x");
+    assert.equal(line(GAP.UNAVAILABLE, 'disabled'), 'STRING: external services are turned off (20 genes) -- x');
+    const partial = new Coverage({ shown: 15, total: 20, unit: 'genes',
+        gaps: [{ reason: GAP.UNAVAILABLE, kind: 'unmapped', source: 'STRING', count: 5, detail: 'A, B' }] });
+    assert.deepEqual(breakdown(partial).rows.map(r => r.chip), ['not found in STRING']);
+});
+
+test('a count of one takes the singular noun', () => {
+    const one = Coverage.partial(74999, 75000, GAP.FILTERED, 'missing coordinates',
+        { source: 'x-axis', unit: 'genes' });
+    assert.match(one.lines()[0], /\(1 gene\)/);
+    assert.match(Coverage.partial(1, 3, GAP.FILTERED, '', { unit: 'cells' }).lines()[0], /\(2 cells\)/);
+    assert.equal(countNoun(1, 'categories'), '1 category');
+    assert.equal(countNoun(0, 'cells'), '0 cells');
+    const single = breakdown(Coverage.complete(1, 'cells'));
+    assert.equal(single.headline, '1 cell');
+    assert.equal(single.headlineExact, '1 cell');
 });

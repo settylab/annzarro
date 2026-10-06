@@ -1,66 +1,115 @@
 # Paper figures
 
 Reference pages for the figures of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation), on the demonstration data `bm_aging.zarr` (8,090 cells × 16,285 genes; ageing
-murine bone marrow processed with Kompot {cite:p}`otto2025kompot`). Each page shows the figure
-and links to where the documentation covers it. Figs. 2 to 5 are reproduced step by step
-inside the {doc}`../tutorials/index`.
+preparation). Each page shows the figure, says which parts AnnZarro reproduces, and links to
+the views: share links and panel set files that reopen every view shown in the figure. The
+interface, cell-by-cell, gene-by-gene and cells-and-genes figures are rebuilt step by step in
+the {doc}`../tutorials/index`.
+
+The pages are named after what a figure shows, not after its number in the paper, so they
+stay valid when the paper's figures are renumbered.
 
 ::::{grid} 2 3 3 3
 :gutter: 2
 
-:::{grid-item-card} Fig. 1 · Focus model, slot map, comparison
-:img-top: ../_static/figures/paper/fig1-thumb.png
-:link: fig1-overview
+:::{grid-item-card} Overview: focus model, slots and comparison
+:img-top: ../_static/figures/paper/overview-thumb.png
+:link: overview
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 2 · Interface
-:img-top: ../_static/figures/paper/fig2-thumb.png
-:link: fig2-interface
+:::{grid-item-card} Interface
+:img-top: ../_static/figures/paper/interface-thumb.png
+:link: interface
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 3 · Cell by cell
-:img-top: ../_static/figures/paper/fig3-thumb.png
-:link: fig3-cell-by-cell
+:::{grid-item-card} Procedure
+:img-top: ../_static/figures/paper/procedure-thumb.png
+:link: procedure
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 4 · Gene by gene
-:img-top: ../_static/figures/paper/fig4-thumb.png
-:link: fig4-gene-by-gene
+:::{grid-item-card} Cell by cell
+:img-top: ../_static/figures/paper/cell-by-cell-thumb.png
+:link: cell-by-cell
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 5 · Cells and genes
-:img-top: ../_static/figures/paper/fig5-thumb.png
-:link: fig5-cells-and-genes
+:::{grid-item-card} Gene by gene
+:img-top: ../_static/figures/paper/gene-by-gene-thumb.png
+:link: gene-by-gene
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 6 · Deployment
-:img-top: ../_static/figures/paper/fig6-thumb.png
-:link: fig6-deployment
+:::{grid-item-card} Cells and genes
+:img-top: ../_static/figures/paper/cells-and-genes-thumb.png
+:link: cells-and-genes
 :link-type: doc
 :::
 
-:::{grid-item-card} Fig. 7 · Performance
-:img-top: ../_static/figures/paper/fig7-thumb.png
-:link: fig7-performance
+:::{grid-item-card} Deployment
+:img-top: ../_static/figures/paper/deployment-thumb.png
+:link: deployment
+:link-type: doc
+:::
+
+:::{grid-item-card} Scale: Tahoe-100M
+:img-top: ../_static/figures/paper/scale-thumb.png
+:link: scale
+:link-type: doc
+:::
+
+:::{grid-item-card} Performance: what one click costs
+:img-top: ../_static/figures/paper/performance-thumb.png
+:link: performance
 :link-type: doc
 :::
 ::::
+
+(paper-data)=
+## Data for the views
+
+The share links on these pages open a store on a local AnnZarro server: they are written for
+`http://127.0.0.1:8000` with the store's file name in the server's data directory
+({doc}`../getting-started/quickstart`; to change the address or the store path, see
+{ref}`tut-start-links`). Each page needs one of these stores.
+
+| Page | Store | How to get it |
+|---|---|---|
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Build it from the public raw data with a script in this repository: {doc}`../data/demo-data` |
+| {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | Build it from `bm_aging.zarr` with a script in this repository, in about 15 s: {doc}`../data/showcase-store` |
+| {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
+| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release; the build script will be published with the paper: {ref}`paper-scale-store` |
+| {doc}`deployment` | none | The figure is a diagram |
+
+```{important}
+**Placeholder: Zenodo deposit.** The processed AnnZarro-ready stores and the panel sets used for
+the figures will be deposited on Zenodo with the paper's release. The record does not exist yet;
+its DOI and download instructions will be added here when it does. Until then, build the stores
+as described in the table.
+```
+
+(paper-companion)=
+## The paper's companion repository
+
+Some pages name files such as `figures/…`, `data_prep/…` or `benchmark/…`. They are in the
+paper's companion repository, `settylab/annzarro-paper`, which stays private until the paper is
+published. The names say where a figure, a number or a view comes from; you do not need them to
+open the views or to build the stores, whose scripts are in this repository. The exception is
+the Tahoe-100M store, whose build script will be published with the paper.
 
 ```{toctree}
 :hidden:
 :maxdepth: 1
 
-fig1-overview
-fig2-interface
-fig3-cell-by-cell
-fig4-gene-by-gene
-fig5-cells-and-genes
-fig6-deployment
-fig7-performance
+overview
+interface
+procedure
+cell-by-cell
+gene-by-gene
+cells-and-genes
+deployment
+scale
+performance
 ```

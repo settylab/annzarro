@@ -12,7 +12,7 @@ Run:
   .venv-docs/bin/python docs/_tools/shoot_userguide.py [--port 8817] [--only interface focus ...]
 
 Data: bm_aging.zarr, bm_aging_showcase.zarr and spatial_demo.zarr in ANNZARRO_DOCS_DATA
-(default ~/gits/annzarro-paper/data). The script serves them from a temporary data directory
+(default ~/annzarro-data). The script serves them from a temporary data directory
 of symlinks, so panel sets it saves for the screenshots never reach the shared sessions folder.
 
 The remote-dataset shots need fsspec + aiohttp (pip install 'annzarro[remote]'). Pass

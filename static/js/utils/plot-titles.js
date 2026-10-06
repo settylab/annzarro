@@ -30,6 +30,24 @@ export function middleEllipsis(text, fits) {
     return best;
 }
 
+/**
+ * The colour bar's (and categorical legend's) title for a colour source
+ * {type, key, column}. It was the raw key ("obsp.chemical_synapses.AVA");
+ * the source type is dropped and the column says what it is:
+ *   obs/var        total_counts
+ *   obsm/varm      X_pca · 3
+ *   obsp/varp      chemical_synapses · row AVA   (the focused entity's row)
+ *   layer          counts · Gata1
+ * @param {{type?: string, key?: string, column?: string}} color
+ * @returns {string}
+ */
+export function colourTitle(color) {
+    if (!color || !color.key) return '';
+    const { type, key, column } = color;
+    if (!column) return key;
+    return type === 'obsp' || type === 'varp' ? `${key} · row ${column}` : `${key} · ${column}`;
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function _fit(textEl, available) {

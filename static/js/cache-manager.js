@@ -83,6 +83,11 @@ const CacheManager = (function() {
     }
   }
 
+  /** Drop one key (no-op when absent). */
+  function remove(key) {
+    _remove(key);
+  }
+
   function clear(pattern = null) {
     for (const key of _cache.keys()) {
       if (!pattern || key.includes(pattern)) {
@@ -137,6 +142,7 @@ const CacheManager = (function() {
     get,
     set,
     clear,
+    remove,
     has,
     keys,
     onChange,

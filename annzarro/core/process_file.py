@@ -5,6 +5,8 @@ from .remote import raise_if_timeout
 from .array_response import array_response, binary_response, categorical_response, numeric_array
 from typing import Literal
 import logging
+from . import freshness
+from .zarr_reader import consolidated_notice
 
 logger = logging.getLogger("data_routes")
 
@@ -109,7 +111,11 @@ def extract_metadata(dataset_path: str, reader: Reader):
                 "available": metadata.get("has_uns", False),
                 "keys": get_keys(metadata, "uns")
             },
-            "embeddings": metadata.get("embeddings", [])
+            "embeddings": metadata.get("embeddings", []),
+            # set when a refresh found the consolidated metadata out of date
+            # (the store is then read without it): the client says so
+            "consolidated_metadata": consolidated_notice(
+                freshness.recorded(dataset_path).get("consolidated_stale")),
         }
         # Use pathlib for consistency when adding dataset_id.
         # Frontend uses path directly, so no need for dataset_id

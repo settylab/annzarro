@@ -1,10 +1,12 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { formatRangeValue } from '../../utils/array-stats.js';
+import { formatRangeValue, colorBoundToData } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
+import { resolveColorscale } from '../../utils/panel-surface.js';
+import { scaleDirection, scaleGradient } from '../../utils/color-scales.js';
 
 // Annotation columns that are numeric in a typical scanpy/anndata object, in
 // the order we would rather plot them. Used only when the matrix source is
@@ -648,6 +650,7 @@ export function updateColorControlsVisibility(container, colorType, id) {
     // Show numerical color controls
     $colorRangeContainer.css('display', '');
     $.showHide($colorScaleSelect, true, '');
+    $.showHide($container.find(`#color-scale-preview-${id}`), true, '');
     $.showHide($categoryPaletteSelect, false);
     $.showHide($numericalLabel, true, '');
     $.showHide($categoricalLabel, false);
@@ -671,6 +674,7 @@ export function updateColorControlsVisibility(container, colorType, id) {
     // Show categorical color controls
     $colorRangeContainer.css('display', '');
     $.showHide($colorScaleSelect, false);
+    $.showHide($container.find(`#color-scale-preview-${id}`), false);
     
     $.showHide($categoryPaletteSelect, true, '');
     
@@ -740,6 +744,30 @@ export function showColorSortControl(id, settings) {
   $.updateButtonState($button, settings.sortByColor !== false);
 }
 
+// Plotly's stops per map name, resolved once per page (resolveColorscale draws an off-screen plot)
+const _scaleStops = new Map();
+
+/**
+ * The swatch beside the Map picker: the map as drawn, low on the left,
+ * Reverse included (utils/color-scales.js). The Reverse button's tooltip
+ * says which way a sequential map now runs.
+ */
+export function showScalePreview($container, id, settings) {
+  const direction = scaleDirection(settings.colorScale, settings.colorReversed);
+  $container.find(`#reverse-colormap-${id}`).attr('title', direction
+    ? `Flip the map end for end (now ${direction}, low to high)` : 'Flip the map end for end');
+  const $swatch = $container.find(`#color-scale-preview-${id}`);
+  if (!$swatch.length || typeof Plotly === 'undefined') return;
+  const scale = settings.colorScale, reversed = !!settings.colorReversed;
+  $swatch.attr('title', `${scale}${reversed ? ', reversed' : ''}: low values left, high right`);
+  if (!_scaleStops.has(scale)) _scaleStops.set(scale, resolveColorscale(scale).catch(() => null));
+  _scaleStops.get(scale).then(stops => {
+    // a later choice may have drawn already
+    if (!stops || settings.colorScale !== scale || !!settings.colorReversed !== reversed) return;
+    $swatch.css('background-image', scaleGradient(stops, reversed));
+  });
+}
+
 /**
  * The scales of the colour min and max sliders (slider-scales.js), or null
  * when no value is finite. Both move in quantile space; centred at 0 they
@@ -753,6 +781,14 @@ export function colorSliderScales(values, centered) {
   }
   const abs = quantileScale(values, { transform: Math.abs });
   return abs && { min: mirroredScale(abs), max: abs };
+}
+
+/**
+ * A colour bound as the Min/Max boxes show it: in data units, also under a
+ * log colour scale, where settings hold log10 (array-stats.js).
+ */
+export function colorBoundText(settings, v) {
+  return formatRangeValue(colorBoundToData(v, !!(settings.color && settings.color.log)));
 }
 
 /** The colour value a min/max slider shows (its scale, else its raw value). */
@@ -785,8 +821,8 @@ function showColorRange($container, id, scales, settings) {
     showColorBound($colorMinSlider, settings.colorMin, 'low');
     showColorBound($colorMaxSlider, settings.colorMax, 'high');
   }
-  if ($colorMinInput.length) $colorMinInput.val(formatRangeValue(settings.colorMin));
-  if ($colorMaxInput.length) $colorMaxInput.val(formatRangeValue(settings.colorMax));
+  if ($colorMinInput.length) $colorMinInput.val(colorBoundText(settings, settings.colorMin));
+  if ($colorMaxInput.length) $colorMaxInput.val(colorBoundText(settings, settings.colorMax));
 }
 
 /**

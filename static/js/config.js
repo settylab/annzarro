@@ -38,6 +38,43 @@ export function readUiSettings(server) {
         memory: ui.memory && typeof ui.memory === 'object' ? ui.memory : null
     };
 }
+/**
+ * The integrations.* settings in /api/v1/config, for the Gene Set Analysis
+ * panel's external services:
+ *   external_requests  ask | on | off: whether the panel may send gene ids to
+ *                      services, asking first (ask, the default), without
+ *                      asking, or never. YAML reads a bare off/on as a
+ *                      boolean, so false and true mean off and on; anything
+ *                      else unknown means ask.
+ *   gene_set.services  adapter ids or service names allowed (null: all)
+ *   gene_set.timeout_ms  per request attempt
+ *   string_db          base_url and version of the STRING API
+ * @param {Object} server - the parsed /api/v1/config response
+ * @returns {{externalRequests: 'ask'|'on'|'off', services: string[]|null, timeoutMs: number,
+ *   stringDb: {baseUrl: string|null, version: string|null}}}
+ */
+export function readIntegrations(server) {
+    const cfg = server && server.integrations && typeof server.integrations === 'object' ? server.integrations : {};
+    let ext = cfg.external_requests;
+    if (ext === false) ext = 'off';
+    else if (ext === true) ext = 'on';
+    ext = typeof ext === 'string' ? ext.trim().toLowerCase() : 'ask';
+    if (!['ask', 'on', 'off'].includes(ext)) ext = 'ask';
+    const gs = cfg.gene_set && typeof cfg.gene_set === 'object' ? cfg.gene_set : {};
+    const services = Array.isArray(gs.services) ? gs.services.filter(x => typeof x === 'string') : null;
+    const t = Number(gs.timeout_ms);
+    const sdb = cfg.string_db && typeof cfg.string_db === 'object' ? cfg.string_db : {};
+    return {
+        externalRequests: ext,
+        services,
+        timeoutMs: Number.isFinite(t) && t > 0 ? t : 20000,
+        stringDb: {
+            baseUrl: typeof sdb.base_url === 'string' && sdb.base_url.startsWith('https://') ? sdb.base_url : null,
+            version: sdb.version !== undefined && sdb.version !== null ? String(sdb.version) : null
+        }
+    };
+}
+
 const Config = (function() {
     // API endpoints, under the path the app is mounted at (see utils/app-url.js)
     const API_BASE = appUrl('/api/v1');
@@ -63,6 +100,7 @@ const Config = (function() {
         BY_PATH: `${API_BASE}/data/by_path`,
         UNS: `${API_BASE}/data/uns`,
         CACHE_RESET: `${API_BASE}/cache/reset`,
+        DATA_REFRESH: `${API_BASE}/data/refresh`,
         SESSIONS_LIST: `${API_BASE}/sessions/list`,
         SESSIONS_SAVE: `${API_BASE}/sessions/save`,
         SESSIONS_LOAD: `${API_BASE}/sessions/load`,
@@ -124,10 +162,16 @@ const Config = (function() {
             '10116': 'Rattus norvegicus',
             '7227': 'Drosophila melanogaster',
             '6239': 'Caenorhabditis elegans',
-            '7955': 'Danio rerio'
+            '7955': 'Danio rerio',
+            '559292': 'Saccharomyces cerevisiae S288C',
+            '3702': 'Arabidopsis thaliana',
+            '8364': 'Xenopus tropicalis',
+            '9823': 'Sus scrofa',
+            '9544': 'Macaca mulatta',
+            '9031': 'Gallus gallus'
         },
         // Enable/disable specific panel types in the selection tile
-        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table'], // 'gene-set'
+        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set'],
         
         // Plot aesthetics defaults
         PLOT_AESTHETICS: {
@@ -205,14 +249,15 @@ const Config = (function() {
         AUTO_RESTORE: true // Automatically restore autosave on startup
     };
     
-    // For StringDB API
+    // For StringDB API: a versioned host, so a result can be reproduced
+    // and says which STRING made it (server key integrations.string_db)
     const STRING_DB = {
-        BASE_URL: 'https://string-db.org/api',
-        VERSION: '11.5',
-        NETWORK_IMAGE_URL: 'https://string-db.org/api/svg/network',
-        INTERACTION_URL: 'https://string-db.org/api/json/interaction_partners',
-        ENRICHMENT_URL: 'https://string-db.org/api/json/enrichment'
+        BASE_URL: 'https://version-12-5.string-db.org/api',
+        VERSION: '12.5'
     };
+
+    // The Gene Set Analysis panel's external services (readIntegrations)
+    const INTEGRATIONS = readIntegrations(null);
     
     // Keyboard shortcuts configuration
     const KEYBOARD_SHORTCUTS = {
@@ -316,12 +361,10 @@ const Config = (function() {
                 if (ui.autosaveAutoRestore !== null) AUTOSAVE.AUTO_RESTORE = ui.autosaveAutoRestore;
                 if (ui.memory) DEFAULTS.MEMORY = ui.memory;
 
-                // Override StringDB settings if provided
-                if (SERVER_CONFIG.integrations && SERVER_CONFIG.integrations.string_db) {
-                    const stringDbConfig = SERVER_CONFIG.integrations.string_db;
-                    if (stringDbConfig.base_url) STRING_DB.BASE_URL = stringDbConfig.base_url;
-                    if (stringDbConfig.version) STRING_DB.VERSION = stringDbConfig.version;
-                }
+                // External services (the gene set panel), StringDB's address
+                Object.assign(INTEGRATIONS, readIntegrations(SERVER_CONFIG));
+                if (INTEGRATIONS.stringDb.baseUrl) STRING_DB.BASE_URL = INTEGRATIONS.stringDb.baseUrl;
+                if (INTEGRATIONS.stringDb.version) STRING_DB.VERSION = INTEGRATIONS.stringDb.version;
                 
                 console.log('Loaded server configuration:', SERVER_CONFIG);
             } else {
@@ -341,6 +384,7 @@ const Config = (function() {
         CACHE,
         AUTOSAVE,
         STRING_DB,
+        INTEGRATIONS,
         PANEL_TYPES,
         KEYBOARD_SHORTCUTS,
         SERVER_CONFIG

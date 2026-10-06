@@ -117,6 +117,7 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
 | `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
+| `ANNZARRO_EXTERNAL_REQUESTS` | `off`, `ask` or `on`: overrides `integrations.external_requests`, whether the Gene Set Analysis panel may contact external services. Any other value is ignored. |
 | `ANNZARRO_CONFIG` | Configuration file used when `--config` is not given, by every `annzarro` command and by the WSGI entry point (gunicorn). `--config` wins if both are set. |
 | `ANNZARRO_ENV` | `production` (default) or `development`, for the WSGI entry point. |
 | `XDG_CONFIG_HOME` | Moves the user configuration file `~/.config/annzarro/config.yaml`. |

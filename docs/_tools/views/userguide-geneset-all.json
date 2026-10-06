@@ -1,0 +1,71 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "H2-Q7",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 38,
+      "controlsVisible": true
+     },
+     {
+      "percentage": 62,
+      "controlsVisible": true
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-table-1",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-set-1",
+      "controlsVisible": false
+     }
+    ],
+    "height": 1500
+   }
+  ],
+  "controlState": {
+   "gene-table-1": false,
+   "gene-set-1": true
+  },
+  "panelConfigs": {
+   "gene-table-1": {
+    "id": "gene-table-1",
+    "title": "All genes",
+    "columns": [
+     {
+      "type": "var",
+      "key": "gene_ids",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     }
+    ]
+   },
+   "gene-set-1": {
+    "id": "gene-set-1",
+    "title": "Gene Set Analysis",
+    "tableFilter": "gene-table-1"
+   }
+  }
+ }
+}

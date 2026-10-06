@@ -65,7 +65,8 @@ config leaves out take their defaults. The docs' screenshot views are in `docs/_
 
 The paper's protocol views of `bm_aging.zarr` are complete examples with two or three panels,
 colour scales, a lock and a table filter (`data_prep/demo_panelsets/*.view.json` in the companion
-repository `settylab/annzarro-paper`). Each link is ready for a local server with `bm_aging.zarr` in
+repository `settylab/annzarro-paper`, private until the paper is published; the panel set files
+below are all you need). Each link is ready for a local server with `bm_aging.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
 the same view with **Load Panel Set** > **Upload file**.
 
@@ -233,6 +234,24 @@ Other fields (`pointSize`, `pointOpacity`, `colorScale`, `colorReversed`, `hover
 the app produced rather than writing them from scratch. A plot config without `pointSize` or
 `pointOpacity` gets automatic values that follow the number of points drawn; one with them keeps
 them (`autoPointSize: true` / `autoPointOpacity: true` mark a saved value as automatic).
+
+A Gene Set Analysis panel (`gene-set-…`) saves its settings and nothing derived from the
+data: never the genes or a result.
+
+| Field | Meaning |
+|---|---|
+| `tableFilter` | id of the source Gene Table, or `none`; remapped with the table's id like a plot's |
+| `idColumn` | the `var` column whose values are sent and linked; `_index` for the var index; `auto` (default) finds one (`gene_id`, `gene_ids`, `gene_name`, `symbol`, ...) |
+| `idType` | how those values are read: `auto` (default, from the values), `symbol`, `ensembl` or `entrez` |
+| `consent` | optional `{selection, hosts}`: the services agreed to for the selection whose gene-id hash is `selection`; applies to that selection only (see the user guide's Consent) |
+| `autoUpdate` | `true`: refresh when the table changes (from the first Run after opening) |
+| `sections` | `{<section id>: {visible, params}}`; params at their default are left out; ids this build does not know are kept |
+| `sectionOrder` | section ids in the order shown; `links` is the Links section |
+| `links` | `{columns, listOpen}`: the resources of the Links list (`null`: the species' default), and whether the list is open |
+
+Section ids: `mygene-card`, `string-enrichment`, `gprofiler-gost`, `string-network`,
+`mygene-mapping`, `string-partners`, `hpa`, `enrichr`, `reactome`, `links`. The species is
+not a panel field: it is `constants.taxonomyId`.
 
 ## Why the fragment, and why compressed
 

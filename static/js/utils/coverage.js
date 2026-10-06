@@ -136,7 +136,15 @@ const GAP_LABEL = Object.freeze({
 
 /** A label that says more than its reason's, for a gap of this kind. */
 const KIND_LABEL = Object.freeze({
-    mode: 'not available in large-plot mode'
+    mode: 'not available in large-plot mode',
+    // the gene set panel's external services: ids a service does not know,
+    // a request that failed, a request not made (species, limit, turned off)
+    unmapped: 'not found by the service',
+    request: 'request failed',
+    unsupported: 'not covered by the service',
+    'over-limit': "over the service's limit",
+    disabled: 'external services are turned off',
+    declined: 'not sent: declined for this service'
 });
 
 /**
@@ -173,6 +181,20 @@ function fmt(n) {
     return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : String(n);
 }
 
+/**
+ * A count and its noun, singular for one: "1 gene", "2 genes". Units are
+ * plural nouns ('cells', 'genes', 'values'); `format` writes the number.
+ * @param {number} n
+ * @param {string} unit
+ * @param {(n: number) => string} [format]
+ * @returns {string}
+ */
+export function countNoun(n, unit, format = fmt) {
+    const noun = n === 1 && typeof unit === 'string'
+        ? unit.replace(/ies$/, 'y').replace(/s$/, '') : unit;
+    return `${format(n)} ${noun}`;
+}
+
 function isReason(value) {
     return Object.values(GAP).includes(value);
 }
@@ -193,6 +215,8 @@ function isBlank(v) {
  * @property {string} kind  What undoes it, for the status strip: 'outside',
  *   'coords', 'table', 'nan', 'outliers', 'mode' (a limit of large-plot
  *   mode), or '' (nothing the panel can undo).
+ * @property {string[]|null} names  The entities by name, when known: the
+ *   breakdown lists every one of them (the detail stays a short summary).
  * @property {boolean} hides  Whether those entities are off the screen. A gap
  *   of a DESCRIBES contributor (a colour column) does not hide its points.
  */
@@ -224,7 +248,10 @@ export class Coverage {
                 source: g.source || '',
                 count: typeof g.count === 'number' ? g.count : null,
                 hides: this.role === ROLE.DESCRIBES ? false : g.hides !== false,
-                kind: g.kind || ''
+                kind: g.kind || '',
+                // every entity the gap is about, by name, when it names them
+                // (the genes a service did not know); the breakdown lists them all
+                names: Array.isArray(g.names) ? Object.freeze(g.names.map(String)) : null
             }))
         );
         Object.freeze(this);
@@ -475,7 +502,7 @@ export class Coverage {
             const where = g.source ? `${g.source}: ` : '';
             const label = KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason;
             const count = typeof g.count === 'number' && g.count > 0
-                ? ` (${fmt(g.count)} ${this.unit})` : '';
+                ? ` (${countNoun(g.count, this.unit)})` : '';
             const why = g.detail ? ` -- ${g.detail}` : '';
             return `${where}${label}${count}${why}`;
         });
@@ -995,9 +1022,10 @@ export function exactCount(n) {
     return typeof n === 'number' && isFinite(n) ? n.toLocaleString('en-US') : String(n);
 }
 
-/** Short chip text per kind of hidden point; see `breakdown`. */
+/** Short chip text per kind of hidden point (or a function of the gap); see `breakdown`. */
 const KIND_CHIP = Object.freeze({
-    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden'
+    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden',
+    unmapped: (g) => `not found in ${g.source || 'the service'}`
 });
 
 /** Order in which the breakdown lists reasons, as createFilterMask attributes them. */
@@ -1031,13 +1059,14 @@ export function breakdown(coverage) {
         const where = g.source ? `${g.source}: ` : '';
         return `${where}${KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason}${g.detail ? ` -- ${g.detail}` : ''}`;
     };
+    const kindChip = (g) => (typeof KIND_CHIP[g.kind] === 'function' ? KIND_CHIP[g.kind](g) : KIND_CHIP[g.kind]);
     const chip = (g) => g.reason === GAP.OUTSIDE ? g.detail
-        : KIND_CHIP[g.kind] || `${g.source ? `${g.source} ` : ''}${GAP_LABEL[g.reason] || g.reason}`;
+        : kindChip(g) || `${g.source ? `${g.source} ` : ''}${GAP_LABEL[g.reason] || g.reason}`;
     const rows = [];
     const notes = [];
     for (const g of cov.gaps) {
         if (g.hides && typeof g.count === 'number' && g.count > 0 && counted) {
-            rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count });
+            rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count, names: g.names });
         } else {
             notes.push({ reason: g.reason, label: label(g) });
         }
@@ -1052,10 +1081,10 @@ export function breakdown(coverage) {
     let headline;
     let headlineExact;
     if (!counted) {
-        headline = headlineExact = cov.headline() || (typeof total === 'number' ? `${exactCount(total)} ${unit}` : unit);
+        headline = headlineExact = cov.headline() || (typeof total === 'number' ? countNoun(total, unit, exactCount) : unit);
     } else if (hidden === 0) {
-        headline = `${compactCount(total)} ${unit}`;
-        headlineExact = `${exactCount(total)} ${unit}`;
+        headline = countNoun(total, unit, compactCount);
+        headlineExact = countNoun(total, unit, exactCount);
     } else {
         let a = compactCount(shown);
         const b = compactCount(total);

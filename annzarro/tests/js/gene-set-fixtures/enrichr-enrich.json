@@ -1,0 +1,1 @@
+{"GO_Biological_Process_2025": [[1, "Signal Transduction in Response to DNA Damage (GO:0042770)", 1.2e-08, 450.2, 8200.5, ["MDM2", "ATM", "TP53"], 3.1e-06, 0, 0], [2, "DNA Damage Response (GO:0006974)", 4.5e-07, 120.4, 1751.1, ["ATM", "TP53", "CHEK2", "CDKN1A"], 5.8e-05, 0, 0], [3, "<b>Not bold</b> (GO:0000000)", 0.2, 1.1, 0.4, ["TP53"], 0.6, 0, 0]]}

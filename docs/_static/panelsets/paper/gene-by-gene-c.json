@@ -1,0 +1,356 @@
+{
+  "name": "gene-by-gene-c",
+  "timestamp": "2026-10-02T21:26:49+00:00",
+  "dataset": "bm_aging_showcase.zarr",
+  "datasetName": "bm_aging_showcase",
+  "constants": {
+    "focusedGene": "H2-Q7",
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "gene-plot-4c1": {
+      "id": "gene-plot-4c1",
+      "type": "gene-plot",
+      "title": "DE genes ranked by rho with H2-Q7, colour = module (k = 3)",
+      "config": {
+        "id": "gene-plot-4c1",
+        "title": "DE genes ranked by rho with H2-Q7, colour = module (k = 3)",
+        "x": {
+          "type": "var",
+          "key": "fig4c_rank_H2-Q7",
+          "column": ""
+        },
+        "y": {
+          "type": "var",
+          "key": "rho_fc_H2-Q7",
+          "column": ""
+        },
+        "z": null,
+        "color": {
+          "type": "var",
+          "key": "fig4_module_k3",
+          "column": ""
+        },
+        "pointSize": 7,
+        "pointOpacity": 0.95,
+        "hideNaN": true,
+        "showZeroLines": true,
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "viewport2D": {
+          "xrange": [
+            -4,
+            194
+          ],
+          "yrange": [
+            -0.8,
+            1.35
+          ]
+        }
+      },
+      "isSelectionTile": false
+    },
+    "gene-plot-4c2": {
+      "id": "gene-plot-4c2",
+      "type": "gene-plot",
+      "title": "DE genes ranked by rho with S100a9, colour = module (k = 3)",
+      "config": {
+        "id": "gene-plot-4c2",
+        "title": "DE genes ranked by rho with S100a9, colour = module (k = 3)",
+        "x": {
+          "type": "var",
+          "key": "fig4c_rank_S100a9",
+          "column": ""
+        },
+        "y": {
+          "type": "var",
+          "key": "rho_fc_S100a9",
+          "column": ""
+        },
+        "z": null,
+        "color": {
+          "type": "var",
+          "key": "fig4_module_k3",
+          "column": ""
+        },
+        "pointSize": 7,
+        "pointOpacity": 0.95,
+        "hideNaN": true,
+        "showZeroLines": true,
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "viewport2D": {
+          "xrange": [
+            -4,
+            194
+          ],
+          "yrange": [
+            -0.8,
+            1.35
+          ]
+        }
+      },
+      "isSelectionTile": false
+    },
+    "gene-table-4c": {
+      "id": "gene-table-4c",
+      "type": "gene-table",
+      "title": "H2-Q7's module-mates with rho < 0.2",
+      "config": {
+        "id": "gene-table-4c",
+        "title": "H2-Q7's module-mates with rho < 0.2",
+        "columns": [
+          {
+            "type": "var",
+            "key": "fig4_module_k3",
+            "column": ""
+          },
+          {
+            "type": "var",
+            "key": "rho_fc_H2-Q7",
+            "column": ""
+          },
+          {
+            "type": "var",
+            "key": "rho_fc_S100a9",
+            "column": ""
+          },
+          {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mahalanobis",
+            "column": ""
+          }
+        ],
+        "searchBuilderConfig": {
+          "logic": "AND",
+          "criteria": [
+            {
+              "condition": "=",
+              "data": "fig4_module_k3",
+              "origData": "var_fig4_module_k3_main",
+              "type": "string",
+              "value": [
+                "module 1"
+              ]
+            },
+            {
+              "condition": "<",
+              "data": "rho_fc_H2-Q7",
+              "origData": "var_rho_fc_H2-Q7_main",
+              "type": "num",
+              "value": [
+                "0.2"
+              ]
+            }
+          ]
+        }
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedGene": "H2-Q7",
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 58,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 42,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "split",
+              "direction": "vertical",
+              "panes": [
+                {
+                  "percentage": 50,
+                  "controlsVisible": false
+                },
+                {
+                  "percentage": 50,
+                  "controlsVisible": false
+                }
+              ],
+              "children": [
+                {
+                  "type": "tile",
+                  "id": "gene-plot-4c1",
+                  "controlsVisible": false
+                },
+                {
+                  "type": "tile",
+                  "id": "gene-plot-4c2",
+                  "controlsVisible": false
+                }
+              ]
+            },
+            {
+              "type": "tile",
+              "id": "gene-table-4c",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "gene-plot-4c1": false,
+        "gene-plot-4c2": false,
+        "gene-table-4c": false
+      },
+      "panelConfigs": {
+        "gene-plot-4c1": {
+          "id": "gene-plot-4c1",
+          "title": "DE genes ranked by rho with H2-Q7, colour = module (k = 3)",
+          "x": {
+            "type": "var",
+            "key": "fig4c_rank_H2-Q7",
+            "column": ""
+          },
+          "y": {
+            "type": "var",
+            "key": "rho_fc_H2-Q7",
+            "column": ""
+          },
+          "z": null,
+          "color": {
+            "type": "var",
+            "key": "fig4_module_k3",
+            "column": ""
+          },
+          "pointSize": 7,
+          "pointOpacity": 0.95,
+          "hideNaN": true,
+          "showZeroLines": true,
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "viewport2D": {
+            "xrange": [
+              -4,
+              194
+            ],
+            "yrange": [
+              -0.8,
+              1.35
+            ]
+          }
+        },
+        "gene-plot-4c2": {
+          "id": "gene-plot-4c2",
+          "title": "DE genes ranked by rho with S100a9, colour = module (k = 3)",
+          "x": {
+            "type": "var",
+            "key": "fig4c_rank_S100a9",
+            "column": ""
+          },
+          "y": {
+            "type": "var",
+            "key": "rho_fc_S100a9",
+            "column": ""
+          },
+          "z": null,
+          "color": {
+            "type": "var",
+            "key": "fig4_module_k3",
+            "column": ""
+          },
+          "pointSize": 7,
+          "pointOpacity": 0.95,
+          "hideNaN": true,
+          "showZeroLines": true,
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "viewport2D": {
+            "xrange": [
+              -4,
+              194
+            ],
+            "yrange": [
+              -0.8,
+              1.35
+            ]
+          }
+        },
+        "gene-table-4c": {
+          "id": "gene-table-4c",
+          "title": "H2-Q7's module-mates with rho < 0.2",
+          "columns": [
+            {
+              "type": "var",
+              "key": "fig4_module_k3",
+              "column": ""
+            },
+            {
+              "type": "var",
+              "key": "rho_fc_H2-Q7",
+              "column": ""
+            },
+            {
+              "type": "var",
+              "key": "rho_fc_S100a9",
+              "column": ""
+            },
+            {
+              "type": "var",
+              "key": "kompot_de_Young_to_Old_mahalanobis",
+              "column": ""
+            }
+          ],
+          "searchBuilderConfig": {
+            "logic": "AND",
+            "criteria": [
+              {
+                "condition": "=",
+                "data": "fig4_module_k3",
+                "origData": "var_fig4_module_k3_main",
+                "type": "string",
+                "value": [
+                  "module 1"
+                ]
+              },
+              {
+                "condition": "<",
+                "data": "rho_fc_H2-Q7",
+                "origData": "var_rho_fc_H2-Q7_main",
+                "type": "num",
+                "value": [
+                  "0.2"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

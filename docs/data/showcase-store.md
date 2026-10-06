@@ -12,55 +12,59 @@ appendix ({doc}`../paper/index`), so that every panel can be clicked through in 
 Python, then explore without code.
 
 - **Exact copies of the paper's analysis.** Each field is computed with the code of the paper's
-  figure scripts, and the build script asserts the published numbers. If any one does not
-  reproduce, the build stops.
+  figure scripts, copied into the build script, which checks the paper's numbers: counts and gene
+  lists exactly, decimals to the precision the paper prints them, since the last digits differ
+  between platforms. If any one does not reproduce, the build stops and prints the value it got.
 - **The original store is untouched.** Its arrays are cloned unchanged. Only `obs`, `var` and the
   consolidated metadata are rewritten, with the new columns appended.
 
 ## Added fields
 
-Field names begin with the paper figure that uses them. General-purpose fields have plain names.
+Field names of figure-specific columns begin with `fig3`, `fig4` or `fig5`: the cell-by-cell,
+gene-by-gene and cells-and-genes figures in an earlier draft of the paper, whose figures have
+since been renumbered. The names stay, since panel sets and links refer to them. General-purpose
+fields have plain names.
 The full table, with shapes, dtypes, chunking and colours, is `bm_aging_showcase.FIELDS.md` next to the store.
 
 ### Cell x cell
 
-Used in {doc}`../tutorials/cell-similarity`; paper figure: {doc}`../paper/fig3-cell-by-cell`.
+Used in {doc}`../tutorials/cell-similarity`; paper figure: {doc}`../paper/cell-by-cell`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|
-| `obsp/diffusion_distance` | Dense 8,090 x 8,090 Euclidean distance in Palantir's multiscale diffusion space {cite:p}`setty2019` | Focused cell's row as a colour, or as an axis (Fig 3b) | Plasma cell row vs `umap_distance` row: Spearman ρ = 0.62 |
-| `obsp/umap_distance` | Dense Euclidean distance on `X_umap` | x axis of Fig 3b | |
+| `obsp/diffusion_distance` | Dense 8,090 x 8,090 Euclidean distance in Palantir's multiscale diffusion space {cite:p}`setty2019` | Focused cell's row as a colour, or as an axis (cell by cell, b) | Plasma cell row vs `umap_distance` row: Spearman ρ = 0.62 |
+| `obsp/umap_distance` | Dense Euclidean distance on `X_umap` | x axis of cell by cell, b | |
 | `obsm/X_diffusion` | The multiscale diffusion space itself, 39 components: `DM_EigenVectors[:, 1:40]` scaled by λ/(1 − λ) | Alternative coordinates | |
-| `obs/fig3_plasma_groups` | The focused plasma cell's discordant groups: near in UMAP but far in diffusion (265 cells), and the reverse (392 cells) | Colour (Fig 3b, 3c) | 265 / 392 cells. Walk mass 0.09% / 59.2%. |
+| `obs/fig3_plasma_groups` | The focused plasma cell's discordant groups: near in UMAP but far in diffusion (265 cells), and the reverse (392 cells) | Colour (cell by cell, b and c) | 265 / 392 cells. Walk mass 0.09% / 59.2%. |
 | `obs/fig3_plasma_focus` | The plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1` | Filter, or find the cell | |
 | `obs/fig3_umap_dist_to_plasma`, `obs/fig3_diffusion_dist_to_plasma` | That cell's two distance rows as columns | Axes, where an obsp row cannot be chosen | |
-| `obs/fig3a_path_cell`, `obs/fig3a_path_step`, `obs/fig3a_focus_cells` | The 13 cells of the HSC to monocyte path, their order, and the four focus cells (HSC, LMPP, GMP, monocyte) | Find and focus the Fig 3a cells | Same four cells and path cell types |
+| `obs/fig3a_path_cell`, `obs/fig3a_path_step`, `obs/fig3a_focus_cells` | The 13 cells of the HSC to monocyte path, their order, and the four focus cells (HSC, LMPP, GMP, monocyte) | Find and focus the cells of cell by cell, a | Same four cells and path cell types |
 
 The kNN graph (`obsp/connectivities`, `obsp/distances`) and Palantir's kernel were already sparse
 CSR matrices in the original store, so they serve as the sparse examples.
 
 ### Gene x gene
 
-Used in {doc}`../tutorials/gene-similarity`; paper figure: {doc}`../paper/fig4-gene-by-gene`.
+Used in {doc}`../tutorials/gene-similarity`; paper figure: {doc}`../paper/gene-by-gene`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|
 | `var/rho_fc_H2-Q7`, `var/rho_fc_H2-Aa`, `var/rho_fc_S100a9` | That gene's row of `varp/spearman_fold_change`, as a column | Gene-plot axis (the varp row itself already works as a colour) | H2-Q7's top partners: H2-Q6 0.82, Tapbpl 0.73, H2-D1 0.66, Fxyd5 0.65, Sec62 0.63 |
-| `var/rho_smoothed_H2-Q7` | H2-Q7's row of `varp/spearman_smoothed` | x axis of Fig 4d | |
-| `var/fig4_module_k3` | Average-linkage modules on 1 − ρ for the 190 DE genes, k = 3 (silhouette maximum); NA for other genes | Colour (Fig 4c) | Modules of 87, 68 and 35 genes |
-| `var/fig4c_rank_H2-Q7`, `var/fig4c_rank_S100a9` | Rank of each DE gene by ρ with the focus gene | x axis of the ranked strips in Fig 4c | H2-Q7 in-module median ρ 0.16 |
-| `var/fig4d_class` | Shares the age response (fold-change ρ > 0.5), shares the cell-state pattern only (smoothed ρ > 0.7, fold-change ρ < 0.5), or other | Colour (Fig 4d) | 35 and 192 genes |
+| `var/rho_smoothed_H2-Q7` | H2-Q7's row of `varp/spearman_smoothed` | x axis of gene by gene, d | |
+| `var/fig4_module_k3` | Average-linkage modules on 1 − ρ for the 190 DE genes, k = 3 (silhouette maximum); NA for other genes | Colour (gene by gene, c) | Modules of 87, 68 and 35 genes |
+| `var/fig4c_rank_H2-Q7`, `var/fig4c_rank_S100a9` | Rank of each DE gene by ρ with the focus gene | x axis of the ranked strips in gene by gene, c | H2-Q7 in-module median ρ 0.16 |
+| `var/fig4d_class` | Shares the age response (fold-change ρ > 0.5), shares the cell-state pattern only (smoothed ρ > 0.7, fold-change ρ < 0.5), or other | Colour (gene by gene, d) | 35 and 192 genes |
 
 ### Cells and genes
 
-Used in {doc}`../tutorials/cells-and-genes`; paper figure: {doc}`../paper/fig5-cells-and-genes`.
+Used in {doc}`../tutorials/cells-and-genes`; paper figure: {doc}`../paper/cells-and-genes`.
 
 | Slot and key | What it is | Use in the app | Checked against the paper |
 |---|---|---|---|
-| `layers/kompot_de_Young_to_Old_fold_change_zscores` | Fold change divided by Kompot's per-cell standard deviation, sqrt(σ²_Young + σ²_Old) {cite:p}`otto2025kompot` | Colour any gene by signal over noise; \|z\| > 1.96 as the noise level of Fig 5d | 120 DE genes beyond 1.96 in the HSC, 13 in the monocyte. Apoe is the only opposite-direction gene beyond it in both. |
-| `var/fig5d_fc_locked_HSC`, `var/fig5d_fc_focused_monocyte` | The two cells' rows of the fold-change layer | Axes of Fig 5d | Apoe +0.94 / −0.35 |
+| `layers/kompot_de_Young_to_Old_fold_change_zscores` | Fold change divided by Kompot's per-cell standard deviation, sqrt(σ²_Young + σ²_Old) {cite:p}`otto2025kompot` | Colour any gene by signal over noise; \|z\| > 1.96 as the noise level of cells and genes, d | 120 DE genes beyond 1.96 in the HSC, 13 in the monocyte. Apoe is the only opposite-direction gene beyond it in both. |
+| `var/fig5d_fc_locked_HSC`, `var/fig5d_fc_focused_monocyte` | The two cells' rows of the fold-change layer | Axes of cells and genes, d | Apoe +0.94 / −0.35 |
 | `var/fig5d_z_locked_HSC`, `var/fig5d_z_focused_monocyte` | The same rows of the z-score layer | Filter the gene table by noise level | |
-| `var/fig5d_direction` | DE genes with the same or opposite sign in the two cells | Colour (Fig 5d) | 129 same, 61 opposite |
+| `var/fig5d_direction` | DE genes with the same or opposite sign in the two cells | Colour (cells and genes, d) | 129 same, 61 opposite |
 
 The z-score layer is not new to Kompot. It is the layer Kompot writes when it is run with
 `StorageSettings(store_additional_stats=True)`. The demo run did not store it. The build script
@@ -81,7 +85,7 @@ The showcase store and its sources look like this in the app:
 :class: screenshot
 :alt: Two cell plots. Left, x is obsp umap_distance and y is obsp diffusion_distance for the focused plasma cell, points coloured by fig3_plasma_groups. Right, X_umap coloured by the same groups.
 
-Paper Fig 3b and 3c rebuilt from the showcase store. Left: the focused plasma cell's rows of
+Panels b and c of the paper's cell-by-cell figure, rebuilt from the showcase store. Left: the focused plasma cell's rows of
 `obsp/umap_distance` (x) and `obsp/diffusion_distance` (y), chosen as axes. Right: `X_umap`.
 Both are coloured by `obs/fig3_plasma_groups` with the colours stored in `uns`. Orange: near in
 UMAP, far in diffusion (265 cells). Blue: the reverse (392 cells).
@@ -89,14 +93,12 @@ UMAP, far in diffusion (265 cells). Blue: the reverse (392 cells).
 
 ## Build it
 
-The script lives in this repository's docs folder. It reads `bm_aging.zarr` and imports the
-figure helpers of the paper repository, so it runs in the paper's analysis environment:
+{download}`make_showcase_store.py <../_tools/make_showcase_store.py>` (in this repository's
+`docs/_tools/`) reads `bm_aging.zarr` ({doc}`demo-data`) and needs anndata, zarr, scipy,
+scikit-learn and pandas:
 
 ```bash
-cd ~/gits/annzarro            # this repository
-~/gits/annzarro-paper/.venv/bin/python docs/_tools/make_showcase_store.py \
-    --src ~/gits/annzarro-paper/data/bm_aging.zarr \
-    --dst ~/gits/annzarro-paper/data/bm_aging_showcase.zarr
+python docs/_tools/make_showcase_store.py --src bm_aging.zarr --dst bm_aging_showcase.zarr
 ```
 
 It runs in about 15 seconds on an Apple-silicon laptop. Most of that is the two 8,090²
@@ -168,11 +170,10 @@ stretch with the tile's shape. Make the tile roughly square, as in these screens
 the section's proportions.
 ```
 
-Build it (the download is 28 MB and is cached in `data/_downloads/`):
+Build it (the download is 28 MB and is cached in the `--download-dir`):
 
 ```bash
-~/gits/annzarro-paper/.venv/bin/python docs/_tools/make_spatial_demo.py \
-    --out ~/gits/annzarro-paper/data/spatial_demo.zarr
+python docs/_tools/make_spatial_demo.py --out spatial_demo.zarr --download-dir _downloads
 ```
 
 The build takes about 10 seconds after the download.

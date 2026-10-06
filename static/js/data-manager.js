@@ -36,6 +36,11 @@ const DataManager = (function() {
     let _focusedCell = null;
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
+    // where the species came from: 'explicit' (a user's pick, a link, a
+    // panel set), 'inferred' (from the dataset, e.g. its Ensembl ids) or
+    // 'default' (the server's ui.defaults.taxonomy_id); a new dataset starts
+    // from 'default'
+    let _taxonomySource = 'default';
     let _datasetLoaded = false; // Track if a dataset has been loaded
 
     // The cell subset in effect (utils/subset.js, annzarro/core/subset.py):
@@ -235,15 +240,72 @@ const DataManager = (function() {
         return { ...meta, data: column === null ? values : { [column]: values } };
     }
 
+    /**
+     * Drop every cached reply for one dataset. The keys are request URLs,
+     * whose dataset_path is URL-encoded (`%2Fdata%2Fa.zarr`); matching the
+     * raw path (`dataset_path=/data/a.zarr`) found none of them, so a
+     * refresh within the 60 s lifetime redrew from the old replies without
+     * a single request. Compared as a parsed parameter, so /data/a.zarr
+     * does not also clear /data/a.zarr2.
+     * @returns {number} how many replies were dropped
+     */
+    function clearDatasetCache(datasetPath = _currentDataset) {
+        if (!datasetPath) return 0;
+        let dropped = 0;
+        for (const key of CacheManager.keys()) {
+            const query = key.indexOf('?');
+            if (query < 0) continue;
+            if (new URLSearchParams(key.slice(query + 1)).get('dataset_path') === datasetPath) {
+                CacheManager.remove(key);
+                dropped += 1;
+            }
+        }
+        return dropped;
+    }
+
     function refreshCacheForDataset(datasetPath = _currentDataset) {
         if (!datasetPath) {
             console.warn("No dataset set for refresh.");
             return;
         }
-        CacheManager.clear(`dataset_path=${datasetPath}`);
+        clearDatasetCache(datasetPath);
         _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
         // Optionally re-fetch structure/cells/genes
         return setCurrentDataset(datasetPath);
+    }
+
+    /**
+     * Ask the server to check the dataset against the disk (POST data/refresh,
+     * open to every user). When the store changed, every server process
+     * serves the change from now on and the browser's revalidations get new
+     * ETags; an unchanged store keeps everyone's caches. A failure is logged
+     * and reported, not thrown: the refresh in this browser still goes ahead.
+     * @returns {Promise<Object|null>} `{changed, checked}` or null
+     */
+    async function revalidateDataset(datasetPath = _currentDataset) {
+        if (!datasetPath) return null;
+        try {
+            const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams({ dataset_path: datasetPath })}`,
+                { method: 'POST' });
+            if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            console.warn('The server did not re-check the dataset:', error && error.message);
+            return null;
+        }
+    }
+
+    /**
+     * What a panel's Refresh needs before it redraws: the server re-checks
+     * the dataset against the disk (revalidateDataset) and this browser's
+     * copies of the dataset's replies are dropped, so the redraw reads past
+     * them. Without this a Refresh within 60 s of a load sent no request.
+     * @returns {Promise<Object|null>} the server's `{changed, checked}`, or null
+     */
+    async function reloadDatasetData(datasetPath = _currentDataset) {
+        const result = await revalidateDataset(datasetPath);
+        clearDatasetCache(datasetPath);
+        return result;
     }
 
     /**
@@ -348,6 +410,7 @@ const DataManager = (function() {
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
             _currentDataset = datasetPath;
+            if (datasetPath !== previousDataset) _taxonomySource = 'default';
             
             // Check for abort signal before each async operation
             if (signal && signal.aborted) {
@@ -1930,16 +1993,21 @@ const DataManager = (function() {
     /**
      * Set the taxonomy ID
      * @param {string} taxId - Taxonomy ID
+     * @param {{source?: 'explicit'|'inferred'}} [opts] - 'inferred' when guessed
+     *   from the dataset (the gene set panel), so a user's or a link's choice
+     *   stays distinguishable from a guess
      */
-    function setTaxonomyId(taxId) {
+    function setTaxonomyId(taxId, { source = 'explicit' } = {}) {
         _taxonomyId = taxId;
+        _taxonomySource = source;
         
         // Trigger event for components to update
         const event = new CustomEvent('taxonomyIdChanged', {
             detail: { 
                 taxonomyId: taxId,
                 species: Config.DEFAULTS.TAXONOMY_SPECIES[taxId] || 'Custom',
-                isCustom: !Config.DEFAULTS.TAXONOMY_SPECIES[taxId]
+                isCustom: !Config.DEFAULTS.TAXONOMY_SPECIES[taxId],
+                source
             }
         });
         document.dispatchEvent(event);
@@ -2084,6 +2152,11 @@ const DataManager = (function() {
     function getTaxonomyId() {
         return _taxonomyId;
     }
+
+    /** Where the species came from: 'explicit', 'inferred' or 'default' (see _taxonomySource). */
+    function getTaxonomySource() {
+        return _taxonomySource;
+    }
     
     /**
      * Get the taxonomy species
@@ -2153,6 +2226,7 @@ const DataManager = (function() {
         getFocusedCell,
         getFocusedGene,
         getTaxonomyId,
+        getTaxonomySource,
         getTaxonomySpecies,
         getCellIndex,
         resolveCellIndex,
@@ -2181,6 +2255,9 @@ const DataManager = (function() {
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,
+        clearDatasetCache,
+        revalidateDataset,
+        reloadDatasetData,
         resetBackendCache,
         getCacheKeys: () => CacheManager.keys(),
         // History navigation functions

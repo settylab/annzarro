@@ -14,8 +14,8 @@ Kompot's own uncertainty.
 
 The two cells are the paper's examples (`data_prep/demo_panelsets/examples.json` in the paper
 repository): the HSC `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` and the monocyte
-`Mature_Young_2#TCAATTCAGTGAGGCT-1`. The results are the panels of Fig. 5 of the AnnZarro paper
-({doc}`../paper/fig5-cells-and-genes`).
+`Mature_Young_2#TCAATTCAGTGAGGCT-1`. The results are the panels of the AnnZarro paper's cells-and-genes
+figure ({doc}`../paper/cells-and-genes`).
 
 ## What you need
 
@@ -43,10 +43,10 @@ changes. Only `fig5d_direction` is precomputed, for the two example cells.
 ## 1. Where does a gene change? Read its column
 
 ::::{dropdown} Start here: cells with an S100a9 fold change below −0.5, and the masked UMAP
-```{literalinclude} ../_static/panelsets/paper/fig5-a-cells.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-a-cells.url.txt
 :language: text
 ```
-Panel set file: {download}`fig5-a-cells.json <../_static/panelsets/paper/fig5-a-cells.json>`. The link is
+Panel set file: {download}`cells-and-genes-a-cells.json <../_static/panelsets/paper/cells-and-genes-a-cells.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -87,17 +87,17 @@ The 317 cells with an S100a9 fold change below −0.5 are almost all in the HSC 
    the 317 cells are HSCs (the rest are 24 LMPPs and 5 MKPs). The data contain 319 HSCs.
 
 :::{note}
-**Paper Fig. 5a.** The fold-change UMAP of step 1 is panel a of the paper figure.
+**Paper, cells and genes, panel a.** The fold-change UMAP of step 1 is panel a of the paper figure.
 :::
 
 (tut-cg-shared-scale)=
 ## 2. Compare Young and Old on one colour scale
 
 ::::{dropdown} Start here: the fold change, Young and Old on a shared scale
-```{literalinclude} ../_static/panelsets/paper/fig5-abc.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-abc.url.txt
 :language: text
 ```
-Panel set file: {download}`fig5-abc.json <../_static/panelsets/paper/fig5-abc.json>`. The link is
+Panel set file: {download}`cells-and-genes-abc.json <../_static/panelsets/paper/cells-and-genes-abc.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -128,17 +128,17 @@ Without the lock, a focus change rescales each plot to the new gene's range, and
 drift apart again.
 
 :::{note}
-**Paper Fig. 5b, c.** The Young and Old plots on the 0 to 3.77 scale are panels b and c.
+**Paper, cells and genes, panels b and c.** The Young and Old plots on the 0 to 3.77 scale are panels b and c.
 :::
 
 (tut-cg-rows)=
 ## 3. How do two cells differ? Read their rows
 
 ::::{dropdown} Start here: the locked HSC against the focused monocyte, with the AND/OR table
-```{literalinclude} ../_static/panelsets/paper/fig5-d.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-d.url.txt
 :language: text
 ```
-Panel set file: {download}`fig5-d.json <../_static/panelsets/paper/fig5-d.json>`. The link is
+Panel set file: {download}`cells-and-genes-d.json <../_static/panelsets/paper/cells-and-genes-d.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -187,7 +187,7 @@ Apoe, the strongest opposite-direction change.
 ```
 
 :::{note}
-**Paper Fig. 5d.** This scatter is panel d of the paper figure.
+**Paper, cells and genes, panel d.** This scatter is panel d of the paper figure.
 :::
 
 (tut-cg-andor)=
@@ -216,10 +216,10 @@ DE AND ((HSC up AND monocyte down) OR (HSC down AND monocyte up)): 61 genes.
 ### Which changes clear Kompot's uncertainty?
 
 ::::{dropdown} Start here: coloured by z-score, with the noise filter
-```{literalinclude} ../_static/panelsets/paper/fig5-d-noise.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-d-noise.url.txt
 :language: text
 ```
-Panel set file: {download}`fig5-d-noise.json <../_static/panelsets/paper/fig5-d-noise.json>`. The link is
+Panel set file: {download}`cells-and-genes-d-noise.json <../_static/panelsets/paper/cells-and-genes-d-noise.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -265,34 +265,34 @@ for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tu
 says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: S100a9 fold change, Young and Old on a shared scale (HSC focused)
-```{literalinclude} ../_static/panelsets/paper/fig5-abc.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-abc.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Step 1: cells with S100a9 fold change below −0.5, and the masked UMAP
-```{literalinclude} ../_static/panelsets/paper/fig5-a-cells.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-a-cells.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Step 3: locked HSC against the focused monocyte, with the AND/OR table
-```{literalinclude} ../_static/panelsets/paper/fig5-d.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-d.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Step 3: coloured by z-score, with the noise filter
-```{literalinclude} ../_static/panelsets/paper/fig5-d-noise.url.txt
+```{literalinclude} ../_static/panelsets/paper/cells-and-genes-d-noise.url.txt
 :language: text
 ```
 ::::
 
 The same panels as panel-set files:
-{download}`fig5-abc.json <../_static/panelsets/paper/fig5-abc.json>`,
-{download}`fig5-a-cells.json <../_static/panelsets/paper/fig5-a-cells.json>`,
-{download}`fig5-d.json <../_static/panelsets/paper/fig5-d.json>`,
-{download}`fig5-d-noise.json <../_static/panelsets/paper/fig5-d-noise.json>`. **Load Panel Set** >
+{download}`cells-and-genes-abc.json <../_static/panelsets/paper/cells-and-genes-abc.json>`,
+{download}`cells-and-genes-a-cells.json <../_static/panelsets/paper/cells-and-genes-a-cells.json>`,
+{download}`cells-and-genes-d.json <../_static/panelsets/paper/cells-and-genes-d.json>`,
+{download}`cells-and-genes-d-noise.json <../_static/panelsets/paper/cells-and-genes-d-noise.json>`. **Load Panel Set** >
 upload restores a set like its link: dataset, focus, layout and panel settings
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 

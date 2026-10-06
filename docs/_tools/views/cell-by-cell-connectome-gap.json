@@ -1,0 +1,52 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedCell": "AVA"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-plot-N",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-plot-N": false
+  },
+  "panelConfigs": {
+   "cell-plot-N": {
+    "id": "cell-plot-N",
+    "title": "Gap junctions of the focused class",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obsp",
+     "key": "gap_junctions",
+     "column": "AVA",
+     "locked": false,
+     "log": true,
+     "logFloor": 0.5
+    },
+    "colorScale": "Blues",
+    "colorReversed": true,
+    "pointSize": 8,
+    "pointOpacity": 1,
+    "highlightFocusedCell": true,
+    "equalAspect": true,
+    "xaxisTitle": "UMAP 1",
+    "yaxisTitle": "UMAP 2"
+   }
+  }
+ }
+}

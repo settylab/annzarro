@@ -1,0 +1,408 @@
+{
+  "name": "interface-overview",
+  "timestamp": "2026-10-02T21:33:48+00:00",
+  "dataset": "bm_aging.zarr",
+  "datasetName": "bm_aging",
+  "constants": {
+    "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+    "focusedGene": "H2-Q7",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "cell-plot-O1": {
+      "id": "cell-plot-O1",
+      "type": "cell-plot",
+      "title": "5-step diffusion walk from the focused cell",
+      "config": {
+        "id": "cell-plot-O1",
+        "title": "5-step diffusion walk from the focused cell",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obsp",
+          "key": "diffusion_walk_t5",
+          "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+          "locked": false
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ],
+        "colorScale": "Blues",
+        "colorReversed": true
+      },
+      "isSelectionTile": false
+    },
+    "gene-plot-O2": {
+      "id": "gene-plot-O2",
+      "type": "gene-plot",
+      "title": "Kompot volcano, colour = Spearman (fold change) to focused gene",
+      "config": {
+        "id": "gene-plot-O2",
+        "title": "Kompot volcano, colour = Spearman (fold change) to focused gene",
+        "x": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mean_lfc",
+          "column": ""
+        },
+        "y": {
+          "type": "var",
+          "key": "kompot_de_Young_to_Old_mahalanobis",
+          "column": ""
+        },
+        "z": null,
+        "color": {
+          "type": "varp",
+          "key": "spearman_fold_change",
+          "column": "H2-Q7",
+          "locked": false
+        },
+        "pointSize": 5,
+        "pointOpacity": 0.8,
+        "highlightFocusedGene": true,
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "colorScale": "RdBu",
+        "colorMin": -1,
+        "colorMax": 1,
+        "lockColorRange": true
+      },
+      "isSelectionTile": false
+    },
+    "cell-plot-O3": {
+      "id": "cell-plot-O3",
+      "type": "cell-plot",
+      "title": "Fold change (Young to Old) of the focused gene",
+      "config": {
+        "id": "cell-plot-O3",
+        "title": "Fold change (Young to Old) of the focused gene",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "H2-Q7",
+          "locked": false
+        },
+        "pointSize": 3,
+        "pointOpacity": 0.8,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "type": "obs",
+            "key": "_index"
+          },
+          {
+            "type": "obs",
+            "key": "highres_celltype"
+          }
+        ],
+        "colorScale": "RdBu",
+        "centeringActive": true
+      },
+      "isSelectionTile": false
+    },
+    "cell-table-O4": {
+      "id": "cell-table-O4",
+      "type": "cell-table",
+      "title": "Cells filtered by cell type (HSC)",
+      "config": {
+        "id": "cell-table-O4",
+        "title": "Cells filtered by cell type (HSC)",
+        "columns": [
+          {
+            "type": "obs",
+            "key": "highres_celltype",
+            "column": ""
+          },
+          {
+            "type": "obs",
+            "key": "Age",
+            "column": ""
+          },
+          {
+            "type": "obs",
+            "key": "kompot_da_Young_to_Old_lfc_zscore",
+            "column": ""
+          }
+        ],
+        "searchBuilderConfig": {
+          "criteria": [
+            {
+              "condition": "=",
+              "data": "highres_celltype",
+              "origData": "obs_highres_celltype_main",
+              "type": "string",
+              "value": [
+                "HSC"
+              ]
+            }
+          ],
+          "logic": "AND"
+        }
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "focusedGene": "H2-Q7",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 50,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "split",
+              "direction": "vertical",
+              "panes": [
+                {
+                  "percentage": 50,
+                  "controlsVisible": false
+                },
+                {
+                  "percentage": 50,
+                  "controlsVisible": false
+                }
+              ],
+              "children": [
+                {
+                  "type": "tile",
+                  "id": "cell-plot-O1",
+                  "controlsVisible": false
+                },
+                {
+                  "type": "tile",
+                  "id": "cell-plot-O3",
+                  "controlsVisible": false
+                }
+              ]
+            },
+            {
+              "type": "split",
+              "direction": "vertical",
+              "panes": [
+                {
+                  "percentage": 45,
+                  "controlsVisible": false
+                },
+                {
+                  "percentage": 55,
+                  "controlsVisible": false
+                }
+              ],
+              "children": [
+                {
+                  "type": "tile",
+                  "id": "gene-plot-O2",
+                  "controlsVisible": false
+                },
+                {
+                  "type": "tile",
+                  "id": "cell-table-O4",
+                  "controlsVisible": false
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "cell-plot-O1": false,
+        "gene-plot-O2": false,
+        "cell-plot-O3": false,
+        "cell-table-O4": false
+      },
+      "panelConfigs": {
+        "cell-plot-O1": {
+          "id": "cell-plot-O1",
+          "title": "5-step diffusion walk from the focused cell",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obsp",
+            "key": "diffusion_walk_t5",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+            "locked": false
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorScale": "Blues",
+          "colorReversed": true
+        },
+        "gene-plot-O2": {
+          "id": "gene-plot-O2",
+          "title": "Kompot volcano, colour = Spearman (fold change) to focused gene",
+          "x": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mean_lfc",
+            "column": ""
+          },
+          "y": {
+            "type": "var",
+            "key": "kompot_de_Young_to_Old_mahalanobis",
+            "column": ""
+          },
+          "z": null,
+          "color": {
+            "type": "varp",
+            "key": "spearman_fold_change",
+            "column": "H2-Q7",
+            "locked": false
+          },
+          "pointSize": 5,
+          "pointOpacity": 0.8,
+          "highlightFocusedGene": true,
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "colorScale": "RdBu",
+          "colorMin": -1,
+          "colorMax": 1,
+          "lockColorRange": true
+        },
+        "cell-plot-O3": {
+          "id": "cell-plot-O3",
+          "title": "Fold change (Young to Old) of the focused gene",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "H2-Q7",
+            "locked": false
+          },
+          "pointSize": 3,
+          "pointOpacity": 0.8,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "type": "obs",
+              "key": "_index"
+            },
+            {
+              "type": "obs",
+              "key": "highres_celltype"
+            }
+          ],
+          "colorScale": "RdBu",
+          "centeringActive": true
+        },
+        "cell-table-O4": {
+          "id": "cell-table-O4",
+          "title": "Cells filtered by cell type (HSC)",
+          "columns": [
+            {
+              "type": "obs",
+              "key": "highres_celltype",
+              "column": ""
+            },
+            {
+              "type": "obs",
+              "key": "Age",
+              "column": ""
+            },
+            {
+              "type": "obs",
+              "key": "kompot_da_Young_to_Old_lfc_zscore",
+              "column": ""
+            }
+          ],
+          "searchBuilderConfig": {
+            "criteria": [
+              {
+                "condition": "=",
+                "data": "highres_celltype",
+                "origData": "obs_highres_celltype_main",
+                "type": "string",
+                "value": [
+                  "HSC"
+                ]
+              }
+            ],
+            "logic": "AND"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,9 @@
-"""Screenshots for the paper-figure guides 7 (slot map) and 9 (performance).
+"""Screenshots for the paper-figure guides on the slot map and on performance.
 
-Fig 1b (slot map, Fig 7 before the paper's renumbering): one single-panel view per AnnData slot, each cropped to its tile, plus the controls
-of three panels so the guide can show the exact dropdown values. Fig 7 (performance, formerly Fig 9): one deep link is
+Slot map (docs/paper/overview.md, panel b; the script name keeps an earlier figure numbering):
+one single-panel view per AnnData slot, each cropped to its tile, plus the controls of three
+panels so the guide can show the exact dropdown values. Performance (docs/paper/performance.md):
+one deep link is
 opened, a gene and a cell are clicked, and the browser's own Resource Timing entries for
 the data requests are written to fig9-resource-timing.json (the numbers quoted in the
 guide come from that file).
@@ -86,7 +88,7 @@ FIG7 = {
         colorScale="RdBu", colorMin=-1, colorMax=1, lockColorRange=True),
 }
 # Output names are referenced by docs/data/slot-map.md (slot-obsp, slot-layer-gene, slot-varp,
-# slot-varp-controls) as well as docs/paper/fig1-overview.md; keep them stable.
+# slot-varp-controls) as well as docs/paper/overview.md; keep them stable.
 # shots that also crop the panel's controls, to show the three dropdowns
 WITH_CONTROLS = ["slot-obsp", "slot-layer-cell", "slot-varp"]
 
@@ -121,7 +123,7 @@ def name_of(tid):
 def fig7(s):
     for name, cfg in FIG7.items():
         view = single(cfg)
-        (VIEWS / f"fig7-{name}.json").write_text(json.dumps(view, indent=1))
+        (VIEWS / f"{name}.json").write_text(json.dumps(view, indent=1))
         page = s.open(view, viewport=SMALL)
         s.shot(page, f"_full-{name}", tiles={cfg["id"]: name})
         (OUT / f"_full-{name}.png").unlink()
@@ -131,7 +133,7 @@ def fig7(s):
         page.context.close()
 
 
-# Fig 7 (formerly 9): what one click costs, measured by the browser itself.
+# Performance: what one click costs, measured by the browser itself.
 TIMING_JS = """() => performance.getEntriesByType('resource')
   .filter(e => e.name.includes('/api/v1/data/'))
   .map(e => ({url: e.name.replace(location.origin, ''), ms: +e.duration.toFixed(1),
@@ -149,7 +151,7 @@ def fig9(s):
             "layout": {"v": 1, "hierarchy": [split("horizontal", tile(a["id"]), tile(b["id"]))],
                        "controlState": {a["id"]: False, b["id"]: False},
                        "panelConfigs": {a["id"]: a, b["id"]: b}}}
-    (VIEWS / "fig9-click-cost.json").write_text(json.dumps(view, indent=1))
+    (VIEWS / "click-cost.json").write_text(json.dumps(view, indent=1))
     page = s.open(view)
     page.evaluate("performance.clearResourceTimings()")
     record = {"dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)", "clicks": []}

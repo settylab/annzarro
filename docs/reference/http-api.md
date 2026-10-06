@@ -9,7 +9,7 @@ a server started with
 
 ```bash
 annzarro start --host 127.0.0.1 --port 8812 --no-browser --auth-disabled \
-    --data-dir ~/gits/annzarro-paper/data
+    --data-dir ~/annzarro-data
 ```
 
 on the demonstration store `bm_aging.zarr` (8,090 cells × 16,285 genes). Outputs are copied
@@ -334,7 +334,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets" | python -m json.tool | head -
         "genes": 16285,
         "is_link": false,
         "name": "bm_aging.zarr",
-        "path": "/Users/dotto/gits/annzarro-paper/data/bm_aging.zarr",
+        "path": "/Users/me/annzarro-data/bm_aging.zarr",
         "rel_path": "bm_aging.zarr"
     },
 ```
@@ -369,7 +369,8 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks |
 | `GET /cache/info` | the server's result cache of the process that answers: datasets, items, `memory_usage_mb` (exactly what the cache holds), `max_memory_mb` |
-| `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`. On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache; this clears only the worker that answers |
+| `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`, and start a new generation of them (new ETags, {ref}`revalidation`). On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache: the one that answers clears it now, the others drop the dataset's entries on their next request, when they see the new generation |
+| `POST /data/refresh?dataset_path=` | check the dataset against the disk (every file's modification time and size) and, if it changed, start a new generation, so every worker serves the change and the browser's revalidations get new tags. Open to every user who may read the dataset; an unchanged store keeps its generation and everyone's cached reads. Bounded: concurrent refreshes in a worker share one walk; a dataset is walked at most once per `server.refresh_min_interval_s` (10 s) across workers, and a refresh sooner waits (at most that long) for the walk at the interval's end, which every refresh waiting meanwhile shares, so the answer always comes from a walk that started after the request (`waited_s` says how long it waited); a walk stops after 3 s, and a store too large to fingerprint fully answers `status: "partial"` (with a `message`) and is not bumped: an admin's `POST /cache/reset` serves its in-place chunk writes. Answers `{"status": "full" or "partial" or "remote", "changed": bool, "checked": bool, "waited_s", "consolidated_metadata": null or {"stale": true, "detail", "message", "fix"}}`; when the store's consolidated metadata no longer describes it (an element added or rewritten without `zarr.consolidate_metadata`), the store is read without it until it is consolidated again, and `dataset_structure` carries the same `consolidated_metadata` notice. The header's Refresh dataset and each panel's Refresh call it |
 | `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
 
@@ -400,7 +401,7 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
-| 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. Re-consolidate (`zarr.consolidate_metadata(path)`), then `POST /cache/reset` or restart |
+| 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
 | 501 | `missing_dependency` | a remote store without the `annzarro[remote]` extras |
 | 504 | `remote_timeout` | a remote store did not answer in time |

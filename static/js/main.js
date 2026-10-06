@@ -16,6 +16,7 @@ import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { sameSubset } from './utils/subset.js';
+import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
 import { canSnapshot, exportImage } from './utils/plot-export.js';
@@ -348,7 +349,10 @@ const App = (function() {
                     if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
                 }
             }
-            if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
+            if (constants.taxonomyId) {
+                DataManager.setTaxonomyId(constants.taxonomyId,
+                    { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
+            }
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //
@@ -816,10 +820,12 @@ const App = (function() {
                 document.getElementById('cell-count').textContent = 'Loading..';
                 document.getElementById('gene-count').textContent = 'Loading..';
 
-                // Reset backend cache for the current dataset (if one is selected)
-                // Only an admin may clear a hosted server's shared cache; for
-                // everyone else Refresh reloads in this browser only, and a
-                // refusal (403 admin_only) is expected, not an error.
+                // Every user: the server checks the store against the disk
+                // and, if it changed, serves the change from every worker.
+                await DataManager.revalidateDataset(datasetPath);
+                // Clearing the server's whole cache for the dataset as well is
+                // for an admin of a hosted server (and the desktop); a refusal
+                // (403 admin_only) is expected, not an error.
                 if (_refreshPlan.resetServerCache) {
                     try {
                         await DataManager.resetBackendCache(datasetPath);
@@ -1114,6 +1120,11 @@ const App = (function() {
             SubsetControl.update();
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
+            // A refresh found the store's consolidated metadata out of date:
+            // it is read without it now, and the fix is the user's to run
+            if (datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale) {
+                _showNotification('Consolidated metadata out of date', datasetStructure.consolidated_metadata.message, 'warning');
+            }
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
@@ -1175,10 +1186,10 @@ const App = (function() {
                     const genes = DataManager.getGenes() || [];
 
                     document.getElementById('cell-count').textContent =
-                        `${cells.length.toLocaleString()} cells`;
+                        countNoun(cells.length, 'cells');
                     SubsetControl.update();
                     document.getElementById('gene-count').textContent =
-                        `${genes.length.toLocaleString()} genes`;
+                        countNoun(genes.length, 'genes');
                     document.getElementById('dataset-path').textContent = currentDataset;
                 } else {
                     // No current dataset, so show an error notification

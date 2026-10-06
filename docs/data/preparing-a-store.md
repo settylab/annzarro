@@ -236,8 +236,8 @@ Two more cases:
 ## The Procedure's steps for the demonstration data
 
 The paper's Procedure (Steps 3-10) builds `bm_aging.zarr` from the Kompot tutorial data. The
-companion repository runs them as scripts; about 10 minutes on a 16-core workstation with
-32 GB RAM, most of it the 2.4 GB download.
+paper budgets about 10 minutes on a 16-core workstation with 32 GB RAM, most of it the 2.4 GB
+download.
 
 ```{list-table}
 :header-rows: 1
@@ -274,23 +274,23 @@ companion repository runs them as scripts; about 10 minutes on a 16-core worksta
   - {doc}`chunking`
 ```
 
-Commands, from the root of the companion repository `settylab/annzarro-paper`:
+{download}`bm_aging.py <../_tools/datasets/bm_aging.py>` (in this repository's
+`docs/_tools/datasets/`) runs all of them, with the versions the paper validated
+({doc}`demo-data`):
 
 ```bash
-N=16 data_prep/download_data.sh data                         # Step 3
-python data_prep/run_kompot.py                               # Step 4, writes the processed h5ad
-python data_prep/prepare_annzarro_store.py \
-    --input data/murine_bone_marrow_aging_processed.h5ad \
-    --output data/bm_aging.zarr --report data/prepare_report.json   # Steps 5-10
+pip install kompot==0.8.0 palantir==1.4.5 mellon==1.7.1 anndata==0.12.19 zarr==3.1.6 \
+    numpy==2.4.6 scipy==1.17.1
+python bm_aging.py --workdir bm_aging     # Steps 3-10; writes bm_aging/bm_aging.zarr
 ```
 
-Measured run (Apple M3 Max, 128 GB, local NVMe): `run_kompot.py` 62 s with a 29 GB peak,
-`prepare_annzarro_store.py` 51 s with a 24.6 GB peak. Memory is dominated by the float64
-Kompot layers of the 5.6 GB h5ad; plan for 32 GB at this size.
+Measured run (Apple M3 Max, 128 GB, local NVMe): 3 min 51 s in all, of which the download took
+2 min and Kompot 59 s, with a peak of 30.0 GB. Memory is dominated by the float64 Kompot layers
+of the 5.6 GB processed h5ad; plan for 32 GB at this size.
 
 ```{note}
 The published `bm_aging.zarr` was made before the Procedure text settled on the aspect rule,
 so its dense arrays have (1024, 1024) chunks and `logged_counts` is still CSR. Both are fine at
 8,090 cells ({doc}`chunking`). The current Procedure text gives (512, 1024) for these layers and
-converts `logged_counts` to CSC.
+converts `logged_counts` to CSC, as `bm_aging.py` does.
 ```
