@@ -982,6 +982,15 @@ class SubsetView:
                                         column_names=column_names,
                                         include_categories=include_categories)
 
+    def get_obs_var_numeric(self, entity="cells", dataset_path=None, column_name=None, indices=None):
+        take = getattr(self._reader, "get_obs_var_numeric", None)
+        if take is None:
+            return None
+        if entity == "cells":
+            indices = (self.subset.indices.tolist() if indices is None
+                       else self._rows(indices))
+        return take(entity=entity, dataset_path=dataset_path, column_name=column_name, indices=indices)
+
     def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None

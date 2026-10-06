@@ -1747,6 +1747,33 @@ class ZarrReader(CacheSettings):
         return result
     
     @cached_method
+    def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None,
+                            indices: Optional[List[int]] = None) -> Optional[np.ndarray]:
+        """One numeric obs/var column as the ndarray it is stored as, or None
+        when it is not one (absent, categorical, string, boolean, or nullable
+        with a missing entry); the caller then answers through get_obs_var.
+
+        For the binary wire format: get_obs_var turns a column into a Python
+        list for JSON, and the binary path turned it back into an array. At
+        95.6M cells that round trip, plus costing the list for the cache, was
+        most of a 16.6 s read. Same values as numeric_array(get_obs_var(...)):
+        the nullable mask is applied the same way (_read_member), and a
+        column with a missing entry is left to the JSON path, which says null.
+        """
+        root = self._get_root(dataset_path=dataset_path)
+        obj = "obs" if entity == "cells" else "var"
+        if root is None or obj not in root or column_name not in root[obj]:
+            return None
+        member = root[obj][column_name]
+        if self._is_group(member) and not self._is_nullable_group(member):
+            return None
+        values = np.asarray(self._read_member(member, indices))
+        if values.ndim != 1 or values.dtype.kind not in "iuf":
+            return None
+        return values
+
+    @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                           column_name: Optional[str] = None, indices: Optional[List[int]] = None):
         """``(codes, categories)`` of a categorical obs/var column, or None

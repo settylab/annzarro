@@ -622,6 +622,24 @@ class h5adReader(CacheSettings):
             return np.asarray(codes), categories.tolist()
 
     @cached_method
+    def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None,
+                            indices: Optional[List[int]] = None) -> Optional[np.ndarray]:
+        """One numeric obs/var column as an ndarray, or None, as
+        ZarrReader.get_obs_var_numeric (no list round trip)."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            values, cats = _column(f, f[layer][column_name], indices)
+        if cats:
+            return None
+        values = np.asarray(values)
+        if values.ndim != 1 or values.dtype.kind not in "iuf":
+            return None
+        return values
+
+    @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
         """Names at the sorted positions ``rows`` (a cell subset's names)."""
         obj_name = "obs" if entity == "cells" else "var"
