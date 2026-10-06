@@ -147,6 +147,22 @@ function actionButtons(list, host) {
         .join('');
 }
 
+/** Lists longer than this get a search box. */
+const NAMES_SEARCH_AT = 50;
+
+/**
+ * Every name a gap is about (the genes a service did not know): all of them,
+ * in a scrolling list, with Copy (one per line) and, when long, a search.
+ */
+function namesHtml(names) {
+    const search = names.length > NAMES_SEARCH_AT
+        ? `<input type="search" class="ps-names-find" placeholder="Find" aria-label="Find a name in the list">` : '';
+    return `<div class="ps-names" data-count="${names.length}">`
+        + `<div class="ps-names-tools"><button type="button" class="ps-action" data-ps-copy="1">Copy ${exactCount(names.length)}</button>`
+        + `${search}<span class="ps-names-said" role="status"></span></div>`
+        + `<ul class="ps-names-list">${names.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul></div>`;
+}
+
 function stripHtml(host, s) {
     const cov = coerce(s.coverage, s.unit);
     const b = breakdown(cov);
@@ -161,7 +177,8 @@ function stripHtml(host, s) {
     const rows = b.rows.map(r =>
         `<tr data-kind="${escapeHtml(r.kind)}"><td class="ps-why">${escapeHtml(r.label)}</td>`
         + `<td class="ps-n">${exactCount(r.count)}</td>`
-        + `<td class="ps-do">${actionButtons(KIND_ACTIONS[r.kind], host)}</td></tr>`).join('');
+        + `<td class="ps-do">${actionButtons(KIND_ACTIONS[r.kind], host)}</td></tr>`
+        + (r.names && r.names.length ? `<tr class="ps-names-row"><td colspan="3">${namesHtml(r.names)}</td></tr>` : '')).join('');
     const total = b.rows.length
         ? `<tr class="ps-total"><td>Not shown</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
     const notes = b.notes.length
@@ -358,6 +375,16 @@ function wireStrips() {
         if (!strip || !strip._host) return;
         const host = strip._host;
         const s = stateOf(host);
+        const copy = e.target.closest('[data-ps-copy]');
+        if (copy) {
+            const box = copy.closest('.ps-names');
+            const names = [...box.querySelectorAll('.ps-names-list li')].map(li => li.textContent);
+            const said = box.querySelector('.ps-names-said');
+            const done = (text) => { if (said) said.textContent = text; };
+            Promise.resolve().then(() => navigator.clipboard.writeText(names.join('\n')))
+                .then(() => done(`Copied ${exactCount(names.length)}`), () => done('Copying is not allowed here'));
+            return;
+        }
         const action = e.target.closest('[data-ps-action]');
         if (action) {
             setOpen(host, null);
@@ -370,6 +397,15 @@ function wireStrips() {
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeAll();
+    });
+    // the search of a long list of names (namesHtml)
+    document.addEventListener('input', (e) => {
+        const find = e.target.closest && e.target.closest('.ps-names-find');
+        if (!find) return;
+        const q = find.value.trim().toLowerCase();
+        for (const li of find.closest('.ps-names').querySelectorAll('.ps-names-list li')) {
+            li.hidden = !!q && !li.textContent.toLowerCase().includes(q);
+        }
     });
 }
 wireStrips();

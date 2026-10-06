@@ -201,6 +201,8 @@ function isBlank(v) {
  * @property {string} kind  What undoes it, for the status strip: 'outside',
  *   'coords', 'table', 'nan', 'outliers', 'mode' (a limit of large-plot
  *   mode), or '' (nothing the panel can undo).
+ * @property {string[]|null} names  The entities by name, when known: the
+ *   breakdown lists every one of them (the detail stays a short summary).
  * @property {boolean} hides  Whether those entities are off the screen. A gap
  *   of a DESCRIBES contributor (a colour column) does not hide its points.
  */
@@ -232,7 +234,10 @@ export class Coverage {
                 source: g.source || '',
                 count: typeof g.count === 'number' ? g.count : null,
                 hides: this.role === ROLE.DESCRIBES ? false : g.hides !== false,
-                kind: g.kind || ''
+                kind: g.kind || '',
+                // every entity the gap is about, by name, when it names them
+                // (the genes a service did not know); the breakdown lists them all
+                names: Array.isArray(g.names) ? Object.freeze(g.names.map(String)) : null
             }))
         );
         Object.freeze(this);
@@ -1047,7 +1052,7 @@ export function breakdown(coverage) {
     const notes = [];
     for (const g of cov.gaps) {
         if (g.hides && typeof g.count === 'number' && g.count > 0 && counted) {
-            rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count });
+            rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count, names: g.names });
         } else {
             notes.push({ reason: g.reason, label: label(g) });
         }

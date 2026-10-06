@@ -317,7 +317,9 @@ export const ID_TYPES = Object.freeze(['auto', 'symbol', 'ensembl', 'entrez']);
  */
 export const ID_COLUMN_PREFERENCE = Object.freeze([
     ['gene_id', 'geneid', 'feature_id'],
-    ['gene_ensembl_id', 'ensembl_id', 'gene_ids', 'ensembl_gene_id', 'ensembl', 'gene_ensembl', 'ensembl_ids'],
+    ['gene_ensembl_id', 'ensembl_id', 'gene_ids', 'ensembl_gene_id', 'ensembl', 'gene_ensembl', 'ensembl_ids',
+        // the model organisms' own ids (WormBase WBGene..., FlyBase FBgn...)
+        'wbgene', 'wbgene_id', 'wormbase_id', 'fbgn', 'flybase_id'],
     ['gene_name', 'gene_names', 'genename', 'feature_name', 'name'],
     ['gene_symbol', 'gene_symbols', 'symbol', 'symbols', 'hgnc_symbol', 'mgi_symbol']
 ]);

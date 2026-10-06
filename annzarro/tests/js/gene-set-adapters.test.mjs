@@ -25,6 +25,8 @@ const { xrefsOf } = await import('../../../static/js/panels/gene-set-utilities/s
 const { organismFor, _resetOrganisms } = await import('../../../static/js/panels/gene-set-utilities/services/gprofiler.js');
 const { checkParams, blockedReason } = await import('../../../static/js/panels/gene-set-utilities/state.js');
 const { _resetBackgrounds } = await import('../../../static/js/panels/gene-set-utilities/services/string.js');
+const { httpError, bodyExcerpt } = await import('../../../static/js/panels/gene-set-utilities/fetch-policy.js');
+const { mappedCoverage } = await import('../../../static/js/panels/gene-set-utilities/services/common.js');
 
 const FIX = new URL('./gene-set-fixtures/', import.meta.url);
 const fixture = (name) => readFileSync(new URL(name, FIX), 'utf8');
@@ -205,7 +207,8 @@ test('ids are read as their type: g:Profiler gets Entrez ids with their namespac
     const m = byId['mygene-mapping'];
     for (const [type, scope] of [['ensembl', 'ensembl.gene'], ['entrez', 'entrezgene'], ['symbol', 'symbol']]) {
         const q = io([[/mygene\.info\/v3\/query$/, () => '[]']]);
-        await m.fetch(base(m, { idType: type, params: { aliases: false } }), q);
+        // nothing found at all: said as such (asserted below); the scope is what matters here
+        await m.fetch(base(m, { idType: type, params: { aliases: false } }), q).catch(() => {});
         assert.equal(q.calls[0].opts.form.scopes, scope, type);
     }
 });
@@ -293,11 +296,12 @@ test('MyGene lookup: exact matches, alias matches flagged (never mixed in), the 
     assert.deepEqual(i.calls[1].opts.form.q.split(','), ['NOTAGENE', 'P53'], 'only the misses are tried as aliases');
     const cov = a.coverage(result, base(a, { genes }));
     assert.equal(cov.shown, 6);
+    assert.deepEqual(cov.gaps[0].names, ['NOTAGENE'], 'the gene not found is named in the strip, not in the card');
     const el = doc.createElement('div');
     a.render(result, el, renderCtx(base(a, { genes })));
     assert.match(el.textContent, /1 only as an alias \(flagged\)/);
     assert.match(el.textContent, /P53 → TP53/);
-    assert.match(el.textContent, /1 not found in MyGene\.info/);
+    assert.doesNotMatch(el.textContent, /not found/, 'said once, in the strip');
     // aliases off: one request, no alias rows
     const j = io([[/mygene\.info\/v3\/query$/, () => fixture('mygene-query-symbol.json')]]);
     const strict = await a.fetch(base(a, { genes, params: { aliases: false } }), j);
@@ -306,7 +310,7 @@ test('MyGene lookup: exact matches, alias matches flagged (never mixed in), the 
     // in batches of 1,000
     const big = Array.from({ length: 2500 }, (_, n) => `G${n}`);
     const k = io([[/mygene\.info\/v3\/query$/, () => '[]']]);
-    await a.fetch(base(a, { genes: big, params: { aliases: false } }), k);
+    await assert.rejects(a.fetch(base(a, { genes: big, params: { aliases: false } }), k), (e) => e.kind === 'unmapped');
     assert.deepEqual(k.calls.map(c => c.opts.form.q.split(',').length), [1000, 1000, 500]);
 });
 
@@ -372,4 +376,87 @@ test('Reactome: projected analysis, link to the result, unmatched counted', asyn
     const el = doc.createElement('div');
     a.render(result, el, renderCtx(base(a)));
     assert.match(el.textContent, /209 pathways with at least one gene; the 2 with the smallest p are listed here/);
+});
+
+
+test('STRING\'s 404 "nothing found" is an answer: none of the genes known, with the species and a hint', async () => {
+    _resetBackgrounds();
+    const a = byId['string-enrichment'];
+    const text = fixture('string-404-nothing-found.json');
+    const i = io([[/get_string_ids$/, () => { throw httpError(404, text, { host: 'version-12-5.string-db.org', now: 0 }); }]]);
+    const input = base(a, { params: { background: 'genome' }, dataTaxonomyId: '6239' });
+    await assert.rejects(a.fetch(input, i), (e) => {
+        assert.equal(e.kind, 'unmapped');
+        assert.equal(e.message, 'STRING knows none of these 6 genes for Homo sapiens (taxon 9606). Is the species right? '
+            + "The dataset's genes look like Caenorhabditis elegans (taxon 6239).");
+        return true;
+    });
+    assert.equal(i.calls.length, 1, 'no enrichment asked for nothing');
+    // the network section says the same
+    await assert.rejects(byId['string-network'].fetch(input, io([[/get_string_ids$/, () => { throw httpError(404, text, { host: 'x', now: 0 }); }]])),
+        (e) => e.kind === 'unmapped');
+    // another error is still an error
+    await assert.rejects(a.fetch(input, io([[/get_string_ids$/, () => { throw httpError(400, '[{"Error":"unknown organism"}]', { host: 'x', now: 0 }); }]])),
+        (e) => e.kind === 'http' && e.status === 400);
+});
+
+test('the wrong species: every gene unmapped is said so by STRING, g:Profiler and MyGene, naming the species', async () => {
+    _resetBackgrounds();
+    _resetOrganisms();
+    const genes = Array.from({ length: 165 }, (_, n) => `wrong-${n}`);
+    const s = byId['string-enrichment'];
+    await assert.rejects(s.fetch(base(s, { genes, params: { background: 'genome' }, taxonomyId: '10090', speciesName: 'Mus musculus' }),
+        io([[/get_string_ids$/, () => '[]']])),
+    (e) => e.kind === 'unmapped' && /none of these 165 genes for Mus musculus \(taxon 10090\)\. Is the species right\?/.test(e.message));
+    const g = byId['gprofiler-gost'];
+    const reply = JSON.stringify({ result: [], meta: { genes_metadata: { failed: genes, ambiguous: {}, query: {} }, version: 'x' } });
+    await assert.rejects(g.fetch(base(g, { genes, params: { ...base(g).params, background: 'genome' } }), io([[/gost\/profile/, () => reply]])),
+        (e) => e.kind === 'unmapped' && /g:Profiler knows none of these 165 genes/.test(e.message));
+    const m = byId['mygene-mapping'];
+    await assert.rejects(m.fetch(base(m, { genes, params: { aliases: false } }), io([[/mygene/, () => '[]']])),
+        (e) => e.kind === 'unmapped' && /MyGene\.info knows none of these 165 genes/.test(e.message));
+});
+
+test('a service\'s error text: one sentence, no HTML, entities decoded', () => {
+    const said = bodyExcerpt(fixture('string-404-nothing-found.json'));
+    assert.equal(said, 'nothing found: Sorry, STRING did not find any matches for your input.');
+    assert.equal(bodyExcerpt('<html><body><h1>Bad &amp; wrong</h1><p>Detail&nbsp;here. More.</p><script>x()</script></body></html>'),
+        'Bad & wrong Detail here.');
+    assert.equal(bodyExcerpt('{"message":"Invalid organism: nosuchorg"}'), 'Invalid organism: nosuchorg');
+    assert.equal(bodyExcerpt('&#x3C;b&#62; &lt;i&gt;'), '<b> <i>', 'decoded entities are text, not markup');
+});
+
+test('the genes not found: all of them in the strip\'s breakdown, its line kept short', () => {
+    const genes = Array.from({ length: 170 }, (_, n) => `G${n}`);
+    const missing = genes.slice(5);
+    const cov = mappedCoverage(5, genes, missing, 'STRING');
+    assert.equal(cov.gaps[0].names.length, 165);
+    assert.deepEqual([...cov.gaps[0].names], missing);
+    assert.equal(cov.gaps[0].detail, 'G5, G6, G7, G8, G9, and 160 more');
+});
+
+test('FDR within category: the column says so, and a note when the table pools categories (or sources)', async () => {
+    const a = byId['string-enrichment'];
+    const result = await a.fetch(base(a, { params: { background: 'genome' } }), io(STRING_ROUTES));
+    const el = doc.createElement('div');
+    a.render(result, el, renderCtx(base(a)));
+    assert.ok(el.byTag('th').some(th => th.textContent === 'FDR (within category)'));
+    const note = () => el.all(n => (n.className || '').includes('gs-fdr-note'));
+    assert.equal(note().length, 1);
+    assert.match(note()[0].textContent, /^FDR is corrected within each category by STRING, not across the \d+ categories shown together\. Expect more false positives than the FDR column suggests; pick a category for a corrected list\.$/);
+    // one category picked: a corrected list, no note
+    const select = el.byTag('select')[0];
+    select.value = select.childNodes[1].value;
+    select.listeners.change[0]();
+    assert.equal(note().length, 0);
+    assert.ok(a.exportRows(result).columns.includes('fdr_within_category'));
+    // g:Profiler: corrected within each source
+    _resetOrganisms();
+    const g = byId['gprofiler-gost'];
+    const gr = await g.fetch(base(g, { params: { ...base(g).params, background: 'genome' } }), io([[/gost\/profile/, () => fixture('gprofiler-profile.json')]]));
+    const gel = doc.createElement('div');
+    g.render(gr, gel, renderCtx(base(g)));
+    assert.match(gel.textContent, /adjusted p is corrected within each source by g:Profiler, not across the \d+ sources shown together/);
+    assert.ok(gel.byTag('th').some(th => th.textContent === 'p (adj., within source)'));
+    assert.ok(g.exportRows(gr).columns.includes('p_value_adjusted_within_source'));
 });

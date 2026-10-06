@@ -16,7 +16,7 @@
  */
 import { ServiceError, parseError } from '../fetch-policy.js';
 import { setHash } from '../state.js';
-import { longTable, attribution, geneButton, unmappedList, apiHost, mappedCoverage } from './common.js';
+import { longTable, attribution, geneButton, apiHost, mappedCoverage, noneKnown, withinNote } from './common.js';
 import { MAX_URL_LENGTH } from '../links.js';
 
 export const STRING_DEFAULT_API = 'https://version-12-5.string-db.org/api';
@@ -66,10 +66,18 @@ function hostsFor(input) {
  */
 export async function mapToString(io, input, genes, genesHash) {
     return io.memo(`string-ids:${api(input)}:${input.taxonomyId}:${genesHash || setHash(genes)}`, async (shared) => {
-        const rows = await shared.fetchJson(`${api(input)}/json/get_string_ids`, {
-            form: { identifiers: genes.join('\r'), species: input.taxonomyId, limit: 1, echo_query: 1, caller_identity: CALLER },
-            timeoutMs: genes.length > 5000 ? 120000 : undefined
-        });
+        let rows;
+        try {
+            rows = await shared.fetchJson(`${api(input)}/json/get_string_ids`, {
+                form: { identifiers: genes.join('\r'), species: input.taxonomyId, limit: 1, echo_query: 1, caller_identity: CALLER },
+                timeoutMs: genes.length > 5000 ? 120000 : undefined
+            });
+        } catch (error) {
+            // 404 "nothing found" is STRING's answer that it knows none of
+            // the ids, not a failure: an empty mapping (the section then says so)
+            if (error && error.kind === 'http' && error.status === 404) rows = [];
+            else throw error;
+        }
         if (!Array.isArray(rows)) throw parseError('STRING sent no id list');
         const byIndex = new Map();
         for (const r of rows) {
@@ -109,8 +117,7 @@ export function _resetBackgrounds() {
 }
 
 function noneFound(input) {
-    return new ServiceError({ kind: 'http', status: 404,
-        message: `STRING knows none of these ${input.genes.length.toLocaleString('en-US')} genes for taxon ${input.taxonomyId}` });
+    return noneKnown('STRING', input);
 }
 
 function mappingCoverage(result, input) {
@@ -166,7 +173,7 @@ export const stringEnrichment = {
         const cats = [...new Set(result.terms.map(t => t.category))];
         const body = ctx.el('div', { class: 'gs-result-body' });
         const summary = result.terms.length
-            ? `${result.terms.length.toLocaleString('en-US')} enriched terms (FDR as STRING reports it)`
+            ? `${result.terms.length.toLocaleString('en-US')} enriched terms`
             : 'No term is enriched for these genes (STRING found none).';
         const select = cats.length > 1 ? ctx.el('select', { class: 'form-select form-select-sm gs-filter', aria: { label: 'Category' } },
             ctx.el('option', { value: '', text: `All categories (${result.terms.length})` }),
@@ -175,22 +182,25 @@ export const stringEnrichment = {
             ctx.clear(body);
             const terms = select && select.value ? result.terms.filter(t => t.category === select.value) : result.terms;
             if (!terms.length) return;
+            // STRING corrects within each category; pooled, the FDRs say more than they hold
+            const shownCats = new Set(terms.map(t => t.category)).size;
+            if (shownCats > 1) body.appendChild(ctx.el('p', { class: 'gs-note gs-note--warn gs-fdr-note', text: withinNote('FDR', 'category', 'STRING', shownCats) }));
             body.appendChild(longTable(ctx, 'STRING functional enrichment',
-                ['Category', 'Term', { label: 'Genes', cls: 'gs-num', title: 'Genes of the input in the term / genes in the term' }, { label: 'FDR', cls: 'gs-num' }],
+                ['Category', 'Term', { label: 'Genes', cls: 'gs-num', title: 'Genes of the input in the term / genes in the term' },
+                    { label: 'FDR (within category)', cls: 'gs-num', title: 'Benjamini-Hochberg, by STRING, within each category' }],
                 terms.map(t => [CATEGORY_LABELS[t.category] || t.category,
                     { text: t.description, title: `${t.term}${t.names.length ? `: ${t.names.join(', ')}` : ''}` },
                     { text: `${t.genes} / ${t.background}`, cls: 'gs-num' }, { text: ctx.sci(t.fdr), cls: 'gs-num' }]), 'terms'));
         };
         if (select) select.addEventListener('change', draw);
         el.append(ctx.el('div', { class: 'gs-result-head' }, ctx.el('span', { text: summary }), select), body,
-            unmappedList(ctx, result.unmapped, 'STRING') || '',
             attribution(ctx, provider(input), result.backgroundSize !== null
                 ? `background: ${result.backgroundSize.toLocaleString('en-US')} of the dataset's genes` : 'background: whole genome'));
         draw();
     },
     openUrl: (input, result) => networkUrl(input, result ? result.mapped.map(m => m.stringId) : input.genes),
     exportRows: (result) => ({
-        columns: ['category', 'term', 'description', 'genes_in_input', 'genes_in_background', 'p_value', 'fdr', 'genes'],
+        columns: ['category', 'term', 'description', 'genes_in_input', 'genes_in_background', 'p_value', 'fdr_within_category', 'genes'],
         rows: result.terms.map(t => [t.category, t.term, t.description, t.genes, t.background, t.p, t.fdr, t.names])
     })
 };
@@ -246,7 +256,6 @@ export const stringNetwork = {
                     + `PPI enrichment p = ${ctx.sci(st.p)}` })),
             ctx.el('div', { class: 'gs-network' }, ctx.blobImage(new Blob([result.image], { type: 'image/svg+xml' }), alt)),
             url ? ctx.el('div', {}, ctx.link(url, 'Open the interactive network on STRING')) : '',
-            unmappedList(ctx, result.unmapped, 'STRING') || '',
             attribution(ctx, provider(input), `score ≥ ${(input.params.requiredScore / 1000).toFixed(2)}`));
     },
     openUrl: (input, result) => networkUrl(input, result ? result.mapped.map(m => m.stringId) : input.genes)
