@@ -77,21 +77,21 @@ the same view with **Load Panel Set** > **Upload file**.
 {download}`protocol-A-kernel-walk.json <../_static/panelsets/protocol/protocol-A-kernel-walk.json>`
 ::::
 
-::::{dropdown} B: volcano coloured by the focused gene's Spearman rows (smoothed, fold change)
+::::{dropdown} B: volcano coloured by H2-Q7's Spearman rows (smoothed, fold change)
 ```{literalinclude} ../_static/panelsets/protocol/protocol-B-volcano-spearman.url.txt
 :language: text
 ```
 {download}`protocol-B-volcano-spearman.json <../_static/panelsets/protocol/protocol-B-volcano-spearman.json>`
 ::::
 
-::::{dropdown} C: the focused gene's fold change, Young and Old smoothed expression
+::::{dropdown} C: the focused gene's fold change, Young and Old smoothed expression on one locked range
 ```{literalinclude} ../_static/panelsets/protocol/protocol-C-foldchange-umap.url.txt
 :language: text
 ```
 {download}`protocol-C-foldchange-umap.json <../_static/panelsets/protocol/protocol-C-foldchange-umap.json>`
 ::::
 
-::::{dropdown} D: fold-change rows of a locked HSC against the focused cell
+::::{dropdown} D: fold-change rows of a locked HSC against the focused cell, coloured by a varp row
 ```{literalinclude} ../_static/panelsets/protocol/protocol-D-locked-vs-focused-cell.url.txt
 :language: text
 ```
@@ -105,8 +105,9 @@ the same view with **Load Panel Set** > **Upload file**.
 {download}`protocol-E-table-filter.json <../_static/panelsets/protocol/protocol-E-table-filter.json>`
 ::::
 
-`docs/_tools/start_links.py` imports them from the paper repository, writes every link of the
-docs from its panel set file, and opens each one in a headless browser.
+`docs/_tools/start_links.py` imports them from the paper repository, sets B, C and D to the
+paper's worked-example steps where the repository's view files differ (Steps 20, 23 and 26),
+writes every link of the docs from its panel set file, and opens each one in a headless browser.
 
 ## The `view` object
 

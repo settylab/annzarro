@@ -44,7 +44,8 @@ The five-step diffusion walk and the kernel row of the focused cell. Tutorial:
 ::::
 
 ::::{dropdown} Worked example 2: browse co-regulated genes in the volcano
-The volcano coloured by the focused gene's Spearman rows, smoothed and fold change. Tutorial:
+The volcano coloured by the Spearman rows (smoothed and fold change) of the focused gene H2-Q7
+(Step 20). Tutorial:
 {doc}`../tutorials/gene-similarity`.
 
 ```{literalinclude} ../_static/panelsets/protocol/protocol-B-volcano-spearman.url.txt
@@ -54,7 +55,8 @@ The volcano coloured by the focused gene's Spearman rows, smoothed and fold chan
 ::::
 
 ::::{dropdown} Worked example 3: from a gene to the cells where it changes
-The focused gene's fold change, and its Young and Old smoothed expression. Tutorial:
+The focused gene's fold change, and its Young and Old smoothed expression on one locked colour
+range (Step 23). Tutorial:
 {doc}`../tutorials/cells-and-genes`.
 
 ```{literalinclude} ../_static/panelsets/protocol/protocol-C-foldchange-umap.url.txt
@@ -64,7 +66,8 @@ The focused gene's fold change, and its Young and Old smoothed expression. Tutor
 ::::
 
 ::::{dropdown} Worked example 4: compare two cell states gene by gene
-The fold-change rows of a locked HSC against the focused cell. Tutorial:
+The fold-change rows of a locked HSC against the focused cell, coloured by the focused gene's
+row of `spearman_fold_change` (Step 26). Tutorial:
 {doc}`../tutorials/cells-and-genes`.
 
 ```{literalinclude} ../_static/panelsets/protocol/protocol-D-locked-vs-focused-cell.url.txt

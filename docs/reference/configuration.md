@@ -128,10 +128,9 @@ as `performance.memory.jsHeapSizeLimit`), and no flag raises it; a test tab died
 Typed arrays are outside that heap and are limited only by the computer's memory. So `heap_gb`
 is the setting that matters; `total_gb` is for computers with little memory.
 
-**How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
-points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
-JavaScript heap per point (1.94 GB at 95.6 million points, 3.53 GB at 175 million; 182 million
-crashed); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+**How the estimates were made.** On an Apple M3 Max laptop with Chrome, in the paper's scale
+benchmark ({ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
+JavaScript heap per point (1.94 GB at 95.6 million points); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
@@ -139,8 +138,12 @@ prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab cl
 marked action. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
-`margin: 0.2`. With these, a single plot of up to about 160 million points is allowed in
-large-plot mode, and two plots of 95.6 million points are not.
+`margin: 0.2`. With these, in the paper's v0.4.0 runs, a single plot of every cell was allowed in
+large-plot mode for stores up to 150 million cells and declined at 160 million ("Needs ~3.9 GB of
+browser JS memory; 3.9 GB free with 1 plot open (of 4.0 GB, estimated)"); two plots of 95.6
+million points are not allowed. Without the guard, the browser drew 175 million
+cells, and at 200 million the page stopped responding in 3 of 3 attempts: a hang, not a memory
+crash.
 
 **When to change them.**
 
