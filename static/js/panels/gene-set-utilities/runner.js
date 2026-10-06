@@ -225,6 +225,11 @@ export function createRunner({ fetchImpl, setTimeout: setT, clearTimeout: clearT
         }
         return Object.freeze({
             signal,
+            /** A line the section shows while it loads ('' clears it). */
+            progress(text) {
+                const run = get(id);
+                if (run.status === 'loading' && !signal.aborted) set(id, { ...run, progress: text || null });
+            },
             fetchJson: (url, opts) => request(url, opts, 'json'),
             fetchText: (url, opts) => request(url, opts, 'text'),
             fetchBlob: (url, opts) => request(url, opts, 'blob'),

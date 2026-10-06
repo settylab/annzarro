@@ -24,6 +24,7 @@ const { makeDom, sci } = await import('../../../static/js/panels/gene-set-utilit
 const { xrefsOf } = await import('../../../static/js/panels/gene-set-utilities/services/mygene.js');
 const { organismFor, _resetOrganisms } = await import('../../../static/js/panels/gene-set-utilities/services/gprofiler.js');
 const { checkParams, blockedReason } = await import('../../../static/js/panels/gene-set-utilities/state.js');
+const { _resetBackgrounds } = await import('../../../static/js/panels/gene-set-utilities/services/string.js');
 
 const FIX = new URL('./gene-set-fixtures/', import.meta.url);
 const fixture = (name) => readFileSync(new URL(name, FIX), 'utf8');
@@ -161,14 +162,63 @@ test('STRING enrichment: mapping states 5 of 6 (NOTAGENE not found); a term name
     assert.equal(csv.rows.length, 44);
 });
 
-test('STRING enrichment against the dataset: the background is mapped and sent as STRING ids', async () => {
+test('STRING enrichment against the dataset: the background is mapped once a page, said while mapping, sent as STRING ids', async () => {
+    _resetBackgrounds();
     const a = byId['string-enrichment'];
+    assert.equal(a.params.background.default, 'dataset', 'the dataset is the default background');
     const i = io(STRING_ROUTES);
+    const said = [];
+    i.progress = (t) => said.push(t);
     const input = base(a, { params: { background: 'dataset' }, background: [...GENES, 'GENE_X'], backgroundHash: 'bg' });
     const result = await a.fetch(input, i);
     assert.equal(result.backgroundSize, 5);
     assert.ok(i.calls.find(c => /json\/enrichment$/.test(c.url)).opts.form.background_string_identifiers.startsWith('9606.ENSP'));
     assert.match(a.describeRequest(input), /dataset's 7 genes as the background/);
+    assert.match(said[0], /Mapping the dataset's 7 genes to STRING ids/);
+    assert.equal(said[said.length - 1], '');
+    // the same dataset and species again: no second mapping of the background
+    const j = io(STRING_ROUTES);
+    await a.fetch({ ...input, genesHash: 'other', genes: GENES.slice(0, 3) }, j);
+    const mapped = j.calls.filter(c => /get_string_ids$/.test(c.url)).map(c => c.opts.form.identifiers.split('\r').length);
+    assert.deepEqual(mapped, [3], 'only the selection is mapped; the background is reused');
+    // the whole genome, on request: no background sent
+    const k = io(STRING_ROUTES);
+    const genome = await a.fetch(base(a, { params: { background: 'genome' } }), k);
+    assert.equal(genome.backgroundSize, null);
+    assert.ok(!('background_string_identifiers' in k.calls.find(c => /json\/enrichment$/.test(c.url)).opts.form));
+});
+
+test('ids are read as their type: g:Profiler gets Entrez ids with their namespace, MyGene its scopes', async () => {
+    _resetOrganisms();
+    const a = byId['gprofiler-gost'];
+    const i = io([[/gost\/profile/, () => fixture('gprofiler-profile.json')]]);
+    await a.fetch(base(a, { genes: ['7157', '4193'], idType: 'entrez', params: { ...base(a).params, background: 'genome' } }), i);
+    assert.equal(i.calls[0].opts.json.numeric_namespace, 'ENTREZGENE_ACC');
+    const j = io([[/gost\/profile/, () => fixture('gprofiler-profile.json')]]);
+    await a.fetch(base(a, { params: { ...base(a).params, background: 'genome' } }), j);
+    assert.ok(!('numeric_namespace' in j.calls[0].opts.json), 'symbols need no namespace');
+    // the dataset background, by default
+    const k = io([[/gost\/profile/, () => fixture('gprofiler-profile.json')]]);
+    await a.fetch(base(a, { background: [...GENES, 'X'], backgroundHash: 'b' }), k);
+    assert.equal(k.calls[0].opts.json.domain_scope, 'custom');
+    assert.equal(k.calls[0].opts.json.background.length, 7);
+    const m = byId['mygene-mapping'];
+    for (const [type, scope] of [['ensembl', 'ensembl.gene'], ['entrez', 'entrezgene'], ['symbol', 'symbol']]) {
+        const q = io([[/mygene\.info\/v3\/query$/, () => '[]']]);
+        await m.fetch(base(m, { idType: type, params: { aliases: false } }), q);
+        assert.equal(q.calls[0].opts.form.scopes, scope, type);
+    }
+});
+
+test('Enrichr and Reactome say that their background is not the dataset', async () => {
+    for (const [id, routes, re] of [['enrichr', [[/addList$/, () => fixture('enrichr-addList.json')], [/\/enrich$/, () => fixture('enrichr-enrich.json')]], /library's genes \(Enrichr takes no dataset background/],
+        ['reactome', [[/projection/, () => fixture('reactome-projection.json')]], /genome only \(Reactome takes no custom background\)/]]) {
+        const a = byId[id];
+        const result = await a.fetch(base(a), io(routes));
+        const el = doc.createElement('div');
+        a.render(result, el, renderCtx(base(a)));
+        assert.match(el.textContent, re, id);
+    }
 });
 
 test('STRING network: an SVG blob shown only through ctx.blobImage, with an alt that counts', async () => {

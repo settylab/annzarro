@@ -68,7 +68,7 @@ export async function mapToString(io, input, genes, genesHash) {
     return io.memo(`string-ids:${api(input)}:${input.taxonomyId}:${genesHash || setHash(genes)}`, async (shared) => {
         const rows = await shared.fetchJson(`${api(input)}/json/get_string_ids`, {
             form: { identifiers: genes.join('\r'), species: input.taxonomyId, limit: 1, echo_query: 1, caller_identity: CALLER },
-            timeoutMs: genes.length > 5000 ? 60000 : undefined
+            timeoutMs: genes.length > 5000 ? 120000 : undefined
         });
         if (!Array.isArray(rows)) throw parseError('STRING sent no id list');
         const byIndex = new Map();
@@ -83,6 +83,29 @@ export async function mapToString(io, input, genes, genesHash) {
         const unmapped = genes.filter((_, i) => !byIndex.has(i));
         return { mapped, unmapped };
     });
+}
+
+/**
+ * The dataset's genes as STRING ids, the enrichment background: mapped
+ * once per page for a dataset, species and STRING (30k genes take STRING a
+ * while), and said on screen while it maps.
+ */
+const _backgrounds = new Map();
+
+async function mapBackground(io, input) {
+    const key = `${api(input)}:${input.taxonomyId}:${input.backgroundHash}`;
+    if (_backgrounds.has(key)) return _backgrounds.get(key);
+    if (io.progress) io.progress(`Mapping the dataset's ${input.background.length.toLocaleString('en-US')} genes to STRING ids (once per page)…`);
+    const bg = await mapToString(io, input, input.background, input.backgroundHash);
+    _backgrounds.set(key, bg);
+    while (_backgrounds.size > 8) _backgrounds.delete(_backgrounds.keys().next().value);
+    if (io.progress) io.progress('');
+    return bg;
+}
+
+/** For tests: forget the mapped backgrounds. */
+export function _resetBackgrounds() {
+    _backgrounds.clear();
 }
 
 function noneFound(input) {
@@ -111,9 +134,9 @@ export const stringEnrichment = {
     limits: { minGenes: 1, maxGenes: 3000 },
     supportsSpecies: () => 'unknown',
     params: {
-        background: { type: 'enum', default: 'genome', label: 'Background',
-            options: [{ value: 'genome', label: 'Whole genome (STRING default)' },
-                { value: 'dataset', label: "This dataset's genes" }] }
+        background: { type: 'enum', default: 'dataset', label: 'Background',
+            options: [{ value: 'dataset', label: "This dataset's genes" },
+                { value: 'genome', label: 'Whole genome (STRING default)' }] }
     },
     describeRequest: (input) => `${input.genes.length.toLocaleString('en-US')} gene ids and taxon ${input.taxonomyId}`
         + (input.params.background === 'dataset' && input.background ? `, plus the dataset's ${input.background.length.toLocaleString('en-US')} genes as the background` : ''),
@@ -123,7 +146,7 @@ export const stringEnrichment = {
         const form = { identifiers: mapped.map(m => m.stringId).join('\r'), species: input.taxonomyId, caller_identity: CALLER };
         let backgroundSize = null;
         if (input.params.background === 'dataset' && input.background) {
-            const bg = await mapToString(io, input, input.background, input.backgroundHash);
+            const bg = await mapBackground(io, input);
             form.background_string_identifiers = bg.mapped.map(m => m.stringId).join('\r');
             backgroundSize = bg.mapped.length;
         }

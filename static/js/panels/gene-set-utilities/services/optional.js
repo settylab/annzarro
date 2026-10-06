@@ -86,7 +86,7 @@ export const enrichr = {
             shown.map(t => [{ text: t.term, title: t.genes.join(', ') }, { text: String(t.genes.length), cls: 'gs-num' },
                 { text: Number.isFinite(t.odds) ? t.odds.toFixed(1) : '', cls: 'gs-num' }, { text: ctx.sci(t.adjP), cls: 'gs-num' }]), 'terms') : '',
         ctx.el('p', { class: 'gs-note gs-note--warn', text: `Enrichr stored this list as number ${result.userListId}; anyone can read it.` }),
-        attribution(ctx, ENRICHR));
+        attribution(ctx, ENRICHR, "background: the library's genes (Enrichr takes no dataset background here)"));
     },
     openUrl: (input, result) => (result && result.shortId ? `https://maayanlab.cloud/Enrichr/enrich?dataset=${encodeURIComponent(result.shortId)}` : null),
     exportRows: (result) => ({
@@ -156,7 +156,8 @@ export const reactome = {
             ['Pathway', { label: 'Entities', cls: 'gs-num', title: 'Reactome entities (genes, proteins, complexes) found / in the pathway' }, { label: 'FDR', cls: 'gs-num' }],
             result.pathways.map(p => [{ text: p.name, href: `https://reactome.org/content/detail/${encodeURIComponent(p.stId)}`, label: `${p.name} on Reactome` },
                 { text: `${p.found} / ${p.total}`, cls: 'gs-num' }, { text: ctx.sci(p.fdr), cls: 'gs-num' }]), 'pathways') : '',
-        attribution(ctx, REACTOME, ctx.input.taxonomyId !== '9606' ? 'projected to human pathways' : ''));
+        attribution(ctx, REACTOME, ['background: genome only (Reactome takes no custom background)',
+            ctx.input.taxonomyId !== '9606' ? 'projected to human pathways' : ''].filter(Boolean).join(' · ')));
     },
     openUrl: (input, result) => (result && result.token ? `https://reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=${result.token}` : null),
     exportRows: (result) => ({

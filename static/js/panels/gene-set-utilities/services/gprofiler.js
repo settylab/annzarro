@@ -79,8 +79,8 @@ export const gprofilerGost = {
         correction: { type: 'enum', default: 'g_SCS', label: 'Correction',
             options: [{ value: 'g_SCS', label: 'g:SCS (g:Profiler default)' }, { value: 'false_discovery_rate', label: 'Benjamini-Hochberg FDR' },
                 { value: 'bonferroni', label: 'Bonferroni' }] },
-        background: { type: 'enum', default: 'genome', label: 'Background',
-            options: [{ value: 'genome', label: 'Annotated genes (g:Profiler default)' }, { value: 'dataset', label: "This dataset's genes" }] }
+        background: { type: 'enum', default: 'dataset', label: 'Background',
+            options: [{ value: 'dataset', label: "This dataset's genes" }, { value: 'genome', label: 'Annotated genes (g:Profiler default)' }] }
     },
     describeRequest: (input) => `${input.genes.length.toLocaleString('en-US')} gene ids and the species`
         + (input.params.background === 'dataset' && input.background ? `, plus the dataset's ${input.background.length.toLocaleString('en-US')} genes as the background` : ''),
@@ -95,6 +95,8 @@ export const gprofilerGost = {
             user_threshold: input.params.threshold, significance_threshold_method: input.params.correction,
             no_evidences: !evidences
         };
+        // Entrez ids are bare numbers, which g:Profiler reads only with their namespace
+        if (input.idType === 'entrez') body.numeric_namespace = 'ENTREZGENE_ACC';
         if (input.params.background === 'dataset' && input.background) {
             body.domain_scope = 'custom';
             body.background = input.background;
