@@ -156,9 +156,11 @@ Tahoe-100M of which it drew every cell within a 16 GiB client memory budget. Mos
 driven by a script; the two desktop applications, Loupe Browser and ManiVault Studio, were measured
 by hand in a desktop session on the same inputs (Loupe Browser drew every cell up to 5 million at
 5.7 GiB; at 10 million its renderer process exited when colouring by a gene). CELLxGENE Explorer,
-Single Cell Portal and VizIt were not measured and show their documented size. SCope is not
-measured yet; its strip shows the largest dataset observed in it, 567,950 cells in the Fly Cell
-Atlas session at scope.aertslab.org. AnnZarro's own
+Single Cell Portal and VizIt were not measured and show their documented size. SCope 1.8.2 was
+not measured either: its only install route, the repository's Dockerfile, could not be built
+locally on 2026-10-06 (on Debian 13 NodeSource has no Node.js 14; with the base pinned to
+Debian 11, the Debian security archive answered 404). Its strip shows the 567,950 cells observed
+in the Fly Cell Atlas session at scope.aertslab.org. AnnZarro's own
 measurements on Tahoe-100M are on {doc}`scale`. The panel is not an AnnZarro view and has no walkthrough here. The
 source behind every cell of the table is listed in the paper's companion repository
 (`figures/COMPARISON_NOTES.md`, checked October 2026; {ref}`paper-companion`).
