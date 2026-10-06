@@ -20,6 +20,7 @@ the interactive ``readline`` module).
 """
 
 import ast
+import json
 import fnmatch
 import os
 import re
@@ -186,24 +187,32 @@ def _licence_of(meta):
     return " AND ".join(c.strip() for c in classifiers)
 
 
-def write_notices(dist_dir, build_dir, site_packages, python_prefix):
-    """Write ``dist_dir/THIRD_PARTY_NOTICES`` and return the index rows.
+def write_notices(dist_dir, build_dir, site_packages, python_prefix, exe_name=None):
+    """Write ``dist_dir/THIRD_PARTY_NOTICES`` and return the inventory.
 
     ``build_dir`` is PyInstaller's work directory for the spec (holding
     COLLECT-00.toc and PYZ-00.toc), ``site_packages`` the build venv's,
-    ``python_prefix`` the base Python installation (``sys.base_prefix``).
+    ``python_prefix`` the base Python installation (``sys.base_prefix``),
+    ``exe_name`` the launcher executable's file name.
+
+    The inventory (also ``inventory.json``) has one entry per component:
+    its licence, how it is shipped and the bundle files that are its.
     """
     dist_dir, build_dir = Path(dist_dir), Path(build_dir)
     out = dist_dir / OUT_NAME
     if out.exists():
         shutil.rmtree(out)
-    (out / "python").mkdir(parents=True)
-    (out / "python-packages").mkdir()
-    (out / "native").mkdir()
+    for sub in ("python", "python-packages", "native", "launcher"):
+        (out / sub).mkdir(parents=True)
 
     dists = Distributions(site_packages)
     prefix = Path(python_prefix).resolve()
-    used_dists, natives, problems = {}, {}, []
+    used_dists, natives, cpython_files, problems = {}, {}, set(), []
+
+    def bundle_path(name, kind):
+        # PyInstaller puts COLLECT entries under _internal/; modules in the
+        # PYZ archive live inside the executable.
+        return f"{exe_name or 'launcher'}:{name}" if kind == "PYMODULE" else f"_internal/{name}"
 
     entries = read_toc(build_dir / "COLLECT-00.toc") + read_toc(build_dir / "PYZ-00.toc")
     for name, source, kind in entries:
@@ -214,28 +223,30 @@ def write_notices(dist_dir, build_dir, site_packages, python_prefix):
         if why:
             problems.append(f"{name}: must not be bundled ({why})")
             continue
+        path = bundle_path(name, kind)
         owner = dists.of(source)
         if owner:
             if owner not in TOOLING:
-                used_dists.setdefault(owner, set()).add(name)
+                used_dists.setdefault(owner, set()).add(path)
             if is_native(base):
                 vendored = native_entry(base, WHEEL_VENDORED)
                 if vendored:
-                    natives.setdefault(vendored[1], (vendored, set()))[1].add(name)
+                    natives.setdefault(vendored[1], (vendored, set(), owner))[1].add(path)
             continue
-        if not is_native(base):
-            continue  # stdlib module or data file of CPython
-        entry = native_entry(base)
+        entry = native_entry(base) if is_native(base) else None
         if entry:
-            natives.setdefault(entry[1], (entry, set()))[1].add(name)
-        elif Path(source).resolve().is_relative_to(prefix) and base.endswith((".so", ".pyd")):
-            continue  # a CPython extension module (lib-dynload / DLLs)
+            natives.setdefault(entry[1], (entry, set(), None))[1].add(path)
+        elif _under(source, prefix):
+            cpython_files.add(path)  # stdlib module, extension module or data of CPython
+        elif not is_native(base):
+            cpython_files.add(path)
         else:
             problems.append(f"{name} (from {source}): no licence notice known; add it to "
                             "NATIVE in annzarro/desktop/scripts/notices.py")
     if problems:
         raise SystemExit("third-party notices:\n  " + "\n  ".join(problems))
 
+    inventory = []
     # CPython itself, always
     python_licence = next((p for p in (prefix / "LICENSE.txt",
                                         prefix / "lib" / f"python{_pyver(prefix)}" / "LICENSE.txt",
@@ -243,7 +254,9 @@ def write_notices(dist_dir, build_dir, site_packages, python_prefix):
     shutil.copy(python_licence or NOTICES_SRC / "python-LICENSE.txt", out / "python" / "LICENSE.txt")
     shutil.copy(NOTICES_SRC / "python-acknowledgements.txt",
                 out / "python" / "acknowledgements-for-incorporated-software.txt")
-    rows = [("CPython", "PSF-2.0", "python/LICENSE.txt")]
+    inventory.append({"component": "CPython (standard library, extension modules)",
+                      "licence": "PSF-2.0", "shipped": "Python modules in the launcher and _internal",
+                      "notice": "python/", "files": sorted(cpython_files)})
 
     for key in sorted(used_dists, key=str.lower):
         d = dists.dists[key]
@@ -259,16 +272,32 @@ def write_notices(dist_dir, build_dir, site_packages, python_prefix):
             (folder / "NO-LICENSE-FILE.txt").write_text(
                 f"{key} {d['version']} ships no licence file in its wheel; its metadata "
                 f"declares: {d['license'] or 'nothing'}.\n")
-        rows.append((f"{key} {d['version']}", d["license"] or "see files",
-                     f"python-packages/{folder.name}/"))
+        inventory.append({"component": f"{key} {d['version']}", "licence": d["license"] or "UNKNOWN",
+                          "shipped": "Python package (pip wheel)",
+                          "notice": f"python-packages/{folder.name}/",
+                          "files": sorted(used_dists[key])})
 
     for component in sorted(natives):
-        (pattern, comp, spdx, files), names = natives[component]
+        (pattern, comp, spdx, files), names, owner = natives[component]
         for f in files:
             shutil.copy(NOTICES_SRC / f, out / "native" / f)
-        rows.append((f"{comp} ({', '.join(sorted(os.path.basename(n) for n in names))})", spdx,
-                     ", ".join(f"native/{f}" for f in files)))
+        how = (f"separate shared library from the {owner} wheel" if owner
+               else "separate shared library from the build machine's Python or system")
+        inventory.append({"component": comp, "licence": spdx, "shipped": how,
+                          "notice": ", ".join(f"native/{f}" for f in files),
+                          "files": sorted(names)})
 
+    # The launcher executable is PyInstaller's bootloader.
+    pyi = dists.dists.get("pyinstaller") or dists.dists.get("PyInstaller")
+    if pyi:
+        for f in dists.licence_files("pyinstaller" if "pyinstaller" in dists.dists else "PyInstaller"):
+            shutil.copy(f, out / "launcher" / f.name)
+    inventory.append({"component": f"PyInstaller bootloader {pyi['version'] if pyi else ''}".strip(),
+                      "licence": "GPL-2.0-or-later WITH PyInstaller-bootloader-exception",
+                      "shipped": "launcher executable", "notice": "launcher/",
+                      "files": [exe_name] if exe_name else []})
+
+    (out / "inventory.json").write_text(json.dumps(inventory, indent=1) + "\n", encoding="utf-8")
     lines = [
         "Third-party software in the AnnZarro desktop app's server",
         "",
@@ -279,15 +308,25 @@ def write_notices(dist_dir, build_dir, site_packages, python_prefix):
         "and Chromium: LICENSE.electron.txt and LICENSES.chromium.html in the app.",
         "The executable's launcher is PyInstaller's bootloader (GPL-2.0-or-later",
         "with the PyInstaller exception, which permits distributing it with any",
-        "program under any licence).",
+        "program under any licence). Every native library is a separate file that",
+        "can be replaced. inventory.json lists every bundled file by component.",
         "",
     ]
+    rows = [(e["component"], e["licence"], e["notice"]) for e in inventory]
     width = max(len(r[0]) for r in rows)
     lic_width = max(len(r[1]) for r in rows)
     for comp, spdx, where in rows:
         lines.append(f"{comp.ljust(width)}  {spdx.ljust(lic_width)}  {where}")
     (out / "README.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return rows
+    return inventory
+
+
+def _under(path, prefix):
+    try:
+        Path(path).resolve().relative_to(prefix)
+        return True
+    except ValueError:
+        return False
 
 
 def _pyver(prefix):

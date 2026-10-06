@@ -234,14 +234,18 @@ def test_notices_collect_cpython_packages_and_native_libraries(tmp_path):
         ("demo", str(site / "demo" / "__init__.py"), "PYMODULE"),
     ])))
     out = tmp_path / "server"
-    rows = notices.write_notices(out, build, site, prefix)
+    inventory = notices.write_notices(out, build, site, prefix, exe_name="annzarro-server")
     notes = out / notices.OUT_NAME
     assert (notes / "python" / "LICENSE.txt").read_text() == "PSF licence\n"
     assert (notes / "python-packages" / "demo-1.2" / "LICENSE.txt").read_text() == "demo licence\n"
     assert (notes / "native" / "openssl-LICENSE.txt").is_file()
     index = (notes / "README.txt").read_text()
     assert "demo 1.2" in index and "BSD-3-Clause" in index and "OpenSSL" in index
-    assert [r[0] for r in rows][0] == "CPython"
+    by = {e["component"]: e for e in inventory}
+    assert by["demo 1.2"]["files"] == ["_internal/demo/_ext.so", "annzarro-server:demo"]
+    assert by["OpenSSL"]["files"] == ["_internal/libssl.so.3"]
+    assert "_internal/lib-dynload/_ssl.so" in inventory[0]["files"]  # CPython
+    assert json.loads((notes / "inventory.json").read_text()) == inventory
 
 
 def test_build_writes_the_notices_and_mac_app_ships_electron_licences():
@@ -250,9 +254,10 @@ def test_build_writes_the_notices_and_mac_app_ships_electron_licences():
     with open(os.path.join(ELECTRON, "package.json")) as f:
         mac = json.load(f)["build"]["mac"]
     shipped = {r["to"] for r in mac["extraResources"]}
-    assert {"LICENSE.electron.txt", "LICENSES.chromium.html"} <= shipped
+    assert {"LICENSE.electron.txt", "LICENSES.chromium.html", "LICENSES.macos-frameworks.txt"} <= shipped
     for r in mac["extraResources"]:
-        assert r["from"].startswith("node_modules/electron/dist/")
+        assert os.path.exists(os.path.join(ELECTRON, r["from"])) or \
+            r["from"].startswith("node_modules/electron/dist/"), r["from"]
 
 
 def test_plotly_bundled_licences_are_complete():
@@ -271,3 +276,77 @@ def test_plotly_bundled_licences_are_complete():
     assert "all MIT except" not in plotly["notes"]
     for spdx in ("ISC", "BSD-3-Clause", "BSD-2-Clause", "Zlib", "Unlicense"):
         assert spdx in plotly["license"]
+
+
+def _licence_check():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "annzarro_licence_check",
+        os.path.join(ROOT, "annzarro", "desktop", "scripts", "licence_check.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_licence_policy():
+    lc = _licence_check()
+    assert lc.classify("BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0") == "ok"
+    assert lc.classify("PSF-2.0") == "ok"
+    assert lc.classify("GPL-3.0-or-later WITH GCC-exception-3.1") == "exception"
+    assert lc.classify("LGPL-2.1-or-later") == "lgpl"
+    assert lc.classify("GPL-3.0-only") == "gpl"
+    assert lc.classify("GNU General Public License v3 (GPLv3)") == "gpl"
+    assert lc.classify("AGPL-3.0") == "gpl"
+    assert lc.classify("") == "unknown"
+
+
+def _fake_linux_app(tmp_path, extra_server_files=(), inventory=None):
+    app = tmp_path / "AnnZarro"
+    server = app / "resources" / "server"
+    (server / "_internal").mkdir(parents=True)
+    (server / "THIRD_PARTY_NOTICES").mkdir()
+    (server / "THIRD_PARTY_NOTICES" / "README.txt").write_text("x")
+    for name in ("LICENSE.electron.txt", "LICENSES.chromium.html"):
+        (app / name).write_text("x")
+    (app / "resources" / "LICENSE").write_text("x")
+    elf = b"\x7fELF" + b"\0" * 64
+    (app / "annzarro-desktop").write_bytes(elf)
+    (app / "libffmpeg.so").write_bytes(elf)
+    (server / "annzarro-server").write_bytes(elf)
+    (server / "_internal" / "libz.so.1").write_bytes(elf)
+    for name, data in extra_server_files:
+        (server / "_internal" / name).write_bytes(data)
+    inventory = inventory or [
+        {"component": "zlib", "licence": "Zlib", "shipped": "separate shared library",
+         "files": ["_internal/libz.so.1"]}]
+    (server / "THIRD_PARTY_NOTICES" / "inventory.json").write_text(json.dumps(inventory))
+    return app
+
+
+def test_licence_check_passes_a_clean_app_and_catches_problems(tmp_path):
+    lc = _licence_check()
+    plat, rows, failures = lc.check(_fake_linux_app(tmp_path / "ok"))
+    assert plat == "linux" and failures == []
+    assert any(r[0].startswith("FFmpeg") and r[3] == "lgpl" for r in rows)
+
+    elf = b"\x7fELF" + b"\0" * 64
+    # A library nobody listed, one linking GNU Readline, and a GPL component.
+    _, _, failures = lc.check(_fake_linux_app(
+        tmp_path / "bad",
+        extra_server_files=[("libmystery.so", elf),
+                            ("readline.cpython-311-x86_64-linux-gnu.so",
+                             elf + b"libreadline.so.8\0")],
+        inventory=[{"component": "zlib", "licence": "Zlib", "shipped": "separate shared library",
+                    "files": ["_internal/libz.so.1",
+                              "_internal/readline.cpython-311-x86_64-linux-gnu.so"]},
+                   {"component": "evil", "licence": "GPL-3.0-only", "shipped": "x", "files": []}]))
+    text = "\n".join(failures)
+    assert "libmystery.so (ELF) is not in the inventory" in text
+    assert "refers to libreadline.so" in text
+    assert "evil: licence 'GPL-3.0-only' is gpl" in text
+
+    # A missing Chromium notice fails too.
+    app = _fake_linux_app(tmp_path / "nonotice")
+    (app / "LICENSES.chromium.html").unlink()
+    _, _, failures = lc.check(app)
+    assert any("LICENSES.chromium.html" in f for f in failures)

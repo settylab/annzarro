@@ -184,6 +184,53 @@ jobs:
           rm -f out/*.blockmap
           ls -la out
 
+      - name: Licence check of the release files
+        # Unpacks each release file as a user gets it and checks every
+        # executable and shared library in it against the server's inventory
+        # and Electron's file list: no GPL/AGPL component, no unknown licence,
+        # LGPL only as a separate shared library, nothing linking GNU
+        # Readline or ncurses, all notices present. Fails the release otherwise.
+        run: |
+          set -o pipefail
+          check=annzarro/desktop/scripts/licence_check.py
+          mkdir -p licence-check
+          status=0
+          run_check() {  # <label> <unpacked app>
+            echo "::group::licence check: $1"
+            python "$check" "$2" --json "licence-check/$1.json" | tee "licence-check/$1.txt" || status=1
+            echo "::endgroup::"
+          }
+          cd out
+          case "$RUNNER_OS" in
+            Linux)
+              dpkg-deb -x AnnZarro-*.deb ../unpack-deb
+              run_check deb ../unpack-deb/opt/AnnZarro
+              mkdir -p ../unpack-appimage && cp AnnZarro-*.AppImage ../unpack-appimage/a.AppImage
+              (cd ../unpack-appimage && chmod +x a.AppImage && ./a.AppImage --appimage-extract >/dev/null)
+              run_check appimage ../unpack-appimage/squashfs-root ;;
+            macOS)
+              ditto -x -k AnnZarro-*.zip ../unpack-zip
+              run_check macos-zip ../unpack-zip/AnnZarro.app
+              hdiutil attach -nobrowse -readonly -mountpoint ../unpack-dmg AnnZarro-*.dmg >/dev/null
+              run_check macos-dmg ../unpack-dmg/AnnZarro.app
+              hdiutil detach ../unpack-dmg >/dev/null ;;
+            Windows)
+              python -m zipfile -e AnnZarro-*-windows-*.zip ../unpack-zip
+              run_check windows-zip ../unpack-zip
+              7z x -y -o../unpack-setup AnnZarro-*-setup.exe >/dev/null
+              7z x -y -o../unpack-setup/app ../unpack-setup/\$PLUGINSDIR/app-64.7z >/dev/null
+              run_check windows-setup ../unpack-setup/app ;;
+          esac
+          cd ..
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: licence-check-${{ matrix.name }}
+          path: licence-check/*
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: AnnZarro-${{ env.VERSION }}-${{ matrix.name }}

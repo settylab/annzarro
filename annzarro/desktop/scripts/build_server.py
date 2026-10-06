@@ -112,8 +112,10 @@ def main(argv=None):
         [str(py), "-c", "import json, sys, sysconfig; print(json.dumps("
          "[sysconfig.get_paths()['purelib'], sys.base_prefix]))"],
         check=True, capture_output=True, text=True).stdout)
-    rows = notices.write_notices(out, BUILD / "pyinstaller" / NAME, paths[0], paths[1])
-    print(f"Third-party notices: {len(rows)} components in {out / notices.OUT_NAME}")
+    exe_name = NAME + (".exe" if os.name == "nt" else "")
+    inventory = notices.write_notices(out, BUILD / "pyinstaller" / NAME, paths[0], paths[1],
+                                      exe_name=exe_name)
+    print(f"Third-party notices: {len(inventory)} components in {out / notices.OUT_NAME}")
 
     exe = out / (NAME + (".exe" if os.name == "nt" else ""))
     if not exe.is_file():
