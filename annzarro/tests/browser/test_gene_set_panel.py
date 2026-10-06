@@ -272,6 +272,8 @@ def test_run_asks_then_fetches_and_states_coverage(env):
     page.click(f"{GS} .gs-run")
     page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
     consent = page.inner_text(f"{GS} .gs-consent")
+    # the one request beyond those listed is named before anything is sent
+    assert "asks that service once for its home page (a bare GET, nothing of yours in it)" in " ".join(consent.split())
     for host in ("version-12-5.string-db.org", "biit.cs.ut.ee", "mygene.info"):
         assert host in consent
     assert services.calls == [], "nothing before the answer"

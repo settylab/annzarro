@@ -1254,6 +1254,10 @@ const GeneSetPanel = (function() {
             box.append(el('div', { class: 'gs-consent__text', text: 'Send these to the services below? Nothing else leaves this browser '
                 + '(no dataset name, no cell data, no address of this page).' }),
             el('ul', { class: 'gs-consent__list' }, lines),
+            // fetch-policy.js hostAnswers: the one request beyond those listed
+            el('div', { class: 'gs-consent__note', text: 'If a request fails without an answer, the panel asks that service '
+                + 'once for its home page (a bare GET, nothing of yours in it) to tell "could not connect" from '
+                + '"blocked by the browser".' }),
             el('div', { class: 'gs-consent__do' },
                 barButton('Send', () => answerConsent('send'), 'btn-primary'),
                 persistable ? barButton('Always send to these services', () => answerConsent('always')) : '',

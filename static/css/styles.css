@@ -1214,6 +1214,7 @@ button.dtsb-button.dtsb-clear:hover {
 }
 .gs-consent__list { margin: 4px 0; padding-left: 18px; }
 .gs-consent__warn { color: #8a3a38; font-weight: 600; }
+.gs-consent__note { color: #6c757d; font-size: 0.75rem; margin-bottom: 0.25rem; }
 .gs-consent__do { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .gs-sections { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 6px 12px; }
