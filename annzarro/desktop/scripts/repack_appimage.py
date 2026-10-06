@@ -86,7 +86,9 @@ def main(argv=None):
                           (NOTICES / notice).read_text(encoding="utf-8").strip(), ""]
             (root / NOTICE_NAME).write_text("\n".join(parts) + "\n", encoding="utf-8")
         out = tmp / appimage.name
-        run([tool, "--no-appstream", "--runtime-file", runtime, root, out], env=env,
+        # xz: the runtime electron-builder embeds reads only xz and zlib
+        # squashfs images (appimagetool defaults to zstd).
+        run([tool, "--no-appstream", "--comp", "xz", "--runtime-file", runtime, root, out], env=env,
             stdout=subprocess.DEVNULL)
         shutil.move(str(out), str(appimage))
         appimage.chmod(0o755)
