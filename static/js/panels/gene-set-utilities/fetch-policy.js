@@ -4,17 +4,44 @@
  * Every request the Gene Set Analysis panel makes goes through
  * fetchWithPolicy: no cookies, no referrer (a share link's URL holds the
  * dataset path), a timeout per attempt, and a failure turned into a
- * ServiceError whose `kind` the panel states ("timed out after 20 s",
- * "could not reach string-db.org"). Pure apart from the injected fetch and
- * timers, so Node tests drive it (gene-set-runner.test.mjs).
+ * ServiceError whose `kind` the panel states, each in its own words:
+ *
+ *   offline      the browser has no network (navigator.onLine is false)
+ *   unreachable  no connection to the host: no network, a name that does not
+ *                resolve, or the service is down
+ *   blocked      the host answers, but the browser keeps the reply from the
+ *                page: the service does not allow this site (CORS), or a
+ *                browser setting or extension blocks the request
+ *   timeout      no answer within integrations.gene_set.timeout_ms
+ *   rate-limit   HTTP 429
+ *   down         HTTP 502, 503, 504: the service is down or overloaded
+ *   server       any other 5xx: the service failed on this request
+ *   endpoint     HTTP 404 or 410 that is not an answer about the genes: the
+ *                address is gone (an API moved, a STRING version retired)
+ *   http         any other 4xx: the service rejected the request
+ *   parse        a reply the adapter cannot read
+ *
+ * fetch() rejects with the same TypeError for no network, a DNS failure, a
+ * CORS refusal and a blocked request. The page tells them apart by asking
+ * the host once more without reading the reply (mode no-cors, no body, no
+ * cookie, no referrer): if that reaches the host, the first reply was
+ * blocked; if not, the host is unreachable. Only "no matches" is ever
+ * reported as the service not knowing the genes, and only by the adapter
+ * that read the service say so (services/string.js).
+ *
+ * Pure apart from the injected fetch and timers, so Node tests drive it
+ * (gene-set-runner.test.mjs, gene-set-errors.test.mjs).
  */
 
 /** Longest wait a Retry-After may ask for before the panel stops waiting. */
 export const MAX_RETRY_AFTER_MS = 30000;
 
+/** How long the no-cors check of a failed host may take. */
+export const PROBE_TIMEOUT_MS = 5000;
+
 export class ServiceError extends Error {
     /**
-     * @param {{kind: 'aborted'|'timeout'|'network'|'http'|'rate-limit'|'parse'|'adapter',
+     * @param {{kind: 'aborted'|'offline'|'unreachable'|'blocked'|'timeout'|'rate-limit'|'down'|'server'|'endpoint'|'http'|'parse'|'adapter',
      *   message: string, status?: number, retryAt?: number, host?: string, attempts?: number}} spec
      */
     constructor({ kind, message, status, retryAt, host, attempts }) {
@@ -45,11 +72,15 @@ export function abortedError() {
     return new ServiceError({ kind: 'aborted', message: 'cancelled' });
 }
 
-/** Whether a second attempt might succeed: a timeout, no connection, a 5xx or a 429. */
+/**
+ * Whether an automatic second attempt might succeed: a timeout, no
+ * connection, a 429 or a 5xx. Not offline (the browser says it has no
+ * network), a blocked reply, a gone address or a rejected request: those
+ * fail the same way again at once.
+ */
 export function isRetryable(error) {
     if (!error) return false;
-    if (error.kind === 'timeout' || error.kind === 'network' || error.kind === 'rate-limit') return true;
-    return error.kind === 'http' && error.status >= 500;
+    return ['timeout', 'unreachable', 'rate-limit', 'down', 'server'].includes(error.kind);
 }
 
 /**
@@ -110,18 +141,26 @@ export function bodyExcerpt(text) {
  * @param {*} error - what fetch (or reading its body) threw
  * @param {{aborted: boolean, timedOut: boolean, timeoutMs: number, host: string}} why
  */
-export function classifyFetchError(error, { aborted, timedOut, timeoutMs, host }) {
+export function classifyFetchError(error, { aborted, timedOut, timeoutMs, host, online, reached }) {
     if (error instanceof ServiceError) return error;
     if (aborted) return abortedError();
     if (timedOut) {
-        return new ServiceError({ kind: 'timeout', host, message: `timed out after ${Math.round(timeoutMs / 1000)} s` });
+        return new ServiceError({ kind: 'timeout', host,
+            message: `timed out after ${Math.round(timeoutMs / 1000)} s: ${host} did not answer in time` });
     }
     if (error && error.name === 'AbortError') return abortedError();
-    // fetch rejects with a TypeError for no connection, a DNS failure, a
-    // blocked request and a missing CORS header alike; the page cannot tell
-    // them apart
-    return new ServiceError({ kind: 'network', host,
-        message: `could not reach ${host} (offline, blocked, or the service does not allow this site)` });
+    // fetch rejects with a TypeError for each of these; `online` and
+    // `reached` (fetchWithPolicy's no-cors check) tell them apart
+    if (online === false) {
+        return new ServiceError({ kind: 'offline', host, message: 'this browser is offline: no request was answered' });
+    }
+    if (reached === true) {
+        return new ServiceError({ kind: 'blocked', host,
+            message: `${host} answered, but the browser blocked its reply: the service does not allow requests `
+                + 'from this page (CORS), or a browser setting or extension blocks it' });
+    }
+    return new ServiceError({ kind: 'unreachable', host,
+        message: `could not connect to ${host}: no network, the address did not resolve, or the service is down` });
 }
 
 /** The error for a response that is not 2xx. */
@@ -130,12 +169,26 @@ export function httpError(status, text, { host, retryAfter, now }) {
         const wait = retryAfterMs(retryAfter, now);
         return new ServiceError({ kind: 'rate-limit', status, host,
             retryAt: wait === null ? undefined : now + wait,
-            message: `${host} is limiting how often it may be asked (HTTP 429)` });
+            message: `${host} is limiting how often it may be asked (HTTP 429); try again in a minute` });
+    }
+    if (status === 502 || status === 503 || status === 504) {
+        return new ServiceError({ kind: 'down', status, host,
+            message: `${host} is down or overloaded (HTTP ${status}); try again later` });
     }
     if (status >= 500) {
-        return new ServiceError({ kind: 'http', status, host, message: `the service returned an error (HTTP ${status})` });
+        return new ServiceError({ kind: 'server', status, host,
+            message: `${host} failed on this request (HTTP ${status}, an error on the service's side)` });
     }
     const excerpt = bodyExcerpt(text);
+    if (status === 404 || status === 410) {
+        // an answer about the genes ("no matches") is read by the adapter
+        // from `body`; anything else is an address that is not there
+        const err = new ServiceError({ kind: 'endpoint', status, host,
+            message: `${host} has no such address (HTTP ${status}): the service's API may have moved, `
+                + `or this version of it is no longer served${excerpt ? `; it said "${excerpt}"` : ''}` });
+        err.body = typeof text === 'string' ? text : '';
+        return err;
+    }
     return new ServiceError({ kind: 'http', status, host,
         message: `the service rejected the request (HTTP ${status})${excerpt ? `: ${excerpt}` : ''}` });
 }
@@ -198,7 +251,37 @@ export function withQuery(url, query) {
  * @param {{signal?: AbortSignal, timeoutMs: number, as?: 'json'|'text'|'blob',
  *   fetchImpl: Function, setTimeout: Function, clearTimeout: Function, now: () => number}} opts
  */
-export async function fetchWithPolicy(url, init, { signal, timeoutMs, as = 'json', fetchImpl, setTimeout: setT, clearTimeout: clearT, now }) {
+/**
+ * Whether `url`'s host answers at all: a GET of its root in mode no-cors,
+ * which the browser completes (opaque) for any host that answers, CORS or
+ * not. No body, no cookie, no referrer, nothing of the request that failed.
+ * @returns {Promise<boolean|null>} null when the check itself was cut short
+ */
+export async function hostAnswers(url, { fetchImpl, setTimeout: setT, clearTimeout: clearT, signal }) {
+    let root;
+    try {
+        root = `${new URL(url).origin}/`;
+    } catch {
+        return false;
+    }
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    let timer;
+    const late = new Promise(resolve => { timer = setT(() => { ctrl.abort(); resolve(null); }, PROBE_TIMEOUT_MS); });
+    try {
+        return await Promise.race([
+            Promise.resolve(fetchImpl(root, { method: 'GET', mode: 'no-cors', credentials: 'omit',
+                referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl.signal })).then(() => true, () => false),
+            late
+        ]);
+    } finally {
+        clearT(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+    }
+}
+
+export async function fetchWithPolicy(url, init, { signal, timeoutMs, as = 'json', fetchImpl, setTimeout: setT, clearTimeout: clearT, now, online }) {
     const host = hostOf(url);
     if (signal && signal.aborted) throw abortedError();
     const ctrl = new AbortController();
@@ -219,7 +302,15 @@ export async function fetchWithPolicy(url, init, { signal, timeoutMs, as = 'json
         try {
             resp = await Promise.race([fetchImpl(url, { ...init, signal: ctrl.signal }), stopped]);
         } catch (error) {
-            throw classifyFetchError(error, why());
+            const w = why();
+            if (!w.aborted && !w.timedOut && !(error && error.name === 'AbortError') && !(error instanceof ServiceError)) {
+                w.online = typeof online === 'function' ? online() : undefined;
+                if (w.online !== false) {
+                    w.reached = await hostAnswers(url, { fetchImpl, setTimeout: setT, clearTimeout: clearT, signal });
+                    if (signal && signal.aborted) throw abortedError();
+                }
+            }
+            throw classifyFetchError(error, w);
         }
         let text = null, blob = null;
         try {

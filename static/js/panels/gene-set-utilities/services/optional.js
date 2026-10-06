@@ -16,7 +16,7 @@
  */
 import { Coverage, GAP } from '../../../utils/coverage.js';
 import { ServiceError, parseError } from '../fetch-policy.js';
-import { attribution, longTable, geneButton } from './common.js';
+import { attribution, longTable, geneButton, noneKnown } from './common.js';
 
 // ---------------------------------------------------------------------------
 // Enrichr
@@ -112,6 +112,24 @@ export const REACTOME_SPECIES = Object.freeze({
 
 const PAGE = 50;
 
+/**
+ * Whether a failed request is Reactome's AnalysisService saying none of the
+ * identifiers matched: HTTP 404 with its JSON error body
+ * ({"code": 404, "reason": "Not Found", "messages": [...]}), not a bare 404.
+ * @param {*} error
+ */
+export function isReactomeNoMatches(error) {
+    if (!error || error.status !== 404 || typeof error.body !== 'string') return false;
+    let j;
+    try {
+        j = JSON.parse(error.body);
+    } catch {
+        return false;
+    }
+    return !!j && typeof j === 'object' && Number(j.code) === 404 && Array.isArray(j.messages)
+        && j.messages.some(m => /\b(no|not)\b.*\b(found|match)/i.test(String(m)));
+}
+
 export const reactome = {
     id: 'reactome',
     version: '1',
@@ -125,11 +143,20 @@ export const reactome = {
         + 'others could read it.' },
     describeRequest: (input) => `${input.genes.length.toLocaleString('en-US')} gene ids (kept by Reactome under a guessable token)`,
     async fetch(input, io) {
-        const j = await io.fetchJson('https://reactome.org/AnalysisService/identifiers/projection', {
-            text: input.genes.join('\n'),
-            query: { interactors: 'false', pageSize: PAGE, page: 1, sortBy: 'ENTITIES_PVALUE', order: 'ASC',
-                resource: 'TOTAL', species: REACTOME_SPECIES[input.taxonomyId] }
-        });
+        let j;
+        try {
+            j = await io.fetchJson('https://reactome.org/AnalysisService/identifiers/projection', {
+                text: input.genes.join('\n'),
+                query: { interactors: 'false', pageSize: PAGE, page: 1, sortBy: 'ENTITIES_PVALUE', order: 'ASC',
+                    resource: 'TOTAL', species: REACTOME_SPECIES[input.taxonomyId] }
+            });
+        } catch (error) {
+            // the AnalysisService's own 404 (a JSON error with messages) is
+            // its answer that none of the ids matched; a 404 without it is
+            // an address that is gone, and stays that failure
+            if (isReactomeNoMatches(error)) throw noneKnown('Reactome', input);
+            throw error;
+        }
         if (!j || !j.summary || !Array.isArray(j.pathways)) throw parseError('Reactome sent no analysis');
         return {
             token: String(j.summary.token || ''), notFound: Number(j.identifiersNotFound) || 0, found: Number(j.pathwaysFound) || 0,

@@ -120,6 +120,8 @@ const GeneSetPanel = (function() {
                 clearTimeout: (t) => window.clearTimeout(t),
                 now: () => Date.now(),
                 timeoutMs: Config.INTEGRATIONS.timeoutMs,
+                // tells "this browser is offline" from a host that does not answer
+                online: () => (typeof navigator !== 'undefined' && 'onLine' in navigator ? navigator.onLine : undefined),
                 onChange: (sid) => {
                     paintSection(sid);
                     // the gene card's ids make the focused gene's links direct

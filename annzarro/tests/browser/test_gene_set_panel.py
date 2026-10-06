@@ -84,13 +84,21 @@ class Services:
         self.root = root
         self.calls = []        # (endpoint, method, url)
         self.unmocked = []
-        self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 503, ...
+        self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 'net', 'blocked', 503, ...
+        self.probes = []       # the panel's no-cors checks of a failed host's root
+        self.hosts_answer = set()  # hosts whose root answers that check
 
     def handle(self, route):
         req = route.request
         url = req.url
         if url.startswith(self.root) or url.startswith(("data:", "blob:")):
             return route.continue_()
+        root = re.match(r"^https://([^/]+)/$", url)
+        if root:
+            self.probes.append(root.group(1))
+            if root.group(1) in self.hosts_answer:
+                return route.fulfill(status=200, body="")
+            return route.abort("internetdisconnected")
         for endpoint, pattern, name, ctype in REPLIES:
             if re.search(pattern, url):
                 self.calls.append((endpoint, req.method, url))
@@ -99,6 +107,12 @@ class Services:
                     outcome = queued.pop(0)
                     if outcome == "timedout":
                         return route.abort("timedout")
+                    if outcome == "net":
+                        return route.abort("internetdisconnected")
+                    if outcome == "blocked":
+                        # the browser keeps the request from the page (as for a missing CORS
+                        # header or an extension): fetch fails, the host itself answers
+                        return route.abort("blockedbyclient")
                     return route.fulfill(status=outcome, body="", headers={"Access-Control-Allow-Origin": "*"})
                 if endpoint == "mygene-lookup":
                     name = "mygene-query-alias.json" if "scopes=alias" in (req.post_data or "") else "mygene-query-symbol.json"
@@ -372,7 +386,7 @@ def test_a_failing_service_fails_its_section_only(env):
     until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-enrichment'].status === 'error'")
     _all_ok(page, ["string-network", "gprofiler-gost", "mygene-mapping", "mygene-card"])
     s = state(page)["runs"]["string-enrichment"]
-    assert s["error"]["kind"] == "http" and s["error"]["status"] == 503 and s["error"]["attempts"] == 2, s
+    assert s["error"]["kind"] == "down" and s["error"]["status"] == 503 and s["error"]["attempts"] == 2, s
     section = f'{GS} .gs-section[data-section="string-enrichment"]'
     text = page.inner_text(section)
     assert "Could not get enrichment from STRING. Other sections are not affected." in text
@@ -386,6 +400,46 @@ def test_a_failing_service_fails_its_section_only(env):
     page.click(f'{section} .gs-placeholder-do button:has-text("Retry")')
     _all_ok(page, ["string-enrichment"])
     assert services.count("string-enrichment") == 3
+
+
+def test_each_failure_is_named_and_offers_retry(env):
+    """No connection (route abort), a request the browser blocks while its
+    host answers, and a 404 that is not STRING's "no matches": each section says
+    which happened, offers Retry, and none calls it "not found"."""
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    services.fail["string-enrichment"] = ["net", "net"]
+    services.fail["gprofiler"] = ["blocked"]
+    services.hosts_answer.add("biit.cs.ut.ee")
+    services.fail["mygene-card"] = [404]
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    for sid in ("string-enrichment", "gprofiler-gost", "mygene-card"):
+        until(page, f"() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['{sid}'].status === 'error'")
+    runs_ = state(page)["runs"]
+    assert runs_["string-enrichment"]["error"]["kind"] == "unreachable", runs_["string-enrichment"]
+    assert runs_["string-enrichment"]["error"]["attempts"] == 2
+    assert runs_["gprofiler-gost"]["error"]["kind"] == "blocked", runs_["gprofiler-gost"]
+    assert runs_["mygene-card"]["error"]["kind"] == "endpoint", runs_["mygene-card"]
+    said = {
+        "string-enrichment": "could not connect to version-12-5.string-db.org: no network, the address did not resolve, "
+                             "or the service is down",
+        "gprofiler-gost": "biit.cs.ut.ee answered, but the browser blocked its reply: the service does not allow "
+                          "requests from this page (CORS)",
+        "mygene-card": "mygene.info has no such address (HTTP 404)",
+    }
+    for sid, text in said.items():
+        section = f'{GS} .gs-section[data-section="{sid}"]'
+        shown = " ".join(page.inner_text(section).split())
+        assert text in shown, shown
+        assert "knows none" not in shown and "not found" not in shown.lower(), shown
+        assert page.locator(f'{section} .gs-placeholder-do button:has-text("Retry")').count() == 1
+    assert "version-12-5.string-db.org" in services.probes and "biit.cs.ut.ee" in services.probes
+    # Retry, with the network back: the section fetches and shows its result
+    page.click(f'{GS} .gs-section[data-section="string-enrichment"] .gs-placeholder-do button:has-text("Retry")')
+    _all_ok(page, ["string-enrichment"])
 
 
 def test_clicking_a_gene_moves_the_links(env):
