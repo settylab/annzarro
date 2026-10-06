@@ -14,19 +14,37 @@ writes carry the same token, so a body is never served under a tag it was
 not read under. ``current(path)`` is the pinned token inside a request and
 a fresh one outside.
 
-The token is computed WITHOUT reading any data: a stat() fingerprint of the
-store (anndata rewrites recreate groups, which moves their directory
-mtimes; zarr rewrites an array's metadata file; an .h5ad file's mtime and
-size). Remote stores have no cheap fingerprint: their token is None and
-their replies get no ETag.
+The token is computed WITHOUT reading any data, from two parts:
+
+* a stat() fingerprint of the store: anndata rewrites recreate groups,
+  which moves their directory mtimes; zarr rewrites an array's metadata
+  file; an .h5ad file has its mtime and size. An in-place write of chunk
+  files (``g['obs/x'][:] = v``) moves none of these.
+* the dataset's generation: a small file per dataset in the state
+  directory (``~/.annzarro/freshness``), replaced on every bump. A cache
+  reset bumps it, and so does a refresh that finds the store changed
+  (server/routes: data/refresh). Every server process on the machine, each
+  gunicorn worker included, stats the same file, so one bump reaches all of
+  them; a reset used to clear only the worker that answered it.
+
+Remote stores have no cheap fingerprint: their token is the generation
+alone, and their replies get no ETag.
 """
 
 import contextlib
 import contextvars
+import hashlib
+import json
+import logging
 import os
+import tempfile
+import threading
+import time
 from typing import Optional
 
 from .remote import is_remote_path
+
+logger = logging.getLogger(__name__)
 
 # Members whose stat changes when a store, or one of its groups, is rewritten.
 _FINGERPRINT_MEMBERS = (".zgroup", ".zattrs", "zarr.json", ".zmetadata",
@@ -54,9 +72,81 @@ def store_fingerprint(dataset_path) -> Optional[str]:
     return "|".join(parts)
 
 
+# --- generations ---------------------------------------------------------
+
+_ALL = "all"
+# bumps that could not be written (no writable state directory): this process only
+_local = {}
+_local_lock = threading.Lock()
+
+
+def _generation_dir():
+    from ..utils.paths import user_state_dir
+    return user_state_dir() / "freshness"
+
+
+def _key(dataset_path) -> str:
+    if dataset_path is None:
+        return _ALL
+    name = str(dataset_path)
+    if not is_remote_path(name):
+        name = os.path.realpath(name)
+    return hashlib.sha1(name.encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def generation(dataset_path=None) -> str:
+    """The dataset's generation (``None``: the one every dataset shares)."""
+    key = _key(dataset_path)
+    try:
+        st = os.stat(_generation_dir() / key)
+        gen = f"{st.st_ino}:{st.st_mtime_ns}:{st.st_size}"
+    except OSError:
+        gen = "0"
+    local = _local.get(key)
+    return gen if local is None else f"{gen}+{local}"
+
+
+def state(dataset_path) -> dict:
+    """What the last bump recorded for the dataset ({} if none)."""
+    try:
+        with open(_generation_dir() / _key(dataset_path), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def bump(dataset_path=None, **recorded) -> None:
+    """Start a new generation of the dataset (``None``: of every dataset).
+
+    The file is replaced, not rewritten, so its inode changes and every
+    process sees a new generation on its next stat(). ``recorded`` is kept
+    in the file for the next refresh (``state``).
+    """
+    key = _key(dataset_path)
+    body = {"dataset_path": None if dataset_path is None else str(dataset_path),
+            "time": time.time(), **recorded}
+    folder = _generation_dir()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=f".{key}.")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(body, f)
+        os.replace(tmp, folder / key)
+    except OSError as exc:
+        logger.warning(f"Freshness of {dataset_path or 'all datasets'} kept in this process only: {exc}")
+        with _local_lock:
+            _local[key] = _local.get(key, 0) + 1
+
+
 def token(dataset_path) -> Optional[str]:
-    """The dataset's current freshness token, or None when there is none."""
-    return store_fingerprint(dataset_path)
+    """The dataset's current freshness token, or None for a missing local path."""
+    if not dataset_path:
+        return None
+    gen = f"{generation(dataset_path)}/{generation(None)}"
+    if is_remote_path(dataset_path):
+        return f"remote|{gen}"
+    fingerprint = store_fingerprint(dataset_path)
+    return None if fingerprint is None else f"{fingerprint}|{gen}"
 
 
 _pinned = contextvars.ContextVar("annzarro_freshness_pinned", default=None)

@@ -12,6 +12,7 @@ from flask import jsonify, request, current_app as app
 
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
+from ...core import freshness
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,11 @@ def register_zarr_routes(app, api_version):
             h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
             # The name search index is a cache too: a reset must rebuild it.
             name_index.clear(dataset_path)
+            # A new generation: the ETags change (an in-place chunk write
+            # kept the old ones, so the browser was answered 304 with its old
+            # body), and every other process, each gunicorn worker, drops
+            # its cached reads of the dataset on its next request.
+            freshness.bump(dataset_path, reason="cache_reset")
             
             # Add cache configuration to the response
             result["cache_config"] = {

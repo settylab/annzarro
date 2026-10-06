@@ -84,3 +84,40 @@ def test_a_new_etag_comes_with_the_new_body(server, tmp_path, kind):
     assert again.status_code == 200, "the store changed: no 304"
     assert again.headers["ETag"] != tag
     assert again.get_json()["data"]["total_counts"][0] == old + 1000, "new tag, old body"
+
+
+def _slice_write(path, value):
+    """``g['obs/total_counts'][0] = v``: chunk files only, no metadata, no group touched."""
+    import zarr
+    root = zarr.open_group(path, mode="r+", use_consolidated=False)
+    root["obs/total_counts"][0] = value
+
+
+def test_a_chunk_write_gets_a_new_etag_after_a_cache_reset(server, tmp_path):
+    """No stat() of the store's top level sees a chunk write, so after one
+    even a cache reset left the ETag as it was: the browser revalidated,
+    got 304 and kept its old body. A reset now starts a new generation."""
+    path = make_rich_store(tmp_path / "r.zarr")
+    first = _read(server, path)
+    old, tag = first.get_json()["data"]["total_counts"][0], first.headers["ETag"]
+    _slice_write(path, old + 1000)
+    assert _read(server, path, tag).status_code == 304, "a chunk write alone is not seen (by design)"
+    assert server.post("/api/v1/cache/reset", query_string={"dataset_path": path}).status_code == 200
+    again = _read(server, path, tag)
+    assert again.status_code == 200 and again.headers["ETag"] != tag
+    assert again.get_json()["data"]["total_counts"][0] == old + 1000
+
+
+def test_a_bump_from_another_process_reaches_this_one(server, tmp_path):
+    """A hosted server's reset reached only the gunicorn worker that answered
+    it. The generation lives in a file every worker stats: here a bump made
+    outside this process's caches (as another worker's would be) drops them."""
+    from annzarro.core import freshness
+    path = make_rich_store(tmp_path / "r.zarr")
+    old = _first_total_counts(server, path)
+    _slice_write(path, old + 1000)
+    assert _first_total_counts(server, path) == old, "served from the result cache"
+    folder = freshness._generation_dir()
+    freshness.bump(path)
+    assert (folder / freshness._key(path)).exists(), "the generation is a file, shared by every worker"
+    assert _first_total_counts(server, path) == old + 1000

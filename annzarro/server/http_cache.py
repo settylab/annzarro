@@ -11,13 +11,15 @@ with no body and no zarr read.
 The fingerprint follows the same rule as the dataset listing
 (``data_routes._listing_signature``): anndata rewrites recreate groups, which
 moves their directory mtimes, and zarr rewrites an array's metadata file. An
-in-place overwrite of chunk files alone is not seen -- the same assumption the
-server's result cache already makes (README, "Caches assume the store does not
-change"). Remote stores get no ETag: there is no cheap fingerprint.
+in-place overwrite of chunk files alone is not seen until a refresh or a cache
+reset (below). Remote stores get no ETag: there is no cheap fingerprint.
 
 The fingerprint is the dataset's freshness token (core/freshness.py),
 computed once per request and shared with the server's result cache, so the
-body sent is always the one read under the tag it carries.
+body sent is always the one read under the tag it carries. The token also
+holds the dataset's generation, which a cache reset or a refresh that finds
+the store changed moves: in-place chunk writes, which no stat() of the
+store's top level sees, then get new tags too.
 
 ``ENCODING_VERSION`` is part of every tag, so a server whose reply format
 changed never matches a body cached from an older one.
@@ -31,6 +33,7 @@ import logging
 from flask import current_app, make_response, request
 
 from ..core import freshness
+from ..core.remote import is_remote_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +68,10 @@ def conditional(view):
             return view(*args, **kwargs)
         # One token for the tag and for the result cache the view reads, so
         # the body sent is the one the tag names (core/freshness.py)
-        with freshness.pinned(request.args.get("dataset_path")) as token:
-            etag = _etag_for(token)
+        dataset_path = request.args.get("dataset_path")
+        with freshness.pinned(dataset_path) as token:
+            # remote stores: no fingerprint, so no tag (their token is the generation alone)
+            etag = None if is_remote_path(dataset_path) else _etag_for(token)
             if etag is not None and request.if_none_match.contains_weak(etag):
                 response = current_app.response_class(status=304)
                 response.set_etag(etag, weak=True)
