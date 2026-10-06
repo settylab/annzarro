@@ -142,7 +142,7 @@ test('STRING enrichment: mapping states 5 of 6 (NOTAGENE not found); a term name
     const cov = a.coverage(result, base(a));
     assert.equal(cov.shown, 5);
     assert.equal(cov.total, 6);
-    assert.match(cov.lines()[0], /STRING: not found by the service \(1 genes\) -- NOTAGENE/);
+    assert.match(cov.lines()[0], /STRING: not found by the service \(1 gene\) -- NOTAGENE/);
     // enrichment is asked for with the STRING ids, not the names
     const enr = i.calls.find(c => /json\/enrichment$/.test(c.url));
     assert.ok(enr.opts.form.identifiers.split('\r').every(s => s.startsWith('9606.ENSP')));
