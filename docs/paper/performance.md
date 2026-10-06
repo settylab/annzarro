@@ -37,7 +37,7 @@ repository.
 ## Rerunning the benchmark
 
 The harness lives in `benchmark/` of the paper's companion repository
-(`settylab/annzarro-paper`, not yet public). It writes synthetic, seeded zarr v2 stores,
+(`settylab/annzarro-paper`, private until the paper is published; {ref}`paper-companion`). It writes synthetic, seeded zarr v2 stores,
 starts AnnZarro servers on localhost, and records latency, response bytes and server memory
 for each request. Results and their interpretation are in `benchmark/FINDINGS.md`; the
 measurement conditions and CSV columns are documented in `benchmark/README.md`.

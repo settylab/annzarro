@@ -93,13 +93,12 @@ UMAP, far in diffusion (265 cells). Blue: the reverse (392 cells).
 ## Build it
 
 The script lives in this repository's docs folder. It reads `bm_aging.zarr` and imports the
-figure helpers of the paper repository, so it runs in the paper's analysis environment:
+figure code of the paper's companion repository, which stays private until the paper is
+published ({ref}`paper-companion`). With a checkout of that repository, its analysis
+environment, and `ANNZARRO_PAPER` set to the checkout:
 
 ```bash
-cd ~/gits/annzarro            # this repository
-~/gits/annzarro-paper/.venv/bin/python docs/_tools/make_showcase_store.py \
-    --src ~/gits/annzarro-paper/data/bm_aging.zarr \
-    --dst ~/gits/annzarro-paper/data/bm_aging_showcase.zarr
+ANNZARRO_PAPER=/path/to/annzarro-paper python docs/_tools/make_showcase_store.py --src bm_aging.zarr --dst bm_aging_showcase.zarr
 ```
 
 It runs in about 15 seconds on an Apple-silicon laptop. Most of that is the two 8,090²
@@ -171,11 +170,10 @@ stretch with the tile's shape. Make the tile roughly square, as in these screens
 the section's proportions.
 ```
 
-Build it (the download is 28 MB and is cached in `data/_downloads/`):
+Build it (the download is 28 MB and is cached in the `--download-dir`):
 
 ```bash
-~/gits/annzarro-paper/.venv/bin/python docs/_tools/make_spatial_demo.py \
-    --out ~/gits/annzarro-paper/data/spatial_demo.zarr
+python docs/_tools/make_spatial_demo.py --out spatial_demo.zarr --download-dir _downloads
 ```
 
 The build takes about 10 seconds after the download.

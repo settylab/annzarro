@@ -73,13 +73,14 @@ stay valid when the paper's figures are renumbered.
 The share links on these pages open a store on a local AnnZarro server: they are written for
 `http://127.0.0.1:8000` with the store's file name in the server's data directory
 ({doc}`../getting-started/quickstart`; to change the address or the store path, see
-{ref}`tut-start-links`). Each page needs one of three stores.
+{ref}`tut-start-links`). Each page needs one of these stores.
 
 | Page | Store | How to get it |
 |---|---|---|
-| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Build it from the public raw data with the paper repository's `data_prep/` scripts: {doc}`../data/demo-data` |
-| {doc}`cell-by-cell`, {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | `bm_aging.zarr` plus precomputed fields, built from it in about 15 s: {doc}`../data/showcase-store` |
-| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Build it from the public Tahoe-100M release: {ref}`paper-scale-store` |
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Public raw data and every build step, in Python: {doc}`../data/demo-data`. The ready-made scripts are in the companion repository ({ref}`paper-companion`) |
+| {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | `bm_aging.zarr` plus precomputed fields: {doc}`../data/showcase-store`. The build script uses the paper's figure code, so it runs only with the companion repository ({ref}`paper-companion`) |
+| {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
+| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release; the build script will be published with the paper: {ref}`paper-scale-store` |
 | {doc}`deployment` | none | The figure is a diagram |
 
 ```{important}
@@ -88,6 +89,15 @@ the figures will be deposited on Zenodo with the paper's release. The record doe
 its DOI and download instructions will be added here when it does. Until then, build the stores
 as described in the table.
 ```
+
+(paper-companion)=
+## The paper's companion repository
+
+Some pages name files such as `figures/…`, `data_prep/…` or `benchmark/…`. They are in the
+paper's companion repository, `settylab/annzarro-paper`, which stays private until the paper is
+published. The names say where a figure, a number or a view comes from; you do not need them to
+open the views. Where a store can only be built with a script from that repository, the page
+says so.
 
 ```{toctree}
 :hidden:

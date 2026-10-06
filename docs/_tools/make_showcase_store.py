@@ -29,13 +29,14 @@ rows/cols ~ n_obs/n_vars at ~5e5 values; obsp/varp chunks hold whole rows.
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-PAPER = Path.home() / "gits/annzarro-paper"
+PAPER = Path(os.environ.get("ANNZARRO_PAPER", Path.home() / "gits/annzarro-paper"))
 sys.path.insert(0, str(PAPER))
 
 import anndata as ad  # noqa: E402

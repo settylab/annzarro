@@ -19,9 +19,10 @@ AnnZarro-ready Zarr store.
 The raw data are the CITE-seq ageing atlas on Zenodo,
 [doi:10.5281/zenodo.15587768](https://doi.org/10.5281/zenodo.15587768) (CC BY 4.0). The file is
 `murine_bone_marrow_aging.h5ad`, 2,439,076,864 bytes, MD5 `3e346c91e029e5fde551a9ebf9ecee78`.
-Three scripts in the paper repository
-([settylab/annzarro-paper](https://github.com/settylab/annzarro-paper), folder `data_prep/`) turn it into
-the store:
+Three scripts in the paper's companion repository (`settylab/annzarro-paper`, folder `data_prep/`)
+turn it into the store. That repository stays private until the paper is published
+({ref}`paper-companion`); until then, follow the same steps in Python with
+{doc}`preparing-a-store`, {doc}`kompot` and {doc}`pairwise-matrices`.
 
 1. `download_data.sh` downloads the h5ad with parallel range requests and checks the MD5.
 2. `run_kompot.py` runs the Kompot tutorial as a script. It computes Palantir diffusion maps
@@ -42,7 +43,7 @@ timings and every correction to the draft procedure.
 
 ## Regenerate it
 
-Run from the root of the paper repository with its analysis environment (scanpy, Kompot 0.8,
+Once the companion repository is public, run from its root with its analysis environment (scanpy, Kompot 0.8,
 Palantir). The whole run takes about two minutes after the download and needs about 32 GB
 of RAM, because the Kompot layers are float64 in memory.
 
@@ -54,8 +55,8 @@ $PY data_prep/prepare_annzarro_store.py --report data/prepare_report.json   # ~5
 ```
 
 The processed store is not yet available as a download. The paper's data availability
-statement says it will be deposited on Zenodo with the release. Until then, regenerate it
-as above.
+statement says it will be deposited on Zenodo with the release. Until then, build it with the
+steps of {doc}`preparing-a-store`.
 
 To check a copy, hash every file of the directory store in a fixed order:
 

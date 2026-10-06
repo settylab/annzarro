@@ -274,7 +274,9 @@ companion repository runs them as scripts; about 10 minutes on a 16-core worksta
   - {doc}`chunking`
 ```
 
-Commands, from the root of the companion repository `settylab/annzarro-paper`:
+Commands, from the root of the companion repository `settylab/annzarro-paper`, which stays
+private until the paper is published ({ref}`paper-companion`; until then, the pages in the table
+give each step in Python):
 
 ```bash
 N=16 data_prep/download_data.sh data                         # Step 3

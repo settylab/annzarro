@@ -155,4 +155,4 @@ underlays and a static-site mode. A Cells strip gives, per tool, the largest dat
 Tahoe-100M of which it drew every cell within a 16 GiB client memory budget; AnnZarro's own
 measurements on Tahoe-100M are on {doc}`scale`. The panel is not an AnnZarro view and has no walkthrough here. The
 source behind every cell of the table is listed in the paper's companion repository
-(`figures/COMPARISON_NOTES.md` in settylab/annzarro-paper, checked October 2026).
+(`figures/COMPARISON_NOTES.md`, checked October 2026; {ref}`paper-companion`).
