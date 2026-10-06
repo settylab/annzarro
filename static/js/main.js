@@ -817,10 +817,12 @@ const App = (function() {
                 document.getElementById('cell-count').textContent = 'Loading..';
                 document.getElementById('gene-count').textContent = 'Loading..';
 
-                // Reset backend cache for the current dataset (if one is selected)
-                // Only an admin may clear a hosted server's shared cache; for
-                // everyone else Refresh reloads in this browser only, and a
-                // refusal (403 admin_only) is expected, not an error.
+                // Every user: the server checks the store against the disk
+                // and, if it changed, serves the change from every worker.
+                await DataManager.revalidateDataset(datasetPath);
+                // Clearing the server's whole cache for the dataset as well is
+                // for an admin of a hosted server (and the desktop); a refusal
+                // (403 admin_only) is expected, not an error.
                 if (_refreshPlan.resetServerCache) {
                     try {
                         await DataManager.resetBackendCache(datasetPath);

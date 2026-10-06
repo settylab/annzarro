@@ -127,10 +127,12 @@ export function describeFailure(result, fallback) {
 /**
  * What the header's Refresh button does for this user.
  *
+ * Every user's refresh asks the server to re-check the store against the
+ * disk (POST data/refresh), which serves a changed store afresh to everyone.
  * On a hosted server (login on, or reachable from the network) clearing the
- * server's cache is admin-only (POST /cache/reset answers 403 admin_only):
- * the cache is shared by every user. Everyone else still gets a refresh of
- * the dataset and panels in their own browser, and a tooltip that does not
+ * whole server cache is admin-only (POST /cache/reset answers 403
+ * admin_only): the cache is shared by every user. Everyone else gets the
+ * re-check and a refresh in their own browser, and a tooltip that does not
  * promise a server cache clear.
  * @param {Object|null} me - `{auth_enabled, username, is_admin, exposed}` from auth/me
  * @returns {{resetServerCache: boolean, title: string}}
@@ -141,7 +143,7 @@ export function refreshPlan(me) {
     return {
         resetServerCache,
         title: resetServerCache
-            ? "Reload this dataset and clear the server's cache for it"
-            : "Reload this dataset in this browser (only an admin can clear the server's shared cache)"
+            ? "Reload this dataset, re-checked against the disk, and clear the server's cache for it"
+            : "Reload this dataset, re-checked against the disk (only an admin can clear the server's shared cache)"
     };
 }

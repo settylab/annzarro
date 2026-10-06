@@ -23,7 +23,7 @@ The token is computed WITHOUT reading any data, from two parts:
 * the dataset's generation: a small file per dataset in the state
   directory (``~/.annzarro/freshness``), replaced on every bump. A cache
   reset bumps it, and so does a refresh that finds the store changed
-  (server/routes: data/refresh). Every server process on the machine, each
+  (``revalidate``: POST /api/v1/data/refresh, open to every user). Every server process on the machine, each
   gunicorn worker included, stats the same file, so one bump reaches all of
   them; a reset used to clear only the worker that answered it.
 
@@ -147,6 +147,76 @@ def token(dataset_path) -> Optional[str]:
         return f"remote|{gen}"
     fingerprint = store_fingerprint(dataset_path)
     return None if fingerprint is None else f"{fingerprint}|{gen}"
+
+
+# --- refresh: is the store on disk still what was served? -----------------
+
+#: A refresh walks every file of a store; past this many seconds it stops
+#: and assumes the store changed.
+DEEP_BUDGET_S = 3.0
+#: A refresh that could not check (remote store, walk over budget) starts a
+#: new generation at most this often per dataset.
+UNCHECKED_MIN_INTERVAL_S = 5.0
+
+
+def deep_fingerprint(dataset_path, budget_s: float = DEEP_BUDGET_S) -> Optional[str]:
+    """A digest of every file's path, mtime and size, or None when it cannot
+    be had (remote, missing, or the walk took longer than ``budget_s``).
+
+    This is what sees an in-place chunk write. It reads no data, but it
+    stats every chunk file, so it runs on a refresh, never per request.
+    """
+    if not dataset_path or is_remote_path(dataset_path):
+        return None
+    try:
+        st = os.stat(dataset_path)
+    except OSError:
+        return None
+    if not os.path.isdir(dataset_path):
+        return f"file:{st.st_mtime_ns}:{st.st_size}"
+    digest = hashlib.sha1()
+    deadline = time.monotonic() + budget_s
+    stack, seen = [str(dataset_path)], 0
+    while stack:
+        folder = stack.pop()
+        try:
+            with os.scandir(folder) as entries:
+                for entry in sorted(entries, key=lambda e: e.name):
+                    seen += 1
+                    if seen % 1024 == 0 and time.monotonic() > deadline:
+                        return None
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                            continue
+                        est = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    digest.update(f"{entry.path}\0{est.st_mtime_ns}\0{est.st_size}\n"
+                                  .encode("utf-8", "surrogateescape"))
+        except OSError:
+            continue
+    return digest.hexdigest()
+
+
+def revalidate(dataset_path, **recorded) -> dict:
+    """A refresh: compare the store with what the last refresh recorded and
+    start a new generation if it differs (or could not be checked).
+
+    Any user may ask for this. It cannot force the server to re-read a store
+    that did not change: an unchanged store keeps its generation, and so its
+    ETags and every user's cached reads. ``recorded`` (e.g. whether the
+    consolidated metadata is stale) counts as part of the store's state.
+    """
+    deep = deep_fingerprint(dataset_path)
+    previous = state(dataset_path)
+    changed = deep is None or previous.get("deep") != deep or any(
+        previous.get(k) != v for k, v in recorded.items())
+    if deep is None and time.time() - previous.get("time", 0) < UNCHECKED_MIN_INTERVAL_S:
+        changed = False
+    if changed:
+        bump(dataset_path, deep=deep, reason="refresh", **recorded)
+    return {"changed": changed, "checked": deep is not None}
 
 
 _pinned = contextvars.ContextVar("annzarro_freshness_pinned", default=None)

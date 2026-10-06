@@ -270,6 +270,27 @@ const DataManager = (function() {
     }
 
     /**
+     * Ask the server to check the dataset against the disk (POST data/refresh,
+     * open to every user). When the store changed, every server process
+     * serves the change from now on and the browser's revalidations get new
+     * ETags; an unchanged store keeps everyone's caches. A failure is logged
+     * and reported, not thrown: the refresh in this browser still goes ahead.
+     * @returns {Promise<Object|null>} `{changed, checked}` or null
+     */
+    async function revalidateDataset(datasetPath = _currentDataset) {
+        if (!datasetPath) return null;
+        try {
+            const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams({ dataset_path: datasetPath })}`,
+                { method: 'POST' });
+            if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            console.warn('The server did not re-check the dataset:', error && error.message);
+            return null;
+        }
+    }
+
+    /**
      * Reset backend zarr reader cache for a specific dataset or all datasets
      * @param {string} [datasetPath] - Optional dataset path to reset cache for
      * @returns {Promise<Object>} - Cache reset result information
@@ -2205,6 +2226,7 @@ const DataManager = (function() {
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,
         clearDatasetCache,
+        revalidateDataset,
         resetBackendCache,
         getCacheKeys: () => CacheManager.keys(),
         // History navigation functions

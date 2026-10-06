@@ -106,6 +106,34 @@ def register_zarr_routes(app, api_version):
                 "message": f"Failed to clear cache: {str(e)}"
             }), 500
     
+    @app.route(f"/api/{api_version}/data/refresh", methods=["POST"])
+    def refresh_dataset():
+        """Check a dataset against the disk and serve its changes from now on.
+
+        Query parameters:
+            dataset_path: the dataset to check (required).
+
+        Open to every user who may read the dataset, unlike cache/reset: it
+        walks the store's files (core/freshness.py ``revalidate``) and starts
+        a new generation only when they changed, so every server process
+        then reads the changed store afresh, while an unchanged store keeps
+        what every user has cached. A hosted server's non-admins could not
+        see a change until a restart, and an admin's reset reached one
+        gunicorn worker.
+        """
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        from ...core import get_reader
+        try:
+            get_reader(dataset_path)
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc), "reason": "not_found"}), 404
+        except (ValueError, PermissionError, ImportError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        result = freshness.revalidate(dataset_path)
+        return jsonify({"status": "success", "dataset_path": dataset_path, **result})
+
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
     def get_dataset_metadata(dataset_path: str):
         """

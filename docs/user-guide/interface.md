@@ -18,10 +18,11 @@ The header. Numbers match the list below.
 1. **Dataset** lists every dataset the server found at the top level of its data directory
    (`~/annzarro-data` unless set with `--data-dir`) and in that directory's `datasets` folder. You can also type a
    path or a remote URL into its search field and press Enter ({doc}`remote-datasets`).
-2. **Refresh dataset** reloads the dataset list and reopens the current dataset with the
-   browser's cache cleared. On your own machine, and for admins of a hosted server, it also clears
-   the server's cache for that dataset; other users of a hosted server get a reload without it,
-   because that cache is shared. Use it after the store on disk changed.
+2. **Refresh dataset** reloads the dataset list and reopens the current dataset. The server first
+   re-checks the store against the disk and, if any file changed (an in-place write of values
+   included), serves the change from then on, to every user; the panels then read the dataset
+   again, past this browser's copies. On your own machine, and for admins of a hosted server, it
+   also clears the server's cache for that dataset. Use it after the store on disk changed.
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).
 5. **Previous cell / Next cell** step through the cells you focused.

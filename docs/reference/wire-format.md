@@ -208,7 +208,8 @@ first time and 300 bytes (headers only) for each repeat. Rewriting a store moves
 modification times, so old tags stop matching. Overwriting chunk files in place
 (`g["obs/x"][:] = v`) moves none of them, so the tag also holds the dataset's **generation**: a
 small file per dataset under `~/.annzarro/freshness` (`ANNZARRO_HOME`), replaced by
-`POST /api/v1/cache/reset`. After a reset every tag of that dataset changes, in every server
+`POST /api/v1/cache/reset` and by `POST /api/v1/data/refresh` when that finds the store's files
+changed (Refresh dataset; any user may). After either every tag of that dataset changes, in every server
 process on the machine (each gunicorn worker stats the same file), and the server's own result
 cache, keyed by the same token, is read afresh. Remote stores get no ETag.
 

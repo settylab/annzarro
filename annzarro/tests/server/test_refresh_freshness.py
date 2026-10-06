@@ -121,3 +121,53 @@ def test_a_bump_from_another_process_reaches_this_one(server, tmp_path):
     freshness.bump(path)
     assert (folder / freshness._key(path)).exists(), "the generation is a file, shared by every worker"
     assert _first_total_counts(server, path) == old + 1000
+
+
+def _hosted(tmp_path):
+    from annzarro.server.auth import AuthManager
+    from annzarro.server.core import create_app
+    users = tmp_path / "users.json"
+    manager = AuthManager(user_file=str(users))
+    manager.create_user("bob", "pw")
+    app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(tmp_path),
+                      "log_file": str(tmp_path / "t.log"), "auth_enabled": True, "user_file": str(users)})
+    client = app.test_client()
+    client.post("/login", data={"username": "bob", "password": "pw"})
+    return client
+
+
+def test_any_user_can_refresh_a_changed_store(tmp_path):
+    """On a hosted server only an admin may reset the shared cache, so a user
+    never saw a change until a restart. data/refresh is open to every user:
+    it starts a new generation only when the store on disk changed."""
+    import annzarro.core as core
+    core.zarr_reader.clear_cache()
+    bob = _hosted(tmp_path)
+    path = make_rich_store(tmp_path / "r.zarr")
+    assert bob.post("/api/v1/cache/reset", query_string={"dataset_path": path}).status_code == 403
+    old = _first_total_counts(bob, path)
+    first = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path})
+    assert first.status_code == 200, first.get_data(as_text=True)
+    tag = _read(bob, path).headers["ETag"]
+    # nothing changed: the generation, the tags and everyone's caches stay
+    unchanged = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
+    assert unchanged["changed"] is False and unchanged["checked"] is True
+    assert _read(bob, path, tag).status_code == 304
+    _slice_write(path, old + 1000)
+    changed = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
+    assert changed["changed"] is True
+    again = _read(bob, path, tag)
+    assert again.status_code == 200 and again.get_json()["data"]["total_counts"][0] == old + 1000
+    core.zarr_reader.clear_cache()
+
+
+def test_refresh_needs_a_dataset_it_may_read(tmp_path):
+    bob = _hosted(tmp_path)
+    assert bob.post("/api/v1/data/refresh").status_code == 400
+    outside = bob.post("/api/v1/data/refresh", query_string={"dataset_path": "/etc"})
+    assert outside.status_code == 403, outside.get_data(as_text=True)
+    assert bob.post("/api/v1/data/refresh", query_string={"dataset_path": str(tmp_path / "none.zarr")}).status_code == 404
+    from annzarro.server.core import create_app
+    anonymous = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "a.log"),
+                            "auth_enabled": True, "user_file": str(tmp_path / "users.json")}).test_client()
+    assert anonymous.post("/api/v1/data/refresh", query_string={"dataset_path": str(tmp_path)}).status_code == 401

@@ -65,3 +65,19 @@ test('a dataset refresh drops that dataset\'s replies, keyed URL-encoded', () =>
     CacheManager.set(key('obs', path), [5]);
     assert.equal(DataManager.clearDatasetCache(path), 1);
 });
+
+test('a refresh asks the server to re-check the dataset, for every user', async () => {
+    const calls = [];
+    globalThis.fetch = async (url, opts) => {
+        calls.push([String(url), opts && opts.method]);
+        return new Response(JSON.stringify({ status: 'success', changed: true, checked: true }), { status: 200 });
+    };
+    const r = await DataManager.revalidateDataset('/data/my store/a.zarr');
+    assert.deepEqual(r.changed, true);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0][0], /\/data\/refresh\?dataset_path=%2Fdata%2Fmy\+store%2Fa\.zarr$/);
+    assert.equal(calls[0][1], 'POST');
+    // a server that cannot re-check does not stop the refresh in the browser
+    globalThis.fetch = async () => new Response('{}', { status: 500 });
+    assert.equal(await DataManager.revalidateDataset('/x.zarr'), null);
+});
