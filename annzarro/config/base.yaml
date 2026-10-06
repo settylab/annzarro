@@ -112,7 +112,7 @@ ui:
     - gene-plot
     - cell-table
     - gene-table
-    # - gene-set  # Uncomment to enable gene set analysis
+    - gene-set
   
   # Default visualization settings
   defaults:

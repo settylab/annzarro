@@ -123,10 +123,11 @@ test('integrations: ask by default; on, off and YAML booleans; anything else is 
     assert.deepEqual(full.stringDb, { baseUrl: 'https://version-12-5.string-db.org/api', version: '12.5' });
     assert.equal(readIntegrations({ integrations: { string_db: { base_url: 'http://insecure' } } }).stringDb.baseUrl, null);
     assert.equal(readIntegrations({ integrations: { gene_set: { timeout_ms: -1 } } }).timeoutMs, 20000);
-    // the client's defaults: STRING pinned to 12.5
+    // the client's defaults: STRING pinned to 12.5, the panel offered
     assert.equal(Config.STRING_DB.BASE_URL, 'https://version-12-5.string-db.org/api');
     assert.equal(Config.STRING_DB.VERSION, '12.5');
     assert.equal(Config.INTEGRATIONS.externalRequests, 'ask');
+    assert.ok(Config.DEFAULTS.ENABLED_PANEL_TYPES.includes('gene-set'));
 });
 
 function memoryStorage(initial = {}) {

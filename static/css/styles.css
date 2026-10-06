@@ -1140,41 +1140,154 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 
-/* Gene Set Panel Styles */
-.gene-set-panel {
+/* Gene Set Analysis panel (panels/gene-set.js): controls in the plot
+   controls' grid idiom, a freshness bar, then the sections, which scroll.
+   Status words always come with their colour; a stale result is dimmed. */
+.gs-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
+    position: relative;
 }
 
-.gene-set-controls {
-    padding: 0.5rem;
+.gs-controls {
+    --ctl-u: 4px;
+    --ctl-label: 3.5rem;
+    --ctl-h: 1.75rem;
+    padding: calc(2 * var(--ctl-u));
     border-bottom: 1px solid #dee2e6;
     background-color: #f8f9fa;
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+    container: gs-controls / inline-size;
+}
+.gs-controls .form-select-sm,
+.gs-controls .form-control-sm {
+    min-height: var(--ctl-h);
+    height: var(--ctl-h);
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 0.8125rem;
+}
+@container gs-controls (min-width: 640px) {
+    .gs-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+.gs-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ctl-u); }
+.gs-auto.active { background: #6c757d; color: #fff; }
+.gs-hint { color: #6c757d; white-space: nowrap; font-size: 0.75rem; }
+.gs-hint--error { color: #a94442; white-space: normal; }
+.gs-species { position: relative; flex-wrap: wrap; }
+.gs-species input { flex: 1 1 12rem; min-width: 0; }
+.gs-sections-wrap { position: relative; }
+.gs-menu {
+    position: absolute; z-index: 20; top: calc(100% + 2px); right: 0;
+    min-width: 18rem; padding: 4px 0;
+    background: #fff; border: 1px solid #ced4da; border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.gs-menu__item {
+    display: flex; width: 100%; gap: 6px; align-items: baseline;
+    padding: 3px 10px; border: 0; background: none; text-align: left; font-size: 0.8125rem;
+}
+.gs-menu__item:hover, .gs-menu__item:focus { background: #e9ecef; outline: none; }
+.gs-menu__check { flex: 0 0 1em; color: #0d6efd; }
+.gs-menu__warn { color: #8a6d3b; font-size: 0.75rem; }
+
+/* one persistent line: fresh, stale or a notice */
+.gs-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+    padding: 4px 8px; font-size: 0.8125rem;
+    border-bottom: 1px solid #dee2e6; border-left: 3px solid #9aa9b7;
+}
+.gs-bar--ok { border-left-color: #5a9e6f; color: #3d5a45; }
+.gs-bar--notice { border-left-color: #31708f; color: #245269; background: #f4f9fb; }
+.gs-bar--stale { border-left-color: #c09853; color: #7a5f34; background: #fcf8e3; }
+.gs-bar__text { flex: 1 1 16rem; min-width: 0; }
+.gs-bar__actions { display: flex; gap: 4px; }
+.gs-consent {
+    padding: 8px 10px; font-size: 0.8125rem;
+    background: #e7f3f8; border-bottom: 1px solid #bce8f1;
+}
+.gs-consent__list { margin: 4px 0; padding-left: 18px; }
+.gs-consent__warn { color: #8a3a38; font-weight: 600; }
+.gs-consent__do { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.gs-sections { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 6px 12px; }
+.gs-section { border: 1px solid #dee2e6; border-radius: 4px; margin: 6px 0; background: #fff; }
+.gs-section__head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; background: #f8f9fa; border-radius: 4px; }
+.gs-section__toggle {
+    flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 4px;
+    border: 0; background: none; padding: 3px 0; text-align: left; font-size: 0.875rem; font-weight: 600;
+}
+.gs-section__provider { font-weight: 400; color: #495057; }
+.gs-caret::before { content: "\25be"; display: inline-block; width: 1em; color: #6c757d; }
+.gs-section--hidden .gs-caret::before { content: "\25b8"; }
+.gs-section--hidden .gs-section__head { color: #6c757d; }
+.gs-section__actions { display: flex; gap: 2px; }
+.gs-section__actions .btn { padding: 0 6px; font-size: 0.75rem; line-height: 1.6; }
+.gs-section__params { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 6px 10px; border-bottom: 1px solid #eef0f2; font-size: 0.8125rem; }
+.gs-param { display: flex; align-items: center; gap: 6px; }
+.gs-param__label { font-weight: 500; color: #495057; }
+.gs-param__multi { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.gs-param__check { font-weight: 400; margin: 0; }
+.gs-section__body { padding: 4px 8px 6px; font-size: 0.8125rem; }
+.gs-section--stale .gs-section__result { opacity: 0.55; }
+
+.gs-badge { flex: none; font-size: 0.75rem; padding: 0 6px; border-radius: 8px; white-space: nowrap; color: #495057; background: #e9ecef; }
+.gs-badge--ok { color: #2f6b3f; background: #e3f1e6; }
+.gs-badge--loading { color: #245269; background: #e7f3f8; }
+.gs-badge--stale { color: #7a5f34; background: #fcf3e3; }
+.gs-badge--error { color: #8b3a38; background: #f8e1e1; }
+.gs-badge--hidden { background: none; color: #868e96; }
+.gs-badge .spinner-border-sm { width: 0.7rem; height: 0.7rem; border-width: 0.12em; }
+@media (prefers-reduced-motion: reduce) {
+    .gs-badge .spinner-border, .gs-loading .spinner-border { display: none; }
 }
 
-.gene-set-content {
-    flex: 1;
-    overflow: auto;
-    padding: 0.5rem;
+.gs-result-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0 4px; }
+.gs-filter { width: auto; max-width: 16rem; }
+.gs-table { margin: 0; font-size: 0.8125rem; }
+.gs-table th { font-weight: 600; white-space: nowrap; }
+.gs-table td, .gs-table th { padding: 2px 6px; }
+.gs-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gs-flag { color: #8a3a38; font-weight: 600; }
+.gs-more { display: flex; align-items: center; gap: 8px; color: #6c757d; }
+.gs-note { margin: 4px 0; color: #495057; }
+.gs-note--warn { color: #7a5f34; background: #fcf8e3; padding: 2px 6px; border-left: 3px solid #c09853; }
+.gs-unmapped summary { cursor: pointer; color: #495057; }
+.gs-unmapped__list { margin: 2px 0 4px 12px; overflow-wrap: anywhere; }
+.gs-attribution { margin-top: 4px; color: #6c757d; font-size: 0.75rem; }
+.gs-idle { margin: 2px 0; color: #6c757d; }
+.gs-loading { color: #245269; padding: 6px 0; }
+.gs-error-title { font-weight: 600; color: #8b3a38; margin: 4px 12px -6px; }
+.gs-placeholder-do { display: flex; gap: 6px; margin: 0 12px 8px; }
+.gs-network { overflow: auto; max-height: 70vh; border: 1px solid #eef0f2; background: #fff; }
+.gs-image { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.gs-card__title { font-size: 0.875rem; }
+.gs-card__meta, .gs-card__ids { color: #495057; }
+.gs-card__row { display: flex; gap: 8px; }
+.gs-card__key { flex: 0 0 11rem; color: #6c757d; }
+.gs-card__summary summary { cursor: pointer; color: #495057; }
+.gs-gene { padding: 0; font-size: inherit; vertical-align: baseline; text-decoration: none; }
+.gs-gene--focused { font-weight: 600; }
+.gs-links__title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0; }
+.gs-links__key { color: #6c757d; }
+.gs-links__row { margin: 2px 0 6px; line-height: 1.7; }
+.gs-links__list { margin-top: 6px; }
+.gs-links__copied { color: #2f6b3f; }
+.gs-link--off { color: #adb5bd; text-decoration: line-through dotted; cursor: help; }
+.gs-links__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.gs-find { width: 12rem; }
+.gs-columns { position: relative; }
+.gs-columns summary { cursor: pointer; padding: 1px 8px; border: 1px solid #6c757d; border-radius: 4px; color: #495057; }
+.gs-columns__list {
+    position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 16rem; max-height: 18rem; overflow: auto;
+    display: flex; flex-direction: column; padding: 6px 10px;
+    background: #fff; border: 1px solid #ced4da; border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
-
-.gene-set-section {
-    margin-bottom: 1rem;
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-}
-
-.gene-set-section-header {
-    padding: 0.5rem;
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
-    cursor: pointer;
-}
-
-.gene-set-section-content {
-    padding: 0.5rem;
-}
+.gs-pager { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: #6c757d; }
 
 /* Utility Classes */
 .hidden {

@@ -230,7 +230,7 @@ ui:
       items:
         type: string
         enum: [cell-plot, gene-plot, cell-table, gene-table, gene-set]
-      default: [cell-plot, gene-plot, cell-table, gene-table]
+      default: [cell-plot, gene-plot, cell-table, gene-table, gene-set]
     defaults:
       type: object
       description: Default UI settings

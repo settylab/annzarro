@@ -270,11 +270,12 @@ export function createRunner({ fetchImpl, setTimeout: setT, clearTimeout: clearT
     /**
      * Run section `id` for `key`. Resolves (never rejects) with the section's
      * state once this run settles, or once it is superseded or cancelled.
+     * `fresh` asks the service again instead of reusing a cached result.
      */
-    async function start(id, adapter, input, key) {
+    async function start(id, adapter, input, key, { fresh = false } = {}) {
         if (disposed) return get(id);
         abort(id);
-        const cached = cacheGet(key);
+        const cached = fresh ? undefined : cacheGet(key);
         let run = startRun(get(id), key, now());
         const token = run.token;
         // the input stays with its result: a stale result is drawn as what it was for

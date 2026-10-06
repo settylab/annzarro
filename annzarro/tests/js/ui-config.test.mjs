@@ -46,3 +46,9 @@ test('nothing sent leaves everything unset (null), autosave included', () => {
     assert.ok(Object.values(ui).every(v => v === null), JSON.stringify(ui));
     assert.equal(readUiSettings(undefined).autosaveEnabled, null);
 });
+
+test('the Gene Set Analysis panel is offered by default', async () => {
+    const { Config } = await import('../../../static/js/config.js');
+    assert.ok(Config.DEFAULTS.ENABLED_PANEL_TYPES.includes('gene-set'));
+    assert.ok(Config.PANEL_TYPES.some(p => p.type === 'gene-set'));
+});

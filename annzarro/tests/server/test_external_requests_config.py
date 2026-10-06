@@ -6,7 +6,7 @@
 - ``ANNZARRO_EXTERNAL_REQUESTS`` (off/ask/on) wins over the file, so the
   desktop app or an offline install can force ``off`` without one; an
   unknown value is ignored. ``config show`` does not call it unknown.
-- STRING is pinned to the versioned 12.5 host.
+- STRING is pinned to the versioned 12.5 host, and the panel is offered.
 """
 import os
 
@@ -41,6 +41,7 @@ def test_defaults_reach_the_browser(site):
     assert integrations["external_requests"] == "ask"
     assert integrations["gene_set"] == {"services": None, "timeout_ms": 20000}
     assert integrations["string_db"] == {"base_url": "https://version-12-5.string-db.org/api", "version": "12.5"}
+    assert "gene-set" in cfg["ui"]["enabled_panel_types"]
 
 
 def test_an_admin_turns_it_off(site):
