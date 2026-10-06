@@ -62,43 +62,6 @@ PROTOCOL = {  # paper view file -> docs name
 PROTOCOL_DATASET = "bm_aging.zarr"
 
 
-def _focus_gene(view: dict, gene: str) -> None:
-    """Focus `gene`, and point every unlocked varp axis or colour at it."""
-    view.setdefault("constants", {})["focusedGene"] = gene
-    for cfg in view["layout"]["panelConfigs"].values():
-        for axis in ("x", "y", "z", "color"):
-            a = cfg.get(axis)
-            if a and a.get("type") == "varp" and not a.get("locked"):
-                a["column"] = gene
-
-
-def _shared_smoothed_range(view: dict) -> None:
-    """Step 23: the Young and Old smoothed panels share one locked colour range: 0 to 3.77, the
-    larger of the two maxima for S100a9 (Young 3.77, Old 3.72), as in the cells-and-genes tutorial."""
-    for cfg in view["layout"]["panelConfigs"].values():
-        if cfg["color"].get("key") in ("kompot_de_Young_smoothed", "kompot_de_Old_smoothed"):
-            cfg.update(colorScale="Viridis", colorMin=0, colorMax=3.77, lockColorRange=True)
-
-
-def _colour_by_focused_gene_row(view: dict) -> None:
-    """Step 26: the gene plot is coloured by varp spearman_fold_change, row of the focused gene."""
-    gene = view["constants"]["focusedGene"]
-    for cfg in view["layout"]["panelConfigs"].values():
-        if cfg["id"].startswith("gene-plot"):
-            cfg["color"] = {"type": "varp", "key": "spearman_fold_change", "column": gene,
-                            "locked": False}
-            cfg.update(colorScale="RdBu", colorMin=-1, colorMax=1, lockColorRange=True)
-
-
-# Where the companion repository's view files differ from the paper's worked-example steps, the
-# paper's text wins (consistency audit R4): WE2, Step 20 focuses H2-Q7; WE3, Step 23 locks the
-# smoothed panels to a shared range; WE4, Step 26 colours by the focused gene's correlation row.
-PROTOCOL_FIXES = {
-    "protocol-B-volcano-spearman": lambda v: _focus_gene(v, "H2-Q7"),
-    "protocol-C-foldchange-umap": _shared_smoothed_range,
-    "protocol-D-locked-vs-focused-cell": _colour_by_focused_gene_row,
-}
-
 # The scale figure: docs name -> (paper view file in figures/scale, subset, title, changes)
 SCALE_STORE = "tahoe_panel_95.6M_plot.zarr"
 DEFAULT_SUBSET = {"n": 100000, "seed": 0}
@@ -131,7 +94,6 @@ def import_protocol() -> None:
     out.mkdir(parents=True, exist_ok=True)
     for src, name in PROTOCOL.items():
         view = json.loads((paper() / "data_prep" / "demo_panelsets" / f"{src}.view.json").read_text())
-        PROTOCOL_FIXES.get(name, lambda v: None)(view)
         (out / f"{name}.json").write_text(
             json.dumps(panelset_file(name, view, PROTOCOL_DATASET), indent=2) + "\n")
         print("wrote", out / f"{name}.json")
