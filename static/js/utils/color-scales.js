@@ -1,5 +1,6 @@
 /**
- * Which way the sequential colour maps run, for the Map picker's labels.
+ * Which way the sequential colour maps run, for the Map picker's labels,
+ * and which points "Strong on top" draws last (strongOnTopKey, below).
  *
  * Plotly's single-hue maps run from dark to light (Blues, Greens, Greys,
  * YlGnBu, YlOrRd), against the usual "pale for little, dark for a lot";
@@ -50,4 +51,63 @@ export function scaleOptionLabel(scale) {
 export function scaleGradient(stops, reversed = false) {
     const ordered = reversed ? stops.map(([t, c]) => [1 - t, c]).reverse() : stops;
     return `linear-gradient(to right, ${ordered.map(([t, c]) => `${c} ${Math.round(t * 1000) / 10}%`).join(', ')})`;
+}
+
+/*
+ * "Strong on top": which points are drawn last (on top).
+ *
+ * It ordered every map by |value|. That is right for a scale centred at 0
+ * (Center at 0) and for the diverging maps, whose middle is the neutral
+ * colour; it is wrong for a sequential map. Blues with Reverse (pale = low)
+ * and Min 0.3 locked: values far below 0.3, clamped to the pale end, have a
+ * large |value| and were drawn over the strong blue ones.
+ *
+ * So on a sequential map (no Center at 0) points are ordered by where their
+ * colour sits on the scale, clamped to [Min, Max] in drawn units (log10 when
+ * Log is on), and "strong" is the end away from the pale end: the end that
+ * stands out against the white plot. Reverse moves the pale end and so what
+ * counts as strong. A map with no near-white end (Portland, Jet, Viridis,
+ * ...) has no pale end; there the high end is strong, Reverse or not.
+ * Points clamped to the same end tie and keep data order. For values that
+ * are all at or above 0 on an unlocked range this is the |value| order it
+ * was. Missing values stay at the bottom.
+ */
+
+/** Diverging maps (neutral middle or two hues): strong on top stays |value|. */
+export const DIVERGING_SCALES = Object.freeze(new Set(['RdBu', 'Picnic', 'Bluered']));
+
+/**
+ * The near-white end of the sequential maps that have one ('low' or 'high'
+ * as Plotly 2.20 draws them, before Reverse): every channel of the end
+ * colour at 200/255 or more. Viridis' and Cividis' yellow, Blackbody's pale
+ * blue and the rainbow maps' ends are not near-white.
+ */
+export const PALE_END = Object.freeze({
+    Greys: 'high', YlGnBu: 'high', Greens: 'high', YlOrRd: 'high', Reds: 'low', Blues: 'high',
+    Hot: 'high', Earth: 'high', Electric: 'high'
+});
+
+/**
+ * The sort key of strong on top: points are drawn in ascending key order.
+ * @param {Object} o
+ * @param {string} o.scale - the colour map's name
+ * @param {boolean} [o.reversed]
+ * @param {boolean} [o.centred] - Center at 0
+ * @param {number} o.min - the drawn range (cmin, in drawn units)
+ * @param {number} o.max
+ * @returns {(v: number) => number} -Infinity for a missing value
+ */
+export function strongOnTopKey({ scale, reversed = false, centred = false, min, max }) {
+    const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+    if (centred || DIVERGING_SCALES.has(scale) || !(finite(min) && finite(max) && max > min)) {
+        return (v) => (finite(v) ? Math.abs(v) : -Infinity);
+    }
+    const pale = PALE_END[scale];
+    const paleHigh = pale ? (pale === 'high') !== !!reversed : false;
+    const span = max - min;
+    return (v) => {
+        if (!finite(v)) return -Infinity;
+        const p = v <= min ? 0 : v >= max ? 1 : (v - min) / span;
+        return paleHigh ? 1 - p : p;
+    };
 }

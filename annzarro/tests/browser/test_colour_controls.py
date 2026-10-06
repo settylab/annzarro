@@ -338,3 +338,66 @@ def test_slow_recolour_shows_busy(server, slow):
             page.close()
         finally:
             browser.close()
+
+
+SIGNED = {"type": "obsm", "key": "X_umap", "column": "0"}   # about -3.9 .. 2.4: both signs
+
+ORDER = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    // large-plot mode: one single-colour trace per colour step, drawn in trace order
+    const lum = c => {{ const m = c.match(/[\\d.]+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }};
+    const steps = gd.data.filter(t => t.meta === 'az-points' && typeof t.marker.color === 'string'
+                                      && t.marker.color.startsWith('rgb'));
+    if (steps.length) return {{ lums: steps.map(t => lum(t.marker.color)) }};
+    const t = gd.data.find(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+    return {{ values: t.marker.color }};
+}}"""
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_strong_on_top_follows_a_sequential_map(request, mode):
+    """Blues with Reverse (pale = low), Min 0.3 locked: values far below 0.3 are clamped to the pale end
+    and are drawn underneath; the strong blue ones (high) are on top. |value| put them over the blue."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            # large-plot mode bins over [Min, Max]: a Min below 0 puts pale bins on both sides of 0,
+            # where |bin centre| drew the palest ones (near Min) over the middle ones
+            page, errors = _open(browser, _link(server, color=SIGNED, colorScale="Blues", colorReversed=True,
+                                                colorMin=0.3 if mode == "regular" else -2, colorMax=2.4,
+                                                lockColorRange=True))
+            got = page.evaluate(ORDER)
+            if mode == "regular":
+                v = [x for x in got["values"] if x is not None]
+                below = [i for i, x in enumerate(v) if x <= 0.3]
+                above = [i for i, x in enumerate(v) if x > 0.3]
+                assert below and above and max(below) < min(above), "pale (clamped) points first, strong blue last"
+                assert [v[i] for i in above] == sorted(v[i] for i in above)
+                assert min(v) < -1 and v.index(min(v)) < min(above), "the most negative value is underneath"
+            else:
+                lums = got["lums"]
+                assert len(lums) > 2 and all(a >= b - 1e-9 for a, b in zip(lums, lums[1:])), lums
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_strong_on_top_centred_is_unchanged(server):
+    """Center at 0: still |value| ascending (the strongest of either sign on top)."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=SIGNED, colorScale="RdBu", centeringActive=True))
+            v = [x for x in page.evaluate(ORDER)["values"] if x is not None]
+            assert [abs(x) for x in v] == sorted(abs(x) for x in v)
+            page.click(f"#color-scale-{PID}")                    # a sequential map, still centred: |value|
+            page.select_option(f"#color-scale-{PID}", "Blues")
+            page.wait_for_timeout(1000)
+            v = [x for x in page.evaluate(ORDER)["values"] if x is not None]
+            assert [abs(x) for x in v] == sorted(abs(x) for x in v)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()

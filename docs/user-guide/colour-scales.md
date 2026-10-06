@@ -40,8 +40,8 @@ Numerical colour controls of the fold-change panel.
 7. **Hide Outliers** removes points whose value lies outside Min to Max. The axes keep their range.
 8. **Hide NaN** removes points with no value (also offered for categorical colours, where it
    removes the grey **NA** points). The axes keep their range.
-9. **Strong on top** (on by default) draws the points with the largest absolute colour value
-   last, so they are not hidden under weaker ones.
+9. **Strong on top** (on by default) draws the points with the strongest colours last, so they
+   are not hidden under weaker ones (see "Drawing order" below).
 10. **Log** switches to a log10 colour scale.
 11. **floor** is the smallest value the log scale shows; empty means the smallest positive value
     in the data.
@@ -139,6 +139,21 @@ Points are drawn one over the other, so in a dense plot the last drawn decide wh
 value last. In the volcano plot below, the genes most correlated or anticorrelated with H2-Q7 sit
 on top of the weakly correlated mass; with it off, the points are drawn in data order and strong
 values are scattered under weak ones.
+
+What counts as strong depends on the scale:
+
+- **Center at 0**, or a diverging map (RdBu, Picnic, Bluered): the largest absolute value, of
+  either sign, is drawn last.
+- A sequential map: the colour farthest from the map's pale end, as drawn. Points are ordered by
+  where their colour sits between Min and Max (on the log scale when **Log** is on); values
+  beyond Min or Max share the end colour and keep their data order. **Reverse** moves the pale
+  end, so with Blues reversed (pale for low values) the high values are drawn on top, and values
+  far below Min, which are drawn pale, stay underneath.
+- A map without a near-white end (Portland, Jet, Rainbow, Viridis, Cividis, Blackbody): the high
+  end is drawn last, Reverse or not.
+
+For values that are all zero or above, with Min and Max at the data range, all three orders are
+the same.
 
 ```{figure} ../_static/screens/user-guide/colour-strong-on-top.png
 :class: screenshot

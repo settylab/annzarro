@@ -82,3 +82,40 @@ test('3D: depth decides what is in front, so strong-on-top does not reorder', as
     await sortTracesByColor(stray, { sortByColor: true });
     assert.deepEqual(stray.data[0].x, [1, 2, 3]);
 });
+
+const { strongOnTopKey, PALE_END } = await import('../../../static/js/utils/color-scales.js');
+const order = (vals, o) => colorSortOrder(vals, strongOnTopKey(o)).map(i => vals[i]);
+
+test('sequential map, pale low (Blues + Reverse), Min 0.3 locked: clamped pale values go underneath', () => {
+    // the issue: -0.9 is clamped to the pale end but has the largest |value|; it was drawn on top
+    const vals = [0.5, -0.9, 0.95, 0.31, -0.4, null, 0.1];
+    const got = order(vals, { scale: 'Blues', reversed: true, min: 0.3, max: 1 });
+    assert.deepEqual(got, [null, -0.9, -0.4, 0.1, 0.31, 0.5, 0.95], 'clamped ties keep data order, then by position');
+});
+
+test('the strong end is the one away from the pale end; Reverse moves it', () => {
+    const vals = [0.2, 0.9, 0.5];
+    assert.equal(PALE_END.Blues, 'high');
+    assert.deepEqual(order(vals, { scale: 'Blues', min: 0, max: 1 }), [0.9, 0.5, 0.2], 'Blues: dark low is strong');
+    assert.deepEqual(order(vals, { scale: 'Blues', reversed: true, min: 0, max: 1 }), [0.2, 0.5, 0.9]);
+    assert.deepEqual(order(vals, { scale: 'Reds', min: 0, max: 1 }), [0.2, 0.5, 0.9], 'Reds: pale low');
+    // no near-white end: the high end is strong, Reverse or not
+    assert.deepEqual(order(vals, { scale: 'Viridis', min: 0, max: 1 }), [0.2, 0.5, 0.9]);
+    assert.deepEqual(order(vals, { scale: 'Portland', reversed: true, min: 0, max: 1 }), [0.2, 0.5, 0.9]);
+});
+
+test('centred (Center at 0) and diverging maps keep |value|', () => {
+    const vals = [0.5, -0.9, 0.95, -0.1];
+    const abs = [-0.1, 0.5, -0.9, 0.95];
+    assert.deepEqual(order(vals, { scale: 'Blues', reversed: true, centred: true, min: -1, max: 1 }), abs);
+    for (const scale of ['RdBu', 'Picnic', 'Bluered']) assert.deepEqual(order(vals, { scale, min: 0.3, max: 1 }), abs, scale);
+    // a constant range: nothing to place on a scale
+    assert.deepEqual(order(vals, { scale: 'Blues', min: 1, max: 1 }), abs);
+});
+
+test('non-negative values on an unlocked range: the same order |value| gave', () => {
+    const vals = [3, 0, 7.5, 1, null, 2];
+    for (const scale of ['Viridis', 'Portland', 'Reds']) {
+        assert.deepEqual(order(vals, { scale, min: 0, max: 7.5 }), order(vals, { scale: 'RdBu', min: 0, max: 7.5 }), scale);
+    }
+});
