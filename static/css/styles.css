@@ -419,7 +419,12 @@ body {
 
 .tile-controls {
     display: flex;
-    flex: none;
+    /* in a tile narrower than its buttons they wrap, right-aligned, rather
+       than push the close button past the edge */
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
     gap: 0.25rem;
 }
 
@@ -528,6 +533,9 @@ body {
 /* Plot controls: the layout is under "Plot controls grid" below. JS sets
    display flex/none on .plot-controls (controls-visibility.js). */
 .plot-controls {
+    /* never squeezed below its content (which then ran under the plot); a
+       panel too short for both scrolls instead */
+    flex-shrink: 0;
     padding: 0.5rem;
     border-bottom: 1px solid #dee2e6;
     background-color: #f8f9fa;
@@ -2799,6 +2807,22 @@ button.dtsb-button.dtsb-clear:hover {
     font-size: 0.8125rem;
     line-height: calc(var(--ctl-h) - 2px);
     white-space: nowrap;
+}
+
+/* A very narrow panel (a 10% split): every label on its own line above its
+   field, an axis's type above its key and column, number boxes narrower and
+   button text free to wrap, so nothing reaches past the panel's edge. */
+@container plot-controls (max-width: 279px) {
+    .plot-controls { --ctl-num: 3.5rem; }
+    .ctl-row { grid-template-columns: minmax(0, 1fr); }
+    .ctl-row.ctl-slider { grid-template-columns: minmax(0, 1fr) var(--ctl-num); }
+    .ctl-row > .ctl-label { grid-column: 1 / -1; }
+    .ctl-row.ctl-slider > .point-auto { grid-column: 1 / -1; grid-row: 3; }
+    .plot-controls .btn-sm { white-space: normal; height: auto; }
+    .axis-selector { flex-wrap: wrap; }
+    .axis-selector .axis-type-select { flex: 1 1 100%; }
+    .ctl-log { flex-wrap: wrap; max-width: 100%; }
+    .ctl-log .log-floor-input { width: 5rem; }
 }
 
 /* The 3rd axis row only appears with 3D on; axis lock/refocus buttons only

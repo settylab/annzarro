@@ -12,8 +12,16 @@ square right corners. A hidden button still counts as a group's first or last
 child too, so the test also hides the ends of a joined group and checks that
 the ends that show are rounded.
 
+Buttons wrap onto more lines as a panel narrows. The rule is geometric, so it
+holds for the lines as drawn: the wrapping colour toolbar is separate buttons
+with a gap, each rounded, and a joined group never wraps (checked: every
+button of a .btn-group on one line). At 320 px the toolbar is checked to
+wrap.
+
 One headless Chromium session on the committed 200-cell fixture checks the
-rule at 600 and 1600 px, for a numerical colour, after switching to a
+rule in the narrowest panel a split allows (11% of a 1280 px window), and
+in panels of 320, 600 and 1600 px, where nothing may reach past the panel's
+edge or scroll the page sideways; for a numerical colour, after switching to a
 categorical one (most toggles hidden) and back, with 3D on, and with the
 header's Save / Load / Share group missing its last and then its first button.
 
@@ -79,15 +87,32 @@ def server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root):
+def _link(root, narrow=False):
+    """The Cell Plot alone, or (narrow) in the 11% pane of a split, the narrowest a split allows."""
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
     colour = {"type": "obs", "key": "total_counts", "column": ""}
     cfg = {PID: {"id": PID, "title": "t", "x": x, "y": y, "z": None, "color": colour}}
-    view = {"v": 1, "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": PID, "controlsVisible": True}],
-                               "controlState": {PID: True}, "panelConfigs": cfg}}
+    tile = {"type": "tile", "id": PID, "controlsVisible": True}
+    hierarchy = [tile]
+    if narrow:
+        cfg["cell-plot-R"] = {"id": "cell-plot-R", "title": "r", "x": x, "y": y, "z": None, "color": colour}
+        hierarchy = [{"type": "split", "direction": "horizontal", "panes": [{"percentage": 11}, {"percentage": 89}],
+                      "children": [tile, {"type": "tile", "id": "cell-plot-R", "controlsVisible": False}]}]
+    view = {"v": 1, "layout": {"v": 1, "hierarchy": hierarchy, "controlState": {PID: True}, "panelConfigs": cfg}}
     enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
     return f"{root}/?dataset_path={STORE}#view={enc}"
+
+
+# How far the panel's controls reach past its edge, and the page past the window.
+OVERFLOW = """(pid) => {
+  const c = document.querySelector(`.tile[data-tile-id="${pid}"] .plot-controls`), r = c.getBoundingClientRect();
+  const out = [...c.querySelectorAll('select, input, button, label')]
+      .filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0
+                   && e.getBoundingClientRect().right > r.right + 0.5).map(e => e.id || e.className);
+  return {controls: c.scrollWidth - c.clientWidth, outside: out, page: document.documentElement.scrollWidth - innerWidth,
+          panel: Math.round(r.width)};
+}"""
 
 
 # Every visible .btn on the page whose corners break the rule, as
@@ -115,24 +140,54 @@ CORNERS = """() => {
 }"""
 
 
+# Joined groups whose buttons sit on more than one line (a wrapped joined group
+# cannot be drawn right); and how many lines the colour toolbar takes.
+LINES = """(pid) => {
+  const shown = (e) => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0;
+  const tops = (els) => new Set(els.filter(shown).map(e => Math.round(e.getBoundingClientRect().top)));
+  const wrapped = [...document.querySelectorAll('.btn-group')]
+      .filter(g => tops([...g.children].filter(c => c.classList.contains('btn'))).size > 1)
+      .map(g => g.id || g.className);
+  const toolbar = document.querySelector(`#color-range-container-${pid} .ctl-toggles`);
+  return {wrapped, toolbarLines: toolbar ? tops([...toolbar.querySelectorAll('.btn, input')]).size : 0};
+}"""
+
+
 def _assert_corners(page, when):
     res = page.evaluate(CORNERS)
     assert res["checked"] > 10, when
     assert not res["bad"], f"{when}: {res['bad']}"
+    lines = page.evaluate(LINES, PID)
+    assert not lines["wrapped"], f"{when}: joined group wrapped: {lines['wrapped']}"
+    return lines
 
 
-@pytest.mark.parametrize("width", [600, 1600])
+@pytest.mark.parametrize("width", ["narrowest", 320, 600, 1600])
 def test_buttons_round_only_their_free_corners(server, width):
+    narrow = width == "narrowest"
     with playwright.sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": width, "height": 1000})
+        page = browser.new_page(viewport={"width": 1280 if narrow else width, "height": 1000})
         try:
-            page.goto(_link(server))
+            page.goto(_link(server, narrow))
             page.wait_for_selector(f"#plot-container-{PID} .main-svg", timeout=30000)
             page.wait_for_function(f"""() => {{
                 const b = document.querySelector('#log-color-{PID}');
                 return b && getComputedStyle(b).display !== 'none'; }}""", timeout=30000)
-            _assert_corners(page, "numerical colour")
+            lines = _assert_corners(page, "numerical colour")
+            if width in ("narrowest", 320):
+                assert lines["toolbarLines"] >= 3, lines   # the case that has to hold when wrapped
+            # the panel header's buttons stay inside the tile (close included)
+            spill = page.evaluate(f"""() => {{
+                const t = document.querySelector('{TILE}'), r = t.getBoundingClientRect();
+                return [...t.querySelectorAll('.tile-header button')]
+                    .filter(b => getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().right > r.right + 0.5)
+                    .map(b => b.className); }}""")
+            assert not spill, spill
+            fit = page.evaluate(OVERFLOW, PID)
+            assert fit["controls"] <= 0 and not fit["outside"] and fit["page"] <= 0, fit
+            if narrow:
+                assert fit["panel"] < 160, fit
 
             key = f'{TILE} .axis-key-select[data-axis="color"]'
             page.select_option(key, "leiden")
