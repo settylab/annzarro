@@ -279,6 +279,10 @@ ui:
           type: integer
           description: Seed of that subset (same seed, same cells)
           default: 0
+        category_colour_limit:
+          type: integer
+          description: Most categories a categorical column may have to be coloured by (more are refused with too_many_categories)
+          default: 10000
     memory:
       type: object
       description: Browser memory guard (predicts what an action needs and refuses one that would crash the tab)

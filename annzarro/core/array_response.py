@@ -54,6 +54,14 @@ bytes (a multiple of 4, so the codes that follow are aligned), then n
 little-endian codes. Code k is categories[k]. A client that does not send
 ``categorical=codes`` (every client before this encoding) still gets JSON.
 
+A column with more than 65,536 categories (a barcode column has one per
+cell), or a request with ``categories=used``, gets only the categories the
+returned codes use, renumbered, and the header
+``X-Annzarro-Categories-Total`` with the column's count. A request with
+``categories=all`` (the client colouring by the column) is refused with 413
+``too_many_categories`` above the colour limit, from the column's metadata,
+before anything is read (core/categories.py).
+
 JSON
 ----
 JSON stays the default and keeps its shape contract (an n x 1 slice is still a
@@ -78,8 +86,9 @@ HEADER_DTYPE = "X-Annzarro-Dtype"
 HEADER_ENCODING = "X-Annzarro-Encoding"
 HEADER_NNZ = "X-Annzarro-Nnz"
 HEADER_CATEGORIES_BYTES = "X-Annzarro-Categories-Bytes"
+HEADER_CATEGORIES_TOTAL = "X-Annzarro-Categories-Total"
 EXPOSED_HEADERS = ", ".join((HEADER_SHAPE, HEADER_DTYPE, HEADER_ENCODING, HEADER_NNZ,
-                             HEADER_CATEGORIES_BYTES, "ETag"))
+                             HEADER_CATEGORIES_BYTES, HEADER_CATEGORIES_TOTAL, "ETag"))
 
 _F32_EXACT_INT = 2 ** 24
 
@@ -162,8 +171,14 @@ def code_dtype(n_categories: int) -> np.dtype:
     return np.dtype("<i4")
 
 
-def categorical_response(codes: np.ndarray, categories) -> Response:
-    """A categorical column as codes plus its categories (module docstring)."""
+def categorical_response(codes: np.ndarray, categories, total=None) -> Response:
+    """A categorical column as codes plus its categories (module docstring).
+
+    ``total``: the column's number of categories when ``categories`` holds
+    only those the codes use (core/categories.py); sent as
+    X-Annzarro-Categories-Total, so a client never takes the short list for
+    the column's.
+    """
     categories = [c.item() if isinstance(c, np.generic) else c for c in categories]
     codes = np.asarray(codes).reshape(-1)
     bad = (codes < 0) | (codes >= len(categories))
@@ -179,6 +194,8 @@ def categorical_response(codes: np.ndarray, categories) -> Response:
         HEADER_CATEGORIES_BYTES: str(len(prefix)),
         "Access-Control-Expose-Headers": EXPOSED_HEADERS,
     }
+    if total is not None:
+        headers[HEADER_CATEGORIES_TOTAL] = str(int(total))
     return Response(prefix + wire.tobytes(), mimetype=BINARY_MIMETYPE, headers=headers)
 
 

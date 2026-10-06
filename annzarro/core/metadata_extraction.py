@@ -12,6 +12,18 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 
 logger = logging.getLogger(__name__)
 
+
+
+def _category_count(group):
+    """Length of a categorical group's categories array, or None."""
+    try:
+        categories = group['categories']
+        shape = getattr(categories, 'shape', None)
+        return int(shape[0]) if shape else None
+    except Exception:
+        return None
+
+
 def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = None, detail_level: str = 'full') -> Dict[str, Any]:
     """
     Extract metadata from a zarr store using visititems for efficient single-pass traversal
@@ -347,15 +359,16 @@ def extract_metadata(path: Optional[str] = None, root: Optional[zarr.Group] = No
             elif encoding_type == 'categorical':
                 path_parts = name.split('/')
                 
-                # Handle obs categorical
-                if len(path_parts) == 2 and path_parts[0] == 'obs':
-                    col_name = path_parts[1]
-                    metadata['obs_columns_info'][col_name] = {'type': 'categorical'}
-                
-                # Handle var categorical
-                elif len(path_parts) == 2 and path_parts[0] == 'var':
-                    col_name = path_parts[1]
-                    metadata['var_columns_info'][col_name] = {'type': 'categorical'}
+                # Handle obs/var categorical. The number of categories is the
+                # length of the categories array, from its metadata (no read):
+                # a client decides from it whether a column can be coloured by
+                # (core/categories.py) before asking for anything.
+                if len(path_parts) == 2 and path_parts[0] in ('obs', 'var'):
+                    info = {'type': 'categorical'}
+                    n_categories = _category_count(obj)
+                    if n_categories is not None:
+                        info['n_categories'] = n_categories
+                    metadata[f'{path_parts[0]}_columns_info'][path_parts[1]] = info
             
             # Handle root-level containers
             elif name == 'layers':

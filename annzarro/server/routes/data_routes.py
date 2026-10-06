@@ -22,6 +22,7 @@ from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
 from ...core.array_response import wants_binary, wants_codes
+from ...core import categories as category_rules
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,40 @@ def _probe_dataset_counts(entry_path, probe):
     return counts
 
 
+def _category_rules_for(reader, dataset_path, entity, column_names, n_rows):
+    """Apply core/categories.py to one obs/var request before it reads.
+
+    Returns ``(n_categories, used_only)`` for a single requested column (None,
+    False otherwise). Raises TooManyCategories (413) for ``categories=all``
+    past the colour limit, and for a reply that would need more than
+    MAX_LABELS labels.
+    """
+    if not column_names or len(column_names) != 1:
+        if column_names:
+            meta = reader.get_metadata(dataset_path)
+            for column in column_names:
+                category_rules.check_labels(column, category_rules.category_count(meta, entity, column),
+                                            n_rows)
+        return None, False
+    column = column_names[0]
+    count = category_rules.category_count(reader.get_metadata(dataset_path), entity, column)
+    wanted = (request.args.get("categories") or "").lower()
+    if wanted == "all" and count is not None:
+        limit = category_rules.colour_limit(app.config)
+        if count > limit:
+            raise category_rules.TooManyCategories(column, count, limit, "colour")
+    category_rules.check_labels(column, count, n_rows)
+    return count, wanted == "used"
+
+
+def _axis_rows(reader, dataset_path, indices, axis):
+    """Rows a request reads: those named, else the axis length."""
+    if indices:
+        return len(indices)
+    shape = (reader.get_metadata(dataset_path) or {}).get("shape") or (0, 0)
+    return int(shape[axis]) if len(shape) > axis else 0
+
+
 def _reader_error_response(exc, dataset_path):
     """Turn a reader-construction failure into a response that names the CAUSE.
 
@@ -118,6 +153,8 @@ def _reader_error_response(exc, dataset_path):
     A remote store that stops answering is a 504: the failure is upstream of
     this server, and retrying later may well succeed, unlike a 500.
     """
+    if isinstance(exc, category_rules.TooManyCategories):
+        return jsonify(exc.body()), exc.status
     if isinstance(exc, DataRequestError):
         return _data_request_error_response(exc)
     if isinstance(exc, KeyError):
@@ -643,6 +680,9 @@ def register_data_routes(app, api_version):
             format: "f32" for the binary encoding of one numeric column.
             categorical: "codes" (with format=f32) for one categorical column
                 as integer codes plus its categories (core/array_response.py).
+            categories: "all" (colouring: refused with 413 too_many_categories
+                past the colour limit) or "used" (only the categories the rows
+                use; core/categories.py).
             
         Returns:
             JSON response with observation annotations
@@ -676,9 +716,12 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
+            n_categories, used_only = _category_rules_for(
+                reader, dataset_path_str, "cells", column_names,
+                _axis_rows(reader, dataset_path_str, row_indices, 0))
             if wants_codes(request.args) and column_names and len(column_names) == 1:
                 coded = process_file.extract_obs_var_codes(dataset_path_str, reader, row_indices,
-                                                           column_names[0], "cells")
+                                                           column_names[0], "cells", used_only, n_categories)
                 if coded is not None:
                     return coded
             return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells",
@@ -701,6 +744,7 @@ def register_data_routes(app, api_version):
             format: "f32" for the binary encoding of one numeric column.
             categorical: "codes" (with format=f32) for one categorical column
                 as integer codes plus its categories (core/array_response.py).
+            categories: "all" or "used", as on /data/obs.
             
         Returns:
             JSON response with variable annotations
@@ -734,9 +778,12 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
+            n_categories, used_only = _category_rules_for(
+                reader, dataset_path_str, "genes", column_names,
+                _axis_rows(reader, dataset_path_str, col_indices, 1))
             if wants_codes(request.args) and column_names and len(column_names) == 1:
                 coded = process_file.extract_obs_var_codes(dataset_path_str, reader, col_indices,
-                                                           column_names[0], "genes")
+                                                           column_names[0], "genes", used_only, n_categories)
                 if coded is not None:
                     return coded
             return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes",

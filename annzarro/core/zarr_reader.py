@@ -31,6 +31,7 @@ from .metadata_extraction import extract_metadata
 from .caching import CacheSettings, DatasetCache, cached_method
 from . import freshness
 from . import string_chunks
+from . import categories as category_rules
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
 # Try to import optional dependencies
@@ -1563,6 +1564,16 @@ class ZarrReader(CacheSettings):
             )
         return 0
 
+    def _read_categories(self, group, codes):
+        """A categorical group's categories, or ``(codes, categories)``
+        renumbered to the ones ``codes`` use when the column has more than
+        READ_ALL_MAX of them (core/categories.py)."""
+        member = group['categories']
+        n_categories = int(member.shape[0]) if getattr(member, 'shape', None) else 0
+        if n_categories <= category_rules.READ_ALL_MAX:
+            return self._read_member(member)
+        return category_rules.compact(codes, lambda positions: self._read_member(member, positions))
+
     def _get_categorical_values(self, group, indices=None, return_categories=False):
         """
         Get values from a categorical data structure in AnnData.
@@ -1586,12 +1597,17 @@ class ZarrReader(CacheSettings):
                 group.attrs['encoding-type'] == 'categorical' and
                 'codes' in group and 'categories' in group):
                 
-                # Get codes and categories
-                categories = self._read_member(group['categories'])
+                # Get codes and categories. Past READ_ALL_MAX categories (a
+                # barcode column has one per cell) only the categories these
+                # rows use are read, and the codes renumbered into them.
                 if indices is not None:
                     codes = group['codes'][indices]
                 else:
                     codes = group['codes'][:]
+                categories = self._read_categories(group, codes)
+                if isinstance(categories, tuple):
+                    codes, categories = categories
+                    categories = np.asarray(categories, dtype=object)
                 
                 # Map codes to categories using NumPy vectorization
                 # Create a mask for valid codes
@@ -1718,6 +1734,10 @@ class ZarrReader(CacheSettings):
                     # Add categories info if available
                     if categories:
                         categories_dict[col] = categories
+                    total = self._category_total(col_data)
+                    if total is not None and total > category_rules.READ_ALL_MAX:
+                        # the list holds only the categories these rows use
+                        result.setdefault('n_categories', {})[col] = total
                 else:
                     # Just get the values without categories
                     values = self._get_categorical_values(col_data, indices)
@@ -1746,15 +1766,29 @@ class ZarrReader(CacheSettings):
         
         return result
     
+    @staticmethod
+    def _category_total(group) -> Optional[int]:
+        """Number of categories of a categorical group, from its metadata."""
+        try:
+            if group.attrs.get('encoding-type') == 'categorical' and 'categories' in group:
+                return int(group['categories'].shape[0])
+        except Exception:
+            return None
+        return None
+
     @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
-                          column_name: Optional[str] = None, indices: Optional[List[int]] = None):
+                          column_name: Optional[str] = None, indices: Optional[List[int]] = None,
+                          used_only: bool = False):
         """``(codes, categories)`` of a categorical obs/var column, or None
         when the column is not categorical.
 
         The codes are the stored integer array, read by index; nothing is
         decoded into one string per cell, which is what made a categorical
-        column cost 12 B per cell on the wire (see array_response).
+        column cost 12 B per cell on the wire (see array_response). With
+        ``used_only``, or past READ_ALL_MAX categories, the categories are
+        only those the rows use and the codes index that list
+        (core/categories.py).
         """
         root = self._get_root(dataset_path=dataset_path)
         obj = "obs" if entity == "cells" else "var"
@@ -1765,8 +1799,15 @@ class ZarrReader(CacheSettings):
                 or 'codes' not in group or 'categories' not in group):
             return None
         try:
-            categories = self._read_member(group['categories'])
-            codes = group['codes'][indices] if indices is not None else group['codes'][:]
+            codes = np.asarray(group['codes'][indices] if indices is not None else group['codes'][:])
+            if used_only:
+                member = group['categories']
+                codes, categories = category_rules.compact(
+                    codes, lambda positions: self._read_member(member, positions))
+            else:
+                categories = self._read_categories(group, codes)
+                if isinstance(categories, tuple):
+                    codes, categories = categories
         except Exception as e:
             raise_if_timeout(e)
             raise store_read_error(group, e) from e
