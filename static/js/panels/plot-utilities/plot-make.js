@@ -1,4 +1,4 @@
-import { strongOnTopKey } from '../../utils/color-scales.js';
+import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
@@ -2506,7 +2506,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             size: settings.pointSize,
             opacity: settings.pointOpacity,
             color: tableFilteredIndices.map(idx => filteredData.color[idx]),
-            colorscale: settings.colorScale,
+            colorscale: plotlyColorscale(settings.colorScale),
             reversescale: settings.colorReversed,
             cmin: cmin,
             cmax: cmax,
@@ -2543,7 +2543,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     else {
       // Numerical coloring branch.
       baseTrace.marker.color = filteredData.color;
-      baseTrace.marker.colorscale = settings.colorScale;
+      baseTrace.marker.colorscale = plotlyColorscale(settings.colorScale);
       baseTrace.marker.reversescale = settings.colorReversed;
       
       // Update color sliders with the loaded data while preserving saved settings

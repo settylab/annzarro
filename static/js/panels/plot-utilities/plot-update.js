@@ -1,3 +1,4 @@
+import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   loadAxisData, 
@@ -352,7 +353,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         size: settings.pointSize,
                         opacity: settings.pointOpacity,
                         color: data.color,
-                        colorscale: settings.colorScale,
+                        colorscale: plotlyColorscale(settings.colorScale),
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : arrayMin(data.color.filter(v => !isNaN(v))),
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
@@ -460,7 +461,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   }
                   
                   if (updateOptions.colorScale || updateOptions.colors) {
-                      update['marker.colorscale'] = settings.colorScale;
+                      update['marker.colorscale'] = [plotlyColorscale(settings.colorScale)];   // [ ]: a stops array is one value, not one per trace
                       update['marker.reversescale'] = settings.colorReversed;
                   }
                   
@@ -554,7 +555,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         size: settings.pointSize,
                         opacity: settings.pointOpacity,
                         color: tableFilteredIndices.map(i => data.color[i]),
-                        colorscale: settings.colorScale,
+                        colorscale: plotlyColorscale(settings.colorScale),
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : undefined,
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
@@ -596,7 +597,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 }
                 
                 if (updateOptions.colorScale || updateOptions.colors) {
-                    update['marker.colorscale'] = settings.colorScale;
+                    update['marker.colorscale'] = [plotlyColorscale(settings.colorScale)];   // [ ]: a stops array is one value, not one per trace
                     update['marker.reversescale'] = settings.colorReversed;
                 }
                 

@@ -470,3 +470,66 @@ def test_strong_on_top_volcano_blues_reverse_min_locked(volcano_server):
             page.close()
         finally:
             browser.close()
+
+
+COUNTS = {"type": "obs", "key": "total_counts", "column": ""}
+
+DRAWN_SCALE = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    const i = gd.data.findIndex(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+    return {{ stops: gd._fullData[i].marker.colorscale,
+              steps: gd.data.filter(t => t.meta === 'az-points' && typeof t.marker.color === 'string').map(t => t.marker.color),
+              swatch: (document.querySelector('.tile[data-tile-id="{PID}"] .color-scale-swatch, .tile[data-tile-id="{PID}"] [id^=color-scale-swatch]') || {{}}).style?.backgroundImage || '' }};
+}}"""
+
+
+def _pick_map(page, name):
+    page.select_option(f"#color-scale-{PID}", name)
+    page.wait_for_timeout(700)
+
+
+def test_every_map_draws_its_own_colours(server):
+    """Each map the picker offers reaches Plotly as itself. Inferno, Magma and Plasma are not Plotly
+    names: passed by name they silently drew Plotly's default (RdBu's stops)."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=COUNTS))
+            names = page.evaluate(f"() => [...document.querySelectorAll('#color-scale-{PID} option')].map(o => o.value)")
+            assert {"Inferno", "Magma", "Plasma", "RdBu", "Viridis"} <= set(names), names
+            drawn = {}
+            for name in names:
+                _pick_map(page, name)
+                drawn[name] = json.dumps(page.evaluate(DRAWN_SCALE)["stops"])
+            same = {}
+            for name, stops in drawn.items():
+                same.setdefault(stops, []).append(name)
+            assert all(len(v) == 1 for v in same.values()), [v for v in same.values() if len(v) > 1]
+            ends = {n: json.loads(drawn[n]) for n in ("Inferno", "Magma", "Plasma")}
+            assert (ends["Inferno"][0][1], ends["Inferno"][-1][1]) == ("#000004", "#fcffa4")
+            assert (ends["Magma"][0][1], ends["Magma"][-1][1]) == ("#000004", "#fcfdbf")
+            assert (ends["Plasma"][0][1], ends["Plasma"][-1][1]) == ("#0d0887", "#f0f921")
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_large_plot_maps_draw_their_own_colours(large_server):
+    """Large-plot mode colours its steps from the resolved stops: Inferno's are not RdBu's."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(large_server, color=COUNTS, colorScale="RdBu"))
+            rdbu = page.evaluate(DRAWN_SCALE)["steps"]
+            _pick_map(page, "Inferno")
+            page.wait_for_timeout(800)
+            inferno = page.evaluate(DRAWN_SCALE)["steps"]
+            assert rdbu and inferno and set(rdbu) != set(inferno)
+            # Inferno runs black -> pale yellow: its darkest step is near black
+            lum = lambda c: sum(w * float(x) for w, x in zip((0.2126, 0.7152, 0.0722), c[c.index("(") + 1:-1].split(",")[:3]))
+            assert min(lum(c) for c in inferno) < 40, inferno
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()

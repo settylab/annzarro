@@ -95,3 +95,26 @@ export function strongOnTopKey({ scale, centred = false, min, max }) {
         return v <= min ? 0 : v >= max ? 1 : (v - min) / span;
     };
 }
+
+/*
+ * Maps the picker offers that Plotly 2.20 has no name for. Given a name it
+ * does not know, Plotly silently drew its default (RdBu's stops), so
+ * Inferno, Magma and Plasma looked like RdBu. They are passed to Plotly as
+ * explicit stops instead: 11 evenly spaced samples of the maps as matplotlib
+ * 3.11 ships them. The maps are by Nathaniel J. Smith and Stefan van der Walt
+ * (https://github.com/BIDS/colormap, colormaps.py), released under the CC0
+ * public domain dedication; credit is asked for, no terms are imposed.
+ */
+export const EXTRA_SCALES = Object.freeze({
+    Inferno: [[0.0, '#000004'], [0.1, '#160b39'], [0.2, '#420a68'], [0.3, '#6a176e'], [0.4, '#932667'], [0.5, '#bc3754'],
+        [0.6, '#dd513a'], [0.7, '#f37819'], [0.8, '#fca50a'], [0.9, '#f6d746'], [1.0, '#fcffa4']],
+    Magma: [[0.0, '#000004'], [0.1, '#140e36'], [0.2, '#3b0f70'], [0.3, '#641a80'], [0.4, '#8c2981'], [0.5, '#b73779'],
+        [0.6, '#de4968'], [0.7, '#f7705c'], [0.8, '#fe9f6d'], [0.9, '#fecf92'], [1.0, '#fcfdbf']],
+    Plasma: [[0.0, '#0d0887'], [0.1, '#41049d'], [0.2, '#6a00a8'], [0.3, '#8f0da4'], [0.4, '#b12a90'], [0.5, '#cc4778'],
+        [0.6, '#e16462'], [0.7, '#f2844b'], [0.8, '#fca636'], [0.9, '#fcce25'], [1.0, '#f0f921']]
+});
+
+/** What to give Plotly as `colorscale` for a map name: its stops for EXTRA_SCALES, else the name. */
+export function plotlyColorscale(name) {
+    return Object.prototype.hasOwnProperty.call(EXTRA_SCALES, name) ? EXTRA_SCALES[name] : name;
+}

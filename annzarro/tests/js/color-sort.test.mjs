@@ -119,3 +119,15 @@ test('non-negative values on an unlocked range: the same order |value| gave', ()
         assert.deepEqual(order(vals, { scale, min: 0, max: 7.5 }), order(vals, { scale: 'RdBu', min: 0, max: 7.5 }), scale);
     }
 });
+
+test('maps Plotly has no name for go to it as stops; the others by name', async () => {
+    const { plotlyColorscale, EXTRA_SCALES } = await import('../../../static/js/utils/color-scales.js');
+    for (const name of ['Inferno', 'Magma', 'Plasma']) {
+        const stops = plotlyColorscale(name);
+        assert.ok(Array.isArray(stops) && stops.length === 11, name);
+        assert.deepEqual(stops, EXTRA_SCALES[name]);
+        assert.equal(stops[0][0], 0); assert.equal(stops[10][0], 1);
+        assert.ok(stops.every(([t, c], i) => t === i / 10 && /^#[0-9a-f]{6}$/.test(c)), name);
+    }
+    for (const name of ['RdBu', 'Viridis', 'Blues', 'Portland', 'toString']) assert.equal(plotlyColorscale(name), name);
+});

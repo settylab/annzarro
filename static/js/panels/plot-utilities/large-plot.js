@@ -27,7 +27,7 @@
  * settings it cannot draw are refused with a message (largePlotRefusal):
  * far above the threshold the regular path would close the tab.
  */
-import { strongOnTopKey } from '../../utils/color-scales.js';
+import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
@@ -431,7 +431,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     }
     traces.push({
       type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false,
-      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: settings.colorScale,
+      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: plotlyColorscale(settings.colorScale),
         reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
     });
     layout.showlegend = false;
