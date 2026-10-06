@@ -360,13 +360,37 @@ z-score is above 2, all in the HSC cluster. Edit a condition and the mask follow
 **Paper, interface, panel c.** This view is panel c of the paper figure.
 :::
 
+The search box above the table (top right) narrows the rows further, on top of the conditions.
+
+27. Click **.\*** ("Regular Expression Mode") under the search box, so the search is a regular
+    expression, and type `(Mid|Old)`. The footer reads "Showing 1 to 25 of 286 entries": the
+    HSCs above z = 2 from Mid and Old mice. The plot follows: 286 cells "In table", 7,804
+    grey.
+
+    ```{figure} ../_static/screens/tutorials/we5-regex.png
+    :class: screenshot
+    :alt: The table's search box holding (Mid|Old) with the regular-expression and smart-search options switched on; rows of Mid HSCs with z-scores near 10; the footer "Showing 1 to 25 of 286 entries (filtered from 8,090 total entries)".
+    :width: 70%
+
+    A regular expression in the search box, combined with the two conditions.
+    ```
+
+    Keep the parentheses. With smart search on (the wand, the default), `Mid|Old` without them
+    matches only 56 rows, the Mid ones, because the search wraps the whole term in a pattern
+    that ties `Old` to the start of the row. A plain word works in either mode: `Old` alone finds
+    the 230 Old HSCs.
+28. Open the table's controls and click **Export CSV**. The file, named after the table title and
+    the date, holds the 286 rows that pass, with the columns of the table: `Cell ID`, `Age`,
+    `highres_celltype`, `kompot_da_Young_to_Old_lfc_zscore`. Close the controls and click a
+    cell ID in the table: that cell becomes the focused cell everywhere.
+
 (tut-tour-save)=
 ## 8. Save and share the view
 
 **Save Panel Set** stores the panel settings under a name on the server. Every user of the same
 server can load it, so a lab can keep a shared library of views ({doc}`../user-guide/panel-sets`).
 
-27. Click **Save Panel Set** in the header, type a name, click **Save**.
+29. Click **Save Panel Set** in the header, type a name, click **Save**.
 
     ```{figure} ../_static/screens/paper/fig2-save-panel-set.png
     :class: screenshot
@@ -374,7 +398,7 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
     :width: 60%
     ```
 
-28. To reopen it, click **Load Panel Set**, click its card and click **Load**. Each card shows
+30. To reopen it, click **Load Panel Set**, click its card and click **Load**. Each card shows
     the dataset and one icon per panel; **Export** downloads the set as a JSON file.
 
     ```{figure} ../_static/screens/paper/fig2-load-panel-set.png
@@ -424,7 +448,7 @@ that server, visible to its other users.
 (tut-tour-share)=
 ### Share link
 
-29. Click **Share Link**. The link is copied to the clipboard. Where the browser does not allow
+31. Click **Share Link**. The link is copied to the clipboard. Where the browser does not allow
     that (a plain `http` address on a cluster node, for example), the link appears in a field
     under the button, already selected; copy it with Ctrl+C or Cmd+C.
 

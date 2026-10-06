@@ -6,6 +6,7 @@
 modes
 personal-server
 lab-server
+analyst-workflow
 authentication
 hosting-checklist
 ```

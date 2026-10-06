@@ -25,6 +25,7 @@ sudo python3 -m venv /opt/annzarro/venv
 sudo /opt/annzarro/venv/bin/pip install annzarro gunicorn     # 'annzarro[remote]' for remote stores
 ```
 
+(lab-server-data-dir)=
 ## 2. Lay out the data directory
 
 ```bash
@@ -119,8 +120,7 @@ login, no confinement).
 **Workers and memory.** Each gunicorn worker is a separate process with its own result cache,
 so memory grows with `workers x cache_memory_mb`. The production default for
 `cache_memory_mb` is 4,000 MB; with four workers that allows 16 GB of cache, which is why the
-example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. On the paper's lab deployment, three server processes used 0.58 to 0.92 GB
-resident each while serving 33 datasets (2.2 TiB on disk). Logins work across workers because
+example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. Logins work across workers because
 the session cookie is signed with one key stored beside the users file.
 
 **Timeouts.** gunicorn kills a worker whose request takes longer than its timeout (60 s in the
@@ -157,6 +157,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now annzarro
 journalctl -u annzarro -f
 ```
+
+(lab-server-several)=
+**Several services on one host** (two ports, or a public and an internal instance): give each
+its own `ANNZARRO_HOME` (for example `/var/lib/annzarro-public` and `/var/lib/annzarro-lab`).
+`$ANNZARRO_HOME/freshness` holds the datasets' generations, which every ETag includes
+({ref}`revalidation`). A service's start begins a new generation of every dataset, and an admin's
+cache clear one of its dataset; with a shared `ANNZARRO_HOME` that invalidates the other
+services' ETags too. Nothing breaks, but their browsers fetch everything again.
 
 ## 6. Put nginx in front
 
@@ -290,15 +298,16 @@ request line returned 400 under the gunicorn default and 200 with `--limit-reque
 414 at 70 KB. If people bring legacy links, raise both
 limits; otherwise ask them to re-share with the current **Share Link**.
 
+(lab-server-updating)=
 ## Updating datasets
 
-The server caches store metadata and results and assumes a store does not change while it
-runs. After rewriting or replacing a store, restart the service
-(`sudo systemctl restart annzarro`). `POST /api/v1/cache/reset` (admins only on a shared
-server) clears only the worker that happens to answer it, so with several workers a restart is
-the reliable way. Adding a new
-dataset (a new link in the data directory) needs no restart; it appears after the Dataset
-picker's refresh button is clicked.
+**Refresh dataset** (the button right of the Dataset menu) asks the server to check the store
+against the disk; when files changed, every worker serves the change from then on. For an admin
+it also clears the server's cache for the dataset. Use it after adding or rewriting elements of
+a store; {doc}`analyst-workflow` walks through one round. After replacing a whole store (a new
+directory behind the same link), restart the service (`sudo systemctl restart annzarro`) to be
+sure no worker keeps the old one open. Adding a new dataset (a new link in the data directory)
+needs no restart; it appears after the Dataset picker's refresh button is clicked.
 
 ## Logs
 

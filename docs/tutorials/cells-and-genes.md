@@ -190,6 +190,31 @@ Apoe, the strongest opposite-direction change.
 **Paper, cells and genes, panel d.** This scatter is panel d of the paper figure.
 :::
 
+6. The paper's Worked example 4 (Step 26) colours the same scatter by the focused gene's row of
+   the gene-gene correlation instead. Set **Color** to `varp` · `spearman_fold_change`, and the
+   row selector to "Focused gene S100a9". This works on `bm_aging.zarr` as well.
+
+```{figure} ../_static/screens/tutorials/we4-spearman-controls.png
+:class: screenshot
+:alt: The Color row of the gene plot's controls: varp, spearman_fold_change, Focused gene, with an open lock.
+:width: 60%
+
+**Color** on the focused gene's row of `spearman_fold_change`.
+```
+
+```{figure} ../_static/screens/tutorials/we4-spearman.png
+:class: screenshot
+:alt: The same scatter of fold change in the locked HSC (x) against the focused monocyte (y), now coloured by Spearman correlation with S100a9 from −0.8 (blue) to 1 (red); genes left of zero in x are mostly yellow to red, genes right of zero mostly blue; S100a9 is the red marker at x −1.35.
+:width: 80%
+
+Coloured by correlation with S100a9. Genes whose fold change correlates with S100a9's across
+cells (warm) sit mostly where the HSC's change is negative, like S100a9's own.
+```
+
+Now each gene's colour says how it co-varies with the focused gene, while its position says how
+it changes in the two cells. Click a gene, or pick one in **Focused Gene**: the colour follows,
+the axes do not.
+
 (tut-cg-andor)=
 ### Count the directions with AND/OR
 

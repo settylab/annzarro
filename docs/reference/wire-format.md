@@ -170,9 +170,10 @@ JSON is the default and keeps its historical shape contract:
 - Non-finite values are `null`.
 - `obs` and `var`: `{"data": {"<column>": [...]}, "categories": {"<column>": [...]}}`.
 
-The same gene column of the fold-change layer is 32,360 bytes binary and 111,869 bytes JSON;
-a varp row 65,140 against 186,736 bytes. At 1M cells a JSON gene column is 21.5 MB and the
-binary one 4.0 MB ({doc}`performance`).
+On AnnZarro v0.4.0 the same gene column of the demonstration fold-change layer is 32,360 bytes
+binary and about 117 kB JSON (JSON length depends on the values); a varp row 65,140 bytes against
+about 187 kB (`docs/_tools/data/api_bm_aging.csv`). Binary is 4 bytes per value at any size, so a gene column
+of one million cells is 4.0 MB ({doc}`performance`).
 
 (revalidation)=
 ## Revalidation: ETag and 304

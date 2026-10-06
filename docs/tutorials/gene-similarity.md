@@ -161,8 +161,10 @@ genes only.
 1. Add a gene plot. Set **X** to `var`, `fig4c_rank_H2-Q7`, **Y** to `var`,
    `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Palette** stays at "As
    stored in adata.uns", which gives the paper's purple, green and amber.
-2. Non-DE genes have no rank, so 16,096 genes have no x value and are not drawn. The tile says so
-   in a blue notice ("189 of 16,285 genes shown").
+2. Only DE genes have a rank, and H2-Q7 has none either: it is the gene the others are ranked
+   against. So the 16,095 non-DE genes and H2-Q7 itself, 16,096 genes, have no x value and are
+   not drawn, and the tile shows the other 189 of the 190 DE genes in a blue notice ("189 of
+   16,285 genes shown"). The S100a9 plot of step 3 likewise leaves out S100a9.
 3. Add a second gene plot with `fig4c_rank_S100a9`, `rho_fc_S100a9` and the same colour.
 4. Add a gene table with the columns `fig4_module_k3`, `rho_fc_H2-Q7`, `rho_fc_S100a9` and
    `kompot_de_Young_to_Old_mahalanobis` (tab `var`). In **Advanced Search**, **Add Condition**

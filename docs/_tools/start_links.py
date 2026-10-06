@@ -22,7 +22,7 @@ Links to a store that is not available are skipped; set ANNZARRO_SCALE_STORE to 
 store (or any prefix of it, e.g. its first 2 million cells) to check the scale links against it.
 
 `scale` writes the views of the paper's scale figure (docs/paper/scale.md) from the view files
-of its screenshots, figures/scale/v030/*.view.json in the paper repository, adding the cell
+of its v0.4.0 screenshots, figures/scale/*.view.json in the paper repository, adding the cell
 subset each panel was drawn with: a deep link records the subset and the part, while the
 screenshot script set them through the app.
 """
@@ -61,7 +61,8 @@ PROTOCOL = {  # paper view file -> docs name
 }
 PROTOCOL_DATASET = "bm_aging.zarr"
 
-# The scale figure: docs name -> (paper view file in figures/scale/v030, subset, title, changes)
+
+# The scale figure: docs name -> (paper view file in figures/scale, subset, title, changes)
 SCALE_STORE = "tahoe_panel_95.6M_plot.zarr"
 DEFAULT_SUBSET = {"n": 100000, "seed": 0}
 SCALE = {
@@ -101,7 +102,7 @@ def import_protocol() -> None:
 def import_scale() -> None:
     out = PANELSETS / "paper"
     for name, (src, subset, title, changes) in SCALE.items():
-        given = json.loads((paper() / "figures" / "scale" / "v030" / f"{src}.view.json").read_text())
+        given = json.loads((paper() / "figures" / "scale" / f"{src}.view.json").read_text())
         assert Path(given["store"]).name == SCALE_STORE, given["store"]
         view = {k: v for k, v in given["view"].items() if k != "subset"}
         view["subset"] = subset

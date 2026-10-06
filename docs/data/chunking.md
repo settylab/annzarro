@@ -3,7 +3,7 @@
 A zarr array is stored as compressed chunks, and a read decompresses every chunk it touches,
 whole. One click in AnnZarro reads one row or one column, so the chunk shape decides how much
 data a click decompresses. It is the one storage decision that can turn a 10 ms click into a
-45 s one.
+seconds-long one.
 
 ## The rule
 
@@ -24,7 +24,7 @@ def layer_chunks(n_obs, n_vars, target=5e5):
     return min(rows, n_obs), min(cols, n_vars)
 
 layer_chunks(8_090, 16_285)       # (512, 1024)   demonstration data
-layer_chunks(1_165_934, 12_731)   # (8192, 64)    1.17M-cell atlas
+layer_chunks(1_000_000, 5_000)    # (8192, 64)    1M x 5,000, as in the paper's sweep
 ```
 
 Pairwise matrices (`obsp`, `varp`) are only ever read by row, so their chunks span whole rows:
@@ -40,35 +40,35 @@ stores written by other tools or older versions, in particular any with **whole-
 
 ## Measured
 
-The figure was measured for these docs through AnnZarro itself on this branch: one synthetic
+The figure was measured for these docs through AnnZarro v0.4.0: one synthetic
 200,000 × 2,000 float32 layer written five times with different chunks, read with the binary
 transfer the browser uses. Each point is the median of 15 requests, each for a new random gene
 or cell; whiskers are the interquartile range (too small to see for most points).
 
 ```{figure} ../_static/figures/chunk-sweep.svg
-:alt: Scatter of time for one cell row against time for one gene column, log axes. Whole-gene chunks (200000 x 8) are fastest for a gene column at 13 ms but slowest for a cell row at 129 ms. Whole-cell chunks (256 x 2000) are the reverse, 193 ms per gene column and 4 ms per cell row. Square (1024 x 1024) is 83 ms and 6 ms. The aspect rule (8192 x 64, filled point) and the anndata default (6250 x 125) sit near the origin at 16 and 12 ms, and 22 and 9 ms.
+:alt: Scatter of time for one cell row against time for one gene column, log axes. Whole-gene chunks (200000 x 8) are fastest for a gene column at 12 ms but slowest for a cell row at 125 ms. Whole-cell chunks (256 x 2000) are the reverse, 170 ms per gene column and 3 ms per cell row. Square (1024 x 1024) is 75 ms and 5 ms. The aspect rule (8192 x 64, filled point) and the anndata default (6250 x 125) sit near the origin at 15 and 11 ms, and 20 and 9 ms.
 :width: 85%
 
 **Chunk shape decides which click is slow.** The aspect-rule shape (filled) and anndata's
-default keep both reads near 10-20 ms. Whole-gene chunks make a cell row 10× slower; square
-and whole-cell chunks make a gene column 5-12× slower. Apple M3 Max, local NVMe, page cache
+default keep both reads near 10-20 ms. Whole-gene chunks make a cell row 11× slower; square
+and whole-cell chunks make a gene column 5-11× slower. Apple M3 Max, local NVMe, page cache
 warm, localhost. Script: `docs/_tools/bench_chunks.py`; data: `docs/_tools/data/chunk_sweep.csv`.
 ```
 
 | Chunks | Gene column | Cell row |
 |---|---|---|
-| (200000, 8) whole-gene | 13 ms | 129 ms |
-| (8192, 64) aspect rule | 16 ms | 12 ms |
-| (6250, 125) anndata default | 22 ms | 9 ms |
-| (1024, 1024) square | 83 ms | 6 ms |
-| (256, 2000) whole-cell | 193 ms | 4 ms |
+| (200000, 8) whole-gene | 12 ms | 125 ms |
+| (8192, 64) aspect rule | 15 ms | 11 ms |
+| (6250, 125) anndata default | 20 ms | 9 ms |
+| (1024, 1024) square | 75 ms | 5 ms |
+| (256, 2000) whole-cell | 170 ms | 3 ms |
 
-The penalty grows with the matrix. At 200,000 cells a whole-gene layer costs 129 ms per cell
-row with the files in the page cache. The paper measured the same layout at 1.17 million cells
-on an HPC node with a cold cache: **45 s** for one cell row, against 0.41 s after rechunking to
-(4096, 64) (provisional HPC numbers; {doc}`../reference/performance`). On the paper's laptop
-sweep at 1M × 5,000, whole-gene (n, 64) chunks needed 2.86 s and 12 GB of server memory for a
-cell row, enough to swap a 16 GB laptop.
+The penalty grows with the matrix. At 200,000 cells a whole-gene layer costs 125 ms per cell
+row with the files in the page cache. On the paper's laptop sweep at 1M × 5,000 (AnnZarro
+v0.4.0, cold), whole-gene (n, 64) chunks needed **2.9 s** and 7.2 GiB of server memory for one
+cell row, against 0.055 s with anndata's default chunks ({doc}`../reference/performance`). The
+paper's HPC measurement on a larger Kompot layer, on a network filesystem with a cold
+cache, is being re-measured on v0.4.0.
 
 At the size of the demonstration data the choice matters little. Direct zarr reads of the
 8,090 × 16,285 fold-change layer, from the paper's validation:

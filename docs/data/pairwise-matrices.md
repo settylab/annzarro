@@ -15,13 +15,14 @@ A dense float32 matrix over *n* items costs **4n² bytes**. One row costs 4n byt
 | 8,090 cells | 0.26 GB | 32 kB | demonstration `obsp/diffusion_walk_t5` |
 | 16,285 genes | 1.06 GB | 65 kB | demonstration `varp/spearman_*` |
 | 32,000 cells | 4.1 GB | 128 kB | |
-| 75,000 cells | 22.5 GB | 300 kB | browsed on the lab deployment, one row per click |
+| 75,000 cells | 22.5 GB | 300 kB | |
 | 100,000 cells | 40 GB | 400 kB | |
-| 200,000 cells | 160 GB | 800 kB | HPC benchmark: 0.23 s per row cold (provisional) |
+| 200,000 cells | 160 GB | 800 kB | the largest matrix of the paper's HPC benchmark |
 
-The server never holds the matrix: on the paper's HPC benchmark, peak server memory stayed at
-85-117 MiB while serving rows of 10-160 GB matrices ({doc}`../reference/performance`). The limits
-are disk and the time to compute the matrix, not AnnZarro.
+The server never holds the matrix: a click reads only the chunks of one row. The paper's
+timings and server memory for rows of 10-160 GB matrices on HPC nodes are being re-measured on
+AnnZarro v0.4.0 ({doc}`../reference/performance`). The limits are disk and the time to compute
+the matrix, not AnnZarro.
 
 ### Sparse or dense
 
