@@ -365,6 +365,14 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
                f"cache_enabled={app.config.get('cache_enabled')}, "
                f"cache_dataset_limit={app.config.get('cache_dataset_limit')}")
 
+    # A server that starts cannot know what changed on disk while none ran:
+    # every dataset starts a new generation (core/freshness.py), so a
+    # browser's cached replies are revalidated against the stores as they
+    # are now. The generations outlive the process, and a chunk write made
+    # while the server was down kept its old ETags through a restart.
+    from annzarro.core import freshness
+    freshness.bump(None, reason="server_start")
+
     # Initialize h5ad reader with cache settings from config
     configure_h5ad_reader(app.config)
     logger.info(f"H5AD reader configured with: cache_memory_mb={app.config.get('cache_memory_mb')}, "

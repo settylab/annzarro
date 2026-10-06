@@ -207,6 +207,10 @@ def test_an_element_added_without_consolidating_appears_after_a_refresh(server, 
     structure = _structure(server, path)
     assert "new_score" in structure["obs"]["columns"]
     assert structure["consolidated_metadata"]["stale"] is True
+    # the desktop's Refresh resets the cache right after: the finding holds
+    assert server.post("/api/v1/cache/reset", query_string={"dataset_path": path}).status_code == 200
+    assert server.get("/api/v1/data/obs", query_string=q).status_code == 200
+    assert _structure(server, path)["consolidated_metadata"]["stale"] is True
     # consolidated again: the notice goes with the next refresh
     zarr.consolidate_metadata(path)
     assert server.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()["consolidated_metadata"] is None
@@ -318,3 +322,17 @@ def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):
     assert r["status"] == "partial" and r["checked"] is False and r["changed"] is False
     assert "too large to fingerprint fully" in r["message"]
     assert freshness.generation(path) == gen
+
+
+def test_a_restart_revalidates_every_dataset(server, tmp_path):
+    """The generations live in files that outlive the server: a chunk write
+    followed by a restart and a reload got 304 and the old values (v0.3.1
+    validation: 'slice + restart+reload'). A starting server bumps them all."""
+    from annzarro.server.core import create_app
+    path = make_rich_store(tmp_path / "r.zarr")
+    first = _read(server, path)
+    old, tag = first.get_json()["data"]["total_counts"][0], first.headers["ETag"]
+    _slice_write(path, old + 1000)
+    restarted = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "r.log")}).test_client()
+    again = _read(restarted, path, tag)
+    assert again.status_code == 200 and again.get_json()["data"]["total_counts"][0] == old + 1000
