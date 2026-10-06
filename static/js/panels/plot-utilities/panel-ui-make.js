@@ -542,11 +542,21 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   if ($reverseColormapButton.length) {
     $.updateButtonState($reverseColormapButton, settings.colorReversed);
   }
-  // The swatch draws an off-screen plot to resolve the map: once the
-  // browser is idle, not on the way to the panel's first plot.
+  // The swatch draws an off-screen plot to resolve the map: only once the
+  // swatch is on screen (controls open, colour numerical), and then when
+  // the browser is idle, not on the way to the panel's first plot.
   const preview = () => showScalePreview(jQuery(`#color-range-container-${id}`), id, settings);
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(preview, { timeout: 5000 });
-  else setTimeout(preview, 1000);
+  const whenIdle = () => (typeof requestIdleCallback === 'function'
+    ? requestIdleCallback(preview, { timeout: 5000 }) : setTimeout(preview, 1000));
+  const swatch = document.getElementById(`color-scale-preview-${id}`);
+  if (swatch && typeof IntersectionObserver === 'function') {
+    const seen = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) { seen.disconnect(); whenIdle(); }
+    });
+    seen.observe(swatch);
+  } else {
+    whenIdle();
+  }
   
   // We can't update color sliders here because the data isn't loaded yet
   // Color sliders will be updated after data is loaded during plot creation
