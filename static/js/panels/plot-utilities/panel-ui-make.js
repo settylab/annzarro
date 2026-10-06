@@ -151,7 +151,7 @@ export function createPanelStructure(container, id, settings) {
             </div>
 
             <div class="btn-toolbar ctl-toggles" role="toolbar" aria-label="Colour scale options">
-              <div class="btn-group" role="group">
+              <div class="ctl-toggle-set" role="group">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}" aria-pressed="false">Center at 0</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}" aria-pressed="false">Reverse</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}" aria-pressed="false">Lock Range</button>

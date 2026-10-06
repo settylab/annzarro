@@ -2742,9 +2742,24 @@ button.dtsb-button.dtsb-clear:hover {
     min-width: 0;
 }
 
-/* Toggles wrap; they never push the panel wider. */
+/* A joined .btn-group rounds only its outer ends. Bootstrap finds the ends
+   by :first-child/:last-child, which a hidden button still is, leaving the
+   end that shows square; round the first and last button that show. */
+.btn-group > .btn:not(.btn:not([hidden], .d-none, [style*="display: none"], [style*="display:none"]) ~ .btn) {
+    border-top-left-radius: var(--bs-btn-border-radius);
+    border-bottom-left-radius: var(--bs-btn-border-radius);
+}
+.btn-group > .btn:not(:has(~ .btn:not([hidden], .d-none, [style*="display: none"], [style*="display:none"]))) {
+    border-top-right-radius: var(--bs-btn-border-radius);
+    border-bottom-right-radius: var(--bs-btn-border-radius);
+}
+
+/* Toggles wrap; they never push the panel wider. They are separate buttons
+   with a gap between them, each fully rounded: a .btn-group here (as it
+   was) squared their right corners, since Bootstrap rounds a group's ends
+   by :first-child/:last-child and the Log span came last. */
 .ctl-toggles,
-.ctl-toggles > .btn-group,
+.ctl-toggle-set,
 .ctl-actions,
 .ctl-actions-toggles {
     display: flex;
@@ -2753,14 +2768,7 @@ button.dtsb-button.dtsb-clear:hover {
     align-items: center;
     min-width: 0;
 }
-/* Bootstrap's .btn-group joins and stretches its buttons; here they are
-   separate toggles of their own width. */
-.ctl-toggles > .btn-group > .btn,
-.ctl-log > .btn {
-    flex: 0 0 auto;
-    border-radius: 0.25rem;
-    margin-left: 0;
-}
+.ctl-toggle-set > .btn { flex: 0 0 auto; }
 .ctl-log {
     display: inline-flex;
     gap: var(--ctl-u);
