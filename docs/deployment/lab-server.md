@@ -25,6 +25,7 @@ sudo python3 -m venv /opt/annzarro/venv
 sudo /opt/annzarro/venv/bin/pip install annzarro gunicorn     # 'annzarro[remote]' for remote stores
 ```
 
+(lab-server-data-dir)=
 ## 2. Lay out the data directory
 
 ```bash
@@ -290,15 +291,16 @@ request line returned 400 under the gunicorn default and 200 with `--limit-reque
 414 at 70 KB. If people bring legacy links, raise both
 limits; otherwise ask them to re-share with the current **Share Link**.
 
+(lab-server-updating)=
 ## Updating datasets
 
-The server caches store metadata and results and assumes a store does not change while it
-runs. After rewriting or replacing a store, restart the service
-(`sudo systemctl restart annzarro`). `POST /api/v1/cache/reset` (admins only on a shared
-server) clears only the worker that happens to answer it, so with several workers a restart is
-the reliable way. Adding a new
-dataset (a new link in the data directory) needs no restart; it appears after the Dataset
-picker's refresh button is clicked.
+**Refresh dataset** (the button right of the Dataset menu) asks the server to check the store
+against the disk; when files changed, every worker serves the change from then on. For an admin
+it also clears the server's cache for the dataset. Use it after adding or rewriting elements of
+a store; {doc}`analyst-workflow` walks through one round. After replacing a whole store (a new
+directory behind the same link), restart the service (`sudo systemctl restart annzarro`) to be
+sure no worker keeps the old one open. Adding a new dataset (a new link in the data directory)
+needs no restart; it appears after the Dataset picker's refresh button is clicked.
 
 ## Logs
 
