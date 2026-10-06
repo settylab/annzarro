@@ -16,6 +16,7 @@ import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { sameSubset } from './utils/subset.js';
+import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
 import { canSnapshot, exportImage } from './utils/plot-export.js';
@@ -1175,10 +1176,10 @@ const App = (function() {
                     const genes = DataManager.getGenes() || [];
 
                     document.getElementById('cell-count').textContent =
-                        `${cells.length.toLocaleString()} cells`;
+                        countNoun(cells.length, 'cells');
                     SubsetControl.update();
                     document.getElementById('gene-count').textContent =
-                        `${genes.length.toLocaleString()} genes`;
+                        countNoun(genes.length, 'genes');
                     document.getElementById('dataset-path').textContent = currentDataset;
                 } else {
                     // No current dataset, so show an error notification

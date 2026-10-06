@@ -173,6 +173,20 @@ function fmt(n) {
     return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : String(n);
 }
 
+/**
+ * A count and its noun, singular for one: "1 gene", "2 genes". Units are
+ * plural nouns ('cells', 'genes', 'values'); `format` writes the number.
+ * @param {number} n
+ * @param {string} unit
+ * @param {(n: number) => string} [format]
+ * @returns {string}
+ */
+export function countNoun(n, unit, format = fmt) {
+    const noun = n === 1 && typeof unit === 'string'
+        ? unit.replace(/ies$/, 'y').replace(/s$/, '') : unit;
+    return `${format(n)} ${noun}`;
+}
+
 function isReason(value) {
     return Object.values(GAP).includes(value);
 }
@@ -475,7 +489,7 @@ export class Coverage {
             const where = g.source ? `${g.source}: ` : '';
             const label = KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason;
             const count = typeof g.count === 'number' && g.count > 0
-                ? ` (${fmt(g.count)} ${this.unit})` : '';
+                ? ` (${countNoun(g.count, this.unit)})` : '';
             const why = g.detail ? ` -- ${g.detail}` : '';
             return `${where}${label}${count}${why}`;
         });
@@ -1052,10 +1066,10 @@ export function breakdown(coverage) {
     let headline;
     let headlineExact;
     if (!counted) {
-        headline = headlineExact = cov.headline() || (typeof total === 'number' ? `${exactCount(total)} ${unit}` : unit);
+        headline = headlineExact = cov.headline() || (typeof total === 'number' ? countNoun(total, unit, exactCount) : unit);
     } else if (hidden === 0) {
-        headline = `${compactCount(total)} ${unit}`;
-        headlineExact = `${exactCount(total)} ${unit}`;
+        headline = countNoun(total, unit, compactCount);
+        headlineExact = countNoun(total, unit, exactCount);
     } else {
         let a = compactCount(shown);
         const b = compactCount(total);
