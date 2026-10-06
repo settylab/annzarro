@@ -12,8 +12,9 @@ appendix ({doc}`../paper/index`), so that every panel can be clicked through in 
 Python, then explore without code.
 
 - **Exact copies of the paper's analysis.** Each field is computed with the code of the paper's
-  figure scripts, and the build script asserts the published numbers. If any one does not
-  reproduce, the build stops.
+  figure scripts, copied into the build script, which checks the paper's numbers: counts and gene
+  lists exactly, decimals to the precision the paper prints them, since the last digits differ
+  between platforms. If any one does not reproduce, the build stops and prints the value it got.
 - **The original store is untouched.** Its arrays are cloned unchanged. Only `obs`, `var` and the
   consolidated metadata are rewritten, with the new columns appended.
 
@@ -92,13 +93,12 @@ UMAP, far in diffusion (265 cells). Blue: the reverse (392 cells).
 
 ## Build it
 
-The script lives in this repository's docs folder. It reads `bm_aging.zarr` and imports the
-figure code of the paper's companion repository, which stays private until the paper is
-published ({ref}`paper-companion`). With a checkout of that repository, its analysis
-environment, and `ANNZARRO_PAPER` set to the checkout:
+{download}`make_showcase_store.py <../_tools/make_showcase_store.py>` (in this repository's
+`docs/_tools/`) reads `bm_aging.zarr` ({doc}`demo-data`) and needs anndata, zarr, scipy,
+scikit-learn and pandas:
 
 ```bash
-ANNZARRO_PAPER=/path/to/annzarro-paper python docs/_tools/make_showcase_store.py --src bm_aging.zarr --dst bm_aging_showcase.zarr
+python docs/_tools/make_showcase_store.py --src bm_aging.zarr --dst bm_aging_showcase.zarr
 ```
 
 It runs in about 15 seconds on an Apple-silicon laptop. Most of that is the two 8,090²

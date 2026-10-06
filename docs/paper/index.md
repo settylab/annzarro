@@ -77,8 +77,8 @@ The share links on these pages open a store on a local AnnZarro server: they are
 
 | Page | Store | How to get it |
 |---|---|---|
-| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Public raw data and every build step, in Python: {doc}`../data/demo-data`. The ready-made scripts are in the companion repository ({ref}`paper-companion`) |
-| {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | `bm_aging.zarr` plus precomputed fields: {doc}`../data/showcase-store`. The build script uses the paper's figure code, so it runs only with the companion repository ({ref}`paper-companion`) |
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Build it from the public raw data with a script in this repository: {doc}`../data/demo-data` |
+| {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | Build it from `bm_aging.zarr` with a script in this repository, in about 15 s: {doc}`../data/showcase-store` |
 | {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
 | {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release; the build script will be published with the paper: {ref}`paper-scale-store` |
 | {doc}`deployment` | none | The figure is a diagram |
@@ -96,8 +96,8 @@ as described in the table.
 Some pages name files such as `figures/…`, `data_prep/…` or `benchmark/…`. They are in the
 paper's companion repository, `settylab/annzarro-paper`, which stays private until the paper is
 published. The names say where a figure, a number or a view comes from; you do not need them to
-open the views. Where a store can only be built with a script from that repository, the page
-says so.
+open the views or to build the stores, whose scripts are in this repository. The exception is
+the Tahoe-100M store, whose build script will be published with the paper.
 
 ```{toctree}
 :hidden:
