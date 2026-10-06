@@ -1,0 +1,958 @@
+[
+{
+"category": "WikiPathways",
+"term": "WP2516",
+"number_of_genes": 5,
+"number_of_genes_in_background": 37,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 3.44e-14,
+"fdr": 3.3e-11,
+"description": "ATM signaling"
+},
+{
+"category": "WikiPathways",
+"term": "WP1971",
+"number_of_genes": 5,
+"number_of_genes_in_background": 44,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 7.71e-14,
+"fdr": 3.7e-11,
+"description": "Integrated cancer pathway"
+},
+{
+"category": "PMID",
+"term": "PMID:23592841",
+"number_of_genes": 5,
+"number_of_genes_in_background": 5,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.02e-17,
+"fdr": 5.24e-11,
+"description": "(2013) p53 as Batman: using a movie plot to understand control of the cell cycle."
+},
+{
+"category": "PMID",
+"term": "PMID:11326311",
+"number_of_genes": 5,
+"number_of_genes_in_background": 6,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.87e-17,
+"fdr": 5.24e-11,
+"description": "(2001) Cisplatinum and taxol induce different patterns of p53 phosphorylation."
+},
+{
+"category": "Process",
+"term": "GO:0071480",
+"number_of_genes": 5,
+"number_of_genes_in_background": 27,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 8.14e-15,
+"fdr": 1e-10,
+"description": "Cellular response to gamma radiation"
+},
+{
+"category": "PMID",
+"term": "PMID:21870295",
+"number_of_genes": 5,
+"number_of_genes_in_background": 9,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 8.09e-17,
+"fdr": 1.39e-10,
+"description": "(2011) Assessing G1-to-S-phase progression after genotoxic stress."
+},
+{
+"category": "PMID",
+"term": "PMID:28096294",
+"number_of_genes": 5,
+"number_of_genes_in_background": 10,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.21e-16,
+"fdr": 1.56e-10,
+"description": "(2017) Mouse modelling of the MDM2MDMX-p53 signalling axis."
+},
+{
+"category": "WikiPathways",
+"term": "WP1530",
+"number_of_genes": 5,
+"number_of_genes_in_background": 69,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 6.51e-13,
+"fdr": 2.08e-10,
+"description": "miRNA regulation of DNA damage response"
+},
+{
+"category": "WikiPathways",
+"term": "WP707",
+"number_of_genes": 5,
+"number_of_genes_in_background": 69,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 6.51e-13,
+"fdr": 2.08e-10,
+"description": "DNA damage response"
+},
+{
+"category": "KEGG",
+"term": "hsa04115",
+"number_of_genes": 5,
+"number_of_genes_in_background": 75,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 9.72e-13,
+"fdr": 3.57e-10,
+"description": "p53 signaling pathway"
+},
+{
+"category": "Process",
+"term": "GO:0030330",
+"number_of_genes": 5,
+"number_of_genes_in_background": 42,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 6.2e-14,
+"fdr": 3.82e-10,
+"description": "DNA damage response, signal transduction by p53 class mediator"
+},
+{
+"category": "RCTM",
+"term": "HSA-69563",
+"number_of_genes": 5,
+"number_of_genes_in_background": 51,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.54e-13,
+"fdr": 3.83e-10,
+"description": "p53-Dependent G1 DNA Damage Response"
+},
+{
+"category": "RCTM",
+"term": "HSA-6804760",
+"number_of_genes": 4,
+"number_of_genes_in_background": 19,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 7.05e-12,
+"fdr": 4.37e-09,
+"description": "Regulation of TP53 Activity through Methylation"
+},
+{
+"category": "KEGG",
+"term": "hsa04110",
+"number_of_genes": 5,
+"number_of_genes_in_background": 157,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 3.53e-11,
+"fdr": 6.09e-09,
+"description": "Cell cycle"
+},
+{
+"category": "KEGG",
+"term": "hsa04218",
+"number_of_genes": 5,
+"number_of_genes_in_background": 155,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 3.32e-11,
+"fdr": 6.09e-09,
+"description": "Cellular senescence"
+},
+{
+"category": "Process",
+"term": "GO:0090399",
+"number_of_genes": 4,
+"number_of_genes_in_background": 16,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 3.86e-12,
+"fdr": 7.91e-09,
+"description": "Replicative senescence"
+},
+{
+"category": "RCTM",
+"term": "HSA-6804757",
+"number_of_genes": 4,
+"number_of_genes_in_background": 35,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 6.54e-11,
+"fdr": 3.24e-08,
+"description": "Regulation of TP53 Degradation"
+},
+{
+"category": "RCTM",
+"term": "HSA-69541",
+"number_of_genes": 4,
+"number_of_genes_in_background": 42,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 1.3e-10,
+"fdr": 4.59e-08,
+"description": "Stabilization of p53"
+},
+{
+"category": "DISEASES",
+"term": "DOID:11054",
+"number_of_genes": 4,
+"number_of_genes_in_background": 28,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 2.86e-11,
+"fdr": 7.07e-08,
+"description": "Urinary bladder cancer"
+},
+{
+"category": "KEGG",
+"term": "hsa01524",
+"number_of_genes": 4,
+"number_of_genes_in_background": 73,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 1.07e-09,
+"fdr": 9.86e-08,
+"description": "Platinum drug resistance"
+},
+{
+"category": "Process",
+"term": "GO:0044773",
+"number_of_genes": 4,
+"number_of_genes_in_background": 69,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 8.64e-10,
+"fdr": 1.06e-06,
+"description": "Mitotic DNA damage checkpoint signaling"
+},
+{
+"category": "DISEASES",
+"term": "DOID:0050686",
+"number_of_genes": 5,
+"number_of_genes_in_background": 583,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 2.33e-08,
+"fdr": 1.44e-05,
+"description": "Organ system cancer"
+},
+{
+"category": "DISEASES",
+"term": "DOID:1612",
+"number_of_genes": 3,
+"number_of_genes_in_background": 45,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 1.35e-07,
+"fdr": 6.68e-05,
+"description": "Breast cancer"
+},
+{
+"category": "DISEASES",
+"term": "DOID:5093",
+"number_of_genes": 3,
+"number_of_genes_in_background": 47,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 1.53e-07,
+"fdr": 6.68e-05,
+"description": "Thoracic cancer"
+},
+{
+"category": "Hallmark",
+"term": "M5925",
+"number_of_genes": 3,
+"number_of_genes_in_background": 199,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.05e-05,
+"fdr": 0.00052,
+"description": "E2F targets"
+},
+{
+"category": "Hallmark",
+"term": "M5939",
+"number_of_genes": 3,
+"number_of_genes_in_background": 198,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"CDKN1A"
+],
+"p_value": 1.03e-05,
+"fdr": 0.00052,
+"description": "P53 pathway"
+},
+{
+"category": "COMPARTMENTS",
+"term": "GOCC:0005654",
+"number_of_genes": 5,
+"number_of_genes_in_background": 1075,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 4.9e-07,
+"fdr": 0.00085,
+"description": "Nucleoplasm"
+},
+{
+"category": "Function",
+"term": "GO:0031625",
+"number_of_genes": 4,
+"number_of_genes_in_background": 293,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 2.5e-07,
+"fdr": 0.0009,
+"description": "Ubiquitin protein ligase binding"
+},
+{
+"category": "COMPARTMENTS",
+"term": "GOCC:0005730",
+"number_of_genes": 4,
+"number_of_genes_in_background": 638,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 5.44e-06,
+"fdr": 0.0035,
+"description": "Nucleolus"
+},
+{
+"category": "COMPARTMENTS",
+"term": "GOCC:0030870",
+"number_of_genes": 2,
+"number_of_genes_in_background": 11,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"ATM",
+"CHEK2"
+],
+"p_value": 4.01e-06,
+"fdr": 0.0035,
+"description": "Mre11 complex"
+},
+{
+"category": "GWAS",
+"term": "MONDO:0021074",
+"number_of_genes": 3,
+"number_of_genes_in_background": 91,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CHEK2"
+],
+"p_value": 1.04e-06,
+"fdr": 0.0115,
+"description": "Precancerous condition"
+},
+{
+"category": "GWAS",
+"term": "EFO:0002890",
+"number_of_genes": 3,
+"number_of_genes_in_background": 128,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 2.84e-06,
+"fdr": 0.0156,
+"description": "Renal carcinoma"
+},
+{
+"category": "GWAS",
+"term": "EFO:0003865",
+"number_of_genes": 3,
+"number_of_genes_in_background": 142,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 3.86e-06,
+"fdr": 0.0156,
+"description": "Kidney neoplasm"
+},
+{
+"category": "GWAS",
+"term": "EFO:1000363",
+"number_of_genes": 3,
+"number_of_genes_in_background": 191,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 9.26e-06,
+"fdr": 0.0156,
+"description": "Malignant Urinary System Neoplasm"
+},
+{
+"category": "Function",
+"term": "GO:0097718",
+"number_of_genes": 2,
+"number_of_genes_in_background": 25,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305"
+],
+"preferredNames": [
+"MDM2",
+"TP53"
+],
+"p_value": 1.8e-05,
+"fdr": 0.0216,
+"description": "Disordered domain specific binding"
+},
+{
+"category": "HPO",
+"term": "HP:0000135",
+"number_of_genes": 3,
+"number_of_genes_in_background": 152,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM"
+],
+"p_value": 4.72e-06,
+"fdr": 0.0219,
+"description": "Hypogonadism"
+},
+{
+"category": "HPO",
+"term": "HP:0002669",
+"number_of_genes": 2,
+"number_of_genes_in_background": 9,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"CHEK2"
+],
+"p_value": 2.83e-06,
+"fdr": 0.0219,
+"description": "Osteosarcoma"
+},
+{
+"category": "HPO",
+"term": "HP:0002898",
+"number_of_genes": 2,
+"number_of_genes_in_background": 32,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"CHEK2"
+],
+"p_value": 2.88e-05,
+"fdr": 0.0219,
+"description": "Embryonal neoplasm"
+},
+{
+"category": "HPO",
+"term": "HP:0003002",
+"number_of_genes": 2,
+"number_of_genes_in_background": 28,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000372023"
+],
+"preferredNames": [
+"TP53",
+"CHEK2"
+],
+"p_value": 2.23e-05,
+"fdr": 0.0219,
+"description": "Breast carcinoma"
+},
+{
+"category": "COMPARTMENTS",
+"term": "GOCC:0016604",
+"number_of_genes": 3,
+"number_of_genes_in_background": 408,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 8.73e-05,
+"fdr": 0.0251,
+"description": "Nuclear body"
+},
+{
+"category": "Component",
+"term": "GO:0016604",
+"number_of_genes": 4,
+"number_of_genes_in_background": 886,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000372023",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"CHEK2",
+"CDKN1A"
+],
+"p_value": 1.99e-05,
+"fdr": 0.0352,
+"description": "Nuclear body"
+},
+{
+"category": "Component",
+"term": "GO:0005730",
+"number_of_genes": 4,
+"number_of_genes_in_background": 1069,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000258149",
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"MDM2",
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 4.18e-05,
+"fdr": 0.037,
+"description": "Nucleolus"
+},
+{
+"category": "Keyword",
+"term": "KW-0131",
+"number_of_genes": 3,
+"number_of_genes_in_background": 407,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 8.67e-05,
+"fdr": 0.0443,
+"description": "Cell cycle"
+},
+{
+"category": "Keyword",
+"term": "GO:9999999",
+"number_of_genes": 3,
+"number_of_genes_in_background": 407,
+"ncbiTaxonId": 9606,
+"inputGenes": [
+"9606.ENSP00000269305",
+"9606.ENSP00000278616",
+"9606.ENSP00000384849"
+],
+"preferredNames": [
+"TP53",
+"ATM",
+"CDKN1A"
+],
+"p_value": 8.67e-05,
+"fdr": 0.0443,
+"description": "<img src=x onerror=alert(1)>"
+}
+]

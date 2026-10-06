@@ -94,6 +94,14 @@ def register_core_routes(app, api_version):
         for key in ("host", "port"):
             if key in public.get("server", {}):
                 client[key] = public["server"][key]
+        # The gene set panel's external requests (integrations.external_requests),
+        # forced by the environment where a deployment (the desktop app, an
+        # offline install) must not depend on a config file
+        forced = os.environ.get("ANNZARRO_EXTERNAL_REQUESTS", "").strip().lower()
+        if forced in ("ask", "on", "off"):
+            integrations = dict(client.get("integrations") or {})
+            integrations["external_requests"] = forced
+            client["integrations"] = integrations
         client["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
         client["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
         # One user on this machine (loopback, login off, no proxy, not

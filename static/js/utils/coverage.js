@@ -136,7 +136,15 @@ const GAP_LABEL = Object.freeze({
 
 /** A label that says more than its reason's, for a gap of this kind. */
 const KIND_LABEL = Object.freeze({
-    mode: 'not available in large-plot mode'
+    mode: 'not available in large-plot mode',
+    // the gene set panel's external services: ids a service does not know,
+    // a request that failed, a request not made (species, limit, turned off)
+    unmapped: 'not found by the service',
+    request: 'request failed',
+    unsupported: 'not covered by the service',
+    'over-limit': "over the service's limit",
+    disabled: 'external services are turned off',
+    declined: 'not sent: declined for this service'
 });
 
 /**
@@ -995,9 +1003,10 @@ export function exactCount(n) {
     return typeof n === 'number' && isFinite(n) ? n.toLocaleString('en-US') : String(n);
 }
 
-/** Short chip text per kind of hidden point; see `breakdown`. */
+/** Short chip text per kind of hidden point (or a function of the gap); see `breakdown`. */
 const KIND_CHIP = Object.freeze({
-    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden'
+    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden',
+    unmapped: (g) => `not found in ${g.source || 'the service'}`
 });
 
 /** Order in which the breakdown lists reasons, as createFilterMask attributes them. */
@@ -1031,8 +1040,9 @@ export function breakdown(coverage) {
         const where = g.source ? `${g.source}: ` : '';
         return `${where}${KIND_LABEL[g.kind] || GAP_LABEL[g.reason] || g.reason}${g.detail ? ` -- ${g.detail}` : ''}`;
     };
+    const kindChip = (g) => (typeof KIND_CHIP[g.kind] === 'function' ? KIND_CHIP[g.kind](g) : KIND_CHIP[g.kind]);
     const chip = (g) => g.reason === GAP.OUTSIDE ? g.detail
-        : KIND_CHIP[g.kind] || `${g.source ? `${g.source} ` : ''}${GAP_LABEL[g.reason] || g.reason}`;
+        : kindChip(g) || `${g.source ? `${g.source} ` : ''}${GAP_LABEL[g.reason] || g.reason}`;
     const rows = [];
     const notes = [];
     for (const g of cov.gaps) {

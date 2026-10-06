@@ -12,7 +12,7 @@ import { LayoutManager } from './layout-manager.js';
 import { SelectionTile } from './selection-tile.js';
 import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
-import { setControlsVisible } from './utils/controls-visibility.js';
+import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
 
 const PanelManager = (function() {
@@ -398,6 +398,17 @@ const PanelManager = (function() {
         } catch (error) {
             console.error('Error updating table filter dropdowns:', error);
         }
+
+        // Panels that follow another panel (a gene set panel's source
+        // table) hear that one was added, closed, reopened or renamed
+        _activePanels.forEach(panel => {
+            if (typeof panel.onPanelsChanged !== 'function') return;
+            try {
+                panel.onPanelsChanged();
+            } catch (error) {
+                console.error(`Error updating panel ${panel.getId && panel.getId()}:`, error);
+            }
+        });
         
         // Notify SessionManager about panel update to trigger autosave if enabled
         if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
@@ -451,12 +462,8 @@ const PanelManager = (function() {
         const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
         const contentContainer = tileElement.querySelector('.tile-content');
         
-        // Find either plot-controls or table-controls element within the panel
-        const plotControls = contentContainer.querySelector('.plot-controls');
-        const tableControls = contentContainer.querySelector('.table-controls');
-        
-        // Determine which controls element to toggle
-        const controlsElement = plotControls || tableControls;
+        // The panel's control bar (a plot's, a table's, a gene set panel's)
+        const controlsElement = controlsElementOf(contentContainer);
         if (!controlsElement) return;
         
         // Toggle controls visibility (recorded, so dataset loading keeps it)
@@ -667,10 +674,7 @@ const PanelManager = (function() {
         _panels.forEach((panel, id) => {
             const tileElement = document.querySelector(`.tile[data-tile-id="${id}"]`);
             if (tileElement) {
-                const contentContainer = tileElement.querySelector('.tile-content');
-                const plotControls = contentContainer?.querySelector('.plot-controls');
-                const tableControls = contentContainer?.querySelector('.table-controls');
-                const controlsElement = plotControls || tableControls;
+                const controlsElement = controlsElementOf(tileElement.querySelector('.tile-content'));
 
                 if (controlsElement) {
                     controlState[id] = controlsElement.style.display !== 'none';
@@ -965,8 +969,7 @@ const PanelManager = (function() {
     function _applyControlsVisible(tileElement, visible) {
         const contentContainer = tileElement && tileElement.querySelector('.tile-content');
         if (!contentContainer) return;
-        const controlsElement = contentContainer.querySelector('.plot-controls')
-            || contentContainer.querySelector('.table-controls');
+        const controlsElement = controlsElementOf(contentContainer);
         if (!controlsElement) return;
         setControlsVisible(controlsElement, visible);
         const pane = tileElement.closest && tileElement.closest('.split-pane');

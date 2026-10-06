@@ -112,7 +112,7 @@ ui:
     - gene-plot
     - cell-table
     - gene-table
-    # - gene-set  # Uncomment to enable gene set analysis
+    - gene-set
   
   # Default visualization settings
   defaults:
@@ -169,6 +169,20 @@ ui:
 
 # External API integrations
 integrations:
+  # Whether the Gene Set Analysis panel may send gene ids to external
+  # services (STRING, g:Profiler, MyGene.info, ...): "ask" asks the user
+  # first, once per service; "on" sends without asking (users agreed out of
+  # band); "off" never sends anything (its Links still work). Quote the
+  # value: YAML reads a bare on/off as a boolean. The environment variable
+  # ANNZARRO_EXTERNAL_REQUESTS overrides it.
+  external_requests: "ask"
+  gene_set:
+    # adapter ids (string-enrichment) or service names (string) the panel
+    # offers; null offers all of them
+    services: null
+    # per request attempt, in ms (each request is tried at most twice)
+    timeout_ms: 20000
   string_db:
-    base_url: "https://string-db.org/api"
-    version: "11.5"
+    # a versioned host, so results can be reproduced
+    base_url: "https://version-12-5.string-db.org/api"
+    version: "12.5"

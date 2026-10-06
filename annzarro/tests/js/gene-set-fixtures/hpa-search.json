@@ -1,0 +1,65 @@
+[
+{
+"Gene": "TP53",
+"Gene synonym": [
+"LFS1",
+"p53"
+],
+"Ensembl": "ENSG00000141510",
+"Uniprot": [
+"P04637"
+],
+"RNA tissue specificity": "Low tissue specificity",
+"RNA tissue distribution": "Detected in all",
+"RNA single cell type specificity": "Low cell type specificity",
+"RNA single cell type distribution": "Detected in many",
+"Subcellular location": [
+"Nucleoplasm",
+"Vesicles",
+"Cytosol"
+]
+},
+{
+"Gene": "TP53INP1",
+"Gene synonym": [
+"DKFZp434M1317",
+"FLJ22139",
+"P53DINP1",
+"SIP",
+"Teap",
+"TP53INP1A",
+"TP53INP1B"
+],
+"Ensembl": "ENSG00000164938",
+"Uniprot": [
+"Q96A56"
+],
+"RNA tissue specificity": "Tissue enhanced",
+"RNA tissue distribution": "Detected in all",
+"RNA single cell type specificity": "Cell type enhanced",
+"RNA single cell type distribution": "Detected in many",
+"Subcellular location": [
+"Cytosol"
+]
+},
+{
+"Gene": "TP53BP1",
+"Gene synonym": [
+"53BP1",
+"p202",
+"TDRD30"
+],
+"Ensembl": "ENSG00000067369",
+"Uniprot": [
+"Q12888"
+],
+"RNA tissue specificity": "Low tissue specificity",
+"RNA tissue distribution": "Detected in all",
+"RNA single cell type specificity": "Cell type enhanced",
+"RNA single cell type distribution": "Detected in many",
+"Subcellular location": [
+"Nucleoplasm",
+"Nuclear bodies"
+]
+}
+]

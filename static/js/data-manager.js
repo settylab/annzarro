@@ -36,6 +36,11 @@ const DataManager = (function() {
     let _focusedCell = null;
     let _focusedGene = null;
     let _taxonomyId = Config.DEFAULTS.TAXONOMY_ID;
+    // where the species came from: 'explicit' (a user's pick, a link, a
+    // panel set), 'inferred' (from the dataset, e.g. its Ensembl ids) or
+    // 'default' (the server's ui.defaults.taxonomy_id); a new dataset starts
+    // from 'default'
+    let _taxonomySource = 'default';
     let _datasetLoaded = false; // Track if a dataset has been loaded
 
     // The cell subset in effect (utils/subset.js, annzarro/core/subset.py):
@@ -348,6 +353,7 @@ const DataManager = (function() {
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
             _currentDataset = datasetPath;
+            if (datasetPath !== previousDataset) _taxonomySource = 'default';
             
             // Check for abort signal before each async operation
             if (signal && signal.aborted) {
@@ -1930,16 +1936,21 @@ const DataManager = (function() {
     /**
      * Set the taxonomy ID
      * @param {string} taxId - Taxonomy ID
+     * @param {{source?: 'explicit'|'inferred'}} [opts] - 'inferred' when guessed
+     *   from the dataset (the gene set panel), so a user's or a link's choice
+     *   stays distinguishable from a guess
      */
-    function setTaxonomyId(taxId) {
+    function setTaxonomyId(taxId, { source = 'explicit' } = {}) {
         _taxonomyId = taxId;
+        _taxonomySource = source;
         
         // Trigger event for components to update
         const event = new CustomEvent('taxonomyIdChanged', {
             detail: { 
                 taxonomyId: taxId,
                 species: Config.DEFAULTS.TAXONOMY_SPECIES[taxId] || 'Custom',
-                isCustom: !Config.DEFAULTS.TAXONOMY_SPECIES[taxId]
+                isCustom: !Config.DEFAULTS.TAXONOMY_SPECIES[taxId],
+                source
             }
         });
         document.dispatchEvent(event);
@@ -2084,6 +2095,11 @@ const DataManager = (function() {
     function getTaxonomyId() {
         return _taxonomyId;
     }
+
+    /** Where the species came from: 'explicit', 'inferred' or 'default' (see _taxonomySource). */
+    function getTaxonomySource() {
+        return _taxonomySource;
+    }
     
     /**
      * Get the taxonomy species
@@ -2153,6 +2169,7 @@ const DataManager = (function() {
         getFocusedCell,
         getFocusedGene,
         getTaxonomyId,
+        getTaxonomySource,
         getTaxonomySpecies,
         getCellIndex,
         resolveCellIndex,
