@@ -115,6 +115,21 @@ def state(dataset_path) -> dict:
         return {}
 
 
+_state_cache = {}
+
+
+def recorded(dataset_path) -> dict:
+    """``state(dataset_path)``, read again only when the generation moved: the
+    readers ask on every open (whether to skip stale consolidated metadata)."""
+    key, gen = _key(dataset_path), generation(dataset_path)
+    hit = _state_cache.get(key)
+    if hit is not None and hit[0] == gen:
+        return hit[1]
+    value = state(dataset_path)
+    _state_cache[key] = (gen, value)
+    return value
+
+
 def bump(dataset_path=None, **recorded) -> None:
     """Start a new generation of the dataset (``None``: of every dataset).
 

@@ -13,6 +13,7 @@ from flask import jsonify, request, current_app as app
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import freshness
+from ...core.zarr_reader import consolidated_staleness, consolidated_notice
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +132,10 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": str(exc), "reason": "not_found"}), 404
         except (ValueError, PermissionError, ImportError) as exc:
             return jsonify({"error": str(exc)}), 400
-        result = freshness.revalidate(dataset_path)
-        return jsonify({"status": "success", "dataset_path": dataset_path, **result})
+        stale = consolidated_staleness(dataset_path)
+        result = freshness.revalidate(dataset_path, consolidated_stale=stale)
+        return jsonify({"status": "success", "dataset_path": dataset_path, **result,
+                        "consolidated_metadata": consolidated_notice(stale)})
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
     def get_dataset_metadata(dataset_path: str):

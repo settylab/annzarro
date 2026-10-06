@@ -25,8 +25,11 @@ from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
 from pathlib import Path
 from collections import OrderedDict
 
+_ZARR3 = int(zarr.__version__.split('.')[0]) >= 3
+
 from .metadata_extraction import extract_metadata
 from .caching import CacheSettings, DatasetCache, cached_method
+from . import freshness
 from . import string_chunks
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
@@ -143,11 +146,91 @@ def store_read_error(node, exc, dataset_path=None) -> StoreReadError:
     if mismatch:
         return StoreReadError(
             f"The store's consolidated metadata (.zmetadata) is out of date ({mismatch}). "
-            "It was probably rewritten in place without re-consolidating. Run "
-            "`zarr.consolidate_metadata(path)` on the store (or rewrite it with "
-            "anndata), then reset the server cache or restart the server.",
+            "It was probably rewritten in place without re-consolidating. Click "
+            "Refresh dataset (the server then reads the store without it), or run "
+            "`zarr.consolidate_metadata(path)` on the store and then refresh.",
             reason="stale_metadata")
     return StoreReadError(f"Failed to read {where}: {exc}")
+
+
+def _json(path):
+    import json
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def consolidated_staleness(dataset_path) -> Optional[str]:
+    """What the LOCAL store's consolidated metadata no longer describes, or
+    None (also for a store without it, or a remote one).
+
+    zarr opens a consolidated store from that one file: an element written
+    afterwards without ``zarr.consolidate_metadata`` is not there (the API
+    answered 404 key_not_found for it), and an array rewritten with another
+    dtype or chunking is read with the old metadata (old values, or 500
+    stale_metadata). Compares the listing with the nodes on disk: children
+    of every listed group, and the metadata of every listed node. Reads
+    only metadata files, so it runs on a refresh, not on every open.
+    """
+    if not dataset_path or is_remote_path(dataset_path) or not os.path.isdir(dataset_path):
+        return None
+    root = Path(dataset_path)
+    try:
+        if (root / ".zmetadata").is_file():
+            listed = _json(root / ".zmetadata").get("metadata", {})
+            meta = {}
+            for key, value in listed.items():
+                node, _, name = key.rpartition("/") if "/" in key else ("", "", key)
+                meta.setdefault(node, {})[name] = value
+            groups = {n for n, m in meta.items() if ".zgroup" in m}
+            kinds = (".zgroup", ".zarray")
+        elif (root / "zarr.json").is_file():
+            cm = (_json(root / "zarr.json").get("consolidated_metadata") or {}).get("metadata")
+            if cm is None:
+                return None
+            meta = {node: {"zarr.json": value} for node, value in cm.items()}
+            meta[""] = {"zarr.json": {"node_type": "group"}}
+            groups = {n for n, m in meta.items() if m["zarr.json"].get("node_type") == "group"}
+            kinds = ("zarr.json",)
+        else:
+            return None
+        for group in sorted(groups):
+            folder = root / group if group else root
+            try:
+                children = sorted(e.name for e in os.scandir(folder) if e.is_dir())
+            except OSError:
+                return f"{group or 'the root group'} is listed but no longer on disk"
+            for child in children:
+                node = f"{group}/{child}" if group else child
+                if node not in meta and any((folder / child / k).is_file() for k in kinds):
+                    return f"{node} is on disk but not in it"
+        for node, files in sorted(meta.items()):
+            for name, said in files.items():
+                path = (root / node / name) if node else (root / name)
+                if not path.is_file():
+                    return f"{node or 'the root'} is listed but no longer on disk"
+                on_disk = _json(path)
+                # zarr 3 adds an (empty) consolidated_metadata entry to groups
+                if isinstance(on_disk, dict) and isinstance(said, dict):
+                    on_disk.pop("consolidated_metadata", None)
+                    said = {k: v for k, v in said.items() if k != "consolidated_metadata"}
+                if node == "" and name == "zarr.json":
+                    continue
+                if on_disk != said:
+                    return f"{node or 'the root'}: its metadata on disk differs (rewritten since)"
+    except (OSError, ValueError) as exc:
+        return f"it could not be compared with the store ({exc})"
+    return None
+
+
+def consolidated_notice(stale):
+    """The notice for a store whose consolidated metadata is out of date, or None."""
+    if not stale:
+        return None
+    return {"stale": True, "detail": stale,
+            "message": (f"This store's consolidated metadata is out of date: {stale}. AnnZarro now reads "
+                        "the store without it, which is slower to open. Run "
+                        "zarr.consolidate_metadata(path) on the store, then Refresh dataset."),
+            "fix": "zarr.consolidate_metadata(path)"}
 
 
 def zarr_format_problem(dataset_path) -> Optional[str]:
@@ -445,7 +528,12 @@ class ZarrReader(CacheSettings):
                     raise ValueError(f"Directory does not appear to be a zarr dataset: {dataset_path}")
                 
                 try:
-                    # Use regular open_group for existing paths, which works better with various zarr formats
+                    # Use regular open_group for existing paths, which works better with various zarr formats.
+                    # A refresh that found the consolidated metadata out of
+                    # date (consolidated_staleness) recorded it: read the
+                    # nodes' own metadata until the store is consolidated again.
+                    if _ZARR3 and freshness.recorded(dataset_path).get("consolidated_stale"):
+                        return zarr.open_group(dataset_path, mode='r', use_consolidated=False)
                     return zarr.open_group(dataset_path, mode='r')
                 except Exception as e:
                     raise_if_timeout(e)
@@ -786,9 +874,11 @@ class ZarrReader(CacheSettings):
       """
       # Use path-based extraction
       try:
-          if root is None and is_remote_path(dataset_path):
+          if root is None and (is_remote_path(dataset_path)
+                               or freshness.recorded(dataset_path).get("consolidated_stale")):
               # extract_metadata would zarr.open_group() the bare URL: no
               # policy check, no anonymous-access options, a fresh open.
+              # Nor would it skip consolidated metadata a refresh found stale.
               root, dataset_path = self._get_root(dataset_path), None
           metadata = extract_metadata(dataset_path, root, detail_level=detail_level)
           return metadata

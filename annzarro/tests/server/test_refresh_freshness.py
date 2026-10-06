@@ -171,3 +171,81 @@ def test_refresh_needs_a_dataset_it_may_read(tmp_path):
     anonymous = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "a.log"),
                             "auth_enabled": True, "user_file": str(tmp_path / "users.json")}).test_client()
     assert anonymous.post("/api/v1/data/refresh", query_string={"dataset_path": str(tmp_path)}).status_code == 401
+
+
+def _structure(client, path):
+    return client.get("/api/v1/data/dataset_structure", query_string={"dataset_path": path}).get_json()
+
+
+def test_an_element_added_without_consolidating_appears_after_a_refresh(server, tmp_path):
+    """anndata's write_elem into a consolidated store, without
+    zarr.consolidate_metadata: the new column was missing from the menus and
+    the API answered 404 key_not_found, with nothing saying why, through every
+    refresh. A refresh now finds the consolidated metadata out of date, reads
+    the store without it, and the structure carries a notice with the fix."""
+    import numpy as np
+    import zarr
+    path = make_rich_store(tmp_path / "r.zarr")
+    assert _structure(server, path)["consolidated_metadata"] is None
+    root = zarr.open_group(path, mode="r+", use_consolidated=False)
+    obs = root["obs"]
+    new = obs.create_array("new_score", data=np.arange(200, dtype="float64"))
+    new.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+    obs.attrs["column-order"] = list(obs.attrs["column-order"]) + ["new_score"]
+    q = {"dataset_path": path, "columns": "new_score"}
+    assert server.get("/api/v1/data/obs", query_string=q).status_code == 404
+    r = server.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
+    assert r["changed"] is True
+    assert r["consolidated_metadata"]["stale"] is True
+    assert "obs/new_score is on disk but not in it" in r["consolidated_metadata"]["message"]
+    assert "zarr.consolidate_metadata" in r["consolidated_metadata"]["message"]
+    reply = server.get("/api/v1/data/obs", query_string=q)
+    assert reply.status_code == 200, reply.get_data(as_text=True)
+    assert reply.get_json()["data"]["new_score"][:3] == [0, 1, 2]
+    structure = _structure(server, path)
+    assert "new_score" in structure["obs"]["columns"]
+    assert structure["consolidated_metadata"]["stale"] is True
+    # consolidated again: the notice goes with the next refresh
+    zarr.consolidate_metadata(path)
+    assert server.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()["consolidated_metadata"] is None
+    assert _structure(server, path)["consolidated_metadata"] is None
+
+
+def test_a_dtype_change_without_consolidating_reads_the_new_array(server, tmp_path):
+    """obs/total_counts replaced by float32 with other chunks, not re-consolidated:
+    after Ctrl+R the panel showed the OLD values with no message. After a
+    refresh the array is read with its own metadata."""
+    import numpy as np
+    import zarr
+    path = make_rich_store(tmp_path / "r.zarr")
+    old = _first_total_counts(server, path)
+    root = zarr.open_group(path, mode="r+", use_consolidated=False)
+    attrs = dict(root["obs/total_counts"].attrs)
+    del root["obs/total_counts"]
+    root["obs"].create_array("total_counts", data=np.full(200, 7.5, dtype="float32"),
+                             chunks=(50,)).attrs.update(attrs)
+    server.post("/api/v1/data/refresh", query_string={"dataset_path": path})
+    assert _first_total_counts(server, path) == 7.5 != old
+    assert "obs/total_counts" in _structure(server, path)["consolidated_metadata"]["detail"]
+
+
+def test_zarr_format_3_consolidated_additions(server, tmp_path):
+    """The same for a format-3 store, whose consolidated metadata is in the root zarr.json."""
+    import shutil
+    import numpy as np
+    import zarr
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fixture_small_v3.zarr")
+    path = str(tmp_path / "v3.zarr")
+    shutil.copytree(src, path)
+    zarr.consolidate_metadata(path)
+    root = zarr.open_group(path, mode="r+", use_consolidated=False)
+    obs = root["obs"]
+    n = obs[obs.attrs.get("_index", "_index")].shape[0]
+    obs.create_array("new_score", data=np.arange(n, dtype="float64")).attrs.update(
+        {"encoding-type": "array", "encoding-version": "0.2.0"})
+    obs.attrs["column-order"] = list(obs.attrs["column-order"]) + ["new_score"]
+    q = {"dataset_path": path, "columns": "new_score"}
+    assert server.get("/api/v1/data/obs", query_string=q).status_code == 404
+    r = server.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
+    assert "obs/new_score is on disk but not in it" in r["consolidated_metadata"]["detail"]
+    assert server.get("/api/v1/data/obs", query_string=q).status_code == 200

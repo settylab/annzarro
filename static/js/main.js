@@ -1117,6 +1117,11 @@ const App = (function() {
             SubsetControl.update();
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
+            // A refresh found the store's consolidated metadata out of date:
+            // it is read without it now, and the fix is the user's to run
+            if (datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale) {
+                _showNotification('Consolidated metadata out of date', datasetStructure.consolidated_metadata.message, 'warning');
+            }
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
