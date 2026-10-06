@@ -137,8 +137,13 @@ const GAP_LABEL = Object.freeze({
 /** A label that says more than its reason's, for a gap of this kind. */
 const KIND_LABEL = Object.freeze({
     mode: 'not available in large-plot mode',
-    // an external service (the gene set panel's) does not know these ids
-    unmapped: 'not found by the service'
+    // the gene set panel's external services: ids a service does not know,
+    // a request that failed, a request not made (species, limit, turned off)
+    unmapped: 'not found by the service',
+    request: 'request failed',
+    unsupported: 'not covered by the service',
+    'over-limit': "over the service's limit",
+    disabled: 'external services are turned off'
 });
 
 /**

@@ -153,7 +153,7 @@ export const reactome = {
                 + (result.found > result.pathways.length ? `; the ${result.pathways.length} with the smallest p are listed here` : '') }),
         browser && result.found > result.pathways.length ? ctx.link(browser, `All ${result.found.toLocaleString('en-US')} in Reactome`) : ''),
         result.pathways.length ? longTable(ctx, 'Reactome pathway analysis',
-            ['Pathway', { label: 'Genes', cls: 'gs-num', title: 'Found / in the pathway' }, { label: 'FDR', cls: 'gs-num' }],
+            ['Pathway', { label: 'Entities', cls: 'gs-num', title: 'Reactome entities (genes, proteins, complexes) found / in the pathway' }, { label: 'FDR', cls: 'gs-num' }],
             result.pathways.map(p => [{ text: p.name, href: `https://reactome.org/content/detail/${encodeURIComponent(p.stId)}`, label: `${p.name} on Reactome` },
                 { text: `${p.found} / ${p.total}`, cls: 'gs-num' }, { text: ctx.sci(p.fdr), cls: 'gs-num' }]), 'pathways') : '',
         attribution(ctx, REACTOME, ctx.input.taxonomyId !== '9606' ? 'projected to human pathways' : ''));

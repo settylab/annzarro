@@ -47,10 +47,10 @@ const AUTO_DEBOUNCE_MS = 750;
 /** Rows of the Links list per page (the DOM stays small at 30k genes). */
 const LIST_PAGE = 50;
 
-/** What a blocked or failed run is, as a coverage gap. */
+/** What a blocked run is, as a coverage gap: [reason, kind] (coverage.js KIND_LABEL). */
 const GAP_OF = {
-    empty: GAP.EMPTY, capped: GAP.CAPPED, species: GAP.UNAVAILABLE, idtype: GAP.UNAVAILABLE,
-    unfocused: GAP.UNFOCUSED, disabled: GAP.UNAVAILABLE, offline: GAP.FAILED
+    empty: [GAP.EMPTY, ''], capped: [GAP.CAPPED, 'over-limit'], species: [GAP.UNAVAILABLE, 'unsupported'],
+    idtype: [GAP.UNAVAILABLE, 'unsupported'], unfocused: [GAP.UNFOCUSED, '']
 };
 
 const STATUS_WORD = { idle: 'not run', loading: 'loading…', ok: 'ok', stale: 'stale', error: 'error' };
@@ -953,13 +953,14 @@ const GeneSetPanel = (function() {
 
         function sectionSummary() {
             if (!_runner) return '';
-            const counts = { ok: 0, error: 0, loading: 0 };
+            const counts = { ok: 0, error: 0, loading: 0, refused: 0 };
             for (const a of visibleAdapters()) {
-                const s = _runner.get(a.id).status;
-                if (s in counts) counts[s]++;
+                const run = _runner.get(a.id);
+                if (run.status === 'error' && run.error && GAP_OF[run.error.kind]) counts.refused++;
+                else if (run.status in counts) counts[run.status]++;
             }
             return [counts.loading ? `${counts.loading} loading` : '', counts.ok ? `${counts.ok} ready` : '',
-                counts.error ? `${counts.error} failed` : ''].filter(Boolean).join(', ');
+                counts.error ? `${counts.error} failed` : '', counts.refused ? `${counts.refused} not sent` : ''].filter(Boolean).join(', ');
         }
 
         function paintConsent() {
@@ -1082,9 +1083,12 @@ const GeneSetPanel = (function() {
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
 
-        function placeholder(host, a, reason, message, extra = []) {
+        /** A section that shows no result, and why ("No genes shown (of 20)" and the reason). */
+        function placeholder(host, a, reason, kind, message, extra = []) {
             host.dataset.drawn = '';
-            drawPlaceholder(host, Coverage.missing(reason, message, { source: a.provider.name, unit: 'genes' }), 'genes');
+            const total = a.kind === 'gene' ? 1 : (_snapshot ? _snapshot.count : _source.count);
+            drawPlaceholder(host, new Coverage({ shown: 0, total, unit: 'genes',
+                gaps: [{ reason, kind, detail: message, source: a.provider.name, count: total }] }), 'genes');
             if (extra.length) host.appendChild(D.el('div', { class: 'gs-placeholder-do' }, extra));
         }
 
@@ -1097,7 +1101,7 @@ const GeneSetPanel = (function() {
                 revokeSection(sid);
                 D.clear(host);
                 const kind = run.error.kind;
-                const reason = GAP_OF[kind] || GAP.FAILED;
+                const [reason, gapKind] = GAP_OF[kind] || [GAP.FAILED, 'request'];
                 const failed = !GAP_OF[kind];
                 const msg = failed
                     ? `${run.error.message}${run.error.attempts > 1 ? ` (${run.error.attempts} attempts)` : ''}`
@@ -1108,7 +1112,7 @@ const GeneSetPanel = (function() {
                     const url = openUrlOf(a, input, null);
                     if (url) extra.push(D.link(url, `Open in ${a.provider.name}`, { cls: 'btn btn-sm btn-outline-secondary' }));
                 }
-                placeholder(host, a, reason, msg, extra);
+                placeholder(host, a, reason, gapKind, msg, extra);
                 if (failed) {
                     host.insertBefore(D.el('div', { class: 'gs-error-title', text: `Could not get ${a.label.toLowerCase()} from ${a.provider.name}. Other sections are not affected.` }), host.firstChild);
                 }
@@ -1117,13 +1121,13 @@ const GeneSetPanel = (function() {
             if (policy() === 'off') {
                 revokeSection(sid);
                 D.clear(host);
-                placeholder(host, a, GAP.UNAVAILABLE, 'External services are turned off on this server; the Links section still works.');
+                placeholder(host, a, GAP.UNAVAILABLE, 'disabled', 'External services are turned off on this server; the Links section still works.');
                 return;
             }
             if (!showResult && offline()) {
                 revokeSection(sid);
                 D.clear(host);
-                placeholder(host, a, GAP.FAILED, 'This browser is offline. Links still work; results fetch when it is back online.');
+                placeholder(host, a, GAP.FAILED, 'request', 'This browser is offline. Links still work; results fetch when it is back online.');
                 return;
             }
             if (run.status === 'loading' && !showResult) {
@@ -1162,7 +1166,7 @@ const GeneSetPanel = (function() {
                 console.error(`Gene set panel ${_id}: ${sid} could not draw its result:`, error);
                 revokeSection(sid);
                 D.clear(host);
-                placeholder(host, a, GAP.FAILED, `the result could not be shown (${error.message || error})`);
+                placeholder(host, a, GAP.FAILED, '', `the result could not be shown (${error.message || error})`);
                 host.dataset.drawn = '';
             }
         }
