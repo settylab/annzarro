@@ -1,0 +1,254 @@
+{
+  "name": "cells-and-genes-d-noise",
+  "timestamp": "2026-10-02T21:26:49+00:00",
+  "dataset": "bm_aging_showcase.zarr",
+  "datasetName": "bm_aging_showcase",
+  "constants": {
+    "focusedGene": "S100a9",
+    "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+    "taxonomyId": "10090"
+  },
+  "panelConfigs": {
+    "gene-plot-5d": {
+      "id": "gene-plot-5d",
+      "type": "gene-plot",
+      "title": "d' | colour = z-score of the focused cell's fold change",
+      "config": {
+        "id": "gene-plot-5d",
+        "title": "d' | colour = z-score of the focused cell's fold change",
+        "x": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+          "locked": true
+        },
+        "y": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change",
+          "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+          "locked": false
+        },
+        "z": null,
+        "color": {
+          "type": "layer",
+          "key": "kompot_de_Young_to_Old_fold_change_zscores",
+          "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+          "locked": false
+        },
+        "pointSize": 6,
+        "pointOpacity": 0.9,
+        "highlightFocusedGene": true,
+        "showZeroLines": true,
+        "hoverInfo": [
+          {
+            "type": "var",
+            "key": "_index"
+          }
+        ],
+        "colorScale": "RdBu",
+        "colorMin": -4,
+        "colorMax": 4,
+        "lockColorRange": true
+      },
+      "isSelectionTile": false
+    },
+    "gene-table-5d": {
+      "id": "gene-table-5d",
+      "type": "gene-table",
+      "title": "DE genes beyond 1.96 s.d. in both cells",
+      "config": {
+        "id": "gene-table-5d",
+        "title": "DE genes beyond 1.96 s.d. in both cells",
+        "columns": [
+          {
+            "type": "var",
+            "key": "fig5d_direction",
+            "column": ""
+          },
+          {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change_zscores",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+          },
+          {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change_zscores",
+            "column": "focused_cell"
+          }
+        ],
+        "searchBuilderConfig": {
+          "logic": "AND",
+          "criteria": [
+            {
+              "condition": "!=",
+              "data": "fig5d_direction",
+              "origData": "var_fig5d_direction_main",
+              "type": "string",
+              "value": [
+                "not DE"
+              ]
+            },
+            {
+              "condition": "!between",
+              "data": "kompot_de_Young_to_Old_fold_change_zscores: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+              "origData": "layer_kompot_de_Young_to_Old_fold_change_zscores_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+              "type": "num",
+              "value": [
+                "-1.96",
+                "1.96"
+              ]
+            },
+            {
+              "condition": "!between",
+              "data": "kompot_de_Young_to_Old_fold_change_zscores: Mature_Young_2#TCAATTCAGTGAGGCT-1",
+              "origData": "layer_kompot_de_Young_to_Old_fold_change_zscores_focused_cell",
+              "type": "num",
+              "value": [
+                "-1.96",
+                "1.96"
+              ]
+            }
+          ]
+        }
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedGene": "S100a9",
+      "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+      "taxonomyId": "10090"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "split",
+          "direction": "horizontal",
+          "panes": [
+            {
+              "percentage": 55,
+              "controlsVisible": false
+            },
+            {
+              "percentage": 45,
+              "controlsVisible": false
+            }
+          ],
+          "children": [
+            {
+              "type": "tile",
+              "id": "gene-plot-5d",
+              "controlsVisible": false
+            },
+            {
+              "type": "tile",
+              "id": "gene-table-5d",
+              "controlsVisible": false
+            }
+          ]
+        }
+      ],
+      "controlState": {
+        "gene-plot-5d": false,
+        "gene-table-5d": false
+      },
+      "panelConfigs": {
+        "gene-plot-5d": {
+          "id": "gene-plot-5d",
+          "title": "d' | colour = z-score of the focused cell's fold change",
+          "x": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+            "locked": true
+          },
+          "y": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change",
+            "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+            "locked": false
+          },
+          "z": null,
+          "color": {
+            "type": "layer",
+            "key": "kompot_de_Young_to_Old_fold_change_zscores",
+            "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+            "locked": false
+          },
+          "pointSize": 6,
+          "pointOpacity": 0.9,
+          "highlightFocusedGene": true,
+          "showZeroLines": true,
+          "hoverInfo": [
+            {
+              "type": "var",
+              "key": "_index"
+            }
+          ],
+          "colorScale": "RdBu",
+          "colorMin": -4,
+          "colorMax": 4,
+          "lockColorRange": true
+        },
+        "gene-table-5d": {
+          "id": "gene-table-5d",
+          "title": "DE genes beyond 1.96 s.d. in both cells",
+          "columns": [
+            {
+              "type": "var",
+              "key": "fig5d_direction",
+              "column": ""
+            },
+            {
+              "type": "layer",
+              "key": "kompot_de_Young_to_Old_fold_change_zscores",
+              "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+            },
+            {
+              "type": "layer",
+              "key": "kompot_de_Young_to_Old_fold_change_zscores",
+              "column": "focused_cell"
+            }
+          ],
+          "searchBuilderConfig": {
+            "logic": "AND",
+            "criteria": [
+              {
+                "condition": "!=",
+                "data": "fig5d_direction",
+                "origData": "var_fig5d_direction_main",
+                "type": "string",
+                "value": [
+                  "not DE"
+                ]
+              },
+              {
+                "condition": "!between",
+                "data": "kompot_de_Young_to_Old_fold_change_zscores: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+                "origData": "layer_kompot_de_Young_to_Old_fold_change_zscores_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+                "type": "num",
+                "value": [
+                  "-1.96",
+                  "1.96"
+                ]
+              },
+              {
+                "condition": "!between",
+                "data": "kompot_de_Young_to_Old_fold_change_zscores: Mature_Young_2#TCAATTCAGTGAGGCT-1",
+                "origData": "layer_kompot_de_Young_to_Old_fold_change_zscores_focused_cell",
+                "type": "num",
+                "value": [
+                  "-1.96",
+                  "1.96"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -129,7 +129,7 @@ Typed arrays are outside that heap and are limited only by the computer's memory
 is the setting that matters; `total_gb` is for computers with little memory.
 
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
-points (annzarro-paper `benchmark/scale`): a Cell Plot in large-plot mode holds 20.2 bytes of the
+points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
 JavaScript heap per point (1.94 GB at 95.6 million points, 3.53 GB at 175 million; 182 million
 crashed); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs

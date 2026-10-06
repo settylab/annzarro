@@ -1,16 +1,20 @@
-"""Web PNGs of the paper figures for docs/_static/figures/paper/ (fig1.png ... fig7.png),
-plus same-size gallery thumbnails (fig1-thumb.png ...) for paper/index.md.
+"""Web PNGs of the paper figures for docs/_static/figures/paper/ (overview.png ... scale.png),
+plus same-size gallery thumbnails (overview-thumb.png ...) for paper/index.md.
 
-Numbering follows the manuscript (annzarro-paper c9df73c): 1 overview (a focus model, b slot
-map, c tool comparison), 2 app, 3 cell x cell, 4 gene x gene, 5 cells <-> genes, 6 deployment,
-7 performance. The raster figures are taken from the PNGs in manuscript/figures/. The one TikZ
-figure (6, deployment) is compiled with pdflatex in a minimal wrapper that loads the same
-packages and TikZ libraries as manuscript/main.tex, rendered with pdftocairo and trimmed.
-Images of figure numbers the paper no longer has (fig8, fig9) are deleted.
+Files are named after the docs page that shows them, not after a figure number, so a
+renumbering of the paper changes nothing here. The raster figures are taken from the PNGs in
+manuscript/figures/. The two TikZ figures (procedure, deployment) are compiled with pdflatex in
+a minimal wrapper that loads the same packages and TikZ libraries as manuscript/main.tex,
+rendered with pdftocairo and trimmed. Images named by the earlier figure numbers (fig1.png ...)
+are deleted.
 
-Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper ~/gits/annzarro-paper]
+Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper PATH]   (or set ANNZARRO_PAPER)
+Refresh some figures after the paper regenerates them (e.g. figures/fig_scale.py and
+figures/fig6_performance.py, which write manuscript/figures/fig_scale.png and fig6_performance.png):
+     .venv-docs/bin/python docs/_tools/make_paper_figs.py --only scale performance
 Needs pdflatex (TeX Live) and pdftocairo (poppler) on PATH.
 """
+import os
 import argparse
 import shutil
 import subprocess
@@ -24,14 +28,15 @@ OUT = HERE.parent / "_static" / "figures" / "paper"
 MAX_W = 1600
 MAX_KB = 400
 
-# docs number -> manuscript/figures source
-RASTER = {1: "fig1_overview.png", 2: "fig5_app.png", 3: "fig2_cell_by_cell.png",
-          4: "fig3_gene_by_gene.png", 5: "fig4_cells_by_genes.png", 7: "fig6_performance.png"}
-TIKZ = {6: "fig_deploy.tex"}
-RETIRED = (8, 9)
+# docs page -> manuscript/figures source
+RASTER = {"overview": "fig1_overview.png", "interface": "fig5_app.png",
+          "cell-by-cell": "fig2_cell_by_cell.png", "gene-by-gene": "fig3_gene_by_gene.png",
+          "cells-and-genes": "fig4_cells_by_genes.png", "scale": "fig_scale.png",
+          "performance": "fig6_performance.png"}
+TIKZ = {"procedure": "fig_procedure.tex", "deployment": "fig_deploy.tex"}
+RETIRED = [f"fig{n}{t}.png" for n in range(1, 10) for t in ("", "-thumb")]
 
-# Same packages and libraries as manuscript/main.tex. \ref is mapped to the paper's figure
-# numbers so the slot map's cross references read "Fig. 3" instead of "??".
+# Same packages and libraries as manuscript/main.tex.
 WRAPPER = r"""\documentclass{article}
 \usepackage[paperwidth=17.4cm,paperheight=30cm,margin=0.5cm]{geometry}
 \pagestyle{empty}
@@ -43,13 +48,6 @@ WRAPPER = r"""\documentclass{article}
 \usepackage{xcolor}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
-\makeatletter
-\def\ref#1{\@ifundefined{fn@#1}{??}{\csname fn@#1\endcsname}}
-\expandafter\def\csname fn@fig:cellcell\endcsname{3}
-\expandafter\def\csname fn@fig:genegene\endcsname{4}
-\expandafter\def\csname fn@fig:cellgene\endcsname{5}
-\expandafter\def\csname fn@fig:performance\endcsname{7}
-\makeatother
 \begin{document}
 \noindent\begin{minipage}{16.4cm}
 \input{%s}
@@ -70,38 +68,40 @@ def trim(im: Image.Image, pad: int = 24) -> Image.Image:
 THUMB = (800, 500)
 
 
-def thumb(im: Image.Image, n: int) -> None:
+def thumb(im: Image.Image, n: str) -> None:
     """Gallery thumbnail: the whole figure, letterboxed on white to one aspect ratio."""
     im = im.copy()
     im.thumbnail((THUMB[0] - 40, THUMB[1] - 40), Image.LANCZOS)
     out = Image.new("RGB", THUMB, (255, 255, 255))
     out.paste(im, ((THUMB[0] - im.width) // 2, (THUMB[1] - im.height) // 2))
-    out.save(OUT / f"fig{n}-thumb.png", optimize=True)
+    out.save(OUT / f"{n}-thumb.png", optimize=True)
 
 
-def save(im: Image.Image, n: int) -> None:
+def save(im: Image.Image, n: str) -> None:
     im = im.convert("RGB")
     thumb(im, n)
     if im.width > MAX_W:
         im = im.resize((MAX_W, round(im.height * MAX_W / im.width)), Image.LANCZOS)
-    path = OUT / f"fig{n}.png"
+    path = OUT / f"{n}.png"
     im.save(path, optimize=True)
     if path.stat().st_size > MAX_KB * 1024:
         im.quantize(256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(path, optimize=True)
-    print(f"fig{n}.png {im.width}x{im.height} {path.stat().st_size // 1024} KB")
+    print(f"{n}.png {im.width}x{im.height} {path.stat().st_size // 1024} KB")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--paper", type=Path, default=Path.home() / "gits/annzarro-paper")
-    ap.add_argument("--only", type=int, nargs="*", help="figure numbers to (re)make")
+    ap.add_argument("--paper", type=Path, default=os.environ.get("ANNZARRO_PAPER"),
+                    help="a checkout of the paper's companion repository (default: $ANNZARRO_PAPER)")
+    ap.add_argument("--only", nargs="*", help="pages whose figure to (re)make, e.g. scale")
     a = ap.parse_args()
-    figs = a.paper / "manuscript" / "figures"
+    if not a.paper:
+        ap.error("give --paper or set ANNZARRO_PAPER")
+    figs = Path(a.paper) / "manuscript" / "figures"
     OUT.mkdir(parents=True, exist_ok=True)
     want = set(a.only or list(RASTER) + list(TIKZ))
-    for n in RETIRED:
-        for f in (OUT / f"fig{n}.png", OUT / f"fig{n}-thumb.png"):
-            f.unlink(missing_ok=True)
+    for f in RETIRED:
+        (OUT / f).unlink(missing_ok=True)
     for n, src in RASTER.items():
         if n in want:
             save(Image.open(figs / src), n)

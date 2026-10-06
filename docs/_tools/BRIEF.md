@@ -15,11 +15,14 @@
   `sections/figs_results.tex`), figure scripts `figures/*.py`, numbers `figures/NOTES.md`,
   `figures/numbers/*.json`, `figures/PERFORMANCE_NOTES.md`, screenshot script
   `figures/screenshots.py`, notes `figures/SCREENSHOTS.md`, benchmark `benchmark/`.
-- Paper figure numbering (use these numbers): 1 focus model (TikZ `manuscript/figures/fig1_focus_model.tex`),
-  2 app screenshots (`figures/fig5_app.py`), 3 cell x cell (`figures/fig2_cell_by_cell.py`),
-  4 gene x gene (`figures/fig3_gene_by_gene.py`), 5 cells <-> genes (`figures/fig4_cells_by_genes.py`),
-  6 tool comparison (not an AnnZarro view; no guide), 7 slot map (`manuscript/figures/fig_slots.tex`),
-  8 deployment (`manuscript/figures/fig_deploy.tex`), 9 performance (`figures/fig6_performance.py`).
+- Paper figures: never write a figure number in docs titles, cards or prose; numbers change when
+  the paper is renumbered. Name a figure by its page (docs/paper/<slug>.md) or its subject, e.g.
+  "the paper's cell-by-cell figure, panel b". Pages, in the paper's order: overview (focus model,
+  slot map, tool comparison; `figures/fig1_overview`), interface (`figures/fig5_app.py`),
+  procedure (`manuscript/figures/fig_procedure.tex`), cell-by-cell (`figures/fig2_cell_by_cell.py`),
+  gene-by-gene (`figures/fig3_gene_by_gene.py`), cells-and-genes (`figures/fig4_cells_by_genes.py`),
+  deployment (`manuscript/figures/fig_deploy.tex`), scale (Tahoe-100M, `figures/scale/`),
+  performance (`figures/fig6_performance.py`). Old fig<N>-*.md pages are redirect stubs.
 - AnnZarro source: `annzarro/` in the worktree (server `annzarro/server`, frontend `annzarro/ui` and
   `static/`), README.md, `docs/reference/deep-links.md` (the deep-link grammar).
 

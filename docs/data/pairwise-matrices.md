@@ -2,8 +2,8 @@
 
 `obsp` (cells × cells) and `varp` (genes × genes) drive the two views no other single-cell
 browser offers: colour every cell by its relation to the focused cell, and every gene by its
-relation to the focused gene (paper {doc}`Fig. 3 <../paper/fig3-cell-by-cell>` and
-{doc}`Fig. 4 <../paper/fig4-gene-by-gene>`). AnnZarro reads one row per click, so the matrix can
+relation to the focused gene (paper figures {doc}`../paper/cell-by-cell` and
+{doc}`../paper/gene-by-gene`). AnnZarro reads one row per click, so the matrix can
 be far larger than memory. Building it is your job, in Python, before writing the store.
 
 ## Size first

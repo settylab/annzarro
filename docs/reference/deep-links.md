@@ -65,7 +65,8 @@ config leaves out take their defaults. The docs' screenshot views are in `docs/_
 
 The paper's protocol views of `bm_aging.zarr` are complete examples with two or three panels,
 colour scales, a lock and a table filter (`data_prep/demo_panelsets/*.view.json` in the companion
-repository `settylab/annzarro-paper`). Each link is ready for a local server with `bm_aging.zarr` in
+repository `settylab/annzarro-paper`, private until the paper is published; the panel set files
+below are all you need). Each link is ready for a local server with `bm_aging.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
 the same view with **Load Panel Set** > **Upload file**.
 

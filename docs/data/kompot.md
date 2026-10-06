@@ -37,8 +37,8 @@ about 0.5 GB each on disk. Their chunking decides click latency at scale ({doc}`
 
 :::{warning}
 **Do not call `kompot.cleanup(adata)` before saving.** The Kompot tutorial ends with it, and it
-deletes the `*_smoothed` and `*_fold_change` layers. Without them the cells × genes views (paper
-{doc}`Fig. 5 <../paper/fig5-cells-and-genes>`) and the fold-change correlation in varp cannot be
+deletes the `*_smoothed` and `*_fold_change` layers. Without them the cells × genes views (paper figure
+{doc}`../paper/cells-and-genes`) and the fold-change correlation in varp cannot be
 built. If you already ran it, re-run `kompot.de`.
 :::
 

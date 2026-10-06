@@ -1,0 +1,91 @@
+{
+  "name": "scale-next-part",
+  "timestamp": "2026-10-06T00:21:26+00:00",
+  "dataset": "tahoe_panel_95.6M_plot.zarr",
+  "datasetName": "tahoe_panel_95.6M_plot",
+  "constants": {
+    "focusedGene": "FN1"
+  },
+  "panelConfigs": {
+    "cell-plot-A": {
+      "id": "cell-plot-A",
+      "type": "cell-plot",
+      "title": "Default subset, part 2",
+      "config": {
+        "id": "cell-plot-A",
+        "title": "Default subset, part 2",
+        "x": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "0"
+        },
+        "y": {
+          "type": "obsm",
+          "key": "X_umap",
+          "column": "1"
+        },
+        "z": null,
+        "color": {
+          "type": "obs",
+          "key": "cell_line_id",
+          "column": ""
+        },
+        "xaxisTitle": "UMAP 1",
+        "yaxisTitle": "UMAP 2",
+        "pointSize": 5,
+        "pointOpacity": 1
+      },
+      "isSelectionTile": false
+    }
+  },
+  "view": {
+    "v": 1,
+    "constants": {
+      "focusedGene": "FN1"
+    },
+    "layout": {
+      "v": 1,
+      "hierarchy": [
+        {
+          "type": "tile",
+          "id": "cell-plot-A",
+          "controlsVisible": false
+        }
+      ],
+      "controlState": {
+        "cell-plot-A": false
+      },
+      "panelConfigs": {
+        "cell-plot-A": {
+          "id": "cell-plot-A",
+          "title": "Default subset, part 2",
+          "x": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "0"
+          },
+          "y": {
+            "type": "obsm",
+            "key": "X_umap",
+            "column": "1"
+          },
+          "z": null,
+          "color": {
+            "type": "obs",
+            "key": "cell_line_id",
+            "column": ""
+          },
+          "xaxisTitle": "UMAP 1",
+          "yaxisTitle": "UMAP 2",
+          "pointSize": 5,
+          "pointOpacity": 1
+        }
+      }
+    },
+    "subset": {
+      "n": 100000,
+      "seed": 0,
+      "part": 1
+    }
+  }
+}

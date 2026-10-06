@@ -12,7 +12,7 @@ volcano plot. Click another gene and the colour follows. At the end you compare 
 with discrete modules, and you separate genes that share an *age response* from genes that only
 share an *expression pattern*.
 
-The results are panels of Fig. 4 of the AnnZarro paper ({doc}`../paper/fig4-gene-by-gene`).
+The results are panels of the AnnZarro paper's gene-by-gene figure ({doc}`../paper/gene-by-gene`).
 
 ## What you need
 
@@ -42,10 +42,10 @@ expressed in the same cell states whether or not they change. Both are dense
 ## 1. Colour a volcano by the focused gene's row
 
 ::::{dropdown} Start here: the volcano coloured by the focused gene's row (steps 1 and 2)
-```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-ab.url.txt
 :language: text
 ```
-Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+Panel set file: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -98,17 +98,17 @@ grey core; hover to find them, or sort a table ({ref}`tut-gene-check`). A module
 DE genes alone could not contain them.
 
 :::{note}
-**Paper Fig. 4a.** This view is panel a of the paper figure.
+**Paper, gene by gene, panel a.** This view is panel a of the paper figure.
 :::
 
 (tut-gene-refocus)=
 ## 2. Click a gene to follow another row
 
 ::::{dropdown} Start here: the volcano of step 1
-```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-ab.url.txt
 :language: text
 ```
-Panel set file: {download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`. The link is
+Panel set file: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -134,7 +134,7 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
    ```
 
 :::{note}
-**Paper Fig. 4b.** This view is panel b of the paper figure.
+**Paper, gene by gene, panel b.** This view is panel b of the paper figure.
 :::
 
 The two top genes of the volcano, H2-Q7 and H2-Aa, belong to different responses: class I and
@@ -145,10 +145,10 @@ class II antigen presentation, correlated with each other at only 0.20. Use the 
 ## 3. Compare the graded row with discrete modules
 
 ::::{dropdown} Start here: rank strips and the module table
-```{literalinclude} ../_static/panelsets/paper/fig4-c.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-c.url.txt
 :language: text
 ```
-Panel set file: {download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`. The link is
+Panel set file: {download}`gene-by-gene-c.json <../_static/panelsets/paper/gene-by-gene-c.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -193,7 +193,7 @@ Camp: rank 2 by ρ with S100a9, ρ = 0.72, module 2.
 ```
 
 :::{note}
-**Paper Fig. 4c.** The two strips are panel c. The module labels, ranks and silhouette scores are
+**Paper, gene by gene, panel c.** The two strips are panel c. The module labels, ranks and silhouette scores are
 offline results of the paper's figure script, stored as columns.
 :::
 
@@ -204,10 +204,10 @@ of it, and at this data size a weak one: the silhouette is flat (0.23 to 0.25 fo
 ## 4. Separate a shared age response from a shared expression pattern
 
 ::::{dropdown} Start here: the smoothed row against the fold-change row
-```{literalinclude} ../_static/panelsets/paper/fig4-d.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-d.url.txt
 :language: text
 ```
-Panel set file: {download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. The link is
+Panel set file: {download}`gene-by-gene-d.json <../_static/panelsets/paper/gene-by-gene-d.json>`. The link is
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
@@ -251,7 +251,7 @@ shares its age response. Focus another gene and the axes redraw for it; the `fig
 does not, because it was computed for H2-Q7.
 
 :::{note}
-**Paper Fig. 4d.** This view is panel d of the paper figure.
+**Paper, gene by gene, panel d.** This view is panel d of the paper figure.
 :::
 
 (tut-gene-check)=
@@ -288,27 +288,27 @@ for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tu
 says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: volcano coloured by the focused gene's row (H2-Q7)
-```{literalinclude} ../_static/panelsets/paper/fig4-ab.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-ab.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Step 3: rank strips and module table
-```{literalinclude} ../_static/panelsets/paper/fig4-c.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-c.url.txt
 :language: text
 ```
 ::::
 
 ::::{dropdown} Step 4: smoothed row against fold-change row
-```{literalinclude} ../_static/panelsets/paper/fig4-d.url.txt
+```{literalinclude} ../_static/panelsets/paper/gene-by-gene-d.url.txt
 :language: text
 ```
 ::::
 
 The same panels as panel-set files:
-{download}`fig4-ab.json <../_static/panelsets/paper/fig4-ab.json>`,
-{download}`fig4-c.json <../_static/panelsets/paper/fig4-c.json>`,
-{download}`fig4-d.json <../_static/panelsets/paper/fig4-d.json>`. **Load Panel Set** >
+{download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`,
+{download}`gene-by-gene-c.json <../_static/panelsets/paper/gene-by-gene-c.json>`,
+{download}`gene-by-gene-d.json <../_static/panelsets/paper/gene-by-gene-d.json>`. **Load Panel Set** >
 upload restores a set like its link: dataset, focus, layout and panel settings
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 

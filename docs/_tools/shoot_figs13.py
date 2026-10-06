@@ -1,5 +1,7 @@
-"""Screenshots, views and panel sets for the paper-figure guides 1 (focus model),
-2 (interface) and 3 (cell by cell).
+"""Screenshots, views and panel sets for the paper-figure guides overview (focus model),
+interface and cell by cell (docs/paper/{overview,interface,cell-by-cell}.md). File and
+screenshot names with fig1/fig2/fig3 keep an earlier figure numbering; panel sets and views are
+named after the guide.
 
 Every capture follows real user input where the guide describes a click: points are clicked
 in the Plotly graph, the header pickers are typed into, lock buttons are pressed. Cell IDs
@@ -8,9 +10,9 @@ settylab/annzarro-paper, so the guides match the paper.
 
 Writes
   docs/_static/screens/paper/fig{1,2,3}-*.png     screenshots
-  docs/_tools/views/fig{1,2,3}-*.json              deep-link `view` objects
-  docs/_static/panelsets/paper/fig{1,2,3}-*.json   panel sets for Load Panel Set > Upload file
-  docs/_static/panelsets/paper/fig{1,2,3}-*.url.txt  share links with a placeholder data directory
+  docs/_tools/views/{overview,interface,cell-by-cell}-*.json   deep-link `view` objects
+  docs/_static/panelsets/paper/<same names>.json   panel sets for Load Panel Set > Upload file
+  docs/_static/panelsets/paper/<same names>.url.txt  share links (start_links.py write)
   docs/_static/panelsets/paper/links-figs13.json     compressed `#view=z1.` fragments per view
 
 Run: .venv-docs/bin/python docs/_tools/shoot_figs13.py [--port 8814] [--only fig1 fig2 fig3 check]
@@ -27,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from shots import Session, panelset_file, split, start_link, tile, z1  # noqa: E402
+from shots import DATA_DIR, Session, panelset_file, split, start_link, tile, z1  # noqa: E402
 
 DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "paper"
@@ -213,12 +215,12 @@ def panelset(name: str, v: dict, dataset: str) -> dict:
 
 
 ALL_VIEWS = {
-    "fig1-focus-model": (fig1_view, "bm_aging.zarr"),
-    "fig2-overview": (fig2_overview_view, "bm_aging.zarr"),
-    "fig2-focus-sequence": (fig2_focus_view, "bm_aging.zarr"),
-    "fig2-table-filter": (fig2_filter_view, "bm_aging.zarr"),
-    "fig3-walk": (fig3a_view, SHOWCASE),
-    "fig3-umap-vs-diffusion": (fig3bc_view, SHOWCASE),
+    "overview-focus-model": (fig1_view, "bm_aging.zarr"),
+    "interface-overview": (fig2_overview_view, "bm_aging.zarr"),
+    "interface-focus-sequence": (fig2_focus_view, "bm_aging.zarr"),
+    "interface-table-filter": (fig2_filter_view, "bm_aging.zarr"),
+    "cell-by-cell-walk": (fig3a_view, SHOWCASE),
+    "cell-by-cell-umap-vs-diffusion": (fig3bc_view, SHOWCASE),
 }
 
 
@@ -397,7 +399,7 @@ def shoot_fig2(s) -> None:
     # Save Panel Set dialog, then Share Link with the clipboard denied (shows the field).
     page.click("#btn-save-session")
     page.wait_for_selector("#session-name", state="visible")
-    page.fill("#session-name", "fig2-table-filter")
+    page.fill("#session-name", "interface-table-filter")
     time.sleep(0.6)
     crop(page, "#session-modal .modal-content", OUT / "fig2-save-panel-set.png")
     page.keyboard.press("Escape")
@@ -434,7 +436,7 @@ def shoot_fig2(s) -> None:
     # under another path, so it loads without asking (PR #58); older builds asked first, which
     # the fallback below still accepts. Then shoot the restored layout. The uploaded set is deleted again so the shared list stays clean.
     page.click("#toggle-upload-btn")
-    page.set_input_files("#session-file-upload", str(PANELSETS / "fig1-focus-model.json"))
+    page.set_input_files("#session-file-upload", str(PANELSETS / "overview-focus-model.json"))
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
     page.click("#btn-confirm-session")
@@ -458,7 +460,7 @@ def shoot_fig2(s) -> None:
         s.log.append("fig2 loaded focus: " + focused(page, "cell") + " / " + focused(page, "gene"))
     finally:
         s.log.append("fig2 delete uploaded set: " + str(page.evaluate(
-            "fetch('/api/v1/sessions/delete?name=fig1-focus-model', {method: 'DELETE'}).then(r => r.status)")))
+            "fetch('/api/v1/sessions/delete?name=overview-focus-model', {method: 'DELETE'}).then(r => r.status)")))
     page.context.close()
 
 
@@ -540,7 +542,7 @@ if __name__ == "__main__":
     ap.add_argument("--only", nargs="*", default=["fig1", "fig2", "fig3"])
     a = ap.parse_args()
     write_artefacts()
-    showcase = (Path.home() / "gits/annzarro-paper/data/bm_aging_showcase.READY").exists()
+    showcase = (DATA_DIR / "bm_aging_showcase.zarr").exists()
     with Session(a.port, OUT) as s:
         if "fig1" in a.only:
             shoot_fig1(s)

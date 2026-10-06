@@ -9,7 +9,7 @@ a server started with
 
 ```bash
 annzarro start --host 127.0.0.1 --port 8812 --no-browser --auth-disabled \
-    --data-dir ~/gits/annzarro-paper/data
+    --data-dir ~/annzarro-data
 ```
 
 on the demonstration store `bm_aging.zarr` (8,090 cells × 16,285 genes). Outputs are copied
@@ -334,7 +334,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets" | python -m json.tool | head -
         "genes": 16285,
         "is_link": false,
         "name": "bm_aging.zarr",
-        "path": "/Users/dotto/gits/annzarro-paper/data/bm_aging.zarr",
+        "path": "/Users/me/annzarro-data/bm_aging.zarr",
         "rel_path": "bm_aging.zarr"
     },
 ```
