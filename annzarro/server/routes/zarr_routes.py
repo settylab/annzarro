@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
-from ...core import zarr_reader
+from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 
 logger = logging.getLogger(__name__)
@@ -75,8 +75,12 @@ def register_zarr_routes(app, api_version):
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
             
-            # Clear the cache
+            # Clear the cache: both readers. The h5ad reader keeps its own
+            # result cache (it opens the file per read and holds no handle);
+            # resetting the zarr reader alone served an .h5ad's old reads
+            # until a restart.
             result = zarr_reader.clear_cache(dataset_path=dataset_path)
+            h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
             # The name search index is a cache too: a reset must rebuild it.
             name_index.clear(dataset_path)
             
