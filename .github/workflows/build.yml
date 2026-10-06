@@ -192,12 +192,14 @@ jobs:
         # Readline or ncurses, all notices present. Fails the release otherwise.
         run: |
           set -o pipefail
-          check=annzarro/desktop/scripts/licence_check.py
-          mkdir -p licence-check
+          root=$PWD
+          check=$root/annzarro/desktop/scripts/licence_check.py
+          mkdir -p "$root/licence-check"
           status=0
           run_check() {  # <label> <unpacked app>
             echo "::group::licence check: $1"
-            python "$check" "$2" --json "licence-check/$1.json" | tee "licence-check/$1.txt" || status=1
+            python "$check" "$2" --json "$root/licence-check/$1.json" \
+              | tee "$root/licence-check/$1.txt" || status=1
             echo "::endgroup::"
           }
           cd out
