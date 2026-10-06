@@ -72,6 +72,19 @@ server:
       description: Data directory
       default: "~/annzarro-data"
       security: internal  # an absolute server path; the client does not need it
+    allowed_dirs:
+      type: array
+      items:
+        type: string
+      description: Directories beyond data_dir that dataset paths may resolve into on a confined server
+      default: []
+      security: internal
+    arbitrary_paths:
+      type: string
+      enum: [auto, admins, none]
+      description: "Who may open dataset paths outside data_dir/allowed_dirs: auto = only the user of a local single-user server; admins = also admins of a shared server; none = nobody"
+      default: auto
+      security: internal
     static_dir:
       type: [string, "null"]
       description: Static files directory

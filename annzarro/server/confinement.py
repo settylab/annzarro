@@ -16,8 +16,14 @@ allowed roots: ``data_dir`` plus any ``allowed_dirs`` from the configuration.
 Anything else is refused with a 403 (after the login check, and without
 naming the roots: absolute server paths stay in the server log).
 
-Local single-user mode (localhost, login disabled -- including the desktop
-app) is unchanged: free browsing.
+Who may open a path OUTSIDE those roots is ``server.arbitrary_paths``
+(``may_open_any_path``):
+
+* ``auto`` (default): on a shared server nobody, admins included; on a local
+  single-user server (localhost, login disabled: a laptop, the desktop app)
+  its one user, who owns the machine and its files anyway.
+* ``admins``: as ``auto``, and admins of a shared server with login.
+* ``none``: nobody, local servers included.
 
 Remote stores (a scheme in ``core.remote.REMOTE_SCHEMES``: ``s3://``,
 ``gs://``, ``gcs://``, ``http(s)://``) are not local paths and are left alone
@@ -28,7 +34,7 @@ here; they get their own allowlist elsewhere. Any other ``scheme://`` string
 import logging
 import os
 
-from flask import current_app, jsonify, request
+from flask import current_app, has_request_context, jsonify, request
 
 from ..core.remote import is_remote_path
 
@@ -43,6 +49,40 @@ PATH_ARGS = ("dataset_path", "dataset_id", "dir")
 #: Endpoints whose ``path`` argument is a filesystem directory. Elsewhere
 #: (``data/by_path``) ``path`` names an array INSIDE a dataset, not a file.
 DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
+
+
+ARBITRARY_PATH_MODES = ("auto", "admins", "none")
+
+
+def arbitrary_paths_mode(config):
+    """``server.arbitrary_paths``, validated (``auto`` when unset)."""
+    mode = str(config.get("arbitrary_paths") or "auto").strip().lower()
+    if mode not in ARBITRARY_PATH_MODES:
+        raise ValueError(f"server.arbitrary_paths must be one of {', '.join(ARBITRARY_PATH_MODES)}, "
+                         f"not {config.get('arbitrary_paths')!r}")
+    return mode
+
+
+def may_open_any_path(config):
+    """Whether the current requester may open paths outside the allowed roots.
+
+    Needs a request context for ``admins`` (the admin flag is read from the
+    user store, not the cookie, so revoking admin takes effect at once).
+    """
+    mode = arbitrary_paths_mode(config)
+    if mode == "none":
+        return False
+    if not is_hosted(config):
+        return True
+    if mode == "admins":
+        from . import permissions
+        return permissions.current_user()[1]
+    return False
+
+
+def is_confined(config):
+    """Whether anyone at all is held to the allowed roots on this server."""
+    return is_hosted(config) or arbitrary_paths_mode(config) == "none"
 
 
 def is_hosted(config):
@@ -122,7 +162,7 @@ def resolve_relative_dataset_paths():
 def enforce():
     """``before_request`` hook: refuse local paths outside the allowed roots."""
     config = current_app.config
-    if not is_hosted(config):
+    if not is_confined(config):
         return None
     paths = _requested_paths()
     if not paths:
@@ -135,20 +175,27 @@ def enforce():
         if not is_logged_in():
             return login_required_response()
     roots = allowed_roots(config)
-    for path in paths:
-        if not is_inside(path, roots):
-            # The roots go to the log for the administrator, never to the
-            # client: absolute server paths are nobody else's business.
-            logger.warning(f"Refused path outside the data directory: {path!r} "
-                           f"({request.path}); allowed roots: {', '.join(roots)}")
-            return jsonify({
-                "error": (f"'{path}' is outside the data directory this server "
-                          f"shares, so it cannot be opened here. Open a dataset "
-                          f"from the dataset list, or ask an administrator to "
-                          f"add its directory to server.allowed_dirs."),
-                "reason": "outside_data_dir",
-                "path": path,
-            }), 403
+    outside = [path for path in paths if not is_inside(path, roots)]
+    if outside and may_open_any_path(config):
+        if is_hosted(config):
+            from . import permissions
+            logger.info(f"Admin {permissions.current_user()[0]!r} opened a path outside the "
+                        f"data directory: {outside[0]!r} ({request.path})")
+        return None
+    if outside:
+        path = outside[0]
+        # The roots go to the log for the administrator, never to the
+        # client: absolute server paths are nobody else's business.
+        logger.warning(f"Refused path outside the data directory: {path!r} "
+                       f"({request.path}); allowed roots: {', '.join(roots)}")
+        return jsonify({
+            "error": (f"'{path}' is outside the data directory this server "
+                      f"shares, so it cannot be opened here. Open a dataset "
+                      f"from the dataset list, or ask an administrator to "
+                      f"add its directory to server.allowed_dirs."),
+            "reason": "outside_data_dir",
+            "path": path,
+        }), 403
     return None
 
 
@@ -159,9 +206,11 @@ def listable(config, path):
     allowed root, so listing it only offers a dataset that fails with 403
     when clicked. Local single-user mode lists everything.
     """
-    if not is_hosted(config):
+    if not is_confined(config):
         return True
-    return is_inside(path, allowed_roots(config))
+    if is_inside(path, allowed_roots(config)):
+        return True
+    return has_request_context() and may_open_any_path(config)
 
 
 def warn_about_escaping_links(config):
@@ -171,7 +220,7 @@ def warn_about_escaping_links(config):
     In hosted mode a link whose target is outside every allowed root is
     refused, so say so at startup rather than at the first 403.
     """
-    if not is_hosted(config):
+    if not is_confined(config):
         return
     data_dir = config.get("data_dir") or default_data_dir()
     roots = allowed_roots(config)
