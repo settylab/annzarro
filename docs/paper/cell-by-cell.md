@@ -1,7 +1,7 @@
 # Cell by cell
 
 ```{figure} ../_static/figures/paper/cell-by-cell.png
-:alt: The paper's cell-by-cell figure. a, four UMAPs coloured by the five-step diffusion walk from an HSC, an LMPP, a GMP and a monocyte, with the diffusion path drawn as a line. b, UMAP distance against diffusion distance from a focused plasma cell, with two discordant groups in orange and blue. c, the same groups on the UMAP.
+:alt: The paper's cell-by-cell figure. a, four UMAPs coloured by the five-step diffusion walk from an HSC, an LMPP, a GMP and a monocyte, with the diffusion path drawn as a line. b, UMAP distance against diffusion distance from a focused plasma cell, with two discordant groups in orange and blue. c, the same groups on the UMAP. d, 112 C. elegans neuron classes on a UMAP of their transcriptomes, coloured by the chemical synapses sent by the focused class AVA, strongest in the ventral cord motor neurons.
 :width: 100%
 
 *A cell-by-cell matrix, read one focused cell at a time*, a figure of the AnnZarro paper (Otto,
@@ -14,8 +14,10 @@ cell's row of a dense five-step diffusion walk (`obsp/diffusion_walk_t5`) for fo
 shortest diffusion path from an HSC to a monocyte. **b**, For a focused plasma cell, UMAP distance
 against multiscale diffusion distance to every other cell (Spearman ρ = 0.62), with 265 cells near
 on the UMAP but far in diffusion space (orange) and 392 the reverse (blue). **c**, The same groups
-on the UMAP. The tutorial {doc}`../tutorials/cell-similarity` builds every panel in AnnZarro on
-`bm_aging_showcase.zarr`.
+on the UMAP. **d**, A connectome as a cells × cells matrix: *C. elegans* neuron classes on a UMAP of
+their transcriptomes, coloured by the focused class AVA's row of chemical synapses. The tutorial
+{doc}`../tutorials/cell-similarity` builds panels a to c in AnnZarro on `bm_aging_showcase.zarr`;
+panel d uses its own store ({ref}`cell-by-cell-connectome`).
 
 | Panel | In AnnZarro | Tutorial section |
 |---|---|---|
@@ -23,18 +25,12 @@ on the UMAP. The tutorial {doc}`../tutorials/cell-similarity` builds every panel
 | b | live axes: rows of `obsp/umap_distance` and `obsp/diffusion_distance`; precomputed colour `fig3_plasma_groups` | {ref}`tut-cell-distance-axes` |
 | c | UMAP coloured by `fig3_plasma_groups` | {ref}`tut-cell-groups-umap` |
 | counts (265, 392, cell types) | table filters | {ref}`tut-cell-check` |
-
-(cell-by-cell-connectome)=
-## Neuron connectome
-
-```{important}
-**Placeholder.** The paper's cell-by-cell figure is gaining a view of the *C. elegans* neuron
-connectome with CeNGEN expression. Its panel, store recipe and views will be added here when they
-exist.
-```
+| d | live: `obsp/chemical_synapses` row of the focused class as a log colour | {ref}`cell-by-cell-connectome` |
 
 (cell-by-cell-differences)=
 ## Differences from the paper figure
+
+This section covers panels a to c; panel d has its own list below.
 
 | In the paper | In AnnZarro | Closest equivalent |
 |---|---|---|
@@ -77,3 +73,86 @@ Loading one restores the dataset, the focus and the split layout, like the links
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
 `figures/numbers/fig2.json` of the paper repository.
+
+(cell-by-cell-connectome)=
+## A connectome as a cells × cells matrix
+
+Panel d puts a different kind of cells × cells matrix behind the same click: the wiring of the
+*C. elegans* hermaphrodite nervous system {cite:p}`varshney2011`. Each point is a neuron class,
+placed on a UMAP of its CeNGEN transcriptome {cite:p}`taylor2021`, and the colour is the focused
+class's row of `obsp/chemical_synapses`: the number of chemical synapses it sends to every other
+class. The view opens on AVA, the command interneuron for backward locomotion.
+
+1. **Build the store.** In the paper repository, run `python data_prep/neuro_demo.py` in an
+   environment with anndata, scanpy, pyreadr, openpyxl and xlrd. It downloads every input from its
+   public source, checks each file's sha256, and writes
+   `data/neuro_demo/celegans_connectome_cengen.zarr` (7.7 MB; 112 neuron classes × 13,669 genes).
+2. **Start AnnZarro on that folder:** `annzarro start --data-dir data/neuro_demo`.
+3. **Open the link** below. If your server is not at `http://127.0.0.1:8000`, see
+   {ref}`tut-start-links`.
+
+::::{dropdown} Panel d: chemical synapses from the focused class (opens at AVA)
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-connectome.url.txt
+:language: text
+```
+::::
+
+::::{dropdown} The same view with gap junctions (`obsp/gap_junctions`)
+```{literalinclude} ../_static/panelsets/paper/cell-by-cell-connectome-gap.url.txt
+:language: text
+```
+::::
+
+Panel sets: {download}`cell-by-cell-connectome.json <../_static/panelsets/paper/cell-by-cell-connectome.json>`,
+{download}`cell-by-cell-connectome-gap.json <../_static/panelsets/paper/cell-by-cell-connectome-gap.json>`.
+
+```{figure} ../_static/screens/paper/connectome.png
+:class: screenshot
+:alt: Neuron classes on a UMAP, most in grey; the focused class AVA is a red dot on the left, and the darkest blue points sit in the small separate cluster of ventral cord motor neurons on the right.
+
+The link in AnnZarro: chemical synapses from AVA, log colour scale. Classes that receive none are
+grey.
+```
+
+**What to look for.** AVA's strongest targets are the ventral cord motor neurons VA (82 synapses),
+DA (78) and AS (62), which sit in their own cluster at the right of the UMAP; together they receive
+76% of the 293 chemical synapses AVA sends to other classes. The next is the interneuron PVC (28). Click VA to see its own
+row, or type AVB into **Focused Cell** to compare the command interneuron for forward locomotion
+with AVA.
+
+**The unit is a neuron class, not a neuron.** CeNGEN measures expression per neuron class, so each
+point is a class, and its synapse counts are summed over the class's neurons: left and right
+partners (AVAL and AVAR), and the members of the motor neuron classes along the cord. Differences
+between the two sides, or along the cord, are summed away.
+
+**Licence.** The store combines the Varshney et al. connectome from WormAtlas (CC BY), the CeNGEN
+tables of the `cengenDataSC` package (GPL-3.0) and neurotransmitter identities from Wang et al.
+{cite:p}`wang2024nt` (CC BY 4.0). Because of the CeNGEN tables, a shared copy of the store is
+GPL-3.0, together with the script that builds it. The more complete connectome of Cook et al.
+(2019) was not used: its files carry no licence that allows redistribution.
+
+### Settings and differences from panel d
+
+The view is a Cell Plot with X and Y `obsm` `X_umap` 0 and 1, colour `obsp` `chemical_synapses`
+(the focused cell's row), **Log** on with floor 0.5, reversed `Blues`, **Strong on top** and
+**Highlight Focused Cell** on, and **Equal aspect** on. It is made by
+`docs/_tools/shoot_connectome.py`.
+
+- **Classes with no synapse.** Under **Log**, every value at or below the floor shares the lowest
+  colour. With the default floor, the smallest positive value (here 1), the 94 classes that
+  receive nothing would share a colour with the three that receive one synapse (AVH, ADE, RIG). A
+  floor of 0.5 keeps them apart: zeros take the lowest colour, a light grey in reversed `Blues`, and
+  one synapse is already pale blue. The paper draws zeros in a separate grey and slightly smaller.
+- **Colour range.** Under **Log** the range is in log10 units. The view leaves it to the data
+  (0.5 to 82, that is −0.30 to 1.91). To pin the paper's 1 to 82, set **Min** 0 and **Max** 1.914,
+  with zeros then clipped to the lowest colour as well.
+- **Colour map.** Plotly's `Blues`, reversed, runs from light grey to a saturated royal blue; the
+  paper's map runs from pale sky blue to navy. The colour bar is labelled at 1 and 10, the paper's
+  at 1, 3, 10, 30 and 80.
+- **AVA itself.** AVA sends 3 synapses to its own class (AVAL to AVAR). The paper sets that value to
+  0; AnnZarro keeps it, but the focused class is drawn as the large red marker of **Highlight
+  Focused Cell**, so its colour is not seen. The paper draws a ring instead.
+- **Labels.** The paper labels the focus, PVC and the motor neuron classes. AnnZarro has no text
+  labels on plots; hover over a point for its class and value.
+- **Extent.** The paper leaves room below the UMAP for its labels; the app fits the axes to the
+  points.
