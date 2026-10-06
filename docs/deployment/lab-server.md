@@ -159,6 +159,14 @@ sudo systemctl enable --now annzarro
 journalctl -u annzarro -f
 ```
 
+(lab-server-several)=
+**Several services on one host** (two ports, or a public and an internal instance): give each
+its own `ANNZARRO_HOME` (for example `/var/lib/annzarro-public` and `/var/lib/annzarro-lab`).
+`$ANNZARRO_HOME/freshness` holds the datasets' generations, which every ETag includes
+({ref}`revalidation`). A service's start begins a new generation of every dataset, and an admin's
+cache clear one of its dataset; with a shared `ANNZARRO_HOME` that invalidates the other
+services' ETags too. Nothing breaks, but their browsers fetch everything again.
+
 ## 6. Put nginx in front
 
 TLS belongs in the proxy. Without it, passwords and session cookies cross the network in clear

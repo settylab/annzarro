@@ -107,6 +107,10 @@ the store keeps the column.
   enough for a store too large to check within 3 s (the 95.6-million-cell Tahoe-100M store): there
   the check answers `status: "partial"` and changes nothing, and an in-place chunk write needs an
   admin's refresh.
+- **With login off, anyone who can reach the server can refresh.** A server without login
+  treats every visitor alike, so any of them can ask for the re-check (and, on your own machine,
+  the cache clear). That is harmless: a refresh only reads the store, and it is rate-limited as
+  below. On a lab server, turn login on ({doc}`authentication`).
 - **One check every 10 seconds per dataset.** The server walks a dataset's files at most once per
   `server.refresh_min_interval_s` (default 10 s), across all workers. A refresh sooner waits for
   the next walk, at most that long, and shares it with everyone waiting; it is never answered by a
