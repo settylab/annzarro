@@ -39,5 +39,15 @@ are installed separately by pip under their own licences.
 
 ## Citing AnnZarro
 
-Otto, D. J., Baasri, S. and Setty, M. AnnZarro: interactive exploration of cell-by-cell and
-gene-by-gene relationships in single-cell data. In preparation.
+The citation metadata are in
+[`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff) at the top of the
+repository; GitHub's "Cite this repository" button reads it. From v0.4.1, each release is
+archived on Zenodo with a DOI, with the same authors (`.zenodo.json`). To cite the software, cite the release you
+used:
+
+Otto, D. J., Baasri, S. and Setty, M. AnnZarro (software), version X.Y.Z.
+<https://github.com/settylab/annzarro>
+
+The paper describing AnnZarro is in preparation: Otto, D. J., Baasri, S. and Setty, M. AnnZarro:
+scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell
+data. Once it has a DOI, it will be added to `CITATION.cff` as the preferred citation.

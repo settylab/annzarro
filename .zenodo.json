@@ -1,0 +1,37 @@
+{
+  "upload_type": "software",
+  "title": "AnnZarro",
+  "description": "A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers leave out: cell x cell kernels and distances (obsp) and gene x gene similarities (varp), explored one focused cell or gene at a time and linked to the cell x gene layers. It reads only the chunks behind what is on screen, locally or from S3, GCS and HTTP, and never writes to the data or runs code. Documentation: https://annzarro.readthedocs.io",
+  "creators": [
+    {
+      "name": "Otto, Dominik J.",
+      "affiliation": "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA",
+      "orcid": "0009-0009-3295-1234"
+    },
+    {
+      "name": "Baasri, Siddharth",
+      "affiliation": "University of Washington, Seattle, WA, USA"
+    },
+    {
+      "name": "Setty, Manu",
+      "affiliation": "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA",
+      "orcid": "0000-0002-0344-2627"
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": [
+    "single-cell",
+    "visualization",
+    "genomics",
+    "anndata",
+    "zarr"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://annzarro.readthedocs.io",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-softwaredocumentation"
+    }
+  ]
+}

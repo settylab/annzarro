@@ -69,7 +69,9 @@ similarity, the user guide, data preparation, deployment, and the CLI, configura
 
 ## Citation
 
-Otto D.J., Baasri S. and Setty M. AnnZarro. Protocol preprint in preparation.
+Citation metadata are in [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff)
+(GitHub's "Cite this repository"); from v0.4.1, each release is archived on Zenodo with a DOI. Otto D.J., Baasri S. and Setty M. AnnZarro.
+Protocol preprint in preparation.
 
 ```bibtex
 % PLACEHOLDER: replace with the preprint entry once it has a DOI.
