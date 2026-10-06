@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/settylab/annzarro/blob/main/LICENSE)
 [![Docs](https://readthedocs.org/projects/annzarro/badge/?version=latest)](https://annzarro.readthedocs.io)
 [![Tests](https://github.com/settylab/annzarro/actions/workflows/tests.yml/badge.svg)](https://github.com/settylab/annzarro/actions/workflows/tests.yml)
+[![DOI](https://zenodo.org/badge/966413721.svg)](https://zenodo.org/badge/latestdoi/966413721)
 
 A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers
 leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
