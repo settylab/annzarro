@@ -115,7 +115,7 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | `ANNZARRO_<SECTION>_<KEY>` | Sets any configuration key, e.g. `ANNZARRO_SERVER_PORT=9000`, `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`, `ANNZARRO_AUTH_ENABLED=true`, `ANNZARRO_AUTH_SECRET_KEY=...`, `ANNZARRO_SERVER_HOSTED=true`, `ANNZARRO_SERVER_WORKERS=2`, `ANNZARRO_SERVER_ALLOWED_DIRS=/a,/b` (comma-separated list). Variables that name no key are listed as "ignored" by `config show`. |
 | `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys. |
 | `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
-| `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key). |
+| `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key, and `freshness/`, the datasets' generations behind every ETag). Give each server on a host its own: one server's start invalidates the ETags of every server sharing the directory, so their browsers fetch everything again ({ref}`lab-server-several`). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
 | `ANNZARRO_EXTERNAL_REQUESTS` | `off`, `ask` or `on`: overrides `integrations.external_requests`, whether the Gene Set Analysis panel may contact external services. Any other value is ignored. |
 | `ANNZARRO_CONFIG` | Configuration file used when `--config` is not given, by every `annzarro` command and by the WSGI entry point (gunicorn). `--config` wins if both are set. |
