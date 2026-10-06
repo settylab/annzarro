@@ -1,7 +1,7 @@
 # Overview: focus model, slots and comparison
 
 ```{figure} ../_static/figures/paper/overview.png
-:alt: Three panels. a, the focus model: the focused cell selects its row of cells x cells (obsp) and of cells x genes (X and layers), the focused gene its column of cells x genes and its row of genes x genes (varp); each colours a cell or gene scatter, and the server reads only the chunks of that row or column. b, the AnnData slot map with the focused cell as a blue row and the focused gene as an orange column through every cell- or gene-indexed array. c, a feature table comparing AnnZarro with CELLxGENE Explorer, CELLxGENE Annotate, Vitessce, Cirrocumulus, iSEE, UCSC Cell Browser, Single Cell Portal, ShinyCell2, Kana, Loupe Browser, ManiVault Studio, VizIt and Scanpy or Seurat code, with a strip of the largest number of cells each drew within a 16 GiB client memory budget.
+:alt: Three panels. a, the focus model: the focused cell selects its row of cells x cells (obsp) and of cells x genes (X and layers), the focused gene its column of cells x genes and its row of genes x genes (varp); each colours a cell or gene scatter, and the server reads only the chunks of that row or column. b, the AnnData slot map with the focused cell as a blue row and the focused gene as an orange column through every cell- or gene-indexed array. c, a feature table comparing AnnZarro with CELLxGENE Explorer, CELLxGENE Annotate, Vitessce, Cirrocumulus, iSEE, UCSC Cell Browser, Single Cell Portal, ShinyCell2, Kana, Loupe Browser, ManiVault Studio, VizIt and Scanpy or Seurat code, 13 tools in 14 rows, with a strip of the largest number of cells each drew within a 16 GiB client memory budget.
 :width: 100%
 
 *The focus model, the AnnData slots behind it, and AnnZarro compared with other viewers*, the
@@ -145,9 +145,9 @@ outside the PCA have zero loadings and sit at the origin.
 (overview-comparison)=
 ## c · Comparison with other viewers
 
-Panel c scores other single-cell viewers and analysis code in Scanpy or Seurat, one row per tool
-(CELLxGENE as its two programs, Explorer and Annotate) and one column per capability, grouped by
-job. The shaded relationship columns are what
+Panel c scores 13 tools, AnnZarro included, with CELLxGENE as its two programs (Explorer and
+Annotate), against analysis code in Scanpy or Seurat as a baseline: 14 rows, one column per
+capability, grouped by job. The shaded relationship columns are what
 AnnZarro adds: a stored cells × cells or genes × genes matrix becomes a colour or an axis, and
 the focused cell or gene picks which row every linked panel shows. The table also records what
 AnnZarro does not do: annotation editing, differential expression on the fly, tissue image
