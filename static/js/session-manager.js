@@ -41,9 +41,17 @@ const SessionManager = (function() {
     function _constants() {
         const constants = {
             focusedGene: DataManager.getFocusedGene(),
-            focusedCell: DataManager.getFocusedCell(),
-            taxonomyId: DataManager.getTaxonomyId()
+            focusedCell: DataManager.getFocusedCell()
         };
+        // The species when the dataset has one: chosen, or inferred from it
+        // (kept as inferred, so it is inferred again when reopened). The
+        // server's default is not saved: saved, it would read as a choice
+        // and pin a mouse dataset to human.
+        const taxonomySource = DataManager.getTaxonomySource();
+        if (taxonomySource !== 'default') {
+            constants.taxonomyId = DataManager.getTaxonomyId();
+            if (taxonomySource === 'inferred') constants.taxonomySource = 'inferred';
+        }
         const cellRows = DataManager.cellRowHints(getFixedCells().map(c => c.cell));
         if (Object.keys(cellRows).length) constants.cellRows = cellRows;
         return constants;

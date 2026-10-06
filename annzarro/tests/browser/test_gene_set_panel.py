@@ -761,3 +761,133 @@ def test_never_is_kept_by_the_browser_and_wins_over_a_link(env, browser):
     _all_ok(page, ["string-enrichment"])
     assert services.count("string-ids") >= 1
     assert "version-12-5.string-db.org" not in (page.evaluate("() => localStorage.getItem('annzarro:external-ok')") or "")
+
+
+# --------------------------------------------------------------------------- the species, when not chosen
+
+def _species_stores(tmp_path_factory):
+    """Copies of the fixture: mouse Ensembl ids in gene_name; and symbols with uns["organism"]."""
+    import shutil
+    import numpy as np
+    import zarr
+    root = tmp_path_factory.mktemp("species-data")
+    mouse = root / "mouse_ens.zarr"
+    shutil.copytree(STORE, mouse)
+    g = zarr.open_group(str(mouse), mode="r+", zarr_format=2)
+    g["var"]["gene_name"][:] = np.array([f"ENSMUSG000000{33845 + i}" for i in range(20)], dtype=object)
+    org = root / "organism.zarr"
+    shutil.copytree(STORE, org)
+    g = zarr.open_group(str(org), mode="r+", zarr_format=2)
+    # as tests/server/test_uns_scalars.py writes a string scalar (zarr 3 API, format 2)
+    a = g["uns"].create_array("organism", shape=(), dtype=str)
+    a[()] = "Danio rerio"
+    # the fixture's metadata is consolidated: list the new entry there too
+    zarr.consolidate_metadata(str(org), zarr_format=2)
+    return root
+
+
+@pytest.fixture(scope="module")
+def species_server(tmp_path_factory):
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+    from annzarro.tests.browser.test_memory_guard import REPO, _free_port
+    data = _species_stores(tmp_path_factory)
+    home = tmp_path_factory.mktemp("species-home")
+    port = _free_port()
+    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
+               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1", "--port", str(port),
+                             "--data-dir", str(data), "--no-browser", "--auth-disabled"],
+                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    root = f"http://127.0.0.1:{port}"
+    for _ in range(120):
+        try:
+            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
+            break
+        except OSError:
+            time.sleep(0.25)
+    yield root, data
+    proc.terminate()
+    proc.wait(10)
+
+
+def _species_link(root, store, taxonomy=None):
+    cfgs = {"gene-table-A": {"id": "gene-table-A", "title": "Gene Table 1", "searchText": "",
+                             "columns": [{"type": "var", "key": "gene_name", "column": ""}]},
+            "gene-set-G": {"id": "gene-set-G", "title": "Gene Set Analysis 1", "tableFilter": "gene-table-A"}}
+    tiles = [{"type": "tile", "id": "gene-table-A"}, {"type": "tile", "id": "gene-set-G"}]
+    constants = {"focusedGene": "GENE003"}
+    if taxonomy:
+        constants["taxonomyId"] = taxonomy
+    view = {"v": 1, "constants": constants, "layout": {"v": 1, "hierarchy": [{"type": "split", "direction": "horizontal",
+            "height": 1000, "panes": [{"percentage": 35}, {"percentage": 65}], "children": tiles}],
+            "controlState": {}, "panelConfigs": cfgs}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    return f"{root}/?dataset_path={urllib.parse.quote(str(store), safe='/')}#view={enc}"
+
+
+SPECIES_FIELD = f"{GS} #gs-species-gene-set-G"
+
+
+def _taxonomy(page):
+    return page.evaluate("async () => { const {DataManager} = await import('/static/js/data-manager.js');"
+                         " return [DataManager.getTaxonomyId(), DataManager.getTaxonomySource()]; }")
+
+
+def test_species_from_ensembl_ids_when_nobody_chose_it(browser, species_server):
+    root, data = species_server
+    context, page, services, errors = _open(browser, root)
+    try:
+        page.goto(_species_link(root, data / "mouse_ens.zarr"))
+        _ready(page)
+        until(page, "(sel) => document.querySelector(sel).value === 'Auto: Mus musculus (from Ensembl IDs)'", SPECIES_FIELD)
+        assert _taxonomy(page) == ["10090", "inferred"]
+        assert state(page)["idType"] == "ensembl"
+        # the links follow: mouse resources, not human ones
+        labels = page.locator(f"{GS} .gs-links__focus a").all_inner_texts()
+        assert "Ensembl" in labels and "GeneCards" not in labels and "HPA" not in labels
+        # saved as inferred, so reopened it is inferred again (not frozen as a choice)
+        constants = page.evaluate("() => window.sessionManager.captureView().constants")
+        assert constants["taxonomyId"] == "10090" and constants["taxonomySource"] == "inferred"
+        # a user's pick wins over the inference
+        page.click(SPECIES_FIELD)
+        page.fill(SPECIES_FIELD, "rat")
+        page.click(f'{GS} .name-picker-option:has-text("Rattus norvegicus")')
+        until(page, "async () => { const {DataManager} = await import('/static/js/data-manager.js'); return DataManager.getTaxonomySource() === 'explicit'; }")
+        assert _taxonomy(page) == ["10116", "explicit"]
+        page.click(f"{TABLE} .dataTables_scrollBody")  # move the focus off the field
+        until(page, "(sel) => document.querySelector(sel).value === 'Rattus norvegicus (rat) · 10116'", SPECIES_FIELD)
+        assert services.calls == [] and not errors and not services.unmocked
+    finally:
+        context.close()
+
+
+def test_species_from_uns_and_an_unconfirmed_default(browser, species_server):
+    root, data = species_server
+    context, page, services, errors = _open(browser, root)
+    try:
+        page.goto(_species_link(root, data / "organism.zarr"))
+        _ready(page)
+        until(page, """(sel) => document.querySelector(sel).value === 'Auto: Danio rerio (from uns["organism"])'""", SPECIES_FIELD)
+        assert _taxonomy(page) == ["7955", "inferred"]
+        # symbols, no uns entry: the server's default, said to be unchecked; not saved in a link
+        page.goto("about:blank")
+        page.goto(_species_link(root, STORE))
+        _ready(page)
+        until(page, "(sel) => document.querySelector(sel).value === 'Homo sapiens (human) · 9606 (default, not checked)'", SPECIES_FIELD)
+        hint = page.inner_text(f"{GS} #gs-species-err-gene-set-G")
+        assert "does not say its species" in hint and "Check it" in hint
+        assert _taxonomy(page) == ["9606", "default"]
+        assert "taxonomyId" not in page.evaluate("() => window.sessionManager.captureView().constants")
+        # a link that names the species is a choice: kept, not inferred over
+        page.goto("about:blank")
+        page.goto(_species_link(root, data / "mouse_ens.zarr", taxonomy="10116"))
+        _ready(page)
+        page.wait_for_timeout(800)
+        assert _taxonomy(page) == ["10116", "explicit"]
+        assert page.input_value(SPECIES_FIELD) == "Rattus norvegicus (rat) · 10116"
+        assert services.calls == [] and not errors and not services.unmocked
+    finally:
+        context.close()

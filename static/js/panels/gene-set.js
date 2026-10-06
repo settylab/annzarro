@@ -38,7 +38,9 @@ import { xrefsOf } from './gene-set-utilities/services/mygene.js';
 import {
     detectIdType, geneRecord, geneLinks, geneLink, setLinks, defaultColumns, columnChoices, linksCsv, resourceById, stripVersion
 } from './gene-set-utilities/links.js';
-import { speciesOf, speciesLabel, searchSpecies, remoteSpeciesSearch, learnSpecies } from './gene-set-utilities/species.js';
+import {
+    speciesOf, speciesLabel, searchSpecies, remoteSpeciesSearch, learnSpecies, speciesFromIds, speciesFromText, UNS_SPECIES_KEYS
+} from './gene-set-utilities/species.js';
 
 registerAll();
 
@@ -85,6 +87,8 @@ const GeneSetPanel = (function() {
         let _idType = 'unknown';      // how the ids are read: the setting, or detected
         let _detectedType = 'unknown';
         let _varColumns = [];
+        let _unsKeys = [];
+        let _speciesWhy = null;       // why this species: 'explicit', 'ensembl', 'uns:<key>', 'default'
         let _pending = null;          // sections waiting for consent
         let _notice = null;           // a one-off line in the bar ("Not sent")
         let _autoTimer = null;
@@ -171,6 +175,7 @@ const GeneSetPanel = (function() {
             syncControlsWithDataset(_dom.controls, true);
             await loadIdColumns(path);
             await ensureIds();
+            await inferSpecies();
             const f = DataManager.getFocusedGene();
             _focus = { name: f || null, id: f ? idOf(f) : null };
             _loadTried = false;
@@ -184,6 +189,7 @@ const GeneSetPanel = (function() {
             let columns = [];
             try {
                 const structure = await DataManager.getDatasetStructure(path);
+                _unsKeys = structure && structure.uns && Array.isArray(structure.uns.keys) ? structure.uns.keys : [];
                 const v = structure && structure.var;
                 columns = (v && (v.columns || Object.keys(v))) || [];
             } catch (error) {
@@ -264,6 +270,65 @@ const GeneSetPanel = (function() {
         function idOf(name) {
             const id = rawIdOf(name);
             return id && _idType === 'ensembl' ? stripVersion(id) : id;
+        }
+
+        /**
+         * The dataset's species, when nobody chose it (not a user, not a
+         * link, not a panel set): a species or organism entry of uns, else
+         * the Ensembl prefix of the ids (ENSMUSG: mouse); without either,
+         * the server's default stays, marked as unconfirmed. A user's pick
+         * always wins (DataManager source 'explicit').
+         */
+        async function inferSpecies() {
+            if (DataManager.getTaxonomySource() === 'explicit') { _speciesWhy = 'explicit'; paintSpecies(); return; }
+            let tax = null, why = null;
+            const keys = new Map(_unsKeys.map(k => [String(k).toLowerCase(), k]));
+            for (const name of UNS_SPECIES_KEYS) {
+                const key = keys.get(name);
+                if (!key) continue;
+                try {
+                    const resp = await DataManager.loadUns({ datasetPath: _dataset, unsKey: key });
+                    tax = speciesFromText(resp && resp.data);
+                } catch { tax = null; }
+                if (tax) { why = `uns:${key}`; break; }
+            }
+            if (!tax) {
+                tax = speciesFromIds(_genes.slice(0, 500).map(rawIdOf)) || speciesFromIds(_genes.slice(0, 500));
+                if (tax) why = 'ensembl';
+            }
+            // a choice made meanwhile is not overwritten
+            if (DataManager.getTaxonomySource() === 'explicit') { _speciesWhy = 'explicit'; paintSpecies(); return; }
+            if (tax) {
+                _speciesWhy = why;
+                if (tax !== taxonomyId() || DataManager.getTaxonomySource() !== 'inferred') DataManager.setTaxonomyId(tax, { source: 'inferred' });
+            } else {
+                _speciesWhy = DataManager.getTaxonomySource() === 'inferred' ? 'inferred' : 'default';
+            }
+            paintSpecies();
+        }
+
+        /** The species field's text, with why this species. */
+        function speciesText() {
+            const tax = taxonomyId();
+            const sp = speciesOf(tax);
+            const name = sp.name || `taxon ${tax}`;
+            if (_speciesWhy === 'ensembl') return `Auto: ${name} (from Ensembl IDs)`;
+            if (_speciesWhy && _speciesWhy.startsWith('uns:')) return `Auto: ${name} (from uns["${_speciesWhy.slice(4)}"])`;
+            if (_speciesWhy === 'default') return `${speciesLabel(tax)} (default, not checked)`;
+            return speciesLabel(tax);
+        }
+
+        function paintSpecies() {
+            if (!_dom) return;
+            if (_picker && document.activeElement !== _dom.species) _picker.setValue(speciesText());
+            const unconfirmed = _speciesWhy === 'default';
+            _dom.species.classList.toggle('gs-species--unconfirmed', unconfirmed);
+            if (!_dom.speciesErr.dataset.error) {
+                _dom.speciesErr.className = `gs-hint${unconfirmed ? ' gs-hint--warn' : ''}`;
+                _dom.speciesErr.textContent = unconfirmed
+                    ? 'The dataset does not say its species, and its ids have no Ensembl prefix: this is the server\'s default. Check it.'
+                    : '';
+            }
         }
 
         function nameOfId(id) {
@@ -349,7 +414,8 @@ const GeneSetPanel = (function() {
 
         function onSpeciesChanged() {
             if (!_initialized) return;
-            if (_picker) _picker.setValue(speciesLabel(taxonomyId()));
+            if (DataManager.getTaxonomySource() === 'explicit') _speciesWhy = 'explicit';
+            paintSpecies();
             settleAll();
             paintAll();
             if (_settings.autoUpdate && _armed) runNow({ auto: true });
@@ -689,9 +755,9 @@ const GeneSetPanel = (function() {
             el('option', { value: 'ensembl', text: 'Ensembl ids' }), el('option', { value: 'entrez', text: 'Entrez ids' }));
             idType.value = _settings.idType;
             const species = el('input', { type: 'text', class: 'form-control form-control-sm', id: sid('species'),
-                placeholder: 'name, common name or taxonomy id', value: speciesLabel(taxonomyId()),
+                placeholder: 'name, common name or taxonomy id', value: speciesText(),
                 aria: { describedby: sid('species-err') } });
-            const speciesErr = el('span', { class: 'gs-hint gs-hint--error', id: sid('species-err') });
+            const speciesErr = el('span', { class: 'gs-hint', id: sid('species-err'), aria: { live: 'polite' } });
             const run = el('button', { type: 'button', class: 'btn btn-sm btn-primary gs-run', on: { click: () => runNow() } });
             const auto = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gs-auto',
                 aria: { pressed: String(_settings.autoUpdate) }, title: 'Refresh whenever the source table changes',
@@ -780,7 +846,9 @@ const GeneSetPanel = (function() {
 
         async function setIdColumn(col) {
             _settings.idColumn = col || 'auto';
+            _speciesWhy = null;
             await ensureIds();
+            await inferSpecies();
             const f = DataManager.getFocusedGene();
             _focus = { name: f || null, id: f ? idOf(f) : null };
             refreshSource();
@@ -816,7 +884,7 @@ const GeneSetPanel = (function() {
         }
 
         function pickSpecies(name, item) {
-            _dom.speciesErr.textContent = '';
+            delete _dom.speciesErr.dataset.error;
             _dom.species.removeAttribute('aria-invalid');
             if (item.kind === 'remote-ask') {
                 // asked for by name: only now does the text go to NCBI
@@ -828,12 +896,18 @@ const GeneSetPanel = (function() {
             }
             if (!/^\d+$/.test(String(item.taxid))) {
                 _dom.species.setAttribute('aria-invalid', 'true');
+                _dom.speciesErr.dataset.error = '1';
+                _dom.speciesErr.className = 'gs-hint gs-hint--error';
                 _dom.speciesErr.textContent = 'Not a species: pick one from the list or type a taxonomy id.';
                 return;
             }
             if (item.kind === 'remote') learnSpecies({ taxid: item.taxid, name: item.sci, common: item.common });
-            _picker.setValue(speciesLabel(item.taxid));
-            if (String(item.taxid) !== taxonomyId()) DataManager.setTaxonomyId(String(item.taxid));
+            // a pick is a choice, also of the species that was inferred or the default
+            _speciesWhy = 'explicit';
+            if (String(item.taxid) !== taxonomyId() || DataManager.getTaxonomySource() !== 'explicit') {
+                DataManager.setTaxonomyId(String(item.taxid));
+            }
+            paintSpecies();
         }
 
         // sections menu -------------------------------------------------------
@@ -1012,7 +1086,7 @@ const GeneSetPanel = (function() {
             if (_dom.source.value !== _settings.tableFilter) fillSourceOptions();
             _dom.ids.value = _settings.idColumn;
             _dom.idType.value = _settings.idType;
-            if (_picker && document.activeElement !== _dom.species) _picker.setValue(speciesLabel(taxonomyId()));
+            paintSpecies();
         }
 
         function hostsSummary() {

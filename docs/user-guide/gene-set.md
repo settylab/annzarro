@@ -213,7 +213,15 @@ The focused gene's links, and the list of the selection.
 ## Species
 
 The species belongs to the dataset: picking one in the panel changes it for the app, and share
-links and panel sets keep it. Type a name, a common name or a taxonomy id. Twelve species are
+links and panel sets keep it. When nobody chose one (not you, not the link or panel set), the
+panel finds it in the dataset: an `uns` entry named `taxonomy_id`, `taxid`, `species` or
+`organism`, else the Ensembl prefix of the gene ids (`ENSG` human, `ENSMUSG` mouse, `ENSRNOG`
+rat, `ENSDARG` zebrafish, `FBgn` fly, `WBGene` worm, ...). The field then reads, for example,
+"Auto: Mus musculus (from Ensembl IDs)". Without either (symbols, no `uns` entry) the server's
+default stays, marked "(default, not checked)" with a note to check it; such a default is not
+saved in links. Your pick always wins.
+
+Type a name, a common name or a taxonomy id. Twelve species are
 listed without asking anyone (human, mouse, rat, zebrafish, fly, worm, yeast, Arabidopsis,
 Xenopus, pig, macaque, chicken), a number is taken as a taxonomy id, and **Search NCBI Taxonomy
 for "..."** asks NCBI (only the text typed) for anything else. Sections whose service does not

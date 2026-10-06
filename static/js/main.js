@@ -348,7 +348,10 @@ const App = (function() {
                     if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
                 }
             }
-            if (constants.taxonomyId) DataManager.setTaxonomyId(constants.taxonomyId);
+            if (constants.taxonomyId) {
+                DataManager.setTaxonomyId(constants.taxonomyId,
+                    { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
+            }
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //

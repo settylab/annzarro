@@ -1179,6 +1179,8 @@ button.dtsb-button.dtsb-clear:hover {
 .gs-auto.active { background: #6c757d; color: #fff; }
 .gs-hint { color: #6c757d; white-space: nowrap; font-size: 0.75rem; }
 .gs-hint--error { color: #a94442; white-space: normal; }
+.gs-hint--warn { color: #7a5f34; white-space: normal; }
+.gs-species--unconfirmed { border-color: #c09853; background: #fcf8e3; }
 .gs-species { position: relative; flex-wrap: wrap; }
 .gs-species input { flex: 1 1 12rem; min-width: 0; }
 .gs-sections-wrap { position: relative; }

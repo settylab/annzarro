@@ -103,3 +103,65 @@ export async function remoteSpeciesSearch(query, deps) {
         name: `${e.sci}${e.common ? ` (${e.common})` : ''} · ${e.taxid}`, taxid: e.taxid, kind: 'remote', sci: e.sci, common: e.common
     }));
 }
+
+/** Ensembl gene id prefixes (and the fly and worm ids Ensembl uses) by species. */
+export const ENSEMBL_PREFIXES = Object.freeze([
+    ['ENSMUSG', '10090'], ['ENSRNOG', '10116'], ['ENSDARG', '7955'], ['ENSGALG', '9031'], ['ENSSSCG', '9823'],
+    ['ENSMMUG', '9544'], ['ENSXETG', '8364'], ['ENSBTAG', '9913'], ['ENSCAFG', '9615'], ['FBgn', '7227'],
+    ['WBGene', '6239'], ['ENSG', '9606']
+]);
+
+/** The species of one gene id, from its Ensembl prefix (ENSG + 11 digits is human), or null. */
+export function speciesOfId(id) {
+    const s = String(id || '').trim();
+    for (const [prefix, tax] of ENSEMBL_PREFIXES) {
+        if (s.startsWith(prefix) && /^\d/.test(s.slice(prefix.length))) return tax;
+    }
+    return null;
+}
+
+/**
+ * The species most of `ids` belong to by their Ensembl prefix (80 % of the
+ * ids that have one, and at least half of all), or null for symbols or a mix.
+ * @param {string[]} ids
+ * @returns {string|null} taxonomy id
+ */
+export function speciesFromIds(ids) {
+    const counts = new Map();
+    let n = 0;
+    for (const id of ids || []) {
+        if (typeof id !== 'string' || !id.trim()) continue;
+        n++;
+        const tax = speciesOfId(id);
+        if (tax) counts.set(tax, (counts.get(tax) || 0) + 1);
+    }
+    let best = null, top = 0, prefixed = 0;
+    for (const [tax, c] of counts) {
+        prefixed += c;
+        if (c > top) { best = tax; top = c; }
+    }
+    return best && top >= 0.8 * prefixed && prefixed >= 0.5 * n ? best : null;
+}
+
+/** uns keys that may name the dataset's species, most specific first. */
+export const UNS_SPECIES_KEYS = Object.freeze(['taxonomy_id', 'taxid', 'tax_id', 'ncbi_taxonomy_id', 'species', 'organism']);
+
+/**
+ * A species from a free text value (an uns entry): a taxonomy id, or a
+ * scientific or common name of the local list ("Mus musculus", "mouse",
+ * "human", "homo_sapiens", "NCBITaxon:10090").
+ * @returns {string|null} taxonomy id
+ */
+export function speciesFromText(value) {
+    let v = Array.isArray(value) ? value[0] : value;
+    if (v && typeof v === 'object') v = v.value ?? v.name ?? null;
+    if (typeof v === 'number' && Number.isInteger(v) && v > 0) return String(v);
+    if (typeof v !== 'string') return null;
+    const s = v.trim().toLowerCase().replace(/^ncbitaxon:/, '').replace(/[_]+/g, ' ');
+    if (/^\d+$/.test(s)) return s;
+    for (const sp of SPECIES) {
+        const names = [sp.name, sp.common, ...(sp.aliases || [])].map(x => x.toLowerCase());
+        if (names.includes(s) || s === sp.name.toLowerCase().split(' ').slice(0, 2).join(' ')) return sp.taxid;
+    }
+    return null;
+}
