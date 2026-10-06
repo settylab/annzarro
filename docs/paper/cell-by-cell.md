@@ -24,6 +24,15 @@ on the UMAP. The tutorial {doc}`../tutorials/cell-similarity` builds every panel
 | c | UMAP coloured by `fig3_plasma_groups` | {ref}`tut-cell-groups-umap` |
 | counts (265, 392, cell types) | table filters | {ref}`tut-cell-check` |
 
+(cell-by-cell-connectome)=
+## Neuron connectome
+
+```{important}
+**Placeholder.** The paper's cell-by-cell figure is gaining a view of the *C. elegans* neuron
+connectome with CeNGEN expression. Its panel, store recipe and views will be added here when they
+exist.
+```
+
 (cell-by-cell-differences)=
 ## Differences from the paper figure
 

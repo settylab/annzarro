@@ -9,6 +9,9 @@ rendered with pdftocairo and trimmed. Images named by the earlier figure numbers
 are deleted.
 
 Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper ~/gits/annzarro-paper]
+Refresh some figures after the paper regenerates them (e.g. figures/fig_scale.py and
+figures/fig6_performance.py, which write manuscript/figures/fig_scale.png and fig6_performance.png):
+     .venv-docs/bin/python docs/_tools/make_paper_figs.py --only scale performance
 Needs pdflatex (TeX Live) and pdftocairo (poppler) on PATH.
 """
 import argparse
