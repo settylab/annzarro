@@ -44,3 +44,24 @@ test('caching a large decoded slice does not JSON-encode it', () => {
     assert.equal(stringified, 0);
     assert.ok(CacheManager.get('big'));
 });
+
+test('a dataset refresh drops that dataset\'s replies, keyed URL-encoded', () => {
+    // The keys are the request URLs _fetchWithCache builds: dataset_path is
+    // encoded (%2F). Clearing by the raw path matched none of them, so a
+    // refresh within 60 s of a load redrew from the old replies.
+    CacheManager.clear();
+    const key = (route, path, extra = {}) =>
+        `/api/v1/data/${route}?${new URLSearchParams({ dataset_path: path, ...extra })}`;
+    const path = '/data/my store/bm_aging.zarr';
+    CacheManager.set(key('obs', path, { columns: 'doublet_score' }), [1]);
+    CacheManager.set(key('obsm/X_umap', path), [2]);
+    CacheManager.set(key('obs', `${path}2`), [3]);          // another dataset, same prefix
+    CacheManager.set('/api/v1/datasets?', [4]);
+    assert.ok(CacheManager.keys()[0].includes('%2Fdata%2Fmy+store'), 'keys are encoded');
+    // what the header's Refresh dataset calls (then reopens the dataset)
+    globalThis.fetch = async () => { throw new Error('offline in test'); };
+    Promise.resolve(DataManager.refreshCacheForDataset(path)).catch(() => {});
+    assert.deepEqual(CacheManager.keys(), [key('obs', `${path}2`), '/api/v1/datasets?']);
+    CacheManager.set(key('obs', path), [5]);
+    assert.equal(DataManager.clearDatasetCache(path), 1);
+});

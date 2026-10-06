@@ -235,12 +235,35 @@ const DataManager = (function() {
         return { ...meta, data: column === null ? values : { [column]: values } };
     }
 
+    /**
+     * Drop every cached reply for one dataset. The keys are request URLs,
+     * whose dataset_path is URL-encoded (`%2Fdata%2Fa.zarr`); matching the
+     * raw path (`dataset_path=/data/a.zarr`) found none of them, so a
+     * refresh within the 60 s lifetime redrew from the old replies without
+     * a single request. Compared as a parsed parameter, so /data/a.zarr
+     * does not also clear /data/a.zarr2.
+     * @returns {number} how many replies were dropped
+     */
+    function clearDatasetCache(datasetPath = _currentDataset) {
+        if (!datasetPath) return 0;
+        let dropped = 0;
+        for (const key of CacheManager.keys()) {
+            const query = key.indexOf('?');
+            if (query < 0) continue;
+            if (new URLSearchParams(key.slice(query + 1)).get('dataset_path') === datasetPath) {
+                CacheManager.remove(key);
+                dropped += 1;
+            }
+        }
+        return dropped;
+    }
+
     function refreshCacheForDataset(datasetPath = _currentDataset) {
         if (!datasetPath) {
             console.warn("No dataset set for refresh.");
             return;
         }
-        CacheManager.clear(`dataset_path=${datasetPath}`);
+        clearDatasetCache(datasetPath);
         _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
         // Optionally re-fetch structure/cells/genes
         return setCurrentDataset(datasetPath);
@@ -2181,6 +2204,7 @@ const DataManager = (function() {
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
         refreshCacheForDataset,
+        clearDatasetCache,
         resetBackendCache,
         getCacheKeys: () => CacheManager.keys(),
         // History navigation functions
