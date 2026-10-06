@@ -13,7 +13,7 @@ their numbers are reproduced below where they matter for setting up a store or a
 ```{important}
 **HPC numbers are being re-measured.** The paper's benchmark on HPC nodes (Xeon Gold 6254, data
 on an NFS scratch filer), which covers dense pairwise matrices up to 160 GB and a
-1.17-million-cell atlas, is being rerun on v0.4.0. Until it lands, neither the paper nor this
+larger atlas, is being rerun on v0.4.0. Until it lands, neither the paper nor this
 page gives an HPC number. Laptop and demonstration-store numbers are final for v0.4.0.
 ```
 
@@ -135,7 +135,7 @@ The slowest interaction is set by chunk layout, not by data size. Full discussio
 | (256, 4096) | **2.21 s** | 0.015 s | 0.09 GiB |
 
 With whole-gene chunks every chunk holds part of each cell's row, so one cell row decompresses the
-whole layer. The HPC sweep on the 1.17-million-cell Kompot layer is being re-measured on v0.4.0.
+whole layer. The HPC sweep on a larger Kompot layer is being re-measured on v0.4.0.
 
 ## Pairwise matrices
 

@@ -24,7 +24,7 @@ def layer_chunks(n_obs, n_vars, target=5e5):
     return min(rows, n_obs), min(cols, n_vars)
 
 layer_chunks(8_090, 16_285)       # (512, 1024)   demonstration data
-layer_chunks(1_165_934, 12_731)   # (8192, 64)    1.17M-cell atlas
+layer_chunks(1_000_000, 5_000)    # (8192, 64)    1M x 5,000, as in the paper's sweep
 ```
 
 Pairwise matrices (`obsp`, `varp`) are only ever read by row, so their chunks span whole rows:
@@ -67,7 +67,7 @@ The penalty grows with the matrix. At 200,000 cells a whole-gene layer costs 125
 row with the files in the page cache. On the paper's laptop sweep at 1M × 5,000 (AnnZarro
 v0.4.0, cold), whole-gene (n, 64) chunks needed **2.9 s** and 7.2 GiB of server memory for one
 cell row, against 0.055 s with anndata's default chunks ({doc}`../reference/performance`). The
-paper's HPC measurement on a 1.17-million-cell Kompot layer, on a network filesystem with a cold
+paper's HPC measurement on a larger Kompot layer, on a network filesystem with a cold
 cache, is being re-measured on v0.4.0.
 
 At the size of the demonstration data the choice matters little. Direct zarr reads of the

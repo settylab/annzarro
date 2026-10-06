@@ -1,5 +1,10 @@
 # Cell subsets for million-cell datasets
 
+```{note}
+Measurements here were taken during design on pre-release builds and are not current; current
+numbers: {doc}`../reference/performance`. Each one says which build it was taken on.
+```
+
 Issues #7 (consistent subsetting), #14 (scalability to millions of cells, parts
 1 to 6), #17 (atlas-scale rendering). Code: `annzarro/core/subset.py`,
 `annzarro/server/routes/data_routes.py` (`_reader_for`, `/data/subset`),
@@ -79,7 +84,7 @@ rows below a key a little under the wanted ranks and collects the rows inside a
 window a little above them; a group whose count and collection do not bracket
 its ranks gets a wider window and is collected again. Only the collected rows
 (about 1.1 x the part) are sorted, so a part costs about what part 0 does
-(synthetic 2M cells, 20 parts of 100,000, in-process: uniform 0.023 / 0.034 /
+(pre-release build before v0.3.0, 2026-10-02: synthetic 2M cells, 20 parts of 100,000, in-process: uniform 0.023 / 0.034 /
 0.029 s for parts 0 / 10 / 19; balanced across 380 drugs 0.065 / 0.140 /
 0.113 s). On the real 50-million-cell Tahoe store (500 parts of 100,000;
 fresh server process per part, pages cached; laptop, under the benchmark lock),
@@ -110,8 +115,8 @@ that survives restarts and is shared between gunicorn workers, or every client
 has to handle "unknown id" and re-register. The spec is short (tens of bytes,
 capped at 2,000 characters), self-describing, and any worker resolves it to the
 same indices. Its cost: the first request for a new spec computes the indices
-(about 30 ms at 1.16M cells for a uniform subset; a filter reads its obs
-columns once).
+(about 30 ms at 1.16M synthetic cells for a uniform subset, on a pre-release build before
+v0.2.0; a filter reads its obs columns once).
 
 ## How the server serves a subset
 
@@ -161,7 +166,7 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 
 ## What the UI shows
 
-- Stats bar: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
+- Stats bar, for example: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
   `Cells: 8,090 [All cells]`. The badge's tooltip spells out the spec
   (seed, balance, filter, cells passing the filter).
 - The badge opens the dialog: on/off; size presets below the eligible count,
@@ -169,8 +174,8 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
   for three from 1k), each with its parts ⌈eligible / n⌉ and an estimated load
   time, and "All" (every cell passing the filter); a marker before the presets
   above `ui.defaults.large_plot_points`; a "may exceed browser memory" warning
-  above `BROWSER_POINT_CEILING` (150M; 175M drew, 182M was a V8 OOM at a
-  4.40 GB heap), a size the dialog never picks by default; the cell count for any other size;
+  above `BROWSER_POINT_CEILING` (150M; set from a pre-release build before v0.3.0; the paper's
+  v0.4.0 numbers are in {doc}`../reference/configuration`), a size the dialog never picks by default; the cell count for any other size;
   seed and a "New seed" button, uniform or balanced sampling, filter
   conditions, "use a cell table's filter". It previews what the server would
   select (`/data/subset`) before anything changes, including per-group counts,
@@ -179,8 +184,8 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 - The load estimate (`static/js/utils/subset-presets.js`) is
   server(n_total) + fixed + perPoint · n, with one (fixed, perPoint) pair for
   the regular plot and one for large-plot mode. The defaults come from the clean
-  runs of the paper's laptop benchmark (20 ns per dataset cell to select, 0.53 s
-  + 5.5 µs per point regular, 62 ns per point large). Each Cell Plot draw and
+  runs of the paper's laptop benchmark on a pre-release build before v0.3.0 (20 ns per dataset
+  cell to select, 0.53 s + 5.5 µs per point regular, 62 ns per point large). Each Cell Plot draw and
   recolour the page times rescales its path: a sample's log(measured / modelled)
   goes to the per-point cost by the per-point share of the modelled time and to
   the fixed cost by the rest, so small plots tune the fixed cost and large ones
@@ -221,7 +226,8 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 
 ## Measured
 
-Synthetic store: 1,160,000 cells x 1,000 genes (CSC X, obs with 20 clusters and
+Pre-release build before v0.2.0 (2026-10-02), JSON transfer. Synthetic store: 1,160,000 cells x
+1,000 genes (CSC X, obs with 20 clusters and
 4 batches, X_umap, 15-NN obsp), Apple M3 Max, headless Chromium, local server.
 View: two UMAP panels, one coloured by cluster, one by a gene of X. "Every cell"
 is this branch with `view.subset = null`, which sends the requests the base
@@ -241,7 +247,7 @@ every cell, 27 ms / 0.66 MB for the subset; UMAP 740 ms / 46 MB vs 92 ms /
 4 MB; kNN row 84 ms / 4.6 MB vs 8 ms / 0.4 MB. Resolving the default subset:
 26 ms once, then 0.4 ms.
 
-With PR #44 merged (binary transfer), bytes at open drop to 8.6 MB for the
+With PR #44 merged (binary transfer, still before v0.2.0), bytes at open drop to 8.6 MB for the
 default subset; the recolour time is not lower (1.8 s; 26 s with every cell), because it is
 spent in Plotly redrawing coloured points (profiled: Plotly's colour handling,
 not AnnZarro code). Recolour time grows faster than linearly with the points
@@ -251,7 +257,7 @@ drawn, which is what the default size trades against.
 
 - **Density rendering** (#17's "datashader-style" mode). A subset already
   removes the frontend stress; a binned grid of every cell
-  (`np.histogram2d` over an obsm pair, ~50 ms at 1.16M cells) drawn as a
+  (`np.histogram2d` over an obsm pair, ~50 ms at 1.16M synthetic cells, pre-release build) drawn as a
   heatmap under the subset's points would show where the unloaded cells are.
   Not implemented here.
 - **A pasted list of cell names** (#7, optional). It does not fit in a request
@@ -261,5 +267,5 @@ drawn, which is what the default size trades against.
 - **The gene axis.** `SubsetView` takes an entity and passes genes through; a
   gene subset would be the same mechanism on var.
 - **Names download.** The browser still downloads the subset's names (1.5 MB at
-  100,000 cells) because `getCellIndex`, the tables and the plots index into
+  100,000 cells, pre-release build before v0.2.0) because `getCellIndex`, the tables and the plots index into
   that list; with the typeahead pickers (#46) nothing else needs every name.
