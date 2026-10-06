@@ -158,8 +158,18 @@ before any path is looked at.
   (`/lab/atlases/bm_aging.zarr`).
 - A symlink in the data directory whose target is outside every allowed root is left out of the
   Dataset picker and refused if opened by path. The startup log names every such link.
-- On a local single-user server (loopback, no login) there is no confinement: you can open any
-  path your account can read.
+- Who may open a path outside those directories is `server.arbitrary_paths`:
+
+  | `arbitrary_paths` | shared server (login on, or a network host) | local single-user server (loopback, no login) |
+  |---|---|---|
+  | `auto` (default) | nobody, admins included | its one user: any path the account can read |
+  | `admins` | admins only; each such open is logged with the admin's name | its one user |
+  | `none` | nobody | nobody |
+
+  Admin status is read from the users file on every request, so `annzarro user set-admin
+  --no-admin` takes effect at once. `GET /api/v1/auth/me` reports `may_open_any_path` for the
+  current user. Turn `admins` on only if your admins should be able to read every file the
+  server account can read: the server opens whatever path they type.
 - Only `s3://`, `gs://`, `gcs://`, `http://` and `https://` count as remote stores; they skip
   this check and follow the remote-store policy below. Any other `scheme://` path (`file://`,
   `ftp://`) is checked as a local path, so on a shared server it is refused.

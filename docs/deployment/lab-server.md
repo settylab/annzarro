@@ -55,6 +55,7 @@ server:
     - /lab/atlases            # targets of the links above
   proxy_count: 1              # one reverse proxy in front: trust its X-Forwarded-* headers
   workers: 4                  # gunicorn worker processes
+  threads: 4                  # threads per worker (gthread)
   cache_memory_mb: 1000       # per worker, see below
   log_file: /var/lib/annzarro/logs/annzarro_server.log
 auth:
@@ -102,7 +103,9 @@ sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzar
 
 The bundled gunicorn configuration `annzarro.server.gunicorn_config` reads the same AnnZarro
 configuration as the app: it binds to `server.host:server.port`, starts `server.workers`
-workers (default: twice the CPUs plus one, at most 4), sets a 60 s worker timeout and sends
+workers (default: twice the CPUs plus one, at most 4) of the `gthread` class with `server.threads`
+threads each (default 4), so a slow request (a large read, a remote store) does not hold a whole
+worker, sets a 60 s worker timeout and sends
 gunicorn's own logs, including the access log, to standard error. Options given on the
 command line, such as `--limit-request-line` here, override it. In a source checkout,
 `annzarro/server/run_gunicorn.sh` runs this command without `--limit-request-line`, with `ANNZARRO_CONFIG` defaulting to
