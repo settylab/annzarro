@@ -298,3 +298,26 @@ test('a trace uid is a valid CSS id fragment, and distinct names stay distinct',
     for (const u of uids) assert.match(u, /^[A-Za-z0-9_-]+$/);
     assert.equal(new Set(uids).size, names.length);
 });
+
+test('a gap that names its entities lists every one in the breakdown: scrolling, Copy, and a search when long', () => {
+    const { panel, host } = installDom();
+    const names = Array.from({ length: 165 }, (_, i) => `gene<${i}>`);
+    const cov = new Coverage({ shown: 5, total: 170, unit: 'genes', gaps: [{ reason: GAP.UNAVAILABLE, kind: 'unmapped',
+        source: 'STRING', count: 165, detail: 'gene<0>, gene<1>, and 163 more', names }] });
+    renderCoverageNotice(host, cov, 'genes');
+    const [el] = notices(panel);
+    const html = el.innerHTML;
+    assert.equal((html.match(/<li>/g) || []).length, 165, 'all 165, not the first five');
+    assert.ok(html.includes('<li>gene&lt;164&gt;</li>'), 'names are escaped');
+    assert.match(html, /data-ps-copy="1">Copy 165</);
+    assert.match(html, /class="ps-names-find"/);
+    // the strip's own line stays one short summary
+    assert.match(el.getAttribute('data-summary'), /^5 of 170 genes shown\nSTRING: not found by the service \(165 genes\) -- gene<0>, gene<1>, and 163 more$/);
+    // a short list: no search box
+    const { panel: p2, host: h2 } = installDom();
+    renderCoverageNotice(h2, new Coverage({ shown: 1, total: 3, unit: 'genes', gaps: [{ reason: GAP.UNAVAILABLE,
+        kind: 'unmapped', source: 'STRING', count: 2, detail: 'a, b', names: ['a', 'b'] }] }), 'genes');
+    const short = notices(p2)[0].innerHTML;
+    assert.equal((short.match(/<li>/g) || []).length, 2);
+    assert.doesNotMatch(short, /ps-names-find/);
+});

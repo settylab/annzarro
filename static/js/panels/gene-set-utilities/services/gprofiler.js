@@ -10,7 +10,7 @@
  */
 import { ServiceError, parseError } from '../fetch-policy.js';
 import { GPROFILER_ORGANISMS, MAX_URL_LENGTH } from '../links.js';
-import { longTable, attribution, unmappedList, mappedCoverage } from './common.js';
+import { longTable, attribution, mappedCoverage, noneKnown, withinNote } from './common.js';
 
 const PROVIDER = Object.freeze({
     name: 'g:Profiler', host: 'biit.cs.ut.ee', home: 'https://biit.cs.ut.ee/gprofiler/', licence: '', maxConcurrent: 2
@@ -105,6 +105,7 @@ export const gprofilerGost = {
         if (!j || !Array.isArray(j.result) || !j.meta) throw parseError('g:Profiler sent no result');
         const gm = j.meta.genes_metadata || {};
         const failed = Array.isArray(gm.failed) ? gm.failed.map(String) : [];
+        if (failed.length && failed.length >= input.genes.length) throw noneKnown('g:Profiler', input);
         const ambiguous = gm.ambiguous && typeof gm.ambiguous === 'object' ? Object.keys(gm.ambiguous) : [];
         // which input genes are in each term: intersections[i] is non-empty
         // when ensgs[i] is; ensgs map back to the query through `mapping`
@@ -129,18 +130,21 @@ export const gprofilerGost = {
         const head = result.terms.length
             ? `${result.terms.length.toLocaleString('en-US')} significant terms (${input.params.correction === 'g_SCS' ? 'g:SCS' : input.params.correction.replace(/_/g, ' ')} < ${input.params.threshold})`
             : `No term passes the threshold (${input.params.threshold}).`;
+        // g:Profiler corrects within each source (g:SCS per source); pooled, the p-values say more than they hold
+        const sources = new Set(result.terms.map(t => t.source)).size;
         el.append(ctx.el('div', { class: 'gs-result-head' }, ctx.el('span', { text: head })),
+            sources > 1 ? ctx.el('p', { class: 'gs-note gs-note--warn gs-fdr-note', text: withinNote('adjusted p', 'source', 'g:Profiler', sources) }) : '',
             result.terms.length ? longTable(ctx, 'g:Profiler enrichment',
-                ['Source', 'Term', { label: 'Genes', cls: 'gs-num', title: 'Input genes in the term / genes in the term' }, { label: 'p (adj.)', cls: 'gs-num' }],
+                ['Source', 'Term', { label: 'Genes', cls: 'gs-num', title: 'Input genes in the term / genes in the term' },
+                    { label: 'p (adj., within source)', cls: 'gs-num', title: 'Adjusted by g:Profiler within each source' }],
                 result.terms.map(t => [t.source, { text: t.name, title: `${t.native}${t.genes.length ? `: ${t.genes.join(', ')}` : ''}` },
                     { text: `${t.hits} / ${t.termSize}`, cls: 'gs-num' }, { text: ctx.sci(t.p), cls: 'gs-num' }]), 'terms') : '',
-            unmappedList(ctx, result.failed, 'g:Profiler') || '',
             result.ambiguous.length ? ctx.el('p', { class: 'gs-note', text: `Ambiguous (g:Profiler picked one gene for each): ${result.ambiguous.join(', ')}` }) : '',
             attribution(ctx, { ...PROVIDER, version: result.version }, `background: ${result.domain === 'custom' ? "this dataset's genes" : 'annotated genes'}`));
     },
     openUrl: (input, result) => gostUrl(result ? result.organism : GPROFILER_ORGANISMS[input.taxonomyId], input.genes, input.params.sources),
     exportRows: (result) => ({
-        columns: ['source', 'term_id', 'term_name', 'p_value_adjusted', 'intersection_size', 'term_size', 'query_size', 'genes'],
+        columns: ['source', 'term_id', 'term_name', 'p_value_adjusted_within_source', 'intersection_size', 'term_size', 'query_size', 'genes'],
         rows: result.terms.map(t => [t.source, t.native, t.name, t.p, t.hits, t.termSize, t.querySize, t.genes])
     })
 };

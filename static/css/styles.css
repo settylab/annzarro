@@ -1290,6 +1290,9 @@ button.dtsb-button.dtsb-clear:hover {
     background: #fff; border: 1px solid #ced4da; border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 .gs-pager { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: #6c757d; }
+.gs-links__scroll { max-height: 50vh; overflow: auto; border: 1px solid #eef0f2; }
+.gs-links__scroll thead th { position: sticky; top: 0; background: #fff; }
+.gs-list-hide { margin-left: auto; }
 
 /* Utility Classes */
 .hidden {
@@ -3154,6 +3157,15 @@ button.dtsb-button.dtsb-clear:hover {
 .plot-status .ps-rows .ps-why { overflow-wrap: anywhere; }
 .plot-status .ps-rows .ps-n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .plot-status .ps-rows .ps-do { white-space: nowrap; }
+/* every name a gap is about (coverage gap.names): all of them, scrolling */
+.plot-status .ps-names-tools { display: flex; align-items: center; gap: calc(2 * var(--ps-u)); margin-bottom: var(--ps-u); }
+.plot-status .ps-names-find { width: 10rem; font-size: 12px; padding: 0 4px; }
+.plot-status .ps-names-said { color: #2f6b3f; }
+.plot-status .ps-names-list {
+    max-height: 12rem; overflow: auto; margin: 0; padding: 2px 6px; list-style: none;
+    columns: 10rem auto; column-gap: 1rem; border: 1px solid #eef2f5; border-radius: 3px;
+}
+.plot-status .ps-names-list li { overflow-wrap: anywhere; }
 .plot-status .ps-total td { border-bottom: 0; font-weight: 600; }
 .plot-status .ps-notes { margin: var(--ps-u) 0 0; padding-left: calc(4 * var(--ps-u)); }
 .plot-status .ps-foot { margin-top: var(--ps-u); color: #5a6b7b; font-size: 11px; }

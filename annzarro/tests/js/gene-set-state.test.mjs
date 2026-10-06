@@ -186,3 +186,9 @@ test('over the limit: refused with the limit, unless forced (Try anyway); the li
     assert.equal(S.blockedReason(adapter(), { ...base, genes: [] }, { force: true }).kind, 'empty');
     assert.equal(S.blockedReason(adapter({ supportsSpecies: () => false }), base, { force: true }).kind, 'species');
 });
+
+test('model-organism id columns count as ids: wbgene (C. elegans CeNGEN), fbgn', () => {
+    // celegans_connectome_cengen.zarr's var: gene_symbol, wbgene: the ids win
+    assert.equal(S.pickIdColumn(['dispersions', 'gene_symbol', 'highly_variable', 'means', 'wbgene']), 'wbgene');
+    assert.equal(S.pickIdColumn(['symbol', 'FBgn']), 'FBgn');
+});

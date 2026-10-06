@@ -28,7 +28,7 @@ import { mountNamePicker } from '../utils/name-picker.js';
 import { makeDom, sci, toCsv } from './gene-set-utilities/dom.js';
 import {
     setHash, inputKey, readTableSelection, selectionIds, makeSnapshot, panelStaleness, fmt,
-    settleRun, needsFetch, blockedReason, normalizeConfig, configOf, startRun, pickIdColumn
+    settleRun, needsFetch, blockedReason, normalizeConfig, configOf, startRun, pickIdColumn, ID_COLUMN_PREFERENCE
 } from './gene-set-utilities/state.js';
 import { createRunner } from './gene-set-utilities/runner.js';
 import { createConsent } from './gene-set-utilities/consent.js';
@@ -52,7 +52,9 @@ const LIST_PAGE = 50;
 /** What a blocked run is, as a coverage gap: [reason, kind] (coverage.js KIND_LABEL). */
 const GAP_OF = {
     empty: [GAP.EMPTY, ''], capped: [GAP.CAPPED, 'over-limit'], species: [GAP.UNAVAILABLE, 'unsupported'],
-    idtype: [GAP.UNAVAILABLE, 'unsupported'], unfocused: [GAP.UNFOCUSED, ''], declined: [GAP.UNAVAILABLE, 'declined']
+    idtype: [GAP.UNAVAILABLE, 'unsupported'], unfocused: [GAP.UNFOCUSED, ''], declined: [GAP.UNAVAILABLE, 'declined'],
+    // asked, and the service knew none of the genes (an answer, not a failure)
+    unmapped: [GAP.UNAVAILABLE, 'unmapped']
 };
 
 const STATUS_WORD = { idle: 'not run', loading: 'loading…', ok: 'ok', stale: 'stale', error: 'error' };
@@ -89,6 +91,7 @@ const GeneSetPanel = (function() {
         let _varColumns = [];
         let _unsKeys = [];
         let _speciesWhy = null;       // why this species: 'explicit', 'ensembl', 'uns:<key>', 'default'
+        let _dataTaxonomyId = null;   // the species the dataset itself points to (uns, Ensembl ids), chosen or not
         let _pending = null;          // sections waiting for consent
         let _notice = null;           // a one-off line in the bar ("Not sent")
         let _autoTimer = null;
@@ -279,28 +282,58 @@ const GeneSetPanel = (function() {
          * the server's default stays, marked as unconfirmed. A user's pick
          * always wins (DataManager source 'explicit').
          */
-        async function inferSpecies() {
-            if (DataManager.getTaxonomySource() === 'explicit') { _speciesWhy = 'explicit'; paintSpecies(); return; }
-            let tax = null, why = null;
+        /**
+         * What the dataset says its species is: an uns entry (taxonomy_id,
+         * taxid, species, organism, ...), else the Ensembl prefixes of the ID
+         * column, the var index, or another var column of ids (gene_ids,
+         * wbgene, ...). {tax, why} or null.
+         */
+        async function datasetSpecies() {
             const keys = new Map(_unsKeys.map(k => [String(k).toLowerCase(), k]));
             for (const name of UNS_SPECIES_KEYS) {
                 const key = keys.get(name);
                 if (!key) continue;
+                let tax;
                 try {
                     const resp = await DataManager.loadUns({ datasetPath: _dataset, unsKey: key });
                     tax = speciesFromText(resp && resp.data);
                 } catch { tax = null; }
-                if (tax) { why = `uns:${key}`; break; }
+                if (tax) return { tax, why: `uns:${key}` };
             }
-            if (!tax) {
-                tax = speciesFromIds(_genes.slice(0, 500).map(rawIdOf)) || speciesFromIds(_genes.slice(0, 500));
-                if (tax) why = 'ensembl';
+            const fromIds = speciesFromIds(_genes.slice(0, 500).map(rawIdOf)) || speciesFromIds(_genes.slice(0, 500));
+            if (fromIds) return { tax: fromIds, why: 'ensembl' };
+            // other columns of ids, in the order Auto would pick them
+            const idCols = ID_COLUMN_PREFERENCE.slice(0, 2).flat();
+            const lower = new Map(_varColumns.map(c => [c.toLowerCase(), c]));
+            for (const name of idCols) {
+                const col = lower.get(name);
+                if (!col || col === idCol()) continue;
+                try {
+                    const resp = await DataManager.loadVar({ datasetPath: _dataset, columns: [col] });
+                    const values = resp && resp.data && resp.data[col];
+                    const tax = values ? speciesFromIds(Array.from({ length: Math.min(500, values.length) }, (_, i) => String(values[i] ?? ''))) : null;
+                    if (tax) return { tax, why: 'ensembl' };
+                } catch { /* a column that cannot be read says nothing */ }
             }
-            // a choice made meanwhile is not overwritten
+            return null;
+        }
+
+        /**
+         * The dataset's species, when nobody chose it (not a user, not a
+         * link, not a panel set): what datasetSpecies finds; without it, the
+         * server's default stays, marked as unconfirmed. A user's pick always
+         * wins (DataManager source 'explicit'); what the dataset says is kept
+         * anyway, for the hint when a service knows none of the genes.
+         */
+        async function inferSpecies() {
+            const found = await datasetSpecies();
+            _dataTaxonomyId = found ? found.tax : null;
             if (DataManager.getTaxonomySource() === 'explicit') { _speciesWhy = 'explicit'; paintSpecies(); return; }
-            if (tax) {
-                _speciesWhy = why;
-                if (tax !== taxonomyId() || DataManager.getTaxonomySource() !== 'inferred') DataManager.setTaxonomyId(tax, { source: 'inferred' });
+            if (found) {
+                _speciesWhy = found.why;
+                if (found.tax !== taxonomyId() || DataManager.getTaxonomySource() !== 'inferred') {
+                    DataManager.setTaxonomyId(found.tax, { source: 'inferred' });
+                }
             } else {
                 _speciesWhy = DataManager.getTaxonomySource() === 'inferred' ? 'inferred' : 'default';
             }
@@ -427,6 +460,9 @@ const GeneSetPanel = (function() {
         }
 
         function onDocumentClick(e) {
+            // a menu item redraws the menu, so its click arrives here from a
+            // detached element: that click was inside, not outside
+            if (!e.target.isConnected) return;
             if (_dom && !_dom.sectionsMenu.hidden && !_dom.sectionsWrap.contains(e.target)) closeSectionsMenu();
         }
 
@@ -515,6 +551,8 @@ const GeneSetPanel = (function() {
                 taxonomyId: tax,
                 speciesName: speciesOf(tax).name,
                 idType: _idType,
+                // what the dataset's ids say, for "is the species right?" when nothing maps
+                dataTaxonomyId: _dataTaxonomyId,
                 params,
                 background: null,
                 backgroundHash: null,
@@ -961,6 +999,7 @@ const GeneSetPanel = (function() {
             const a = _adapters.find(x => x.id === sid);
             if (!visible && a && _runner) _runner.abort(sid);
             paintSection(sid);
+            paintSectionsButton();
             paintBar();
             if (visible && a && _armed && policy() !== 'off') runSections([a]);
         }
@@ -1073,6 +1112,14 @@ const GeneSetPanel = (function() {
             for (const sid of _dom.sectionEls.keys()) paintSection(sid);
         }
 
+        /** "Sections n/m": how many sections are shown, after every change of one. */
+        function paintSectionsButton() {
+            if (!_dom) return;
+            const all = [..._adapters.map(a => a.id), 'links'];
+            const on = all.filter(sid => _settings.sections[sid] && _settings.sections[sid].visible).length;
+            _dom.sectionsBtn.textContent = `Sections ${on}/${all.length} ▾`;
+        }
+
         function paintControls() {
             const n = _source.count;
             const blocked = gate();
@@ -1080,9 +1127,7 @@ const GeneSetPanel = (function() {
             _dom.run.disabled = !!blocked && blocked !== 'waiting';
             _dom.auto.setAttribute('aria-pressed', String(_settings.autoUpdate));
             _dom.auto.classList.toggle('active', _settings.autoUpdate);
-            const all = [..._adapters.map(a => a.id), 'links'];
-            const on = all.filter(sid => _settings.sections[sid] && _settings.sections[sid].visible).length;
-            _dom.sectionsBtn.textContent = `Sections ${on}/${all.length} ▾`;
+            paintSectionsButton();
             if (_dom.source.value !== _settings.tableFilter) fillSourceOptions();
             _dom.ids.value = _settings.idColumn;
             _dom.idType.value = _settings.idType;
@@ -1175,13 +1220,15 @@ const GeneSetPanel = (function() {
 
         function sectionSummary() {
             if (!_runner) return '';
-            const counts = { ok: 0, error: 0, loading: 0, refused: 0 };
+            const counts = { ok: 0, error: 0, loading: 0, refused: 0, none: 0 };
             for (const a of visibleAdapters()) {
                 const run = _runner.get(a.id);
-                if (run.status === 'error' && run.error && GAP_OF[run.error.kind]) counts.refused++;
+                if (run.status === 'error' && run.error && run.error.kind === 'unmapped') counts.none++;
+                else if (run.status === 'error' && run.error && GAP_OF[run.error.kind]) counts.refused++;
                 else if (run.status in counts) counts[run.status]++;
             }
             return [counts.loading ? `${counts.loading} loading` : '', counts.ok ? `${counts.ok} ready` : '',
+                counts.none ? `${counts.none} found none of the genes` : '',
                 counts.error ? `${counts.error} failed` : '', counts.refused ? `${counts.refused} not sent` : ''].filter(Boolean).join(', ');
         }
 
@@ -1237,8 +1284,8 @@ const GeneSetPanel = (function() {
             if (visible && !stale && run.status === 'ok' && run.finishedAt && run.startedAt) {
                 word = run.cached ? 'ok · cached' : `ok · ${((run.finishedAt - run.startedAt) / 1000).toFixed(1)} s`;
             }
-            if (visible && run.status === 'error' && run.error && GAP_OF[run.error.kind]) {
-                word = run.error.kind === 'species' ? 'species not covered' : 'not sent';
+            if (visible && !stale && run.status === 'error' && run.error && GAP_OF[run.error.kind]) {
+                word = { species: 'species not covered', unmapped: 'none found' }[run.error.kind] || 'not sent';
             }
             parts.badge.className = `gs-badge gs-badge--${visible ? (stale && run.status !== 'loading' ? 'stale' : run.status) : 'hidden'}`;
             D.clear(parts.badge);
@@ -1452,9 +1499,10 @@ const GeneSetPanel = (function() {
             const list = el('div', { class: 'gs-links__list' });
             const head = el('div', { class: 'gs-links__title' },
                 el('span', { class: 'gs-links__key', text: `Selected genes (${fmt(n)}${differs ? ', current' : ''}) ` }),
-                n ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', aria: { expanded: String(_settings.links.listOpen) },
+                n ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gs-list-toggle',
+                    aria: { expanded: String(_settings.links.listOpen), controls: `gs-list-${_id}` },
                     text: _settings.links.listOpen ? 'Hide list' : 'Show list',
-                    on: { click: () => { _settings.links.listOpen = !_settings.links.listOpen; paintSection('links'); } } }) : '',
+                    on: { click: () => setListOpen(!_settings.links.listOpen) } }) : '',
                 n ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', text: 'Copy ids', on: { click: copyIds } }) : '',
                 el('span', { class: 'gs-links__copied', role: 'status', aria: { live: 'polite' } }));
             list.appendChild(head);
@@ -1484,7 +1532,7 @@ const GeneSetPanel = (function() {
             const pages = Math.max(1, Math.ceil(rows.length / LIST_PAGE));
             _listPage = Math.min(_listPage, pages - 1);
             const page = rows.slice(_listPage * LIST_PAGE, (_listPage + 1) * LIST_PAGE);
-            const box = el('div', { class: 'gs-links__table' });
+            const box = el('div', { class: 'gs-links__table', id: `gs-list-${_id}` });
             const find = el('input', { type: 'search', class: 'form-control form-control-sm gs-find', placeholder: 'Find',
                 value: _listFilter, aria: { label: 'Find a gene in the list' },
                 on: { input: (e) => { _listFilter = e.target.value; _listPage = 0; repaintListKeepingFocus(); } } });
@@ -1495,7 +1543,8 @@ const GeneSetPanel = (function() {
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', text: 'Download links CSV',
                     on: { click: () => download('gene-links.csv', new Blob([linksCsv(all.map(r => ({ ...r, rec: geneRecord(r.id, _idType) })), cols, ctx)], { type: 'text/csv' })) } })));
             const focused = _focus.name;
-            box.appendChild(D.table(`Links for the ${fmt(rows.length)} selected genes`, ['Gene', ...cols.map(c => (resourceById(c) || { label: c }).label)],
+            // the table scrolls on its own, so Hide list (above and below it) stays at hand
+            box.appendChild(el('div', { class: 'gs-links__scroll' }, D.table(`Links for the ${fmt(rows.length)} selected genes`, ['Gene', ...cols.map(c => (resourceById(c) || { label: c }).label)],
                 page.map(r => {
                     const rec = geneRecord(r.id, _idType);
                     return [el('button', { type: 'button', class: `btn btn-link btn-sm gs-gene${r.name === focused ? ' gs-gene--focused' : ''}`,
@@ -1506,14 +1555,24 @@ const GeneSetPanel = (function() {
                         const label = (resourceById(c) || { label: c }).label;
                         return l.href ? { text: '↗', href: l.href, label: `${r.name} on ${label}` } : { text: '—', title: l.why };
                     })];
-                })));
+                }))));
             box.appendChild(el('div', { class: 'gs-pager' },
                 el('span', { text: rows.length ? `${fmt(_listPage * LIST_PAGE + 1)}–${fmt(Math.min(rows.length, (_listPage + 1) * LIST_PAGE))} of ${fmt(rows.length)}` : 'No gene matches' }),
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', text: '‹ Prev', disabled: _listPage === 0,
                     on: { click: () => { _listPage--; paintSection('links'); } } }),
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', text: 'Next ›', disabled: _listPage >= pages - 1,
-                    on: { click: () => { _listPage++; paintSection('links'); } } })));
+                    on: { click: () => { _listPage++; paintSection('links'); } } }),
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gs-list-hide', text: 'Hide list',
+                    aria: { controls: `gs-list-${_id}` }, on: { click: () => setListOpen(false) } })));
             return box;
+        }
+
+        /** Show or hide the Links list; the focus stays on (or returns to) its Show/Hide button. */
+        function setListOpen(open) {
+            _settings.links.listOpen = open;
+            paintSection('links');
+            const toggle = _dom && _dom.sectionEls.get('links').result.querySelector('.gs-list-toggle');
+            if (toggle) toggle.focus();
         }
 
         function repaintListKeepingFocus() {

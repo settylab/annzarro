@@ -14,7 +14,7 @@
  *     into direct links.
  */
 import { parseError } from '../fetch-policy.js';
-import { attribution, geneButton, unmappedList, longTable, mappedCoverage } from './common.js';
+import { attribution, geneButton, longTable, mappedCoverage, noneKnown } from './common.js';
 
 const PROVIDER = Object.freeze({
     name: 'MyGene.info', host: 'mygene.info', home: 'https://mygene.info', licence: '', maxConcurrent: 2
@@ -107,6 +107,7 @@ export const mygeneMapping = {
                 entrez: String(h.entrezgene ?? h._id ?? ''), ensembl: ensemblOf(h), type: String(h.type_of_gene || ''),
                 others: m.hits - 1 };
         });
+        if (input.genes.length && rows.every(r => r.match === 'none')) throw noneKnown('MyGene.info', input);
         return { rows };
     },
     coverage(result, input) {
@@ -123,7 +124,6 @@ export const mygeneMapping = {
             ctx.el('div', { class: 'gs-result-head' }, ctx.el('span', { text: [
                 `${exact.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} found by ${ctx.input.idType === 'symbol' ? 'symbol' : 'id'}`,
                 alias.length ? `${alias.length.toLocaleString('en-US')} only as an alias (flagged)` : '',
-                none.length ? `${none.length.toLocaleString('en-US')} not found` : '',
                 several ? `${several.toLocaleString('en-US')} matched more than one gene (the best match is shown)` : ''
             ].filter(Boolean).join('; ') })),
             alias.length ? ctx.el('p', { class: 'gs-note gs-note--warn', text:
@@ -133,7 +133,6 @@ export const mygeneMapping = {
                 rows.filter(r => r.match !== 'none').map(r => [geneButton(ctx, ctx.nameOf ? ctx.nameOf(r.query) : r.query), r.symbol, r.name,
                     r.entrez, r.ensembl, r.match === 'alias' ? { text: 'alias', cls: 'gs-flag', title: 'Not this symbol: found as an alias of another gene' }
                         : (r.others ? { text: `exact (+${r.others})`, title: `${r.others} other genes also match` } : 'exact')]), 'genes') : '',
-            unmappedList(ctx, none, 'MyGene.info') || '',
             attribution(ctx, PROVIDER));
     },
     exportRows: (result) => ({

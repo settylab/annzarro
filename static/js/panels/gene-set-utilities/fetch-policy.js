@@ -69,10 +69,25 @@ export function retryAfterMs(value, now) {
     return Math.max(0, Math.min(MAX_RETRY_AFTER_MS, ms));
 }
 
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
+
+/** HTML entities as text: &nbsp; &amp; &#8211; &#x2013; ... */
+export function decodeEntities(s) {
+    return String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+        if (e[0] === '#') {
+            const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+            return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : ' ';
+        }
+        return ENTITIES[e.toLowerCase()] ?? m;
+    });
+}
+
 /**
- * The first 200 characters of what a service said when it refused: its
- * JSON error message when there is one (STRING: [{"Error", "ErrorMessage"}],
- * g:Profiler: {"message"}), else the text with any HTML tags removed.
+ * What a service said when it refused, as one plain sentence: its JSON
+ * error message when there is one (STRING: [{"Error", "ErrorMessage"}],
+ * g:Profiler: {"message"}), else the text; HTML tags removed, entities
+ * decoded, cut after the first sentence and at 200 characters. Never the
+ * service's HTML on the page.
  */
 export function bodyExcerpt(text) {
     let s = typeof text === 'string' ? text : '';
@@ -84,7 +99,9 @@ export function bodyExcerpt(text) {
             if (typeof msg === 'string' && msg) s = j.Error && j.ErrorMessage ? `${j.Error}: ${j.ErrorMessage}` : msg;
         }
     } catch { /* not JSON: the text itself */ }
-    s = s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    s = decodeEntities(s.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+    const end = s.search(/[.!?](\s|$)/);
+    if (end >= 0) s = s.slice(0, end + 1);
     return s.length > 200 ? `${s.slice(0, 200)}…` : s;
 }
 

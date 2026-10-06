@@ -3,7 +3,8 @@
  * (the first rows, then all of them on request: nothing is cut without
  * saying so) and the attribution line every section carries.
  */
-import { hostOf } from '../fetch-policy.js';
+import { hostOf, ServiceError } from '../fetch-policy.js';
+import { speciesOf } from '../species.js';
 import { Coverage, GAP } from '../../../utils/coverage.js';
 
 /** Rows shown before "Show all". */
@@ -54,15 +55,6 @@ export function geneButton(ctx, name) {
     return el('span', { class: 'gs-gene-text', text: name || '' });
 }
 
-/** The genes that were not found, all of them, in a details element. */
-export function unmappedList(ctx, names, service) {
-    const { el } = ctx;
-    if (!names.length) return null;
-    return el('details', { class: 'gs-unmapped' },
-        el('summary', { text: `${names.length.toLocaleString('en-US')} not found in ${service}` }),
-        el('p', { class: 'gs-unmapped__list', text: names.join(', ') }));
-}
-
 /** The host an adapter's base URL points at (for consent and errors). */
 export function apiHost(url, fallback) {
     const h = hostOf(url || '');
@@ -80,7 +72,40 @@ export function apiHost(url, fallback) {
 export function mappedCoverage(found, genes, missing, service) {
     const n = genes.length;
     if (found >= n) return Coverage.complete(n, 'genes');
-    const names = missing.slice(0, 5).join(', ') + (missing.length > 5 ? ', …' : '');
+    // the strip's line stays short; its breakdown lists every gene (gap.names)
+    const summary = missing.slice(0, 5).join(', ') + (missing.length > 5 ? `, and ${(missing.length - 5).toLocaleString('en-US')} more` : '');
     return new Coverage({ shown: found, total: n, unit: 'genes', gaps: [{
-        reason: GAP.UNAVAILABLE, kind: 'unmapped', source: service, count: n - found, detail: names }] });
+        reason: GAP.UNAVAILABLE, kind: 'unmapped', source: service, count: n - found, detail: summary, names: missing.slice() }] });
+}
+
+function speciesName(tax) {
+    const s = speciesOf(tax);
+    return s.name ? `${s.name} (taxon ${tax})` : `taxon ${tax}`;
+}
+
+/**
+ * A service that knows none of the genes: usually the wrong species, or ids
+ * the service does not read. Said so, with the species asked for and, when
+ * the dataset's ids point elsewhere (input.dataTaxonomyId), that species.
+ */
+export function noneKnown(service, input) {
+    const n = input.genes.length;
+    let message = `${service} knows none of these ${n.toLocaleString('en-US')} genes for ${speciesName(input.taxonomyId)}. Is the species right?`;
+    if (input.dataTaxonomyId && String(input.dataTaxonomyId) !== String(input.taxonomyId)) {
+        message += ` The dataset's genes look like ${speciesName(input.dataTaxonomyId)}.`;
+    } else if (input.idType && input.idType !== 'unknown') {
+        message += ` The ids are read as ${({ symbol: 'gene names', ensembl: 'Ensembl ids', entrez: 'Entrez ids' })[input.idType]}; check IDs too.`;
+    }
+    return new ServiceError({ kind: 'unmapped', message });
+}
+
+/**
+ * The note under a table that pools several categories (sources), each
+ * corrected on its own by the service. Nothing is recomputed: the service
+ * returns only the terms passing its threshold, so a pooled correction of
+ * them would be wrong.
+ */
+export function withinNote(stat, unit, service, n) {
+    return `${stat} is corrected within each ${unit} by ${service}, not across the ${n} ${unit === 'category' ? 'categories' : `${unit}s`} shown together. `
+        + `Expect more false positives than the ${stat} column suggests; pick a ${unit} for a corrected list.`;
 }
