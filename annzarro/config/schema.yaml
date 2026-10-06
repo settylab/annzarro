@@ -345,15 +345,38 @@ integrations:
   description: External API integrations
   security: public   # the browser calls these APIs itself
   properties:
+    external_requests:
+      type: string
+      enum: [ask, "on", "off"]
+      description: >-
+        Whether the Gene Set Analysis panel may send gene ids to external
+        services: ask (the user, once per service), on (without asking) or
+        off (never). Overridden by the ANNZARRO_EXTERNAL_REQUESTS
+        environment variable.
+      default: ask
+    gene_set:
+      type: object
+      description: The Gene Set Analysis panel's external services
+      properties:
+        services:
+          type: [array, "null"]
+          items:
+            type: string
+          description: Adapter ids or service names offered (null for all)
+          default: null
+        timeout_ms:
+          type: integer
+          description: Timeout of one request attempt, in ms
+          default: 20000
     string_db:
       type: object
       description: StringDB API integration
       properties:
         base_url:
           type: string
-          description: StringDB API base URL
-          default: https://string-db.org/api
+          description: StringDB API base URL (a versioned host)
+          default: https://version-12-5.string-db.org/api
         version:
           type: string
           description: StringDB API version
-          default: "11.5"
+          default: "12.5"
