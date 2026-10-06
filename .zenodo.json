@@ -18,6 +18,14 @@
       "orcid": "0000-0002-0344-2627"
     }
   ],
+  "contributors": [
+    {
+      "name": "Otto, Dominik J.",
+      "type": "ContactPerson",
+      "affiliation": "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA",
+      "orcid": "0009-0009-3295-1234"
+    }
+  ],
   "license": "MIT",
   "access_right": "open",
   "keywords": [

@@ -10,6 +10,7 @@ authors:
   - family-names: Otto
     given-names: Dominik J.
     affiliation: "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA"
+    alias: katosh
     orcid: "https://orcid.org/0009-0009-3295-1234"
   - family-names: Baasri
     given-names: Siddharth
@@ -18,6 +19,11 @@ authors:
     given-names: Manu
     affiliation: "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA"
     orcid: "https://orcid.org/0000-0002-0344-2627"
+contact:
+  - family-names: Otto
+    given-names: Dominik J.
+    email: dotto@fredhutch.org
+    orcid: "https://orcid.org/0009-0009-3295-1234"
 license: MIT
 repository-code: "https://github.com/settylab/annzarro"
 url: "https://annzarro.readthedocs.io"
