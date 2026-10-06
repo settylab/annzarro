@@ -97,8 +97,17 @@ genes) and **⤓** (the result as CSV).
 :alt: STRING's enrichment section: the number of enriched terms, a category filter, a table of category, term, genes and FDR, the genes STRING did not know, and the status line "of 109 genes shown".
 
 STRING's enrichment against the dataset's genes. The line under the result says how many of the
-genes STRING knew; **details** names the others.
+genes STRING knew; **details** lists every gene it did not know, with **Copy** (one per line) and,
+for a long list, a search.
 ```
+
+**FDR within each category.** STRING corrects its p-values (Benjamini-Hochberg) within each
+category, not across them, and returns only the terms that pass. With **All categories**, the
+table pools several categories and the panel says so: expect more false positives than the FDR
+column suggests, and pick a category for a corrected list. The column is labelled "FDR (within
+category)", in the CSV too. g:Profiler likewise corrects within each source; its table carries
+the same note when it shows several. Nothing is recomputed in the browser: a pooled correction of
+only the terms that passed would be wrong.
 
 ```{figure} ../_static/screens/user-guide/geneset-network.png
 :class: screenshot
@@ -107,7 +116,11 @@ genes STRING knew; **details** names the others.
 The network, and whether its genes interact more than a random set of the same size would.
 ```
 
-Every section says how many of the genes the service knew. MyGene.info's gene lookup tries the
+Every section says how many of the genes the service knew, once, in the line under its result.
+When a service knows none of them, the section says so and names the species it was asked for:
+"STRING knows none of these 165 genes for Homo sapiens (taxon 9606). Is the species right? The
+dataset's genes look like Caenorhabditis elegans (taxon 6239)." That is almost always the
+species, or ids the service does not read (check **IDs**). MyGene.info's gene lookup tries the
 symbols it does not find again as aliases and marks those matches **alias**: an alias can be
 another gene's symbol, so they are never mixed in silently.
 
@@ -200,7 +213,8 @@ services turned off, offline, and in the desktop app (links open in the system b
 - **Selected genes:** links for the whole selection (a STRING network, g:Profiler, NCBI Gene,
   UniProt, GeneMANIA, PubMed for up to 5 genes); one too long for a link is greyed out, with the
   reason. **Show list** lists every gene with one link per resource (choose them under
-  **Columns**), 50 per page; click a gene to focus it. **Copy ids** and **Download links CSV**
+  **Columns**), 50 per page, in a table that scrolls on its own; **Hide list** is above and below
+  it. Click a gene to focus it. **Copy ids** and **Download links CSV**
   take the whole list.
 
 ```{figure} ../_static/screens/user-guide/geneset-links.png
@@ -215,8 +229,9 @@ The focused gene's links, and the list of the selection.
 The species belongs to the dataset: picking one in the panel changes it for the app, and share
 links and panel sets keep it. When nobody chose one (not you, not the link or panel set), the
 panel finds it in the dataset: an `uns` entry named `taxonomy_id`, `taxid`, `species` or
-`organism`, else the Ensembl prefix of the gene ids (`ENSG` human, `ENSMUSG` mouse, `ENSRNOG`
-rat, `ENSDARG` zebrafish, `FBgn` fly, `WBGene` worm, ...). The field then reads, for example,
+`organism`, else the prefix of the gene ids in the ID column, the var index, or another column
+of ids such as `gene_ids` or `wbgene`: `ENSG` human, `ENSMUSG` mouse, `ENSRNOG` rat, `ENSDARG`
+zebrafish, `FBgn` fly, `WBGene` worm, and so on. The field then reads, for example,
 "Auto: Mus musculus (from Ensembl IDs)". Without either (symbols, no `uns` entry) the server's
 default stays, marked "(default, not checked)" with a note to check it; such a default is not
 saved in links. Your pick always wins.

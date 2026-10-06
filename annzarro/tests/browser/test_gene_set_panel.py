@@ -197,6 +197,9 @@ def bar(page):
 
 
 VISIBLE = ["mygene-card", "string-enrichment", "gprofiler-gost", "string-network", "mygene-mapping"]
+# MyGene's recorded lookup is of TP53 etc., none of the fixture's GENE ids: that section's
+# answer is "none found" (an error of kind unmapped), which counts as settled here
+SETTLED_KINDS = ["unmapped"]
 
 
 def _ready(page):
@@ -205,7 +208,10 @@ def _ready(page):
 
 
 def _all_ok(page, ids=VISIBLE):
-    until(page, f"() => {{ const r = window.PanelManager.getPanel('gene-set-G')._debugState().runs; return {json.dumps(ids)}.every(id => r[id].status === 'ok'); }}")
+    """Every section in `ids` answered: ok, or (MyGene's lookup here) knew none of the genes."""
+    until(page, f"() => {{ const r = window.PanelManager.getPanel('gene-set-G')._debugState().runs; "
+                f"return {json.dumps(ids)}.every(id => r[id].status === 'ok' || "
+                f"(r[id].status === 'error' && {json.dumps(SETTLED_KINDS)}.includes(r[id].error.kind))); }}")
 
 
 def _run_and_send(page):
@@ -765,6 +771,30 @@ def test_never_is_kept_by_the_browser_and_wins_over_a_link(env, browser):
 
 # --------------------------------------------------------------------------- the species, when not chosen
 
+def _widen(path, n):
+    """A copy of the fixture with n genes (GENE000...): var rewritten, X an empty sparse matrix."""
+    import shutil
+    import numpy as np
+    import zarr
+    shutil.copytree(STORE, path)
+    g = zarr.open_group(str(path), mode="r+", zarr_format=2)
+    names = np.array([f"GENE{i:03d}" for i in range(n)], dtype=object)
+    for col in ("_index", "gene_name"):
+        old = g["var"][col]
+        attrs = dict(old.attrs)
+        a = g["var"].create_array(col, shape=(n,), dtype=str, overwrite=True)
+        a[:] = names
+        a.attrs.update(attrs)
+    x = g["X"]
+    x.attrs["shape"] = [200, n]
+    for key, values in (("data", np.zeros(0, dtype="float32")), ("indices", np.zeros(0, dtype="int32")),
+                        ("indptr", np.zeros(n + 1, dtype="int32"))):
+        arr = x.create_array(key, shape=values.shape, dtype=values.dtype, overwrite=True)
+        if values.size:
+            arr[:] = values
+    zarr.consolidate_metadata(str(path), zarr_format=2)
+
+
 def _species_stores(tmp_path_factory):
     """Copies of the fixture: mouse Ensembl ids in gene_name; and symbols with uns["organism"]."""
     import shutil
@@ -775,6 +805,8 @@ def _species_stores(tmp_path_factory):
     shutil.copytree(STORE, mouse)
     g = zarr.open_group(str(mouse), mode="r+", zarr_format=2)
     g["var"]["gene_name"][:] = np.array([f"ENSMUSG000000{33845 + i}" for i in range(20)], dtype=object)
+    wide = root / "wide.zarr"
+    _widen(wide, 170)
     org = root / "organism.zarr"
     shutil.copytree(STORE, org)
     g = zarr.open_group(str(org), mode="r+", zarr_format=2)
@@ -889,5 +921,104 @@ def test_species_from_uns_and_an_unconfirmed_default(browser, species_server):
         assert _taxonomy(page) == ["10116", "explicit"]
         assert page.input_value(SPECIES_FIELD) == "Rattus norvegicus (rat) · 10116"
         assert services.calls == [] and not errors and not services.unmocked
+    finally:
+        context.close()
+
+
+# --------------------------------------------------------------------------- operator review, batch 2
+
+def _wide_link(root, data):
+    return _species_link(root, data / "wide.zarr", taxonomy="9606")
+
+
+def test_the_sections_label_follows_hiding_and_showing(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    label = lambda: page.inner_text(f"{GS} .gs-sections-btn")
+    assert label().startswith("Sections 6/10")
+    page.click(f'{GS} .gs-section[data-section="string-network"] .gs-section__toggle')
+    until(page, "() => /Sections 5\\/10/.test(document.querySelector('%s .gs-sections-btn').textContent)" % GS)
+    page.click(f"{GS} .gs-sections-btn")
+    page.click(f'{GS} .gs-menu [data-section="gprofiler-gost"]')
+    until(page, "() => /Sections 4\\/10/.test(document.querySelector('%s .gs-sections-btn').textContent)" % GS)
+    page.click(f'{GS} .gs-menu [data-section="gprofiler-gost"]')
+    until(page, "() => /Sections 5\\/10/.test(document.querySelector('%s .gs-sections-btn').textContent)" % GS)
+    assert services.calls == []
+
+
+def test_a_long_links_list_can_be_hidden_from_its_end(browser, species_server):
+    root, data = species_server
+    context, page, services, errors = _open(browser, root)
+    try:
+        page.goto(_wide_link(root, data))
+        _ready(page)
+        until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.count === 170")
+        page.click(f'{GS} .gs-list-toggle:has-text("Show list")')
+        page.wait_for_selector(f"{GS} .gs-links__table tbody tr")
+        scroll = f"{GS} .gs-links__scroll"
+        box = page.evaluate("(sel) => { const e = document.querySelector(sel); return [e.scrollHeight, e.clientHeight, getComputedStyle(e).overflowY]; }", scroll)
+        assert box[2] == "auto" and box[0] > box[1], f"the table scrolls on its own: {box}"
+        page.evaluate("(sel) => { const e = document.querySelector(sel); e.scrollTop = e.scrollHeight; }", scroll)
+        # the title row's Hide list stays in view; the one under the table hides it too
+        assert page.inner_text(f"{GS} .gs-list-toggle") == "Hide list"
+        page.click(f"{GS} .gs-list-hide")
+        until(page, "() => !document.querySelector('%s .gs-links__table')" % GS)
+        assert page.evaluate("() => document.activeElement && document.activeElement.textContent") == "Show list"
+        assert page.get_attribute(f"{GS} .gs-list-toggle", "aria-expanded") == "false"
+        assert services.calls == [] and not errors and not services.unmocked
+    finally:
+        context.close()
+
+
+def test_every_gene_string_did_not_know_is_in_the_breakdown(browser, species_server):
+    root, data = species_server
+    context, page, services, errors = _open(browser, root)
+    try:
+        page.goto(_wide_link(root, data))
+        _ready(page)
+        until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.count === 170")
+        page.click(f"{GS} .gs-sections-btn")
+        for sid in ("gprofiler-gost", "string-network", "mygene-mapping", "mygene-card"):
+            page.click(f'{GS} .gs-menu [data-section="{sid}"]')
+        page.click(f"{GS} .gs-sections-btn")
+        page.click(f"{GS} .gs-run")
+        page.click(f"{GS} .gs-consent button:has-text('Send')")
+        _all_ok(page, ["string-enrichment"])
+        section = f'{GS} .gs-section[data-section="string-enrichment"]'
+        assert "not found in STRING" not in page.inner_text(f"{section} .gs-section__result"), "said once, in the strip"
+        assert page.get_attribute(f"{section} .plot-status", "data-summary").startswith("5 of 170 genes shown")
+        page.click(f"{section} .plot-status .ps-summary")
+        page.wait_for_selector(f"{section} .ps-names-list")
+        assert page.locator(f"{section} .ps-names-list li").count() == 165
+        assert page.inner_text(f"{section} [data-ps-copy]") == "Copy 165"
+        page.fill(f"{section} .ps-names-find", "GENE16")
+        assert page.locator(f"{section} .ps-names-list li:not([hidden])").count() == 10
+        assert not errors and not services.unmocked
+    finally:
+        context.close()
+
+
+def test_string_finding_nothing_is_an_answer_that_names_the_species(browser, species_server):
+    root, data = species_server
+    context, page, services, errors = _open(browser, root)
+    body = open(os.path.join(FIX, "string-404-nothing-found.json")).read()
+    page.route("**/api/json/get_string_ids", lambda route: route.fulfill(status=404, body=body,
+               headers={"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}))
+    try:
+        # a mouse dataset (Ensembl ids), with human chosen in the link
+        page.goto(_species_link(root, data / "mouse_ens.zarr", taxonomy="9606"))
+        _ready(page)
+        page.click(f"{GS} .gs-run")
+        page.click(f"{GS} .gs-consent button:has-text('Send')")
+        until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-enrichment'].error?.kind === 'unmapped'")
+        section = f'{GS} .gs-section[data-section="string-enrichment"]'
+        text = " ".join(page.inner_text(section).split())
+        assert "none found" in text
+        assert ("STRING knows none of these 20 genes for Homo sapiens (taxon 9606). Is the species right? "
+                "The dataset's genes look like Mus musculus (taxon 10090).") in text, text
+        assert "not found by the service" in text
+        assert "&nbsp;" not in text and "<br" not in text and "Sorry" not in text
+        assert not errors
     finally:
         context.close()
