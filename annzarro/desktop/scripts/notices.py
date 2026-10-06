@@ -72,6 +72,7 @@ NATIVE = [
     ("libaec*", "libaec", "BSD-2-Clause", ["libaec-LICENSE.txt"]),
     ("libsz*", "libaec (szip)", "BSD-2-Clause", ["libaec-LICENSE.txt"]),
     ("libcrc32c*", "google/crc32c", "BSD-3-Clause", ["crc32c-LICENSE.txt"]),
+    ("crc32c.dll", "google/crc32c", "BSD-3-Clause", ["crc32c-LICENSE.txt"]),
     ("VCRUNTIME140*.dll", "Microsoft Visual C++ runtime", "Microsoft redistributable",
      ["microsoft-vc-runtime.txt"]),
     ("MSVCP140*.dll", "Microsoft Visual C++ runtime", "Microsoft redistributable",
@@ -86,7 +87,7 @@ NATIVE = [
 #: in addition to the distribution's own licence files.
 WHEEL_VENDORED = [p for p in NATIVE if p[1] in (
     "OpenBLAS", "GCC runtime (libgfortran)", "GCC libquadmath", "GCC runtime (libgomp)",
-    "libaec", "libaec (szip)", "google/crc32c", "zlib")]
+    "libaec", "libaec (szip)", "google/crc32c", "zlib", "Microsoft Visual C++ runtime")]
 
 #: Build tools. PyInstaller contributes its bootloader and runtime hooks,
 #: which its licence lets anyone distribute under any terms (see README.txt);
@@ -104,14 +105,14 @@ def is_native(name):
 
 def forbidden(name):
     for pattern, why in FORBIDDEN:
-        if fnmatch.fnmatch(name, pattern):
+        if fnmatch.fnmatchcase(name.lower(), pattern.lower()):
             return why
     return None
 
 
 def native_entry(name, table=NATIVE):
     for entry in table:
-        if fnmatch.fnmatch(name, entry[0]):
+        if fnmatch.fnmatchcase(name.lower(), entry[0].lower()):
             return entry
     return None
 
@@ -218,6 +219,7 @@ def write_notices(dist_dir, build_dir, site_packages, python_prefix, exe_name=No
     for name, source, kind in entries:
         if not source or source == "-" or not os.path.isabs(source):
             continue
+        name = name.replace("\\", "/")  # Windows TOCs use backslashes
         base = os.path.basename(name)
         why = forbidden(base)
         if why:

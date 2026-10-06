@@ -225,7 +225,8 @@ def test_notices_collect_cpython_packages_and_native_libraries(tmp_path):
     build = tmp_path / "build"
     build.mkdir()
     (build / "COLLECT-00.toc").write_text(repr(("dist", [
-        ("demo/_ext.so", str(site / "demo" / "_ext.so"), "EXTENSION"),
+        # Windows TOCs name files with backslashes; the inventory uses '/'.
+        ("demo\\_ext.so", str(site / "demo" / "_ext.so"), "EXTENSION"),
         ("libssl.so.3", "/usr/lib/libssl.so.3", "BINARY"),
         ("lib-dynload/_ssl.so", str(prefix / "lib" / "python3.11" / "lib-dynload" / "_ssl.so"),
          "EXTENSION"),

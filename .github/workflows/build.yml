@@ -124,6 +124,21 @@ jobs:
           npx electron-builder "${args[@]}"
           ls -la dist
 
+      - name: Remove GPL/LGPL libraries from the AppImage
+        # electron-builder always copies libindicator (GPL-3.0),
+        # libappindicator, libgconf-2 and libnotify into the AppImage's usr/lib;
+        # AnnZarro needs none of them. Repack without them (appimagetool 1.9.1,
+        # pinned by checksum, with the original AppImage runtime), then make
+        # sure the repacked AppImage starts.
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool" | sha256sum -c -
+          for a in annzarro/desktop/electron/dist/AnnZarro-*.AppImage; do
+            python annzarro/desktop/scripts/repack_appimage.py "$a" --appimagetool appimagetool
+            APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$a" --no-sandbox
+          done
+
       - name: Smoke-test the app (twice at once)
         # Two self-tests start together, each with its own profile: they race
         # for the same free port, and each must end up with its own server.

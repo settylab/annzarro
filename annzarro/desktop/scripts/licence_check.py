@@ -56,6 +56,8 @@ ELECTRON = [
     ("dxil.dll", "Microsoft DXIL signer", "Microsoft redistributable", "separate shared library"),
     ("dxcompiler.dll", "DirectX Shader Compiler", "NCSA AND MIT", "separate shared library"),
     ("AppRun", "AppImage runtime (AppRun)", "MIT", "AppImage launcher"),
+    ("libXss.so*", "libXScrnSaver (X11)", "MIT", "separate shared library (AppImage only)"),
+    ("libXtst.so*", "libXtst (X11)", "MIT", "separate shared library (AppImage only)"),
     ("elevate.exe", "electron-builder elevate helper", "MIT", "separate executable"),
     ("Mantle", "Mantle (macOS updater framework)", "MIT", "separate framework"),
     ("ReactiveObjC", "ReactiveObjC (macOS updater framework)", "MIT", "separate framework"),
@@ -127,7 +129,10 @@ def check(app):
     server = server_dir(app, plat)
     failures, rows = [], []
 
-    for rel in REQUIRED[plat]:
+    required = list(REQUIRED[plat])
+    if (app / "usr" / "lib").is_dir():  # an AppImage with electron-builder's libraries
+        required.append("LICENSES.appimage-libraries.txt")
+    for rel in required:
         if not (app / rel).is_file():
             failures.append(f"missing notice file: {rel}")
 
@@ -175,7 +180,8 @@ def check(app):
         kind = binary_kind(path)
         if not kind:
             continue
-        entry = next((e for e in ELECTRON if fnmatch.fnmatch(path.name, e[0])), None)
+        entry = next((e for e in ELECTRON
+                      if fnmatch.fnmatchcase(path.name.lower(), e[0].lower())), None)
         rel = path.relative_to(app).as_posix()
         if not entry:
             failures.append(f"app: {rel} ({kind}) is not a known Electron file")
