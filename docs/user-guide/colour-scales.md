@@ -132,6 +132,7 @@ The same diffusion walk row, linear (left) and log with floor 1e-5 (right). View
 {download}`userguide-colour-log.json <../_tools/views/userguide-colour-log.json>`.
 ```
 
+(colour-strong-on-top)=
 ## Drawing order: Strong on top
 
 Points are drawn one over the other, so in a dense plot the last drawn decide what you see. With

@@ -131,9 +131,9 @@ DE genes alone could not contain them.
    The same scale for H2-Aa.
    ```
 
-   In this view **Strong on top** does not help on v0.4.0: it orders points by |ρ|, so the
-   strongly anti-correlated genes, pale here, are drawn over the blue ones in the dense core.
-   Hover, or sort a table, to find the partners there.
+   Keep **Strong on top** on: it draws the top end of the colour bar last, so the strongly
+   correlated genes, dark blue, are drawn over the dense core, and the anti-correlated ones, pale
+   at the bar's bottom, stay underneath ({ref}`drawing order <colour-strong-on-top>`).
 
 :::{note}
 **Paper, gene by gene, panel a.** This view is panel a of the paper figure.

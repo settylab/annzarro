@@ -188,8 +188,9 @@ def fade(sh, data):
         const c = t.marker.color, n = c.length, last = c.slice(n - 500);
         return {{n, colorscale0: JSON.stringify(t.marker.colorscale[0]), cmin: t.marker.cmin, cmax: t.marker.cmax,
                 last500_below_0_3: last.filter(v => v < 0.3).length, below_minus_0_3: c.filter(v => v < -0.3).length}}; }}""")
-    # v0.4.0's Strong on top (on by default) orders by |value|: count how many of the 500
-    # points drawn last are below Min, i.e. pale (anti-correlated genes among them)
+    # Strong on top (on by default) draws the colour bar's top end last: count how many of
+    # the 500 points drawn last are below Min, i.e. pale (0 since v0.4.1; v0.4.0 ordered by
+    # |value| and drew 285 there, anti-correlated genes among them)
     sh.log.append("WE2 step 21: draw order = " + json.dumps(order()))
     crop(page, "we2-fade", [f"{g} .tile-content"], pad=0)
     # the range holds as the focus moves
