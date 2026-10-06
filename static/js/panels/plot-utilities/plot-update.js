@@ -907,7 +907,7 @@ export async function loadColorDataAndUpdatePlot(
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer);
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour' });
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.

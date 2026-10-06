@@ -18,6 +18,7 @@ import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { colourRefusal } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -201,12 +202,16 @@ if (typeof window !== 'undefined') {
  * @param {Object} settings - Axis settings object.
  * @param {string} [plotType=null] - Optional plot type ('cells' or 'genes') to determine context.
  * @param {HTMLElement} [plotContainer=null] - Container to show loading indicator in.
+ * @param {{role?: 'colour'|null}} [opts] - role 'colour': an obs/var column is
+ *    loaded with every category (the palette and legend need them) and one
+ *    with more categories than can be coloured by is refused before anything
+ *    is requested (utils/categories.js).
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -348,7 +353,20 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'obs':
       case 'var': {
         const loadMethod = type === 'obs' ? DataManager.loadObs : DataManager.loadVar;
-        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr });
+        if (role === 'colour') {
+          // the structure says how many categories the column has; without it
+          // the server refuses (categories=all) instead
+          let structure = null;
+          try {
+            structure = await DataManager.getDatasetStructure(datasetPath);
+          } catch {
+            structure = null;
+          }
+          const refusal = colourRefusal(settings, structure);
+          if (refusal) throw refusal;
+        }
+        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr,
+                                  categories: role === 'colour' ? 'all' : undefined });
         // classifyColumn encodes the server's measured semantics: key ABSENT
         // means the column is not in this dataset; key present but empty on a
         // non-empty dataset means the read FAILED. Those two look identical in
@@ -862,7 +880,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // back to a constant colour, and STATE that the colour is missing.
           let colorData;
           try {
-            colorData = await loadAxisData(settings.color, plotType, plotContainer);
+            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour' });
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
@@ -1302,6 +1320,9 @@ export function hoverTemplateFor(trace, settings, data) {
   if (settings.z) t += '<br>z: %{z:.4~g}';
   if (trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale !== undefined) {
     t += data.colorLog ? '<br>log10 c: %{marker.color:.4~g}' : '<br>c: %{marker.color:.4~g}';
+  } else if (Array.isArray(trace._azLabels)) {
+    // shared-colour trace (many categories): each point's category is in hovertext
+    return t + '%{hovertext}<extra></extra>';
   } else if (data.colorType === 'categorical' && trace.name && trace.name !== 'Not in table') {
     t += `<br>${trace.name}`;
   }
@@ -1319,14 +1340,16 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
     indices.push(i);
     templates.push(hoverTemplateFor(trace, settings, data));
-    hovertexts.push(rowOf ? trace.text.map(name => {
-      const r = rowOf.get(name);
-      return r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join('');
+    const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
+    hovertexts.push(rowOf || labels ? trace.text.map((name, j) => {
+      const r = rowOf ? rowOf.get(name) : undefined;
+      const own = labels ? `<br>${labels[j]}` : '';
+      return own + (r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join(''));
     }) : null);
   });
   if (!indices.length) return;
   const update = { hovertemplate: templates };
-  if (rowOf) update.hovertext = hovertexts;
+  if (hovertexts.some(h => h !== null)) update.hovertext = hovertexts.map((h, k) => h || plotContainer.data[indices[k]].hovertext || null);
   try {
     await Plotly.restyle(plotContainer, update, indices);
   } catch (err) {

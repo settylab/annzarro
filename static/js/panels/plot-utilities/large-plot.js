@@ -40,6 +40,7 @@ import { classifyFilterStats, compactCount, exactCount } from '../../utils/cover
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { BUCKET_COLOURS, bucketed, bucketLegendName, colourRefusal } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -104,6 +105,9 @@ async function loadSeries(s, datasetPath, structure) {
   const info = structure && structure.obs && structure.obs.columns_info
     && structure.obs.columns_info[s.key];
   if (info && info.type === 'categorical') {
+    // too many categories to colour by: say so before downloading any
+    const refusal = colourRefusal(s, structure);
+    if (refusal) throw refusal;
     return DataManager.loadCategoryCodes(datasetPath, s.key);
   }
   const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key });
@@ -324,8 +328,12 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
 
   if (cs && cs.codes) {
-    // categorical: key = category, missing values last-but-drawn-first
-    const nc = cs.categories.length;
+    // categorical: key = category, missing values last-but-drawn-first. Over
+    // LEGEND_CATEGORIES the key is the shared colour (category mod
+    // BUCKET_COLOURS) and the legend one line (utils/categories.js).
+    const ncAll = cs.categories.length;
+    const many = bucketed(ncAll);
+    const nc = many ? Math.min(ncAll, BUCKET_COLOURS) : ncAll;
     const key = new Uint16Array(n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
@@ -334,14 +342,14 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       else if (c === cs.MISSING) {
         key[i] = settings.hideNaN ? DROP : NA;
         if (settings.hideNaN) only.nan++;
-      } else key[i] = c;
+      } else key[i] = many ? c % nc : c;
     }
     const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
     filtered = n - kept;
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
     let palette = null;
-    if (settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
+    if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
         if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
@@ -358,12 +366,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings));
     const groups = [];
     for (let k = 0; k < nc; k++) {
-      const name = String(cs.categories[k]), color = palette[k % palette.length];
+      const name = many ? `${bucketLegendName(ncAll)}: colour ${k + 1}` : String(cs.categories[k]);
+      const color = palette[k % palette.length];
       if (start[k + 1] > start[k]) {
-        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
-        traces.push(legendTrace(name, color, settings, k + 1));
+        const chunks = chunkTraces(X, Y, start[k], start[k + 1], name, color, settings);
+        // the one legend line shows and hides every shared colour
+        if (many) chunks.forEach(t => { t.legendgroup = bucketLegendName(ncAll); });
+        groups.push(chunks);
+        if (!many) traces.push(legendTrace(name, color, settings, k + 1));
       }
     }
+    if (many) traces.push(legendTrace(bucketLegendName(ncAll), palette[0], settings, 1));
     if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));
     traces.push(...interleave(groups));
     layout.showlegend = true;

@@ -1161,11 +1161,14 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Observation data
      */
     async function loadObs(options) {
-        const { datasetPath, columns, rows, maxCells } = options;
+        const { datasetPath, columns, rows, maxCells, categories } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
+        // 'all' to colour by a categorical column (refused past the colour
+        // limit), 'used' for its labels only (annzarro/core/categories.py)
+        if (categories) params.categories = categories;
         
         if (columns && columns.length > 0) {
             params.columns = columns.join(',');
@@ -1203,11 +1206,12 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Variable data
      */
     async function loadVar(options) {
-        const { datasetPath, columns, cols, maxGenes } = options;
+        const { datasetPath, columns, cols, maxGenes, categories } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
+        if (categories) params.categories = categories;   // as loadObs
         
         if (columns && columns.length > 0) {
             params.columns = columns.join(',');
@@ -2075,7 +2079,9 @@ const DataManager = (function() {
      * body of a large dataset does not fit in one string.
      */
     async function loadCategoryCodes(datasetPath, column) {
-        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column });
+        // every category: this is a colouring (large-plot.js), refused by the
+        // server past the colour limit
+        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column, categories: 'all' });
         const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
