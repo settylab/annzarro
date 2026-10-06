@@ -11,7 +11,8 @@ import {
   sortTracesByColor,
   unsortTraces,
   applyLogColor,
-  applyLogColorbar
+  applyLogColorbar,
+  loadingIndicator
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories, isLegendProxy, axisTitle } from './plot-make-helper.js';
@@ -23,6 +24,7 @@ import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { colourTitle } from '../../utils/plot-titles.js';
 
 
 
@@ -356,8 +358,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
                         colorbar: {
                             title: {
-                                text: `${settings.color.type}.${settings.color.key}` + 
-                                      (settings.color.column ? `.${settings.color.column}` : ''),
+                                text: colourTitle(settings.color),
                                 side: 'right',
                                 font: { size: 12 }
                             },
@@ -419,8 +420,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Update the legend title for categorical data
                 Plotly.relayout(plotContainer, {
-                    'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
-                                        (settings.color.column ? `.${settings.color.column}` : ''),
+                    'legend.title.text': colourTitle(settings.color),
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,
                         family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -560,8 +560,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
                         colorbar: {
                           title: {
-                            text: `${settings.color.type}.${settings.color.key}` + 
-                                  (settings.color.column ? `.${settings.color.column}` : ''),
+                            text: colourTitle(settings.color),
                             side: 'right'
                           },
                           titleside: 'right'
@@ -799,7 +798,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 if (data.colorType === 'numerical') {
                     const colorbar = {
                         title: {
-                            text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
+                            text: colourTitle(settings.color),
                             side: 'right',
                             font: { 
                                 size: settings.fontSize ? settings.fontSize + 2 : 14,
@@ -818,8 +817,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 } else if (data.colorType === 'categorical') {
                     // Update the legend title for categorical data
                     Plotly.relayout(plotContainer, {
-                        'legend.title.text': `${settings.color.type}.${settings.color.key}` + 
-                                           (settings.color.column ? `.${settings.color.column}` : ''),
+                        'legend.title.text': colourTitle(settings.color),
                         'legend.title.font': { 
                             size: settings.fontSize ? settings.fontSize + 2 : 14,
                             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -888,6 +886,11 @@ export async function loadColorDataAndUpdatePlot(
     }
     setStatusTag(plotContainer, 'memory', null);
     const started = performance.now();
+    // Busy until the new colours are drawn, not only while the column loads:
+    // on a remote store the category colours (uns.<key>_colors) took seconds
+    // more, and the plot sat on the old colours with nothing saying why.
+    loadingIndicator.show(plotContainer, 'recolour');
+    let drawing = null;
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
@@ -919,7 +922,7 @@ export async function loadColorDataAndUpdatePlot(
                 filter: true, // Update filtering if needed.
                 layout: true
             }
-            updatePlotElements(plotContainer, data, settings, refreshPlot, options)
+            drawing = updatePlotElements(plotContainer, data, settings, refreshPlot, options)
                 .then(() => {
                     if (data.entities !== 'genes') {
                         recordLoad({ n: colorData.values.length, seconds: (performance.now() - started) / 1000, kind: 'recolour' });
@@ -934,6 +937,9 @@ export async function loadColorDataAndUpdatePlot(
         console.error('Error updating color data:', error);
         // Fall back to recreating the plot.
         refreshPlot();
+    } finally {
+        if (drawing) drawing.finally(() => loadingIndicator.hide(plotContainer, 'recolour'));
+        else loadingIndicator.hide(plotContainer, 'recolour');
     }
 }
 

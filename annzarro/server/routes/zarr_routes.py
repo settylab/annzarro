@@ -10,8 +10,10 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
-from ...core import zarr_reader
+from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
+from ...core import freshness
+from ...core.zarr_reader import consolidated_staleness, consolidated_notice
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +77,19 @@ def register_zarr_routes(app, api_version):
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
             
-            # Clear the cache
+            # Clear the cache: both readers. The h5ad reader keeps its own
+            # result cache (it opens the file per read and holds no handle);
+            # resetting the zarr reader alone served an .h5ad's old reads
+            # until a restart.
             result = zarr_reader.clear_cache(dataset_path=dataset_path)
+            h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
             # The name search index is a cache too: a reset must rebuild it.
             name_index.clear(dataset_path)
+            # A new generation: the ETags change (an in-place chunk write
+            # kept the old ones, so the browser was answered 304 with its old
+            # body), and every other process, each gunicorn worker, drops
+            # its cached reads of the dataset on its next request.
+            freshness.bump(dataset_path, reason="cache_reset")
             
             # Add cache configuration to the response
             result["cache_config"] = {
@@ -96,6 +107,38 @@ def register_zarr_routes(app, api_version):
                 "message": f"Failed to clear cache: {str(e)}"
             }), 500
     
+    @app.route(f"/api/{api_version}/data/refresh", methods=["POST"])
+    def refresh_dataset():
+        """Check a dataset against the disk and serve its changes from now on.
+
+        Query parameters:
+            dataset_path: the dataset to check (required).
+
+        Open to every user who may read the dataset, unlike cache/reset: it
+        walks the store's files (core/freshness.py ``revalidate``) and starts
+        a new generation only when they changed, so every server process
+        then reads the changed store afresh, while an unchanged store keeps
+        what every user has cached. A hosted server's non-admins could not
+        see a change until a restart, and an admin's reset reached one
+        gunicorn worker.
+        """
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        from ...core import get_reader
+        try:
+            get_reader(dataset_path)
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc), "reason": "not_found"}), 404
+        except (ValueError, PermissionError, ImportError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        result = freshness.revalidate(
+            dataset_path, min_interval_s=float(app.config.get("refresh_min_interval_s", 10)),
+            inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)})
+        stale = result.pop("consolidated_stale", None)
+        return jsonify({**result, "result": "success", "dataset_path": dataset_path,
+                        "consolidated_metadata": consolidated_notice(stale)})
+
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
     def get_dataset_metadata(dataset_path: str):
         """

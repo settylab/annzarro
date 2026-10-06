@@ -39,6 +39,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
+import { colourTitle } from '../../utils/plot-titles.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -215,11 +216,6 @@ function interleave(groups) {
   return all.map(e => e[2]);
 }
 
-/** The colour's axis title, as the regular path writes it. */
-function colourTitle(settings) {
-  return `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : '');
-}
-
 function titleFont(settings) {
   return { size: settings.fontSize ? settings.fontSize + 2 : 14,
     family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: settings.textColor || '#000000' };
@@ -373,7 +369,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     layout.showlegend = true;
     // legend as the regular path draws it (plot-make.js, categorical branch)
     const pos = getPositioningByLocation(settings.legendPosition || 'right');
-    layout.legend = { ...(layout.legend || {}), title: { text: colourTitle(settings), font: titleFont(settings) },
+    layout.legend = { ...(layout.legend || {}), title: { text: colourTitle(settings.color), font: titleFont(settings) },
       orientation: pos.legendOrientation, x: pos.legendX, y: pos.legendY,
       xanchor: pos.legendXanchor, yanchor: pos.legendYanchor };
   } else if (cs && cs.values) {
@@ -423,10 +419,10 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       pushTraces(traces, X, Y, start[r + 1], start[r + 2], `bin ${bin}`, colors[bin], settings);
     });
     // the colour bar: one invisible point carrying the scale
-    const bar = colourBar(settings, colourTitle(settings));
+    const bar = colourBar(settings, colourTitle(settings.color));
     if (settings.color.log) {
-      // whole decades labelled in original units, as applyLogColorbar does
-      const ticks = logColorbarTicks(lo, hi);
+      // labelled in original units over the drawn range, as applyLogColorbar does
+      const ticks = logColorbarTicks(cmin, cmax);
       if (ticks) Object.assign(bar, { tickvals: ticks.tickvals, ticktext: ticks.ticktext });
     }
     traces.push({

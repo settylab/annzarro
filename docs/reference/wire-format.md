@@ -186,9 +186,10 @@ Cache-Control: private, no-cache
 ```
 
 The tag is computed **without reading any data**: a hash of the encoding version, the
-AnnZarro version, the full request URL and a `stat()` fingerprint of the store (modification
-times and sizes of the store directory and its top-level members `.zgroup`, `.zattrs`,
-`zarr.json`, `.zmetadata`, `X`, `obs`, `var`, `layers`, `obsm`, `varm`, `obsp`, `varp`, `uns`).
+AnnZarro version, the full request URL and the dataset's freshness token: a `stat()` fingerprint
+of the store (modification times and sizes of the store directory and its top-level members
+`.zgroup`, `.zattrs`, `zarr.json`, `.zmetadata`, `X`, `obs`, `var`, `layers`, `obsm`, `varm`,
+`obsp`, `varp`, `uns`) plus its generation (below).
 `no-cache` makes the browser keep the reply and revalidate every reuse. A repeat with a matching
 `If-None-Match` is answered `304 Not Modified` with no body and no zarr read:
 
@@ -204,8 +205,13 @@ Cache-Control: private, no-cache
 
 In Chromium, three identical `fetch` calls for that gene column transferred 32,660 bytes the
 first time and 300 bytes (headers only) for each repeat. Rewriting a store moves the directory
-modification times, so old tags stop matching. Overwriting chunk files in place does not; restart
-the server or `POST /api/v1/cache/reset` (admins only on a shared server) after such a change. Remote stores get no ETag.
+modification times, so old tags stop matching. Overwriting chunk files in place
+(`g["obs/x"][:] = v`) moves none of them, so the tag also holds the dataset's **generation**: a
+small file per dataset under `~/.annzarro/freshness` (`ANNZARRO_HOME`), replaced by
+`POST /api/v1/cache/reset` and by `POST /api/v1/data/refresh` when that finds the store's files
+changed (Refresh dataset; any user may). After either every tag of that dataset changes, in every server
+process on the machine (each gunicorn worker stats the same file), and the server's own result
+cache, keyed by the same token, is read afresh. Remote stores get no ETag.
 
 ## Compression
 

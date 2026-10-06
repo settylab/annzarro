@@ -100,5 +100,62 @@ test("log colour: floor clamps zeros and negatives, missing stays missing", asyn
   assert.equal(logColorValues([0, -1]).floor, null);
   // ticks at whole decades in original units (view A walk row: 1e-6 .. 0.0126)
   assert.deepEqual(logColorbarTicks(-6, -1.9), { tickvals: [-6, -5, -4, -3, -2], ticktext: ["1e-6", "1e-5", "1e-4", "0.001", "0.01"] });
-  assert.equal(logColorbarTicks(-2.3, -1.9), null);
+  // inside one decade there are no whole decades: evenly spaced values instead
+  // of none (Plotly then labelled the bar in log10 units)
+  assert.deepEqual(logColorbarTicks(-2.3, -1.9).ticktext, ["0.006", "0.007", "0.008", "0.009", "0.01"]);
+  assert.equal(logColorbarTicks(1, 1), null);
+});
+
+test("log colour bar: 1-2-5 ticks over a short range, every n-th decade over a long one", async () => {
+  const { logColorbarTicks } = await import(pathToFileURL(MODULE_PATH).href);
+  // data 1 .. 82 drew ticks at 1 and 10 only
+  const t = logColorbarTicks(0, Math.log10(82));
+  assert.deepEqual(t.ticktext, ["1", "2", "5", "10", "20", "50"]);
+  t.tickvals.forEach((x, i) => assert.ok(Math.abs(10 ** x - Number(t.ticktext[i])) < 1e-9, t.ticktext[i]));
+  // three decades: 1-3-10, at most 8 ticks
+  assert.deepEqual(logColorbarTicks(0, 3).ticktext, ["1", "3", "10", "30", "100", "300", "1000"]);
+  assert.deepEqual(logColorbarTicks(Math.log10(2e-6), Math.log10(6e-6)).ticktext, ["2e-6", "3e-6", "4e-6", "5e-6", "6e-6"]);
+  assert.deepEqual(logColorbarTicks(-30, 82).ticktext, ["1e-20", "1", "1e20", "1e40", "1e60", "1e80"]);
+  for (const [a, b] of [[0, 0.01], [-3.2, 7.9], [-12, -11.5], [0.3, 0.46]]) {
+    const n = logColorbarTicks(a, b).tickvals.length;
+    assert.ok(n >= 3 && n <= 8, `${a}..${b}: ${n} ticks`);
+  }
+});
+
+test("log colour: Min/Max are data values, drawn in log10", async () => {
+  const { colorBoundToData, colorBoundFromData } = await import(pathToFileURL(MODULE_PATH).href);
+  assert.equal(colorBoundFromData(82, true, "max").value, Math.log10(82));
+  assert.equal(colorBoundToData(Math.log10(82), true), 82);
+  assert.equal(colorBoundFromData(82, false, "max").value, 82);
+  assert.equal(colorBoundToData(1.5, false), 1.5);
+  assert.equal(colorBoundToData(null, true), null);
+  // at or below zero: Min starts at the floor, with a note; Max is refused
+  const min = colorBoundFromData(0, true, "min", 1e-5);
+  assert.equal(min.value, -5);
+  assert.match(min.note, /at or below 0.*floor, 0\.00001\./);
+  assert.equal(colorBoundFromData(-1, true, "min").value, null, "no floor known: from the data");
+  const max = colorBoundFromData(0, true, "max", 1e-5);
+  assert.equal(max.value, null);
+  assert.match(max.refused, /Max must be above 0/);
+});
+
+test("log colour: saved views store data values; older views (log10 under Log) still open", async () => {
+  const { storedColorRange, restoreColorRange } = await import(pathToFileURL(MODULE_PATH).href);
+  const settings = { color: { type: "obs", key: "n", log: true }, colorMin: 0, colorMax: Math.log10(82) };
+  const stored = storedColorRange(settings);
+  assert.deepEqual(stored, { colorMin: 1, colorMax: 82, colorRangeUnits: "data" });
+  // round trip: what getConfig writes, a new panel reads back as drawn units
+  const back = restoreColorRange({ ...settings, ...stored });
+  assert.equal(back.colorMin, 0);
+  assert.equal(back.colorMax, Math.log10(82));
+  assert.ok(!("colorRangeUnits" in back));
+  // a link saved before: Min 1, Max 82 under Log meant 10 .. 1e82 and still does
+  const old = restoreColorRange({ color: { log: true }, colorMin: 1, colorMax: 82 });
+  assert.deepEqual([old.colorMin, old.colorMax], [1, 82]);
+  // linear views are the same in either form
+  const lin = restoreColorRange({ color: { log: false }, colorMin: -1, colorMax: 3, colorRangeUnits: "data" });
+  assert.deepEqual([lin.colorMin, lin.colorMax], [-1, 3]);
+  assert.deepEqual(storedColorRange({ color: {}, colorMin: -1, colorMax: 3 }), { colorMin: -1, colorMax: 3, colorRangeUnits: "data" });
+  // a stored bound at or below 0 under Log draws from the data's end
+  assert.equal(restoreColorRange({ color: { log: true }, colorMin: 0, colorRangeUnits: "data" }).colorMin, null);
 });

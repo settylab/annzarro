@@ -17,6 +17,7 @@ import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { colourTitle } from '../../utils/plot-titles.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -178,7 +179,7 @@ class LoadingIndicator {
 }
 
 // Create a singleton instance
-const loadingIndicator = new LoadingIndicator();
+export const loadingIndicator = new LoadingIndicator();
 
 // Make loadingIndicator globally available for cleanup.
 //
@@ -1430,8 +1431,14 @@ export async function applyLogColorbar(gd, data, settings) {
   if (idx < 0) return;
   const update = {};
   if (data.colorLog) {
-    const finite = data.color.filter(v => Number.isFinite(v));
-    const ticks = finite.length ? logColorbarTicks(arrayMin(finite), arrayMax(finite)) : null;
+    // over the drawn range: the set Min/Max, else the data's
+    let lo = settings.colorMin, hi = settings.colorMax;
+    if (lo == null || hi == null) {
+      const finite = data.color.filter(v => Number.isFinite(v));
+      if (lo == null) lo = finite.length ? arrayMin(finite) : NaN;
+      if (hi == null) hi = finite.length ? arrayMax(finite) : NaN;
+    }
+    const ticks = logColorbarTicks(lo, hi);
     update['marker.colorbar.tickvals'] = [ticks ? ticks.tickvals : null];
     update['marker.colorbar.ticktext'] = [ticks ? ticks.ticktext : null];
   } else {
@@ -2270,7 +2277,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend = { 
         ...(layout.legend || {}), 
         title: { 
-          text: `${settings.color.type}.${settings.color.key}` + (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -2382,8 +2389,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       // Common colorbar settings for table entities
       const colorbarSettings = {
         title: {
-          text: `${settings.color.type}.${settings.color.key}` +
-                (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           side: 'right',
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
@@ -2540,9 +2546,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.cmax = cmax;
       baseTrace.marker.colorbar = {
         title: {
-          text:
-            `${settings.color.type}.${settings.color.key}` +
-            (settings.color.column ? `.${settings.color.column}` : ''),
+          text: colourTitle(settings.color),
           side: 'right',
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,

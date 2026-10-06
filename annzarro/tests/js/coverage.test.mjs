@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 
 import {
     GAP, ROLE, Coverage, classifyColumn, classifyValues, classifyError,
-    classifyFilterStats, breakdown
+    classifyFilterStats, countNoun, breakdown
 } from '../../../static/js/utils/coverage.js';
 
 test('complete coverage says nothing', () => {
@@ -749,4 +749,16 @@ test('the gene set panel names its gaps by kind: not found, request failed, not 
     const partial = new Coverage({ shown: 15, total: 20, unit: 'genes',
         gaps: [{ reason: GAP.UNAVAILABLE, kind: 'unmapped', source: 'STRING', count: 5, detail: 'A, B' }] });
     assert.deepEqual(breakdown(partial).rows.map(r => r.chip), ['not found in STRING']);
+});
+
+test('a count of one takes the singular noun', () => {
+    const one = Coverage.partial(74999, 75000, GAP.FILTERED, 'missing coordinates',
+        { source: 'x-axis', unit: 'genes' });
+    assert.match(one.lines()[0], /\(1 gene\)/);
+    assert.match(Coverage.partial(1, 3, GAP.FILTERED, '', { unit: 'cells' }).lines()[0], /\(2 cells\)/);
+    assert.equal(countNoun(1, 'categories'), '1 category');
+    assert.equal(countNoun(0, 'cells'), '0 cells');
+    const single = breakdown(Coverage.complete(1, 'cells'));
+    assert.equal(single.headline, '1 cell');
+    assert.equal(single.headlineExact, '1 cell');
 });

@@ -129,7 +129,10 @@ def _sign_in(page, password):
     page.wait_for_selector("#username")
     page.fill("#username", "alice")
     page.fill("#password", password)
-    page.click("button[type=submit]")
+    # Wait for the app page: evaluating STATE while the login page navigates
+    # away throws "Execution context was destroyed".
+    with page.expect_navigation(url=lambda u: urllib.parse.urlsplit(u).path != "/login", timeout=30000):
+        page.click("button[type=submit]")
 
 
 @pytest.mark.parametrize("how", ["cookie-gone", "password-changed"])
@@ -164,9 +167,19 @@ def test_expired_login_returns_to_the_current_view(server, how):
                 cli("passwd", "--username", "alice", "--password", "pw-two")
                 password = "pw-two"
 
-            # The next request finds out and goes to the login page
-            with page.expect_navigation(url=lambda u: "/login" in u, timeout=15000):
-                page.evaluate("() => fetch('api/v1/auth/me')")
+            # The next request finds out and goes to the login page. It used
+            # to be awaited inside evaluate, under expect_navigation: under load
+            # the redirect committed while evaluate still waited ("Execution
+            # context was destroyed"), and a redirect already under way when
+            # expect_navigation began would have been missed. The request is
+            # now fired without waiting, and the test waits for the login URL,
+            # which holds whichever request's 401 got there first.
+            try:
+                page.evaluate("() => { fetch('api/v1/auth/me'); }")
+            except playwright.Error as e:
+                if "Execution context was destroyed" not in str(e):
+                    raise
+            page.wait_for_url(lambda u: urllib.parse.urlsplit(u).path == "/login", timeout=15000)
             parts = urllib.parse.urlsplit(page.url)
             assert parts.path == "/login"
             assert "dataset_path" in urllib.parse.unquote(parts.query)

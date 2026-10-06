@@ -106,6 +106,10 @@ server:
       type: integer
       description: Maximum number of datasets to keep in memory
       default: 10
+    refresh_min_interval_s:
+      type: number
+      description: Seconds between two walks of one dataset by POST /data/refresh (open to every user)
+      default: 10
     remote_stores:
       type: string
       enum: [auto, allow, deny]
