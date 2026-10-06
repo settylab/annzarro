@@ -20,7 +20,8 @@ def server(tmp_path):
     import annzarro.core as core
     core.zarr_reader.clear_cache()
     core.h5ad_reader_obj.clear_cache()
-    app = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log")})
+    app = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log"),
+                      "refresh_min_interval_s": 0})
     yield app.test_client()
     core.zarr_reader.clear_cache()
     core.h5ad_reader_obj.clear_cache()
@@ -130,7 +131,8 @@ def _hosted(tmp_path):
     manager = AuthManager(user_file=str(users))
     manager.create_user("bob", "pw")
     app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(tmp_path),
-                      "log_file": str(tmp_path / "t.log"), "auth_enabled": True, "user_file": str(users)})
+                      "log_file": str(tmp_path / "t.log"), "auth_enabled": True, "user_file": str(users),
+                      "refresh_min_interval_s": 0})
     client = app.test_client()
     client.post("/login", data={"username": "bob", "password": "pw"})
     return client
@@ -151,7 +153,7 @@ def test_any_user_can_refresh_a_changed_store(tmp_path):
     tag = _read(bob, path).headers["ETag"]
     # nothing changed: the generation, the tags and everyone's caches stay
     unchanged = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
-    assert unchanged["changed"] is False and unchanged["checked"] is True
+    assert unchanged["changed"] is False and unchanged["status"] == "full"
     assert _read(bob, path, tag).status_code == 304
     _slice_write(path, old + 1000)
     changed = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
@@ -249,3 +251,63 @@ def test_zarr_format_3_consolidated_additions(server, tmp_path):
     r = server.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
     assert "obs/new_score is on disk but not in it" in r["consolidated_metadata"]["detail"]
     assert server.get("/api/v1/data/obs", query_string=q).status_code == 200
+
+
+def test_refresh_walks_a_dataset_at_most_once_per_interval(tmp_path):
+    """Any user may refresh, so a loop of refreshes must not walk a large
+    store in a loop: within server.refresh_min_interval_s a refresh answers
+    with the last walk's finding and its age."""
+    from annzarro.server.core import create_app
+    import annzarro.core as core
+    core.zarr_reader.clear_cache()
+    client = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log"),
+                         "refresh_min_interval_s": 60}).test_client()
+    path = make_rich_store(tmp_path / "r.zarr")
+    q = {"dataset_path": path}
+    assert client.post("/api/v1/data/refresh", query_string=q).get_json()["status"] == "full"
+    old = _first_total_counts(client, path)
+    _slice_write(path, old + 1000)
+    soon = client.post("/api/v1/data/refresh", query_string=q).get_json()
+    assert soon["status"] == "recent" and soon["changed"] is False
+    assert 0 <= soon["checked_ago_s"] < 60
+    assert _first_total_counts(client, path) == old, "not walked again within the interval"
+    core.zarr_reader.clear_cache()
+
+
+def test_concurrent_refreshes_share_one_walk(tmp_path):
+    import threading
+    import time as _time
+    from annzarro.core import freshness
+    path = make_rich_store(tmp_path / "r.zarr")
+    walks = []
+
+    def inspect():
+        walks.append(1)
+        _time.sleep(0.5)
+        return {}
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(
+        freshness.revalidate(path, min_interval_s=0, inspect=inspect))) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(walks) == 1, walks
+    assert len(results) == 5 and sum(1 for r in results if r.get("shared")) == 4
+
+
+def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):
+    """The walk stops at its budget (the 95.6M-cell store has far more chunk
+    files than 3 s of stat() calls): the answer says so, and the generation,
+    with every user's cached reads, stays; an admin's reset still bumps it."""
+    from annzarro.core import freshness
+    path = make_rich_store(tmp_path / "r.zarr")
+    many = os.path.join(path, "uns", "many")
+    os.makedirs(many)
+    for i in range(3000):
+        open(os.path.join(many, str(i)), "w").close()
+    gen = freshness.generation(path)
+    r = freshness.revalidate(path, min_interval_s=0, budget_s=0.0)
+    assert r["status"] == "partial" and r["checked"] is False and r["changed"] is False
+    assert "too large to fingerprint fully" in r["message"]
+    assert freshness.generation(path) == gen

@@ -132,9 +132,11 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": str(exc), "reason": "not_found"}), 404
         except (ValueError, PermissionError, ImportError) as exc:
             return jsonify({"error": str(exc)}), 400
-        stale = consolidated_staleness(dataset_path)
-        result = freshness.revalidate(dataset_path, consolidated_stale=stale)
-        return jsonify({"status": "success", "dataset_path": dataset_path, **result,
+        result = freshness.revalidate(
+            dataset_path, min_interval_s=float(app.config.get("refresh_min_interval_s", 10)),
+            inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)})
+        stale = result.pop("consolidated_stale", None)
+        return jsonify({**result, "result": "success", "dataset_path": dataset_path,
                         "consolidated_metadata": consolidated_notice(stale)})
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])

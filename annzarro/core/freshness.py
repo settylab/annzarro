@@ -167,39 +167,42 @@ def token(dataset_path) -> Optional[str]:
 # --- refresh: is the store on disk still what was served? -----------------
 
 #: A refresh walks every file of a store; past this many seconds it stops
-#: and assumes the store changed.
+#: (a store too large to fingerprint fully, e.g. 95.6M cells).
 DEEP_BUDGET_S = 3.0
-#: A refresh that could not check (remote store, walk over budget) starts a
-#: new generation at most this often per dataset.
-UNCHECKED_MIN_INTERVAL_S = 5.0
+#: A refresh walks a dataset at most this often (``server.refresh_min_interval_s``);
+#: one asked for sooner answers with the last walk's finding and its age.
+REFRESH_MIN_INTERVAL_S = 10.0
 
 
-def deep_fingerprint(dataset_path, budget_s: float = DEEP_BUDGET_S) -> Optional[str]:
-    """A digest of every file's path, mtime and size, or None when it cannot
-    be had (remote, missing, or the walk took longer than ``budget_s``).
+def deep_fingerprint(dataset_path, budget_s: float = DEEP_BUDGET_S):
+    """``(digest, complete)``: a digest of every file's path, mtime and size,
+    and False when the walk stopped at ``budget_s`` (digest None). (None,
+    True) for a remote or missing store, which has no files to walk.
 
     This is what sees an in-place chunk write. It reads no data, but it
     stats every chunk file, so it runs on a refresh, never per request.
     """
     if not dataset_path or is_remote_path(dataset_path):
-        return None
+        return None, True
     try:
         st = os.stat(dataset_path)
     except OSError:
-        return None
+        return None, True
     if not os.path.isdir(dataset_path):
-        return f"file:{st.st_mtime_ns}:{st.st_size}"
+        return f"file:{st.st_mtime_ns}:{st.st_size}", True
     digest = hashlib.sha1()
     deadline = time.monotonic() + budget_s
     stack, seen = [str(dataset_path)], 0
     while stack:
         folder = stack.pop()
+        if time.monotonic() > deadline:
+            return None, False
         try:
             with os.scandir(folder) as entries:
                 for entry in sorted(entries, key=lambda e: e.name):
                     seen += 1
                     if seen % 1024 == 0 and time.monotonic() > deadline:
-                        return None
+                        return None, False
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
@@ -211,27 +214,106 @@ def deep_fingerprint(dataset_path, budget_s: float = DEEP_BUDGET_S) -> Optional[
                                   .encode("utf-8", "surrogateescape"))
         except OSError:
             continue
-    return digest.hexdigest()
+    return digest.hexdigest(), True
 
 
-def revalidate(dataset_path, **recorded) -> dict:
-    """A refresh: compare the store with what the last refresh recorded and
-    start a new generation if it differs (or could not be checked).
+def _checked_file(dataset_path):
+    # beside the generation file, not in it: recording a walk that found
+    # nothing must not start a new generation
+    return _generation_dir() / f"{_key(dataset_path)}.checked"
 
-    Any user may ask for this. It cannot force the server to re-read a store
-    that did not change: an unchanged store keeps its generation, and so its
-    ETags and every user's cached reads. ``recorded`` (e.g. whether the
-    consolidated metadata is stale) counts as part of the store's state.
+
+def last_check(dataset_path) -> dict:
+    try:
+        with open(_checked_file(dataset_path), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _record_check(dataset_path, body) -> None:
+    folder = _generation_dir()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=f".{_key(dataset_path)}.c.")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(body, f)
+        os.replace(tmp, _checked_file(dataset_path))
+    except OSError as exc:
+        logger.warning(f"Refresh of {dataset_path} not recorded: {exc}")
+
+
+# one walk per dataset at a time in this process; callers meanwhile share its result
+_walks = {}
+_walks_lock = threading.Lock()
+
+
+def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
+               budget_s: float = DEEP_BUDGET_S, inspect=None) -> dict:
+    """A refresh: compare the store with what the last refresh found and start
+    a new generation if it differs.
+
+    Any user may ask for this, so it is bounded three ways. An unchanged store
+    keeps its generation, and so its ETags and every user's cached reads: no
+    user can make the server drop and re-read a store that did not change.
+    Concurrent calls in a process share one walk, and a dataset is walked at
+    most once per ``min_interval_s`` across processes (the last walk is
+    recorded beside the generation file); a call within the window answers
+    ``status: "recent"`` with that walk's age. A walk stops at ``budget_s``:
+    a store too large to fingerprint fully answers ``status: "partial"`` and
+    is not bumped (an admin's cache/reset still is). ``inspect()`` returns
+    further state recorded with the walk (whether the consolidated metadata
+    is stale); a change in it is a change of the store.
+
+    Returns ``{"changed", "checked", "status", "checked_ago_s", ...inspected}``.
     """
-    deep = deep_fingerprint(dataset_path)
-    previous = state(dataset_path)
-    changed = deep is None or previous.get("deep") != deep or any(
-        previous.get(k) != v for k, v in recorded.items())
-    if deep is None and time.time() - previous.get("time", 0) < UNCHECKED_MIN_INTERVAL_S:
-        changed = False
+    key = _key(dataset_path)
+    with _walks_lock:
+        walk = _walks.get(key)
+        if walk is None:
+            walk = {"done": threading.Event(), "result": None}
+            _walks[key] = walk
+            mine = True
+        else:
+            mine = False
+    if not mine:
+        walk["done"].wait(budget_s + 30)
+        if walk["result"] is not None:
+            return {**walk["result"], "shared": True}
+    try:
+        result = _revalidate(dataset_path, min_interval_s, budget_s, inspect)
+        walk["result"] = result
+        return result
+    finally:
+        walk["done"].set()
+        with _walks_lock:
+            if _walks.get(key) is walk:
+                del _walks[key]
+
+
+def _revalidate(dataset_path, min_interval_s, budget_s, inspect):
+    previous = last_check(dataset_path)
+    age = time.time() - previous.get("time", 0)
+    if previous and 0 <= age < min_interval_s:
+        return {"changed": False, "checked": previous.get("status") == "full", "status": "recent",
+                "checked_ago_s": round(age, 1), **previous.get("inspected", {})}
+    deep, complete = deep_fingerprint(dataset_path, budget_s)
+    inspected = inspect() if inspect else {}
+    status = "remote" if (deep is None and complete) else ("full" if complete else "partial")
+    before = state(dataset_path)
+    changed = any(before.get(k) != v for k, v in inspected.items())
+    if status == "full" and previous.get("deep") != deep:
+        changed = True
     if changed:
-        bump(dataset_path, deep=deep, reason="refresh", **recorded)
-    return {"changed": changed, "checked": deep is not None}
+        bump(dataset_path, reason="refresh", **inspected)
+    _record_check(dataset_path, {"time": time.time(), "deep": deep if status == "full" else previous.get("deep"),
+                                 "status": status, "inspected": inspected})
+    result = {"changed": changed, "checked": status == "full", "status": status, "checked_ago_s": 0.0,
+              **inspected}
+    if status == "partial":
+        result["message"] = (f"Store too large to fingerprint fully in {budget_s:g} s: changes that only "
+                             "overwrite chunk files are not detected. An admin's cache reset serves them.")
+    return result
 
 
 _pinned = contextvars.ContextVar("annzarro_freshness_pinned", default=None)
