@@ -449,10 +449,17 @@ export function keptViewRanges(settings) {
   /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */
   export const LEGEND_PROXY = 'az-legend';
   export const LEGEND_POINTS = 'az-points';
+  /** Trace `meta` of the one invisible point that carries a large plot's colour bar. */
+  export const COLOUR_BAR = 'az-colorbar';
 
   /** True for a legend proxy trace (no points; styling restyles skip it). */
   export function isLegendProxy(trace) {
     return !!trace && trace.meta === LEGEND_PROXY;
+  }
+
+  /** True for a trace the point size and opacity leave alone: a legend proxy or a colour bar's point. */
+  export function keepsOwnMarker(trace) {
+    return isLegendProxy(trace) || (!!trace && trace.meta === COLOUR_BAR);
   }
 
   /**

@@ -42,6 +42,7 @@ import { keepTitlesFitted } from './plot-titles.js';
 import { releasePlot } from './release-plot.js';
 import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
+import { installGlColors } from './gl-colors.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -612,6 +613,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
     // a fresh draw clears a lost-context tag; before the draw, for the same reason
     setStatusTag(plotContainer, 'webgl', null);
+    // per-point colours without Plotly's colour strings (once per page)
+    await installGlColors();
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(

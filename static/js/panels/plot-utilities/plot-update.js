@@ -15,7 +15,7 @@ import {
   loadingIndicator
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, axisTitle } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
@@ -1293,11 +1293,11 @@ export async function restyleMarkers(plotContainer, settings) {
     // every trace: out of V8 heap at 95.6M points, the heap nearly doubled
     // at 5M (utils/gl-markers.js). The axes keep their range.
     const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
-    if (!is3D && setGlMarkers(plotContainer, (trace) => (isLegendProxy(trace) ? null
+    if (!is3D && setGlMarkers(plotContainer, (trace) => (keepsOwnMarker(trace) ? null
         : isHighlight(trace) ? { size: settings.pointSize * 2 }
         : { size: settings.pointSize, opacity: settings.pointOpacity }))) return;
     plotContainer.data.forEach((trace, i) => {
-        if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
+        if (keepsOwnMarker(trace)) return;   // legend entries stay at full opacity, the colour bar's point hidden
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);
     });
     if (dataIdx.length) {
