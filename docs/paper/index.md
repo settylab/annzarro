@@ -24,6 +24,12 @@ stay valid when the paper's figures are renumbered.
 :link-type: doc
 :::
 
+:::{grid-item-card} Procedure
+:img-top: ../_static/figures/paper/procedure-thumb.png
+:link: procedure
+:link-type: doc
+:::
+
 :::{grid-item-card} Cell by cell
 :img-top: ../_static/figures/paper/cell-by-cell-thumb.png
 :link: cell-by-cell
@@ -67,6 +73,7 @@ stay valid when the paper's figures are renumbered.
 
 overview
 interface
+procedure
 cell-by-cell
 gene-by-gene
 cells-and-genes
