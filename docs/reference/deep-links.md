@@ -105,9 +105,8 @@ the same view with **Load Panel Set** > **Upload file**.
 {download}`protocol-E-table-filter.json <../_static/panelsets/protocol/protocol-E-table-filter.json>`
 ::::
 
-`docs/_tools/start_links.py` imports them from the paper repository, sets B, C and D to the
-paper's worked-example steps where the repository's view files differ (Steps 20, 23 and 26),
-writes every link of the docs from its panel set file, and opens each one in a headless browser.
+`docs/_tools/start_links.py` imports them from the paper repository, writes every link of the
+docs from its panel set file, and opens each one in a headless browser.
 
 ## The `view` object
 
