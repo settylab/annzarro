@@ -9,7 +9,10 @@ coloured by a numeric column and checks:
 - under Log, Min and Max are data values (typing 5000 draws up to 5000, not
   10^5000), values with no log10 are explained, the colour bar has 1-2-5
   ticks, saved views store data values and links saved before (log10 under
-  Log) open with the range they had, in both drawing paths.
+  Log) open with the range they had, in both drawing paths;
+- a recolour that waits on the server (a remote store: seconds) shows the
+  panel's busy state until the new colours are drawn, and the legend keeps
+  the old title until then.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -272,3 +275,66 @@ def test_log_limits_in_old_and_new_links(request, mode):
         finally:
             browser.close()
 
+
+LEGEND = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    const busy = [...gd.querySelectorAll('.loading-overlay')].filter(e => e.offsetParent !== null).length;
+    return {{ title: (gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text) || null,
+              // the colour traces; the focused-cell highlight comes and goes on its own
+              names: gd.data.map(t => t.name || '').filter(n => !n.startsWith('Focused')).join('|'), busy }};
+}}"""
+
+
+@pytest.mark.parametrize("slow", ["column", "category colours"])
+def test_slow_recolour_shows_busy(server, slow):
+    """A remote store answers in seconds; until the new colours are drawn the panel says it is busy."""
+    delay_ms = 3000
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1100})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            if slow == "column":
+                def column(route):
+                    page.wait_for_timeout(delay_ms)
+                    route.continue_()
+                page.route(lambda u: "/api/v1/data/obs" in u and "leiden" in u, column)
+            else:
+                # the store has uns.leiden_colors (the fixture has none); reading them is slow
+                def structure(route):
+                    body = route.fetch().json()
+                    body.setdefault("uns", {}).setdefault("keys", []).append("leiden_colors")
+                    route.fulfill(json=body)
+                page.route("**/api/v1/data/dataset_structure*", structure)
+
+                def colours(route):
+                    page.wait_for_timeout(delay_ms)
+                    route.fulfill(json={"data": ["#%02x%02x%02x" % (40 * i % 256, 90, 200 - 9 * i) for i in range(20)],
+                                        "uns_key": "leiden_colors"})
+                page.route("**/api/v1/data/uns/leiden_colors*", colours)
+            page.goto(_link(server, color={"type": "obs", "key": "cell_type", "column": ""}))
+            page.wait_for_selector(TILE + ".js-plotly-plot", timeout=30000)
+            page.wait_for_function(f"() => !document.querySelector('.tile[data-tile-id=\"{PID}\"] .loading-overlay')")
+            page.wait_for_timeout(500)
+            before = page.evaluate(LEGEND)
+            assert before["title"] == "cell_type" and not before["busy"], before
+
+            page.select_option(TILE + 'select.axis-key-select[data-axis="color"]', "leiden")
+            page.wait_for_timeout(delay_ms // 2)
+            during = page.evaluate(LEGEND)
+            assert during["busy"], f"no busy state while the {slow} loads: {during}"
+            assert during["title"] == "cell_type" and during["names"] == before["names"], \
+                ("the legend changed before the colours arrived", during)
+
+            page.wait_for_function(f"""() => {{
+                const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+                return gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text === 'leiden'
+                    && !gd.querySelector('.loading-overlay');
+            }}""", timeout=15000)
+            after = page.evaluate(LEGEND)
+            assert after["names"] != before["names"] and not after["busy"], after
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()

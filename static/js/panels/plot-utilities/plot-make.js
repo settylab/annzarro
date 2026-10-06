@@ -179,7 +179,7 @@ class LoadingIndicator {
 }
 
 // Create a singleton instance
-const loadingIndicator = new LoadingIndicator();
+export const loadingIndicator = new LoadingIndicator();
 
 // Make loadingIndicator globally available for cleanup.
 //
