@@ -93,14 +93,16 @@ test('plot: a covered row stays complete', async () => {
 });
 
 test('table and plot give the same sentence for the uncovered row', async () => {
+    // A table column names its gene (issue #9: it never follows the focus),
+    // so it says what a plot axis LOCKED on that gene says
     varpRow = Array(N).fill(null);
-    const plot = (await loadAxisData({ ...COLOR }, 'genes')).coverage;
+    const plot = (await loadAxisData({ ...COLOR, locked: true }, 'genes')).coverage;
     const table = await loadTableData(
-        { columns: [{ type: 'varp', key: 'corr', column: 'focused_gene' }] }, 'genes');
+        { columns: [{ type: 'varp', key: 'corr', column: 'GENE_0' }] }, 'genes');
     const tableText = table.coverage.lines().join('\n');
-    assert.ok(tableText.includes('focused gene "GENE_0" has no values in "corr"'), JSON.stringify(table.coverage.lines()));
+    const sentence = 'the gene "GENE_0" has no values in "corr"';
+    assert.ok(tableText.includes(sentence), JSON.stringify(table.coverage.lines()));
     assert.equal(table.coverage.worstReason, plot.worstReason);
-    const sentence = 'focused gene "GENE_0" has no values in "corr"';
     assert.ok(plot.lines().join('\n').includes(sentence));
 });
 

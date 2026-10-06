@@ -43,11 +43,11 @@ export function setupTableEventListeners({
         signal
     });
 
-    // Focus listeners. BOTH table types hold columns keyed to BOTH foci: a
-    // cell table has obsp "focused cell" and layer "focused gene" columns, a
-    // gene table has varp "focused gene" and layer "focused cell" columns. So
-    // both tables listen to both events and let updateTableOnFocusChange
-    // decide which columns actually depend on the entity that changed.
+    // Focus listeners. BOTH table types offer columns from BOTH foci: a cell
+    // table obsp rows of a cell and layer columns of a gene, a gene table
+    // varp rows of a gene and layer rows of a cell. A focus change only
+    // re-lists the chooser (updateTableOnFocusChange); the columns already
+    // in the table name their entity and never change with the focus.
     if (entityType === 'cells' || entityType === 'genes') {
         setupFocusEventListeners({
             id,

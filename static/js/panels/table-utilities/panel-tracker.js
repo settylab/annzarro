@@ -349,8 +349,9 @@ const PLACEHOLDERS = {
  * Offered, once per entity: the focused one, every one locked in a plot
  * (all of them, from any panel), and every one this table already holds, so
  * a column added from an earlier focus stays listed and can be removed.
- * A placeholder column from an older session still follows the focus and is
- * listed as such.
+ * A placeholder column from an older session is pinned to a name when its
+ * panel is made (table-data.js pinFocusPlaceholders); one that is not names
+ * no entity, never the focus, and is listed so it can be removed.
  *
  * @param {Object} options
  * @param {string} options.type - 'obsp' | 'varp' | 'layer'
@@ -382,14 +383,13 @@ export function entityColumnItems({ type, keys, entities, kind, selected = [] })
             });
         }
     }
-    const focused = entities.find(e => e.source === 'focused')?.name;
     for (const col of selected || []) {
         if (!col || col.type !== type || !keys.includes(col.key) || !col.column) continue;
         if (PLACEHOLDERS[kind].has(col.column)) {
             add({
                 type, key: col.key, column: col.column,
-                label: `${col.key}: follows the focused ${kind}${focused ? ` (${focused})` : ''}`,
-                source: 'focused'
+                label: `${col.key}: no ${kind} (unresolved placeholder)`,
+                source: 'table'
             });
         } else {
             add({
