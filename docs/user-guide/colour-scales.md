@@ -40,8 +40,8 @@ Numerical colour controls of the fold-change panel.
 7. **Hide Outliers** removes points whose value lies outside Min to Max. The axes keep their range.
 8. **Hide NaN** removes points with no value (also offered for categorical colours, where it
    removes the grey **NA** points). The axes keep their range.
-9. **Strong on top** (on by default) draws the points with the strongest colours last, so they
-   are not hidden under weaker ones (see "Drawing order" below).
+9. **Strong on top** (on by default) draws the points at the top end of the colour bar last,
+   so they are not hidden under weaker ones (see "Drawing order" below).
 10. **Log** switches to a log10 colour scale.
 11. **floor** is the smallest value the log scale shows; empty means the smallest positive value
     in the data.
@@ -135,25 +135,24 @@ The same diffusion walk row, linear (left) and log with floor 1e-5 (right). View
 ## Drawing order: Strong on top
 
 Points are drawn one over the other, so in a dense plot the last drawn decide what you see. With
-**Strong on top** on (the default), AnnZarro draws the points with the largest absolute colour
-value last. In the volcano plot below, the genes most correlated or anticorrelated with H2-Q7 sit
-on top of the weakly correlated mass; with it off, the points are drawn in data order and strong
-values are scattered under weak ones.
+**Strong on top** on (the default), AnnZarro draws the points at the top end of the colour bar
+last. In the volcano plot below, the genes most correlated or anticorrelated with H2-Q7 sit on top
+of the weakly correlated mass; with it off, the points are drawn in data order and strong values
+are scattered under weak ones.
 
-What counts as strong depends on the scale:
+What the top end is depends on the scale:
 
-- **Center at 0**, or a diverging map (RdBu, Picnic, Bluered): the largest absolute value, of
-  either sign, is drawn last.
-- A sequential map: the colour farthest from the map's pale end, as drawn. Points are ordered by
-  where their colour sits between Min and Max (on the log scale when **Log** is on); values
-  beyond Min or Max share the end colour and keep their data order. **Reverse** moves the pale
-  end, so with Blues reversed (pale for low values) the high values are drawn on top, and values
-  far below Min, which are drawn pale, stay underneath.
-- A map without a near-white end (Portland, Jet, Rainbow, Viridis, Cividis, Blackbody): the high
-  end is drawn last, Reverse or not.
+- With **Center at 0**, or a diverging map (RdBu, Picnic, Bluered), both ends of the bar count
+  as the top: the largest absolute value, of either sign, is drawn last.
+- With any other map, points are ordered by where their colour sits on the bar, from Min to
+  Max (on the log scale when **Log** is on), so the points at Max are drawn last. Values beyond
+  Min or Max share the end colour and keep their data order. **Reverse** swaps the colours, not
+  the ends: Max stays at the top of the bar, and the order does not change. With Blues reversed
+  (pale for low values) and Min locked at 0.3, the strong blue values are drawn on top, and
+  values far below 0.3, drawn pale at the bar's bottom, stay underneath.
 
-For values that are all zero or above, with Min and Max at the data range, all three orders are
-the same.
+For values that are all zero or above, with Min and Max at the data range, both orders are the
+same.
 
 ```{figure} ../_static/screens/user-guide/colour-strong-on-top.png
 :class: screenshot

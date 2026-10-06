@@ -397,11 +397,10 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     if (container && id !== null) updateColorSliderUI(container, { color: v }, settings, id, keepRange);
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
     const width = (cmax - cmin) / COLOR_BINS || 1;
-    // draw order: weakest bin first, so the strongest values are on top
-    // (|value| on a centred or diverging map, else away from the pale end:
-    // utils/color-scales.js strongOnTopKey)
-    const strong = strongOnTopKey({ scale: settings.colorScale, reversed: !!settings.colorReversed,
-      centred: !!settings.centeringActive, min: cmin, max: cmax });
+    // draw order: the colour bar's top end last (|value| on a centred or
+    // diverging map, else position on the bar: utils/color-scales.js strongOnTopKey)
+    const strong = strongOnTopKey({ scale: settings.colorScale, centred: !!settings.centeringActive,
+      min: cmin, max: cmax });
     const order = [...Array(COLOR_BINS).keys()]
       .sort((a, b) => strong(cmin + (a + 0.5) * width) - strong(cmin + (b + 0.5) * width) || a - b);
     const rank = new Uint16Array(COLOR_BINS);

@@ -83,7 +83,7 @@ test('3D: depth decides what is in front, so strong-on-top does not reorder', as
     assert.deepEqual(stray.data[0].x, [1, 2, 3]);
 });
 
-const { strongOnTopKey, PALE_END } = await import('../../../static/js/utils/color-scales.js');
+const { strongOnTopKey } = await import('../../../static/js/utils/color-scales.js');
 const order = (vals, o) => colorSortOrder(vals, strongOnTopKey(o)).map(i => vals[i]);
 
 test('sequential map, pale low (Blues + Reverse), Min 0.3 locked: clamped pale values go underneath', () => {
@@ -93,15 +93,15 @@ test('sequential map, pale low (Blues + Reverse), Min 0.3 locked: clamped pale v
     assert.deepEqual(got, [null, -0.9, -0.4, 0.1, 0.31, 0.5, 0.95], 'clamped ties keep data order, then by position');
 });
 
-test('the strong end is the one away from the pale end; Reverse moves it', () => {
+test('sequential maps: the top end of the colour bar (Max) is drawn last, Reverse or not', () => {
     const vals = [0.2, 0.9, 0.5];
-    assert.equal(PALE_END.Blues, 'high');
-    assert.deepEqual(order(vals, { scale: 'Blues', min: 0, max: 1 }), [0.9, 0.5, 0.2], 'Blues: dark low is strong');
-    assert.deepEqual(order(vals, { scale: 'Blues', reversed: true, min: 0, max: 1 }), [0.2, 0.5, 0.9]);
-    assert.deepEqual(order(vals, { scale: 'Reds', min: 0, max: 1 }), [0.2, 0.5, 0.9], 'Reds: pale low');
-    // no near-white end: the high end is strong, Reverse or not
-    assert.deepEqual(order(vals, { scale: 'Viridis', min: 0, max: 1 }), [0.2, 0.5, 0.9]);
-    assert.deepEqual(order(vals, { scale: 'Portland', reversed: true, min: 0, max: 1 }), [0.2, 0.5, 0.9]);
+    for (const scale of ['Blues', 'Reds', 'Viridis', 'Portland']) {
+        for (const reversed of [false, true]) {
+            assert.deepEqual(order(vals, { scale, reversed, min: 0, max: 1 }), [0.2, 0.5, 0.9], `${scale} ${reversed}`);
+        }
+    }
+    // clamped to the bar: everything at or above Max ties at the top, at or below Min at the bottom
+    assert.deepEqual(order([2, 1.5, -3, -1], { scale: 'Blues', min: -1, max: 1 }), [-3, -1, 2, 1.5]);
 });
 
 test('centred (Center at 0) and diverging maps keep |value|', () => {

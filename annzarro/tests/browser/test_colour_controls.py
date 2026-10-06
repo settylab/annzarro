@@ -48,13 +48,13 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _serve(home, *extra):
+def _serve(home, *extra, data_dir=DATA_DIR):
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     # this checkout's package, not whatever "annzarro" is installed
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled", *extra],
+                             "--port", str(port), "--data-dir", str(data_dir), "--no-browser", "--auth-disabled", *extra],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
     for _ in range(120):
@@ -397,6 +397,75 @@ def test_strong_on_top_centred_is_unchanged(server):
             page.wait_for_timeout(1000)
             v = [x for x in page.evaluate(ORDER)["values"] if x is not None]
             assert [abs(x) for x in v] == sorted(abs(x) for x in v)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.fixture(scope="module")
+def volcano_server(tmp_path_factory):
+    """The fixture with two gene-by-gene matrices (varp), so a gene plot can be the issue's volcano:
+    GENE000's rows of spearman_smoothed (x) and spearman_fold_change (y, and the colour)."""
+    import shutil
+    import numpy as np
+    import zarr
+    data = tmp_path_factory.mktemp("volcano-data")
+    store = data / "fixture_small.zarr"
+    shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), store)
+    g = zarr.open_group(str(store), mode="r+")
+    n = g["var"]["_index"].shape[0]
+    rng = np.random.default_rng(7)
+    fold = rng.uniform(-0.95, 0.95, size=(n, n)).astype("float32")
+    fold[0, :4] = [-0.9, -0.6, 0.95, 0.4]          # strongly anti-correlated and strongly correlated partners
+    for name, values in (("spearman_fold_change", fold), ("spearman_smoothed", fold * 0.8)):
+        arr = g["varp"].create_array(name, shape=values.shape, dtype="float32")
+        arr[:] = values
+        arr.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+    zarr.consolidate_metadata(str(store))
+    home = tmp_path_factory.mktemp("home-volcano")
+    proc, root = _serve(home, data_dir=data)
+    yield root, str(store)
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_strong_on_top_volcano_blues_reverse_min_locked(volcano_server):
+    """The issue's setup: a volcano coloured by a gene's spearman_fold_change row, Blues with Reverse
+    (pale = low), Min 0.3 and Lock Range. The strongly positive partners (the bar's top end) are drawn
+    last; the strongly anti-correlated ones, clamped to the pale bottom of the bar, stay underneath.
+    On 0.4.0 |value| drew them on top of the blue ones."""
+    root, store = volcano_server
+    gid = "gene-plot-v"
+    row = lambda key: {"type": "varp", "key": key, "column": "GENE000", "locked": False}
+    plot = {"id": gid, "x": row("spearman_smoothed"), "y": row("spearman_fold_change"), "z": None,
+            "color": row("spearman_fold_change"), "colorScale": "Blues", "colorReversed": True,
+            "colorMin": 0.3, "colorMax": 0.95, "lockColorRange": True}
+    view = {"v": 1, "constants": {"focusedGene": "GENE000"},
+            "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": gid, "controlsVisible": False}],
+                       "panelConfigs": {gid: plot}}}
+    payload = base64.urlsafe_b64encode(json.dumps(view, separators=(",", ":")).encode()).decode().rstrip("=")
+    url = f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={payload}"
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1100})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(url)
+            page.wait_for_selector(f'.tile[data-tile-id="{gid}"] .js-plotly-plot', timeout=30000)
+            page.wait_for_timeout(1000)
+            got = page.evaluate("""(gid) => { const gd = document.querySelector('.tile[data-tile-id="' + gid + '"] .js-plotly-plot');
+                const t = gd.data.find(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+                return { type: t.type, values: t.marker.color, reversed: !!t.marker.reversescale, cmin: t.marker.cmin }; }""", gid)
+            assert got["type"] == "scattergl" and got["reversed"] and got["cmin"] == pytest.approx(0.3), got
+            v = [x for x in got["values"] if x is not None]
+            above = [i for i, x in enumerate(v) if x > 0.3]
+            anti = [i for i, x in enumerate(v) if x < -0.3]
+            assert above and anti
+            assert max(anti) < min(above), "anti-correlated (pale, clamped) genes are drawn under the strong blue ones"
+            assert [v[i] for i in above] == sorted(v[i] for i in above), "and the strongest blue last"
+            assert v[-1] == pytest.approx(max(v))
             assert not errors, errors
             page.close()
         finally:

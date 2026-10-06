@@ -1341,9 +1341,9 @@ export async function applyHoverInfo(plotContainer, data, settings) {
  * scattergl draws points in array order, so in a dense core a few large
  * values were buried under hundreds of small ones. For continuously
  * coloured traces the point arrays are reordered weakest first (missing
- * values first, so they sit at the bottom): by |colour| on a centred or
- * diverging map, by position on the scale away from its pale end on a
- * sequential one (utils/color-scales.js strongOnTopKey). On by default;
+ * values first, so they sit at the bottom): the top end of the colour bar
+ * last, i.e. by |colour| on a centred or diverging map and by position on
+ * the bar on any other (utils/color-scales.js strongOnTopKey). On by default;
  * settings.sortByColor = false keeps data order.
  *
  * Incremental updates write arrays in DATA order, so updatePlotElements
@@ -1386,8 +1386,7 @@ export function colorSortKey(colors, settings, trace = null) {
   // the map as the trace draws it, else as the settings name it
   const m = (trace && trace.marker) || {};
   const scale = typeof m.colorscale === 'string' ? m.colorscale : settings.colorScale;
-  const reversed = m.reversescale !== undefined ? !!m.reversescale : !!settings.colorReversed;
-  return strongOnTopKey({ scale, reversed, centred: !!settings.centeringActive, min, max });
+  return strongOnTopKey({ scale, centred: !!settings.centeringActive, min, max });
 }
 
 /**
