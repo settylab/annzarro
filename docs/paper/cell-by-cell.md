@@ -83,11 +83,20 @@ placed on a UMAP of its CeNGEN transcriptome {cite:p}`taylor2021`, and the colou
 class's row of `obsp/chemical_synapses`: the number of chemical synapses it sends to every other
 class. The view opens on AVA, the command interneuron for backward locomotion.
 
-1. **Build the store.** In the paper repository, run `python data_prep/neuro_demo.py` in an
-   environment with anndata, scanpy, pyreadr, openpyxl and xlrd. It downloads every input from its
-   public source, checks each file's sha256, and writes
-   `data/neuro_demo/celegans_connectome_cengen.zarr` (7.7 MB; 112 neuron classes × 13,669 genes).
-2. **Start AnnZarro on that folder:** `annzarro start --data-dir data/neuro_demo`.
+1. **Build the store** with {download}`celegans_connectome.py <../_tools/datasets/celegans_connectome.py>`
+   (in this repository at `docs/_tools/datasets/`). It needs anndata, zarr, scanpy, pyreadr,
+   openpyxl and xlrd:
+
+   ```bash
+   pip install anndata zarr scanpy pyreadr openpyxl xlrd
+   python celegans_connectome.py
+   ```
+
+   It downloads every input from its original public source into `celegans_connectome/raw`,
+   checks each file's sha256, and writes `celegans_connectome/celegans_connectome_cengen.zarr`
+   (7.7 MB; 112 neuron classes × 13,669 genes). `--raw` and `--out` choose other
+   places.
+2. **Start AnnZarro on that folder:** `annzarro start --data-dir celegans_connectome`.
 3. **Open the link** below. If your server is not at `http://127.0.0.1:8000`, see
    {ref}`tut-start-links`.
 
@@ -125,11 +134,13 @@ point is a class, and its synapse counts are summed over the class's neurons: le
 partners (AVAL and AVAR), and the members of the motor neuron classes along the cord. Differences
 between the two sides, or along the cord, are summed away.
 
-**Licence.** The store combines the Varshney et al. connectome from WormAtlas (CC BY), the CeNGEN
-tables of the `cengenDataSC` package (GPL-3.0) and neurotransmitter identities from Wang et al.
-{cite:p}`wang2024nt` (CC BY 4.0). Because of the CeNGEN tables, a shared copy of the store is
-GPL-3.0, together with the script that builds it. The more complete connectome of Cook et al.
-(2019) was not used: its files carry no licence that allows redistribution.
+**Licence.** The script is part of AnnZarro (MIT) and contains no data: it fetches each input
+at run time, and you obtain each under its own licence. The inputs are the Varshney et al.
+connectome from WormAtlas (CC BY), the CeNGEN tables of the `cengenDataSC` package (GPL-3.0) and
+neurotransmitter identities from Wang et al. {cite:p}`wang2024nt` (CC BY 4.0). The store you
+build contains data derived from the GPL-3.0 CeNGEN tables, so if you share it, share it under
+GPL-3.0. The more complete connectome of Cook et al. (2019) was not used: its files carry no
+licence that allows redistribution.
 
 ### Settings and differences from panel d
 

@@ -14,7 +14,7 @@ Run:
   .venv-docs/bin/python docs/_tools/start_links.py check      # open each link headless
 
 `check` serves bm_aging.zarr, bm_aging_showcase.zarr and neuro_demo/celegans_connectome_cengen.zarr
-(when built) from ANNZARRO_DOCS_DATA (default
+(when built, by docs/_tools/datasets/celegans_connectome.py) from ANNZARRO_DOCS_DATA (default
 ~/gits/annzarro-paper/data) through a temporary data directory of symlinks, opens every link with
 its host:port swapped for the test server, and fails on a page error or a panel that does not
 draw. It also reports panel settings the app dropped while loading (renamed or retired keys).
@@ -167,7 +167,7 @@ def check() -> int:
     data_dir = Path(tempfile.mkdtemp(prefix="start-links-"))
     for store in ("bm_aging.zarr", "bm_aging_showcase.zarr"):
         os.symlink(DATA_DIR / store, data_dir / store)
-    neuro = DATA_DIR / "neuro_demo" / "celegans_connectome_cengen.zarr"   # data_prep/neuro_demo.py
+    neuro = DATA_DIR / "neuro_demo" / "celegans_connectome_cengen.zarr"   # docs/_tools/datasets/celegans_connectome.py
     if neuro.exists():
         os.symlink(neuro, data_dir / neuro.name)
     if os.environ.get("ANNZARRO_SCALE_STORE"):

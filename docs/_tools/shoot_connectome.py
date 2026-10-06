@@ -1,11 +1,11 @@
 """Views, panel sets and screenshots for the connectome panel of the paper's cell-by-cell figure
 (docs/paper/cell-by-cell.md, section "A connectome as a cells x cells matrix").
 
-The store is built by data_prep/neuro_demo.py in settylab/annzarro-paper:
-data/neuro_demo/celegans_connectome_cengen.zarr (112 C. elegans neuron classes, CeNGEN
-transcriptomes, Varshney 2011 synapse counts summed per class). The paper panel is drawn by
-figures/fig2_cell_by_cell.py connectome_panel(): focus AVA, row of obsp/chemical_synapses, log
-colour from 1 to 82, strongest on top, classes with no synapse in grey.
+The store is built by docs/_tools/datasets/celegans_connectome.py (112 C. elegans neuron
+classes, CeNGEN transcriptomes, Varshney 2011 synapse counts summed per class); point
+ANNZARRO_NEURO_DATA at the folder that holds celegans_connectome_cengen.zarr. The paper panel:
+focus AVA, row of obsp/chemical_synapses, log colour from 1 to 82, strongest on top, classes
+with no synapse in grey.
 
 In AnnZarro the closest view is: Log on with floor 0.5 and the colour range from the data, so
 classes with no synapse take the lowest colour (log10 0.5) and a single synapse (log10 1) is
