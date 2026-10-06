@@ -13,6 +13,8 @@ import threading
 from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 import numpy as np
 
+from . import freshness
+
 logger = logging.getLogger(__name__)
 
 def _scalar_bytes(item) -> int:
@@ -102,6 +104,10 @@ class DatasetCache:
         # exactly that (a flat 1 MB per metadata entry used to drift).
         self._sizes_mb = {}
 
+        # Each dataset's freshness token when its entries were last used
+        # (core/freshness.py): a new token drops them (note_token).
+        self._tokens = {}
+
         # One reader, and so one cache, serves every request thread of a
         # threaded server. Every read and write of the dicts above and of
         # memory_usage_mb happens under this lock: an eviction iterating them
@@ -161,6 +167,15 @@ class DatasetCache:
             self._sizes_mb = {}
             self.memory_usage_mb = 0
             return result
+
+    def note_token(self, dataset_path, token: str) -> None:
+        """Record the dataset's freshness token; when it moved, the entries
+        read before belong to an older store and are dropped."""
+        with self._lock:
+            previous = self._tokens.get(dataset_path)
+            if previous is not None and previous != token:
+                self._remove_dataset_from_cache(dataset_path)
+            self._tokens[dataset_path] = token
 
     def _remove_dataset_from_cache(self, dataset_path: str) -> Dict[str, Any]:
         """
@@ -525,6 +540,16 @@ def cached_method(func):
         if cache_key is None:
             logger.debug(f"CACHE[{method_name}]: Skipping cache (couldn't create cache key)")
             return func(self, *args, **kwargs)
+
+        # The same token the request's ETag carries (core/freshness.py): a
+        # reply read from an older store is not served under a newer tag.
+        # It used to be keyed by the request alone, so after a rewrite the
+        # new ETag went out with the old body.
+        fresh = freshness.current(path_str) if path_str is not None else None
+        if fresh is not None:
+            self.cache.note_token(dataset_path, fresh)
+            import hashlib
+            cache_key = f"{cache_key}:fresh:{hashlib.sha1(fresh.encode('utf-8', 'surrogateescape')).hexdigest()[:16]}"
         
         logger.debug(f"CACHE[{method_name}]: Using cache key '{cache_key}'")
         
