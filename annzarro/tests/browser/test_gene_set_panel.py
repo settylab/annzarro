@@ -151,13 +151,15 @@ def env(browser, server):
     context.close()
 
 
-def _link(root, gs=None, search="GENE00", focus="GENE003", table_open=True, taxonomy="9606"):
+def _link(root, gs=None, search="GENE00", focus="GENE003", table_open=True, taxonomy="9606", with_panel=True):
     cfgs = {
         "gene-table-A": {"id": "gene-table-A", "title": "Gene Table 1", "searchText": search,
                          "columns": [{"type": "var", "key": "gene_name", "column": ""}]},
         "gene-set-G": {"id": "gene-set-G", "title": "Gene Set Analysis 1", "tableFilter": "gene-table-A", **(gs or {})},
     }
-    tiles = [{"type": "tile", "id": "gene-set-G"}]
+    tiles = [{"type": "tile", "id": "gene-set-G"}] if with_panel else []
+    if not with_panel:
+        del cfgs["gene-set-G"]
     if table_open:
         tiles.insert(0, {"type": "tile", "id": "gene-table-A"})
     hierarchy = tiles if len(tiles) == 1 else [{"type": "split", "direction": "horizontal", "height": 1000,
@@ -256,7 +258,10 @@ def test_run_asks_then_fetches_and_states_coverage(env):
     page.click(f"{GS} .gs-consent button:has-text('Send')")
     _all_ok(page)
     counts = services.counts()
-    assert counts["string-ids"] == 1, "the STRING id mapping is shared by its sections"
+    # the selection, and the dataset's 20 genes as the default background: each mapped once,
+    # shared by STRING's sections
+    assert counts["string-ids"] == 2, counts
+    assert counts["gprofiler"] == 1
     assert all(c[1] == "POST" for c in services.calls if c[0] != "mygene-card")
     for _, _, url in services.calls:
         assert "GENE00" not in url or url.startswith("https://mygene.info/v3/query?q=symbol"), f"a gene list in a URL: {url}"
@@ -284,9 +289,9 @@ def test_a_changed_selection_is_stale_without_a_request_and_refresh_fetches_once
     _ready(page)
     _run_and_send(page)
     before = len(services.calls)
-    _search(page, "GENE0")
+    _search(page, "GENE01")
     until(page, "() => /Selection changed/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
-    assert 'Selection changed: "Gene Table 1" now has 20 genes; results are for 10' in bar(page)
+    assert 'Selection changed: "Gene Table 1" now has 10 genes; results are for 10' in bar(page)
     page.wait_for_timeout(1200)
     assert len(services.calls) == before, "auto-update is off: nothing is fetched"
     for sid in ("string-enrichment", "gprofiler-gost", "string-network", "mygene-mapping"):
@@ -294,12 +299,14 @@ def test_a_changed_selection_is_stale_without_a_request_and_refresh_fetches_once
         assert "gs-section--stale" in page.get_attribute(f'{GS} .gs-section[data-section="{sid}"]', "class")
     page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
     _all_ok(page)
-    until(page, "() => /^✓ Results for 20 genes/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    until(page, "() => /^✓ Results for 10 genes/.test(document.querySelector('%s .gs-bar__text').textContent)"
+          " && window.PanelManager.getPanel('gene-set-G')._debugState().stale === null" % GS)
     new = {}
     for endpoint, _, _ in services.calls[before:]:
         new[endpoint] = new.get(endpoint, 0) + 1
     # each set section once (MyGene's lookup is two: symbols, then the misses as aliases); the
-    # focused gene did not change, so its card is not asked again
+    # dataset background is mapped once a page, not again; the focused gene did not change,
+    # so its card is not asked again
     assert new == {"string-ids": 1, "string-enrichment": 1, "string-ppi": 1, "string-svg": 1, "gprofiler": 1, "mygene-lookup": 2}, new
 
 
@@ -397,7 +404,9 @@ def test_the_saved_config_holds_settings_only_and_reopens_without_a_request(env,
     _ready(page)
     saved = page.evaluate("() => window.PanelManager.saveLayout()")
     cfg = saved["panelConfigs"]["gene-set-G"]
-    assert set(cfg) <= {"id", "title", "tableFilter", "idColumn", "autoUpdate", "sections", "sectionOrder", "links", "controlsVisible"}, set(cfg)
+    assert set(cfg) <= {"id", "title", "tableFilter", "idColumn", "idType", "consent", "autoUpdate", "sections",
+                        "sectionOrder", "links", "controlsVisible"}, set(cfg)
+    assert "consent" not in cfg, "nothing was agreed to, so the link carries no consent"
     assert cfg["tableFilter"] == "gene-table-A"
     assert cfg["sections"]["string-network"]["visible"] is False
     assert len(json.dumps(cfg)) < 1024
@@ -552,3 +561,203 @@ def test_offline_sends_nothing_and_links_work(env):
     assert page.locator(f"{GS} .gs-links__focus a").count() >= 8
     assert services.calls == []
     page.context.set_offline(False)
+
+
+# --------------------------------------------------------------------------- APPROVALS Y3
+
+def _link_without_table(root, gs=None):
+    view = {"v": 1, "constants": {"focusedGene": "GENE003", "taxonomyId": "9606"},
+            "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": "gene-set-G"}], "controlState": {},
+                       "panelConfigs": {"gene-set-G": {"id": "gene-set-G", "title": "Gene Set Analysis 1", **(gs or {})}}}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    return f"{root}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}"
+
+
+def test_no_gene_table_says_so_and_binds_to_the_first_one_made(env):
+    page, services, root = env
+    page.goto(_link_without_table(root))
+    until(page, "() => !!window.PanelManager.getPanel('gene-set-G')")
+    until(page, "() => /No gene table yet/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    assert "Create New Panel" in bar(page) and "Gene Table" in bar(page)
+    assert page.inner_text(f"{GS} #gs-source-gene-set-G") == "No gene table yet"
+    assert page.is_disabled(f"{GS} #gs-source-gene-set-G")
+    page.evaluate("""() => window.PanelManager.createPanelInLayout('gene-table', {id: 'gene-table-N', title: 'New genes',
+        searchText: 'GENE00', columns: [{type: 'var', key: 'gene_name', column: ''}]})""")
+    until(page, "() => { const s = window.PanelManager.getPanel('gene-set-G')._debugState(); "
+                "return s.settings.tableFilter === 'gene-table-N' && s.source.status === 'open' && s.source.count === 10; }")
+    assert bar(page).startswith("Not run yet. Run sends 10 gene ids")
+    assert services.calls == []
+
+
+def test_the_id_column_is_found_and_its_type_can_be_switched(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    s = state(page)
+    assert s["settings"]["idColumn"] == "auto" and s["idColumn"] == "gene_name", "gene_name found in var"
+    assert s["idType"] == "symbol"
+    assert page.inner_text(f'{GS} #gs-ids-gene-set-G option[value="auto"]') == "Auto: gene_name"
+    assert page.inner_text(f'{GS} #gs-idtype-gene-set-G option[value="auto"]') == "Auto: gene names (symbols)"
+    _run_and_send(page)
+    # read as Entrez ids: stale, and g:Profiler is then told the namespace
+    page.select_option(f"{GS} #gs-idtype-gene-set-G", "entrez")
+    until(page, "() => /IDs changed to gene_name as Entrez ids/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    before = len(services.calls)
+    page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['gprofiler-gost'].status !== 'loading'"
+                " && window.PanelManager.getPanel('gene-set-G')._debugState().stale === null")
+    _all_ok(page, ["gprofiler-gost"])
+    gp = [c for c in services.calls[before:] if c[0] == "gprofiler"]
+    assert len(gp) == 1
+    # both settings are saved
+    cfg = page.evaluate("() => window.PanelManager.getPanel('gene-set-G').getConfig()")
+    assert cfg["idType"] == "entrez" and cfg["idColumn"] == "auto"
+    page.select_option(f"{GS} #gs-ids-gene-set-G", "_index")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G').getConfig().idColumn === '_index'")
+
+
+def test_gprofiler_is_told_the_entrez_namespace(env):
+    page, services, root = env
+    bodies = []
+    page.on("request", lambda r: bodies.append(r.post_data) if "gost/profile" in r.url else None)
+    page.goto(_link(root, gs={"idType": "entrez"}))
+    _ready(page)
+    _run_and_send(page)
+    assert bodies and all('"numeric_namespace":"ENTREZGENE_ACC"' in (b or "").replace(" ", "") for b in bodies), bodies
+
+
+def test_over_the_limit_is_not_sent_until_try_anyway_and_the_refusal_is_shown(env):
+    page, services, root = env
+    page.goto(_link(root, with_panel=False))
+    page.wait_for_selector(f"{TABLE} .dataTables_scrollBody tbody tr", timeout=30000)
+    # a section that takes at most 5 genes, registered before the panel is made
+    page.evaluate("""async () => {
+        const r = await import('/static/js/panels/gene-set-utilities/registry.js');
+        r.registerAdapter({ id: 'test-limit', version: '1', label: 'Small', kind: 'set', defaultVisible: true,
+            provider: { name: 'STRING', host: 'string-db.org', home: 'https://string-db.org' },
+            hostsFor: () => ['version-12-5.string-db.org'],
+            limits: { minGenes: 1, maxGenes: 5 }, supportsSpecies: () => 'unknown',
+            async fetch(input, io) { return io.fetchJson('https://version-12-5.string-db.org/api/json/too_large', { form: { identifiers: input.genes.join('\\r') } }); },
+            render(result, el, ctx) { el.append(ctx.el('p', { text: 'drawn' })); } });
+        window.PanelManager.createPanelInLayout('gene-set', { id: 'gene-set-G', title: 'Limits', tableFilter: 'gene-table-A',
+            sections: Object.fromEntries(['mygene-card', 'string-enrichment', 'gprofiler-gost', 'string-network', 'mygene-mapping']
+                .map(id => [id, { visible: false, params: {} }])) });
+    }""")
+    _ready(page)
+    page.route("**/api/json/too_large", lambda route: route.fulfill(status=400, headers={"Access-Control-Allow-Origin": "*"},
+               body='[{"Error":"input too large","ErrorMessage":"STRING website does not support networks larger than 2000 nodes"}]'))
+    page.click(f"{GS} .gs-run")
+    section = f'{GS} .gs-section[data-section="test-limit"]'
+    page.wait_for_selector(f'{section} button:has-text("Try anyway")')
+    text = " ".join(page.inner_text(section).split())
+    assert "10 genes; STRING small accepts at most 5. Filter the table to fewer genes, or try anyway." in text
+    assert page.locator(f"{GS} .gs-consent:not([hidden])").count() == 0, "nothing to ask: nothing is sent"
+    page.click(f'{section} button:has-text("Try anyway")')
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['test-limit'].status === 'error'"
+                " && window.PanelManager.getPanel('gene-set-G')._debugState().runs['test-limit'].error.kind === 'http'")
+    text = " ".join(page.inner_text(section).split())
+    assert "input too large: STRING website does not support networks larger than 2000 nodes" in text, text
+    page.unroute("**/api/json/too_large")
+
+
+def test_the_dataset_is_the_default_background_and_the_genome_an_option(env):
+    page, services, root = env
+    bodies = []
+    page.on("request", lambda r: bodies.append((r.url, r.post_data or "")) if "string-db.org/api/json/enrichment" in r.url or "gost/profile" in r.url else None)
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    enr = [b for u, b in bodies if "enrichment" in u]
+    assert enr and "background_string_identifiers=" in enr[-1]
+    gp = json.loads([b for u, b in bodies if "gost" in u][-1])
+    assert gp["domain_scope"] == "custom" and len(gp["background"]) == 20, "all 20 genes of the dataset"
+    assert "background: 5 of the dataset's genes" in page.inner_text(f'{GS} .gs-section[data-section="string-enrichment"]')
+    # the whole genome, in the section's settings: fetched again without a background
+    page.click(f'{GS} .gs-section[data-section="string-enrichment"] button[aria-label$="settings"]')
+    page.select_option(f'{GS} #gs-p-string-enrichment-background-gene-set-G', "genome")
+    until(page, "() => /background: whole genome/.test(document.querySelector('%s .gs-section[data-section=\"string-enrichment\"]').textContent)" % GS)
+    assert "background_string_identifiers=" not in [b for u, b in bodies if "enrichment" in u][-1]
+
+
+def _selection_hash(page, genes):
+    return page.evaluate("async (g) => (await import('/static/js/panels/gene-set-utilities/state.js')).setHash(g)", genes)
+
+
+def test_consent_rides_in_the_link_for_its_selection_only(env, browser):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    cfg = page.evaluate("() => window.PanelManager.getPanel('gene-set-G').getConfig()")
+    ten = [f"GENE00{i}" for i in range(10)]
+    assert cfg["consent"]["selection"] == _selection_hash(page, ten)
+    assert set(cfg["consent"]["hosts"]) == {"version-12-5.string-db.org", "biit.cs.ut.ee", "mygene.info"}
+    consent = cfg["consent"]
+
+    def opened(gs, search="GENE00"):
+        context, p2, s2, errors = _open(browser, root)
+        p2.goto(_link(root, gs=gs, search=search))
+        p2.wait_for_selector(f"{TABLE} .dataTables_scrollBody tbody tr", timeout=30000)
+        until(p2, "() => window.PanelManager.getPanel('gene-set-G') && window.PanelManager.getPanel('gene-set-G')._debugState().source.count > 0")
+        return context, p2, s2, errors
+
+    # a fresh browser (no stored answers): auto-update on with the link's consent for this
+    # selection fetches on opening, without asking
+    context, p2, s2, errors = opened({"autoUpdate": True, "consent": consent})
+    try:
+        _all_ok(p2)
+        assert p2.locator(f"{GS} .gs-consent:not([hidden])").count() == 0
+        assert not errors and not s2.unmocked
+    finally:
+        context.close()
+    # the same link with auto-update off: nothing on opening; Run sends without asking
+    context, p2, s2, errors = opened({"autoUpdate": False, "consent": consent})
+    try:
+        p2.wait_for_timeout(1500)
+        assert s2.calls == []
+        p2.click(f"{GS} .gs-run")
+        _all_ok(p2)
+        assert p2.locator(f"{GS} .gs-consent:not([hidden])").count() == 0
+    finally:
+        context.close()
+    # another selection: the link's consent does not cover it; nothing on opening, Run asks
+    context, p2, s2, errors = opened({"autoUpdate": True, "consent": consent}, search="GENE01")
+    try:
+        p2.wait_for_timeout(2000)
+        assert s2.calls == [], "another selection: not covered"
+        p2.click(f"{GS} .gs-run")
+        p2.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+        assert s2.calls == []
+    finally:
+        context.close()
+
+
+def test_never_is_kept_by_the_browser_and_wins_over_a_link(env, browser):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    page.click(f"{GS} .gs-consent button:has-text('Never')")
+    section = f'{GS} .gs-section[data-section="string-enrichment"]'
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-enrichment'].error?.kind === 'declined'")
+    assert "You chose not to send gene ids to version-12-5.string-db.org (in this browser)." in " ".join(page.inner_text(section).split())
+    assert services.calls == []
+    stored = page.evaluate("() => JSON.parse(localStorage.getItem('annzarro:external-ok'))")
+    assert stored["version-12-5.string-db.org"] == "deny"
+    # a link whose author agreed for this very selection: the user's Never still holds
+    ten = [f"GENE00{i}" for i in range(10)]
+    consent = {"selection": _selection_hash(page, ten), "hosts": ["version-12-5.string-db.org"]}
+    page.goto("about:blank")
+    page.goto(_link(root, gs={"consent": consent}))
+    _ready(page)
+    page.click(f"{GS} .gs-run")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-network'].error?.kind === 'declined'")
+    assert services.count("string-ids") == 0
+    # Ask again forgets the Never for that service; the link's consent for this selection then
+    # applies, so STRING is asked without a question
+    page.click(f'{section} button:has-text("Ask again")')
+    _all_ok(page, ["string-enrichment"])
+    assert services.count("string-ids") >= 1
+    assert "version-12-5.string-db.org" not in (page.evaluate("() => localStorage.getItem('annzarro:external-ok')") or "")

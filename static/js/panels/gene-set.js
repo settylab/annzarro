@@ -28,7 +28,7 @@ import { mountNamePicker } from '../utils/name-picker.js';
 import { makeDom, sci, toCsv } from './gene-set-utilities/dom.js';
 import {
     setHash, inputKey, readTableSelection, selectionIds, makeSnapshot, panelStaleness, fmt,
-    settleRun, needsFetch, blockedReason, normalizeConfig, configOf, startRun
+    settleRun, needsFetch, blockedReason, normalizeConfig, configOf, startRun, pickIdColumn
 } from './gene-set-utilities/state.js';
 import { createRunner } from './gene-set-utilities/runner.js';
 import { createConsent } from './gene-set-utilities/consent.js';
@@ -36,7 +36,7 @@ import { enabledAdapters, hostsOf } from './gene-set-utilities/registry.js';
 import { registerAll } from './gene-set-utilities/services/index.js';
 import { xrefsOf } from './gene-set-utilities/services/mygene.js';
 import {
-    detectIdType, geneRecord, geneLinks, geneLink, setLinks, defaultColumns, columnChoices, linksCsv, resourceById
+    detectIdType, geneRecord, geneLinks, geneLink, setLinks, defaultColumns, columnChoices, linksCsv, resourceById, stripVersion
 } from './gene-set-utilities/links.js';
 import { speciesOf, speciesLabel, searchSpecies, remoteSpeciesSearch, learnSpecies } from './gene-set-utilities/species.js';
 
@@ -50,7 +50,7 @@ const LIST_PAGE = 50;
 /** What a blocked run is, as a coverage gap: [reason, kind] (coverage.js KIND_LABEL). */
 const GAP_OF = {
     empty: [GAP.EMPTY, ''], capped: [GAP.CAPPED, 'over-limit'], species: [GAP.UNAVAILABLE, 'unsupported'],
-    idtype: [GAP.UNAVAILABLE, 'unsupported'], unfocused: [GAP.UNFOCUSED, '']
+    idtype: [GAP.UNAVAILABLE, 'unsupported'], unfocused: [GAP.UNFOCUSED, ''], declined: [GAP.UNAVAILABLE, 'declined']
 };
 
 const STATUS_WORD = { idle: 'not run', loading: 'loading…', ok: 'ok', stale: 'stale', error: 'error' };
@@ -82,7 +82,9 @@ const GeneSetPanel = (function() {
         let _genes = [];              // the dataset's gene names (var index)
         let _geneSet = null;
         let _ids = null;              // {column, byName: Map, toName: Map} for an ID column
-        let _idType = 'unknown';
+        let _idType = 'unknown';      // how the ids are read: the setting, or detected
+        let _detectedType = 'unknown';
+        let _varColumns = [];
         let _pending = null;          // sections waiting for consent
         let _notice = null;           // a one-off line in the bar ("Not sent")
         let _autoTimer = null;
@@ -171,8 +173,10 @@ const GeneSetPanel = (function() {
             await ensureIds();
             const f = DataManager.getFocusedGene();
             _focus = { name: f || null, id: f ? idOf(f) : null };
+            _loadTried = false;
             refreshSource();
             paintAll();
+            maybeAutoOnLoad();
         }
 
         /** The var columns offered under IDs (the var index first). */
@@ -185,21 +189,38 @@ const GeneSetPanel = (function() {
             } catch (error) {
                 console.warn(`Gene set panel ${_id}: no var columns:`, error);
             }
+            _varColumns = columns.filter(c => c !== '_index');
+            fillIdOptions();
+        }
+
+        function fillIdOptions() {
             const sel = _dom.ids;
             D.clear(sel);
+            const auto = pickIdColumn(_varColumns);
+            sel.appendChild(D.el('option', { value: 'auto', text: `Auto: ${auto === '_index' ? 'var index' : auto}` }));
             sel.appendChild(D.el('option', { value: '_index', text: 'var index' }));
-            for (const c of columns) {
-                if (c !== '_index') sel.appendChild(D.el('option', { value: c, text: c }));
+            for (const c of _varColumns) sel.appendChild(D.el('option', { value: c, text: c }));
+            const col = _settings.idColumn;
+            if (col !== 'auto' && col !== '_index' && !_varColumns.includes(col)) {
+                sel.appendChild(D.el('option', { value: col, text: `${col} (not in this dataset)` }));
             }
-            if (_settings.idColumn !== '_index' && !columns.includes(_settings.idColumn)) {
-                sel.appendChild(D.el('option', { value: _settings.idColumn, text: `${_settings.idColumn} (not in this dataset)` }));
-            }
-            sel.value = _settings.idColumn;
+            sel.value = col;
+        }
+
+        /** The column the ids come from: the setting, or for 'auto' pickIdColumn's choice. */
+        function idCol() {
+            return _settings.idColumn === 'auto' ? pickIdColumn(_varColumns) : _settings.idColumn;
+        }
+
+        /** What the ids are, in words, as the bar and the snapshot name them. */
+        function idLabel() {
+            const words = { symbol: 'gene names', ensembl: 'Ensembl ids', entrez: 'Entrez ids', unknown: 'ids' };
+            return `${idCol() === '_index' ? 'var index' : idCol()} as ${words[_idType]}`;
         }
 
         /** The ID column's values by gene name (read once per dataset and column). */
         async function ensureIds() {
-            const col = _settings.idColumn;
+            const col = idCol();
             if (col === '_index') {
                 _ids = null;
             } else if (!_ids || _ids.column !== col || _ids.dataset !== _dataset) {
@@ -214,6 +235,9 @@ const GeneSetPanel = (function() {
                         const id = v === null || v === undefined ? '' : String(v);
                         byName.set(genes[i], id);
                         if (id && !toName.has(id)) toName.set(id, genes[i]);
+                        // the id as sent, without an Ensembl version, finds its gene too
+                        const bare = id ? stripVersion(id) : '';
+                        if (bare && !toName.has(bare)) toName.set(bare, genes[i]);
                     }
                     _ids = { column: col, dataset: _dataset, byName, toName, error: null };
                 } catch (error) {
@@ -221,20 +245,29 @@ const GeneSetPanel = (function() {
                     _ids = { column: col, dataset: _dataset, byName: new Map(), toName: new Map(), error: String(error.message || error) };
                 }
             }
-            const sample = _genes.slice(0, 200).map(idOf).filter(Boolean);
-            _idType = detectIdType(sample);
-            _dom.idType.textContent = { symbol: 'symbols', ensembl: 'Ensembl ids', entrez: 'Entrez ids', unknown: 'mixed ids' }[_idType];
+            _detectedType = detectIdType(_genes.slice(0, 200).map(rawIdOf).filter(Boolean));
+            _idType = _settings.idType === 'auto' ? _detectedType : _settings.idType;
+            const words = { symbol: 'gene names (symbols)', ensembl: 'Ensembl ids', entrez: 'Entrez ids', unknown: 'mixed ids' };
+            _dom.idTypeAuto.textContent = `Auto: ${words[_detectedType]}`;
+            _dom.idType.value = _settings.idType;
         }
 
-        function idOf(name) {
+        /** A gene's value in the ID column, as stored. */
+        function rawIdOf(name) {
             if (!name) return null;
-            if (_settings.idColumn === '_index') return name;
+            if (idCol() === '_index') return name;
             const id = _ids && _ids.byName.get(name);
             return id ? id.trim() : null;
         }
 
+        /** A gene's id as sent: Ensembl ids without their version (ENSG….16 -> ENSG…). */
+        function idOf(name) {
+            const id = rawIdOf(name);
+            return id && _idType === 'ensembl' ? stripVersion(id) : id;
+        }
+
         function nameOfId(id) {
-            if (_settings.idColumn === '_index') return id;
+            if (idCol() === '_index') return id;
             return (_ids && _ids.toName.get(id)) || id;
         }
 
@@ -282,15 +315,21 @@ const GeneSetPanel = (function() {
                 refreshSource();
                 paintAll();
                 if (_settings.autoUpdate && _armed && _source.hash !== before && sourceChangedSinceSnapshot()) scheduleAuto();
+                else maybeAutoOnLoad();
             });
         }
 
         /** Tables were added, closed, reopened or renamed. */
         function onPanelsChanged() {
             if (!_initialized) return;
-            fillSourceOptions();
-            if (_settings.tableFilter !== 'none' && !PanelManager.getPanel(_settings.tableFilter)) {
-                _notice = 'The source table was removed.';
+            const before = _settings.tableFilter;
+            if (fillSourceOptions()) {
+                // bound to another (or a first) table: results were for the old one
+                if (before !== 'none') _notice = 'The source table was removed; following the next one.';
+                setSource(_settings.tableFilter);
+                return;
+            }
+            if (!PanelManager.getPanelsByType('gene-table').length && before !== 'none') {
                 setSource('none');
                 return;
             }
@@ -358,7 +397,7 @@ const GeneSetPanel = (function() {
                 _source = { status: sel.status, title: sel.title, names: null, ids: [], hash: null, count: 0, missingIds: 0 };
                 return;
             }
-            const picked = selectionIds(sel.names, { idColumn: _settings.idColumn, idOf });
+            const picked = selectionIds(sel.names, { idColumn: 'mapped', idOf });
             _source = { status: sel.status, title: sel.title, names: picked.names, ids: picked.genes,
                 hash: setHash(picked.genes), count: picked.genes.length, missingIds: picked.missingIds, duplicates: picked.duplicates };
         }
@@ -369,7 +408,7 @@ const GeneSetPanel = (function() {
 
         function currentDescriptor() {
             return { hash: _source.hash, count: _source.count, taxonomyId: taxonomyId(), speciesName: speciesName(),
-                idColumn: _settings.idColumn, sourceId: _settings.tableFilter };
+                idColumn: idLabel(), sourceId: _settings.tableFilter };
         }
 
         function takeSnapshot() {
@@ -378,16 +417,16 @@ const GeneSetPanel = (function() {
             _snapshot = makeSnapshot({ genes: _source.ids, names: _source.names, missingIds: _source.missingIds,
                 duplicates: _source.duplicates || 0, sourceId: _settings.tableFilter, sourceTitle: _source.title,
                 sourceStatus: _source.status, taxonomyId: taxonomyId(), speciesName: speciesName(),
-                idColumn: _settings.idColumn, takenAt: Date.now() });
+                idColumn: idLabel(), takenAt: Date.now() });
             return _snapshot;
         }
 
         /** The dataset's ids, as the enrichment background (once per dataset and ID column). */
         let _background = null;
         function background() {
-            const key = `${_dataset}\u0001${_settings.idColumn}\u0001${_genes.length}`;
+            const key = `${_dataset}\u0001${idLabel()}\u0001${_genes.length}`;
             if (!_background || _background.key !== key || (_ids && _background.ids !== _ids)) {
-                const list = selectionIds(_genes, { idColumn: _settings.idColumn, idOf }).genes;
+                const list = selectionIds(_genes, { idColumn: 'mapped', idOf }).genes;
                 _background = { key, ids: _ids, list, hash: setHash(list) };
             }
             return _background;
@@ -422,7 +461,7 @@ const GeneSetPanel = (function() {
             }
             const key = inputKey(a, {
                 genesHash: input.genesHash, focusId: input.focus && input.focus.id, taxonomyId: tax,
-                idColumn: a.kind === 'set' && _snapshot ? _snapshot.idColumn : _settings.idColumn,
+                idColumn: a.kind === 'set' && _snapshot ? _snapshot.idColumn : idLabel(),
                 params, backgroundHash: input.backgroundHash, service: a.id.startsWith('string') ? services.string.api : ''
             });
             return { input: Object.freeze(input), key };
@@ -462,7 +501,7 @@ const GeneSetPanel = (function() {
             if (_source.status === 'missing') return 'no-source';
             if (_source.status === 'waiting') return 'waiting';
             if (_source.status === 'closed-unknown') return 'closed-unknown';
-            if (_settings.idColumn !== '_index' && _ids && _ids.error) return 'ids';
+            if (idCol() !== '_index' && _ids && _ids.error) return 'ids';
             return null;
         }
 
@@ -471,38 +510,79 @@ const GeneSetPanel = (function() {
          * visible section whose input changed. One click; consent first
          * where it is still needed.
          */
-        async function runNow({ auto = false } = {}) {
+        async function runNow({ auto = false, quiet = false } = {}) {
             if (!_initialized) return;
             _notice = null;
-            if (_settings.idColumn !== '_index') await ensureIds();
+            if (idCol() !== '_index') await ensureIds();
             refreshSource();
             if (gate()) { paintAll(); return; }
             takeSnapshot();
-            _armed = true;
+            // a Run arms auto-update; an auto-update on opening only once it may send
+            if (!quiet) _armed = true;
             settleAll();
-            await runSections(visibleAdapters(), { auto });
+            await runSections(visibleAdapters(), { auto, quiet });
+        }
+
+        /**
+         * Opening a link, a panel set or a session sends nothing, unless
+         * auto-update is on and every service it needs is already agreed to
+         * (the server's "on", the user's "Always", or the link's consent for
+         * exactly this selection). Tried once, when the source is first read.
+         */
+        let _loadTried = false;
+        function maybeAutoOnLoad() {
+            if (_loadTried || _armed || !_settings.autoUpdate || gate() || policy() === 'off' || offline()) return;
+            _loadTried = true;
+            runNow({ auto: true, quiet: true });
+        }
+
+        /** The consent rules, for the selection about to be sent (consent.js). */
+        function makeConsent() {
+            return createConsent({ policy: policy(), storage: safeStorage(), link: _settings.consent,
+                selection: _snapshot ? _snapshot.hash : _source.hash });
+        }
+
+        /**
+         * Remember in the panel's settings which services the user agreed to
+         * for this selection: a share link then carries that consent, for
+         * exactly this selection and no other.
+         */
+        function recordConsent(consent, requests) {
+            if (!_snapshot || policy() !== 'ask') return;
+            const hosts = requests.filter(r => r.persistable && ['page', 'user', 'link'].includes(consent.decide(r).why)
+                && consent.decide(r).answer === 'send').map(r => r.host);
+            if (!hosts.length) return;
+            const same = _settings.consent && _settings.consent.selection === _snapshot.hash;
+            _settings.consent = { selection: _snapshot.hash, hosts: [...new Set([...(same ? _settings.consent.hosts : []), ...hosts])].sort() };
+        }
+
+        /** A section that is not sent, and why (before any request). */
+        function refuse(a, key, error) {
+            _runner.abort(a.id);
+            _runner.update(a.id, r => ({ ...startRun(r, key, Date.now()), status: 'error', lastInputHash: key,
+                error: { attempts: 0, ...error }, prev: null, finishedAt: Date.now() }));
         }
 
         /**
          * Start `adapters` that need it: blocked ones say why, the rest ask
          * consent, then fetch. `fresh`: asked for by the user, so fetched
          * even when the result is current (and not from the cache).
+         * `force`: sent although over the service's limit ("Try anyway").
+         * `quiet`: never asks; what is not agreed to is not sent.
          */
-        async function runSections(adapters, { auto = false, fresh = false } = {}) {
+        async function runSections(adapters, { auto = false, fresh = false, force = false, quiet = false } = {}) {
             if (!_runner) return;
-            const toFetch = [];
+            let toFetch = [];
             for (const a of adapters) {
                 if (a.kind === 'set' && !_snapshot) continue;
                 const { input, key } = inputFor(a);
                 const run = _runner.get(a.id);
                 if (!fresh && !needsFetch(run, key)) continue;
                 const blocked = a.kind === 'gene' && _focus.name && !_focus.id
-                    ? { kind: 'empty', message: `${_focus.name} has no value in the ID column ${_settings.idColumn}.` }
-                    : blockedReason(a, input);
+                    ? { kind: 'empty', message: `${_focus.name} has no value in the ID column ${idCol()}.` }
+                    : blockedReason(a, input, { force });
                 if (blocked) {
-                    _runner.abort(a.id);
-                    _runner.update(a.id, r => ({ ...startRun(r, key, Date.now()), status: 'error', lastInputHash: key,
-                        error: { kind: blocked.kind, message: blocked.message, attempts: 0 }, prev: null, finishedAt: Date.now() }));
+                    refuse(a, key, blocked);
                     continue;
                 }
                 toFetch.push({ adapter: a, input, key, fresh });
@@ -510,20 +590,28 @@ const GeneSetPanel = (function() {
             paintAll();
             if (!toFetch.length) return;
             if (policy() === 'off' || offline()) { paintAll(); return; }
-            const consent = createConsent({ policy: policy(), storage: safeStorage() });
-            const requests = [];
+            const consent = makeConsent();
+            const requestsOf = (t) => hostsOf(t.adapter, t.input).map(host => ({ host, persistable: !t.adapter.privacy, adapter: t.adapter, input: t.input }));
+            // the user said "Never" to a service: its sections say so, and are not sent
+            toFetch = toFetch.filter(t => {
+                const denied = consent.denied(requestsOf(t));
+                if (!denied.length) return true;
+                refuse(t.adapter, t.key, { kind: 'declined', hosts: denied,
+                    message: `You chose not to send gene ids to ${denied.join(', ')} (in this browser).` });
+                return false;
+            });
+            if (!toFetch.length) { paintAll(); return; }
             // a cached result is shown without a request, so without asking
-            for (const t of toFetch.filter(x => x.fresh || !_runner.has(x.key))) {
-                for (const host of hostsOf(t.adapter, t.input)) {
-                    requests.push({ host, persistable: !t.adapter.privacy, adapter: t.adapter, input: t.input });
-                }
-            }
+            const requests = toFetch.filter(x => x.fresh || !_runner.has(x.key)).flatMap(requestsOf);
             const missing = consent.missing(requests);
             if (missing.length) {
-                _pending = { toFetch, requests: missing, consent, auto };
+                if (quiet) { paintAll(); return; }
+                _pending = { toFetch, requests: missing, all: requests, consent, auto };
                 paintAll();
                 return;
             }
+            if (quiet) _armed = true;
+            recordConsent(consent, requests);
             startFetches(toFetch);
         }
 
@@ -536,6 +624,7 @@ const GeneSetPanel = (function() {
             paintAll();
         }
 
+        /** The answer to the consent bar: send, always, never, or cancel. */
         function answerConsent(answer) {
             const p = _pending;
             _pending = null;
@@ -547,8 +636,21 @@ const GeneSetPanel = (function() {
                 paintAll();
                 return;
             }
+            if (answer === 'never') {
+                p.consent.deny(p.requests);
+                // sections of those services now say so; the others are sent if agreed to
+                runSections(p.toFetch.map(t => t.adapter), { auto: p.auto, fresh: true, quiet: true });
+                return;
+            }
             p.consent.grant(p.requests, { always: answer === 'always' });
+            recordConsent(p.consent, p.all);
             startFetches(p.toFetch);
+        }
+
+        /** Forget a "Never" for these hosts, then try the section again (it asks). */
+        function askAgain(a, hosts) {
+            makeConsent().forget(hosts);
+            refreshSection(a);
         }
 
         function safeStorage() {
@@ -577,9 +679,15 @@ const GeneSetPanel = (function() {
             const sid = (x) => `gs-${x}-${_id}`;
             const source = el('select', { class: 'form-select form-select-sm', id: sid('source'),
                 on: { change: (e) => setSource(e.target.value) } });
-            const ids = el('select', { class: 'form-select form-select-sm', id: sid('ids'),
-                on: { change: (e) => setIdColumn(e.target.value) } }, el('option', { value: '_index', text: 'var index' }));
-            const idType = el('span', { class: 'gs-hint', aria: { live: 'polite' } });
+            const ids = el('select', { class: 'form-select form-select-sm', id: sid('ids'), title: 'The var column whose values are sent and linked',
+                on: { change: (e) => setIdColumn(e.target.value) } }, el('option', { value: 'auto', text: 'Auto' }));
+            const idTypeAuto = el('option', { value: 'auto', text: 'Auto' });
+            const idType = el('select', { class: 'form-select form-select-sm gs-idtype', id: sid('idtype'),
+                aria: { label: 'Read the ids as' }, title: 'How the values are read: gene names (symbols), Ensembl or Entrez ids',
+                on: { change: (e) => setIdType(e.target.value) } },
+            idTypeAuto, el('option', { value: 'symbol', text: 'Gene names (symbols)' }),
+            el('option', { value: 'ensembl', text: 'Ensembl ids' }), el('option', { value: 'entrez', text: 'Entrez ids' }));
+            idType.value = _settings.idType;
             const species = el('input', { type: 'text', class: 'form-control form-control-sm', id: sid('species'),
                 placeholder: 'name, common name or taxonomy id', value: speciesLabel(taxonomyId()),
                 aria: { describedby: sid('species-err') } });
@@ -612,33 +720,45 @@ const GeneSetPanel = (function() {
             root.append(controls, bar, consent, sections);
             _container.innerHTML = '';
             _container.appendChild(root);
-            _dom = { root, controls, source, ids, idType, species, speciesErr, run, auto, sectionsBtn, sectionsMenu, sectionsWrap,
+            _dom = { root, controls, source, ids, idType, idTypeAuto, species, speciesErr, run, auto, sectionsBtn, sectionsMenu, sectionsWrap,
                 bar, barText, barActions, consent, sections, noData: root.querySelector(`#loading-screen-${_id}`), sectionEls: new Map() };
             _picker = mountNamePicker({ input: species, noun: 'species', search: searchSpeciesItems, onPick: pickSpecies });
             fillSourceOptions();
             buildSections();
         }
 
+        /**
+         * The Source list. A panel without a source (new, or its table
+         * removed) follows the first open gene table, or the first closed
+         * one; with none at all it says so, and binds to the first table as
+         * soon as one is made (onPanelsChanged).
+         * @returns {boolean} whether the source changed
+         */
         function fillSourceOptions() {
-            if (!_dom) return;
+            if (!_dom) return false;
             const sel = _dom.source;
             D.clear(sel);
-            sel.appendChild(D.el('option', { value: 'none', text: 'Pick a gene table' }));
             const tables = PanelManager.getPanelsByType('gene-table');
             const active = new Set(PanelManager.getActivePanels());
+            if (!tables.length) {
+                sel.appendChild(D.el('option', { value: 'none', text: 'No gene table yet' }));
+                sel.disabled = true;
+                sel.value = 'none';
+                return false;
+            }
+            sel.disabled = false;
             for (const t of tables) {
                 const label = `${t.getTitle()}${active.has(t) ? '' : ' (closed)'}`;
                 sel.appendChild(D.el('option', { value: t.getId(), text: label }));
             }
-            if (_settings.tableFilter !== 'none' && !tables.some(t => t.getId() === _settings.tableFilter)) {
-                sel.appendChild(D.el('option', { value: _settings.tableFilter, text: 'missing table' }));
+            let changed = false;
+            if (!tables.some(t => t.getId() === _settings.tableFilter)) {
+                const pick = tables.find(t => active.has(t)) || tables[0];
+                changed = _settings.tableFilter !== pick.getId();
+                _settings.tableFilter = pick.getId();
             }
             sel.value = _settings.tableFilter;
-            // the first table, for a new panel that has none
-            if (_settings.tableFilter === 'none' && tables.length && !options.tableFilter) {
-                const open = tables.find(t => active.has(t));
-                if (open) { _settings.tableFilter = open.getId(); sel.value = _settings.tableFilter; }
-            }
+            return changed;
         }
 
         function setSource(id) {
@@ -653,8 +773,13 @@ const GeneSetPanel = (function() {
             paintAll();
         }
 
+        async function setIdType(type) {
+            _settings.idType = type || 'auto';
+            await setIdColumn(_settings.idColumn);
+        }
+
         async function setIdColumn(col) {
-            _settings.idColumn = col || '_index';
+            _settings.idColumn = col || 'auto';
             await ensureIds();
             const f = DataManager.getFocusedGene();
             _focus = { name: f || null, id: f ? idOf(f) : null };
@@ -886,6 +1011,7 @@ const GeneSetPanel = (function() {
             _dom.sectionsBtn.textContent = `Sections ${on}/${all.length} ▾`;
             if (_dom.source.value !== _settings.tableFilter) fillSourceOptions();
             _dom.ids.value = _settings.idColumn;
+            _dom.idType.value = _settings.idType;
             if (_picker && document.activeElement !== _dom.species) _picker.setValue(speciesLabel(taxonomyId()));
         }
 
@@ -911,14 +1037,18 @@ const GeneSetPanel = (function() {
             const n = _source.count;
             const tag = _source.status === 'closed' ? ' (source table closed: its selection when it closed)' : '';
             if (g === 'no-dataset') text = 'No dataset loaded.';
-            else if (g === 'no-source') text = _notice || 'Pick a gene table as the source.';
+            else if (g === 'no-source') {
+                text = PanelManager.getPanelsByType('gene-table').length ? 'Pick a gene table as the source.'
+                    : 'No gene table yet. Add one with Create New Panel (the panel chooser) → Gene Table; '
+                        + 'this panel then analyses the genes passing its filter.';
+            }
             else if (g === 'waiting') text = `Waiting for "${_source.title}" to load…`;
             else if (g === 'closed-unknown') {
                 tone = 'stale';
                 text = `Source table "${_source.title}" is closed and its selection is not known; reopen it.`;
             } else if (g === 'ids') {
                 tone = 'stale';
-                text = `Cannot read the ID column ${_settings.idColumn}: ${_ids.error}`;
+                text = `Cannot read the ID column ${idCol()}: ${_ids.error}`;
             } else if (_pending) {
                 text = 'Waiting for your answer below: nothing has been sent yet.';
             } else if (!_snapshot || !anyResult()) {
@@ -1004,6 +1134,7 @@ const GeneSetPanel = (function() {
             el('div', { class: 'gs-consent__do' },
                 barButton('Send', () => answerConsent('send'), 'btn-primary'),
                 persistable ? barButton('Always send to these services', () => answerConsent('always')) : '',
+                persistable ? barButton('Never', () => answerConsent('never'), 'btn-outline-danger') : '',
                 barButton('Cancel', () => answerConsent('cancel'), 'btn-outline-secondary')));
             box.hidden = false;
         }
@@ -1130,6 +1261,13 @@ const GeneSetPanel = (function() {
                     const url = openUrlOf(a, input, null);
                     if (url) extra.push(D.link(url, `Open in ${a.provider.name}`, { cls: 'btn btn-sm btn-outline-secondary' }));
                 }
+                // over the service's limit: the user may send it anyway, and see what the service says
+                if (kind === 'capped' && policy() !== 'off') {
+                    extra.push(barButton('Try anyway', () => { _armed = true; runSections([a], { fresh: true, force: true }); }));
+                }
+                if (kind === 'declined') {
+                    extra.push(barButton('Ask again', () => askAgain(a, run.error.hosts || [])));
+                }
                 placeholder(host, a, reason, gapKind, msg, extra);
                 if (failed) {
                     host.insertBefore(D.el('div', { class: 'gs-error-title', text: `Could not get ${a.label.toLowerCase()} from ${a.provider.name}. Other sections are not affected.` }), host.firstChild);
@@ -1148,12 +1286,12 @@ const GeneSetPanel = (function() {
                 placeholder(host, a, GAP.FAILED, 'request', 'This browser is offline. Links still work; results fetch when it is back online.');
                 return;
             }
-            if (run.status === 'loading' && !showResult) {
+            if (run.status === 'loading' && (!showResult || run.progress)) {
                 revokeSection(sid);
                 D.clear(host);
                 host.dataset.drawn = '';
                 host.appendChild(D.el('div', { class: 'gs-loading' }, D.el('span', { class: 'spinner-border spinner-border-sm', aria: { hidden: 'true' } }),
-                    ` Asking ${a.provider.name}…`));
+                    ` ${run.progress || `Asking ${a.provider.name}…`}`));
                 return;
             }
             if (!showResult) {
@@ -1229,7 +1367,7 @@ const GeneSetPanel = (function() {
                     el('b', { text: _focus.name }), _focus.id && _focus.id !== _focus.name ? ` (${_focus.id})` : '',
                     rec.entrez || rec.ensembl ? '' : ''),
                 el('div', { class: 'gs-links__row' }, links.length ? links.flatMap((l, i) => [i ? ' · ' : '',
-                    D.link(l.href, l.label, { label: `${_focus.name} on ${l.label}` })]) : `No ${_settings.idColumn} value for ${_focus.name}.`));
+                    D.link(l.href, l.label, { label: `${_focus.name} on ${l.label}` })]) : `No ${idCol()} value for ${_focus.name}.`));
             } else {
                 focus.append(el('span', { class: 'gs-idle', text: 'Focused gene: none. Click a gene in a table, or in the list below.' }));
             }
@@ -1383,7 +1521,7 @@ const GeneSetPanel = (function() {
                 }
             }
             return JSON.parse(JSON.stringify({
-                settings: _settings, armed: _armed, gate: gate(), policy: policy(), idType: _idType,
+                settings: _settings, armed: _armed, gate: gate(), policy: policy(), idType: _idType, idColumn: idCol(),
                 source: { status: _source.status, title: _source.title, count: _source.count, hash: _source.hash },
                 snapshot: _snapshot ? { count: _snapshot.count, hash: _snapshot.hash, taxonomyId: _snapshot.taxonomyId,
                     idColumn: _snapshot.idColumn, sourceId: _snapshot.sourceId } : null,
