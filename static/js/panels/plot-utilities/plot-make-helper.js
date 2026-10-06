@@ -247,23 +247,28 @@ export function attachViewportTracking(plotContainer, settings) {
   if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
     plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
+  const followView = () => { if (typeof plotContainer.__azFollowView === 'function') plotContainer.__azFollowView(); };
   const onRelayout = (eventData) => {
     if (!eventData) return;
+    // automatic point size and opacity for the points now in view (listeners.js)
+    if (trackView(eventData) && !settings.z) followView();
+  };
+  const trackView = (eventData) => {
     if (settings.z) {
       const camera = eventData['scene.camera'];
       if (camera) settings.viewport3D = { eye: camera.eye, up: camera.up, center: camera.center };
-      return;
+      return !!camera;
     }
     // Reset axes / double click: back to the axes Plotly fits
     if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
       settings.viewport2D = null;
-      return;
+      return true;
     }
     const range = (axis) => eventData[`${axis}.range`]
       || (eventData[`${axis}.range[0]`] !== undefined && eventData[`${axis}.range[1]`] !== undefined
         ? [eventData[`${axis}.range[0]`], eventData[`${axis}.range[1]`]] : null);
     const xrange = range('xaxis'), yrange = range('yaxis');
-    if (!xrange && !yrange) return;
+    if (!xrange && !yrange) return false;
     // A zoom along one axis (a drag on its edge) keeps the other as drawn
     const fl = plotContainer._fullLayout || {};
     const shown = (axis) => (fl[axis] && Array.isArray(fl[axis].range) ? [...fl[axis].range] : null);
@@ -271,9 +276,12 @@ export function attachViewportTracking(plotContainer, settings) {
       xrange: xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis'),
       yrange: yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis')
     };
+    return true;
   };
   plotContainer.__azViewportHandler = onRelayout;
   plotContainer.on('plotly_relayout', onRelayout);
+  // a redraw that keeps a zoomed view was drawn with the style for every point
+  if (settings.viewport2D && !settings.z) followView();
 }
 
 /**

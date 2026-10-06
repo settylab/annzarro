@@ -1,6 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
+import { pointsInView, debounced } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
@@ -13,7 +14,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { aspectUpdate } from './plot-make-helper.js';
+import { aspectUpdate, keepsOwnMarker } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
@@ -246,11 +247,26 @@ export function setupPlotControlListeners(
       });
       $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
         settings[autoKey] = true;
-        applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
+        applyAutoPointStyle(settings, autoPointCount(), pointStyleBase());
         showPointStyle(id, settings);
         redrawStyling();
       });
     };
+    // Automatic values follow the points in view (issue #85): in a zoomed or
+    // panned 2D view the points inside it, else every point drawn. After a
+    // zoom, a pan or a redraw that keeps the view, once it has settled.
+    const autoPointCount = () => {
+      const inView = settings.viewport2D && !settings.z ? pointsInView(plotContainer, keepsOwnMarker) : null;
+      return inView === null ? plotContainer._pointCount : inView;
+    };
+    plotContainer.__azFollowView = debounced(() => {
+      if (!settings.autoPointSize && !settings.autoPointOpacity) return;
+      if (!plotContainer._fullLayout) return;
+      if (applyAutoPointStyle(settings, autoPointCount(), pointStyleBase())) {
+        showPointStyle(id, settings);
+        redrawStyling();
+      }
+    });
     pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0, sizeSnap);
     pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1,
       (v, other) => other(v));

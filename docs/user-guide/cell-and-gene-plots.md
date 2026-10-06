@@ -47,7 +47,10 @@ Cell plot controls, coloured by a categorical obs column.
     UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
     0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An
     automatic value is shown in grey italics and changes when the number of points does, for
-    example when you turn the subset off. In a 3D plot the automatic opacity is always 1: below 1,
+    example when you turn the subset off. In a 2D plot it also follows the zoom: once a zoom or
+    pan has settled, the count is the points inside the view, so a close view of a dense
+    region gets larger, more opaque points; Reset axes (or a double click) goes back to the
+    value for every point drawn. In a 3D plot the automatic opacity is always 1: below 1,
     Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
     kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
     sets it; it then stays

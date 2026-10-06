@@ -1,6 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker } from './plot-make-helper.js';
+import { pointsInView } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
@@ -674,7 +675,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // drawn: the subset, or every cell (utils/point-style.js)
     const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
     plotContainer._pointCount = nPoints;
-    applyAutoPointStyle(settings, nPoints, pointStyleBase());
+    // in a zoomed view kept from the graph drawn now, the points in that view
+    // (utils/view-point-style.js; checked again once the new graph is drawn)
+    const inView = settings.viewport2D && !settings.z ? pointsInView(plotContainer, keepsOwnMarker) : null;
+    applyAutoPointStyle(settings, inView === null ? nPoints : inView, pointStyleBase());
     showPointStyle(id, settings);
     showColorSortControl(id, settings);
 
