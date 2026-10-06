@@ -32,6 +32,33 @@ const { colorSortOrder, sortTracesByColor, unsortTraces, colorSortApplies } =
 
 test('order: by |colour| ascending, missing first, stable for ties', () => {
     assert.deepEqual(colorSortOrder([3, -5, null, 0.1, NaN, -3]), [2, 4, 3, 0, 5, 1]);
+    assert.deepEqual(colorSortOrder([]), []);
+    assert.deepEqual(colorSortOrder([NaN, undefined, Infinity]), [0, 1, 2]);
+    assert.deepEqual(colorSortOrder([0, -0, 2, 2, 0]), [0, 1, 4, 2, 3]);
+});
+
+// The radix sort against the comparison sort it replaced, on value sets that
+// stress it: mostly zeros (a sparse gene), float32 values (zero low bits),
+// wide magnitudes with missing values, few distinct values.
+test('order: the same as a stable comparison sort over many inputs', () => {
+    const reference = (colors) => {
+        const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
+        return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+    };
+    let s = 11;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const kinds = {
+        sparse: () => (rnd() < 0.7 ? 0 : Math.round(rnd() * 400) / 100),
+        float32: () => Math.fround(rnd() * 8 - 1),
+        wide: () => (rnd() < 0.05 ? (rnd() < 0.5 ? NaN : null) : (rnd() - 0.5) * 10 ** Math.round(rnd() * 40 - 20)),
+        few: () => [-2, -1, 0, 1, 2][Math.floor(rnd() * 5)],
+    };
+    for (const [kind, draw] of Object.entries(kinds)) {
+        for (const n of [1, 7, 1000, 70000]) {
+            const c = Array.from({ length: n }, draw);
+            assert.deepEqual(colorSortOrder(c), reference(c), `${kind} n=${n}`);
+        }
+    }
 });
 
 const gd = () => ({ data: [

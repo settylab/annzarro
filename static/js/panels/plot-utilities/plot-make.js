@@ -1354,17 +1354,60 @@ function _get(trace, attr) {
 }
 
 function _permuted(trace, order) {
+  const n = order.length;
   const update = {};
   for (const attr of SORTED_ATTRS) {
     const arr = _get(trace, attr);
-    if (Array.isArray(arr) && arr.length === order.length) update[attr] = [order.map(i => arr[i])];
+    if (!Array.isArray(arr) || arr.length !== n) continue;
+    const out = [];
+    for (let k = 0; k < n; k++) out.push(arr[order[k]]);
+    update[attr] = [out];
   }
   return update;
 }
 
+/**
+ * Point indexes by |colour| ascending, missing values first, ties in index
+ * order. A comparison sort took 120-310 ms at 1M points; this is a stable
+ * radix sort of the |values| as float64 bits (for values >= 0 the bit
+ * patterns sort as the numbers do), 16 bits per pass, a pass skipped when
+ * all points share its digit (the low bits of float32 data are zero).
+ */
 export function colorSortOrder(colors) {
-  const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
-  return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+  const n = colors.length;
+  const keys = new Float64Array(n);
+  const words = new Uint32Array(keys.buffer);   // little endian: low word at 2i
+  let src = new Uint32Array(n);
+  let missing = 0;
+  for (let i = 0; i < n; i++) {
+    const v = colors[i];
+    if (typeof v === 'number' && Number.isFinite(v)) keys[i] = Math.abs(v);
+    else src[missing++] = i;
+  }
+  const order = new Array(n).fill(0);
+  for (let k = 0; k < missing; k++) order[k] = src[k];
+  let m = 0;
+  for (let i = 0, k = missing; i < n; i++) {
+    const v = colors[i];
+    if (typeof v === 'number' && Number.isFinite(v)) src[k + m++] = i;
+  }
+  src = src.subarray(missing);
+  let dst = new Uint32Array(m);
+  const count = new Uint32Array(65537);
+  for (let pass = 0; pass < 4; pass++) {
+    const word = pass >> 1, shift = (pass & 1) * 16;
+    count.fill(0);
+    for (let k = 0; k < m; k++) count[((words[2 * src[k] + word] >>> shift) & 0xffff) + 1]++;
+    if (count.some(c => c === m)) continue;
+    for (let d = 0; d < 65536; d++) count[d + 1] += count[d];
+    for (let k = 0; k < m; k++) {
+      const i = src[k];
+      dst[count[(words[2 * i + word] >>> shift) & 0xffff]++] = i;
+    }
+    const t = src; src = dst; dst = t;
+  }
+  for (let k = 0; k < m; k++) order[missing + k] = src[k];
+  return order;
 }
 
 /**
@@ -1473,17 +1516,32 @@ export function createFilterMask(data, settings) {
   const totalPts = data.x.values.length;
   if (totalPts === 0) return { indexMask: null, filterStats };
 
-  // 1. Build per-axis masks & NaN-counts
-  const xMask = data.x.values.map(v => v != null && !isNaN(v));
-  filterStats.xNaN = totalPts - xMask.filter(Boolean).length;
+  // 1. Build per-axis masks & NaN-counts (loops: at 1M points the
+  // map/filter/every closures were 50 ms of a recolour)
+  const validMask = (values) => {
+    const mask = new Array(values.length);
+    let bad = 0;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      const ok = v != null && !isNaN(v);
+      mask[i] = ok;
+      if (!ok) bad++;
+    }
+    return { mask, bad };
+  };
+  const xValid = validMask(data.x.values);
+  const xMask = xValid.mask;
+  filterStats.xNaN = xValid.bad;
 
-  const yMask = data.y.values.map(v => v != null && !isNaN(v));
-  filterStats.yNaN = totalPts - yMask.filter(Boolean).length;
+  const yValid = validMask(data.y.values);
+  const yMask = yValid.mask;
+  filterStats.yNaN = yValid.bad;
 
   let zMask = null;
   if (settings.z && data.z?.values) {
-    zMask = data.z.values.map(v => v != null && !isNaN(v));
-    filterStats.zNaN = totalPts - zMask.filter(Boolean).length;
+    const zValid = validMask(data.z.values);
+    zMask = zValid.mask;
+    filterStats.zNaN = zValid.bad;
   }
 
   // Table filtering uses pre-populated tableEntities and tableFilterMask
@@ -1596,19 +1654,18 @@ export function createFilterMask(data, settings) {
   if (tableFilterMask && settings.removeNonTableEntries) masks.push(tableFilterMask);
 
   // 6. Build the final indexMask
-  let indexMask;
-  if (masks.length > 0) {
-    // If we have masks to apply, build a mask requiring all filters to pass
-    indexMask = Array.from({ length: totalPts }, (_, i) =>
-      masks.every(mask => mask[i])
-    );
-  } else {
-    // If no explicit filtering, use a pass-through mask
-    indexMask = Array.from({ length: totalPts }, () => true);
+  // (a point passes when every mask has it)
+  const indexMask = new Array(totalPts);
+  let kept = 0;
+  for (let i = 0; i < totalPts; i++) {
+    let keep = true;
+    for (let m = 0; m < masks.length && keep; m++) keep = !!masks[m][i];
+    indexMask[i] = keep;
+    if (keep) kept++;
   }
 
   // 7. Compute filtered count
-  filterStats.filtered = totalPts - indexMask.filter(Boolean).length;
+  filterStats.filtered = totalPts - kept;
 
   // 8. Each hidden point once, under the first reason that applies, so the
   // reasons the panel names add up to `filtered` (classifyFilterStats)
@@ -1758,25 +1815,30 @@ export function applyFilterMask(data, indexMask) {
   const entityType = data.entities;
   const entities = data[entityType];
 
+  const keep = [];
+  for (let i = 0; i < indexMask.length; i++) if (indexMask[i]) keep.push(i);
+  const pick = (values) => {
+    const out = [];
+    for (let k = 0; k < keep.length; k++) out.push(values[keep[k]]);
+    return out;
+  };
+
   const filteredData = {
     ...data,
-    x: { ...data.x, values: data.x.values.filter((_, i) => indexMask[i]) },
-    y: { ...data.y, values: data.y.values.filter((_, i) => indexMask[i]) }
+    x: { ...data.x, values: pick(data.x.values) },
+    y: { ...data.y, values: pick(data.y.values) }
   };
 
   if (data.z) {
-    filteredData.z = { ...data.z, values: data.z.values.filter((_, i) => indexMask[i]) };
+    filteredData.z = { ...data.z, values: pick(data.z.values) };
   }
 
-  filteredData.color = data.color.filter((_, i) => indexMask[i]);
-  filteredData[entityType] = entities.filter((_, i) => indexMask[i]);
+  filteredData.color = pick(data.color);
+  filteredData[entityType] = pick(entities);
   
   // Generate proper customdata with entity names
   // This provides direct access to the entity names for click handlers
-  filteredData.customdata = indexMask.reduce((acc, keep, i) => {
-    if (keep) acc.push(entities[i]);
-    return acc;
-  }, []);
+  filteredData.customdata = pick(entities);
   
   // Keep track of the mask
   filteredData.indexMask = indexMask;
